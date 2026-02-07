@@ -5,11 +5,14 @@ import json
 import base64
 from datetime import datetime, timedelta
 from pathlib import Path
+from dotenv import load_dotenv
 import sys
 
 project_root = Path(os.path.dirname(__file__)).parent
 print(project_root)
 sys.path.append(project_root.as_posix())
+
+load_dotenv()
 
 from webFunc import *
 
@@ -190,7 +193,7 @@ def main():
     
     print(f"开始检查，ADDRESS: {ADDRESS}")
     
-    note_ = Note(address=ADDRESS, pwd="AutoTranslate", read_only=True)
+    note_ = Note(address=ADDRESS, pwd="AutoTranslate")
     note_.fetch_note_info()
     try:
         current_data = json.loads(note_.note_content)
@@ -229,6 +232,7 @@ def main():
         print("首次运行，初始化数据")
         current_ourplay_version = None
         current_llc_version = None
+        current_machine_version = None
         ourplay_last_update = datetime.fromisoformat('1970-01-01T00:00:00')
         llc_last_update = datetime.fromisoformat('1970-01-01T00:00:00')
         llc_mirror_update = datetime.fromisoformat('1970-01-01T00:00:00')
