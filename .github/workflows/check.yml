@@ -40,3 +40,4 @@ jobs:
           ADDRESS: ${{ secrets.WEBNOTE_ADDRESS }}
         run: |
           python .github/UpdatePackage.py
+          python .github/UpdatePackage_LCTA.py
