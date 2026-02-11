@@ -3,7 +3,7 @@ name: Check Newest Package
 on:
   # 每小时运行一次（在15分钟时）
   schedule:
-    - cron: '15 * * * *'
+    - cron: '0 13 * * *'
   # 允许手动触发
   workflow_dispatch:
 
