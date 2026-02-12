@@ -3,19 +3,19 @@ import os
 
 def check_need_up_translate(version_info:str = "") -> bool:
     try:
-        if not os.path.exists('workshop/LLC_zh-CN/info/version.json'):
+        if not os.path.exists('lang/LLC_zh-CN/info/version.json'):
             return True
 
         if version_info != "":
             version_timestamp = version_info
         else:
             version_timestamp = str(load(
-                open('workshop/LimbusCompany_Data/Lang/LLC_zh-CN/info/version.json', 
+                open('lang/LimbusCompany_Data/Lang/LLC_zh-CN/info/version.json', 
                     'r', encoding='utf-8')
             )['version'])
 
         now_timestamp = str(load(
-            open('workshop/LLC_zh-CN/info/version.json', 
+            open('lang/LLC_zh-CN/info/version.json', 
                 'r', encoding='utf-8')
         )['version'])
 

@@ -21,7 +21,7 @@ mod_zips_root_path = get_mod_folder()
 os.makedirs(mod_zips_root_path, exist_ok=True)
 
 
-# from functions.settings_manager import get_settings_manager
+# from functions.base.settings_manager import get_settings_manager
 # game_path = get_settings_manager().get_setting("game_path")
 game_path = '1123'
 
@@ -66,6 +66,7 @@ def main():
         sound.replace_sound(mod_zips_root_path)
         logging.info("Starting game")
 
+        # subprocess.call(sys.argv[1:])
         subprocess.Popen(['start', 'steam://rungameid/1973530'], shell=True)
 
     except Exception as e:

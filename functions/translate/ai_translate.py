@@ -1,5 +1,5 @@
 import requests
-from functions.settings_manager import get_settings_manager
+from functions.base.settings_manager import get_settings_manager
 
 
 class AITranslator:

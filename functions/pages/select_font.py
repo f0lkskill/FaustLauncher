@@ -3,7 +3,7 @@ from tkinter import ttk, filedialog, messagebox
 import os
 import shutil
 from PIL import Image, ImageTk, ImageFont, ImageDraw
-from functions.window_ulits import center_window
+from functions.base.window_ulits import center_window
 
 class FontSelectorGUI:
     def __init__(self, window, root):
@@ -26,8 +26,8 @@ class FontSelectorGUI:
             pass
         
         # 字体路径
-        self.context_font_path = "Font\\Context\\ChineseFont.ttf"
-        self.title_font_path = "Font\\Title\\ChineseFont.ttf"
+        self.context_font_path = "assets\\Font\\Context\\ChineseFont.ttf"
+        self.title_font_path = "assets\\Font\\Title\\ChineseFont.ttf"
         
         # 为每个选项卡创建独立的预览对象和图片引用列表
         self.context_preview_data = {

@@ -4,7 +4,7 @@ import os
 import json
 import re
 from threading import Thread
-from functions.window_ulits import center_window
+from functions.base.window_ulits import center_window
 
 class CustomTranslationTool:
     """自定义汉化工具类"""
@@ -15,8 +15,8 @@ class CustomTranslationTool:
         self.current_file = None
         self.original_data = {}
         self.changes = {}
-        self.changes_file = "workshop/changes.json"
-        self.workshop_dir = "workshop"
+        self.changes_file = "lang/changes.json"
+        self.lang_dir = "lang"
         self.undo_stack = []  # 撤销栈
         self.redo_stack = []  # 重做栈
         self.current_content = ""  # 当前编辑内容
@@ -35,8 +35,8 @@ class CustomTranslationTool:
         except:
             pass
 
-        # 确保workshop目录存在
-        os.makedirs(self.workshop_dir, exist_ok=True)
+        # 确保lang目录存在
+        os.makedirs(self.lang_dir, exist_ok=True)
 
         
         # 确保changes.json文件存在
@@ -305,9 +305,9 @@ class CustomTranslationTool:
         """刷新文件树"""
         print("开始刷新文件树...")
         
-        # 检查workshop目录是否存在
-        if not os.path.exists(self.workshop_dir):
-            messagebox.showerror("错误", f"workshop目录不存在: {self.workshop_dir}")
+        # 检查lang目录是否存在
+        if not os.path.exists(self.lang_dir):
+            messagebox.showerror("错误", f"lang目录不存在: {self.lang_dir}")
             return
         
         # 清空树形结构
@@ -315,12 +315,12 @@ class CustomTranslationTool:
             self.file_tree.delete(item)
         
         # 添加根节点
-        root_node = self.file_tree.insert('', 'end', text="workshop", values=("workshop", True))
-        print("添加根节点: workshop")
+        root_node = self.file_tree.insert('', 'end', text="lang", values=("lang", True))
+        print("添加根节点: lang")
         
         # 递归构建文件树
         from threading import Thread
-        Thread(target=self.build_tree, args=(root_node, self.workshop_dir)).start()
+        Thread(target=self.build_tree, args=(root_node, self.lang_dir)).start()
         
         # 展开根节点
         self.file_tree.item(root_node, open=True)
@@ -354,7 +354,7 @@ class CustomTranslationTool:
             # 添加目录
             for dir_name in dirs:
                 dir_path = os.path.join(path, dir_name)
-                relative_path = os.path.relpath(dir_path, self.workshop_dir)
+                relative_path = os.path.relpath(dir_path, self.lang_dir)
                 node = self.file_tree.insert(parent, 'end', text=dir_name, 
                                             values=(relative_path, True))
                 print(f"添加目录节点: {dir_name}")
@@ -363,7 +363,7 @@ class CustomTranslationTool:
             # 添加文件
             for file_name in files:
                 file_path = os.path.join(path, file_name)
-                relative_path = os.path.relpath(file_path, self.workshop_dir)
+                relative_path = os.path.relpath(file_path, self.lang_dir)
                 self.file_tree.insert(parent, 'end', text=file_name, 
                                      values=(relative_path, False))
                 
@@ -382,7 +382,7 @@ class CustomTranslationTool:
                 # 修复：正确处理字符串和布尔值的判断
                 is_directory = values[1] if isinstance(values[1], bool) else values[1] == 'True'
                 if not is_directory:  # 如果是文件而不是目录
-                    file_path = os.path.join(self.workshop_dir, values[0])
+                    file_path = os.path.join(self.lang_dir, values[0])
                     print(f"加载文件: {file_path}")
                     self.load_json_file(file_path)
                 else:
@@ -399,7 +399,7 @@ class CustomTranslationTool:
                 # 修复：正确处理字符串和布尔值的判断
                 is_directory = values[1] if isinstance(values[1], bool) else values[1] == 'True'
                 if not is_directory:  # 如果是文件而不是目录
-                    file_path = os.path.join(self.workshop_dir, values[0])
+                    file_path = os.path.join(self.lang_dir, values[0])
                     print(f"双击加载文件: {file_path}")
                     self.load_json_file(file_path)
     
@@ -583,7 +583,7 @@ class CustomTranslationTool:
             Thread(target=self.apply_json_syntax_highlighting).start()
             
             # 更新当前文件显示
-            relative_path = os.path.relpath(file_path, self.workshop_dir)
+            relative_path = os.path.relpath(file_path, self.lang_dir)
             self.current_file_label.config(text=f"当前文件: {relative_path}")
             
             # 更新状态
@@ -597,7 +597,7 @@ class CustomTranslationTool:
 
     def apply_changes(self, original_data, file_path):
         """应用changes.json中的修改"""
-        relative_path = os.path.relpath(file_path, self.workshop_dir)
+        relative_path = os.path.relpath(file_path, self.lang_dir)
         
         if relative_path in self.changes:
             changes = self.changes[relative_path]
@@ -815,7 +815,7 @@ class CustomTranslationTool:
     
     def compare_and_save_changes(self, edited_data):
         """比较并保存修改"""
-        relative_path = os.path.relpath(self.current_file, self.workshop_dir) # type: ignore
+        relative_path = os.path.relpath(self.current_file, self.lang_dir) # type: ignore
         
         # 比较修改
         changes = self.find_changes(self.original_data, edited_data)
@@ -911,7 +911,7 @@ class CustomTranslationTool:
     def reset_json_edits(self):
         """撤销所有修改"""
         if self.current_file:
-            relative_path = os.path.relpath(self.current_file, self.workshop_dir) # type: ignore
+            relative_path = os.path.relpath(self.current_file, self.lang_dir) # type: ignore
             if relative_path in self.changes:
                 del self.changes[relative_path]
                 with open(self.changes_file, 'w', encoding='utf-8') as f:

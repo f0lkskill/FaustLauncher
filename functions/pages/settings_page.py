@@ -1,6 +1,6 @@
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, colorchooser
-from functions.settings_manager import get_settings_manager
+from functions.base.settings_manager import get_settings_manager
 
 class SettingsPage:
     def __init__(self, parent_frame, bg_color, lighten_bg_color):
@@ -17,7 +17,7 @@ class SettingsPage:
         """创建设置页面控件"""
         
         # 创建设置内容容器, 居中显示
-        content_frame = tk.Frame(self.parent, bg=self.lighten_bg_color, relief='groove', borderwidth=3)
+        content_frame = tk.Frame(self.parent, bg=self.lighten_bg_color, relief='groove', borderwidth=1)
         content_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=10)
         
         # 创建标签页控件
@@ -46,7 +46,7 @@ class SettingsPage:
                                 command=self.reset_all_settings,
                                 font=('Microsoft YaHei UI', 11, 'bold'),
                                 bg='#e67e22', fg='white',
-                                relief='raised', borderwidth=2,
+                                relief='raised', borderwidth=1,
                                 padx=20, pady=5)
         reset_all_btn.pack(anchor=tk.CENTER, padx=10)
     

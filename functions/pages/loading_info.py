@@ -1,8 +1,8 @@
 import tkinter as tk
 import time
 import threading
-from functions.window_ulits import center_window
-from functions.settings_manager import get_settings_manager
+from functions.base.window_ulits import center_window
+from functions.base.settings_manager import get_settings_manager
 
 VERSION_INFO = get_settings_manager().get_setting("version_info")  # type: ignore
 

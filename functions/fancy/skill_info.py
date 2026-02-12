@@ -152,4 +152,4 @@ def handle_skill(translate_pack_path) -> None:
             json.dump(skill_content, f, ensure_ascii=False, indent=4)
 
 if __name__ == '__main__':
-    handle_skill("workshop")
+    handle_skill("lang")

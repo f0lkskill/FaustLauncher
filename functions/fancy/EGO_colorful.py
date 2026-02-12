@@ -2,7 +2,7 @@ import json
 import glob
 from typing import Dict, Any
 from functions.fancy.dialog_colorful import apply_color_gradient_custom
-from functions.settings_manager import get_settings_manager
+from functions.base.settings_manager import get_settings_manager
 
 settings_manager = get_settings_manager()
 

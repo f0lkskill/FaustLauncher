@@ -7,8 +7,8 @@ import threading
 import time
 from functions.dowloads.github_ulits import GitHubReleaseFetcher
 from functions.dowloads.dow_ulits import check_need_up_translate
-from functions.settings_manager import get_settings_manager
-from functions.window_ulits import center_window
+from functions.base.settings_manager import get_settings_manager
+from functions.base.window_ulits import center_window
 
 # 7-Zip可执行文件路径
 SEVEN_ZIP_PATH = r"7-Zip\7z.exe"
@@ -628,7 +628,7 @@ def download_and_extract_gui(gui, config_path: str = "") -> bool:
     ]
     
     # 临时文件路径
-    temp_dir = 'workshop/'
+    temp_dir = 'lang/'
     os.makedirs(temp_dir, exist_ok=True)
     
     success_count = 0
@@ -639,7 +639,7 @@ def download_and_extract_gui(gui, config_path: str = "") -> bool:
             break
 
         # 检查字体文件是否已存在
-        if os.path.exists("Font/Context/ChineseFont.ttf") and \
+        if os.path.exists("assets/Font/Context/ChineseFont.ttf") and \
            file_info['name'] == 'TTF 字体文件':
             print("字体文件已存在, 无需下载.")
             success_count += 1
@@ -725,9 +725,9 @@ def download_and_extract_gui(gui, config_path: str = "") -> bool:
         create_config_file(game_path)
         
         # 检查字体文件
-        if not os.path.exists("Font/Context/ChineseFont.ttf"):
+        if not os.path.exists("assets/Font/Context/ChineseFont.ttf"):
             import shutil
-            source_dir = "workshop/LimbusCompany_Data/Lang/LLC_zh-CN/Font/Context/ChineseFont.ttf"
+            source_dir = "lang/LimbusCompany_Data/Lang/LLC_zh-CN/Font/Context/ChineseFont.ttf"
             if os.path.exists(source_dir):
                 print("复制字体文件到Font/Context目录...")
                 try:

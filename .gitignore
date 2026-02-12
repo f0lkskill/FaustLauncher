@@ -11,7 +11,7 @@ __pycache__/
 vscode/
 _internal/
 temp/
-workshop/
+lang/
 build/
 develop-eggs/
 dist/
@@ -141,3 +141,4 @@ ModLoader.zip
 .vscode
 starting.bat
 *.exe
+AALC-auto/

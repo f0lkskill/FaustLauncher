@@ -8,11 +8,11 @@ from PIL import Image, ImageTk, ImageFilter
 import pymysql
 from subprocess import Popen
 from functions.pages.settings_page import init_settings_page
-from functions.settings_manager import get_settings_manager
+from functions.base.settings_manager import get_settings_manager
 from functions.pages.loading_info import create_simple_splash
-from functions.window_ulits import center_window
+from functions.base.window_ulits import center_window
 from functions.dowloads.sql_manager import check_new_version, notify_new_version
-from functions.sound_ulits import play_sound
+from functions.base.sound_ulits import play_sound
 
 # 添加自定义汉化工具导入
 try:
@@ -217,6 +217,9 @@ class FaustLauncherApp:
         # 绑定分页切换事件
         self.notebook.bind("<<NotebookTabChanged>>", self.on_tab_changed)
 
+        # 绑定关闭按钮事件（关键步骤）
+        root.protocol("WM_DELETE_WINDOW", self.root.withdraw)   
+
         # 设置样式
         self.set_styles()
 
@@ -226,6 +229,7 @@ class FaustLauncherApp:
         self.init_tools_page()  # 新增工具页初始化
         self.init_settings_page()
         self.init_about_page()
+        self.init_tray()
         
         # 启动背景轮换
         self.start_background_rotation()
@@ -238,6 +242,28 @@ class FaustLauncherApp:
         
         # 延迟调用初始化完成回调，确保界面完全渲染
         self.root.after(500, self._notify_initialized)
+
+    def init_tray(self):
+        """初始化托盘程序"""
+        ico = Image.open("assets/images/icon/icon.ico")
+        import pystray, threading
+        menu = pystray.Menu(
+            pystray.MenuItem('显示窗口', self.root.deiconify, default=True),
+            pystray.MenuItem('隐藏', self.root.withdraw),
+            pystray.MenuItem('退出', lambda:os._exit(0))
+        )
+
+        
+
+        self.tray = pystray.Icon(
+            'FaustLauncher',
+            ico,
+            '浮士德启动器',
+            menu
+        )
+
+        # 在单独线程中运行托盘图标
+        threading.Thread(target=self.tray.run, daemon=True).start()
 
     def _notify_initialized(self):
         """通知应用程序初始化完成"""
@@ -281,13 +307,13 @@ class FaustLauncherApp:
         
         def spawn_function_tr():
             source_path = f"{settings_manager.get_setting('game_path')}/LimbusCompany_Data/Assets/Resources_moved/Localize/en"
-            target_path = "workshop/LLC_zh-CN"
+            target_path = "lang/LLC_zh-CN"
 
             return lambda: show_auto_translate_gui(self, source_path, target_path)
         
         # 创建工具列表
         tools = [
-            {"name": "🔧 自定义汉化", "description": "编辑workshop目录下的JSON文件\n实现自定义的汉化修改。", "color": "#3498db", "command": self.open_custom_translation_tool},
+            {"name": "🔧 自定义汉化", "description": "编辑lang目录下的JSON文件\n实现自定义的汉化修改。", "color": "#3498db", "command": self.open_custom_translation_tool},
             {"name": "🚜 文件夹超链接", "description": "为文件夹制作超链接，达到转移空间的目的？", "color": "#34db34", "command": self.folder_link},
             {"name": "💻 渐变文本处理器", "description": "根据用户输入的文本生成渐变的 Untity 富文本。", "color": "#FFBD30", "command": lambda: test_color_gradient_gui(self)},
             {"name": "📝 字体修改", "description": "修改汉化包的字体，使用你自己喜欢的字体包代替。", "color": "#FA3E3E", "command": lambda: select_font_gui(self)},
@@ -887,7 +913,7 @@ class FaustLauncherApp:
             webbrowser.open("https://www.nexusmods.com/limbuscompany/mods")
         elif feature['name'] == "📦 Github":
             # 打开Github
-            webbrowser.open("https://github.com/folkskill/FaustLauncher")
+            webbrowser.open("https://github.com/f0lkskill/FaustLauncher")
     
     def open_website(self):
         """打开作者网站"""
@@ -942,12 +968,12 @@ class FaustLauncherApp:
             print("当前启动器已是最新版本")
 
         # 检查是否有命令行参数
-        if len(sys.argv) > 1 or not os.path.exists("workshop/LLC_zh-CN"):
+        if len(sys.argv) > 1 or not os.path.exists("lang/LLC_zh-CN"):
             from threading import Thread
             # 有命令行参数，进入命令行模式
             Thread(target=handle_dowload).start()
 
-        if not os.path.exists("Font/Context/ChineseFont.ttf"):
+        if not os.path.exists("assets/Font/Context/ChineseFont.ttf"):
             print("错误: 未找到字体文件 Font/Context/ChineseFont.ttf\n请尝试手动添加或者使用汉化更新修复")
 
         self.root.after(1000, self.start_background_rotation)
@@ -1028,9 +1054,9 @@ def handle_dowload(need_run_game=False):
     
     # 导入并执行各个功能模块
     try:
-        # 检测 workshop 下是否有 LLC_zh-CN 文件夹
-        workshop_path = 'workshop/LLC_zh-CN'
-        dowload_path = 'workshop'
+        # 检测 lang 下是否有 LLC_zh-CN 文件夹
+        lang_path = 'lang/LLC_zh-CN'
+        dowload_path = 'lang'
 
         # 1. 下载翻译
         print("开始下载翻译...")
@@ -1055,16 +1081,16 @@ def handle_dowload(need_run_game=False):
         from functions.dowloads.dow_ulits import check_need_up_translate
         need_update = check_need_up_translate()
 
-        # 把 'workshop\LimbusCompany_Data\Lang\LLC_zh-CN' 复制到游戏目录下的 'workshop' 文件夹 并删除 LimbusCompany_Data 文件夹
+        # 把 'lang\LimbusCompany_Data\Lang\LLC_zh-CN' 复制到游戏目录下的 'lang' 文件夹 并删除 LimbusCompany_Data 文件夹
         import shutil
 
         if need_update:
             print("检测到新的汉化版本，准备更新汉化文件...")
             if os.path.exists(dowload_path + '/LimbusCompany_Data/Lang/LLC_zh-CN'): # type: ignore
-                shutil.copytree(dowload_path + '/LimbusCompany_Data/Lang/LLC_zh-CN', workshop_path, dirs_exist_ok=True) # type: ignore
+                shutil.copytree(dowload_path + '/LimbusCompany_Data/Lang/LLC_zh-CN', lang_path, dirs_exist_ok=True) # type: ignore
                 print("文件夹复制完成")
             else:
-                print("错误: 未找到 workshop 下的 LLC_zh-CN 文件夹")
+                print("错误: 未找到 lang 下的 LLC_zh-CN 文件夹")
         else:
             print("当前汉化已是最新版本，无需更新")
 
@@ -1074,7 +1100,7 @@ def handle_dowload(need_run_game=False):
         print("LimbusCompany_Data 文件夹删除完成")
 
         if not os.path.exists('Font/Context/ChineseFont.ttf'):
-            shutil.copytree('Font', 'workshop/LLC_zh-CN', dirs_exist_ok=True) # type: ignore
+            shutil.copytree('Font', 'lang/LLC_zh-CN', dirs_exist_ok=True) # type: ignore
             print("字体文件复制完成")
 
         print("汉化下载及处理全部完成！")
@@ -1100,26 +1126,26 @@ def handle_dowload(need_run_game=False):
 
 def run_game():
     global config_path, settings_manager
-    # 复制 workshop 下的 LLC_zh-CN 文件夹到游戏目录下的 LimbusCompany_Data/Lang 文件夹 下
+    # 复制 lang 下的 LLC_zh-CN 文件夹到游戏目录下的 LimbusCompany_Data/Lang 文件夹 下
     import shutil
     # 尝试删除原有的 LimbusCompany_Data/Lang/LLC_zh-CN 文件夹
     if os.path.exists(os.path.join(config_path, 'LimbusCompany_Data/Lang/LLC_zh-CN')): # type: ignore
         print("删除原有的 LimbusCompany_Data/Lang/LLC_zh-CN 文件夹")
         shutil.rmtree(os.path.join(config_path, 'LimbusCompany_Data/Lang/LLC_zh-CN'), ignore_errors=True) # type: ignore
 
-    print(f"开始复制 workshop 下的 LLC_zh-CN 文件夹到游戏目录下的 {config_path}")
+    print(f"开始复制 lang 下的 LLC_zh-CN 文件夹到游戏目录下的 {config_path}")
     try:
-        shutil.copytree('workshop/LLC_zh-CN', os.path.join(config_path, 'LimbusCompany_Data/Lang/LLC_zh-CN'), dirs_exist_ok=True) # type: ignore
+        shutil.copytree('lang/LLC_zh-CN', os.path.join(config_path, 'LimbusCompany_Data/Lang/LLC_zh-CN'), dirs_exist_ok=True) # type: ignore
         print("汉化复制完成")
     except Exception as e:
         print(f"效用汉化复制文件夹时出错: {e}")
         return
 
-    # 根据 workshop/changes.json 更新 LimbusCompany_Data/Lang/LLC_zh-CN 里的数据
+    # 根据 lang/changes.json 更新 LimbusCompany_Data/Lang/LLC_zh-CN 里的数据
     print("开始应用自定义汉化修改...")
     try:
         # 检查changes.json文件是否存在
-        changes_file = "workshop/changes.json"
+        changes_file = "lang/changes.json"
         if os.path.exists(changes_file):
             # 加载changes.json
             with open(changes_file, 'r', encoding='utf-8') as f:
@@ -1131,7 +1157,7 @@ def run_game():
                 # 遍历changes.json中的每个文件修改记录
                 for relative_path, file_changes in changes_data.items():
                     # 构建完整的文件路径
-                    workshop_file_path = os.path.join("workshop", relative_path)
+                    lang_file_path = os.path.join("lang", relative_path)
                     game_file_path = os.path.join(config_path, "LimbusCompany_Data", "Lang", relative_path) # type: ignore
                     
                     # 检查游戏目录中的文件是否存在
@@ -1207,7 +1233,7 @@ def run_game():
 
     # 载入mod并启动游戏
     print("开始载入mod并启动游戏...")
-    from functions.load_mod import main as load_mod_and_launch
+    from functions.base.load_mod import main as load_mod_and_launch
     load_mod_and_launch(config_path + 'LimbusCompany.exe') # type: ignore
 
 def set_user_name():

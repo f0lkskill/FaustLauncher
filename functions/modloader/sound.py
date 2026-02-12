@@ -3,7 +3,7 @@ import os
 import shutil
 import time
 from threading import Thread
-from functions.settings_manager import get_settings_manager
+from functions.base.settings_manager import get_settings_manager
 
 from functions.modloader.modfolder import get_mod_folder
 

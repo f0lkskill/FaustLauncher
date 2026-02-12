@@ -1,0 +1,8 @@
+{
+    "name": "示例插件",
+    "desc": "这是一个示例插件...",
+    "authors": {
+        "FolkSkill": "weburl"
+    },
+    "addon_version": "0.0.1"
+}
