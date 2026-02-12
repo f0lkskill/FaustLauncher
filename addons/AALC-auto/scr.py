@@ -1,9 +1,10 @@
-import os
-import subprocess
-
+import pystray
 
 def check_and_run_aalc():
-    """检查并运行 AALC.exe"""
+    import os
+    import subprocess
+
+    print("正在启动 AALC...")
     try:
         # 批处理文件中指定的工作目录
         work_dir = r"addons\AALC-auto\AALC"
@@ -37,4 +38,9 @@ def check_and_run_aalc():
     except Exception as e:
         print(f"AALC发生错误：{e}")
 
-check_and_run_aalc()
+self = ADDON_ARG['AddonManager']
+func_menu = pystray.Menu(pystray.MenuItem('测试', check_and_run_aalc))
+
+self.menu_items.append(pystray.MenuItem(ADDON_ARG['AddonName'], action=func_menu))
+
+self.gamestart_funcs.append(check_and_run_aalc)

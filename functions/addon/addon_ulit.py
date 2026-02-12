@@ -9,11 +9,12 @@ class AddonManager:
     负责记录插件路径, 获取指定插件的路径, 以及其下的 addon_info.json 信息, 解析运行 scr.py 等
     """
 
-    def __init__(self, tray) -> None:
+    def __init__(self, menu_items) -> None:
         """
         初始化插件管理器
         """
-        self.app_tray = tray
+        self.menu_items = menu_items
+        self.gamestart_funcs = []
         self.addon_paths: List[str] = []
         self.addon_names: List[str] = []
         self.addons_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'addons')
@@ -100,7 +101,7 @@ class AddonManager:
                 })
         return addons
     
-    def run_addon(self, addon_name: str, *args, **kwargs):
+    def run_addon(self, addon_name: str, ADDON_ARG:dict = {}):
         """
         运行指定插件的scr.py
         
@@ -125,21 +126,29 @@ class AddonManager:
         
         def thread_run():
             try:
-                ADDON_ARG = {
-                    "tray": None
-                }
+                ADDON_ARG['AddonManager'] = self
+                ADDON_ARG['AddonName'] = addon_name
 
-                addon_scr:list[str] = open(addon_path + '\\scr.py', encoding='utf-8').readlines()
-                for line in addon_scr:
-                    exec(line)
+                addon_file = open(addon_path + '\\scr.py', encoding='utf-8')
+                addon_scr = addon_file.read().replace('\r\n', ';')
+                
+                # print(addon_scr)
+
+                exec(addon_scr)
 
                 print(f"插件 {addon_name} 初始化完成!")
 
             except Exception as e:
                 print(f"插件 {addon_name} 载入失败: {e}")
+
+            finally:
+                addon_file.close() # type: ignore
         
         print(f"载入插件 {addon_name}...")
-        threading.Thread(target=thread_run).start()
+
+        thread_run()
+
+        # threading.Thread(target=thread_run).start()
         return True
         
     def add_addon(self, addon_path: str) -> bool:
@@ -198,3 +207,11 @@ class AddonManager:
         except Exception as e:
             print(f"删除插件失败: {e}")
             return False
+        
+    def run_all_addon(self, ADDON_ARG:dict = {}):
+        for name in self.addon_names:
+            self.run_addon(name, ADDON_ARG)
+
+    def run_game_start_event(self):
+        for f in self.gamestart_funcs:
+            f()

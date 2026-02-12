@@ -13,6 +13,7 @@ from functions.pages.loading_info import create_simple_splash
 from functions.base.window_ulits import center_window
 from functions.dowloads.sql_manager import check_new_version, notify_new_version
 from functions.base.sound_ulits import play_sound
+from functions.addon.addon_ulit import AddonManager
 
 # 添加自定义汉化工具导入
 try:
@@ -24,6 +25,7 @@ except ImportError as e:
 
 dowloading = False
 root: tk.Tk = None # type: ignore
+debug = False
 settings_manager = get_settings_manager()
 config_path = settings_manager.get_setting("game_path")
 bg_color:str = settings_manager.get_setting("bg_color") # type: ignore
@@ -147,8 +149,9 @@ class TerminalRedirector:
     
     def start_redirect(self):
         """开始重定向"""
-        sys.stdout = self
-        sys.stderr = self
+        if not debug:
+            sys.stdout = self
+            sys.stderr = self
     
     def stop_redirect(self):
         """停止重定向"""
@@ -247,14 +250,23 @@ class FaustLauncherApp:
         """初始化托盘程序"""
         ico = Image.open("assets/images/icon/icon.ico")
         import pystray, threading
-        menu = pystray.Menu(
+
+        menu_items = [
             pystray.MenuItem('显示窗口', self.root.deiconify, default=True),
             pystray.MenuItem('隐藏', self.root.withdraw),
-            pystray.MenuItem('退出', lambda:os._exit(0))
-        )
+        ]
 
-        
+        addon_items = []
 
+        self.addon_manager = AddonManager(addon_items)
+        self.addon_manager.run_all_addon()
+
+        addon_menu = pystray.Menu(*addon_items)
+        root_menu = pystray.MenuItem("插件", action=addon_menu)
+        menu_items.append(root_menu)
+        menu_items.append(pystray.MenuItem('退出', lambda:os._exit(0)))
+
+        menu = pystray.Menu(*menu_items)
         self.tray = pystray.Icon(
             'FaustLauncher',
             ico,
@@ -566,7 +578,7 @@ class FaustLauncherApp:
         
         # 创建几个美化按钮 - 使用tkinter支持的十六进制颜色
         buttons_data = [
-            {"text": "🚀 启动游戏", "command": lambda:Thread(target=handle_dowload, kwargs={"need_run_game": True}).start(), "color": "#2980b9"},
+            {"text": "🚀 启动游戏", "command": lambda:Thread(target=handle_dowload, kwargs={"need_run_game": True, 'obj': self}).start(), "color": "#2980b9"},
             {"text": "🎯 汉化更新", "command": self.update_translation, "color": "#27ae60"},
             {"text": "📚 使用帮助", "command": self.show_help, "color": "#9b59b6"}
         ]
@@ -1039,7 +1051,7 @@ if %errorlevel% equ 0 (
         except Exception as e:
             messagebox.showerror("错误", f"创建文件夹链接时出错: {str(e)}")
 
-def handle_dowload(need_run_game=False):
+def handle_dowload(obj = None, need_run_game=False):
     """命令行模式：执行下载翻译、下载气泡、载入mod并启动游戏"""
     
     global dowloading, root, config_path
@@ -1099,8 +1111,8 @@ def handle_dowload(need_run_game=False):
         shutil.rmtree(os.path.join(dowload_path, 'LimbusCompany_Data'), ignore_errors=True) # type: ignore
         print("LimbusCompany_Data 文件夹删除完成")
 
-        if not os.path.exists('Font/Context/ChineseFont.ttf'):
-            shutil.copytree('Font', 'lang/LLC_zh-CN', dirs_exist_ok=True) # type: ignore
+        if not os.path.exists('assets/Font/Context/ChineseFont.ttf'):
+            shutil.copytree('assets/Font', 'lang/LLC_zh-CN', dirs_exist_ok=True) # type: ignore
             print("字体文件复制完成")
 
         print("汉化下载及处理全部完成！")
@@ -1114,7 +1126,7 @@ def handle_dowload(need_run_game=False):
             return
         
         # 有参数,运行游戏
-        run_game()
+        run_game(obj)
         
     except Exception as e:
         print(f"下载过程中出错: {e}")
@@ -1124,7 +1136,7 @@ def handle_dowload(need_run_game=False):
 
     dowloading = False
 
-def run_game():
+def run_game(obj:None):
     global config_path, settings_manager
     # 复制 lang 下的 LLC_zh-CN 文件夹到游戏目录下的 LimbusCompany_Data/Lang 文件夹 下
     import shutil
@@ -1198,7 +1210,7 @@ def run_game():
             # 创建Font文件夹
             os.makedirs(config_path + 'LimbusCompany_Data/Lang/LLC_zh-CN/Font', exist_ok=True) # type: ignore
 
-        shutil.copytree('Font', config_path + 'LimbusCompany_Data/Lang/LLC_zh-CN/Font', dirs_exist_ok=True) # type: ignore
+        shutil.copytree('assets/Font', config_path + 'LimbusCompany_Data/Lang/LLC_zh-CN/Font', dirs_exist_ok=True) # type: ignore
         print("字体文件夹复制完成")
     except Exception as e:
         print(f"复制字体文件夹时出错: {e}")
@@ -1230,6 +1242,9 @@ def run_game():
         print(f"应用美化功能时出错: {e}")
         from tkinter import messagebox
         messagebox.showerror("错误", f"应用美化功能时出错: {str(e)}\n可能是汉化包不完整导致的...\n请尝试使用汉化更新修复.")
+
+    print("运行插件注册的启动事件...")
+    obj.addon_manager.run_game_start_event() # type: ignore
 
     # 载入mod并启动游戏
     print("开始载入mod并启动游戏...")

@@ -1,4 +1,8 @@
+import pystray
 
-print(ADDON_ARG['tray'])
+self = ADDON_ARG['AddonManager']
+func_menu = pystray.Menu(pystray.MenuItem('测试', lambda:print('测试?')))
 
-print("hello world!")
+self.menu_items.append(pystray.MenuItem(ADDON_ARG['AddonName'], action=func_menu))
+
+print('loads')

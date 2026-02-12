@@ -2,7 +2,7 @@ import json
 import os
 import re
 from typing import List, Dict, Tuple
-from settings_manager import get_settings_manager
+from functions.base.settings_manager import get_settings_manager
 from functions.base.window_ulits import center_window
 
 gradient_rate = get_settings_manager().get_setting('bubble_text_gradient_rate')

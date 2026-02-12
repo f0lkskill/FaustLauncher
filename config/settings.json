@@ -91,7 +91,7 @@
         "name": "启用Mod功能",
         "type": "boolean",
         "default": true,
-        "value": true,
+        "value": false,
         "description": "是否加载 Mod",
         "page": "Mod"
     },
