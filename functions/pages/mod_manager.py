@@ -156,24 +156,6 @@ class ModManager:
         tree_frame = tk.Frame(self.main_frame, bg=self.parent.bg_color, relief=tk.SUNKEN, borderwidth=1)
         tree_frame.pack(fill=tk.BOTH, expand=True)
         
-        # 创建列标题框架
-        header_frame = tk.Frame(tree_frame, bg=self.parent.bg_color, height=30)
-        header_frame.pack(fill=tk.X)
-        header_frame.pack_propagate(False)
-        
-        # 创建列标题
-        columns = ['文件名', '状态', '大小', '类型']
-        widths = [400, 100, 100, 150]
-        
-        for i, (col, width) in enumerate(zip(columns, widths)):
-            label = tk.Label(header_frame, text=col, 
-                           font=('Microsoft YaHei UI', 10, 'bold'),
-                           bg=self.parent.bg_color, fg='#ecf0f1')
-            if i == len(columns) - 1:
-                label.pack(side=tk.RIGHT, padx=5)
-            else:
-                label.pack(side=tk.LEFT, padx=5)
-        
         # 创建滚动条
         scrollbar = tk.Scrollbar(tree_frame, bg=self.parent.bg_color, troughcolor=self.parent.lighten_bg_color)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
@@ -188,7 +170,7 @@ class ModManager:
         scrollbar.config(command=self.tree.yview)
         
         # 配置列
-        self.tree.column('#0', width=400, anchor=tk.W)
+        self.tree.column('#0', width=200, anchor=tk.W)
         self.tree.column('status', width=100, anchor=tk.CENTER)
         self.tree.column('size', width=100, anchor=tk.E)
         self.tree.column('type', width=150, anchor=tk.W)
@@ -233,7 +215,7 @@ class ModManager:
             
             # 根据文件状态添加菜单项
             if self.is_file_disabled(filename):
-                menu.add_command(label=" 启用", command=lambda: self.enable_file(filename))
+                menu.add_command(label="√ 启用", command=lambda: self.enable_file(filename))
             else:
                 menu.add_command(label="⛔ 禁用", command=lambda: self.disable_file(filename))
             

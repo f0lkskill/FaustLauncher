@@ -6,6 +6,7 @@ import sys
 import json
 from PIL import Image, ImageTk, ImageFilter
 import pymysql
+import threading
 from subprocess import Popen
 from functions.pages.settings_page import init_settings_page
 from functions.base.settings_manager import get_settings_manager
@@ -203,10 +204,11 @@ class FaustLauncherApp:
         self.notebook = ttk.Notebook(self.content_frame)
         self.notebook.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
         
-        # 创建四个页面 - 添加工具页
+        # 创建五个页面 - 添加工具页和插件&mod管理页
         self.home_frame = tk.Frame(self.notebook, bg=self.bg_color)
         self.features_frame = tk.Frame(self.notebook, bg=self.bg_color)
         self.tools_frame = tk.Frame(self.notebook, bg=self.bg_color)  # 新增工具页
+        self.mod_addon_frame = tk.Frame(self.notebook, bg=self.bg_color)  # 新增插件&mod管理页
         self.about_frame = tk.Frame(self.notebook, bg=self.bg_color)
         self.settings_frame = tk.Frame(self.notebook, bg=self.bg_color)
         
@@ -214,6 +216,7 @@ class FaustLauncherApp:
         self.notebook.add(self.home_frame, text="🏘 主页")
         self.notebook.add(self.features_frame, text="✈ 快捷方式")
         self.notebook.add(self.tools_frame, text="🔨 工具页")
+        self.notebook.add(self.mod_addon_frame, text="🧩 插件&Mod")
         self.notebook.add(self.settings_frame, text="⚙️ 设置")
         self.notebook.add(self.about_frame, text="💻 关于")
         
@@ -230,6 +233,7 @@ class FaustLauncherApp:
         self.init_home_page()
         self.init_features_page()
         self.init_tools_page()  # 新增工具页初始化
+        self.init_mod_addon_page()  # 新增插件&mod管理页初始化
         self.init_settings_page()
         self.init_about_page()
         self.init_tray()
@@ -300,7 +304,27 @@ class FaustLauncherApp:
                                  bg=self.bg_color, fg='white')
             error_label.pack(expand=True)
             
-            detail_label = tk.Label(self.settings_frame,
+            detail_label = tk.Label(self.settings_frame, 
+                                  text=str(e),
+                                  font=('Microsoft YaHei UI', 10),
+                                  bg=self.bg_color, fg='#bdc3c7')
+            detail_label.pack()
+    
+    def init_mod_addon_page(self):
+        """初始化插件&mod管理页面"""
+        try:
+            from functions.pages.mod_addon_info import init_mod_addon_manager
+            self.mod_addon_page = init_mod_addon_manager(self.mod_addon_frame, self.bg_color, self.lighten_bg_color)
+        except Exception as e:
+            print(f"初始化插件&mod管理页面失败: {e}")
+            # 创建错误提示
+            error_label = tk.Label(self.mod_addon_frame, 
+                                 text="❌ 插件&Mod管理页面加载失败",
+                                 font=('Microsoft YaHei UI', 16),
+                                 bg=self.bg_color, fg='white')
+            error_label.pack(expand=True)
+            
+            detail_label = tk.Label(self.mod_addon_frame, 
                                   text=str(e),
                                   font=('Microsoft YaHei UI', 10),
                                   bg=self.bg_color, fg='#bdc3c7')
@@ -424,7 +448,7 @@ class FaustLauncherApp:
         
         # 为当前页面添加淡入效果
         frames = [self.home_frame, self.features_frame, self.tools_frame, 
-                self.settings_frame, self.about_frame]
+                self.mod_addon_frame, self.settings_frame, self.about_frame]
         
         if current_tab < len(frames):
             self.add_fade_animation(frames[current_tab])
@@ -1244,10 +1268,9 @@ def run_game(obj:None):
         messagebox.showerror("错误", f"应用美化功能时出错: {str(e)}\n可能是汉化包不完整导致的...\n请尝试使用汉化更新修复.")
 
     print("运行插件注册的启动事件...")
-    obj.addon_manager.run_game_start_event() # type: ignore
+    threading.Thread(target=obj.addon_manager.run_game_start_event).start() # type: ignore
 
     # 载入mod并启动游戏
-    print("开始载入mod并启动游戏...")
     from functions.base.load_mod import main as load_mod_and_launch
     load_mod_and_launch(config_path + 'LimbusCompany.exe') # type: ignore
 

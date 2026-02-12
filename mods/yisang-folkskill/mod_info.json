@@ -1,0 +1,14 @@
+{
+    "name": "蝶箱替换为FolkSkill",
+    "desc": "folkskill自用换皮mod...!",
+    "authors": {
+        "FolkSkill": "https://space.bilibili.com/599331034"
+    },
+    "settings": {
+        "enable": true
+    },
+    "file_names": [
+        "E.G.O Yi Sang-FolkSkill.carra2"
+    ],
+    "addon_version": "0.0.1"
+}

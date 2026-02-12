@@ -130,7 +130,7 @@ class AddonManager:
                 ADDON_ARG['AddonName'] = addon_name
 
                 addon_file = open(addon_path + '\\scr.py', encoding='utf-8')
-                addon_scr = addon_file.read().replace('\r\n', ';')
+                addon_scr = addon_file.read()
                 
                 # print(addon_scr)
 

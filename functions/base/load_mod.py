@@ -8,12 +8,17 @@ extra_mod_loader_path:str = settings_manager.get_setting('extra_mod_loader') # t
 def main(game_path: str):
     """使用当前系统的运行参数运行YiSangModLoader.exe来启动游戏。"""
     global settings_manager
+
+    if not settings_manager.get_setting("enable_mods"):
+        print("未启用mod,准备启动游戏...")
+        subprocess.Popen(['start', 'steam://rungameid/1973530'], shell=True)
+        return True
     
     if not os.path.exists(extra_mod_loader_path):
         print(f"外部mod加载器不存在, 将使用默认的加载方式...")
     else:
         print(f'使用外部mod加载器启动游戏: {extra_mod_loader_path}')
-        run = [extra_mod_loader_path, game_path + '/LimbusCompany.exe'] if settings_manager.get_setting("enable_mods") else ['start', 'steam://rungameid/1973530']
+        run = [extra_mod_loader_path, game_path + '/LimbusCompany.exe']
         flags = subprocess.CREATE_NO_WINDOW if settings_manager.get_setting("hide_mod_load") else 0
         # 使用CREATE_NO_WINDOW标志隐藏窗口
         subprocess.Popen(run, creationflags=flags)
@@ -21,7 +26,7 @@ def main(game_path: str):
     try:
         print("开始使用默认mod加载器启动游戏...")
 
-        run = ["yisangModLoader.exe", game_path] if settings_manager.get_setting("enable_mods") else [game_path]
+        run = ["yisangModLoader.exe", game_path]
         flags = subprocess.CREATE_NO_WINDOW if settings_manager.get_setting("hide_mod_load") else 0
         # 使用CREATE_NO_WINDOW标志隐藏窗口
         subprocess.Popen(run, creationflags=flags)
