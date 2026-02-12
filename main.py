@@ -78,7 +78,8 @@ class TerminalRedirector:
                 level = "wait"
             
             # 插入带时间戳和颜色的消息
-            self.text_widget.insert(tk.END, f"[{timestamp}]", "info")
+            timestamp_str = f'[{timestamp}]' if '[INFO]' not in message else ''
+            self.text_widget.insert(tk.END, timestamp_str, "info")
             self.text_widget.insert(tk.END, message + "\n", level)
             
             # 自动滚动到底部
@@ -1093,10 +1094,9 @@ def handle_dowload(need_run_game=False):
         print(f"下载过程中出错: {e}")
         return
     
-    print("启动器模式执行完成，程序退出")
-    
-    # 关闭窗口
-    os._exit(0)
+    # TODO 进入最小化辅助模式
+
+    dowloading = False
 
 def run_game():
     global config_path, settings_manager
@@ -1209,8 +1209,6 @@ def run_game():
     print("开始载入mod并启动游戏...")
     from functions.load_mod import main as load_mod_and_launch
     load_mod_and_launch(config_path + 'LimbusCompany.exe') # type: ignore
-
-    os._exit(0)
 
 def set_user_name():
     """设置用户名称到 UserInfo_Friends.json 中"""

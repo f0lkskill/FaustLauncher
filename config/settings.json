@@ -103,6 +103,14 @@
         "description": "启动游戏时是否隐藏 Mod 加载窗口",
         "page": "Mod"
     },
+    "extra_mod_loader": {
+        "name": "外置的mod加载器",
+        "type": "string",
+        "default": "",
+        "value": "",
+        "description": "如果为空, 则使用启动器自带的改装后的mod加载器加载mod并启动游戏.\n否则使用存储路径处的外部mod加载器进行启动操作.",
+        "page": "Mod"
+    },
     "ai_app_key": {
         "name": "翻译 AI 密钥",
         "type": "string",

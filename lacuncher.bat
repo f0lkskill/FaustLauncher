@@ -1,0 +1,1 @@
+E:\projects\python\FaustLauncher\_internal\venv\Scripts\python.exe main.py
