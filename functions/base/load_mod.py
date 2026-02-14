@@ -1,6 +1,8 @@
 import subprocess
 import os
 from functions.base.settings_manager import get_settings_manager
+from functions.mod.mod_ulits import ModUtils
+import atexit
 
 settings_manager = get_settings_manager()
 extra_mod_loader_path:str = settings_manager.get_setting('extra_mod_loader') # type: ignore
@@ -14,6 +16,10 @@ def main(game_path: str):
         subprocess.Popen(['start', 'steam://rungameid/1973530'], shell=True)
         return True
     
+    print("效用启动器下载的mod...")
+    mu = ModUtils()
+    mu.load_all_mods()
+
     if not os.path.exists(extra_mod_loader_path):
         print(f"外部mod加载器不存在, 将使用默认的加载方式...")
     else:

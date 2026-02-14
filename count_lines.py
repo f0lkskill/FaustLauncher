@@ -14,7 +14,7 @@ def find_py_files(directory):
     py_files = []
     for root, dirs, files in os.walk(directory):
         # 排除一些不需要的目录
-        dirs[:] = [d for d in dirs if d not in ['_internal', '__pycache__', '.git', 'build', 'dist', 'temp']]
+        dirs[:] = [d for d in dirs if d not in ['_internal', '__pycache__', '.git', 'build', 'dist', 'temp','venv']]
         
         for file in files:
             if file.endswith('.py'):
@@ -57,6 +57,7 @@ def main():
     # 显示平均行数
     avg_lines = total_lines / len(py_files) if py_files else 0
     print(f"\n📈 平均每个文件: {avg_lines:.1f} 行")
+    os.system("pause")
 
 if __name__ == "__main__":
     main()

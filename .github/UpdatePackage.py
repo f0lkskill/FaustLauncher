@@ -11,7 +11,7 @@ project_root = Path(os.path.dirname(__file__)).parent
 print(project_root)
 sys.path.append(project_root.as_posix())
 
-from webFunc import *
+from functions.webFunc import *
 
 ADDRESS = "FaustLauncher"
 API_URL = "https://api.txttool.cn/netcut/note"

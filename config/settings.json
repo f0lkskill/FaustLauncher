@@ -79,19 +79,11 @@
         "step": 0.1,
         "page": "美化"
     },
-    "bg_color": {
-        "name": "背景颜色",
-        "type": "color",
-        "default": "#181818",
-        "value": "#181818",
-        "description": "应用程序的背景颜色 (十六进制格式)\n重启后才能生效",
-        "page": "美化"
-    },
     "enable_mods": {
         "name": "启用Mod功能",
         "type": "boolean",
         "default": true,
-        "value": false,
+        "value": true,
         "description": "是否加载 Mod",
         "page": "Mod"
     },
@@ -127,11 +119,38 @@
         "description": "翻译 AI 提示词\n请确保提示词格式正确\n'{text}'将会被替换为要翻译的文本",
         "page": "翻译"
     },
+    "welcome_sound": {
+        "name": "欢迎音效",
+        "type": "string",
+        "default": "assets/voices/welcome_1.wav",
+        "value": "assets/voices/welcome_1.wav",
+        "description": "启动器欢迎音效的文件路径\n可以替换为你喜欢的音效文件\n支持mp3和wav格式\n如果不想要欢迎音效, 可以将其设置为空字符串",
+        "page": "其它"
+    },
+    "bg_color": {
+        "name": "背景颜色",
+        "type": "color",
+        "default": "#181818",
+        "value": "#181818",
+        "description": "应用程序的背景颜色 (十六进制格式)\n重启后才能生效",
+        "page": "其它"
+    },
     "version_info": {
         "name": "版本信息",
         "type": "UNABLE_TO_EDIT",
-        "default": "V0.5.3-release",
-        "value": "V0.5.3-release",
+        "default": "V0.6.0-alpha",
+        "value": "V0.6.0-alpha",
         "description": "当前应用程序的版本信息"
+    },
+    "mems": {
+        "name": "程序缓存",
+        "type": "UNABLE_TO_EDIT",
+        "default": {
+            "tray_hint": false
+        },
+        "value": {
+            "tray_hint": true
+        },
+        "description": "程序运行时的缓存数据\n不建议修改"
     }
 }

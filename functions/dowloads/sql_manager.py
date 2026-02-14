@@ -1011,7 +1011,7 @@ def check_new_version(current_version_name):
         print(f"检测新版本时出错: {e}")
         return False, None
 
-def notify_new_version(current_version_name, info = '发现新版本', root = None):
+def notify_new_version(current_version_name, info = '发现新版本', root = None, must_show = False):
     """
     检测并通知新版本（带GUI弹窗）
     
@@ -1019,15 +1019,20 @@ def notify_new_version(current_version_name, info = '发现新版本', root = No
         current_version_name: 当前版本名称
     """
     try:
-        # 导入tkinter用于显示消息框
-        import tkinter as tk
         from functions.pages.version_info import show_version_update_dialog
+        from functions.base.settings_manager import get_settings_manager
+        version_info:str = get_settings_manager().get_setting('version_info') # type: ignore
         
         # 检测新版本
         has_new_version, latest_info = check_new_version(current_version_name=current_version_name)
         
-        if has_new_version and latest_info:
+        if (has_new_version and latest_info) or must_show:
             # 显示消息框
+            if not must_show and ("alpha" in latest_info['version_name'] or "alpha" in version_info): # type: ignore
+                # 不显示alpha版本更新提示
+                if "alpha" in version_info:
+                    messagebox.showwarning("警告", f"当前版本: {version_info}\n最新正式版本: {latest_info['version_name']}\n\n您正在使用测试版本，意味着该版本可能不稳定或包含未完成的功能。\n如果你是参与内测的用户,请将你遇到的问题反馈给开发者。") # type: ignore
+                return False
             show_version_update_dialog(current_version_name, latest_info, info, root)
 
             return True

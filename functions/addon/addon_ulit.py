@@ -52,6 +52,7 @@ class AddonManager:
         
         info_path = os.path.join(addon_path, 'addon_info.json')
         if not os.path.exists(info_path):
+            print(f"插件 {addon_name} 缺少 addon_info.json 文件")
             return None
         
         try:
@@ -113,6 +114,12 @@ class AddonManager:
         Returns:
             是否运行成功
         """
+
+        # print(self.get_addon_info(addon_name))
+        if self.get_addon_info(addon_name)["settings"]["enable"] is False: # type: ignore
+            print(f"插件 {addon_name} 被禁用，跳过运行")
+            return False
+
         addon_path = self.get_addon_path(addon_name)
         if not addon_path:
             print(f"插件 {addon_name} 不存在")

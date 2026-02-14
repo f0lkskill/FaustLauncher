@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import ttk, font
+from tkinter import ttk, font, messagebox
 import os
 import random
 import sys
@@ -60,7 +60,6 @@ class TerminalRedirector:
         message = self.process_message(message)
 
         try:
-
             if '\r' in message:
                 return
             self.text_widget.config(state=tk.NORMAL)
@@ -204,11 +203,12 @@ class FaustLauncherApp:
         self.notebook = ttk.Notebook(self.content_frame)
         self.notebook.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
         
-        # 创建五个页面 - 添加工具页和插件&mod管理页
+        # 创建页面 - 添加工具页、插件&mod管理页和下载中心
         self.home_frame = tk.Frame(self.notebook, bg=self.bg_color)
         self.features_frame = tk.Frame(self.notebook, bg=self.bg_color)
-        self.tools_frame = tk.Frame(self.notebook, bg=self.bg_color)  # 新增工具页
-        self.mod_addon_frame = tk.Frame(self.notebook, bg=self.bg_color)  # 新增插件&mod管理页
+        self.tools_frame = tk.Frame(self.notebook, bg=self.bg_color)  # 工具页
+        self.mod_addon_frame = tk.Frame(self.notebook, bg=self.bg_color)  # 插件&mod管理页
+        self.download_center_frame = tk.Frame(self.notebook, bg=self.bg_color)  # 下载中心页面
         self.about_frame = tk.Frame(self.notebook, bg=self.bg_color)
         self.settings_frame = tk.Frame(self.notebook, bg=self.bg_color)
         
@@ -217,6 +217,7 @@ class FaustLauncherApp:
         self.notebook.add(self.features_frame, text="✈ 快捷方式")
         self.notebook.add(self.tools_frame, text="🔨 工具页")
         self.notebook.add(self.mod_addon_frame, text="🧩 插件&Mod")
+        self.notebook.add(self.download_center_frame, text="📦 下载中心")  # 新增下载中心标签页
         self.notebook.add(self.settings_frame, text="⚙️ 设置")
         self.notebook.add(self.about_frame, text="💻 关于")
         
@@ -224,7 +225,12 @@ class FaustLauncherApp:
         self.notebook.bind("<<NotebookTabChanged>>", self.on_tab_changed)
 
         # 绑定关闭按钮事件（关键步骤）
-        root.protocol("WM_DELETE_WINDOW", self.root.withdraw)   
+        def check_close():
+            self.root.withdraw()
+            if not settings_manager.get_setting("mems")["tray_hint"]: # type: ignore
+                settings_manager.set_setting("mems", {"tray_hint": True}) # type: ignore
+                messagebox.showinfo("提示", "程序将继续在托盘后台继续运行，右键托盘图标可退出程序")
+        root.protocol("WM_DELETE_WINDOW", check_close)
 
         # 设置样式
         self.set_styles()
@@ -232,8 +238,9 @@ class FaustLauncherApp:
         # 初始化各页面
         self.init_home_page()
         self.init_features_page()
-        self.init_tools_page()  # 新增工具页初始化
-        self.init_mod_addon_page()  # 新增插件&mod管理页初始化
+        self.init_tools_page()  # 工具页初始化
+        self.init_mod_addon_page()  # 插件&mod管理页初始化
+        self.init_download_center_page()  # 下载中心页面初始化
         self.init_settings_page()
         self.init_about_page()
         self.init_tray()
@@ -325,6 +332,26 @@ class FaustLauncherApp:
             error_label.pack(expand=True)
             
             detail_label = tk.Label(self.mod_addon_frame, 
+                                  text=str(e),
+                                  font=('Microsoft YaHei UI', 10),
+                                  bg=self.bg_color, fg='#bdc3c7')
+            detail_label.pack()
+    
+    def init_download_center_page(self):
+        """初始化下载中心页面"""
+        try:
+            from functions.pages.download_center import init_download_center
+            self.download_center_page = init_download_center(self.download_center_frame, self, self.bg_color, self.lighten_bg_color)
+        except Exception as e:
+            print(f"初始化下载中心页面失败: {e}")
+            # 创建错误提示
+            error_label = tk.Label(self.download_center_frame, 
+                                 text="❌ 下载中心页面加载失败",
+                                 font=('Microsoft YaHei UI', 16),
+                                 bg=self.bg_color, fg='white')
+            error_label.pack(expand=True)
+            
+            detail_label = tk.Label(self.download_center_frame, 
                                   text=str(e),
                                   font=('Microsoft YaHei UI', 10),
                                   bg=self.bg_color, fg='#bdc3c7')
@@ -445,13 +472,10 @@ class FaustLauncherApp:
 
         # 获取当前选中的标签页
         current_tab = self.notebook.index(self.notebook.select())
-        
-        # 为当前页面添加淡入效果
-        frames = [self.home_frame, self.features_frame, self.tools_frame, 
-                self.mod_addon_frame, self.settings_frame, self.about_frame]
-        
-        if current_tab < len(frames):
-            self.add_fade_animation(frames[current_tab])
+
+        if current_tab == 3:
+            print("切换到插件&Mod管理页，正在刷新数据...")
+            self.mod_addon_page.refresh_all_tabs()
 
     def load_background_images(self):
         """加载背景图片"""
@@ -1394,7 +1418,9 @@ def main():
         
         # 等待一小段时间确保界面完全渲染
         root.after(3000, lambda: root.deiconify())
-        root.after(3000, lambda: play_sound('assets/voices/welcome.wav'))
+
+        ws_path = settings_manager.get_setting("welcome_sound")
+        root.after(3000, lambda: play_sound(ws_path))
 
         # 检查设置
         root.after(3300, app.check_settings)

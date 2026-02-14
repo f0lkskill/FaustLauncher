@@ -17,7 +17,7 @@ settings_manager = get_settings_manager()
 class DownloadGUI:
     """简化版下载GUI界面"""
     
-    def __init__(self, parent, config_path: str = ""):
+    def __init__(self, parent, config_path: str = "", auto_start: bool = True):
         self.root = tk.Toplevel(parent)
         self.root.withdraw()  # 先隐藏，防止闪烁
         # 居中显示窗口
@@ -28,6 +28,13 @@ class DownloadGUI:
         center_window(self.root)
         # self.root.attributes("-transparentcolor","#ffffff")
 
+        # 设置应用程序图标
+        try:
+            if os.path.exists("assets/images/icon/icon.ico"):
+                self.root.iconbitmap("assets/images/icon/icon.ico")
+        except:
+            pass
+
         self.config_path = config_path
         self.is_downloading = True
         
@@ -37,7 +44,8 @@ class DownloadGUI:
         # threading.Thread(target=self.cycle_animation).start()
         
         # 初始化后立即开始下载
-        self.start_download()
+        if auto_start:
+            self.start_download()
 
     def cycle_animation(self):
         """循环动画效果（可选）"""
@@ -409,18 +417,6 @@ def cleanup_temp_files(temp_path):
     except Exception as e:
         print(f"清理临时文件失败: {e}")
 
-def check_write_permission(path):
-    """检查写入权限"""
-    try:
-        test_file = os.path.join(path, 'test_write_permission.tmp')
-        with open(test_file, 'w') as f:
-            f.write('test')
-        os.remove(test_file)
-        return True
-    except Exception as e:
-        print(f"警告: 路径 {path} 没有写入权限: {e}")
-        return False
-
 def verify_download(file_path):
     """验证下载的文件是否完整"""
     try:
@@ -587,7 +583,7 @@ def get_dowload_path_ByGhProxy() -> tuple[str, str] | None:
     print("未获取到下载地址,失败...")
     return None
     
-def download_and_extract_gui(gui, config_path: str = "") -> bool:
+def download_and_extract_gui(gui:DownloadGUI, config_path: str = "", download_files = None) -> bool:
     """带GUI的下载和解压主函数"""
     # 加载配置
     game_path = config_path
@@ -596,14 +592,9 @@ def download_and_extract_gui(gui, config_path: str = "") -> bool:
         gui.current_file_var.set("❌ 错误: 未配置游戏路径")
         return False
     
-    # 检查游戏路径是否存在
+    # 检查路径是否存在
     if not os.path.exists(game_path):
-        gui.current_file_var.set(f"❌ 错误: 游戏路径不存在: {game_path}")
-        return False
-    
-    # 检查写入权限
-    if not check_write_permission(game_path):
-        gui.current_file_var.set("❌ 错误: 没有写入权限")
+        gui.current_file_var.set(f"❌ 错误: 路径不存在: {game_path}")
         return False
 
     # 获取下载链接
@@ -611,21 +602,26 @@ def download_and_extract_gui(gui, config_path: str = "") -> bool:
     dowload_url = ""
     timeout_counter = 0
     need_update_translate = True
+    is_custome = False
 
     
     # 定义要下载的文件列表
-    download_files = [
-        {
-            'name': 'TTF 字体文件',
-            'url': 'https://lz.qaiu.top/parser?url=https://wwbet.lanzoum.com/igRGn3ezd23g&pwd=do1n',
-            'temp_filename': 'LLCCN-Font.7z'
-        },
-        {
-            'name': '零协会汉化包',
-            'url': '',  # URL将在后续代码中动态设置
-            'temp_filename': 'LimbusLocalize_latest.7z'
-        }
-    ]
+    if download_files:
+        is_custome = True
+    else:
+        print("使用默认下载文件列表")
+        download_files = [
+            {
+                'name': 'TTF 字体文件',
+                'url': 'https://lz.qaiu.top/parser?url=https://wwbet.lanzoum.com/igRGn3ezd23g&pwd=do1n',
+                'temp_filename': 'LLCCN-Font.7z'
+            },
+            {
+                'name': '零协会汉化包',
+                'url': '',  # URL将在后续代码中动态设置
+                'temp_filename': 'LimbusLocalize_latest.7z'
+            }
+        ]
     
     # 临时文件路径
     temp_dir = 'lang/'
@@ -718,10 +714,12 @@ def download_and_extract_gui(gui, config_path: str = "") -> bool:
             print(e)
         finally:
             # 清理临时文件
+            gui.root.destroy()  # 关闭下载界面
             cleanup_temp_files(temp_file)
     
     # 创建配置文件（只在至少一个文件处理成功时创建）
-    if success_count > 0:
+    if success_count > 0 and not is_custome:
+        print(is_custome)
         create_config_file(game_path)
         
         # 检查字体文件
@@ -737,6 +735,8 @@ def download_and_extract_gui(gui, config_path: str = "") -> bool:
 
         return True
     else:
+        if success_count > 0:
+            return True
         return False
 
 def main_gui(parrent, config_path: str = ""):

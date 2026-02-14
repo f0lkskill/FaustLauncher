@@ -14,6 +14,8 @@ class ModAddonManagerPage:
         self.addon_manager = AddonManager([])
         self.mods_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'mods')
         self.create_widgets()
+
+        self.refresh_addons_tab()
     
     def create_widgets(self):
         """创建页面控件"""
@@ -31,6 +33,8 @@ class ModAddonManagerPage:
         
         # 创建新Mod架构管理标签页
         self.create_new_mods_tab()
+
+        # self.notebook.add(tk.Frame(self.notebook), text="") # 占位标签页，保持界面美观
     
     def create_addons_tab(self):
         """创建插件管理标签页"""
@@ -147,11 +151,6 @@ class ModAddonManagerPage:
         addons = self.addon_manager.get_all_addons()
         
         if not addons:
-            empty_label = tk.Label(parent, 
-                                 text="没有找到插件\n快去下载中心看看吧!",
-                                 font=('微软雅黑', 12),
-                                 bg=self.bg_color, fg='#bdc3c7')
-            empty_label.pack(expand=True, pady=50)
             return
         
         for addon in addons:
@@ -167,7 +166,7 @@ class ModAddonManagerPage:
             if os.path.exists(icon_path):
                 try:
                     image = Image.open(icon_path)
-                    image = image.resize((40, 40), Image.Resampling.LANCZOS)
+                    image = image.resize((64, 64), Image.Resampling.LANCZOS)
                     icon = ImageTk.PhotoImage(image)
                     icon_label = tk.Label(header_frame, image=icon, bg=self.bg_color)
                     icon_label.image = icon  # type: ignore # 保存引用
@@ -356,11 +355,6 @@ class ModAddonManagerPage:
         # 确保mods目录存在
         if not os.path.exists(self.mods_dir):
             os.makedirs(self.mods_dir)
-            empty_label = tk.Label(parent, 
-                                 text="没有找到Mod\n快去下载中心看看吧!",
-                                 font=('微软雅黑', 12),
-                                 bg=self.bg_color, fg='#bdc3c7')
-            empty_label.pack(expand=True, pady=50)
             return
         
         # 获取所有mod
@@ -382,11 +376,6 @@ class ModAddonManagerPage:
                         pass
         
         if not mods:
-            empty_label = tk.Label(parent, 
-                                 text="没有找到Mod\n快去下载中心看看吧!",
-                                 font=('微软雅黑', 12),
-                                 bg=self.bg_color, fg='#bdc3c7')
-            empty_label.pack(expand=True, pady=50)
             return
         
         for mod in mods:
@@ -402,7 +391,7 @@ class ModAddonManagerPage:
             if os.path.exists(icon_path):
                 try:
                     image = Image.open(icon_path)
-                    image = image.resize((40, 40), Image.Resampling.LANCZOS)
+                    image = image.resize((64, 64), Image.Resampling.LANCZOS)
                     icon = ImageTk.PhotoImage(image)
                     icon_label = tk.Label(header_frame, image=icon, bg=self.bg_color)
                     icon_label.image = icon  # type: ignore # 保存引用
@@ -591,7 +580,6 @@ class ModAddonManagerPage:
                 try:
                     import shutil
                     shutil.rmtree(mod_path)
-                    messagebox.showinfo("成功", f"Mod {mod_name} 已删除")
                     # 刷新Mod列表
                     self.refresh_mods_tab()
                 except Exception as e:
@@ -655,7 +643,6 @@ class ModAddonManagerPage:
         """删除插件"""
         if messagebox.askyesno("确认删除", f"确定要删除插件 {addon_name} 吗？"):
             if self.addon_manager.remove_addon(addon_name):
-                messagebox.showinfo("成功", f"插件 {addon_name} 已删除")
                 # 刷新插件列表
                 self.refresh_addons_tab()
             else:
@@ -694,6 +681,11 @@ class ModAddonManagerPage:
         # 打包滚动区域
         canvas.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
+
+    def refresh_all_tabs(self):
+        """刷新所有标签页"""
+        self.refresh_addons_tab()
+        self.refresh_mods_tab()
 
 def init_mod_addon_manager(parent_frame, bg_color, lighten_bg_color):
     """初始化插件&mod管理器页面"""
