@@ -14,7 +14,7 @@ sys.path.append(project_root.as_posix())
 
 load_dotenv()
 
-from webFunc import *
+from functions.webFunc import *
 
 ADDRESS = os.getenv('ADDRESS')
 API_URL = "https://api.txttool.cn/netcut/note"
