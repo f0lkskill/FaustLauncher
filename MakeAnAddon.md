@@ -36,8 +36,8 @@ YourAddonName:
 - **addon_version**: 版本号标识符
 
 ##### scr.py *插件的核心功能实现*
--本质上就是 python 脚本。
--可以像正常的 python 脚本一样编写，比如：
+- 本质上就是 python 脚本。
+- 可以像正常的 python 脚本一样编写，比如：
 ```python
 import pystray
 
@@ -48,5 +48,5 @@ self.menu_items.append(pystray.MenuItem(ADDON_ARG['AddonName'], action=func_menu
 
 print('loads')
 ```
--这里实现了一个简单的功能，加载的时候实现添加托盘右键功能。
--至于可以做些什么，可以考虑查看项目源码实现更多的功能。
+- 这里实现了一个简单的功能，加载的时候实现添加托盘右键功能。
+- 至于可以做些什么，可以考虑查看项目源码实现更多的功能。
