@@ -1174,7 +1174,115 @@ def handle_dowload(obj = None, need_run_game=False):
             return
         
         # 有参数,运行游戏
-        run_game(obj)
+        # 复制 lang 下的 LLC_zh-CN 文件夹到游戏目录下的 LimbusCompany_Data/Lang 文件夹 下
+        import shutil
+        # 尝试删除原有的 LimbusCompany_Data/Lang/LLC_zh-CN 文件夹
+        if os.path.exists(os.path.join(config_path, 'LimbusCompany_Data/Lang/LLC_zh-CN')): # type: ignore
+            print("删除原有的 LimbusCompany_Data/Lang/LLC_zh-CN 文件夹")
+            shutil.rmtree(os.path.join(config_path, 'LimbusCompany_Data/Lang/LLC_zh-CN'), ignore_errors=True) # type: ignore
+
+        print(f"开始复制 lang 下的 LLC_zh-CN 文件夹到游戏目录下的 {config_path}")
+        try:
+            shutil.copytree('lang/LLC_zh-CN', os.path.join(config_path, 'LimbusCompany_Data/Lang/LLC_zh-CN'), dirs_exist_ok=True) # type: ignore
+            print("汉化复制完成")
+        except Exception as e:
+            print(f"效用汉化复制文件夹时出错: {e}")
+            return
+
+        # 根据 lang/changes.json 更新 LimbusCompany_Data/Lang/LLC_zh-CN 里的数据
+        print("开始应用自定义汉化修改...")
+        try:
+            # 检查changes.json文件是否存在
+            changes_file = "lang/changes.json"
+            if os.path.exists(changes_file):
+                # 加载changes.json
+                with open(changes_file, 'r', encoding='utf-8') as f:
+                    changes_data = json.load(f)
+                
+                if changes_data:
+                    print(f"找到 {len(changes_data)} 个文件的修改记录")
+                    
+                    # 遍历changes.json中的每个文件修改记录
+                    for relative_path, file_changes in changes_data.items():
+                        # 构建完整的文件路径
+                        lang_file_path = os.path.join("lang", relative_path)
+                        game_file_path = os.path.join(config_path, "LimbusCompany_Data", "Lang", relative_path) # type: ignore
+                        
+                        # 检查游戏目录中的文件是否存在
+                        if os.path.exists(game_file_path):
+                            print(f"应用修改到: {relative_path}")
+                            
+                            # 读取游戏目录中的原始文件
+                            with open(game_file_path, 'r', encoding='utf-8') as f:
+                                original_data = json.load(f)
+                            
+                            # 应用修改
+                            modified_data = apply_changes_to_data(original_data, file_changes)
+                            
+                            # 保存修改后的文件
+                            with open(game_file_path, 'w', encoding='utf-8') as f:
+                                json.dump(modified_data, f, ensure_ascii=False, indent=4)
+                            
+                            print(f"文件 {relative_path} 修改已应用")
+                        else:
+                            print(f"警告: 游戏目录中未找到文件 {relative_path}")
+                else:
+                    print("没有自定义汉化修改需要应用")
+            else:
+                print("没有找到changes.json文件，跳过自定义汉化修改")
+        except Exception as e:
+            print(f"应用自定义汉化修改时出错: {e}")
+        
+        # 气泡渐变色处理
+        if settings_manager.get_setting('enable_text_gradient'):
+            from functions.fancy.dialog_colorful import main as handle_colorful
+            handle_colorful()
+            print("气泡渐变色处理完成")
+
+        # 复制字体文件夹到汉化目录下
+        print("开始复制字体文件夹到汉化目录下...")
+        try:
+            if os.path.exists(config_path + 'LimbusCompany_Data/Lang/LLC_zh-CN/Font'): # type: ignore
+                # 创建Font文件夹
+                os.makedirs(config_path + 'LimbusCompany_Data/Lang/LLC_zh-CN/Font', exist_ok=True) # type: ignore
+
+            shutil.copytree('assets/Font', config_path + 'LimbusCompany_Data/Lang/LLC_zh-CN/Font', dirs_exist_ok=True) # type: ignore
+            print("字体文件夹复制完成")
+        except Exception as e:
+            print(f"复制字体文件夹时出错: {e}")
+            return
+
+        from functions.dowloads.zeroasso_dow import create_config_file
+        create_config_file(settings_manager.get_setting('game_path'))
+
+        try:
+            # 是否设置用户名称
+            if settings_manager.get_setting('enable_show_user_name'):
+                set_user_name()
+
+            # 是否进行 EGO 样式美化
+            if settings_manager.get_setting('enable_ego_style'):
+                from functions.fancy.EGO_colorful import main as apply_ego_style
+                apply_ego_style()
+
+            # 技能描述美化
+            if settings_manager.get_setting('enable_skill_style'):
+                from functions.fancy.skill_info import handle_skill
+                handle_skill(config_path + 'LimbusCompany_Data/Lang/LLC_zh-CN/') # type: ignore
+
+            if settings_manager.get_setting('enable_speical_tip'):
+                from functions.fancy.hint_set import simple_replace
+                simple_replace(config_path + 'LimbusCompany_Data/Lang/LLC_zh-CN/BattleHint.json') # type: ignore
+
+        except Exception as e:
+            print(f"应用美化功能时出错: {e}")
+            from tkinter import messagebox
+            messagebox.showerror("错误", f"应用美化功能时出错: {str(e)}\n可能是汉化包不完整导致的...\n请尝试使用汉化更新修复.")
+
+        print("运行插件注册的启动事件...")
+        threading.Thread(target=obj.addon_manager.run_game_start_event).start() # type: ignore
+
+        run_game()
         
     except Exception as e:
         print(f"下载过程中出错: {e}")
@@ -1184,116 +1292,8 @@ def handle_dowload(obj = None, need_run_game=False):
 
     dowloading = False
 
-def run_game(obj:None):
-    global config_path, settings_manager
-    # 复制 lang 下的 LLC_zh-CN 文件夹到游戏目录下的 LimbusCompany_Data/Lang 文件夹 下
-    import shutil
-    # 尝试删除原有的 LimbusCompany_Data/Lang/LLC_zh-CN 文件夹
-    if os.path.exists(os.path.join(config_path, 'LimbusCompany_Data/Lang/LLC_zh-CN')): # type: ignore
-        print("删除原有的 LimbusCompany_Data/Lang/LLC_zh-CN 文件夹")
-        shutil.rmtree(os.path.join(config_path, 'LimbusCompany_Data/Lang/LLC_zh-CN'), ignore_errors=True) # type: ignore
-
-    print(f"开始复制 lang 下的 LLC_zh-CN 文件夹到游戏目录下的 {config_path}")
-    try:
-        shutil.copytree('lang/LLC_zh-CN', os.path.join(config_path, 'LimbusCompany_Data/Lang/LLC_zh-CN'), dirs_exist_ok=True) # type: ignore
-        print("汉化复制完成")
-    except Exception as e:
-        print(f"效用汉化复制文件夹时出错: {e}")
-        return
-
-    # 根据 lang/changes.json 更新 LimbusCompany_Data/Lang/LLC_zh-CN 里的数据
-    print("开始应用自定义汉化修改...")
-    try:
-        # 检查changes.json文件是否存在
-        changes_file = "lang/changes.json"
-        if os.path.exists(changes_file):
-            # 加载changes.json
-            with open(changes_file, 'r', encoding='utf-8') as f:
-                changes_data = json.load(f)
-            
-            if changes_data:
-                print(f"找到 {len(changes_data)} 个文件的修改记录")
-                
-                # 遍历changes.json中的每个文件修改记录
-                for relative_path, file_changes in changes_data.items():
-                    # 构建完整的文件路径
-                    lang_file_path = os.path.join("lang", relative_path)
-                    game_file_path = os.path.join(config_path, "LimbusCompany_Data", "Lang", relative_path) # type: ignore
-                    
-                    # 检查游戏目录中的文件是否存在
-                    if os.path.exists(game_file_path):
-                        print(f"应用修改到: {relative_path}")
-                        
-                        # 读取游戏目录中的原始文件
-                        with open(game_file_path, 'r', encoding='utf-8') as f:
-                            original_data = json.load(f)
-                        
-                        # 应用修改
-                        modified_data = apply_changes_to_data(original_data, file_changes)
-                        
-                        # 保存修改后的文件
-                        with open(game_file_path, 'w', encoding='utf-8') as f:
-                            json.dump(modified_data, f, ensure_ascii=False, indent=4)
-                        
-                        print(f"文件 {relative_path} 修改已应用")
-                    else:
-                        print(f"警告: 游戏目录中未找到文件 {relative_path}")
-            else:
-                print("没有自定义汉化修改需要应用")
-        else:
-            print("没有找到changes.json文件，跳过自定义汉化修改")
-    except Exception as e:
-        print(f"应用自定义汉化修改时出错: {e}")
-    
-    # 气泡渐变色处理
-    if settings_manager.get_setting('enable_text_gradient'):
-        from functions.fancy.dialog_colorful import main as handle_colorful
-        handle_colorful()
-        print("气泡渐变色处理完成")
-
-    # 复制字体文件夹到汉化目录下
-    print("开始复制字体文件夹到汉化目录下...")
-    try:
-        if os.path.exists(config_path + 'LimbusCompany_Data/Lang/LLC_zh-CN/Font'): # type: ignore
-            # 创建Font文件夹
-            os.makedirs(config_path + 'LimbusCompany_Data/Lang/LLC_zh-CN/Font', exist_ok=True) # type: ignore
-
-        shutil.copytree('assets/Font', config_path + 'LimbusCompany_Data/Lang/LLC_zh-CN/Font', dirs_exist_ok=True) # type: ignore
-        print("字体文件夹复制完成")
-    except Exception as e:
-        print(f"复制字体文件夹时出错: {e}")
-        return
-
-    from functions.dowloads.zeroasso_dow import create_config_file
-    create_config_file(settings_manager.get_setting('game_path'))
-
-    try:
-        # 是否设置用户名称
-        if settings_manager.get_setting('enable_show_user_name'):
-            set_user_name()
-
-        # 是否进行 EGO 样式美化
-        if settings_manager.get_setting('enable_ego_style'):
-            from functions.fancy.EGO_colorful import main as apply_ego_style
-            apply_ego_style()
-
-        # 技能描述美化
-        if settings_manager.get_setting('enable_skill_style'):
-            from functions.fancy.skill_info import handle_skill
-            handle_skill(config_path + 'LimbusCompany_Data/Lang/LLC_zh-CN/') # type: ignore
-
-        if settings_manager.get_setting('enable_speical_tip'):
-            from functions.fancy.hint_set import simple_replace
-            simple_replace(config_path + 'LimbusCompany_Data/Lang/LLC_zh-CN/BattleHint.json') # type: ignore
-
-    except Exception as e:
-        print(f"应用美化功能时出错: {e}")
-        from tkinter import messagebox
-        messagebox.showerror("错误", f"应用美化功能时出错: {str(e)}\n可能是汉化包不完整导致的...\n请尝试使用汉化更新修复.")
-
-    print("运行插件注册的启动事件...")
-    threading.Thread(target=obj.addon_manager.run_game_start_event).start() # type: ignore
-
+def run_game():
+    global config_path
     # 载入mod并启动游戏
     from functions.base.load_mod import main as load_mod_and_launch
     load_mod_and_launch(config_path + 'LimbusCompany.exe') # type: ignore
