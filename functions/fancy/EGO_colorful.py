@@ -97,7 +97,7 @@ def process_text_field(text: str, is_specified: bool) -> str:
     if is_specified:
         # 包含"指定"的情况：红色向白色渐变，添加粗体斜体和emoji
         # 应用颜色渐变：红色(#ff0000)向白色(#ffffff)渐变，渐变度0.5
-        processed_text = apply_color_gradient_custom(f"⚠️{text}⚠️", "#ff0000", "#ffffff", 0.5)
+        processed_text = apply_color_gradient_custom(f"! {text} !", "#ff0000", "#ffffff", 0.5)
         # 添加粗体和斜体标签
         processed_text = f"<b><i>{processed_text}</i></b>"
     else:

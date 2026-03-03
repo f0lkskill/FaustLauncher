@@ -6,8 +6,9 @@ import atexit
 
 settings_manager = get_settings_manager()
 extra_mod_loader_path:str = settings_manager.get_setting('extra_mod_loader') # type: ignore
+game_path:str = settings_manager.get_setting('game_path') # type: ignore
 
-def main(game_path: str):
+def main():
     """使用当前系统的运行参数运行YiSangModLoader.exe来启动游戏。"""
     global settings_manager
 
@@ -32,7 +33,7 @@ def main(game_path: str):
     try:
         print("开始使用默认mod加载器启动游戏...")
 
-        run = ["yisangModLoader.exe", game_path]
+        run = ["yisangModLoader.exe", game_path + '/LimbusCompany.exe']
         flags = subprocess.CREATE_NO_WINDOW if settings_manager.get_setting("hide_mod_load") else 0
         # 使用CREATE_NO_WINDOW标志隐藏窗口
         subprocess.Popen(run, creationflags=flags)
@@ -51,6 +52,3 @@ def main(game_path: str):
     except Exception as e:
         print(f"启动失败: {e}")
         return False
-
-if __name__ == "__main__":
-    main("???")

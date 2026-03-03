@@ -71,11 +71,30 @@
     "bubble_text_gradient_rate": {
         "name": "气泡文本渐变系数",
         "type": "float",
-        "default": 0.5,
-        "value": 0.5,
+        "default": 0.4,
+        "value": 0.4,
         "description": "气泡文本渐变系数\n越大的值意味着颜色渐变越快",
         "min": 0.1,
-        "max": 5.0,
+        "max": 1.0,
+        "step": 0.1,
+        "page": "美化"
+    },
+    "enable_skill_text_gradient": {
+        "name": "启用技能名称渐变色美化",
+        "type": "boolean",
+        "default": true,
+        "value": true,
+        "description": "是否对技能名称应用颜色渐变\n根据技能的罪孽颜色添加渐变色。",
+        "page": "美化"
+    },
+    "skill_text_gradient_rate": {
+        "name": "技能名称渐变系数",
+        "type": "float",
+        "default": 0.4,
+        "value": 0.4,
+        "description": "技能名称渐变系数\n越大的值意味着颜色渐变越快",
+        "min": 0.1,
+        "max": 1.0,
         "step": 0.1,
         "page": "美化"
     },
@@ -123,7 +142,7 @@
         "name": "欢迎音效",
         "type": "string",
         "default": "assets/voices/welcome_1.wav",
-        "value": "assets/voices/welcome_1.wav",
+        "value": "assets/voices/welcome_2.wav",
         "description": "启动器欢迎音效的文件路径\n可以替换为你喜欢的音效文件\n支持mp3和wav格式\n如果不想要欢迎音效, 可以将其设置为空字符串",
         "page": "其它"
     },

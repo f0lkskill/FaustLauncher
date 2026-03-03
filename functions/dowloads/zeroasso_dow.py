@@ -613,7 +613,7 @@ def download_and_extract_gui(gui:DownloadGUI, config_path: str = "", download_fi
         download_files = [
             {
                 'name': 'TTF 字体文件',
-                'url': 'https://lz.qaiu.top/parser?url=https://wwbet.lanzoum.com/igRGn3ezd23g&pwd=do1n',
+                'url': 'https://lz.qaiu.top/parser?url=https://folkskill.lanzoum.com/irAGt3iha71c&pwd=3z4n',
                 'temp_filename': 'LLCCN-Font.7z'
             },
             {
@@ -669,7 +669,7 @@ def download_and_extract_gui(gui:DownloadGUI, config_path: str = "", download_fi
             elif dowload_way == 0 or dowload_way == 1:
                 if dowload_way == 1:
                     print("使用upfile下载汉化文件...")
-                    result = get_dowload_path_ByNote()      
+                    result = get_dowload_path_ByNote()  
                 elif dowload_way == 0:
                     print('使用 gh-proxy 代理加速下载')
                     result = get_dowload_path_ByGhProxy()
@@ -719,20 +719,7 @@ def download_and_extract_gui(gui:DownloadGUI, config_path: str = "", download_fi
     
     # 创建配置文件（只在至少一个文件处理成功时创建）
     if success_count > 0 and not is_custome:
-        print(is_custome)
         create_config_file(game_path)
-        
-        # 检查字体文件
-        if not os.path.exists("assets/Font/Context/ChineseFont.ttf"):
-            import shutil
-            source_dir = "lang/LimbusCompany_Data/Lang/LLC_zh-CN/Font/Context/ChineseFont.ttf"
-            if os.path.exists(source_dir):
-                print("复制字体文件到Font/Context目录...")
-                try:
-                    shutil.move(source_dir, 'Font/Context')
-                except Exception:
-                    pass
-
         return True
     else:
         if success_count > 0:
