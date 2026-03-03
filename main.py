@@ -28,7 +28,6 @@ dowloading = False
 root: tk.Tk = None # type: ignore
 debug = False
 settings_manager = get_settings_manager()
-config_path = settings_manager.get_setting("game_path")
 bg_color:str = settings_manager.get_setting("bg_color") # type: ignore
 VERSION_INFO:str = settings_manager.get_setting("version_info") # type: ignore
 
@@ -169,6 +168,8 @@ class FaustLauncherApp:
         self.root.geometry("800x700")
         self.root.resizable(False, False)
 
+        self.addon_manager = None
+
         center_window(self.root, False)
         
         # 设置应用程序图标
@@ -275,6 +276,7 @@ class FaustLauncherApp:
         addon_menu = pystray.Menu(*addon_items)
         root_menu = pystray.MenuItem("插件", action=addon_menu)
         menu_items.append(root_menu)
+        menu_items.append(pystray.MenuItem('重载插件', self.addon_manager.run_all_addon))
         menu_items.append(pystray.MenuItem('退出', lambda:os._exit(0)))
 
         menu = pystray.Menu(*menu_items)
@@ -998,7 +1000,7 @@ class FaustLauncherApp:
             messagebox.showerror("错误", f"打开mod管理器失败: {str(e)}")
 
     def check_settings(self):
-        global config_path, settings_manager
+        global settings_manager
         version_info = settings_manager.get_setting("version_info")
 
         if not settings_manager.get_setting("game_path"):
@@ -1013,6 +1015,8 @@ class FaustLauncherApp:
 
                 has_update, latest_info = check_new_version(version_info)
                 notify_new_version(latest_info, '当前为最新版本', self.root)
+
+                config_path = settings_manager.get_setting("game_path")
 
             else:
                 print("错误: 未选择游戏文件")
@@ -1102,7 +1106,7 @@ if %errorlevel% equ 0 (
 def handle_dowload(obj = None, need_run_game=False):
     """命令行模式：执行下载翻译、下载气泡、载入mod并启动游戏"""
     
-    global dowloading, root, config_path
+    global dowloading, root
     import threading
     from time import sleep
 
@@ -1119,7 +1123,7 @@ def handle_dowload(obj = None, need_run_game=False):
         dowload_path = 'lang'
 
         # 1. 下载翻译
-        print("开始下载翻译...")
+        print("开始下载资源...")
         sys.path.append('functions')
         from functions.dowloads.zeroasso_dow import main_gui as download_translation
         gui = download_translation(root, dowload_path) # type: ignore
@@ -1129,7 +1133,7 @@ def handle_dowload(obj = None, need_run_game=False):
             sleep(1)
         
         del dt
-        print("翻译下载完成")
+        print("资源下载完成")
         
         # 2. 下载气泡
         print("开始下载气泡...")
@@ -1148,20 +1152,18 @@ def handle_dowload(obj = None, need_run_game=False):
             print("检测到新的汉化版本，准备更新汉化文件...")
             if os.path.exists(dowload_path + '/LimbusCompany_Data/Lang/LLC_zh-CN'): # type: ignore
                 shutil.copytree(dowload_path + '/LimbusCompany_Data/Lang/LLC_zh-CN', lang_path, dirs_exist_ok=True) # type: ignore
-                print("文件夹复制完成")
             else:
                 print("错误: 未找到 lang 下的 LLC_zh-CN 文件夹")
         else:
             print("当前汉化已是最新版本，无需更新")
 
-        # 删除 LimbusCompany_Data 文件夹
-        print("开始删除 LimbusCompany_Data 文件夹...")
-        shutil.rmtree(os.path.join(dowload_path, 'LimbusCompany_Data'), ignore_errors=True) # type: ignore
-        print("LimbusCompany_Data 文件夹删除完成")
-
         if not os.path.exists('assets/Font/Context/ChineseFont.ttf'):
-            shutil.copytree('assets/Font', 'lang/LLC_zh-CN', dirs_exist_ok=True) # type: ignore
-            print("字体文件复制完成")
+            shutil.copytree('lang/Font', 'assets/Font', dirs_exist_ok=True) # type: ignore
+            shutil.rmtree('lang/Font', ignore_errors=True)
+
+        # 删除 LimbusCompany_Data 文件夹
+        if os.path.exists(os.path.join(dowload_path, 'LimbusCompany_Data')): # type: ignore
+            shutil.rmtree(os.path.join(dowload_path, 'LimbusCompany_Data'), ignore_errors=True) # type: ignore
 
         print("汉化下载及处理全部完成！")
 
@@ -1185,9 +1187,12 @@ def handle_dowload(obj = None, need_run_game=False):
     dowloading = False
 
 def run_game(obj:None):
-    global config_path, settings_manager
+    global settings_manager
     # 复制 lang 下的 LLC_zh-CN 文件夹到游戏目录下的 LimbusCompany_Data/Lang 文件夹 下
     import shutil
+
+    config_path = settings_manager.get_setting('game_path')
+
     # 尝试删除原有的 LimbusCompany_Data/Lang/LLC_zh-CN 文件夹
     if os.path.exists(os.path.join(config_path, 'LimbusCompany_Data/Lang/LLC_zh-CN')): # type: ignore
         print("删除原有的 LimbusCompany_Data/Lang/LLC_zh-CN 文件夹")
@@ -1286,6 +1291,10 @@ def run_game(obj:None):
             from functions.fancy.hint_set import simple_replace
             simple_replace(config_path + 'LimbusCompany_Data/Lang/LLC_zh-CN/BattleHint.json') # type: ignore
 
+        if settings_manager.get_setting('enable_speical_tip'):
+            from functions.fancy.hint_set import simple_replace
+            simple_replace(config_path + 'LimbusCompany_Data/Lang/LLC_zh-CN/BattleHint.json') # type: ignore
+
     except Exception as e:
         print(f"应用美化功能时出错: {e}")
         from tkinter import messagebox
@@ -1296,12 +1305,13 @@ def run_game(obj:None):
 
     # 载入mod并启动游戏
     from functions.base.load_mod import main as load_mod_and_launch
-    load_mod_and_launch(config_path + 'LimbusCompany.exe') # type: ignore
+    load_mod_and_launch() # type: ignore
 
 def set_user_name():
     """设置用户名称到 UserInfo_Friends.json 中"""
-    global settings_manager, config_path
+    global settings_manager
     user_name = settings_manager.get_setting('user_name')
+    config_path = settings_manager.get_setting('game_path')
     from json import dump, load
     datalist = load(open(f'{config_path}LimbusCompany_Data/Lang/LLC_zh-CN/UserInfo_Friends.json','r',encoding='utf-8'))
     for data in datalist['dataList']:

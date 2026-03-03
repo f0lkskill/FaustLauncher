@@ -1,6 +1,5 @@
 import os
 import json
-import threading
 from typing import Dict, List, Optional, Any
 
 class AddonManager:
@@ -218,6 +217,8 @@ class AddonManager:
     def run_all_addon(self, ADDON_ARG:dict = {}):
         for name in self.addon_names:
             self.run_addon(name, ADDON_ARG)
+
+        # ADDON_ARG['tray'].update_menu()
 
     def run_game_start_event(self):
         for f in self.gamestart_funcs:

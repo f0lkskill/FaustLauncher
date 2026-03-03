@@ -15,7 +15,7 @@ class ModAddonManagerPage:
         self.mods_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'mods')
         self.create_widgets()
 
-        self.refresh_addons_tab()
+        self.refresh_all_tabs()
     
     def create_widgets(self):
         """创建页面控件"""
@@ -34,7 +34,7 @@ class ModAddonManagerPage:
         # 创建新Mod架构管理标签页
         self.create_new_mods_tab()
 
-        # self.notebook.add(tk.Frame(self.notebook), text="") # 占位标签页，保持界面美观
+        # self.notebook.add(tk.Frame(self.notebook), text="")
     
     def create_addons_tab(self):
         """创建插件管理标签页"""
