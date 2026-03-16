@@ -44,10 +44,11 @@ driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () =>
 for character in loaded_dict['dataList']:
     # 生成索引（去除\n）
     index = character['name'] + character['title'].replace('\n', '')
+    index = index.replace(' ','').replace('_','')
     # 生成URL
     url = f"https://limbuscompany.huijiwiki.com/wiki/{index}"
 
-    if os.path.exists(f'functions/tools/html/{index.replace(':','').replace(' ','')}.html'):
+    if os.path.exists(f'functions/tools/html/{index.replace(':','').replace(' ','').replace('_','')}.html'):
         print(f"{index}.html 已存在，跳过加载。 ")
         continue
     
@@ -73,13 +74,13 @@ for character in loaded_dict['dataList']:
         page_source = driver.page_source
         
         # 构建保存路径
-        save_path = os.path.join(html_folder, f"{index}.html".replace(":",'').replace(' ',''))
+        save_path = os.path.join(html_folder, f"{index}.html".replace(":",''))
         
         # 保存HTML文件，确保使用utf-8编码
         with open(save_path, 'w', encoding='utf-8') as f:
             f.write(page_source)
         
-        print(f"已保存角色 {character['name']} 的HTML文件")
+        print(f"已保存角色 {character['name']}-{character['title'].replace('\n','')} 的HTML文件")
         
         # 处理JSON文件
         # 获取百位数字（id的第3位，从右往左数）
@@ -88,7 +89,7 @@ for character in loaded_dict['dataList']:
             # 取第3位数字（从0开始索引）
             # print(id_str)
             hundred_digit = str(id_str[1:3])
-            print(hundred_digit)
+            # print(hundred_digit)
             skill_file = f"lang/LLC_zh-CN/Skills_personality-{hundred_digit}.json"
             
             # 检查文件是否存在
@@ -97,7 +98,7 @@ for character in loaded_dict['dataList']:
                     skill_data = load(f)
                 
                 # 解析HTML文件，提取技能信息
-                html_file = os.path.join(html_folder, f"{index}.html".replace(":",'').replace(' ',''))
+                html_file = os.path.join(html_folder, f"{index}.html".replace(":",''))
                 with open(html_file, 'r', encoding='utf-8') as f:
                     html_content = f.read()
                 
@@ -138,13 +139,11 @@ for character in loaded_dict['dataList']:
                     # 查找技能图标下方的罪孽类型图片
                     # 先查找所有img元素
                     all_imgs = table.find_all('img')
-                    print(f"找到 {len(all_imgs)} 个img元素")
                     
                     # 遍历所有img元素，找到包含"技能-"的alt属性
                     for img in all_imgs:
                         alt_text = img.get('alt', '')
                         if '技能-' in alt_text: # type: ignore
-                            print(f"找到技能图片: {alt_text}")
                             # 从alt属性中提取罪孽类型
                             if '-' in alt_text: # type: ignore
                                 # 格式：技能-类型-罪孽
@@ -216,7 +215,7 @@ for character in loaded_dict['dataList']:
                 with open(output_file, 'w', encoding='utf-8') as f:
                     dump(skills_info, f, ensure_ascii=False, indent=2)
                 
-                print(f"已生成角色 {character['name']} 的技能数据文件，提取了 {len(skills_info)} 个技能信息")
+                print(f"提取了 {len(skills_info)} 个技能信息")
                 print("-"*50)
             else:
                 print(f"技能文件 {skill_file} 不存在")

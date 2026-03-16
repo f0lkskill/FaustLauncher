@@ -1028,9 +1028,9 @@ def notify_new_version(current_version_name, info = '发现新版本', root = No
         
         if (has_new_version and latest_info) or must_show:
             # 显示消息框
-            if not must_show and ("alpha" in latest_info['version_name'] or "alpha" in version_info): # type: ignore
+            if not must_show and ("release" not in latest_info['version_name'] or "release" not in version_info): # type: ignore
                 # 不显示alpha版本更新提示
-                if "alpha" in version_info:
+                if "release" not in version_info:
                     messagebox.showwarning("警告", f"当前版本: {version_info}\n最新正式版本: {latest_info['version_name']}\n\n您正在使用测试版本，意味着该版本可能不稳定或包含未完成的功能。\n如果你是参与内测的用户,请将你遇到的问题反馈给开发者。") # type: ignore
                 return False
             show_version_update_dialog(current_version_name, latest_info, info, root)

@@ -1,58 +1,46 @@
-from functions.fancy.dialog_colorful import process_dlg_text
-from functions.base.settings_manager import get_settings_manager
-from json import load,dump
+from functions.webFunc import Note
+from functions.dowloads.zeroasso_dow import download_and_extract_gui, DownloadGUI
+from json import loads,dumps
+from threading import Thread
 
-settings_manager = get_settings_manager()
-game_path:str = settings_manager.get_setting("game_path") # type: ignore
-skill_text_gradient_rate:float = settings_manager.get_setting("skill_text_gradient_rate") # type: ignore
+note = Note("FaustLauncher.res_info")
+note.fetch_note_info()
 
-def get_personality_skill_files(path = "",head_str = "") -> list:
-    """
-    get_personality_skill_files
-    
-    :return: 技能文件对象列表
-    :rtype: list[Any]
-    """
-    files = []
+note_content = note.note_content
 
-    for id in range(1,13):
-        str_id = ""
-        if id < 10:
-            str_id = "0"+str(id)
-        else:str_id = str(id)
+data:dict = loads(loads(note_content)[0]['content'])
+local_data:dict = loads(open("resources/resource_info.json",'r',encoding='utf-8').read())
 
-        files.append(f"{path}{head_str}personality-{str_id}.json")
+def update_resource(main_root, download_files:list, res:str):
+    dowload_gui = DownloadGUI(main_root, 'resources/', False)
+    download_thread = Thread(target=download_and_extract_gui, args=(dowload_gui,'resources/', download_files))
+    download_thread.start()
+    while download_thread.is_alive():
+        pass
+    local_data[res]['version_info'] = data[res]['version_info']
 
-    return files
+def check_resource_update(main_root):
+    for res in data:
+        if data[res]['version_info'] != local_data[res]['version_info']:
+            print(f"需要更新云端资源 {res}，url: {data[res]['url']}")
+            download_files = [{
+                "url": data[res]['url'],
+                "name": f"更新资源：{res}",
+                "temp_filename": f"{res}.zip"
+            }]
 
-def skill_color_process():
-    package_files = get_personality_skill_files(game_path + 'LimbusCompany_Data/lang/', "LLC_zh-CN/Skills_")
-    config_files = get_personality_skill_files("config/skills_info/")
+            update_resource(main_root, download_files, res)
 
-    sin_color = load(open("config/sin_color.json",'r',encoding='utf-8'))
-
-    for pf in package_files:
-        print(f"处理 {pf}\n {config_files[package_files.index(pf)]}")
-
-        pf_file = open(pf,'r+',encoding='utf-8')
-        cf_file = open(config_files[package_files.index(pf)],'r',encoding='utf-8')
-
-        pf_c = load(pf_file)
-        cf_c = load(cf_file)
-        for skill_content in pf_c["dataList"]:
-            for skill_info in cf_c:
-                if skill_info['id'] == skill_content['id']:
-                    # id 符合，开始渐变化处理。
-                    for signal_skill in skill_content['levelList']:
-                        print(f"{signal_skill['name']} 的罪孽类型为 {skill_info['type']}...")
-                        process_str = f"<color={sin_color[skill_info['type']]}>{signal_skill['name']}</color>"
-                        signal_skill['name'] = process_dlg_text(process_str, skill_text_gradient_rate)
-                    break
+        else:
+            print(f"资源 {res} 已为最新，无需更新。")
         
-        with open(pf, 'w', encoding='utf-8') as tar_file:
-            dump(pf_c, tar_file, indent=2)
+        # 保存更新后的本地资源信息
+        with open("resources/resource_info.json",'w',encoding='utf-8') as f:
+            f.write(dumps(local_data, ensure_ascii=False, indent=4))
+        
 
-        pf_file.close()
-        cf_file.close()
-
-skill_color_process()
+if __name__ == "__main__":
+    import tkinter
+    root = tkinter.Tk()
+    check_resource_update(root)
+    root.mainloop()

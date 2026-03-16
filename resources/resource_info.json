@@ -1,0 +1,11 @@
+{
+    "bubble_speech": {
+        "version_info": "0.0.2"
+    },
+    "mod_loader": {
+        "version_info": "0.0.2"
+    },
+    "siner_skill_info": {
+        "version_info": "0.0.2"
+    }
+}
