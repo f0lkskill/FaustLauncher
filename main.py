@@ -56,6 +56,7 @@ class TerminalRedirector:
     
     def _add_message_to_terminal(self, message):
         """添加格式化消息到终端"""
+        print(message, file=self.original_stdout)
         message = self.process_message(message)
 
         try:
