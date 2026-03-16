@@ -11,7 +11,6 @@ __pycache__/
 vscode/
 _internal/
 temp/
-lang/
 build/
 develop-eggs/
 dist/
@@ -143,3 +142,5 @@ starting.bat
 *.exe
 AALC/
 cache/
+lang/*
+!lang/hereAreSomeResource
