@@ -24,10 +24,10 @@ def get_personality_skill_files(path = "",head_str = "") -> list:
 
     return files
 
-def skill_color_process():
+def skill_color_process(gameLang: str):
     import os
-    package_files = get_personality_skill_files('lang/', "LLC_zh-CN/Skills_")
-    config_files = get_personality_skill_files("resources/siner_skill_info")
+    package_files = get_personality_skill_files(gameLang, "LLC_zh-CN/Skills_")
+    config_files = get_personality_skill_files("resources/siner_skill_info/")
 
     try:
         sin_color = load(open("resources/siner_skill_info/sin_color.json",'r',encoding='utf-8'))
@@ -50,11 +50,11 @@ def skill_color_process():
             continue
 
         try:
-            pf_file = open(pf,'r',encoding='utf-8')
-            cf_file = open(cf_path,'r',encoding='utf-8')
+            with open(pf,'r',encoding='utf-8') as f:
+                pf_c = load(f)
 
-            pf_c = load(pf_file)
-            cf_c = load(cf_file)
+            with open(cf_path,'r',encoding='utf-8') as f:
+                cf_c = load(f)
 
             for skill_content in pf_c["dataList"]:
                 print(f"处理技能 {skill_content['id']}")
@@ -72,25 +72,18 @@ def skill_color_process():
                         break
                     
                 # 缺少对应的 config 信息，请求用户输入并写入对应的文件
-                if not success:
-                    print(f"技能 {skill_content['levelList'][0]['name']} 缺少对应的 config 信息，请求用户输入...")
-                    skill_info = {
-                        "id": skill_content['id'],
-                        "type": input(f"请输入技能 {skill_content['id']} 的罪孽类型："),
-                        "desc": input(f"请输入技能 {skill_content['id']} 的描述：")
-                    }
-                    cf_c.append(skill_info)
+                # if not success:
+                #     print(f"技能 {skill_content['levelList'][0]['name']} 缺少对应的 config 信息，请求用户输入...")
+                #     skill_info = {
+                #         "id": skill_content['id'],
+                #         "type": input(f"请输入技能 {skill_content['id']} 的罪孽类型："),
+                #         "desc": input(f"请输入技能 {skill_content['id']} 的描述：")
+                #     }
+                #     cf_c.append(skill_info)
 
                 with open(pf, 'w', encoding='utf-8') as tar_file:
                     dump(pf_c, tar_file, indent=2, ensure_ascii=False)
                 with open(cf_path, 'w', encoding='utf-8') as tar_file:
                     dump(cf_c, tar_file, indent=2, ensure_ascii=False)
-
-                pf_file.close()
-                cf_file.close()
-                
         except Exception as e:
             print(f"处理文件 {pf} 时出错: {e}")
-            # 确保文件被关闭
-            pf_file.close()
-            cf_file.close()
