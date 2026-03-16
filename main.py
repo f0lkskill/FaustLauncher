@@ -1035,9 +1035,7 @@ class FaustLauncherApp:
             else:
                 print("当前启动器已是最新版本")
 
-        from functions.base.update_resource import check_resource_update
         from threading import Thread
-        Thread(target=check_resource_update, args=(self.root,)).start()
 
         # 检查是否有命令行参数
         if len(sys.argv) > 1 or not os.path.exists("lang/LLC_zh-CN"):
@@ -1120,8 +1118,6 @@ def handle_dowload(obj = None, need_run_game=False):
     if dowloading:
         return
     dowloading = True
-
-    print("汉化下载中...")
     
     # 导入并执行各个功能模块
     try:
@@ -1129,10 +1125,21 @@ def handle_dowload(obj = None, need_run_game=False):
         lang_path = 'lang/LLC_zh-CN'
         dowload_path = 'lang'
 
-        # 1. 下载翻译
-        print("开始下载资源...")
-        sys.path.append('functions')
         from functions.dowloads.zeroasso_dow import main_gui as download_translation
+
+        # 0. 检查必要的资源内容：
+        from functions.base.update_resource import check_resource_update
+        gui_res = download_translation(root, dowload_path) # type: ignore
+        dt = threading.Thread(target=check_resource_update, args=(gui_res,)).start()
+
+        while gui_res.is_downloading:
+            sleep(1)
+
+        del dt
+
+        # 1. 下载翻译
+        print("开始下载零协会汉化包...")
+        sys.path.append('functions')
         gui = download_translation(root, dowload_path) # type: ignore
         dt = threading.Thread(target=gui.root.mainloop)
 
@@ -1140,7 +1147,7 @@ def handle_dowload(obj = None, need_run_game=False):
             sleep(1)
         
         del dt
-        print("资源下载完成")
+        print("零协会汉化包下载完成")
         
         # 2. 下载气泡
         print("开始下载气泡...")
