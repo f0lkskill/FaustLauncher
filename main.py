@@ -1315,7 +1315,7 @@ def run_game(obj:None):
 
         if settings_manager.get_setting('enable_skill_text_gradient'):
             from functions.fancy.skill_colorful import skill_color_process
-            skill_color_process()
+            skill_color_process(config_path + 'LimbusCompany_Data/Lang/')
 
     except Exception as e:
         print(f"应用美化功能时出错: {e}")
