@@ -225,12 +225,17 @@ class FaustLauncherApp:
         # 绑定分页切换事件
         self.notebook.bind("<<NotebookTabChanged>>", self.on_tab_changed)
 
-        # 绑定关闭按钮事件（关键步骤）
+        # 绑定关闭按钮事件
         def check_close():
-            self.root.withdraw()
+            if settings_manager.get_setting("after_gui_exit") == 0:
+                self.root.withdraw()
+            else:
+                self.root.destroy()
+                os._exit(0)
+            
             if not settings_manager.get_setting("mems")["tray_hint"]: # type: ignore
                 settings_manager.set_setting("mems", {"tray_hint": True}) # type: ignore
-                messagebox.showinfo("提示", "程序将继续在托盘后台继续运行，右键托盘图标可退出程序")
+                messagebox.showinfo("提示", "程序将继续在托盘后台继续运行，右键托盘图标可退出程序\n您可以在设置中修改退出后操作")
         root.protocol("WM_DELETE_WINDOW", check_close)
 
         # 设置样式
@@ -276,7 +281,7 @@ class FaustLauncherApp:
         addon_menu = pystray.Menu(*addon_items)
         root_menu = pystray.MenuItem("插件", action=addon_menu)
         menu_items.append(root_menu)
-        menu_items.append(pystray.MenuItem('重载插件', self.addon_manager.run_all_addon))
+        # menu_items.append(pystray.MenuItem('重载插件', self.addon_manager.run_all_addon))
         menu_items.append(pystray.MenuItem('退出', lambda:os._exit(0)))
 
         menu = pystray.Menu(*menu_items)
@@ -1021,19 +1026,21 @@ class FaustLauncherApp:
             else:
                 print("错误: 未选择游戏文件")
                 os._exit(-1)
-
-        # 或者单独检测
-        has_update, latest_info = check_new_version(version_info)
-        if has_update:
-            print(f"启动器的新版本已经发布: {latest_info['version_name']}") # type: ignore
-            notify_new_version(latest_info, root = self.root)
-
         else:
-            print("当前启动器已是最新版本")
+            # 或者单独检测
+            has_update, latest_info = check_new_version(version_info)
+            if has_update:
+                print(f"启动器的新版本已经发布: {latest_info['version_name']}") # type: ignore
+                notify_new_version(latest_info, root = self.root)
+            else:
+                print("当前启动器已是最新版本")
+
+        from functions.base.update_resource import check_resource_update
+        from threading import Thread
+        Thread(target=check_resource_update, args=(self.root,)).start()
 
         # 检查是否有命令行参数
         if len(sys.argv) > 1 or not os.path.exists("lang/LLC_zh-CN"):
-            from threading import Thread
             # 有命令行参数，进入命令行模式
             Thread(target=handle_dowload).start()
 
@@ -1201,54 +1208,61 @@ def run_game(obj:None):
     print(f"开始复制 lang 下的 LLC_zh-CN 文件夹到游戏目录下的 {config_path}")
     try:
         shutil.copytree('lang/LLC_zh-CN', os.path.join(config_path, 'LimbusCompany_Data/Lang/LLC_zh-CN'), dirs_exist_ok=True) # type: ignore
-        print("汉化复制完成")
+        # print("汉化复制完成")
     except Exception as e:
         print(f"效用汉化复制文件夹时出错: {e}")
         return
 
     # 根据 lang/changes.json 更新 LimbusCompany_Data/Lang/LLC_zh-CN 里的数据
     print("开始应用自定义汉化修改...")
-    try:
-        # 检查changes.json文件是否存在
-        changes_file = "lang/changes.json"
-        if os.path.exists(changes_file):
-            # 加载changes.json
-            with open(changes_file, 'r', encoding='utf-8') as f:
-                changes_data = json.load(f)
-            
-            if changes_data:
-                print(f"找到 {len(changes_data)} 个文件的修改记录")
+
+    dirs = []
+    # 填充为mods文件夹下的所有子文件夹
+    for sub_dir in os.listdir('mods'):
+        dirs.append(os.path.join('mods', sub_dir))
+    dirs.append('lang')
+    for dir in dirs:
+        try:
+            # 检查changes.json文件是否存在
+            changes_file = os.path.join(dir, "changes.json")
+            if os.path.exists(changes_file):
+                # 加载changes.json
+                with open(changes_file, 'r', encoding='utf-8') as f:
+                    changes_data = json.load(f)
                 
-                # 遍历changes.json中的每个文件修改记录
-                for relative_path, file_changes in changes_data.items():
-                    # 构建完整的文件路径
-                    lang_file_path = os.path.join("lang", relative_path)
-                    game_file_path = os.path.join(config_path, "LimbusCompany_Data", "Lang", relative_path) # type: ignore
+                if changes_data:
+                    print(f"找到 {len(changes_data)} 个文件的修改记录")
                     
-                    # 检查游戏目录中的文件是否存在
-                    if os.path.exists(game_file_path):
-                        print(f"应用修改到: {relative_path}")
+                    # 遍历changes.json中的每个文件修改记录
+                    for relative_path, file_changes in changes_data.items():
+                        # 构建完整的文件路径
+                        lang_file_path = os.path.join("lang", relative_path)
+                        game_file_path = os.path.join(config_path, "LimbusCompany_Data", "Lang", relative_path) # type: ignore
                         
-                        # 读取游戏目录中的原始文件
-                        with open(game_file_path, 'r', encoding='utf-8') as f:
-                            original_data = json.load(f)
-                        
-                        # 应用修改
-                        modified_data = apply_changes_to_data(original_data, file_changes)
-                        
-                        # 保存修改后的文件
-                        with open(game_file_path, 'w', encoding='utf-8') as f:
-                            json.dump(modified_data, f, ensure_ascii=False, indent=4)
-                        
-                        print(f"文件 {relative_path} 修改已应用")
-                    else:
-                        print(f"警告: 游戏目录中未找到文件 {relative_path}")
+                        # 检查游戏目录中的文件是否存在
+                        if os.path.exists(game_file_path):
+                            print(f"应用修改到: {relative_path}")
+                            
+                            # 读取游戏目录中的原始文件
+                            with open(game_file_path, 'r', encoding='utf-8') as f:
+                                original_data = json.load(f)
+                            
+                            # 应用修改
+                            modified_data = apply_changes_to_data(original_data, file_changes)
+                            
+                            # 保存修改后的文件
+                            with open(game_file_path, 'w', encoding='utf-8') as f:
+                                json.dump(modified_data, f, ensure_ascii=False, indent=4)
+                            
+                            print(f"文件 {relative_path} 修改已应用")
+                        else:
+                            print(f"警告: 游戏目录中未找到文件 {relative_path}")
+                else:
+                    print("没有自定义汉化修改需要应用")
             else:
-                print("没有自定义汉化修改需要应用")
-        else:
-            print("没有找到changes.json文件，跳过自定义汉化修改")
-    except Exception as e:
-        print(f"应用自定义汉化修改时出错: {e}")
+                print("没有找到changes.json文件，跳过自定义汉化修改")
+        except Exception as e:
+            print(f"应用自定义汉化修改时出错: {e}")
     
     # 气泡渐变色处理
     if settings_manager.get_setting('enable_text_gradient'):
@@ -1291,9 +1305,9 @@ def run_game(obj:None):
             from functions.fancy.hint_set import simple_replace
             simple_replace(config_path + 'LimbusCompany_Data/Lang/LLC_zh-CN/BattleHint.json') # type: ignore
 
-        if settings_manager.get_setting('enable_speical_tip'):
-            from functions.fancy.hint_set import simple_replace
-            simple_replace(config_path + 'LimbusCompany_Data/Lang/LLC_zh-CN/BattleHint.json') # type: ignore
+        if settings_manager.get_setting('enable_skill_text_gradient'):
+            from functions.fancy.skill_colorful import skill_color_process
+            skill_color_process()
 
     except Exception as e:
         print(f"应用美化功能时出错: {e}")

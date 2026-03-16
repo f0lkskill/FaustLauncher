@@ -12,6 +12,9 @@ data:dict = loads(loads(note_content)[0]['content'])
 local_data:dict = loads(open("resources/resource_info.json",'r',encoding='utf-8').read())
 
 def update_resource(main_root, download_files:list, res:str):
+    import shutil
+    try:shutil.rmtree(f"resources/{res}")
+    except:pass
     dowload_gui = DownloadGUI(main_root, 'resources/', False)
     download_thread = Thread(target=download_and_extract_gui, args=(dowload_gui,'resources/', download_files))
     download_thread.start()

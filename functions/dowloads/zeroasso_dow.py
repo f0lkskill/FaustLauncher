@@ -11,7 +11,7 @@ from functions.base.settings_manager import get_settings_manager
 from functions.base.window_ulits import center_window
 
 # 7-Zip可执行文件路径
-SEVEN_ZIP_PATH = r"7-Zip\7z.exe"
+SEVEN_ZIP_PATH = r"resources\7-zip\7z.exe"
 settings_manager = get_settings_manager()
 
 class DownloadGUI:

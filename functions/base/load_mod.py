@@ -33,7 +33,7 @@ def main():
     try:
         print("开始使用默认mod加载器启动游戏...")
 
-        run = ["yisangModLoader.exe", game_path + '/LimbusCompany.exe']
+        run = ["resources/mod_loader/yisangModLoader.exe", game_path + '/LimbusCompany.exe']
         flags = subprocess.CREATE_NO_WINDOW if settings_manager.get_setting("hide_mod_load") else 0
         # 使用CREATE_NO_WINDOW标志隐藏窗口
         subprocess.Popen(run, creationflags=flags)

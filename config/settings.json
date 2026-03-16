@@ -17,7 +17,19 @@
         ],
         "default": 0,
         "value": 0,
-        "description": "翻译的下载方式\n推荐使用 upfile 动态更新下载源, 以获取最新的翻译内容\nGithub Releases 官方下载源可能会被墙, 导致下载失败\n若选择 Github Releases 官方下载源, 请确保网络环境可以访问 Github。",
+        "description": "翻译的下载方式\n推荐使用 gh-proxy 代理加速下载, 以获取最新的翻译内容\nGithub Releases 官方下载源可能会被墙, 导致下载失败\n若选择 Github Releases 官方下载源, 请确保网络环境可以访问 Github。",
+        "page": "通用"
+    },
+    "after_gui_exit": {
+        "name": "退出后操作",
+        "type": "combobox",
+        "options": [
+            "最小化到系统托盘",
+            "关闭程序"
+        ],
+        "default": 0,
+        "value": 1,
+        "description": "退出程序后, 程序将如何操作\n最小化到系统托盘: 程序将最小化到系统托盘, 并继续运行\n关闭程序: 程序将立即关闭",
         "page": "通用"
     },
     "user_name": {
@@ -102,7 +114,7 @@
         "name": "启用Mod功能",
         "type": "boolean",
         "default": true,
-        "value": true,
+        "value": false,
         "description": "是否加载 Mod",
         "page": "Mod"
     },
@@ -142,7 +154,7 @@
         "name": "欢迎音效",
         "type": "string",
         "default": "assets/voices/welcome_1.wav",
-        "value": "assets/voices/welcome_2.wav",
+        "value": "assets/voices/welcome_1.wav",
         "description": "启动器欢迎音效的文件路径\n可以替换为你喜欢的音效文件\n支持mp3和wav格式\n如果不想要欢迎音效, 可以将其设置为空字符串",
         "page": "其它"
     },
@@ -157,8 +169,8 @@
     "version_info": {
         "name": "版本信息",
         "type": "UNABLE_TO_EDIT",
-        "default": "V0.6.0-alpha",
-        "value": "V0.6.0-alpha",
+        "default": "V0.6.0-beta",
+        "value": "V0.6.0-beta",
         "description": "当前应用程序的版本信息"
     },
     "mems": {

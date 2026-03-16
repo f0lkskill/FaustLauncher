@@ -12,7 +12,7 @@ class ModAddonManagerPage:
         self.bg_color = bg_color
         self.lighten_bg_color = lighten_bg_color
         self.addon_manager = AddonManager([])
-        self.mods_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'mods')
+        self.mods_dir = 'mods'
         self.create_widgets()
 
         self.refresh_all_tabs()

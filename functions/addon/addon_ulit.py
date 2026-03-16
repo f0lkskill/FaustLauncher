@@ -16,7 +16,7 @@ class AddonManager:
         self.gamestart_funcs = []
         self.addon_paths: List[str] = []
         self.addon_names: List[str] = []
-        self.addons_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'addons')
+        self.addons_dir = 'addons'
         self.scan_addons()
     
     def scan_addons(self) -> None:
