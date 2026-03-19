@@ -11,18 +11,19 @@ note_content = note.note_content
 data:dict = loads(loads(note_content)[0]['content'])
 local_data:dict = loads(open("resources/resource_info.json",'r',encoding='utf-8').read())
 
-def update_resource(main_root, download_files:list, res:str):
+def update_resource(dow_root, download_files:list, res:str):
     import shutil
+    from time import sleep
     try:shutil.rmtree(f"resources/{res}")
     except:pass
-    dowload_gui = DownloadGUI(main_root, 'resources/', False)
+    dowload_gui = dow_root
     download_thread = Thread(target=download_and_extract_gui, args=(dowload_gui,'resources/', download_files))
     download_thread.start()
     while download_thread.is_alive():
-        pass
+        sleep(1)
     local_data[res]['version_info'] = data[res]['version_info']
 
-def check_resource_update(main_root):
+def check_resource_update(dow_root):
     for res in data:
         if data[res]['version_info'] != local_data[res]['version_info']:
             print(f"需要更新云端资源 {res}，url: {data[res]['url']}")
@@ -32,7 +33,7 @@ def check_resource_update(main_root):
                 "temp_filename": f"{res}.zip"
             }]
 
-            update_resource(main_root, download_files, res)
+            update_resource(dow_root, download_files, res)
 
         else:
             print(f"资源 {res} 已为最新，无需更新。")

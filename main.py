@@ -56,7 +56,7 @@ class TerminalRedirector:
     
     def _add_message_to_terminal(self, message):
         """添加格式化消息到终端"""
-        print(message, file=self.original_stdout)
+        # print(message, file=self.original_stdout)
         message = self.process_message(message)
 
         try:
@@ -1129,8 +1129,9 @@ def handle_dowload(obj = None, need_run_game=False):
         from functions.dowloads.zeroasso_dow import main_gui as download_translation
 
         # 0. 检查必要的资源内容：
+        from functions.dowloads.zeroasso_dow import DownloadGUI
         from functions.base.update_resource import check_resource_update
-        gui_res = download_translation(root, dowload_path) # type: ignore
+        gui_res = DownloadGUI(root, 'resources/', False)
         dt = threading.Thread(target=check_resource_update, args=(gui_res,)).start()
 
         while gui_res.is_downloading:
