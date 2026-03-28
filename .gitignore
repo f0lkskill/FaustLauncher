@@ -136,7 +136,7 @@ ModLoader.zip
 # Pyre type checker
 .pyre/
 ModLoader.zip
-7-Zip
+# 7-Zip
 .vscode
 starting.bat
 *.exe

@@ -4,6 +4,7 @@ import os
 import json
 from PIL import Image, ImageTk
 from functions.addon.addon_ulit import AddonManager
+from functions.mod.mod_ulits import ModManager
 
 class ModAddonManagerPage:
     def __init__(self, parent_frame, bg_color, lighten_bg_color):
@@ -12,7 +13,6 @@ class ModAddonManagerPage:
         self.bg_color = bg_color
         self.lighten_bg_color = lighten_bg_color
         self.addon_manager = AddonManager([])
-        self.mods_dir = 'mods'
         self.create_widgets()
 
         self.refresh_all_tabs()
@@ -353,14 +353,16 @@ class ModAddonManagerPage:
     def show_mods(self, parent):
         """显示新架构的Mod列表"""
         # 确保mods目录存在
-        if not os.path.exists(self.mods_dir):
-            os.makedirs(self.mods_dir)
+
+        mods_dir = ModManager.mod_dir
+
+        if not os.path.exists(mods_dir):
+            os.makedirs(mods_dir)
             return
         
         # 获取所有mod
         mods = []
-        for item in os.listdir(self.mods_dir):
-            item_path = os.path.join(self.mods_dir, item)
+        for item_path in ModManager.get_mod_path():
             if os.path.isdir(item_path):
                 mod_info_path = os.path.join(item_path, 'mod_info.json')
                 if os.path.exists(mod_info_path):
@@ -368,7 +370,7 @@ class ModAddonManagerPage:
                         with open(mod_info_path, 'r', encoding='utf-8') as f:
                             info = json.load(f)
                         mods.append({
-                            'name': item,
+                            'name': os.path.basename(item_path),
                             'path': item_path,
                             'info': info
                         })
@@ -574,7 +576,7 @@ class ModAddonManagerPage:
     
     def delete_mod(self, mod_name):
         """删除Mod"""
-        mod_path = os.path.join(self.mods_dir, mod_name)
+        mod_path = os.path.join(ModManager.mod_dir, mod_name)
         if os.path.exists(mod_path):
             if messagebox.askyesno("确认删除", f"确定要删除Mod {mod_name} 吗？"):
                 try:

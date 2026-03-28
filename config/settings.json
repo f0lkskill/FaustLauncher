@@ -28,7 +28,7 @@
             "关闭程序"
         ],
         "default": 0,
-        "value": 1,
+        "value": 0,
         "description": "退出程序后, 程序将如何操作\n最小化到系统托盘: 程序将最小化到系统托盘, 并继续运行\n关闭程序: 程序将立即关闭",
         "page": "通用"
     },
@@ -114,7 +114,7 @@
         "name": "启用Mod功能",
         "type": "boolean",
         "default": true,
-        "value": false,
+        "value": true,
         "description": "是否加载 Mod",
         "page": "Mod"
     },
@@ -169,8 +169,8 @@
     "version_info": {
         "name": "版本信息",
         "type": "UNABLE_TO_EDIT",
-        "default": "V0.6.0-beta",
-        "value": "V0.6.0-beta",
+        "default": "V0.6.0-beta.fix.1",
+        "value": "V0.6.0-beta.fix.1",
         "description": "当前应用程序的版本信息"
     },
     "mems": {

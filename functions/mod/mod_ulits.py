@@ -3,11 +3,13 @@ import json
 import shutil
 from typing import List, Dict, Any
 
-class ModUtils:
+class ModManager:
+    mod_dir = 'mods'
+     
     def __init__(self):
         """初始化Mod工具类"""
         pass
-    
+
     def get_mod_directory(self):
         """获取Mod目录路径"""
         roaming_path = os.getenv('APPDATA')
@@ -20,7 +22,8 @@ class ModUtils:
         
         return mod_path
     
-    def get_mod_info(self, mod_name: str) -> Dict[str, Any]:
+    @staticmethod
+    def get_mod_info(mod_name: str) -> Dict[str, Any]:
         """获取Mod信息"""
         mod_info_path = os.path.join(
             'mods', 
@@ -34,13 +37,10 @@ class ModUtils:
         with open(mod_info_path, 'r', encoding='utf-8') as f:
             return json.load(f)
     
-    def load_all_mods(self) -> List[str]:
-        """
-        装载所有mod
-        读取每个mod_info.json里的settings键值来决定是否加载
-        """
-        loaded_mods = []
+    @staticmethod
+    def get_mod_path() -> List[str]:
         mods_dir = 'mods'
+        mod_paths = []
         
         # 遍历所有mod目录
         for mod_name in os.listdir(mods_dir):
@@ -48,35 +48,50 @@ class ModUtils:
             
             # 检查是否是目录且存在mod_info.json
             if os.path.isdir(mod_path) and os.path.exists(os.path.join(mod_path, 'mod_info.json')):
-                try:
-                    # 获取mod信息
-                    mod_info = self.get_mod_info(mod_name)
+                mod_paths.append(mod_path)
+
+        return mod_paths
+    
+    def load_all_mods(self) -> List[str]:
+        """
+        装载所有mod
+        读取每个mod_info.json里的settings键值来决定是否加载
+        """
+        loaded_mods = []
+        
+        # 遍历所有mod目录
+        for mod_path in self.get_mod_path():
+            
+            mod_name = os.path.basename(mod_path)
+            try:
+                # 获取mod信息
+                mod_info = self.get_mod_info(mod_name)
                     
-                    # 检查settings键值
-                    if mod_info["settings"].get("enable", False):
-                        file_names = mod_info.get('file_names', [])
-                        
-                        # 获取目标目录
-                        target_dir = self.get_mod_directory()
-                        
+                # 检查settings键值
+                if mod_info["settings"].get("enable", False):
+                    file_names = mod_info.get('file_names', [])
+
+                    # 获取目标目录
+                    target_dir = self.get_mod_directory()
+
+                    # 复制文件
+                    for file_name in file_names:
+                        source_file = os.path.join(mod_path, file_name)
+                        target_file = os.path.join(target_dir, file_name)
+                                                
+                        # 确保目标目录存在
+                        os.makedirs(os.path.dirname(target_file), exist_ok=True)
+
                         # 复制文件
-                        for file_name in file_names:
-                            source_file = os.path.join(mod_path, file_name)
-                            target_file = os.path.join(target_dir, file_name)
-                            
-                            # 确保目标目录存在
-                            os.makedirs(os.path.dirname(target_file), exist_ok=True)
-                            
-                            # 复制文件
-                            shutil.copy2(source_file, target_file)
-                            print(f"复制文件: {source_file} -> {target_file}")
-                        
-                        loaded_mods.append(mod_name)
-                        print(f"成功加载Mod: {mod_name}")
-                    else:
-                        print(f"跳过Mod {mod_name}: 没有启用")
-                except Exception as e:
-                    print(f"加载Mod {mod_name} 失败: {e}")
+                        shutil.copy2(source_file, target_file)
+                        print(f"复制文件: {source_file} -> {target_file}")
+                    
+                    loaded_mods.append(mod_name)
+                    print(f"成功加载Mod: {mod_name}")
+                else:
+                    print(f"跳过Mod {mod_name}: 没有启用")
+            except Exception as e:
+                print(f"加载Mod {mod_name} 失败: {e}")
         
         return loaded_mods
     

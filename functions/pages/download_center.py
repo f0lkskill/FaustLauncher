@@ -1,10 +1,12 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
-import os
+import os, shutil
 import threading
 from PIL import Image, ImageTk
 import requests
 from functions.base.web_trigger import WebTrigger
+from functions.mod.mod_ulits import ModManager
+from functions.addon.addon_ulit import AddonManager
 
 class DownloadCenterPage:
     def __init__(self, parent, root, bg_color, lighten_bg_color):
@@ -23,6 +25,8 @@ class DownloadCenterPage:
         
         self.setup_ui()
         
+        # 检测更新
+        self.root.root.after(500, self.total_detect_update)
         # 初始化时自动获取列表
         self.root.root.after(1000, self.load_all_data)
 
@@ -564,6 +568,11 @@ class DownloadCenterPage:
             'name': addon.get('name', 'unknown'),
             'temp_filename': f"{addon.get('name', 'unknown')}.7z"
         }]
+
+        try:
+            shutil.rmtree('addons/' + addon.get('name', 'unknown'))
+        except:
+            pass
         
         # 导入下载模块并执行下载
         try:
@@ -573,18 +582,18 @@ class DownloadCenterPage:
             print(f"准备下载插件: {addon.get('name', 'unknown')}，下载链接: {download_url}")
 
             # 更新状态栏
-            self.status_var.set(f"正在下载插件: {addon.get('name', 'unknown')}")
+            self.status_var.set(f"插件: {addon.get('name', 'unknown')}")
             
             gui = DownloadGUI(self.root.root, addon_path, False)
             thread = threading.Thread(target=download_and_extract_gui, args=(gui, addon_path, download_files), daemon=True)
             thread.start()
-
 
         except Exception as e:
             messagebox.showerror("错误", f"下载过程中发生错误: {str(e)}")
         finally:
             # 恢复状态栏
             self.status_var.set("就绪 - 点击下载按钮开始下载")
+
         threading.Thread(target=self.web_trigger.add_download_nummber_addon, args=(addon.get('name', None),)).start()  # 增加下载次数
         threading.Thread(target=self.refresh_center).start()  # 刷新界面显示最新下载次数
     
@@ -601,6 +610,11 @@ class DownloadCenterPage:
             'name': mod.get('name', 'unknown'),
             'temp_filename': f"{mod.get('name', 'unknown')}.7z"
         }]
+
+        try:
+            shutil.rmtree('mods/' + mod.get('name', 'unknown'))
+        except:
+            pass
         
         # 导入下载模块并执行下载
         try:
@@ -609,7 +623,7 @@ class DownloadCenterPage:
             mod_path = "mods"
             
             # 更新状态栏
-            self.status_var.set(f"正在下载Mod: {mod.get('name', 'unknown')}")
+            self.status_var.set(f"Mod: {mod.get('name', 'unknown')}")
 
             gui = DownloadGUI(self.root.root, mod_path, False)
             thread = threading.Thread(target=download_and_extract_gui, args=(gui, mod_path, download_files))
@@ -620,8 +634,48 @@ class DownloadCenterPage:
         finally:
             # 恢复状态栏
             self.status_var.set("就绪 - 点击下载按钮开始下载")
+            
         threading.Thread(target=self.web_trigger.add_download_nummber_mod, args=(mod.get('name', None),)).start()  # 增加下载次数
         threading.Thread(target=self.refresh_center).start()  # 刷新界面显示最新下载次数
+
+    def detect_mod_update(self):
+        '''检测模组更新'''
+        mod_paths = ModManager.get_mod_path()
+
+        for mod_path in mod_paths:
+            mod_name = os.path.basename(mod_path)
+            
+            mod_info = ModManager.get_mod_info(mod_name)
+            version = mod_info['version']
+
+            for page in self.mod_data:
+                for web_mod_data in page:
+                    if web_mod_data['name'] == mod_info['name']:
+                        if web_mod_data['version'] == version:
+                            self.download_mod(web_mod_data)
+
+    def detect_addon_update(self):
+        '''检测插件更新'''
+        am = AddonManager([])
+        addon_names = am.addon_names
+
+        for addon_name in addon_names:
+            
+            addon_info:dict = am.get_addon_info(addon_name) # type: ignore
+            print(addon_info)
+            version = addon_info['version']
+
+            for page in self.addon_data:
+                for web_addon_data in page:
+                    if web_addon_data['name'] == addon_info['name']:
+                        if web_addon_data['version'] == version:
+                            self.download_addon(web_addon_data)
+
+    def total_detect_update(self):
+        '''检测所有更新'''
+        # 检测模组和插件更新...
+        self.detect_addon_update()
+        self.detect_mod_update()
     
     def open_url(self, url):
         import webbrowser
