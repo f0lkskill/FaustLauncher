@@ -57,13 +57,13 @@ def skill_color_process(gameLang: str):
                 cf_c = load(f)
 
             for skill_content in pf_c["dataList"]:
-                print(f"处理技能 {skill_content['id']}")
+                # print(f"处理技能 {skill_content['id']}")
                 success = False
 
                 for skill_info in cf_c:
                     if skill_info['id'] == skill_content['id']:
                         # id 符合，开始渐变化处理。
-                        print(f"技能 {skill_info['id']} 符合，开始处理...")
+                        print(f"技能 {skill_info['id']} 符合，正在开始处理...")
                         for signal_skill in skill_content['levelList']:
                             # print(f"{signal_skill['name']} 的罪孽类型为 {skill_info['type']}...")
                             process_str = f"<color={sin_color[skill_info['type']]}>{signal_skill['name']}</color>"
@@ -85,5 +85,6 @@ def skill_color_process(gameLang: str):
                     dump(pf_c, tar_file, indent=2, ensure_ascii=False)
                 with open(cf_path, 'w', encoding='utf-8') as tar_file:
                     dump(cf_c, tar_file, indent=2, ensure_ascii=False)
+
         except Exception as e:
             print(f"处理文件 {pf} 时出错: {e}")

@@ -56,7 +56,9 @@ class TerminalRedirector:
     
     def _add_message_to_terminal(self, message):
         """添加格式化消息到终端"""
-        # print(message, file=self.original_stdout)
+        # if message[0] == '|':
+        #     return
+        # print('|'+message, file=self.original_stdout)
         message = self.process_message(message)
 
         try:
@@ -1136,8 +1138,9 @@ def handle_dowload(obj = None, need_run_game=False):
 
         while gui_res.is_downloading:
             sleep(1)
-
+            
         del dt
+        gui_res.root.destroy()
 
         # 1. 下载翻译
         print("开始下载零协会汉化包...")
@@ -1197,8 +1200,6 @@ def handle_dowload(obj = None, need_run_game=False):
     except Exception as e:
         print(f"下载过程中出错: {e}")
         return
-    
-    # TODO 进入最小化辅助模式
 
     dowloading = False
 
@@ -1370,10 +1371,13 @@ def apply_changes_to_data(original_data, changes):
             
             # 对于包含id的字典列表，根据id进行匹配修改
             original_dict = {item['id']: item for item in original_data if 'id' in item}
+            modified_ids = set()
             
+            # 首先处理所有修改项
             for change_item in changes:
                 if isinstance(change_item, dict) and 'id' in change_item:
                     change_id = change_item['id']
+                    modified_ids.add(change_id)
                     
                     if change_id in original_dict:
                         # 找到对应的原始项
@@ -1387,33 +1391,26 @@ def apply_changes_to_data(original_data, changes):
                             elif change_item['action'] == 'added':
                                 # 新增项，直接添加到结果中
                                 result.append(change_item.get('changes', change_item))
-                                continue
-                        
-                        # 应用修改
-                        if 'changes' in change_item:
-                            # 有具体的修改内容
-                            modified_item = apply_changes_to_data(original_item, change_item['changes'])
-                            result.append(modified_item)
-                        else:
-                            # 没有具体修改内容，使用原始项
-                            result.append(original_item)
+                            else:
+                                # 普通修改，应用修改后添加
+                                if 'changes' in change_item:
+                                    modified_item = apply_changes_to_data(original_item, change_item['changes'])
+                                    result.append(modified_item)
+                                else:
+                                    result.append(change_item)
                     else:
                         # 新增项（id不在原始数据中）
-                        if 'action' in change_item and change_item['action'] == 'added':
-                            result.append(change_item.get('changes', change_item))
-                        else:
-                            # 未知情况，保留原始项
-                            result.append(original_dict.get(change_id, change_item))
+                        result.append(change_item.get('changes', change_item))
             
-            # 添加未被修改的原始项
-            for original_item in original_data:
-                if isinstance(original_item, dict) and 'id' in original_item:
-                    original_id = original_item['id']
-                    if original_id not in [item['id'] for item in changes if isinstance(item, dict) and 'id' in item]:
-                        result.append(original_item)
+            # 处理未被修改的原始项
+            for item in original_data:
+                if isinstance(item, dict) and 'id' in item:
+                    # 对于包含id的项，检查是否已被修改
+                    if item['id'] not in modified_ids:
+                        result.append(item)
                 else:
                     # 对于不包含id的项，直接添加
-                    result.append(original_item)
+                    result.append(item)
             
             return result
         else:

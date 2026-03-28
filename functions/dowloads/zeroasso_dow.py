@@ -442,7 +442,7 @@ def download_file_with_gui(url, local_filename, gui, file_name):
     """带GUI进度显示的下载文件函数"""
     try:
         # 更新GUI状态
-        gui.current_file_var.set(f"正在下载: {file_name}")
+        gui.current_file_var.set(f"{file_name}")
         
         # 发送请求
         response = requests.get(url, stream=True, verify=False)
@@ -583,7 +583,7 @@ def get_dowload_path_ByGhProxy() -> tuple[str, str] | None:
     print("未获取到下载地址,失败...")
     return None
     
-def download_and_extract_gui(gui:DownloadGUI, config_path: str = "", download_files = None) -> bool:
+def download_and_extract_gui(gui:DownloadGUI, config_path: str = "", download_files = None, auto_close:bool = True) -> bool:
     """带GUI的下载和解压主函数"""
     # 加载配置
     game_path = config_path
@@ -714,7 +714,8 @@ def download_and_extract_gui(gui:DownloadGUI, config_path: str = "", download_fi
             print(e)
         finally:
             # 清理临时文件
-            gui.root.destroy()  # 关闭下载界面
+            if auto_close:
+                gui.root.destroy()  # 关闭下载界面
             cleanup_temp_files(temp_file)
     
     # 创建配置文件（只在至少一个文件处理成功时创建）

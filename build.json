@@ -52,10 +52,6 @@
   {
    "optionDest": "bootloader_ignore_signals",
    "value": false
-  },
-  {
-   "optionDest": "datas",
-   "value": "E:/projects/python/FaustLauncher/functions;functions/"
   }
  ],
  "nonPyinstallerOptions": {
