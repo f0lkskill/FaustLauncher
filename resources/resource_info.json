@@ -1,14 +1,14 @@
 {
     "bubble_speech": {
-        "version_info": "0.0.2",
+        "version_info": "0.0.6",
         "name": "文本气泡资源包"
     },
     "mod_loader": {
-        "version_info": "0.0.2",
+        "version_info": "0.0.6",
         "name": "模组加载器组件"
     },
     "siner_skill_info": {
-        "version_info": "0.0.3",
+        "version_info": "0.0.4",
         "name": "技能信息资源包"
     }
 }

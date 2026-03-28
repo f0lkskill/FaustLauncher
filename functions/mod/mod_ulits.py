@@ -2,6 +2,7 @@ import os
 import json
 import shutil
 from typing import List, Dict, Any
+from functions.base.settings_manager import SettingsManager
 
 class ModManager:
     mod_dir = 'mods'
@@ -66,11 +67,12 @@ class ModManager:
             try:
                 # 获取mod信息
                 mod_info = self.get_mod_info(mod_name)
+                
+                # 获取file_names，确保变量在任何分支中都已定义
+                file_names = mod_info.get('file_names', [])
                     
                 # 检查settings键值
                 if mod_info["settings"].get("enable", False):
-                    file_names = mod_info.get('file_names', [])
-
                     # 获取目标目录
                     target_dir = self.get_mod_directory()
 
@@ -78,22 +80,69 @@ class ModManager:
                     for file_name in file_names:
                         source_file = os.path.join(mod_path, file_name)
                         target_file = os.path.join(target_dir, file_name)
-                                                
+                                            
                         # 确保目标目录存在
                         os.makedirs(os.path.dirname(target_file), exist_ok=True)
 
                         # 复制文件
                         shutil.copy2(source_file, target_file)
-                        print(f"复制文件: {source_file} -> {target_file}")
+                        print(f"复制 Mod 文件: {source_file} -> {target_file}")
+
+                    # 装载语言文件
+                    self.load_language(mod_name, self.mod_dir)
                     
                     loaded_mods.append(mod_name)
                     print(f"成功加载Mod: {mod_name}")
                 else:
                     print(f"跳过Mod {mod_name}: 没有启用")
+                    # 删除所有文件
+                    target_dir = self.get_mod_directory()
+                    for file_name in file_names:
+                        target_file = os.path.join(target_dir, file_name)
+                        if os.path.exists(target_file):
+                            os.remove(target_file)
+                            print(f"卸载 Mod 文件: {target_file}")
+
             except Exception as e:
                 print(f"加载Mod {mod_name} 失败: {e}")
         
         return loaded_mods
+        
+    @staticmethod
+    def load_language(name: str, dir: str) -> None:
+        """
+        装载语言文件到游戏目录下的 lang 文件夹下
+        """
+        try:
+            game_path: str = SettingsManager().get_setting('game_path') # type: ignore
+            
+            # 检查游戏路径是否存在
+            if not os.path.exists(game_path):
+                print(f"错误: 游戏路径不存在: {game_path}")
+                return
+            
+            # 确定源目录
+            if name != '':
+                lang_dir = os.path.join(dir, name, 'extra_files')
+            else:
+                lang_dir = dir + '/extra_files'
+            
+            # 检查源目录是否存在
+            if not os.path.exists(lang_dir):
+                print(f"错误: 源目录不存在: {lang_dir}")
+                return
+            
+            target_lang_dir = os.path.join(game_path, 'LimbusCompany_Data', 'lang', 'LLC_zh-CN')
+            
+            # 创建目标目录（如果不存在）
+            os.makedirs(target_lang_dir, exist_ok=True)
+            
+            # 复制整个目录结构，使用 dirs_exist_ok=True 允许目标目录存在
+            shutil.copytree(lang_dir, target_lang_dir, dirs_exist_ok=True)
+            print(f"语言文件复制成功: {lang_dir} -> {target_lang_dir}/")
+            
+        except Exception as e:
+            print(f"复制语言文件失败: {e}")
     
     def unload_all_mods(self) -> List[str]:
         """

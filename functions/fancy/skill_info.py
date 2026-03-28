@@ -144,7 +144,7 @@ def handle_skill(translate_pack_path) -> None:
         with open(file_path, 'r', encoding='utf-8') as f:
             skill_content = json.load(f)
 
-        print(f"正在处理技能描述: {file}")
+        # print(f"正在处理技能描述: {file}")
         skill_content = handle_skill_strcture(skill_content)
         
         # 保存处理后的文件

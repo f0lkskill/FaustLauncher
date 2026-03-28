@@ -36,7 +36,7 @@ def skill_color_process(gameLang: str):
         return
 
     for pf in package_files:
-        print(f"技能渐变色处理 {pf}")
+        # print(f"技能渐变色处理 {pf}")
         
         # 检查文件是否存在
         if not os.path.exists(pf):
@@ -63,7 +63,7 @@ def skill_color_process(gameLang: str):
                 for skill_info in cf_c:
                     if skill_info['id'] == skill_content['id']:
                         # id 符合，开始渐变化处理。
-                        print(f"技能 {skill_info['id']} 符合，正在开始处理...")
+                        # print(f"技能 {skill_info['id']} 符合，正在开始处理...")
                         for signal_skill in skill_content['levelList']:
                             # print(f"{signal_skill['name']} 的罪孽类型为 {skill_info['type']}...")
                             process_str = f"<color={sin_color[skill_info['type']]}>{signal_skill['name']}</color>"

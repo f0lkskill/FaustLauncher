@@ -7,21 +7,22 @@ note = Note("FaustLauncher.res_info")
 note.fetch_note_info()
 
 note_content = note.note_content
-
 data:dict = loads(loads(note_content)[0]['content'])
 local_data:dict = loads(open("resources/resource_info.json",'r',encoding='utf-8').read())
 
 def update_resource(dow_root, download_files:list, res:str, auto_close:bool = True):
-    import shutil
+    import shutil,os
     from time import sleep
-    try:shutil.rmtree(f"resources/{res}")
+    try:
+        shutil.rmtree(f"resources/{res}")
     except:pass
+    os.makedirs(f"resources/{res}", exist_ok=True)
     dowload_gui = dow_root
-    download_thread = Thread(target=download_and_extract_gui, args=(dowload_gui,'resources/', download_files, False))
+    download_thread = Thread(target=download_and_extract_gui, args=(dowload_gui,f"resources/{res}", download_files, False))
     download_thread.start()
     while download_thread.is_alive():
         sleep(1)
-        print(f"下载资源 {res} 正在进行中...")
+        # print(f"下载资源 {res} 正在进行中...")
     local_data[res]['version_info'] = data[res]['version_info']
     if auto_close:
         dowload_gui.is_downloading = False

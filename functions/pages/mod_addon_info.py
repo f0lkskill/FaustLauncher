@@ -187,7 +187,7 @@ class ModAddonManagerPage:
             title_label.pack(anchor=tk.W, pady=(0, 2))
             
             # 插件版本
-            version = addon['info'].get('addon_version', '未知版本')
+            version = addon['info'].get('version', '未知版本')
             version_label = tk.Label(title_version_frame, 
                                    text=f"版本: {version}",
                                    font=('微软雅黑', 9),
@@ -414,7 +414,7 @@ class ModAddonManagerPage:
             title_label.pack(anchor=tk.W, pady=(0, 2))
             
             # Mod版本
-            version = mod['info'].get('addon_version', '未知版本')
+            version = mod['info'].get('version', '未知版本')
             version_label = tk.Label(title_version_frame, 
                                    text=f"版本: {version}",
                                    font=('微软雅黑', 9),
