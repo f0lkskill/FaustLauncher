@@ -1,89 +1,89 @@
 {
-  "dataList": [
+    "dataList": [
     {
       "id": "6SV-009-002",
       "desc": "카세티 피격시",
-      "dlg": "<color=#C41E23>妈的，妈的！</color>"
+      "dlg": "<color=#dd2229>妈的，妈的！</color>"
     },
     {
       "id": "6SV-009-002-01",
       "desc": "카세티 피격시",
-      "dlg": "<color=#C41E23>妈的，妈的！</color>"
+      "dlg": "<color=#dd2229>妈的，妈的！</color>"
     },
     {
       "id": "6SV-010-001",
       "desc": "카세티 공격시_1",
-      "dlg": "<color=#C41E23>哈，跪下！</color>"
+      "dlg": "<color=#dd2229>哈，跪下！</color>"
     },
     {
       "id": "6SV-010-002",
       "desc": "카세티 공격시_2",
-      "dlg": "<color=#C41E23>没错，要认清自己的地位……</color>"
+      "dlg": "<color=#dd2229>没错，要认清自己的地位……</color>"
     },
     {
       "id": "6SV-010-003-01",
       "desc": "카세티 공격시_3",
-      "dlg": "<color=#C41E23>如何啊！没、没起效吗？别……别过来！</color>"
+      "dlg": "<color=#dd2229>如何啊！没、没起效吗？别……别过来！</color>"
     },
     {
       "id": "6SV-011-001",
       "desc": "카세티가 전투 중 등장할 때",
-      "dlg": "<color=#C41E23>在王国的主人面前要注意礼节！</color>"
+      "dlg": "<color=#dd2229>在王国的主人面前要注意礼节！</color>"
     },
     {
       "id": "6SV-011-002",
       "desc": "카세티가 전투 중 등장할 때",
-      "dlg": "<color=#C41E23>叛逆之罪当处以极刑！</color>"
+      "dlg": "<color=#dd2229>叛逆之罪当处以极刑！</color>"
     },
     {
       "id": "6SV-012",
       "desc": "카세티 등장 턴",
-      "dlg": "<color=#C41E23>别再吵了……呵，我可以……把你们一个不剩地全部杀光，这样自然就安静了。</color>"
+      "dlg": "<color=#dd2229>别再吵了……呵，我可以……把你们一个不剩地全部杀光，这样自然就安静了。</color>"
     },
     {
       "id": "6SV-013-001",
       "desc": "카세티 나는… 이 행진의… 왕자이다…! 사용 시",
-      "dlg": "<color=#C41E23>这场游行结束后……我将成为真正的王！君临天下！</color>"
+      "dlg": "<color=#dd2229>这场游行结束后……我将成为真正的王！君临天下！</color>"
     },
     {
       "id": "6SV-013-002",
       "desc": "카세티 나는… 이 행진의… 왕자이다…! 사용 시",
-      "dlg": "<color=#C41E23>看啊……！这才是真正的、王子的游行！</color>"
+      "dlg": "<color=#dd2229>看啊……！这才是真正的、王子的游行！</color>"
     },
     {
       "id": "6SV-014",
       "desc": "카세티 나는… 이 행진의… 왕자이다…! 사용 후 다음 턴",
-      "dlg": "<color=#C41E23>虽然很痛……但我很期待……这股力量能达到什么地步……！</color>"
+      "dlg": "<color=#dd2229>虽然很痛……但我很期待……这股力量能达到什么地步……！</color>"
     },
     {
       "id": "6SV-015",
       "desc": "사샤 등장 시",
-      "dlg": "<color=#C41E23>你们怎么就不明白呢，哈……成为血袋即是成为更优越的存在啊！</color>"
+      "dlg": "<color=#dd2229>你们怎么就不明白呢，哈……成为血袋即是成为更优越的存在啊！</color>"
     },
     {
       "id": "6SV-017_2",
       "desc": "사샤 스킬 사용시",
-      "dlg": "<color=#C41E23>彻底填满血之渴望吧！！</color>"
+      "dlg": "<color=#dd2229>彻底填满血之渴望吧！！</color>"
     },
     {
       "id": "6SV-017_2-02",
       "desc": "사샤 스킬 사용시",
-      "dlg": "<color=#C41E23>彻底填满血之渴望吧，哈哈哈……！</color>"
+      "dlg": "<color=#dd2229>彻底填满血之渴望吧，哈哈哈……！</color>"
     },
-	  {
+	{
       "id": "6SV-016_1",
       "desc": "1AddedHitlineforSasha",
-      "dlg": "<color=#C41E23>妈的！</color>"
+      "dlg": "<color=#e0383e>妈的！</color>"
     },
-  	{
+	{
       "id": "6SV-016_1-01",
       "desc": "1AddedHitlineforSasha",
-      "dlg": "<color=#C41E23>妈的！</color>"
+      "dlg": "<color=#e0383e>妈的！</color>"
     },
-    {
+	{
       "id": "6SV-016_1-02",
       "desc": "1AddedHitlineforSasha",
-      "dlg": "<color=#C41E23>妈的！</color>"
+      "dlg": "<color=#e0383e>妈的！</color>"
     }
   ]
 }

@@ -144,3 +144,5 @@ AALC/
 cache/
 lang/*
 !lang/hereAreSomeResource
+mods/*
+addons/*

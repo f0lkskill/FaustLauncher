@@ -15,6 +15,10 @@ from functions.base.window_ulits import center_window
 from functions.dowloads.sql_manager import check_new_version, notify_new_version
 from functions.base.sound_ulits import play_sound
 from functions.addon.addon_ulit import AddonManager
+import urllib3
+
+# 禁用 urllib3 的警告
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # 添加自定义汉化工具导入
 try:
@@ -1170,6 +1174,12 @@ def handle_dowload(obj = None, need_run_game=False):
         if need_update:
             print("检测到新的汉化版本，准备更新汉化文件...")
             if os.path.exists(dowload_path + '/LimbusCompany_Data/Lang/LLC_zh-CN'): # type: ignore
+                # 检查目标目录是否存在，如果存在就先删除
+                if os.path.exists(lang_path):
+                    shutil.rmtree(lang_path, ignore_errors=True)
+                # 确保目标目录的父目录存在
+                os.makedirs(os.path.dirname(lang_path), exist_ok=True)
+                # 复制汉化文件
                 shutil.copytree(dowload_path + '/LimbusCompany_Data/Lang/LLC_zh-CN', lang_path, dirs_exist_ok=True) # type: ignore
             else:
                 print("错误: 未找到 lang 下的 LLC_zh-CN 文件夹")
@@ -1206,7 +1216,8 @@ def handle_dowload(obj = None, need_run_game=False):
 def run_game(obj:None):
     global settings_manager
     # 复制 lang 下的 LLC_zh-CN 文件夹到游戏目录下的 LimbusCompany_Data/Lang 文件夹 下
-    import shutil
+    import shutil,json
+    from functions.mod.mod_ulits import ModManager
 
     config_path = settings_manager.get_setting('game_path')
 
@@ -1228,9 +1239,19 @@ def run_game(obj:None):
 
     dirs = []
     # 填充为mods文件夹下的所有子文件夹
-    for sub_dir in os.listdir('mods'):
-        dirs.append(os.path.join('mods', sub_dir))
+    if settings_manager.get_setting('enable_mods'):
+        for sub_dir in os.listdir('mods'):
+            # 检测目录下 mod_info.json 里是否启用了这个mod
+            mod_info_path = os.path.join('mods', sub_dir, 'mod_info.json')
+            if not os.path.exists(mod_info_path):
+                continue
+            mod_info = json.load(open(mod_info_path, 'r', encoding='utf-8'))
+            if not mod_info['settings']['enable']:
+                continue
+            dirs.append(os.path.join('mods', sub_dir))
     dirs.append('lang')
+    ModManager.load_language('','lang/LLC_zh-CN')
+
     for dir in dirs:
         try:
             # 检查changes.json文件是否存在
@@ -1299,16 +1320,19 @@ def run_game(obj:None):
     try:
         # 是否设置用户名称
         if settings_manager.get_setting('enable_show_user_name'):
+            print("设置用户名称中...")
             set_user_name()
 
         # 是否进行 EGO 样式美化
         if settings_manager.get_setting('enable_ego_style'):
             from functions.fancy.EGO_colorful import main as apply_ego_style
+            print("处理EGO样式中...")
             apply_ego_style()
 
         # 技能描述美化
         if settings_manager.get_setting('enable_skill_style'):
             from functions.fancy.skill_info import handle_skill
+            print("处理技能描述中...")
             handle_skill(config_path + 'LimbusCompany_Data/Lang/LLC_zh-CN/') # type: ignore
 
         if settings_manager.get_setting('enable_speical_tip'):
@@ -1317,6 +1341,7 @@ def run_game(obj:None):
 
         if settings_manager.get_setting('enable_skill_text_gradient'):
             from functions.fancy.skill_colorful import skill_color_process
+            print("处理技能描述渐变色中...")
             skill_color_process(config_path + 'LimbusCompany_Data/Lang/') # type: ignore
 
     except Exception as e:
@@ -1343,11 +1368,20 @@ def set_user_name():
             data['content'] = f'{user_name}'
     dump(datalist, indent=4, fp=open(f'{config_path}LimbusCompany_Data/Lang/LLC_zh-CN/UserInfo_Friends.json','w',encoding='utf-8'))
 
-# 应用changes.json修改的辅助函数
 def apply_changes_to_data(original_data, changes):
     """递归应用修改到数据 - 适配新的修改记录结构（包含id）"""
 
     print(f"应用用户自定义json修改: {type(original_data)}")
+
+    # 处理包含dataList的修改记录结构
+    if isinstance(changes, dict) and 'dataList' in changes:
+        changes = changes['dataList']
+
+    # 处理original_data是包含dataList键的字典，而changes是列表的情况
+    if isinstance(original_data, dict) and 'dataList' in original_data and isinstance(changes, list):
+        result = original_data.copy()
+        result['dataList'] = apply_changes_to_data(original_data['dataList'], changes)
+        return result
 
     if isinstance(original_data, dict) and isinstance(changes, dict):
         result = {}
@@ -1361,6 +1395,7 @@ def apply_changes_to_data(original_data, changes):
             else:
                 result[key] = value
         return result
+    
     elif isinstance(original_data, list) and isinstance(changes, list):
         result = []
         
@@ -1383,21 +1418,13 @@ def apply_changes_to_data(original_data, changes):
                         # 找到对应的原始项
                         original_item = original_dict[change_id]
                         
-                        if 'action' in change_item:
-                            # 处理特殊操作
-                            if change_item['action'] == 'deleted':
-                                # 删除项，不添加到结果中
-                                continue
-                            elif change_item['action'] == 'added':
-                                # 新增项，直接添加到结果中
-                                result.append(change_item.get('changes', change_item))
-                            else:
-                                # 普通修改，应用修改后添加
-                                if 'changes' in change_item:
-                                    modified_item = apply_changes_to_data(original_item, change_item['changes'])
-                                    result.append(modified_item)
-                                else:
-                                    result.append(change_item)
+                        # 普通修改，应用修改后添加
+                        if 'changes' in change_item:
+                            modified_item = apply_changes_to_data(original_item, change_item['changes'])
+                            result.append(modified_item)
+                        else:
+                            # 如果没有changes字段，使用原始项
+                            result.append(original_item)
                     else:
                         # 新增项（id不在原始数据中）
                         result.append(change_item.get('changes', change_item))

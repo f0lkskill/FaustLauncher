@@ -9,8 +9,6 @@ settings_manager = get_settings_manager()
 def process_ego_json_files():
     """处理所有EGO技能JSON文件，对name和abName字段应用颜色渐变效果"""
     global settings_manager
-
-    print("开始处理EGO技能JSON文件")
     
     # 定义JSON文件路径模式
     json_pattern = f"{settings_manager.get_setting('game_path')}/LimbusCompany_Data/Lang/LLC_zh-CN/Skills_Ego_Personality-*.json"
@@ -22,14 +20,15 @@ def process_ego_json_files():
         print("未找到匹配的JSON文件")
         return False
     
-    print(f"找到 {len(json_files)} 个JSON文件")
+    print(f"找到 {len(json_files)} 个JSON文件, 开始处理...")
     
     # 处理每个JSON文件
     for json_file in json_files:
-        print(f"正在处理: {json_file}")
+        # print(f"正在处理: {json_file}")
         success = process_single_json_file(json_file)
         if success:
-            print(f"{json_file} 处理完成")
+            # print(f"{json_file} 处理完成")
+            pass
         else:
             print(f"{json_file} 处理失败")
     
@@ -117,9 +116,9 @@ def main():
     try:
         success = process_ego_json_files()
         if success:
-            print("所有JSON文件处理完成")
+            print("所有EGO技能JSON文件处理完成")
         else:
-            print("处理过程中出现错误")
+            print("EGO技能JSON文件处理失败，处理过程中出现错误")
         
         return success
         

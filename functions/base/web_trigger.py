@@ -7,6 +7,7 @@ class WebTrigger:
     def __init__(self, ):
         self.addon_info = Note("FaustLauncher.addons.info")
         self.mod_info = Note("FaustLauncher.mod.info")
+        self.sort_info_by_download_number()
 
     def refersh_note_info(self):
         """刷新插件和mod信息"""
@@ -61,6 +62,8 @@ class WebTrigger:
                         page['content'] = dumps(addons, indent=4, ensure_ascii=False)
                         self.addon_info.update_note_content(dumps(pages, indent=4, ensure_ascii=False))
                         break
+                        
+        self.sort_info_by_download_number()
 
     def add_download_nummber_mod(self, mod_name: str):
         """增加指定mod的下载次数"""
@@ -76,3 +79,35 @@ class WebTrigger:
                     page['content'] = dumps(mods, indent=4, ensure_ascii=False)
                     self.mod_info.update_note_content(dumps(pages, indent=4, ensure_ascii=False))
                     break
+        
+        self.sort_info_by_download_number()
+    
+    def sort_info_by_download_number(self):
+        """按下载次数排序插件和mod信息"""
+        # 排序插件信息
+        try:
+            pages = self.get_note_info_addon()
+            for page in pages[1:]:  # 跳过第一页的总页数信息
+                addons = loads(page['content'])
+                # 按下载次数降序排序
+                addons.sort(key=lambda x: x.get('download_count', 0), reverse=True)
+                page['content'] = dumps(addons, indent=4, ensure_ascii=False)
+            # 更新排序后的插件信息
+            self.addon_info.update_note_content(dumps(pages, indent=4, ensure_ascii=False))
+            print("插件信息按下载次数排序完成")
+        except Exception as e:
+            print(f"排序插件信息时出错: {e}")
+        
+        # 排序mod信息
+        try:
+            pages = self.get_note_info_mod()
+            for page in pages[1:]:  # 跳过第一页的总页数信息
+                mods = loads(page['content'])
+                # 按下载次数降序排序
+                mods.sort(key=lambda x: x.get('download_count', 0), reverse=True)
+                page['content'] = dumps(mods, indent=4, ensure_ascii=False)
+            # 更新排序后的mod信息
+            self.mod_info.update_note_content(dumps(pages, indent=4, ensure_ascii=False))
+            print("Mod信息按下载次数排序完成")
+        except Exception as e:
+            print(f"排序Mod信息时出错: {e}")
