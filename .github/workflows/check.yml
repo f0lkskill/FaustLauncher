@@ -78,7 +78,7 @@ jobs:
               
               # 运行你的两个脚本
               os.system("python .github/UpdatePackage.py")
-              os.system("python .github/UpdatePackage_LCTA.py")
+              # os.system("python .github/UpdatePackage_LCTA.py")
           else:
               print("✅ 暂无新版本，无需运行")
           PYTHON_CODE
