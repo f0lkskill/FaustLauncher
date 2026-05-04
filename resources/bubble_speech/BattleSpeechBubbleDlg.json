@@ -496,16 +496,16 @@
       "desc": "",
       "dlg": "<color=#7FA188>布隆布隆。</color>"
     },
-    
+
     {
       "id": "battle_8099_s2_2-01",
       "desc": "############ 中指 幼兄 里卡多 ############",
-      "dlg": "<color=#8b40a2>全员……</color>"
+      "dlg": "<color=#a240bf>全员……</color>"
     },
     {
       "id": "battle_8099_s2_2-02",
       "desc": "",
-      "dlg": "<color=#8b40a2>处刑！</color>"
+      "dlg": "<color=#a240bf>处刑！</color>"
     },
     {
       "id": "battle_order_attack_8106_1",
@@ -1011,25 +1011,80 @@
 	{
       "id": "9SV-BAT18-BR3-3",
       "desc": "####### 食指子辈 空 缺失台词 #############",
-      "dlg": "<color=#33adff>是、是这边吧！？</color>"
+      "dlg": "<color=#33adff>是，是这边对吧？</color>"
     },
 	{
       "id": "9SV-BAT18-BR3-3-01",
       "desc": "",
-      "dlg": "<color=#33adff>是、是这边吧？</color>"
+      "dlg": "<color=#33adff>是，是这边对吧？</color>"
     },
-	
-	{
-      "id": "9SV-BAT1-04_2",
-      "desc": "####### 韦斯帕 缺失台词 #############",
-      "dlg": "<color=#33adff>冈格尼尔。</color>"
-    },
-	{
-      "id": "9SV-BAT1-06_2",
+    
+	{	
+      "id": "7SV-BV-022",
+      "desc": "############ 中指 幼兄 里卡多（深夜清扫） ############",
+      "dlg": "<color=#a240bf>游戏到此为止。</color>"
+	},
+	{	
+      "id": "7SV-BV-023-1",
       "desc": "",
-      "dlg": "<color=#33adff>回收。</color>"
-    },
-
+      "dlg": "<color=#a240bf>试炼……</color>"
+	},
+	{	
+      "id": "7SV-BV-023-2",
+      "desc": "",
+      "dlg": "<color=#a240bf>……结束了！</color>"
+	},
+	{	
+      "id": "7SV-BV-024-2",
+      "desc": "",
+      "dlg": "<color=#a240bf>将痛苦……</color>"
+	},
+	{	  
+      "id": "7SV-BV-024-3",
+      "desc": "",
+      "dlg": "<color=#a240bf>……铭刻于你！</color>"
+	},
+	{	
+      "id": "7SV-BV-025",
+      "desc": "",
+      "dlg": "<color=#a240bf>后方交给我。</color>"
+	},
+	{	
+      "id": "7SV-BV-025-01",
+      "desc": "",
+      "dlg": "<color=#a240bf>后方……交给我。</color>"
+	},
+	{	
+      "id": "7SV-BV-026",
+      "desc": "####### 中指 幼弟 维尔纳 #####",
+      "dlg": "<color=#ab53c6>非常抱歉……大哥……！</color>"
+	},
+	{	
+      "id": "7SV-BV-028_3",
+      "desc": "",
+      "dlg": "<color=#ab53c6>把你碾碎！</color>"
+	},
+	{	
+      "id": "7SV-BV-029_1",
+      "desc": "",
+      "dlg": "<color=#ab53c6>你们……</color>"
+	},
+	{	
+      "id": "7SV-BV-029_2",
+      "desc": "",
+      "dlg": "<color=#ab53c6>……都是……</color>"
+	},
+	{	
+      "id": "7SV-BV-029_3",
+      "desc": "",
+      "dlg": "<color=#ab53c6>……复仇目标！</color>"
+	},
+	{	
+      "id": "7SV-BV-030",
+      "desc": "",
+      "dlg": "<color=#ab53c6>……复仇……</color>"
+	},
+	
 
 
 
@@ -1301,7 +1356,7 @@
     {
       "id": "battle_s3_10109_1_4-7",
       "desc": "",
-      "dlg": "<color=#d4dfe8>合格分。</color>"
+      "dlg": "<color=#d4dfe8>及格分。</color>"
     },
     {
       "id": "battle_select_10110_1",
@@ -1665,7 +1720,7 @@
     },
     {
       "id": "battle_select_10201_1",
-      "desc": "############ LCB 罪人 浮士德 ############",
+      "desc": "############ LCB 罪人 浮士德 1 ############",
       "dlg": "<color=#ffbfb4>有什么事吗，经理？</color>"
     },
     {
@@ -1690,7 +1745,7 @@
     },
     {
       "id": "battle_select_10202_1",
-      "desc": "############ W公司 2级清扫人员 浮士德 ############",
+      "desc": "############ W公司 2级清扫人员 浮士德 2 ############",
       "dlg": "<color=#ffbfb4>我在忙。</color>"
     },
     {
@@ -1715,7 +1770,7 @@
     },
     {
       "id": "battle_select_10203_1",
-      "desc": "############ 脑叶公司 幸存者 浮士德 ############",
+      "desc": "############ 脑叶公司 幸存者 浮士德 3 ############",
       "dlg": "<color=#ffbfb4>我有什么失误吗？</color>"
     },
     {
@@ -1740,7 +1795,7 @@
     },
     {
       "id": "battle_select_10204_1",
-      "desc": "############ 执柄者 浮士德 ############",
+      "desc": "############ 执柄者 浮士德 4 ############",
       "dlg": "<color=#ffbfb4>稍后再告解。</color>"
     },
     {
@@ -1775,7 +1830,7 @@
     },
     {
       "id": "battle_select_10205_1",
-      "desc": "############ Zwei协会 南部4科 浮士德 ############",
+      "desc": "############ Zwei协会 南部4科 浮士德 5 ############",
       "dlg": "<color=#ffbfb4>其他的区域也有问题吗？</color>"
     },
     {
@@ -1805,7 +1860,7 @@
     },
     {
       "id": "battle_select_10206_1",
-      "desc": "############ Seven协会 南部4科 浮士德 ############",
+      "desc": "############ Seven协会 南部4科 浮士德 6 ############",
       "dlg": "<color=#ffbfb4>在茶冷掉之前。</color>"
     },
     {
@@ -1845,7 +1900,7 @@
     },
     {
       "id": "battle_select_10207_1",
-      "desc": "############ 脑叶公司E.G.O::悔恨 浮士德 ############",
+      "desc": "############ 脑叶公司E.G.O::悔恨 浮士德 7 ############",
       "dlg": "<color=#ffbfb4>还有其他工作吗？</color>"
     },
     {
@@ -1880,7 +1935,7 @@
     },
     {
       "id": "battle_select_10208_1",
-      "desc": "############ 剑契组 杀手 浮士德 ############",
+      "desc": "############ 剑契组 杀手 浮士德 8 ############",
       "dlg": "<color=#ffbfb4>有在享受吗？</color>"
     },
     {
@@ -1920,7 +1975,7 @@
     },
     {
       "id": "battle_select_10209_1",
-      "desc": "############ 呼啸山庄 管家 浮士德 ############",
+      "desc": "############ 呼啸山庄 管家 浮士德 9 ############",
       "dlg": "<color=#ffbfb4>有任何不便之处吗？</color>"
     },
     {
@@ -1950,7 +2005,7 @@
     },
     {
       "id": "battle_select_10210_1",
-      "desc": "############ 多裂纹事务所 代表 浮士德 ############",
+      "desc": "############ 多裂纹事务所 代表 浮士德 10 ############",
       "dlg": "<color=#ffbfb4>您忘记计划了吗？</color>"
     },
     {
@@ -1985,7 +2040,7 @@
     },
     {
       "id": "battle_select_10211_1",
-      "desc": "############ LCE E.G.O::红艳煞 浮士德 ############",
+      "desc": "############ LCE E.G.O::红艳煞 浮士德 11 ############",
       "dlg": "<color=#ffa033>请不要靠近。这火焰可能蔓延至任何地方。</color>"
     },
     {
@@ -2046,16 +2101,16 @@
     {
       "id": "battle_s3_10211_1_3-02",
       "desc": "",
-      "dlg": "<color=#ffa033>摇曳着……</color>"
+      "dlg": "<color=#ffa033>向着那摇曳的……</color>"
     },
     {
       "id": "battle_s3_10211_1_4-02",
       "desc": "",
-      "dlg": "<color=#ffa033>……投身火光！</color>"
+      "dlg": "<color=#ffa033>……火光之中！</color>"
     },
     {
       "id": "battle_select_10212_1",
-      "desc": "############ 黑兽-卯 魁首 浮士德 ############",
+      "desc": "############ 黑兽-卯 魁首 浮士德 12 ############",
       "dlg": "<color=#ffbfb4>但说无妨。</color>"
     },
     {
@@ -2095,7 +2150,7 @@
     },
     {
       "id": "battle_select_10213_1",
-      "desc": "############ し协会 东部3科 浮士德 ############",
+      "desc": "############ し协会 东部3科 浮士德 13 ############",
       "dlg": "<color=#ffbfb4>静候良机。</color>"
     },
     {
@@ -2180,7 +2235,7 @@
     },
     {
       "id": "battle_select_10214_1",
-      "desc": "############## 食指 苦行者 [纸条] 浮士德 #############",
+      "desc": "############## 食指 苦行者 [纸条] 浮士德 14 #############",
       "dlg": "<color=#2890f0>进行对话并不违背指令之意。</color>"
     },
     {
@@ -2257,6 +2312,61 @@
       "id": "battle_special_10214_5",
       "desc": "",
       "dlg": "<color=#2890f0>是指令之意，望您莫存遗憾。</color>"
+    },
+    {
+      "id": "battle_select_10215_1",
+      "desc": "############ 蜘蛛巢 环指子辈 浮士德 15 ############",
+      "dlg": "<color=#f8e23a>请保持距离，仅用肉眼欣赏。</color>"
+    },
+    {
+      "id": "battle_endcommand_10215_1",
+      "desc": "",
+      "dlg": "<color=#f8e23a>灵感浮现出来了。</color>"
+    },
+    {
+      "id": "battle_enemy_break_10215_1",
+      "desc": "",
+      "dlg": "<color=#f8e23a>血管的厚度，还不错呢。</color>"
+    },
+    {
+      "id": "battle_kill_10215_1",
+      "desc": "",
+      "dlg": "<color=#f8e23a>终于变得亲密了。</color>"
+    },
+    {
+      "id": "battle_break_10215_1",
+      "desc": "",
+      "dlg": "<color=#f8e23a>你在害怕吗，法西娅？</color>"
+    },
+    {
+      "id": "battle_dead_10215_1",
+      "desc": "",
+      "dlg": "<color=#f8e23a>法……西娅……</color>"
+    },
+    {
+      "id": "battle_s2_10215_1_1",
+      "desc": "",
+      "dlg": "<color=#f8e23a>那个素材，我就收下了。</color>"
+    },
+    {
+      "id": "battle_s3_10215_1_1",
+      "desc": "",
+      "dlg": "<color=#f8e23a>以我的骨骼作为框架，以我的血肉盈满其中的，外在的艺术！</color>"
+    },
+    {
+      "id": "battle_special_10215_1",
+      "desc": "",
+      "dlg": "<color=#f8e23a>看来得向您展示一番了。这外在的艺术。</color>"
+    },
+    {
+      "id": "battle_special_10215_2",
+      "desc": "",
+      "dlg": "<color=#f8e23a>请勿破坏展品。</color>"
+    },
+    {
+      "id": "battle_special_10215_3",
+      "desc": "",
+      "dlg": "<color=#f8e23a>您总是能激发我的灵感呢。</color>"
     },
     {
       "id": "battle_select_10301_1",
@@ -2405,41 +2515,41 @@
     {
       "id": "battle_select_10306_1",
       "desc": "############ 中指 幼妹 堂吉诃德 ############",
-      "dlg": "<color=#ffef23>啊！是幼兄召集吾了吗？</color>"
+      "dlg": "<color=#e247eb>啊！是幼兄召集吾了吗？</color>"
     },
     {
       "id": "battle_endcommand_10306_1",
       "desc": "",
-      "dlg": "<color=#ffef23>哈哈！冲锋！</color>"
+      "dlg": "<color=#e247eb>哈哈！冲锋！</color>"
     },
     {
       "id": "battle_enemy_break_10306_1",
       "desc": "",
-      "dlg": "<color=#ffef23>汝快给吾振作起来！账簿上要求报复须于汝清醒时执行。</color>"
+      "dlg": "<color=#e247eb>汝快给吾振作起来！账簿上要求报复须于汝清醒时执行。</color>"
     },
     {
       "id": "battle_kill_10306_1",
       "desc": "",
-      "dlg": "<color=#ffef23>报复已执行。</color>"
+      "dlg": "<color=#e247eb>报复已执行。</color>"
     },
     {
       "id": "battle_break_10306_1",
       "desc": "",
-      "dlg": "<color=#ffef23>不……</color>"
+      "dlg": "<color=#e247eb>不……</color>"
     },
     {
       "id": "battle_dead_10306_1",
       "desc": "",
-      "dlg": "<color=#ffef23>吾在这里……倒下吗……但是，中指绝不遗忘……</color>"
+      "dlg": "<color=#e247eb>吾在这里……倒下吗……但是，中指绝不遗忘……</color>"
     },
     {
       "id": "battle_s3_10306_1_1",
       "desc": "",
-      "dlg": "<color=#ffef23>一笔勾销。</color>"
+      "dlg": "<color=#e247eb>一笔勾销。</color>"
     },
     {
       "id": "battle_select_10307_1",
-      "desc": "############ 脑叶公司堂吉诃德 ############",
+      "desc": "############ 脑叶公司 堂吉诃德 ############",
       "dlg": "<color=#ffef23>是否仍有需吾镇压之敌？</color>"
     },
     {
@@ -3665,32 +3775,32 @@
     {
       "id": "battle_select_10507_1",
       "desc": "############ 中指 幼弟 默尔索 7 ############",
-      "dlg": "<color=#293b95>我在翻阅账簿。</color>"
+      "dlg": "<color=#e247eb>我在翻阅账簿。</color>"
     },
     {
       "id": "battle_endcommand_10507_1",
       "desc": "",
-      "dlg": "<color=#293b95>悉数奉还。</color>"
+      "dlg": "<color=#e247eb>悉数奉还。</color>"
     },
     {
       "id": "battle_enemy_break_10507_1",
       "desc": "",
-      "dlg": "<color=#293b95>凭借这点决心就敢对我的家人出手吗。</color>"
+      "dlg": "<color=#e247eb>凭借这点决心就敢对我的家人出手吗。</color>"
     },
     {
       "id": "battle_kill_10507_1",
       "desc": "",
-      "dlg": "<color=#293b95>悉数奉还了。</color>"
+      "dlg": "<color=#e247eb>悉数奉还了。</color>"
     },
     {
       "id": "battle_break_10507_1",
       "desc": "",
-      "dlg": "<color=#293b95>呃。</color>"
+      "dlg": "<color=#e247eb>呃。</color>"
     },
     {
       "id": "battle_dead_10507_1",
       "desc": "",
-      "dlg": "<color=#293b95>不止……我……一个人……中指会记住……</color>"
+      "dlg": "<color=#e247eb>不止……我……一个人……中指会记住……</color>"
     },
     {
       "id": "battle_select_10508_1",
@@ -4053,8 +4163,63 @@
       "dlg": "<color=#ffe700>嗯，回收余弹。</color>"
     },
     {
+      "id": "battle_select_10515_1",
+      "desc": "############ 环指 野兽派 学徒 默尔索 15 ############",
+      "dlg": "<color=#d4dfe8>想让面对猎物的犬只停下的话……！</color>"
+    },
+    {
+      "id": "battle_endcommand_10515_1",
+      "desc": "",
+      "dlg": "<color=#d4dfe8>野性地(Sauvage)！</color>"
+    },
+    {
+      "id": "battle_enemy_break_10515_1",
+      "desc": "",
+      "dlg": "<color=#d4dfe8>如果彻底掌握犬类这一素材，</color>"
+    },
+    {
+      "id": "battle_kill_10515_1",
+      "desc": "",
+      "dlg": "<color=#d4dfe8>下次，我想尝试以你为素材。</color>"
+    },
+    {
+      "id": "battle_break_10515_1",
+      "desc": "",
+      "dlg": "<color=#d4dfe8>呜，但课题……</color>"
+    },
+    {
+      "id": "battle_dead_10515_1",
+      "desc": "",
+      "dlg": "<color=#d4dfe8>散发出死亡气息的……是，我的……作品啊。</color>"
+    },
+    {
+      "id": "battle_s3_10515_1_2",
+      "desc": "",
+      "dlg": "<color=#d4dfe8>向更具野性的深度……！</color>"
+    },
+    {
+      "id": "battle_special_10515_1",
+      "desc": "",
+      "dlg": "<color=#d4dfe8>收尾要足够强烈。</color>"
+    },
+    {
+      "id": "battle_special_10515_2",
+      "desc": "",
+      "dlg": "<color=#d4dfe8>咕呜！哈……</color>"
+    },
+    {
+      "id": "battle_special_10515_3",
+      "desc": "",
+      "dlg": "<color=#d4dfe8>嗯，爪痕模样的伤口……很是相称。</color>"
+    },
+    {
+      "id": "battle_special_10515_4",
+      "desc": "",
+      "dlg": "<color=#d4dfe8>灵感(Inspiration)，万分感谢。</color>"
+    },
+    {
       "id": "battle_select_10601_1",
-      "desc": "############ LCB罪人鸿璐 ############",
+      "desc": "############ LCB罪人 鸿璐 1 ############",
       "dlg": "<color=#5bffde>怎么了？但丁经理？</color>"
     },
     {
@@ -4079,13 +4244,13 @@
     },
     {
       "id": "battle_select_10602_1",
-      "desc": "############ 黑云鸿璐 ############",
+      "desc": "############ 黑云会若众 鸿璐 2 ############",
       "dlg": "<color=#5bffde>来了呢~但丁阁下。</color>"
     },
     {
       "id": "battle_endcommand_10602_1",
       "desc": "",
-      "dlg": "<color=#5bffde>虽没什么意思，我会照做的~</color>"
+      "dlg": "<color=#5bffde>虽然没什么意思，但我会照做的~</color>"
     },
     {
       "id": "battle_enemy_break_10602_1",
@@ -4104,7 +4269,7 @@
     },
     {
       "id": "battle_select_10603_1",
-      "desc": "############ 豆豆帮鸿璐 ############",
+      "desc": "############ 豆豆帮帮主 鸿璐 3 ############",
       "dlg": "<color=#5bffde>需要帮助吗？但丁经理？</color>"
     },
     {
@@ -4139,7 +4304,7 @@
     },
     {
       "id": "battle_select_10604_1",
-      "desc": "############ 六协 五科 鸿璐 ############",
+      "desc": "############ 六协会南部5科 鸿璐 4 ############",
       "dlg": "<color=#5bffde>你有话要说吗？</color>"
     },
     {
@@ -4169,7 +4334,7 @@
     },
     {
       "id": "battle_select_10605_1",
-      "desc": "############ K公司鸿璐 ############",
+      "desc": "############ K公司3级摘除人员 鸿璐 5 ############",
       "dlg": "<color=#5bffde>我正忙着呢~但会特地听您吩咐哦。</color>"
     },
     {
@@ -4199,7 +4364,7 @@
     },
     {
       "id": "battle_select_10606_1",
-      "desc": "############ W公司鸿璐 ############",
+      "desc": "############ W公司2级清扫人员 鸿璐 6 ############",
       "dlg": "<color=#5bffde>哦~您不该在工作期间来的。</color>"
     },
     {
@@ -4229,7 +4394,7 @@
     },
     {
       "id": "battle_select_10607_1",
-      "desc": "############ 吊钩鸿璐 ############",
+      "desc": "############ 吊钩事务所收尾人 鸿璐 7 ############",
       "dlg": "<color=#5bffde>啊，这样把他们吊起来不是很显眼吗？</color>"
     },
     {
@@ -4259,7 +4424,7 @@
     },
     {
       "id": "battle_select_10608_1",
-      "desc": "############ 10协会鸿璐 ############",
+      "desc": "############ Dieci协会南部4科 鸿璐 8 ############",
       "dlg": "<color=#5bffde>是的~我在听！</color>"
     },
     {
@@ -4295,11 +4460,11 @@
     {
       "id": "battle_s3_10608_1_3",
       "desc": "",
-      "dlg": "<color=#5bffde>为您打开知性。</color>"
+      "dlg": "<color=#5bffde>为您打开吧。</color>"
     },
     {
       "id": "battle_select_10609_1",
-      "desc": "############ 20区 圣愚 鸿璐 ############",
+      "desc": "############ 20区 圣愚 鸿璐 9 ############",
       "dlg": "<color=#5bffde>您对这起事件有什么疑问吗？</color>"
     },
     {
@@ -4334,7 +4499,7 @@
     },
     {
       "id": "battle_select_10610_1",
-      "desc": "############ 猎牙 鸿璐 ############",
+      "desc": "############ 猎牙事务所收尾人 鸿璐 10 ############",
       "dlg": "<color=#5bffde>我需要擦一擦武器上的血。</color>"
     },
     {
@@ -4364,7 +4529,7 @@
     },
     {
       "id": "battle_select_10611_1",
-      "desc": "############ 句点 鸿璐 ############",
+      "desc": "############ 句点事务所代表 鸿璐 11 ############",
       "dlg": "<color=#5bffde>很紧张吗？这时候深呼吸一下会有用哦。</color>"
     },
     {
@@ -4444,7 +4609,7 @@
     },
     {
       "id": "battle_select_10612_1",
-      "desc": "############ R公司鸿璐 ############",
+      "desc": "############ R公司第四集团军驯鹿队 鸿璐 12 ############",
       "dlg": "<color=#5bffde>安静一点……唔！不是叫你有话要说就趁战斗前说完吗！</color>"
     },
     {
@@ -4479,7 +4644,7 @@
     },
     {
       "id": "battle_select_10613_1",
-      "desc": "############ 君主 鸿璐 ############",
+      "desc": "############ 鸿园的君主 鸿璐 13 ############",
       "dlg": "<color=#5bffde>以血统治。</color>"
     },
     {
@@ -4666,6 +4831,96 @@
       "id": "battle_undead_10613_1-01",
       "desc": "battle_undead_10613_1-01",
       "dlg": "<color=#5bffde>直到志成，死亡啊，再一次与我擦身而过吧！</color>"
+    },
+    {
+      "id": "battle_select_10614_1",
+      "desc": "############ 蜘蛛巢 环指父辈 鸿璐 14 ############",
+      "dlg": "<color=#d9d9d9>嘘。参观时要保持安静。</color>"
+    },
+    {
+      "id": "battle_endcommand_10614_1",
+      "desc": "",
+      "dlg": "<color=#d9d9d9>您的感想如何！</color>"
+    },
+    {
+      "id": "battle_enemy_break_10614_1",
+      "desc": "",
+      "dlg": "<color=#d9d9d9>最后还有什么想说的吗……？</color>"
+    },
+    {
+      "id": "battle_kill_10614_1",
+      "desc": "",
+      "dlg": "<color=#d9d9d9>啊啊……多么美妙的临终哀嚎。</color>"
+    },
+    {
+      "id": "battle_break_10614_1",
+      "desc": "",
+      "dlg": "<color=#d9d9d9>是我……不懂如何欣赏吗……</color>"
+    },
+    {
+      "id": "battle_dead_10614_1",
+      "desc": "",
+      "dlg": "<color=#d9d9d9>原来是你啊。能将我埋葬之人……</color>"
+    },
+    {
+      "id": "battle_s3_10614_1_2",
+      "desc": "",
+      "dlg": "<color=#d9d9d9>你听见了吗？那由提比娅的一对肱骨与二十四根肋骨奏响的旋律！</color>"
+    },
+    {
+      "id": "battle_special_10614_1",
+      "desc": "",
+      "dlg": "<color=#d9d9d9>不能再让各位观众……看到更多的丑态了。</color>"
+    },
+    {
+      "id": "battle_special_10614_1-01",
+      "desc": "",
+      "dlg": "<color=#d9d9d9>不能再让各位观众……看到更多的丑态了。</color>"
+    },
+    {
+      "id": "battle_special_10614_2",
+      "desc": "",
+      "dlg": "<color=#d9d9d9>请勿破坏展品！</color>"
+    },
+    {
+      "id": "battle_special_10614_3",
+      "desc": "",
+      "dlg": "<color=#d9d9d9>浮士德？是时候展示人体派的艺术了。</color>"
+    },
+    {
+      "id": "battle_special_10614_4",
+      "desc": "",
+      "dlg": "<color=#d9d9d9>闭馆时间到了哦。那么，再会了！</color>"
+    },
+    {
+      "id": "battle_special_10614_4-01",
+      "desc": "",
+      "dlg": "<color=#d9d9d9>闭馆时间到了哦。那么，再会了！</color>"
+    },
+    {
+      "id": "battle_special_10614_4-02",
+      "desc": "",
+      "dlg": "<color=#d9d9d9>闭馆时间到了哦。那么，再会了！</color>"
+    },
+    {
+      "id": "battle_special_10614_4-03",
+      "desc": "",
+      "dlg": "<color=#d9d9d9>闭馆时间到了哦。那么，再会了！</color>"
+    },
+    {
+      "id": "battle_special_10614_5",
+      "desc": "",
+      "dlg": "<color=#d9d9d9>真遗憾呢，我原本还期望它能成为留下更美妙伤痕的作品。</color>"
+    },
+    {
+      "id": "battle_special_10614_6",
+      "desc": "",
+      "dlg": "<color=#d9d9d9>啊啊……真是艺术呢。</color>"
+    },
+    {
+      "id": "battle_special_10614_7",
+      "desc": "",
+      "dlg": "<color=#d9d9d9>请在那里，好好看着吧！</color>"
     },
     {
       "id": "battle_select_10701_1",
@@ -5268,6 +5523,86 @@
       "dlg": "<color=#ff100f>等的我脖子都快断了……嘿嘿，全都宰了！</color>"
     },
     {
+      "id": "battle_select_10715_1",
+      "desc": "############ 中指 幼兄 希斯克利夫 15 ############",
+      "dlg": "<color=#db19e6>嗯……怎么样，柔顺多了吧？</color>"
+    },
+    {
+      "id": "battle_endcommand_10715_1",
+      "desc": "",
+      "dlg": "<color=#db19e6>没错，我来了！</color>"
+    },
+    {
+      "id": "battle_enemy_break_10715_1",
+      "desc": "",
+      "dlg": "<color=#db19e6>意识不明！好，划去一行。</color>"
+    },
+    {
+      "id": "battle_kill_10715_1",
+      "desc": "",
+      "dlg": "<color=#db19e6>妈的，起来！你还得死上十一次！</color>"
+    },
+    {
+      "id": "battle_break_10715_1",
+      "desc": "",
+      "dlg": "<color=#db19e6>咳……呸！</color>"
+    },
+    {
+      "id": "battle_dead_10715_1",
+      "desc": "",
+      "dlg": "<color=#db19e6>咳哈……即使我现在，死了……长兄的复仇也会将你们……！</color>"
+    },
+    {
+      "id": "battle_s3_10715_1_5-02",
+      "desc": "",
+      "dlg": "<color=#db19e6>将痛苦，铭刻于你！</color>"
+    },
+    {
+      "id": "battle_special_10715_1_1",
+      "desc": "",
+      "dlg": "<color=#db19e6>游戏到此为止。</color>"
+    },
+    {
+      "id": "battle_special_10715_1_2",
+      "desc": "",
+      "dlg": "<color=#db19e6>加大音量！</color>"
+    },
+    {
+      "id": "battle_special_10715_2",
+      "desc": "",
+      "dlg": "<color=#db19e6>哈！</color>"
+    },
+    {
+      "id": "battle_special_10715_2_1",
+      "desc": "",
+      "dlg": "<color=#db19e6>全员……</color>"
+    },
+    {
+      "id": "battle_special_10715_2_2",
+      "desc": "",
+      "dlg": "<color=#db19e6>处刑！</color>"
+    },
+    {
+      "id": "battle_special_10715_3_1",
+      "desc": "",
+      "dlg": "<color=#db19e6>一群豆丁……</color>"
+    },
+    {
+      "id": "battle_special_10715_3_2",
+      "desc": "",
+      "dlg": "<color=#db19e6>给我，滚开！</color>"
+    },
+    {
+      "id": "battle_special_10715_3_3",
+      "desc": "",
+      "dlg": "<color=#db19e6>试着阻止我吧！</color>"
+    },
+    {
+      "id": "battle_special_10715_4",
+      "desc": "",
+      "dlg": "<color=#db19e6>这里的所有人……都得即刻处刑。</color>"
+    },
+    {
       "id": "battle_select_10801_1",
       "desc": "############ LCB 罪人 以实玛利 1 ############",
       "dlg": "<color=#ff9500>我现在很忙，所以请长话短说。</color>"
@@ -5585,42 +5920,42 @@
     {
       "id": "battle_select_10810_1",
       "desc": "############ Zwei协会 西部3科 以实玛利 10 ############",
-      "dlg": "<color=#2e8dd1>正在战斗，请长话短说。</color>"
+      "dlg": "<color=#ff9500>正在战斗，请长话短说。</color>"
     },
     {
       "id": "battle_endcommand_10810_1",
       "desc": "",
-      "dlg": "<color=#2e8dd1>发现危险人物。准备镇压。</color>"
+      "dlg": "<color=#ff9500>发现危险人物。准备镇压。</color>"
     },
     {
       "id": "battle_enemy_break_10810_1",
       "desc": "",
-      "dlg": "<color=#2e8dd1>要是你委托了Zwei的话……</color>"
+      "dlg": "<color=#ff9500>要是你委托了Zwei的话……</color>"
     },
     {
       "id": "battle_kill_10810_1",
       "desc": "",
-      "dlg": "<color=#2e8dd1>……那你的头就不会被这巨剑劈开了吧。</color>"
+      "dlg": "<color=#ff9500>……那你的头就不会被这巨剑劈开了吧。</color>"
     },
     {
       "id": "battle_break_10810_1",
       "desc": "",
-      "dlg": "<color=#2e8dd1>啊，啊啊……？</color>"
+      "dlg": "<color=#ff9500>啊，啊啊……？</color>"
     },
     {
       "id": "battle_dead_10810_1",
       "desc": "",
-      "dlg": "<color=#2e8dd1>被击败了……尽快请求支援……</color>"
+      "dlg": "<color=#ff9500>被击败了……尽快请求支援……</color>"
     },
     {
       "id": "battle_s3_10810_1_4-01",
       "desc": "",
-      "dlg": "<color=#2e8dd1>最佳防御！</color>"
+      "dlg": "<color=#ff9500>最佳防御！</color>"
     },
     {
       "id": "battle_g3_10810_1-02",
       "desc": "",
-      "dlg": "<color=#2e8dd1>大剑防护！</color>"
+      "dlg": "<color=#ff9500>大剑防护！</color>"
     },
     {
       "id": "battle_select_10811_1",
@@ -5780,7 +6115,7 @@
     {
       "id": "battle_special_10813_6",
       "desc": "",
-      "dlg": "<color=#ff9500>芒与雨…</color>"
+      "dlg": "<color=#ff9500>芒与雨……</color>"
     },
     {
       "id": "battle_special_10813_7",
@@ -5859,7 +6194,7 @@
     },
     {
       "id": "battle_select_10901_1",
-      "desc": "############ LCB罪人罗佳 ############",
+      "desc": "############ LCB罪人 罗佳 1 ############",
       "dlg": "<color=#a60000>怎么啦？想我了吗？</color>"
     },
     {
@@ -5884,7 +6219,7 @@
     },
     {
       "id": "battle_select_10902_1",
-      "desc": "############ 黑云会 若众 罗佳 ############",
+      "desc": "############ 黑云会 若众 罗佳 2 ############",
       "dlg": "<color=#a60000>哎呀，我可不喜欢在工作的时候被打扰~</color>"
     },
     {
@@ -5909,7 +6244,7 @@
     },
     {
       "id": "battle_select_10903_1",
-      "desc": "############ LCCB系长 罗佳 ############",
+      "desc": "############ LCCB系长 罗佳 3 ############",
       "dlg": "<color=#a60000>嗯？有什么需要的吗？</color>"
     },
     {
@@ -5939,7 +6274,7 @@
     },
     {
       "id": "battle_select_10904_1",
-      "desc": "############ N公司中锤罗佳 ############",
+      "desc": "############ N公司 中锤 罗佳 4 ############",
       "dlg": "<color=#a60000>你在呼唤我吗？</color>"
     },
     {
@@ -5969,7 +6304,7 @@
     },
     {
       "id": "battle_select_10905_1",
-      "desc": "############ 玫瑰扳手工坊 代表 罗佳 ############",
+      "desc": "############ 玫瑰扳手工坊 代表 罗佳 5 ############",
       "dlg": "<color=#a60000>嗯？现在很忙，有事快点！</color>"
     },
     {
@@ -6004,7 +6339,7 @@
     },
     {
       "id": "battle_select_10906_1",
-      "desc": "############ Zwei协会 南部5科 罗佳 ############",
+      "desc": "############ Zwei协会 南部5科 罗佳 6 ############",
       "dlg": "<color=#a60000>躲在我身后！</color>"
     },
     {
@@ -6034,7 +6369,7 @@
     },
     {
       "id": "battle_select_10907_1",
-      "desc": "############ Dieci协会 南部4科 罗佳 ############",
+      "desc": "############ Dieci协会 南部4科 罗佳 7 ############",
       "dlg": "<color=#a60000>哎？能吃零食了吗？！</color>"
     },
     {
@@ -6069,7 +6404,7 @@
     },
     {
       "id": "battle_select_10908_1",
-      "desc": "############ 六协会 南部四科科长 罗佳 ############",
+      "desc": "############ 六协会 南部四科科长 罗佳 8 ############",
       "dlg": "<color=#a60000>哦，很烫吧？你在远处说话我也能听见！</color>"
     },
     {
@@ -6104,7 +6439,7 @@
     },
     {
       "id": "battle_select_10909_1",
-      "desc": "############ T公司 2级征收人员 罗佳 ############",
+      "desc": "############ T公司 2级征收人员 罗佳 9 ############",
       "dlg": "<color=#a60000>能说快点吗？你在字面意思上浪费时间。</color>"
     },
     {
@@ -6134,7 +6469,7 @@
     },
     {
       "id": "battle_select_10910_1",
-      "desc": "############ Девять协会 北部3科 罗佳 ############",
+      "desc": "############ Девять协会 北部3科 罗佳 10 ############",
       "dlg": "<color=#a60000>之后再说吧。派送时间延长的话可就危险了。</color>"
     },
     {
@@ -6214,7 +6549,7 @@
     },
     {
       "id": "battle_select_10911_1",
-      "desc": "############ 拉·曼却领 公主 罗佳 ############",
+      "desc": "############ 拉·曼却领 公主 罗佳 11 ############",
       "dlg": "<color=#a60000>别在游行中与我搭话会比较好吧？</color>"
     },
     {
@@ -6249,7 +6584,7 @@
     },
     {
       "id": "battle_select_10912_1",
-      "desc": "############ 黑兽-巳 罗佳 ############",
+      "desc": "############ 黑兽-巳 罗佳 12 ############",
       "dlg": "<color=#bf2cfc>主公，你叫我吗？有重要事务随时和我说就好。</color>"
     },
     {
@@ -6284,7 +6619,7 @@
     },
     {
       "id": "battle_select_10913_1",
-      "desc": "############ 脑叶公司E.G.O::泪锋之剑 罗佳 ############",
+      "desc": "############ 脑叶公司E.G.O::泪锋之剑 罗佳 13 ############",
       "dlg": "<color=#3675e3>嗯……要不待会聊？我现在的心情不怎么样。</color>"
     },
     {
@@ -6334,7 +6669,7 @@
     },
     {
       "id": "battle_select_10914_1",
-      "desc": "############ R公司第四集团军 驯鹿队 罗佳 ############",
+      "desc": "############ R公司第四集团军 驯鹿队 罗佳 14 ############",
       "dlg": "<color=#f6851c>……哈哈。快看啊。不管是他们还是我们，都在闪闪发光呢？</color>"
     },
     {
@@ -6366,6 +6701,91 @@
       "id": "battle_s3_10914_1_4",
       "desc": "",
       "dlg": "<color=#f6851c>啊哈哈……烟花很漂亮吧？</color>"
+    },
+    {
+      "id": "battle_select_10915_1",
+      "desc": "############ 环指 野兽派 讲解员 罗佳 15 ############",
+      "dlg": "<color=#8dc2eb>再看下去可是会被磨灭的哦~？</color>"
+    },
+    {
+      "id": "battle_endcommand_10915_1",
+      "desc": "",
+      "dlg": "<color=#8dc2eb>用在任何地方都见不到的色彩。</color>"
+    },
+    {
+      "id": "battle_enemy_break_10915_1",
+      "desc": "",
+      "dlg": "<color=#8dc2eb>怎么了？不小心挠到你了吗？</color>"
+    },
+    {
+      "id": "battle_kill_10915_1",
+      "desc": "",
+      "dlg": "<color=#8dc2eb>永别了(Adieu)。</color>"
+    },
+    {
+      "id": "battle_break_10915_1",
+      "desc": "",
+      "dlg": "<color=#8dc2eb>这次的素材比看上去更狂野啊？</color>"
+    },
+    {
+      "id": "battle_dead_10915_1",
+      "desc": "",
+      "dlg": "<color=#8dc2eb>哈。我没打算这么早就……让我的作品升值啊……</color>"
+    },
+	{
+      "id": "battle_s3_10915_1_1",
+      "desc": "",
+      "dlg": "<color=#8dc2eb>这样不三不四的艺术……</color>"
+    },
+    {
+      "id": "battle_s3_10915_1_5",
+      "desc": "",
+      "dlg": "<color=#8dc2eb>只能在撕咬殆尽之后重作！</color>"
+    },
+    {
+      "id": "battle_special_10915_1_1",
+      "desc": "",
+      "dlg": "<color=#8dc2eb>神经(Nerf)，排列！</color>"
+    },
+    {
+      "id": "battle_special_10915_1_2",
+      "desc": "",
+      "dlg": "<color=#8dc2eb><i>啊哈哈哈哈哈哈……！</i></color>"
+    },
+    {
+      "id": "battle_special_10915_1_3",
+      "desc": "",
+      "dlg": "<color=#8dc2eb>原色呈现！</color>"
+    },
+    {
+      "id": "battle_special_10915_2_1",
+      "desc": "",
+      "dlg": "<color=#8dc2eb>让我来品鉴一番吧？</color>"
+    },
+    {
+      "id": "battle_special_10915_2_2",
+      "desc": "",
+      "dlg": "<color=#8dc2eb>密度有些令人惋惜呢？</color>"
+    },
+    {
+      "id": "battle_special_10915_2_3",
+      "desc": "",
+      "dlg": "<color=#8dc2eb>或许还不错。</color>"
+    },
+    {
+      "id": "battle_special_10915_3",
+      "desc": "",
+      "dlg": "<color=#8dc2eb>我倾尽心血缝制而成的珍藏……就特别展示给你看吧！</color>"
+    },
+    {
+      "id": "battle_special_10915_4",
+      "desc": "",
+      "dlg": "<color=#8dc2eb>厚涂(Impasto)。</color>"
+    },
+    {
+      "id": "battle_special_10915_5",
+      "desc": "",
+      "dlg": "<color=#8dc2eb>很好！鉴赏就到此结束——</color>"
     },
     {
       "id": "battle_select_11001_1",
@@ -6815,37 +7235,37 @@
     {
       "id": "battle_select_11012_1",
       "desc": "############ 中指 幼弟 辛克莱 12 ############",
-      "dlg": "<color=#e81aff>有其他人插手了吗？</color>"
+      "dlg": "<color=#e247eb>有其他人插手了吗？</color>"
     },
     {
       "id": "battle_endcommand_11012_1",
       "desc": "",
-      "dlg": "<color=#e81aff>让他们粉身碎骨。</color>"
+      "dlg": "<color=#e247eb>让他们粉身碎骨。</color>"
     },
     {
       "id": "battle_enemy_break_11012_1",
       "desc": "",
-      "dlg": "<color=#e81aff>别反抗。</color>"
+      "dlg": "<color=#e247eb>别反抗。</color>"
     },
     {
       "id": "battle_kill_11012_1",
       "desc": "",
-      "dlg": "<color=#e81aff>……好嘞，从账簿里划掉。</color>"
+      "dlg": "<color=#e247eb>……好嘞，从账簿里划掉。</color>"
     },
     {
       "id": "battle_break_11012_1",
       "desc": "",
-      "dlg": "<color=#e81aff>你这……混蛋！</color>"
+      "dlg": "<color=#e247eb>你这……混蛋！</color>"
     },
     {
       "id": "battle_dead_11012_1",
       "desc": "",
-      "dlg": "<color=#e81aff>呵……呵。就算我死了……你的名字也会留在账簿里。</color>"
+      "dlg": "<color=#e247eb>呵……呵。就算我死了……你的名字也会留在账簿里。</color>"
     },
     {
       "id": "battle_s3_11012_1_3-02",
       "desc": "",
-      "dlg": "<color=#e81aff>火辣辣地疼吧？</color>"
+      "dlg": "<color=#e247eb>火辣辣地疼吧？</color>"
     },
     {
       "id": "battle_select_11013_1",
@@ -7880,7 +8300,7 @@
     {
       "id": "battle_s3_11210_1-03",
       "desc": "",
-      "dlg": "<color=#a65411>嗯…！血…! 血！！</color>"
+      "dlg": "<color=#a65411>嗯…！血…！血！！</color>"
     },
     {
       "id": "battle_s3_11210_1-02",
@@ -8015,7 +8435,7 @@
     {
       "id": "battle_s3_11213_1_4",
       "desc": "",
-      "dlg": "<color=#c0c0c0>破绽百出……！</color>"
+      "dlg": "<color=#c0c0c0>罅隙百出……！</color>"
     },
     {
       "id": "battle_s3_11213_1_5",
@@ -8112,7 +8532,6 @@
       "desc": "",
       "dlg": "<color=#65f8ed>到这边来。我会保护你的安全。</color>"
     },
-    
     {
       "id": "battle_select_11215_1",
       "desc": "############ 脑叶公司E.G.O::AEDD 格里高尔 15 ############",

@@ -155,7 +155,18 @@
         "type": "string",
         "default": "assets/voices/welcome_1.wav",
         "value": "assets/voices/welcome_1.wav",
-        "description": "启动器欢迎音效的文件路径\n可以替换为你喜欢的音效文件\n支持mp3和wav格式\n如果不想要欢迎音效, 可以将其设置为空字符串",
+        "description": "启动器欢迎音效的文件路径\n可以替换为你喜欢的音效文件\n仅支持wav格式\n如果不想要欢迎音效, 可以将其设置为空字符串",
+        "page": "其它"
+    },
+    "bg_gaussian_blur": {
+        "name": "背景模糊",
+        "type": "float",
+        "default": 3.0,
+        "value": 3.0,
+        "description": "主界面背景模糊效果的强度\n越大的值意味着模糊越强",
+        "min": 0.0,
+        "max": 10.0,
+        "step": 1.0,
         "page": "其它"
     },
     "bg_color": {
@@ -169,8 +180,8 @@
     "version_info": {
         "name": "版本信息",
         "type": "UNABLE_TO_EDIT",
-        "default": "V0.6.0-beta.fix.1",
-        "value": "V0.6.0-beta.fix.1",
+        "default": "V0.6.0-pre.2.fix.1",
+        "value": "V0.6.0-pre.2.fix.1",
         "description": "当前应用程序的版本信息"
     },
     "mems": {
@@ -180,7 +191,7 @@
             "tray_hint": false
         },
         "value": {
-            "tray_hint": true
+            "tray_hint": false
         },
         "description": "程序运行时的缓存数据\n不建议修改"
     }

@@ -3,7 +3,6 @@ from tkinter import ttk, font, messagebox
 import os
 import random
 import sys
-import json
 from PIL import Image, ImageTk, ImageFilter
 import pymysql
 import threading
@@ -12,10 +11,15 @@ from functions.pages.settings_page import init_settings_page
 from functions.base.settings_manager import get_settings_manager
 from functions.pages.loading_info import create_simple_splash
 from functions.base.window_ulits import center_window
-from functions.dowloads.sql_manager import check_new_version, notify_new_version
+from functions.dowloads.sql_manager import notify_new_version
+from functions.update.version_ulits import check_version_update
 from functions.base.sound_ulits import play_sound
 from functions.addon.addon_ulit import AddonManager
+from threading import Thread
 import urllib3
+import traceback
+from rich import print
+import shutil
 
 # 禁用 urllib3 的警告
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -35,13 +39,41 @@ settings_manager = get_settings_manager()
 bg_color:str = settings_manager.get_setting("bg_color") # type: ignore
 VERSION_INFO:str = settings_manager.get_setting("version_info") # type: ignore
 
+import re
+
 class TerminalRedirector:
-    """重定向print输出到文本组件的类"""
+    """重定向print输出到文本组件的类（支持ANSI转义序列解析）"""
+    
+    # ANSI颜色代码到Tkinter颜色的映射
+    ANSI_COLOR_MAP = {
+        '30': '#000000',  # 黑色
+        '31': '#ff6b6b',  # 红色
+        '32': '#4bff4e',  # 绿色
+        '33': '#f9ca24',  # 黄色
+        '34': '#4ecbff',  # 蓝色
+        '35': '#a29bfe',  # 紫色
+        '36': '#00cec9',  # 青色
+        '37': '#ffffff',  # 白色
+        '90': '#636e72',  # 亮黑色
+        '91': '#ff7675',  # 亮红色
+        '92': '#55efc4',  # 亮绿色
+        '93': '#ffeaa7',  # 亮黄色
+        '94': '#74b9ff',  # 亮蓝色
+        '95': '#a29bfe',  # 亮紫色
+        '96': '#81ecec',  # 亮青色
+        '97': '#ffffff',  # 亮白色
+    }
+    
     def __init__(self, text_widget):
         self.text_widget = text_widget
         self.original_stdout = sys.stdout
         self.original_stderr = sys.stderr
         self.buffer = ""  # 缓冲区用于处理部分消息
+        self.current_color = None  # 当前颜色状态
+        self.is_typing = False  # 是否正在打字
+        self.enable_type = False
+        self.typing_queue = []  # 打字队列
+        self.initialized = False  # 组件是否已初始化
     
     def write(self, message):
         """重定向write方法"""
@@ -59,36 +91,58 @@ class TerminalRedirector:
                 self.buffer = ""
     
     def _add_message_to_terminal(self, message):
-        """添加格式化消息到终端"""
-        # if message[0] == '|':
-        #     return
-        # print('|'+message, file=self.original_stdout)
+        """添加格式化消息到终端（支持ANSI转义序列和打字机效果）"""
+        # 如果组件未初始化，直接输出到原始stdout
+        if not self.initialized or not self.text_widget:
+            print(message, file=self.original_stdout)
+            return
+            
+        # 过滤以 | 开头的消息（调试信息）
+        if message.startswith('|'):
+            print(message[1:], file=self.original_stdout)
+            return
+            
         message = self.process_message(message)
 
         try:
             if '\r' in message:
                 return
-            self.text_widget.config(state=tk.NORMAL)
             
+            # 超过阈值直接输出，不使用打字机效果
+            if len(message) > 30:
+                # 如果正在打字，先暂停并清空当前输出，然后直接输出
+                if self.is_typing:
+                    self.is_typing = False
+                    self.typing_queue = []  # 清空队列
+                self._direct_output(message)
+                return
+            
+            # 添加到打字队列
+            self.typing_queue.append(message)
+            
+            # 如果当前没有在打字，开始打字
+            if not self.is_typing:
+                self._start_typing()
+        
+        except Exception as e:
+            print(f"_add_message_to_terminal error: {e}", file=self.original_stdout)
+            pass
+    
+    def _direct_output(self, message):
+        """直接输出消息（不使用打字机效果）"""
+        try:
             # 添加时间戳
             import datetime
             timestamp = datetime.datetime.now().strftime("%H:%M:%S")
-            
-            # 根据消息内容确定级别
-            level = "info"
-            if "❌" in message:
-                level = "error"
-            elif "✅" in message:
-                level = "success"
-            elif "⚠️" in message:
-                level = "warning"
-            elif ("🔄" in message) or ("📦" in message):
-                level = "wait"
-            
-            # 插入带时间戳和颜色的消息
             timestamp_str = f'[{timestamp}]' if '[INFO]' not in message else ''
+            
+            self.text_widget.config(state=tk.NORMAL)
+            
+            # 插入带时间戳
             self.text_widget.insert(tk.END, timestamp_str, "info")
-            self.text_widget.insert(tk.END, message + "\n", level)
+            
+            # 解析ANSI转义序列并插入带样式的文本
+            self._insert_with_ansi(message + "\n")
             
             # 自动滚动到底部
             self.text_widget.see(tk.END)
@@ -98,9 +152,233 @@ class TerminalRedirector:
             
             # 立即更新显示
             self.text_widget.update_idletasks()
-        
-        except:
+        except Exception as e:
+            print(f"_direct_output error: {e}", file=self.original_stdout)
             pass
+    
+    def _start_typing(self):
+        """开始打字机效果输出"""
+        if not self.typing_queue:
+            self.is_typing = False
+            return
+        
+        self.is_typing = True
+        message = self.typing_queue.pop(0)
+        
+        # 添加时间戳
+        import datetime
+        timestamp = datetime.datetime.now().strftime("%H:%M:%S")
+        timestamp_str = f'[{timestamp}]' if '[INFO]' not in message else ''
+        
+        # 处理消息，解析ANSI转义序列
+        processed_parts = self._prepare_typing_parts(message + "\n", timestamp_str)
+        
+        # 计算打字速度：文字越多，间隔越短
+        total_chars = sum(len(part['text']) for part in processed_parts)
+        base_delay = 10  # 基础间隔时间（毫秒）
+        min_delay = 1   # 最短间隔时间
+        # 根据消息长度动态调整间隔时间
+        # 如果太长，直接为最小
+        delay = max(min_delay, base_delay - min(base_delay - min_delay, total_chars * 0.5))
+        
+        # 开始逐字输出
+        self._type_next_char(processed_parts, 0, 0, delay)
+    
+    def _prepare_typing_parts(self, message, timestamp_str):
+        """准备打字的内容片段（包含样式信息）"""
+        parts = []
+        
+        # 添加时间戳
+        if timestamp_str:
+            parts.append({'text': timestamp_str, 'tag': 'info', 'color': None})
+        
+        # 先为路径添加引号和紫色标记
+        message = self._quote_paths(message)
+        
+        # 匹配ANSI转义序列
+        ansi_pattern = re.compile(r'(\x1b\[[0-9;]*m|\033\[[0-9;]*m)')
+        message_parts = ansi_pattern.split(message)
+        
+        current_color = None
+        
+        for part in message_parts:
+            if not part:
+                continue
+            
+            # 检查是否为ANSI转义序列
+            if ansi_pattern.match(part):
+                # 解析ANSI代码 - 不输出转义序列本身，只更新颜色状态
+                match = re.search(r'\[([0-9;]+)m', part)
+                if match:
+                    codes = match.group(1).split(';')
+                    for c in codes:
+                        if c == '0':
+                            current_color = None
+                        elif c in self.ANSI_COLOR_MAP:
+                            current_color = self.ANSI_COLOR_MAP[c]
+            else:
+                # 根据消息内容确定级别
+                level = "info"
+                if "❌" in part:
+                    level = "error"
+                elif "✅" in part:
+                    level = "success"
+                elif "⚠️" in part:
+                    level = "warning"
+                elif ("🔄" in part) or ("📦" in part):
+                    level = "wait"
+                
+                # 使用颜色或级别
+                if current_color:
+                    parts.append({'text': part, 'tag': None, 'color': current_color})
+                else:
+                    parts.append({'text': part, 'tag': level, 'color': None})
+                
+        return parts
+    
+    def _type_next_char(self, parts, part_idx, char_idx, delay):
+        """递归输出下一个字符"""
+        # 如果已经停止打字，直接返回
+        if not self.is_typing:
+            return
+            
+        try:
+            if part_idx >= len(parts):
+                # 所有内容输出完毕
+                self.text_widget.see(tk.END)
+                self.text_widget.config(state=tk.DISABLED)
+                self.text_widget.update_idletasks()
+                
+                # 继续处理队列中的下一条消息
+                root = self.text_widget.winfo_toplevel()
+                root.after(0, self._start_typing)
+                return
+            
+            current_part = parts[part_idx]
+            
+            if char_idx >= len(current_part['text']):
+                # 当前片段已输出完毕，处理下一个片段
+                self._type_next_char(parts, part_idx + 1, 0, delay)
+                return
+            
+            # 输出单个字符
+            self.text_widget.config(state=tk.NORMAL)
+            
+            char = current_part['text'][char_idx]
+            tag = current_part['tag']
+            color = current_part['color']
+            
+            # 根据颜色或标签插入字符
+            if color:
+                # 使用自定义颜色
+                color_tag = f"color_{color.replace('#', '')}"
+                if color_tag not in self.text_widget.tag_names():
+                    self.text_widget.tag_config(color_tag, foreground=color)
+                self.text_widget.insert(tk.END, char, color_tag)
+            elif tag:
+                # 使用预定义标签
+                self.text_widget.insert(tk.END, char, tag)
+            else:
+                # 无样式
+                self.text_widget.insert(tk.END, char)
+            
+            self.text_widget.see(tk.END)
+            self.text_widget.update_idletasks()
+            
+            # 继续输出下一个字符
+            # 通过text_widget获取根窗口
+            root = self.text_widget.winfo_toplevel()
+            root.after(int(delay), lambda: self._type_next_char(parts, part_idx, char_idx + 1, delay))
+            
+        except Exception as e:
+            print(f"_type_next_char error: {e}", file=self.original_stdout)
+            # 继续处理，避免卡住
+            self.is_typing = False
+            self._start_typing()
+            
+    def _insert_with_ansi(self, message):
+        """解析ANSI转义序列并插入文本（支持路径添加引号和紫色）"""
+        # 先为路径添加引号和紫色标记
+        message = self._quote_paths(message)
+        
+        # 匹配ANSI转义序列：\x1b[...m 或 \033[...m
+        ansi_pattern = re.compile(r'(\x1b\[[0-9;]*m|\033\[[0-9;]*m)')
+        parts = ansi_pattern.split(message)
+        
+        for part in parts:
+            if not part:
+                continue
+            
+            # 检查是否为ANSI转义序列
+            if ansi_pattern.match(part):
+                # 解析ANSI代码
+                self._parse_ansi_code(part)
+            else:
+                # 根据消息内容确定级别
+                level = "info"
+                if "❌" in part:
+                    level = "error"
+                elif "✅" in part:
+                    level = "success"
+                elif "⚠️" in part:
+                    level = "warning"
+                elif ("🔄" in part) or ("📦" in part):
+                    level = "wait"
+                
+                # 插入普通文本，使用当前颜色或级别
+                if self.current_color:
+                    # 使用ANSI颜色
+                    tag_name = f"ansi_{self.current_color}"
+                    if tag_name not in self.text_widget.tag_names():
+                        self.text_widget.tag_config(tag_name, foreground=self.current_color)
+                    self.text_widget.insert(tk.END, part, tag_name)
+                else:
+                    # 使用默认级别颜色
+                    self.text_widget.insert(tk.END, part, level)
+        
+        # 重置颜色状态
+        self.current_color = None
+
+    def _quote_paths(self, text):
+        """为文本中的路径添加引号和紫色效果"""
+        if not text:
+            return text
+        
+        # 匹配路径模式：
+        # 1. Windows路径：C:\xxx\yyy 或 C:/xxx/yyy
+        # 2. 包含路径分隔符的路径（支持包含空格但不包含换行）
+        # 3. 相对路径如 mods/xxx 或 extra_files
+        path_pattern = re.compile(
+            r'(?<!")'  # 前面没有引号
+            r'(|^)'  # 前面是空格或行首
+            r'([A-Za-z]:[/\\][^"\n<>|*?]*|[^\s"\n<>|*?]*[/\\][^"\n<>|*?]*)'  # 路径（排除换行符）
+            r'(?=(\s|$))'  # 后面是空白或行尾
+        )
+        
+        def replace_match(match):
+            prefix = match.group(1)
+            path = match.group(2)
+            # 如果路径已经有引号则不处理
+            if path.startswith('"') and path.endswith('"'):
+                return prefix + path
+            # 添加紫色ANSI转义序列和引号
+            return f'{prefix}\x1b[35m"{path}"\x1b[0m'
+        
+        return path_pattern.sub(replace_match, text)
+    
+    def _parse_ansi_code(self, code):
+        """解析ANSI转义序列"""
+        # 提取数字代码（如：\x1b[33m -> 33）
+        match = re.search(r'\[([0-9;]+)m', code)
+        if match:
+            codes = match.group(1).split(';')
+            for c in codes:
+                if c == '0':
+                    # 重置样式
+                    self.current_color = None
+                elif c in self.ANSI_COLOR_MAP:
+                    # 设置前景色
+                    self.current_color = self.ANSI_COLOR_MAP[c]
 
     @staticmethod
     def process_message(message:str) -> str: # type: ignore
@@ -158,6 +436,7 @@ class TerminalRedirector:
         if not debug:
             sys.stdout = self
             sys.stderr = self
+            self.initialized = True  # 标记为已初始化
     
     def stop_redirect(self):
         """停止重定向"""
@@ -482,13 +761,13 @@ class FaustLauncherApp:
 
     def on_tab_changed(self, event):
         """标签页切换时的动画效果"""
-        # play_sound("assets/voices/click.wav")
-
+        play_sound("assets/voices/click.wav")
+        
         # 获取当前选中的标签页
         current_tab = self.notebook.index(self.notebook.select())
 
         if current_tab == 3:
-            print("切换到插件&Mod管理页，正在刷新数据...")
+            # print("切换到插件&Mod管理页，正在刷新数据...")
             self.mod_addon_page.refresh_all_tabs()
 
     def load_background_images(self):
@@ -539,7 +818,8 @@ class FaustLauncherApp:
                 image = image.resize((new_width, new_height), Image.Resampling.LANCZOS)
                 
                 # 应用高斯模糊效果
-                blurred_image = image.filter(ImageFilter.GaussianBlur(radius=5))
+                gaussian_level: float = settings_manager.get_setting('bg_gaussian_blur') # type: ignore
+                blurred_image = image.filter(ImageFilter.GaussianBlur(radius=gaussian_level))
                 
                 # 转换为PhotoImage
                 bg_image = ImageTk.PhotoImage(blurred_image)
@@ -594,12 +874,11 @@ class FaustLauncherApp:
         style.configure("Title.TLabel",
                        background=self.bg_color,
                        foreground='white',
-                       font=('Microsoft YaHei UI', 18, 'bold'))
+                       font=('Microsoft YaHei UI', 23, 'bold'))
         style.configure("Subtitle.TLabel",
                        background=self.bg_color,
                        foreground='white',
                        font=('Microsoft YaHei UI', 12))
-        
         # 配置标签框架样式 - 使用浅色背景
         style.configure("Custom.TLabelframe",
                        background=self.lighten_bg_color,
@@ -623,12 +902,12 @@ class FaustLauncherApp:
 
         # 创建标题标签
         title_label = ttk.Label(self.home_frame, text="✨ Faust Launcher ✨", style="Title.TLabel")
-        title_label.pack(pady=30)
+        title_label.pack(pady=20)
         
         # 创建说明标签
         description = "欢迎使用 Faust Launcher - 您人生中绝无仅有的完美启动器！\n懒人化的一键操作，这就是浮士德大人的聪明才智口牙！"
         desc_label = ttk.Label(self.home_frame, text=description, style="Subtitle.TLabel", justify=tk.CENTER)
-        desc_label.pack(pady=20)
+        desc_label.pack(pady=10)
         
         # 创建快速操作区域
         quick_actions_frame = ttk.LabelFrame(self.home_frame, text="  🚀 快速操作", style="Custom.TLabelframe")
@@ -669,7 +948,7 @@ class FaustLauncherApp:
         
         # 创建终端工具栏
         terminal_toolbar = tk.Frame(terminal_frame, bg=self.lighten_bg_color)
-        terminal_toolbar.pack(fill=tk.X, padx=10, pady=5)
+        terminal_toolbar.pack(fill=tk.X, padx=5, pady=5)
         
         # 添加终端控制按钮
         clear_button = tk.Button(terminal_toolbar, 
@@ -681,7 +960,7 @@ class FaustLauncherApp:
                                relief='flat',
                                padx=8,
                                pady=3)
-        clear_button.pack(side=tk.LEFT, padx=5)
+        clear_button.pack(side=tk.LEFT, padx=2)
         
         copy_button = tk.Button(terminal_toolbar,
                               text="📋  复制内容",
@@ -692,11 +971,11 @@ class FaustLauncherApp:
                               relief='flat',
                               padx=8,
                               pady=3)
-        copy_button.pack(side=tk.LEFT, padx=5)
+        copy_button.pack(side=tk.LEFT, padx=2)
         
         # 创建终端显示区域
         terminal_container = tk.Frame(terminal_frame, bg='#1e1e1e')
-        terminal_container.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        terminal_container.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
         
         # 创建滚动条
         scrollbar = ttk.Scrollbar(terminal_container)
@@ -1024,25 +1303,16 @@ class FaustLauncherApp:
                 settings_manager.set_setting("game_path", file_path.replace('LimbusCompany.exe', ''))
                 settings_manager.save_settings()
                 self.settings_page.refresh_all_displays()
-
-                has_update, latest_info = check_new_version(version_info)
-                notify_new_version(latest_info, '当前为最新版本', self.root)
-
-                config_path = settings_manager.get_setting("game_path")
-
             else:
                 print("错误: 未选择游戏文件")
                 os._exit(-1)
-        else:
-            # 或者单独检测
-            has_update, latest_info = check_new_version(version_info)
-            if has_update:
-                print(f"启动器的新版本已经发布: {latest_info['version_name']}") # type: ignore
-                notify_new_version(latest_info, root = self.root)
-            else:
-                print("当前启动器已是最新版本")
 
-        from threading import Thread
+
+        has_update, latest_info, name = check_version_update(self.root) # type: ignore
+        if has_update:
+            print(f"启动器的新版本已经发布: {name}")
+        latest_info['version_name'] = name # type: ignore
+        notify_new_version(name, root = self.root, has_new_version = True, latest_info = latest_info, info = '发现新版本' if has_update else '已是最新版本') # type: ignore
 
         # 检查是否有命令行参数
         if len(sys.argv) > 1 or not os.path.exists("lang/LLC_zh-CN"):
@@ -1115,6 +1385,22 @@ if %errorlevel% equ 0 (
         except Exception as e:
             messagebox.showerror("错误", f"创建文件夹链接时出错: {str(e)}")
 
+def safe_merge_dirs(src, dst, overwrite=True):
+    """安全地合并目录（支持覆盖）"""
+    os.makedirs(dst, exist_ok=True)
+    
+    for item in os.listdir(src):
+        src_item = os.path.join(src, item)
+        dst_item = os.path.join(dst, item)
+        
+        if os.path.isdir(src_item):
+            safe_merge_dirs(src_item, dst_item, overwrite)
+        else:
+            if os.path.exists(dst_item):
+                if overwrite:
+                    os.remove(dst_item)  # 删除旧文件
+            shutil.copy2(src_item, dst_item)  # 复制新文件
+
 def handle_dowload(obj = None, need_run_game=False):
     """命令行模式：执行下载翻译、下载气泡、载入mod并启动游戏"""
     
@@ -1128,6 +1414,7 @@ def handle_dowload(obj = None, need_run_game=False):
     
     # 导入并执行各个功能模块
     try:
+
         # 检测 lang 下是否有 LLC_zh-CN 文件夹
         lang_path = 'lang/LLC_zh-CN'
         dowload_path = 'lang'
@@ -1135,12 +1422,12 @@ def handle_dowload(obj = None, need_run_game=False):
         from functions.dowloads.zeroasso_dow import main_gui as download_translation
 
         # 0. 检查必要的资源内容：
-        from functions.dowloads.zeroasso_dow import DownloadGUI
+        from functions.dowloads.zeroasso_dow import DownloadGUI, download_and_extract_gui
         from functions.base.update_resource import check_resource_update
-        gui_res = DownloadGUI(root, 'resources/', False)
+        gui_res = DownloadGUI(root, 'resources/', False, dowload_func=download_and_extract_gui)
         dt = threading.Thread(target=check_resource_update, args=(gui_res,)).start()
 
-        while gui_res.is_downloading:
+        while gui_res.is_dowloading:
             sleep(1)
             
         del dt
@@ -1152,7 +1439,7 @@ def handle_dowload(obj = None, need_run_game=False):
         gui = download_translation(root, dowload_path) # type: ignore
         dt = threading.Thread(target=gui.root.mainloop)
 
-        while gui.is_downloading:
+        while gui.is_dowloading:
             sleep(1)
         
         del dt
@@ -1173,19 +1460,28 @@ def handle_dowload(obj = None, need_run_game=False):
 
         if need_update:
             print("检测到新的汉化版本，准备更新汉化文件...")
-            if os.path.exists(dowload_path + '/LimbusCompany_Data/Lang/LLC_zh-CN'): # type: ignore
-                # 检查目标目录是否存在，如果存在就先删除
+            if os.path.exists(dowload_path + '/LimbusCompany_Data/Lang/LLC_zh-CN'):
+
                 if os.path.exists(lang_path):
-                    shutil.rmtree(lang_path, ignore_errors=True)
-                # 确保目标目录的父目录存在
-                os.makedirs(os.path.dirname(lang_path), exist_ok=True)
-                # 复制汉化文件
-                shutil.copytree(dowload_path + '/LimbusCompany_Data/Lang/LLC_zh-CN', lang_path, dirs_exist_ok=True) # type: ignore
+                    try:
+                        print(f"检测到目标目录 {lang_path}，准备删除...")
+                        shutil.rmtree(lang_path)
+                    except Exception as e:
+                        print(f"删除目录 {lang_path} 时出错: {e}")
+                try:
+                    # 复制汉化文件
+                    safe_merge_dirs(
+                        os.path.join(dowload_path, 'LimbusCompany_Data', 'Lang', 'LLC_zh-CN'),
+                        lang_path
+                    )
+                except Exception as e:
+                    print(f"复制汉化文件时出错: {e}")
             else:
                 print("错误: 未找到 lang 下的 LLC_zh-CN 文件夹")
         else:
             print("当前汉化已是最新版本，无需更新")
 
+        # 复制字体文件
         if not os.path.exists('assets/Font/Context/ChineseFont.ttf'):
             shutil.copytree('lang/Font', 'assets/Font', dirs_exist_ok=True) # type: ignore
             shutil.rmtree('lang/Font', ignore_errors=True)
@@ -1209,9 +1505,11 @@ def handle_dowload(obj = None, need_run_game=False):
         
     except Exception as e:
         print(f"下载过程中出错: {e}")
+        traceback.print_exception(*sys.exc_info())
         return
-
-    dowloading = False
+    
+    finally:
+        dowloading = False
 
 def run_game(obj:None):
     global settings_manager
@@ -1314,6 +1612,7 @@ def run_game(obj:None):
         print(f"复制字体文件夹时出错: {e}")
         return
 
+    # 创建配置文件
     from functions.dowloads.zeroasso_dow import create_config_file
     create_config_file(settings_manager.get_setting('game_path'))
 
@@ -1354,7 +1653,7 @@ def run_game(obj:None):
 
     # 载入mod并启动游戏
     from functions.base.load_mod import main as load_mod_and_launch
-    load_mod_and_launch() # type: ignore
+    load_mod_and_launch()
 
 def set_user_name():
     """设置用户名称到 UserInfo_Friends.json 中"""
@@ -1478,6 +1777,7 @@ def main():
 
         ws_path = settings_manager.get_setting("welcome_sound")
         root.after(3000, lambda: play_sound(ws_path))
+        app.terminal_redirector.enable_type = True
 
         # 检查设置
         root.after(3300, app.check_settings)

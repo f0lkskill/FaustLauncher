@@ -26,14 +26,14 @@ class DownloadCenterPage:
         self.setup_ui()
         
         # 检测更新
-        self.root.root.after(500, self.total_detect_update)
         # 初始化时自动获取列表
         self.root.root.after(1000, self.load_all_data)
+        self.root.root.after(3000, self.total_detect_update)
 
     def load_all_data(self):
         self.load_addon_data()
         self.load_mod_data()
-    
+
     def setup_ui(self):
         # 创建设置内容容器, 居中显示
         content_frame = tk.Frame(self.parent, bg=self.lighten_bg_color, relief='groove', borderwidth=1)
@@ -117,6 +117,34 @@ class DownloadCenterPage:
         canvas.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
     
+    def load_data(self):
+        # 在后台线程中加载数据
+        def load_data_addon():
+            try:
+                self.status_var.set("正在获取插件列表...")
+                self.addon_data = self.web_trigger.fectch_all_addon_info()
+                if self.addon_data:
+                    self.display_addon_page(1)
+                else:
+                    self.show_error("未获取到插件数据")
+            except Exception as e:
+                self.show_error(f"加载插件数据失败: {str(e)}")
+        def load_data_mod():
+            try:
+                self.status_var.set("正在获取Mod列表...")
+                self.mod_data = self.web_trigger.fectch_all_mod_info()
+                if self.mod_data:
+                    self.display_mod_page(1)
+                else:
+                    self.show_error("未获取到Mod数据")
+            except Exception as e:
+                self.show_error(f"加载Mod数据失败: {str(e)}")
+        
+        thread = threading.Thread(target=load_data_addon)
+        thread2 = threading.Thread(target=load_data_mod)
+        thread2.start()
+        thread.start()
+    
     def load_addon_data(self):
         # 清空现有内容
         for widget in self.addon_scrollable_frame.winfo_children():
@@ -146,35 +174,7 @@ class DownloadCenterPage:
 
         thread = threading.Thread(target=load_data_addon)
         thread.start()
-        
-    def load_data(self):
-        # 在后台线程中加载数据
-        def load_data_addon():
-            try:
-                self.status_var.set("正在获取插件列表...")
-                self.addon_data = self.web_trigger.fectch_all_addon_info()
-                if self.addon_data:
-                    self.display_addon_page(1)
-                else:
-                    self.show_error("未获取到插件数据")
-            except Exception as e:
-                self.show_error(f"加载插件数据失败: {str(e)}")
-        def load_data_mod():
-            try:
-                self.status_var.set("正在获取Mod列表...")
-                self.mod_data = self.web_trigger.fectch_all_mod_info()
-                if self.mod_data:
-                    self.display_mod_page(1)
-                else:
-                    self.show_error("未获取到Mod数据")
-            except Exception as e:
-                self.show_error(f"加载Mod数据失败: {str(e)}")
-        
-        thread = threading.Thread(target=load_data_addon)
-        thread2 = threading.Thread(target=load_data_mod)
-        thread2.start()
-        thread.start()
-    
+
     def load_mod_data(self):
         # 清空现有内容
         for widget in self.mod_scrollable_frame.winfo_children():
@@ -584,7 +584,7 @@ class DownloadCenterPage:
             # 更新状态栏
             self.status_var.set(f"插件: {addon.get('name', 'unknown')}")
             
-            gui = DownloadGUI(self.root.root, addon_path, False)
+            gui = DownloadGUI(self.root.root, addon_path, False, dowload_func=download_and_extract_gui)
             thread = threading.Thread(target=download_and_extract_gui, args=(gui, addon_path, download_files), daemon=True)
             thread.start()
 
@@ -625,7 +625,7 @@ class DownloadCenterPage:
             # 更新状态栏
             self.status_var.set(f"Mod: {mod.get('name', 'unknown')}")
 
-            gui = DownloadGUI(self.root.root, mod_path, False)
+            gui = DownloadGUI(self.root.root, mod_path, False, dowload_func=download_and_extract_gui)
             thread = threading.Thread(target=download_and_extract_gui, args=(gui, mod_path, download_files))
             thread.start()
 
@@ -646,13 +646,16 @@ class DownloadCenterPage:
             mod_name = os.path.basename(mod_path)
             
             mod_info = ModManager.get_mod_info(mod_name)
-            version = mod_info['version']
+            version = mod_info.get('version', 'unknown')
 
             for page in self.mod_data:
                 for web_mod_data in page:
                     if web_mod_data['name'] == mod_info['name']:
-                        if web_mod_data['version'] == version:
+                        if web_mod_data['version'] != version:
+                            print(f"检测到模组: {mod_info['name']}，当前版本: {version}，网络版本: {web_mod_data['version']}, 准备下载更新...")
                             self.download_mod(web_mod_data)
+                        else:
+                            print(f"模组: {mod_info['name']} 已是最新版本: {version}")
 
     def detect_addon_update(self):
         '''检测插件更新'''
@@ -660,16 +663,16 @@ class DownloadCenterPage:
         addon_names = am.addon_names
 
         for addon_name in addon_names:
-            
             addon_info:dict = am.get_addon_info(addon_name) # type: ignore
-            print(addon_info)
-            version = addon_info['version']
-
+            version = addon_info.get('version', 'unknown')
             for page in self.addon_data:
                 for web_addon_data in page:
                     if web_addon_data['name'] == addon_info['name']:
-                        if web_addon_data['version'] == version:
+                        if web_addon_data['version'] != version:
+                            print(f"检测到插件: {addon_info['name']}，当前版本: {version}，网络版本: {web_addon_data['version']}, 准备下载更新...")
                             self.download_addon(web_addon_data)
+                        else:
+                            print(f"插件: {addon_info['name']} 已是最新版本: {version}")
 
     def total_detect_update(self):
         '''检测所有更新'''
