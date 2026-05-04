@@ -20,7 +20,7 @@ def show_version_update_dialog(current_version, latest_info, info='发现新版�
         # 创建主窗口
         root = tk.Toplevel(root)
         root.withdraw()  # 隐藏主窗口
-        root.title("版本更新")
+        root.title(info)
         root.geometry("500x600")
         center_window(root)
         root.resizable(True, True)
@@ -105,7 +105,7 @@ def show_version_update_dialog(current_version, latest_info, info='发现新版�
         scrollbar.config(command=desc_text.yview)
         
         # 插入版本介绍内容（支持简单的Markdown样式）
-        description = latest_info.get('version_description', '暂无详细说明')
+        description = latest_info.get('description', '暂无详细说明')
         
         # 简单的Markdown解析和格式化
         lines = description.split('\n')

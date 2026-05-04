@@ -5,8 +5,6 @@ from typing import List, Dict, Tuple
 from functions.base.settings_manager import get_settings_manager
 from functions.base.window_ulits import center_window
 
-gradient_rate = get_settings_manager().get_setting('bubble_text_gradient_rate')
-game_path = get_settings_manager().get_setting('game_path')
 
 def hex_to_rgb(hex_color: str) -> Tuple[int, int, int]:
     """将十六进制颜色转换为RGB值"""
@@ -101,7 +99,7 @@ def apply_color_gradient_custom(text: str, start_color: str, end_color: str, gra
             # 对普通字符应用渐变
             if char_count > 1:
                 # 使用指数函数控制渐变速度，gradient_rate越大渐变越快
-                linear_ratio = char_index / (char_count - 1)
+                linear_ratio = char_index / char_count
                 # 应用渐变度参数：gradient_rate越大，ratio增长越快
                 ratio = 1 - (1 - linear_ratio) ** gradient_rate
             else:
@@ -529,11 +527,12 @@ def process_all_json_files(game_path: str, gradient_rate: float = 2.0) -> bool:
         return False
     
     # 要处理的JSON文件列表
-    json_files = [
-        'BattleSpeechBubbleDlg.json',
-        'BattleSpeechBubbleDlg_Cultivation.json',
-        'BattleSpeechBubbleDlg_mowe.json'
-    ]
+    json_files = []
+
+    # 搜索所有前缀带有 'BattleSpeechBubbleDlg' 的文件
+    for file in os.listdir(target_dir):
+        if file.startswith('BattleSpeechBubbleDlg'):
+            json_files.append(file)
     
     success_count = 0
     
@@ -563,12 +562,11 @@ def process_temp_json_files(gradient_rate: float = 2.0) -> bool:
         return False
     
     # 要处理的JSON文件列表
-    json_files = [
-        'BattleSpeechBubbleDlg.json',
-        'BattleSpeechBubbleDlg_Cultivation.json',
-        'BattleSpeechBubbleDlg_mowe.json'
-    ]
-    
+    json_files = []
+
+    # 搜寻所有前缀带有 'BattleSpeechBubbleDlg' 的文件
+    json_files.extend([f for f in os.listdir(temp_dir) if f.startswith('BattleSpeechBubbleDlg')])
+       
     success_count = 0
     
     for json_file in json_files:
@@ -585,15 +583,16 @@ def process_temp_json_files(gradient_rate: float = 2.0) -> bool:
     return success_count > 0
 
 def main():
-    global gradient_rate, game_path
     """主函数入口点"""
     print("=" * 50)
     print("气泡文本 JSON 颜色渐变处理器")
     print("=" * 50)
     try:
+        gradient_rate = get_settings_manager().get_setting('bubble_text_gradient_rate')
+        game_path = get_settings_manager().get_setting('game_path')
         
         if not game_path:
-            print("未配置游戏路径")
+            print("气泡渐变色：未配置游戏路径")
             return False
         if not gradient_rate:
             gradient_rate = 0.5

@@ -1,4 +1,4 @@
-from functions.fancy.dialog_colorful import process_dlg_text
+from functions.fancy.dialog_colorful import apply_color_gradient_custom
 from functions.base.settings_manager import get_settings_manager
 from json import load,dump
 
@@ -66,20 +66,27 @@ def skill_color_process(gameLang: str):
                         # print(f"技能 {skill_info['id']} 符合，正在开始处理...")
                         for signal_skill in skill_content['levelList']:
                             # print(f"{signal_skill['name']} 的罪孽类型为 {skill_info['type']}...")
-                            process_str = f"<color={sin_color[skill_info['type']]}>{signal_skill['name']}</color>"
-                            signal_skill['name'] = process_dlg_text(process_str, skill_text_gradient_rate)
+                            info_type = skill_info.get('type','未知')
+                            info_color = sin_color.get(info_type,'ffffff')
+
+                            if len(signal_skill['name']) > 9:
+                                # 超过9个字符，换行
+                                signal_skill['name'] = signal_skill['name'][:9] + '\n' + signal_skill['name'][9:]
+
+                            signal_skill['name'] = apply_color_gradient_custom(signal_skill['name'],'ffffff',info_color, skill_text_gradient_rate)
                             success = True
                         break
                     
                 # 缺少对应的 config 信息，请求用户输入并写入对应的文件
-                # if not success:
-                #     print(f"技能 {skill_content['levelList'][0]['name']} 缺少对应的 config 信息，请求用户输入...")
-                #     skill_info = {
-                #         "id": skill_content['id'],
-                #         "type": input(f"请输入技能 {skill_content['id']} 的罪孽类型："),
-                #         "desc": input(f"请输入技能 {skill_content['id']} 的描述：")
-                #     }
-                #     cf_c.append(skill_info)
+                if not success:
+                    print(f"⚠技能 {skill_content['levelList'][0]['name']} 缺少对应的 config 信息，跳过...")
+                    # print(f"技能 {skill_content['levelList'][0]['name']} 缺少对应的 config 信息，请求用户输入...")
+                    # skill_info = {
+                    #     "id": skill_content['id'],
+                    #     "type": input(f"请输入技能 {skill_content['id']} 的罪孽类型："),
+                    #     "desc": input(f"请输入技能 {skill_content['id']} 的描述：")
+                    # }
+                    # cf_c.append(skill_info)
 
                 with open(pf, 'w', encoding='utf-8') as tar_file:
                     dump(pf_c, tar_file, indent=2, ensure_ascii=False)
