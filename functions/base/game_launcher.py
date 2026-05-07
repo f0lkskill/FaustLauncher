@@ -4,6 +4,7 @@ import os
 import json
 import shutil
 import threading
+import traceback
 import tkinter.messagebox as messagebox
 
 from functions.base.settings_manager import get_settings_manager
@@ -11,16 +12,26 @@ from functions.base.settings_manager import get_settings_manager
 
 def safe_merge_dirs(src, dst, overwrite=True):
     """安全地合并目录（支持覆盖）"""
-    os.makedirs(dst, exist_ok=True)
+    try:
+        os.makedirs(dst, exist_ok=True)
+    except Exception as e:
+        print(f"[调试] safe_merge_dirs: os.makedirs({dst!r}) 失败: {e}")
+        traceback.print_exc()
+        raise
     for item in os.listdir(src):
         src_item = os.path.join(src, item)
         dst_item = os.path.join(dst, item)
         if os.path.isdir(src_item):
             safe_merge_dirs(src_item, dst_item, overwrite)
         else:
-            if os.path.exists(dst_item) and overwrite:
-                os.remove(dst_item)
-            shutil.copy2(src_item, dst_item)
+            try:
+                if os.path.exists(dst_item) and overwrite:
+                    os.remove(dst_item)
+                shutil.copy2(src_item, dst_item)
+            except Exception as e:
+                print(f"[调试] safe_merge_dirs: 复制文件失败 src={src_item!r} dst={dst_item!r}: {e}")
+                traceback.print_exc()
+                raise
 
 
 def apply_changes_to_data(original_data, changes):
@@ -127,6 +138,7 @@ class GameLauncher:
                 print(f"[{name}] 完成")
             except Exception as e:
                 print(f"[{name}] 失败: {e}")
+                traceback.print_exc()
                 if name in ("复制汉化文件", "复制字体文件"):
                     messagebox.showerror("错误", f"{name}时出错: {str(e)}")
                     return
@@ -139,8 +151,16 @@ class GameLauncher:
     def _prepare_translation(self):
         """复制 lang/LLC_zh-CN 到游戏目录。"""
         target = os.path.join(self._game_path, 'LimbusCompany_Data', 'Lang', 'LLC_zh-CN')
+        print(f"[调试] _prepare_translation: 游戏路径={self._game_path!r}")
+        print(f"[调试] _prepare_translation: 源={os.path.abspath(self._lang_dir)!r} 存在={os.path.exists(self._lang_dir)} 是目录={os.path.isdir(self._lang_dir)}")
+        print(f"[调试] _prepare_translation: 目标={target!r} 存在={os.path.exists(target)} 是目录={os.path.isdir(target)}")
         if os.path.exists(target):
-            shutil.rmtree(target, ignore_errors=True)
+            if os.path.isdir(target):
+                shutil.rmtree(target, ignore_errors=True)
+            else:
+                print(f"[调试] _prepare_translation: 目标路径不是目录，正在删除文件")
+                os.remove(target)
+        print(f"[调试] _prepare_translation: 开始 copytree {self._lang_dir!r} -> {target!r}")
         shutil.copytree(self._lang_dir, target, dirs_exist_ok=True)
 
     def _apply_mod_changes(self):
