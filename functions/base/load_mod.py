@@ -3,51 +3,40 @@ import os
 from functions.base.settings_manager import get_settings_manager
 from functions.mod.mod_ulits import ModManager
 
-settings_manager = get_settings_manager()
-extra_mod_loader_path:str = settings_manager.get_setting('extra_mod_loader') # type: ignore
-game_path:str = settings_manager.get_setting('game_path') # type: ignore
+STEAM_APP_ID = "1973530"
+GAME_EXE = "LimbusCompany.exe"
 
-def main():
-    """使用当前系统的运行参数运行YiSangModLoader.exe来启动游戏。"""
-    global settings_manager
+_settings = get_settings_manager()
+_extra_mod_loader: str = _settings.get_setting('extra_mod_loader')  # type: ignore
+_game_path: str = _settings.get_setting('game_path')  # type: ignore
 
-    if not settings_manager.get_setting("enable_mods"):
-        print("未启用mod,准备启动游戏...")
-        subprocess.Popen(['start', 'steam://rungameid/1973530'], shell=True)
-        return True
-    
-    print("效用启动器下载的mod...")
-    mm = ModManager()
-    mm.load_all_mods()
 
-    if not os.path.exists(extra_mod_loader_path):
-        print(f"外部mod加载器不存在, 将使用默认的加载方式...")
-    else:
-        print(f'使用外部mod加载器启动游戏: {extra_mod_loader_path}')
-        run = [extra_mod_loader_path, game_path + '/LimbusCompany.exe']
-        flags = subprocess.CREATE_NO_WINDOW if settings_manager.get_setting("hide_mod_load") else 0
-        # 使用CREATE_NO_WINDOW标志隐藏窗口
-        subprocess.Popen(run, creationflags=flags)
-    
-    try:
-        print("开始使用默认mod加载器启动游戏...")
-
-        run = ["resources/mod_loader/yisangModLoader.exe", game_path + '/LimbusCompany.exe']
-        flags = subprocess.CREATE_NO_WINDOW if settings_manager.get_setting("hide_mod_load") else 0
-        # 使用CREATE_NO_WINDOW标志隐藏窗口
-        subprocess.Popen(run, creationflags=flags)
-
+def launch_game_process():
+    """启动游戏进程：无 mod 时直接通过 Steam 启动，有 mod 时通过 mod loader 启动。"""
+    if not _settings.get_setting("enable_mods"):
+        print("未启用 mod, 直接启动游戏...")
+        subprocess.Popen(['start', f'steam://rungameid/{STEAM_APP_ID}'], shell=True)
         return True
 
-        # TODO 找到兼容性使用的方法...?
-        #! 使用这样的方式接入总是会导致游戏显示检测到缺失资源
-        #! 并要求用户使用 steam 修复...?
+    print("加载 mod 到游戏目录...")
+    ModManager().load_all_mods()
 
-        # from functions.modloader.main import main as load_mod
-        # load_mod()
+    _start_with_mod_loader()
 
-        # return True
+    return True
 
-    except Exception as e:
-        print(f"启动失败: {e}")
-        return False
+
+def _start_with_mod_loader():
+    """选择合适的 mod loader 启动游戏（外部 loader 优先，否则用内置 loader）。"""
+    game_exe = os.path.join(_game_path, GAME_EXE)
+
+    if os.path.exists(_extra_mod_loader):
+        print(f"使用外部 mod loader 启动: {_extra_mod_loader}")
+        flags = subprocess.CREATE_NO_WINDOW if _settings.get_setting("hide_mod_load") else 0
+        subprocess.Popen([_extra_mod_loader, game_exe], creationflags=flags)
+        return
+
+    print("使用内置 mod loader 启动...")
+    loader = "resources/mod_loader/yisangModLoader.exe"
+    flags = subprocess.CREATE_NO_WINDOW if _settings.get_setting("hide_mod_load") else 0
+    subprocess.Popen([loader, game_exe], creationflags=flags)
