@@ -1448,12 +1448,14 @@ def download_and_launch(obj = None, need_run_game=False):
             print("检测到新的汉化版本，准备更新汉化文件...")
             if os.path.exists(dowload_path + '/LimbusCompany_Data/Lang/LLC_zh-CN'):
 
-                if os.path.exists(lang_path):
+                if os.path.isdir(lang_path):
                     try:
                         print(f"检测到目标目录 {lang_path}，准备删除...")
-                        shutil.rmtree(lang_path)
+                        shutil.rmtree(lang_path, ignore_errors=True)
                     except Exception as e:
                         print(f"删除目录 {lang_path} 时出错: {e}")
+                elif os.path.exists(lang_path):
+                    os.remove(lang_path)
                 try:
                     # 复制汉化文件
                     safe_merge_dirs(
