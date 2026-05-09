@@ -191,7 +191,7 @@
             "tray_hint": false
         },
         "value": {
-            "tray_hint": false
+            "tray_hint": true
         },
         "description": "程序运行时的缓存数据\n不建议修改"
     }

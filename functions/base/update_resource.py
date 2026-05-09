@@ -11,8 +11,10 @@ data:dict = loads(loads(note_content)[0]['content'])
 
 # 不存在文件时，创建空字典
 try:
-    with open("resources/resource_info.json",'w',encoding='utf-8') as f:
-        f.write(dumps({}, ensure_ascii=False, indent=4))
+    import os
+    if not os.path.exists("resources/resource_info.json"):
+        with open("resources/resource_info.json",'w',encoding='utf-8') as f:
+            f.write(dumps({}, ensure_ascii=False, indent=4))
 except:pass
 
 local_data_str = open("resources/resource_info.json",'r',encoding='utf-8').read()
