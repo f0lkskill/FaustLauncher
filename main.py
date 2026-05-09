@@ -5,7 +5,6 @@ import random
 import sys
 from PIL import Image, ImageTk, ImageFilter
 import pymysql
-import threading
 from subprocess import Popen
 from functions.pages.settings_page import init_settings_page
 from functions.base.settings_manager import get_settings_manager
@@ -19,7 +18,6 @@ from threading import Thread
 import urllib3
 import traceback
 from rich import print
-import shutil
 
 # 禁用 urllib3 的警告
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -1460,6 +1458,7 @@ def download_and_launch(obj = None, need_run_game=False):
                         os.path.join(dowload_path, 'LimbusCompany_Data', 'Lang', 'LLC_zh-CN'),
                         lang_path
                     )
+                    
                 except Exception as e:
                     print(f"复制汉化文件时出错: {e}")
             else:

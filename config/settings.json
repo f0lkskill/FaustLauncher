@@ -180,8 +180,8 @@
     "version_info": {
         "name": "版本信息",
         "type": "UNABLE_TO_EDIT",
-        "default": "V0.6.0-pre.2.fix.1",
-        "value": "V0.6.0-pre.2.fix.1",
+        "default": "V0.6.0-pre.2.fix.3",
+        "value": "V0.6.0-pre.2.fix.3",
         "description": "当前应用程序的版本信息"
     },
     "mems": {
