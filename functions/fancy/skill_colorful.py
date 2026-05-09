@@ -69,9 +69,20 @@ def skill_color_process(gameLang: str):
                             info_type = skill_info.get('type','未知')
                             info_color = sin_color.get(info_type,'ffffff')
 
-                            if len(signal_skill['name']) > 9:
-                                # 超过9个字符，换行
-                                signal_skill['name'] = signal_skill['name'][:9] + '\n' + signal_skill['name'][9:]
+                            def count_length(text:str) -> int:
+                                count = 0
+                                for char in text:
+                                    char:str
+                                    # 检测是否是中文字符
+                                    if char.isascii():
+                                        count += 2
+                                    else:
+                                        count += 1
+                                return count
+                            
+                            if count_length(signal_skill['name']) > 14:
+                                # 超过14个字符，换行
+                                signal_skill['name'] = signal_skill['name'][:14] + '\n' + signal_skill['name'][14:]
 
                             signal_skill['name'] = apply_color_gradient_custom(signal_skill['name'],'ffffff',info_color, skill_text_gradient_rate)
                             success = True
@@ -79,7 +90,7 @@ def skill_color_process(gameLang: str):
                     
                 # 缺少对应的 config 信息，请求用户输入并写入对应的文件
                 if not success:
-                    print(f"⚠技能 {skill_content['levelList'][0]['name']} 缺少对应的 config 信息，跳过...")
+                    print(f"技能 {skill_content['levelList'][0]['name']} 缺少对应的 config 信息，跳过...")
                     # print(f"技能 {skill_content['levelList'][0]['name']} 缺少对应的 config 信息，请求用户输入...")
                     # skill_info = {
                     #     "id": skill_content['id'],

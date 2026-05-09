@@ -9,17 +9,42 @@ import tkinter.messagebox as messagebox
 from functions.base.settings_manager import get_settings_manager
 
 
-def safe_merge_dirs(src, dst, overwrite=True):
-    """安全地合并目录（支持覆盖）"""
+def safe_merge_dirs(src, dst, overwrite=True, max_retries=3):
+    """安全地合并目录（支持覆盖）
+    
+    Args:
+        src: 源目录路径
+        dst: 目标目录路径
+        overwrite: 是否覆盖已存在的文件
+        max_retries: 删除文件失败时的重试次数
+    """
+    # 确保使用绝对路径，避免相对路径问题
+    src = os.path.abspath(src)
+    dst = os.path.abspath(dst)
+    
     os.makedirs(dst, exist_ok=True)
+    
     for item in os.listdir(src):
         src_item = os.path.join(src, item)
         dst_item = os.path.join(dst, item)
+        
         if os.path.isdir(src_item):
-            safe_merge_dirs(src_item, dst_item, overwrite)
+            safe_merge_dirs(src_item, dst_item, overwrite, max_retries)
         else:
-            if os.path.exists(dst_item) and overwrite:
-                os.remove(dst_item)
+            if os.path.exists(dst_item):
+                if overwrite:
+                    # 重试删除文件，处理可能的文件占用问题
+                    for attempt in range(max_retries):
+                        try:
+                            os.remove(dst_item)
+                            break
+                        except Exception as e:
+                            if attempt == max_retries - 1:
+                                raise
+                            import time
+                            time.sleep(0.1)  # 等待 100ms 后重试
+                else:
+                    continue
             shutil.copy2(src_item, dst_item)
 
 
@@ -107,7 +132,7 @@ class GameLauncher:
 
     def launch(self):
         """按顺序执行启动流水线的所有步骤。"""
-        print("\n========== 开始启动游戏流水线 ==========")
+        print("========== 开始启动游戏流水线 ==========")
 
         steps = [
             ("复制汉化文件",      self._prepare_translation),
