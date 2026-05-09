@@ -27,7 +27,7 @@ def check_need_up_translate(version_info:str = "") -> bool:
         
         return False
     
-    except:
+    except (OSError, ValueError, KeyError):
         return False
 
 if __name__ == '__main__':

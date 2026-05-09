@@ -1402,6 +1402,12 @@ def download_and_launch(obj = None, need_run_game=False):
         # 检测 lang 下是否有 LLC_zh-CN 文件夹
         lang_path = 'lang/LLC_zh-CN'
         dowload_path = 'lang'
+        print(f"[调试] 当前工作目录: {os.getcwd()}")
+        print(f"[调试] lang_path 相对路径: {lang_path!r} -> 绝对路径: {os.path.abspath(lang_path)!r}")
+        print(f"[调试] dowload_path 相对路径: {dowload_path!r} -> 绝对路径: {os.path.abspath(dowload_path)!r}")
+        print(f"[调试] lang_path 存在: {os.path.exists(lang_path)}, 是目录: {os.path.isdir(lang_path)}, 是文件: {os.path.isfile(lang_path)}")
+        src_full = os.path.join(dowload_path, 'LimbusCompany_Data', 'Lang', 'LLC_zh-CN')
+        print(f"[调试] 下载源路径: {src_full!r} 存在: {os.path.exists(src_full)}")
 
         from functions.dowloads.zeroasso_dow import main_gui as download_translation
 
@@ -1446,21 +1452,27 @@ def download_and_launch(obj = None, need_run_game=False):
             print("检测到新的汉化版本，准备更新汉化文件...")
             if os.path.exists(dowload_path + '/LimbusCompany_Data/Lang/LLC_zh-CN'):
 
-                if os.path.exists(lang_path):
+                if os.path.isdir(lang_path):
                     try:
                         print(f"检测到目标目录 {lang_path}，准备删除...")
-                        shutil.rmtree(lang_path)
+                        shutil.rmtree(lang_path, ignore_errors=True)
                     except Exception as e:
                         print(f"删除目录 {lang_path} 时出错: {e}")
+                        traceback.print_exc()
+                elif os.path.exists(lang_path):
+                    print(f"[调试] lang_path 是文件而非目录，直接删除: {lang_path!r}")
+                    os.remove(lang_path)
                 try:
                     # 复制汉化文件
+                    print(f"[调试] 开始 safe_merge_dirs: 源={os.path.join(dowload_path, 'LimbusCompany_Data', 'Lang', 'LLC_zh-CN')!r} -> 目标={lang_path!r}")
                     safe_merge_dirs(
                         os.path.join(dowload_path, 'LimbusCompany_Data', 'Lang', 'LLC_zh-CN'),
                         lang_path
                     )
-                    
+                    print(f"[调试] safe_merge_dirs 完成")
                 except Exception as e:
                     print(f"复制汉化文件时出错: {e}")
+                    traceback.print_exc()
             else:
                 print("错误: 未找到 lang 下的 LLC_zh-CN 文件夹")
         else:
