@@ -1019,7 +1019,7 @@ def notify_new_version(current_version_name, info = '发现新版本', root = No
         current_version_name: 当前版本名称
     """
     try:
-        from functions.pages.version_info import show_version_update_dialog
+        from functions.pages.notice.version_info import show_version_update_dialog
         from functions.base.settings_manager import get_settings_manager
         version_info:str = get_settings_manager().get_setting('version_info') # type: ignore
         if (has_new_version and latest_info) or must_show:

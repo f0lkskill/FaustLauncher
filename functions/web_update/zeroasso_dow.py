@@ -1,10 +1,10 @@
 import os
 import requests
 import subprocess
-from functions.dowloads.dowload_gui import DownloadGUI
+from functions.pages.download.dowload_gui import DownloadGUI
 import time
-from functions.dowloads.github_ulits import GitHubReleaseFetcher
-from functions.dowloads.dow_ulits import check_need_up_translate
+from functions.web_update.github_ulits import GitHubReleaseFetcher
+from functions.web_update.dow_ulits import check_need_up_translate
 from functions.base.settings_manager import get_settings_manager
 
 # 7-Zip可执行文件路径

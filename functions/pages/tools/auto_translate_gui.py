@@ -1,7 +1,6 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
 import threading
-from pathlib import Path
 from functions.translate.auto_translate import auto_translate
 from functions.base.window_ulits import center_window
 import datetime
