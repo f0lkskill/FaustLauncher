@@ -166,7 +166,7 @@ class GameLauncher:
 
     def _apply_mod_changes(self):
         """应用所有启用 mod 的 changes.json 补丁到游戏语言文件。"""
-        from functions.mod.mod_ulits import ModManager
+        from functions.extension.mod.mod_ulits import ModManager
 
         # 收集所有需要处理的目录
         dirs = []
@@ -236,7 +236,7 @@ class GameLauncher:
 
     def _create_zeroasso_config(self):
         """创建零协会配置文件。"""
-        from functions.dowloads.zeroasso_dow import create_config_file
+        from functions.web_update.zeroasso_dow import create_config_file
         create_config_file(self._game_path)
 
     def _set_user_name(self):

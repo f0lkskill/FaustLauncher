@@ -1,9 +1,19 @@
-import json
+import json, os
 import random
 
 def simple_replace(battlehint_path:str):
     """简单版本，直接替换BattleHint.json中的内容"""
-    
+
+    dir_path = os.path.dirname(battlehint_path)
+    ui_file_path = os.path.join(dir_path, "LoginUIText.json")
+    with open(ui_file_path, 'r', encoding='utf-8') as f:
+        ui_data = json.load(f)
+    for k in ui_data["dataList"]:
+        if k['id'] == 'loginui_loading_battlehint':
+            k['content'] = '你知道吗 ？'
+    with open(ui_file_path, 'w', encoding='utf-8') as f:
+        json.dump(ui_data, f, ensure_ascii=False, indent=4)
+
     # 文件路径
     loadingtext_path = r"config\loadingText.json"
     

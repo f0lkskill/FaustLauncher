@@ -1,5 +1,8 @@
+# 新版本采用蓝奏云云端更新，而不是数据库，所以本集成库现在为纯粹的文件操作。
+# bubble_dow.py 更名为 bubble_transfer.py
+
 def download_bubble_files(config_path: str = "") -> bool:
-    """从数据库下载JSON文件到游戏目录"""
+    """转移效用，覆盖气泡文件"""
     # 加载游戏路径配置
     game_path = config_path
     

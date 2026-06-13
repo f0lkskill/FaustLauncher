@@ -1,6 +1,6 @@
 from functions.webFunc import *
 from json import loads
-from functions.dowloads.zeroasso_dow import download_and_extract_gui
+from functions.web_update.zeroasso_dow import download_and_extract_gui
 from functions.base.settings_manager import get_settings_manager
 from threading import Thread
 from tkinter import messagebox
@@ -17,11 +17,18 @@ def dowload_new_version(dow_root, dowload_files:list):
     download_thread.start()
     while download_thread.is_alive():
         sleep(1)
+
+
     print("新版本下载完成，正在准备安装...")
+    
+    # 同步两个版本的设置
+    from functions.update.sync_setting import sync_settings
+    sync_settings()
+    print("设置项同步完成...")
     
     updater_exe_path = "updater.vbs"
     
-    # 运行C++更新器
+    # 运行vbs更新器
     if os.path.exists(updater_exe_path):
         subprocess.Popen(['start', updater_exe_path], shell=True, cwd='cache/new_version/FaustLauncher')
     else:
@@ -46,7 +53,7 @@ def check_version_update(root):
             if not messagebox.askyesno("版本更新", f"检测到启动器新版本: {version_info['latest_release_version']}\n当前版本: {current_version}\n是否更新？"):
                 return need_update, version_info['versions'][version_info['latest_release_version']], version_info['latest_release_version']
             
-        from functions.dowloads.zeroasso_dow import DownloadGUI
+        from functions.web_update.zeroasso_dow import DownloadGUI
         gui_dow = DownloadGUI(root, 'cache/', False, dowload_func=download_and_extract_gui)
 
         dowload_files = [{

@@ -1,5 +1,5 @@
 from functions.webFunc import Note
-from functions.dowloads.zeroasso_dow import download_and_extract_gui
+from functions.web_update.zeroasso_dow import download_and_extract_gui
 from json import loads,dumps
 from threading import Thread
 

@@ -5,8 +5,8 @@ import threading
 from PIL import Image, ImageTk
 import requests
 from functions.base.web_trigger import WebTrigger
-from functions.mod.mod_ulits import ModManager
-from functions.addon.addon_ulit import AddonManager
+from functions.extension.mod.mod_ulits import ModManager
+from functions.extension.addon.addon_ulit import AddonManager
 
 class DownloadCenterPage:
     def __init__(self, parent, root, bg_color, lighten_bg_color):
@@ -238,7 +238,7 @@ class DownloadCenterPage:
             pagination_frame, 
             text="上一页", 
             command=lambda: self.display_addon_page(page_num - 1) if page_num > 1 else None,
-            bg="#2c3e50",
+            bg=self.lighten_bg_color,
             fg="#ecf0f1",
             relief=tk.FLAT,
             padx=10,
@@ -251,7 +251,7 @@ class DownloadCenterPage:
             pagination_frame, 
             text="下一页", 
             command=lambda: self.display_addon_page(page_num + 1) if page_num < len(self.addon_data) else None,
-            bg="#2c3e50",
+            bg=self.lighten_bg_color,
             fg="#ecf0f1",
             relief=tk.FLAT,
             padx=10,
@@ -296,7 +296,7 @@ class DownloadCenterPage:
             pagination_frame, 
             text="上一页", 
             command=lambda: self.display_mod_page(page_num - 1) if page_num > 1 else None,
-            bg="#2c3e50",
+            bg=self.lighten_bg_color,
             fg="#ecf0f1",
             relief=tk.FLAT,
             padx=10,
@@ -309,7 +309,7 @@ class DownloadCenterPage:
             pagination_frame, 
             text="下一页", 
             command=lambda: self.display_mod_page(page_num + 1) if page_num < len(self.mod_data) else None,
-            bg="#2c3e50",
+            bg=self.lighten_bg_color,
             fg="#ecf0f1",
             relief=tk.FLAT,
             padx=10,
@@ -327,7 +327,7 @@ class DownloadCenterPage:
         
         # 插件头部（包含图标和标题）
         header_frame = tk.Frame(addon_frame, bg=self.bg_color)
-        header_frame.pack(fill=tk.X, padx=15, pady=(5, 5))
+        header_frame.pack(fill=tk.X, padx=15, pady=(2, 2))
         
         # 下载并显示图标
         icon_path = self.download_icon(addon.get('icon_url'), addon.get('name', 'unknown'))
@@ -428,7 +428,7 @@ class DownloadCenterPage:
         
         # Mod头部（包含图标和标题）
         header_frame = tk.Frame(mod_frame, bg=self.bg_color)
-        header_frame.pack(fill=tk.X, padx=15, pady=(5, 5))
+        header_frame.pack(fill=tk.X, padx=15, pady=(2, 2))
         
         # 下载并显示图标
         icon_path = self.download_icon(mod.get('icon_url'), mod.get('name', 'unknown'))
@@ -576,7 +576,7 @@ class DownloadCenterPage:
         
         # 导入下载模块并执行下载
         try:
-            from functions.dowloads.zeroasso_dow import download_and_extract_gui, DownloadGUI
+            from functions.web_update.zeroasso_dow import download_and_extract_gui, DownloadGUI
             addon_path = "addons"
 
             print(f"准备下载插件: {addon.get('name', 'unknown')}，下载链接: {download_url}")
@@ -618,7 +618,7 @@ class DownloadCenterPage:
         
         # 导入下载模块并执行下载
         try:
-            from functions.dowloads.zeroasso_dow import download_and_extract_gui, DownloadGUI
+            from functions.web_update.zeroasso_dow import download_and_extract_gui, DownloadGUI
             # 获取游戏路径
             mod_path = "mods"
             
