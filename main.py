@@ -30,7 +30,7 @@ except ImportError as e:
     print(f"导入自定义汉化工具失败: {e}")
     open_custom_translation_tool = None
 
-dowloading = False
+downloading = False
 root: tk.Tk = None # type: ignore
 debug = True
 settings_manager = get_settings_manager()
@@ -634,7 +634,7 @@ class FaustLauncherApp:
         
         # 创建重定向器
         self.terminal_redirector = TerminalRedirector(self.terminal_text)
-        self.terminal_redirector.start_redirect()
+        self.terminal_redirector.start_redirect(debug)
         
         # 禁用文本组件编辑
         self.terminal_text.config(state=tk.DISABLED)
@@ -982,25 +982,25 @@ from functions.base.game_launcher import safe_merge_dirs, GameLauncher
 def download_and_launch(obj = None, need_run_game=False):
     """下载翻译资源，然后可选地启动游戏"""
     
-    global dowloading, root
+    global downloading, root
     import threading
     from time import sleep
 
-    if dowloading:
+    if downloading:
         return
-    dowloading = True
+    downloading = True
     
     # 导入并执行各个功能模块
     try:
 
         # 检测 lang 下是否有 LLC_zh-CN 文件夹
         lang_path = 'lang/LLC_zh-CN'
-        dowload_path = 'lang'
+        download_path = 'lang'
         print(f"[调试] 当前工作目录: {os.getcwd()}")
         print(f"[调试] lang_path 相对路径: {lang_path!r} -> 绝对路径: {os.path.abspath(lang_path)!r}")
-        print(f"[调试] dowload_path 相对路径: {dowload_path!r} -> 绝对路径: {os.path.abspath(dowload_path)!r}")
+        print(f"[调试] download_path 相对路径: {download_path!r} -> 绝对路径: {os.path.abspath(download_path)!r}")
         print(f"[调试] lang_path 存在: {os.path.exists(lang_path)}, 是目录: {os.path.isdir(lang_path)}, 是文件: {os.path.isfile(lang_path)}")
-        src_full = os.path.join(dowload_path, 'LimbusCompany_Data', 'Lang', 'LLC_zh-CN')
+        src_full = os.path.join(download_path, 'LimbusCompany_Data', 'Lang', 'LLC_zh-CN')
         print(f"[调试] 下载源路径: {src_full!r} 存在: {os.path.exists(src_full)}")
 
         from functions.web_update.zeroasso_dow import main_gui as download_translation
@@ -1008,10 +1008,10 @@ def download_and_launch(obj = None, need_run_game=False):
         # 0. 检查必要的资源内容：
         from functions.web_update.zeroasso_dow import DownloadGUI, download_and_extract_gui
         from functions.base.update_resource import check_resource_update
-        gui_res = DownloadGUI(root, 'resources/', False, dowload_func=download_and_extract_gui)
+        gui_res = DownloadGUI(root, 'resources/', False, download_func=download_and_extract_gui)
         dt = threading.Thread(target=check_resource_update, args=(gui_res,)).start()
 
-        while gui_res.is_dowloading:
+        while gui_res.is_downloading:
             sleep(1)
             
         del dt
@@ -1020,10 +1020,10 @@ def download_and_launch(obj = None, need_run_game=False):
         # 1. 下载翻译
         print("开始下载零协会汉化包...")
         sys.path.append('functions')
-        gui = download_translation(root, dowload_path) # type: ignore
+        gui = download_translation(root, download_path) # type: ignore
         dt = threading.Thread(target=gui.root.mainloop)
 
-        while gui.is_dowloading:
+        while gui.is_downloading:
             sleep(1)
         
         del dt
@@ -1032,7 +1032,7 @@ def download_and_launch(obj = None, need_run_game=False):
         # 2. 下载气泡
         print("开始下载气泡...")
         from functions.fancy.bubble_transfer import main as download_bubble
-        download_bubble(dowload_path) # type: ignore
+        download_bubble(download_path) # type: ignore
         print("气泡下载完成")
 
         # 检查是否需要更新汉化
@@ -1044,7 +1044,7 @@ def download_and_launch(obj = None, need_run_game=False):
 
         if need_update:
             print("检测到新的汉化版本，准备更新汉化文件...")
-            if os.path.exists(dowload_path + '/LimbusCompany_Data/Lang/LLC_zh-CN'):
+            if os.path.exists(download_path + '/LimbusCompany_Data/Lang/LLC_zh-CN'):
 
                 if os.path.isdir(lang_path):
                     try:
@@ -1058,9 +1058,9 @@ def download_and_launch(obj = None, need_run_game=False):
                     os.remove(lang_path)
                 try:
                     # 复制汉化文件
-                    print(f"[调试] 开始 safe_merge_dirs: 源={os.path.join(dowload_path, 'LimbusCompany_Data', 'Lang', 'LLC_zh-CN')!r} -> 目标={lang_path!r}")
+                    print(f"[调试] 开始 safe_merge_dirs: 源={os.path.join(download_path, 'LimbusCompany_Data', 'Lang', 'LLC_zh-CN')!r} -> 目标={lang_path!r}")
                     safe_merge_dirs(
-                        os.path.join(dowload_path, 'LimbusCompany_Data', 'Lang', 'LLC_zh-CN'),
+                        os.path.join(download_path, 'LimbusCompany_Data', 'Lang', 'LLC_zh-CN'),
                         lang_path
                     )
                     print(f"[调试] safe_merge_dirs 完成")
@@ -1078,8 +1078,8 @@ def download_and_launch(obj = None, need_run_game=False):
             shutil.rmtree('lang/Font', ignore_errors=True)
 
         # 删除 LimbusCompany_Data 文件夹
-        if os.path.exists(os.path.join(dowload_path, 'LimbusCompany_Data')): # type: ignore
-            shutil.rmtree(os.path.join(dowload_path, 'LimbusCompany_Data'), ignore_errors=True) # type: ignore
+        if os.path.exists(os.path.join(download_path, 'LimbusCompany_Data')): # type: ignore
+            shutil.rmtree(os.path.join(download_path, 'LimbusCompany_Data'), ignore_errors=True) # type: ignore
 
         print("汉化下载及处理全部完成！")
 
@@ -1088,7 +1088,7 @@ def download_and_launch(obj = None, need_run_game=False):
             # root.withdraw()
             pass
         else:
-            dowloading = False
+            downloading = False
             return
         
         # 有参数或需要运行游戏
@@ -1104,7 +1104,7 @@ def download_and_launch(obj = None, need_run_game=False):
         return
     
     finally:
-        dowloading = False
+        downloading = False
 
 def main():
     """主函数"""

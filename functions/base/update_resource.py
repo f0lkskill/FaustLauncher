@@ -23,27 +23,27 @@ if local_data_str.strip() == "":
 else:
     local_data:dict = loads(local_data_str)
 
-def update_resource(dow_root, dowload_files:list, res:str, auto_close:bool = True):
+def update_resource(dow_root, download_files:list, res:str, auto_close:bool = True):
     import shutil,os
     from time import sleep
     try:
         shutil.rmtree(f"resources/{res}")
     except:pass
     os.makedirs(f"resources/{res}", exist_ok=True)
-    dowload_gui = dow_root
-    download_thread = Thread(target=download_and_extract_gui, args=(dowload_gui,f"resources/{res}", dowload_files, False))
+    download_gui = dow_root
+    download_thread = Thread(target=download_and_extract_gui, args=(download_gui,f"resources/{res}", download_files, False))
     download_thread.start()
     while download_thread.is_alive():
         sleep(1)
         # print(f"下载资源 {res} 正在进行中...")
     local_data[res]['version_info'] = data[res]['version_info']
     if auto_close:
-        dowload_gui.is_dowloading = False
+        download_gui.is_downloading = False
 
 def check_resource_update(dow_root):
 
     thread_count = 0
-    dowload_files = []
+    download_files = []
     up_list = []
 
     for res in data:
@@ -60,14 +60,14 @@ def check_resource_update(dow_root):
     for res in up_list:
         if data[res]['version_info'] != local_data[res]['version_info']:
             print(f"需要更新云端资源 {res}，url: {data[res]['url']}")
-            dowload_files = [{
+            download_files = [{
                 "url": data[res]['url'],
                 "name": local_data[res]['name'],
                 "temp_filename": f"{res}.zip"
             }]
             thread_count += 1
             auto_close = res == up_list[-1]
-            update_resource(dow_root, dowload_files, res, auto_close)
+            update_resource(dow_root, download_files, res, auto_close)
         else:
             print(f"资源 {res} 已为最新，无需更新。")
 
@@ -77,7 +77,7 @@ def check_resource_update(dow_root):
 
     if thread_count == 0:
         print("所有资源均已最新。无需更新。")
-        dow_root.is_dowloading = False
+        dow_root.is_downloading = False
 
 if __name__ == "__main__":
     import tkinter

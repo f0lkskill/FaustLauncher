@@ -1,7 +1,7 @@
 import os
 import requests
 import subprocess
-from functions.pages.download.dowload_gui import DownloadGUI
+from functions.pages.download.download_gui import DownloadGUI
 import time
 from functions.web_update.github_ulits import GitHubReleaseFetcher
 from functions.web_update.dow_ulits import check_need_up_translate
@@ -246,7 +246,7 @@ def download_file_with_gui(url, local_filename, gui, file_name):
         # 下载文件
         with open(local_filename, 'wb') as f:
             for chunk in response.iter_content(chunk_size=block_size):
-                if not gui.is_dowloading:
+                if not gui.is_downloading:
                     return False
                     
                 if chunk:
@@ -320,7 +320,7 @@ def download_file_with_gui(url, local_filename, gui, file_name):
         gui.current_file_var.set(f"❌ 下载过程中出现错误: {e}")
         # print(e)
 
-def get_dowload_path_ByNote() -> tuple[str, str] | None:
+def get_download_path_ByNote() -> tuple[str, str] | None:
     from webFunc import Note
     from json import loads
     note = Note("FaustLauncher", 'AutoTranslate')
@@ -337,7 +337,7 @@ def get_dowload_path_ByNote() -> tuple[str, str] | None:
     print("未获取到下载地址,失败...")
     return None
 
-def get_dowload_path_ByGhProxy() -> tuple[str, str] | None:
+def get_download_path_ByGhProxy() -> tuple[str, str] | None:
     from webFunc import Note
     from json import loads
     note = Note("FaustLauncher", 'AutoTranslate')
@@ -371,7 +371,7 @@ def download_and_extract_gui(gui:DownloadGUI, config_path: str = "", download_fi
 
     # 获取下载链接
     gui.current_file_var.set("正在链接浮务器...")
-    dowload_url = ""
+    download_url = ""
     timeout_counter = 0
     need_update_translate = True
     is_custome = False
@@ -400,10 +400,10 @@ def download_and_extract_gui(gui:DownloadGUI, config_path: str = "", download_fi
     os.makedirs(temp_dir, exist_ok=True)
     
     success_count = 0
-    dowload_way = settings_manager.get_setting('translate_download_way')
+    download_way = settings_manager.get_setting('translate_download_way')
     
     for file_info in download_files:
-        if not gui.is_dowloading:
+        if not gui.is_downloading:
             break
 
         # 检查字体文件是否已存在
@@ -415,41 +415,41 @@ def download_and_extract_gui(gui:DownloadGUI, config_path: str = "", download_fi
 
         if file_info['name'] == '零协会汉化包':
 
-            if dowload_way == 2:
+            if download_way == 2:
                 print("使用 GitHub Release 方式下载汉化文件...")
 
-                while not dowload_url:
+                while not download_url:
                     if timeout_counter >= 10:
                         gui.current_file_var.set("❌ 获取GitHub Release信息失败，已达最大重试次数")
                         return False
                     
-                    dowload_url, name = get_github_release_url() # type: ignore
+                    download_url, name = get_github_release_url() # type: ignore
 
-                    if not dowload_url:
+                    if not download_url:
                         timeout_counter += 1
                         gui.current_file_var.set(f"❌ 获取GitHub Release信息失败，准备重试...\n(剩余次数 {10 - timeout_counter})")
                         time.sleep(1)
                     else:
-                        print (f"获取到下载链接: {dowload_url}\n 零协汉化版本号: {name}")
-                        file_info['url'] = dowload_url
+                        print (f"获取到下载链接: {download_url}\n 零协汉化版本号: {name}")
+                        file_info['url'] = download_url
                         if not check_need_up_translate(name):
                             print("当前已是最新汉化版本，无需更新。")
                             need_update_translate = False
                         else:
                             print("检测到新版本，准备更新...")
 
-            elif dowload_way == 0 or dowload_way == 1:
-                if dowload_way == 1:
+            elif download_way == 0 or download_way == 1:
+                if download_way == 1:
                     print("使用upfile下载汉化文件...")
-                    result = get_dowload_path_ByNote()  
-                elif dowload_way == 0:
+                    result = get_download_path_ByNote()  
+                elif download_way == 0:
                     print('使用 gh-proxy 代理加速下载')
-                    result = get_dowload_path_ByGhProxy()
+                    result = get_download_path_ByGhProxy()
 
                 if result: # type: ignore
-                    dowload_url, version = result
-                    print (f"获取到下载链接: {dowload_url}\n 零协汉化版本号: {version}")
-                    file_info['url'] = dowload_url
+                    download_url, version = result
+                    print (f"获取到下载链接: {download_url}\n 零协汉化版本号: {version}")
+                    file_info['url'] = download_url
                 else:
                     gui.current_file_var.set("❌ 获取下载地址失败")
                     return False
@@ -501,6 +501,6 @@ def download_and_extract_gui(gui:DownloadGUI, config_path: str = "", download_fi
 
 def main_gui(parrent, config_path: str = ""):
     """GUI入口点"""
-    gui = DownloadGUI(parrent, config_path, dowload_func=download_and_extract_gui)
+    gui = DownloadGUI(parrent, config_path, download_func=download_and_extract_gui)
     
     return gui

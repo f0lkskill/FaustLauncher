@@ -537,12 +537,12 @@ class DownloadCenterPage:
         
         # 下载图标
         try:
-            print(f"正在下载图标: {icon_url}")
+            # print(f"正在下载图标: {icon_url}")
             response = requests.get(icon_url, timeout=10, verify=False)
             if response.status_code == 200:
                 with open(icon_path, 'wb') as f:
                     f.write(response.content)
-                print(f"图标下载成功: {icon_path}")
+                # print(f"图标下载成功: {icon_path}")
                 return icon_path
             else:
                 print(f"图标下载失败，状态码: {response.status_code}")
@@ -557,7 +557,7 @@ class DownloadCenterPage:
     
     def download_addon(self, addon):
         # 准备下载信息
-        download_url = addon.get('dowload_url')
+        download_url = addon.get('download_url')
         if not download_url:
             messagebox.showerror("错误", "插件下载链接无效")
             return
@@ -584,7 +584,7 @@ class DownloadCenterPage:
             # 更新状态栏
             self.status_var.set(f"插件: {addon.get('name', 'unknown')}")
             
-            gui = DownloadGUI(self.root.root, addon_path, False, dowload_func=download_and_extract_gui)
+            gui = DownloadGUI(self.root.root, addon_path, False, download_func=download_and_extract_gui)
             thread = threading.Thread(target=download_and_extract_gui, args=(gui, addon_path, download_files), daemon=True)
             thread.start()
 
@@ -599,7 +599,7 @@ class DownloadCenterPage:
     
     def download_mod(self, mod):
         # 准备下载信息
-        download_url = mod.get('dowload_url')
+        download_url = mod.get('download_url')
         if not download_url:
             messagebox.showerror("错误", "Mod下载链接无效")
             return
@@ -625,7 +625,7 @@ class DownloadCenterPage:
             # 更新状态栏
             self.status_var.set(f"Mod: {mod.get('name', 'unknown')}")
 
-            gui = DownloadGUI(self.root.root, mod_path, False, dowload_func=download_and_extract_gui)
+            gui = DownloadGUI(self.root.root, mod_path, False, download_func=download_and_extract_gui)
             thread = threading.Thread(target=download_and_extract_gui, args=(gui, mod_path, download_files))
             thread.start()
 

@@ -14,9 +14,11 @@ def sync_settings():
 
     for key, value in current_config.items():
         if key == 'version_info':
+            # 不能同步版本信息，否则意味着重复的更新。
             continue
         if key in target_config:
             try:
+                # 同步设置值
                 target_config[key]['value'] = value['value']
             except:
                 pass

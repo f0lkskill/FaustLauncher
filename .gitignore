@@ -146,3 +146,4 @@ lang/*
 !lang/hereAreSomeResource
 mods/*
 addons/*
+backup_resources/*

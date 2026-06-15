@@ -26,7 +26,7 @@ BAR_BG = '#21262d'
 
 class DownloadGUI:
     def __init__(self, parent, config_path: str = "", auto_start: bool = True,
-                 dowload_func=None):
+                 download_func=None):
         self.root = tk.Toplevel(parent)
         self.root.withdraw()
         self.root.title("下载中...")
@@ -49,7 +49,7 @@ class DownloadGUI:
         center_window(self.root)
 
         self.config_path = config_path
-        self.is_dowloading = True
+        self.is_downloading = True
         self._bg_photo = None
 
         self.current_file_var = tk.StringVar(value="初始化下载组件...")
@@ -66,7 +66,7 @@ class DownloadGUI:
         self.fade_in()
 
         if auto_start:
-            self.start_download(dowload_func)
+            self.start_download(download_func)
 
     @staticmethod
     def _pil_rounded_rect_mask(size, radius):
@@ -136,7 +136,7 @@ class DownloadGUI:
 
     def fade_in(self):
         def animate(alpha=0.0):
-            if alpha < 1.0 and self.is_dowloading:
+            if alpha < 1.0 and self.is_downloading:
                 self.root.attributes('-alpha', alpha)
                 self.root.after(25, lambda: animate(alpha + 0.05))
             else:
@@ -202,7 +202,7 @@ class DownloadGUI:
                 self.root.after(20, lambda: animate(alpha - 0.05))
             else:
                 self.root.attributes('-alpha', 0.0)
-                self.is_dowloading = False
+                self.is_downloading = False
                 self.root.destroy()
         animate()
 
@@ -263,15 +263,15 @@ class DownloadGUI:
 
         self.root.update_idletasks()
 
-    def start_download(self, dowload_func=None):
-        self.is_dowloading = True
-        thread = threading.Thread(target=self.run_download, args=(dowload_func,))
+    def start_download(self, download_func=None):
+        self.is_downloading = True
+        thread = threading.Thread(target=self.run_download, args=(download_func,))
         thread.daemon = True
         thread.start()
 
-    def run_download(self, dowload_func=None):
+    def run_download(self, download_func=None):
         try:
-            success = dowload_func(self, self.config_path) # type: ignore
+            success = download_func(self, self.config_path) # type: ignore
             if success:
                 self.root.after(300, self.root.destroy)
             else:
@@ -281,4 +281,4 @@ class DownloadGUI:
         except Exception as e:
             self.current_file_var.set(f"下载过程中出现错误: {e}")
         finally:
-            self.is_dowloading = False
+            self.is_downloading = False

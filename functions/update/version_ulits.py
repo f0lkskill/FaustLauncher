@@ -7,13 +7,13 @@ from tkinter import messagebox
 
 settings_manager = get_settings_manager()
 
-def dowload_new_version(dow_root, dowload_files:list):
+def download_new_version(dow_root, download_files:list):
     import os,subprocess
     from time import sleep
     print("正在更新启动器版本...")
     os.makedirs(f"cache/new_version", exist_ok=True)
-    dowload_gui = dow_root
-    download_thread = Thread(target=download_and_extract_gui, args=(dowload_gui,f"cache/new_version", dowload_files, False))
+    download_gui = dow_root
+    download_thread = Thread(target=download_and_extract_gui, args=(download_gui,f"cache/new_version", download_files, False))
     download_thread.start()
     while download_thread.is_alive():
         sleep(1)
@@ -54,14 +54,14 @@ def check_version_update(root):
                 return need_update, version_info['versions'][version_info['latest_release_version']], version_info['latest_release_version']
             
         from functions.web_update.zeroasso_dow import DownloadGUI
-        gui_dow = DownloadGUI(root, 'cache/', False, dowload_func=download_and_extract_gui)
+        gui_dow = DownloadGUI(root, 'cache/', False, download_func=download_and_extract_gui)
 
-        dowload_files = [{
+        download_files = [{
             "url": version_info['versions'][version_info['latest_release_version']]['url'],
             "name": f"FaustLauncher_{version_info['latest_release_version']} 安装包",
             "temp_filename": f"FaustLauncher_{version_info['latest_release_version'].replace('.','_')}.zip"
         }]
-        Thread(target=dowload_new_version, args=(gui_dow, dowload_files)).start()
+        Thread(target=download_new_version, args=(gui_dow, download_files)).start()
         need_update = True
     else:
         print(f"当前启动器版本 {current_version} 已是最新版本，无需更新。")
