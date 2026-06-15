@@ -119,11 +119,11 @@
         "page": "美化"
     },
     "enable_mods": {
-        "name": "启用Mod功能",
+        "name": "启用Mod功能（实验性）",
         "type": "boolean",
-        "default": true,
+        "default": false,
         "value": false,
-        "description": "是否加载 Mod",
+        "description": "是否加载 Mod\n注意: 由于游戏切换了新的引擎，导致大部分mod已经完全失效，不建议您启用 Mod 加载。\n我们将会在接下来的版本进行修复。",
         "page": "Mod"
     },
     "hide_mod_load": {
@@ -188,8 +188,8 @@
     "version_info": {
         "name": "版本信息",
         "type": "UNABLE_TO_EDIT",
-        "default": "V0.6.0-pre.3",
-        "value": "V0.6.0-pre.3",
+        "default": "V0.6.0-pre.4",
+        "value": "V0.6.0-pre.4",
         "description": "当前应用程序的版本信息"
     },
     "mems": {

@@ -32,7 +32,7 @@ except ImportError as e:
 
 downloading = False
 root: tk.Tk = None # type: ignore
-debug = True
+debug = False
 settings_manager = get_settings_manager()
 bg_color:str = settings_manager.get_setting("bg_color") # type: ignore
 VERSION_INFO:str = settings_manager.get_setting("version_info") # type: ignore
@@ -74,13 +74,18 @@ class FaustLauncherApp:
         self.bg_canvas = tk.Canvas(self.container, highlightthickness=0)
         self.bg_canvas.place(x=0, y=0, relwidth=1, relheight=1)
         
-        # 创建内容容器
-        self.content_frame = tk.Frame(self.container, bg=self.bg_color)
-        self.content_frame.place(relx=0.5, rely=0.5, anchor=tk.CENTER, width=700, height=600)
+        # 创建内容 Canvas（显示毛玻璃背景图片 - 参考 loading_info.py 模糊+暗化方案）
+        self.content_canvas = tk.Canvas(self.container, highlightthickness=0, bg=self.bg_color)
+        self.content_canvas.place(relx=0.5, rely=0.5, anchor=tk.CENTER, width=700, height=600)
         
-        # 创建分页控件
-        self.notebook = ttk.Notebook(self.content_frame)
-        self.notebook.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        # 保存当前内容区毛玻璃图片引用（防止GC）
+        self.current_content_bg = None
+        self.tab_frost_canvases = []
+        
+        # 创建分页控件 - 嵌入内容 Canvas
+        self.notebook = ttk.Notebook(self.content_canvas)
+        self.content_canvas.create_window(350, 300, window=self.notebook,
+                                          anchor=tk.CENTER, width=680, height=580)
         
         # 创建页面 - 添加工具页、插件&mod管理页和下载中心
         self.home_frame = tk.Frame(self.notebook, bg=self.bg_color)
@@ -90,7 +95,17 @@ class FaustLauncherApp:
         self.download_center_frame = tk.Frame(self.notebook, bg=self.bg_color)  # 下载中心页面
         self.about_frame = tk.Frame(self.notebook, bg=self.bg_color)
         self.settings_frame = tk.Frame(self.notebook, bg=self.bg_color)
-        
+
+        # 为每个标签页创建毛玻璃背景 Canvas（置于最底层，让内部 frame 透出毛玻璃效果）
+        self.tab_frost_canvases = []
+        for frame in [self.home_frame, self.features_frame, self.tools_frame,
+                      self.mod_addon_frame, self.download_center_frame,
+                      self.about_frame, self.settings_frame]:
+            canvas = tk.Canvas(frame, highlightthickness=0)
+            canvas.place(x=0, y=0, relwidth=1, relheight=1)
+            canvas.lower(1)
+            self.tab_frost_canvases.append(canvas)
+
         # 添加页面到分页控件
         self.notebook.add(self.home_frame, text="🏘 主页")
         self.notebook.add(self.features_frame, text="✈ 快捷方式")
@@ -253,6 +268,11 @@ class FaustLauncherApp:
         tools_container = tk.Frame(self.tools_frame, bg=self.bg_color)
         tools_container.pack(fill=tk.BOTH, expand=True, padx=80, pady=20)
         
+        tools_frost = tk.Canvas(tools_container, highlightthickness=0)
+        tools_frost.place(x=0, y=0, relwidth=1, relheight=1)
+        tools_frost.lower(1)
+        self.tab_frost_canvases.append(tools_frost)
+        
         def spawn_function_tr():
             source_path = f"{settings_manager.get_setting('game_path')}/LimbusCompany_Data/Assets/Resources_moved/Localize/en"
             target_path = "lang/LLC_zh-CN"
@@ -409,14 +429,12 @@ class FaustLauncherApp:
                 # 缩放图片
                 image = image.resize((new_width, new_height), Image.Resampling.LANCZOS)
                 
-                # 应用高斯模糊效果
+                # 应用高斯模糊效果（用户设置的模糊程度）
                 gaussian_level: float = settings_manager.get_setting('bg_gaussian_blur') # type: ignore
                 blurred_image = image.filter(ImageFilter.GaussianBlur(radius=gaussian_level))
                 
-                # 转换为PhotoImage
+                # ===== 1. 主背景：bg_canvas 显示模糊图片（无暗化） =====
                 bg_image = ImageTk.PhotoImage(blurred_image)
-                
-                # 保存图片引用
                 self.current_bg_image = bg_image
                 
                 # 清除Canvas上的旧图片
@@ -431,6 +449,65 @@ class FaustLauncherApp:
                                           anchor=tk.NW, 
                                           image=bg_image,
                                           tags="background")
+                
+                # ===== 2. 内容区毛玻璃背景：裁剪背景 + 额外模糊 + 暗化（参考 loading_info.py） =====
+                from PIL import ImageEnhance  # 确保导入
+                
+                # 内容区域位置（与 content_canvas 位置一致）
+                content_left = (width - 700) // 2
+                content_top = (height - 600) // 2
+                
+                # 将内容区域坐标映射到背景图片坐标
+                crop_x = int(content_left - x_position)
+                crop_y = int(content_top - y_position)
+                crop_w = 700
+                crop_h = 600
+                
+                # 确保裁剪区域在图片范围内
+                crop_x = max(0, min(crop_x, new_width - 1))
+                crop_y = max(0, min(crop_y, new_height - 1))
+                crop_w = min(crop_w, new_width - crop_x)
+                crop_h = min(crop_h, new_height - crop_y)
+                
+                if crop_w > 0 and crop_h > 0:
+                    # 从模糊背景上裁剪内容区域
+                    glass_region = blurred_image.crop((crop_x, crop_y, crop_x + crop_w, crop_y + crop_h))
+                    
+                    # 额外模糊：让内容区比背景更模糊，呈现毛玻璃质感
+                    glass_region = glass_region.filter(ImageFilter.GaussianBlur(radius=10))
+                    
+                    # 降低亮度（参考 loading_info.py: ImageEnhance.Brightness(img).enhance(0.65)）
+                    glass_region = ImageEnhance.Brightness(glass_region).enhance(0.55)
+
+                    # 叠加暗色调蒙版（~#1e1e1e），与 container frame 的 bg_color(#181818) 视觉融合
+                    dark_overlay = Image.new('RGB', glass_region.size, (30, 30, 30))
+                    glass_region = Image.blend(glass_region, dark_overlay, 0.5)
+
+                    # 转换并保存
+                    glass_photo = ImageTk.PhotoImage(glass_region)
+                    self.current_content_bg = glass_photo
+                    
+                    # 在 content_canvas 上显示毛玻璃背景（完全覆盖内容区域）
+                    self.content_canvas.delete("all")
+                    self.content_canvas.create_image(350, 300, image=glass_photo)
+                    # 重新创建 notebook 嵌入窗口（确保在毛玻璃图片之上）
+                    self.content_canvas.create_window(350, 300, window=self.notebook,
+                                                      anchor=tk.CENTER, width=680, height=580)
+
+                    # 更新所有标签页内部的毛玻璃背景（仅删除frost图片，保留create_text文字）
+                    # 同时更新所有标签页内部的毛玻璃背景
+                    if hasattr(self, 'tab_frost_canvases'):
+                        for canvas in self.tab_frost_canvases:
+                            canvas.delete("frost_bg")
+                            canvas.create_image(350, 300, image=glass_photo, tags=("frost_bg",))
+                            canvas.tag_lower("frost_bg")
+
+                # 在Canvas上居中显示模糊背景图片
+                self.bg_canvas.create_image(x_position, y_position, 
+                                          anchor=tk.NW, 
+                                          image=bg_image,
+                                          tags="background")
+                
             except Exception as e:
                 print(f"加载背景图片失败: {e}")
                 # 使用默认背景颜色
@@ -457,10 +534,10 @@ class FaustLauncherApp:
         # 配置自定义主题
         style.theme_use('clam')
         
-        style.configure('TNotebook', background=bg_color)
-        style.configure('TNotebook.Tab', background=bg_color, foreground='#ecf0f1',
+        style.configure('TNotebook', background=self.lighten_bg_color, borderwidth=0)
+        style.configure('TNotebook.Tab', background=self.lighten_bg_color, foreground='#ecf0f1',
                        padding=[15, 5], font=('Microsoft YaHei UI', 10))
-        style.map('TNotebook.Tab', background=[('selected', self.lighten_bg_color)])
+        style.map('TNotebook.Tab', background=[('selected', self.bg_color)])
         
         # 配置标签样式 - 使用白色文字，在模糊背景上更清晰
         style.configure("Title.TLabel",
@@ -492,18 +569,21 @@ class FaustLauncherApp:
         """初始化主页内容"""
         from threading import Thread
 
-        # 创建标题标签
-        title_label = ttk.Label(self.home_frame, text="✨ Faust Launcher ✨", style="Title.TLabel")
-        title_label.pack(pady=20)
-        
-        # 创建说明标签
+        # 使用 ttk Label 作为标题（保持布局，深色背景融合毛玻璃）
         description = "欢迎使用 Faust Launcher - 您人生中绝无仅有的完美启动器！\n懒人化的一键操作，这就是浮士德大人的聪明才智口牙！"
-        desc_label = ttk.Label(self.home_frame, text=description, style="Subtitle.TLabel", justify=tk.CENTER)
-        desc_label.pack(pady=10)
+        
+        frost = self.tab_frost_canvases[0]
+        frost.create_text(350, 50, text="✨ Faust Launcher ✨",
+                          fill='white', font=('Microsoft YaHei UI', 25, 'bold'),
+                          anchor=tk.CENTER, tags=("home_title",))
+        frost.create_text(350, 110, text=description,
+                          fill='white', font=('Microsoft YaHei UI', 13),
+                          anchor=tk.CENTER, justify=tk.CENTER, width=600,
+                          tags=("home_desc",))
         
         # 创建快速操作区域
         quick_actions_frame = ttk.LabelFrame(self.home_frame, text="  🚀 快速操作", style="Custom.TLabelframe")
-        quick_actions_frame.pack(padx=30, pady=10)
+        quick_actions_frame.pack(padx=30, pady=(160, 10))
         
         # 创建按钮容器 - 使用浅色背景
         button_container = tk.Frame(quick_actions_frame, bg=self.lighten_bg_color)
@@ -672,6 +752,14 @@ class FaustLauncherApp:
         # 创建功能区域
         features_container = tk.Frame(self.features_frame, bg=self.bg_color)
         features_container.pack(fill=tk.BOTH, expand=True, padx=20, pady=10)
+
+        # 在 features_container 内部添加毛玻璃 Canvas（卡片间隙透出毛玻璃效果）
+        features_frost = tk.Canvas(features_container, highlightthickness=0)
+        features_frost.place(x=0, y=0, relwidth=1, relheight=1)
+        features_frost.lower(1)
+        self.tab_frost_canvases.append(features_frost)
+
+        # 创建功能列表 - 使用tkinter支持的十六进制颜色
         
         # 创建功能列表 - 使用tkinter支持的十六进制颜色
         features = [
@@ -732,72 +820,106 @@ class FaustLauncherApp:
             features_container.columnconfigure(i, weight=1)
         for i in range(2):
             features_container.rowconfigure(i, weight=1)
-    
+            
     def init_about_page(self):
         """初始化关于页面内容"""
-        # 创建标题标签
-        title_label = ttk.Label(self.about_frame, text="ℹ️ 关于 Faust Launcher", style="Title.TLabel")
-        title_label.pack(pady=30)
+        frost = self.tab_frost_canvases[5]  # about_frame 的毛玻璃 Canvas
         
-        # 创建内容区域
-        content_frame = tk.Frame(self.about_frame, bg=self.bg_color)
-        content_frame.pack(fill=tk.BOTH, expand=True, padx=50, pady=20)
+        # ========== 1. 标题（在毛玻璃上 = 透明背景） ==========
+        frost.create_text(350, 40, text="ℹ️关于 Faust Launcher",
+                          fill='white', font=('Microsoft YaHei UI', 23, 'bold'),
+                          anchor=tk.CENTER, tags=("about_title",))
         
-        # 添加应用程序信息
-        about_info = [
-            f"🌟 版本: {VERSION_INFO}",
-            "👥 开发: FolkSkill"
-            "",
-            "Faust Launcher 是一个专为懒人但丁设计的现代化一键启动器。"
-            "",
-            "✨ 特色功能:",
-            "零协会汉化自动更新，气泡mod自动更新下载，mod管理，载入，无需多余配置，全部内置"
-            "",
-            "🎯 我们的目标:",
-            "让每一个但丁都解放自己的双手，专心坐牢。",
-            "",
-            "© 2025 Faust Launcher. 版权所有。"
-        ]
+        # ========== 2. 版本徽标 ==========
+        ver_badge = tk.Frame(frost, bg='#e74c3c')
+        frost.create_window(350, 78, window=ver_badge, anchor=tk.CENTER,
+                            tags=("content_win",))
+        tk.Label(ver_badge, text=f"{VERSION_INFO}", bg='#e74c3c', fg='white',
+                 font=('Microsoft YaHei UI', 9, 'bold'), padx=14, pady=1).pack()
         
-        for info in about_info:
-            color = 'white' if not info.startswith('✨') and not info.startswith('🎯') else '#e74c3c'
-            weight = 'normal' if not info.startswith('✨') and not info.startswith('🎯') else 'bold'
+        # ========== 3. 内容卡片 ==========
+        card = tk.Frame(frost, bg='#1e1e1e', highlightbackground='#333333',
+                        highlightthickness=1, highlightcolor='#333333')
+        frost.create_window(340, 115, window=card, anchor=tk.N,
+                            width=620, height=350, tags=("content_win",))
+        
+        # 标题栏
+        tk.Label(card, text="📦 版本信息", bg='#1e1e1e', fg='#e74c3c',
+                font=('Microsoft YaHei UI', 12, 'bold')).pack(anchor='w', padx=20, pady=(10, 5))
+        
+        tk.Label(card, text=f"  当前版本: {VERSION_INFO}", bg='#1e1e1e', fg='#cccccc',
+                font=('Microsoft YaHei UI', 10)).pack(anchor='w', padx=20, pady=2)
+        tk.Label(card, text="  开发者: FolkSkill", bg='#1e1e1e', fg='#cccccc',
+                font=('Microsoft YaHei UI', 10)).pack(anchor='w', padx=20, pady=2)
+        
+        # 分隔线
+        tk.Frame(card, bg='#333333', height=1).pack(fill=tk.X, padx=20, pady=10)
             
-            info_label = tk.Label(content_frame, 
-                                text=info,
-                                bg=self.bg_color,
-                                fg=color,
-                                font=('Microsoft YaHei UI', 10, weight),
-                                justify=tk.LEFT if info.startswith('   •') else tk.CENTER)
-            info_label.pack(anchor=tk.CENTER if not info.startswith('   •') else tk.W, pady=2)
+        # 介绍标题
+        tk.Label(card, text="📖 应用介绍", bg='#1e1e1e', fg='#3498db',
+                font=('Microsoft YaHei UI', 12, 'bold')).pack(anchor='w', padx=20, pady=(0, 5))
         
-        # 创建底部按钮区域 - 使用深蓝色背景
-        buttons_frame = tk.Frame(self.about_frame, bg=self.bg_color)
-        buttons_frame.pack(pady=30)
+        # 带滚动条的文本区域
+        desc_frame = tk.Frame(card, bg='#1e1e1e')
+        desc_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=(0, 10))
         
-        # 添加按钮
+        desc_text = tk.Text(desc_frame, bg='#1e1e1e', fg='#cccccc',
+                           font=('Microsoft YaHei UI', 10), wrap=tk.WORD,
+                           relief=tk.FLAT, bd=0, padx=5, pady=5,
+                           highlightthickness=0)
+        scrollbar = tk.Scrollbar(desc_frame, command=desc_text.yview, width=8,
+                                troughcolor='#1e1e1e', activebackground='#555555')
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        desc_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        desc_text.config(yscrollcommand=scrollbar.set)
+        
+        # 配置文本标签
+        desc_text.tag_configure("h2", font=('Microsoft YaHei UI', 11, 'bold'),
+                               foreground='#f1c40f', spacing1=6, spacing3=3)
+        desc_text.tag_configure("h3", font=('Microsoft YaHei UI', 10, 'bold'),
+                               foreground='#2ecc71', spacing1=4, spacing3=2)
+        desc_text.tag_configure("normal", foreground='#cccccc',
+                               font=('Microsoft YaHei UI', 10))
+        desc_text.tag_configure("highlight", foreground='#e2e8f0',
+                               font=('Microsoft YaHei UI', 10, 'bold'))
+        desc_text.tag_configure("muted", foreground='#666666',
+                               font=('Microsoft YaHei UI', 9))
+        
+        # 插入内容
+        desc_text.insert(tk.END, "一个专为懒人但丁设计的现代化启动器\n\n", "highlight")
+        desc_text.insert(tk.END, "✨ 特色功能\n", "h2")
+        desc_text.insert(tk.END, "  · 零协会汉化自动更新\n", "normal")
+        desc_text.insert(tk.END, "  · 气泡mod自动更新下载\n", "normal")
+        desc_text.insert(tk.END, "  · Mod 管理 & 一键载入\n", "normal")
+        desc_text.insert(tk.END, "  · 无需多余配置，全部内置\n\n", "normal")
+        desc_text.insert(tk.END, "🎯 我们的目标\n", "h3")
+        desc_text.insert(tk.END, "让每一个但丁都解放自己的双手，专心坐牢。\n\n", "normal")
+        desc_text.insert(tk.END, "© 2025 Faust Launcher. 版权所有。", "muted")
+        desc_text.config(state=tk.DISABLED)  # 只读
+        
+        # ========== 4. 底部操作按钮（居中 + 悬停反馈） ==========
+        btn_frame = tk.Frame(frost, bg=self.bg_color)
+        frost.create_window(340, 480, window=btn_frame, anchor=tk.N,
+                            width=480, height=45, tags=("content_win",))
+        
         buttons_data = [
-            {"text": "🌐 bilibili", "command": self.open_website, "color": "#22c9e6"},
-            {"text": "💌 意见反馈", "command": self.send_feedback, "color": "#9b59b6"},
-            {"text": "📦 开源地址", "command": lambda: self.open_feature({"name": "📦 Github"}), "color": "#777777"},
-            {"text": "📄 检查更新", "command": lambda: notify_new_version(current_version_name=VERSION_INFO,info = '版本信息',root=self.root), "color": "#2ecc71"}
+            ("🌐 bilibili", self.open_website, "#22c9e6", "#1a9bbf"),
+            ("💌 意见反馈", self.send_feedback, "#9b59b6", "#7d3c98"),
+            ("📦 开源地址", lambda: self.open_feature({"name": "📦 Github"}), "#777777", "#555555"),
+            ("📄 检查更新", lambda: notify_new_version(
+                current_version_name=VERSION_INFO, info='版本信息', root=self.root), "#2ecc71", "#27ae60"),
         ]
         
-        for btn_data in buttons_data:
-            button = tk.Button(buttons_frame,
-                             text=btn_data["text"],
-                             command=btn_data["command"],
-                             bg=btn_data["color"],
-                             fg='white',
-                             font=('Microsoft YaHei UI', 10, 'bold'),
-                             relief='flat',
-                             padx=15,
-                             pady=8,
-                             cursor='hand2')
-            button.pack(side=tk.LEFT, padx=10)
-            # 添加悬停效果
-            button.bind("<Enter>", lambda e, b=button: b.configure(bg=self.darken_color(b.cget('bg'))))
-            button.bind("<Leave>", lambda e, b=button, c=btn_data["color"]: b.configure(bg=c))
+        for text, cmd, color, hover_color in buttons_data:
+            btn = tk.Button(btn_frame, text=text, command=cmd,
+                           bg=color, fg='white', bd=0, cursor='hand2',
+                           font=('Microsoft YaHei UI', 9, 'bold'),
+                           padx=16, pady=6)
+            btn.pack(side=tk.LEFT, padx=6, expand=True)
+            
+            # ── 悬停效果（参考 version_info.py: on_enter / on_leave） ──
+            btn.bind("<Enter>", lambda e, b=btn, hc=hover_color: b.config(bg=hc))
+            btn.bind("<Leave>", lambda e, b=btn, oc=color: b.config(bg=oc))
 
     def lighten_color(self, color, percent):
         """颜色变亮"""

@@ -557,7 +557,7 @@ class DownloadCenterPage:
     
     def download_addon(self, addon):
         # 准备下载信息
-        download_url = addon.get('download_url')
+        download_url = addon.get('dowload_url')
         if not download_url:
             messagebox.showerror("错误", "插件下载链接无效")
             return
@@ -599,7 +599,7 @@ class DownloadCenterPage:
     
     def download_mod(self, mod):
         # 准备下载信息
-        download_url = mod.get('download_url')
+        download_url = mod.get('dowload_url')
         if not download_url:
             messagebox.showerror("错误", "Mod下载链接无效")
             return

@@ -89,15 +89,15 @@ def skill_color_process(gameLang: str):
                         break
                     
                 # 缺少对应的 config 信息，请求用户输入并写入对应的文件
-                if not success:
-                    print(f"技能 {skill_content['levelList'][0]['name']} 缺少对应的 config 信息，跳过...")
-                    print(f"技能 {skill_content['levelList'][0]['name']} 缺少对应的 config 信息，请求用户输入...")
-                    skill_info = {
-                         "id": skill_content['id'],
-                         "type": input(f"请输入技能 {skill_content['id']} 的罪孽类型："),
-                         "desc": input(f"请输入技能 {skill_content['id']} 的描述：")
-                    }
-                    cf_c.append(skill_info)
+                # if not success:
+                #     print(f"技能 {skill_content['levelList'][0]['name']} 缺少对应的 config 信息，跳过...")
+                #     print(f"技能 {skill_content['levelList'][0]['name']} 缺少对应的 config 信息，请求用户输入...")
+                #     skill_info = {
+                #          "id": skill_content['id'],
+                #          "type": input(f"请输入技能 {skill_content['id']} 的罪孽类型："),
+                #          "desc": input(f"请输入技能 {skill_content['id']} 的描述：")
+                #     }
+                #     cf_c.append(skill_info)
 
                 with open(pf, 'w', encoding='utf-8') as tar_file:
                     dump(pf_c, tar_file, indent=2, ensure_ascii=False)
