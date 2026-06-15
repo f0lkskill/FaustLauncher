@@ -46,7 +46,7 @@ class CustomTranslationTool:
         self.init_ui()
         
         # 加载现有的修改记录
-        # self.load_existing_changes()
+        self.load_existing_changes()
         
         # 刷新文件树
         self.refresh_file_tree()
@@ -183,7 +183,7 @@ class CustomTranslationTool:
         jump_btn.pack(side=tk.LEFT)
         
         # 搜索工具栏
-        search_tool_frame = tk.Frame(toolbar_frame, bg='#2c3e50')
+        search_tool_frame = tk.Frame(toolbar_frame, bg=self.root.lighten_bg_color)
         search_tool_frame.pack(side=tk.RIGHT, padx=20)
         
         search_tool_label = tk.Label(search_tool_frame, text="查找:", 
@@ -357,7 +357,7 @@ class CustomTranslationTool:
                 relative_path = os.path.relpath(dir_path, self.lang_dir)
                 node = self.file_tree.insert(parent, 'end', text=dir_name, 
                                             values=(relative_path, True))
-                print(f"添加目录节点: {dir_name}")
+                # print(f"添加目录节点: {dir_name}")
                 self.build_tree(node, dir_path)
             
             # 添加文件
