@@ -42,6 +42,8 @@ class ModAddonManagerPage:
         # self.notebook.add(tk.Frame(self.notebook), text="")
     
     def create_addons_tab(self):
+        """创建插件管理标签页"""
+        
         addons_frame = tk.Frame(self.notebook, bg=self.lighten_bg_color)
         self.notebook.add(addons_frame, text="🔌 插件管理")
         self.addons_list_frame = tk.Frame(addons_frame, bg=self.bg_color)
@@ -52,6 +54,7 @@ class ModAddonManagerPage:
         self.show_addons()
     
     def create_new_mods_tab(self):
+        """创建新Mod架构管理标签页"""
         mods_frame = tk.Frame(self.notebook, bg=self.lighten_bg_color)
         self.notebook.add(mods_frame, text="🎮 Mod管理")
         self.mods_list_frame = tk.Frame(mods_frame, bg=self.bg_color)
@@ -63,6 +66,7 @@ class ModAddonManagerPage:
     
     def create_styled_button(self, parent, text, command, color):
         """创建样式统一的按钮"""
+        
         btn = tk.Button(parent, text=text, command=command,
                        font=('Microsoft YaHei UI', 10, 'bold'),
                        bg=color, fg='white',
@@ -96,6 +100,8 @@ class ModAddonManagerPage:
         return color
     
     def show_addons(self):
+        """显示插件管理列表"""
+        
         self.addon_manager.scan_addons()
         self.all_addons = self.addon_manager.get_all_addons()
         self._load_enabled_state(self.all_addons, 'addon_info.json', self.addon_enabled)
@@ -104,6 +110,8 @@ class ModAddonManagerPage:
                            self.all_addons, self.addon_page, self.addon_enabled, 'addon')
 
     def _show_detail(self, item, item_type):
+        """显示插件或Mod的详细信息"""
+        
         info = item['info']
         display_name = info.get('name', item['name'])
         enabled = self._is_enabled(item_type, item['name'])

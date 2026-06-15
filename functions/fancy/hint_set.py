@@ -10,7 +10,7 @@ def simple_replace(battlehint_path:str):
         ui_data = json.load(f)
     for k in ui_data["dataList"]:
         if k['id'] == 'loginui_loading_battlehint':
-            k['content'] = '你知道吗 ？'
+            k['content'] = '你知道吗？'
     with open(ui_file_path, 'w', encoding='utf-8') as f:
         json.dump(ui_data, f, ensure_ascii=False, indent=4)
 

@@ -1734,7 +1734,7 @@
     {
       "id": "battle_special_10114_1",
       "desc": "",
-      "dlg": "<color=#d4dfe8>……是我李箱。虽说姿态异常，但仍是李箱。毫无疑问。我是……与小姐共同追求理想的侍卫李箱，以上。</color>"
+      "dlg": "<color=#d4dfe8>……是我李箱。虽说姿态异常，但仍是李箱。毫无疑问。我是……与小姐共同追求理想的侍卫李箱。</color>"
     },
     {
       "id": "battle_special_10114_2",
@@ -2274,7 +2274,7 @@
     {
       "id": "battle_s3_10211_1_4-02",
       "desc": "",
-      "dlg": "<color=#ffa033>……火光之中！</color>"
+      "dlg": "<color=#ffa033>火焰之中！</color>"
     },
     {
       "id": "battle_select_10212_1",
@@ -4136,6 +4136,41 @@
       "dlg": "<color=#293b95>骨断！</color>"
     },
     {
+      "id": "battle_select_30501_1",
+      "desc": "############ E.G.O变换形态::着影挥刀 默尔索 E1 ############",
+      "dlg": "<color=#3477f7>不存在无法投下阴影之日光，因此，我亦甘愿接纳这阴影。</color>"
+    },
+    {
+      "id": "battle_endcommand_30501_1",
+      "desc": "",
+      "dlg": "<color=#3477f7>……在我被吞没之前……斩断。</color>"
+    },
+    {
+      "id": "battle_s3_30501_1",
+      "desc": "",
+      "dlg": "<color=#3477f7>虽然月华如此皎洁。</color>"
+    },
+    {
+      "id": "battle_s3_30501_2",
+      "desc": "",
+      "dlg": "<color=#3477f7>但那月光无法持续至晦日！</color>"
+    },
+    {
+      "id": "battle_break_30501_1",
+      "desc": "",
+      "dlg": "<color=#3477f7>向我伸出的手……已然摇曳了吗。</color>"
+    },
+    {
+      "id": "battle_kill_30501_1",
+      "desc": "",
+      "dlg": "<color=#3477f7>斩首。</color>"
+    },
+    {
+      "id": "battle_dead_30501_1",
+      "desc": "",
+      "dlg": "<color=#3477f7>前方连一寸……也无法望见……</color>"
+    },
+    {
       "id": "battle_select_10509_1",
       "desc": "############ 死兔帮老大 默尔索 9 ############",
       "dlg": "<color=#293b95>目前时间并不多。</color>"
@@ -5227,6 +5262,46 @@
       "dlg": "<color=#d9d9d9>请在那里……尽情观赏吧！</color>"
     },
     {
+      "id": "battle_select_10615_1",
+      "desc": "############ S公司推奴人 鸿璐 15 ############",
+      "dlg": "<color=#5bffde>哎呀。请小心些！刚刚我差点就把你当成奴婢绑起来了哦~</color>"
+    },
+    {
+      "id": "battle_endcommand_10615_1",
+      "desc": "",
+      "dlg": "<color=#5bffde>把他们全都抓起来！</color>"
+    },
+    {
+      "id": "battle_enemy_break_10615_1",
+      "desc": "",
+      "dlg": "<color=#5bffde>若你还是不想回去的话……</color>"
+    },
+    {
+      "id": "battle_kill_10615_1",
+      "desc": "",
+      "dlg": "<color=#5bffde>就把脑袋留下来吧！</color>"
+    },
+    {
+      "id": "battle_break_10615_1",
+      "desc": "",
+      "dlg": "<color=#5bffde>唔……</color>"
+    },
+    {
+      "id": "battle_dead_10615_1",
+      "desc": "",
+      "dlg": "<color=#5bffde>……被抓的反而是我啊……咳……</color>"
+    },
+    {
+      "id": "battle_s3_10615_1_1",
+      "desc": "",
+      "dlg": "<color=#5bffde>请老实点！</color>"
+    },
+    {
+      "id": "battle_s3_10615_1_3-03",
+      "desc": "",
+      "dlg": "<color=#5bffde>被捕绳捆住吧！</color>"
+    },
+    {
       "id": "battle_select_10701_1",
       "desc": "############ LCB罪人希斯克利夫 ############",
       "dlg": "<color=#6e44a6>怎么？什么事？</color>"
@@ -5799,12 +5874,12 @@
     {
       "id": "battle_s3_10714_1_1",
       "desc": "",
-      "dlg": "<color=#ff100f>血爪炎化！</color>"
+      "dlg": "<color=#ff100f>血爪炎火！</color>"
     },
     {
       "id": "battle_special_10714_2",
       "desc": "",
-      "dlg": "<color=#ff100f>血爪炎化！</color>"
+      "dlg": "<color=#ff100f>血爪炎火！</color>"
     },
     {
       "id": "battle_special_10714_2-01",
@@ -5859,7 +5934,7 @@
     {
       "id": "battle_s3_10715_1_5-02",
       "desc": "",
-      "dlg": "<color=#db19e6>哈……将痛苦……铭刻于你！</color>"
+      "dlg": "<color=#db19e6>将痛苦……铭刻于你！</color>"
     },
     {
       "id": "battle_special_10715_1_1",
@@ -6419,7 +6494,7 @@
     {
       "id": "battle_special_10813_6",
       "desc": "",
-      "dlg": "<color=#ff9500>芒和雨……</color>"
+      "dlg": "<color=#ff9500>芒、桐和雨……</color>"
     },
     {
       "id": "battle_special_10813_7",
@@ -6510,6 +6585,101 @@
       "id": "battle_s2_10814_1_3",
       "desc": "",
       "dlg": "<color=#e81aff>三！</color>"
+    },
+    {
+      "id": "battle_select_10815_1",
+      "desc": "############ LCD 现场推理小队 以实玛利 15 [R] ############",
+      "dlg": "<color=#36e7dc>……这附近有可能对您造成危险，请退后。</color>"
+    },
+    {
+      "id": "battle_endcommand_10815_1",
+      "desc": "",
+      "dlg": "<color=#36e7dc>拔剑，处决！</color>"
+    },
+    {
+      "id": "battle_enemy_break_10815_1",
+      "desc": "",
+      "dlg": "<color=#36e7dc>若继续将气堵截的话……</color>"
+    },
+    {
+      "id": "battle_kill_10815_1",
+      "desc": "",
+      "dlg": "<color=#36e7dc>便能将其吃下！</color>"
+    },
+    {
+      "id": "battle_break_10815_1",
+      "desc": "",
+      "dlg": "<color=#36e7dc>或许是时候撤退了……</color>"
+    },
+    {
+      "id": "battle_dead_10815_1",
+      "desc": "",
+      "dlg": "<color=#36e7dc>若是能……将剑笔直地刺出的话……就足够了……</color>"
+    },
+    {
+      "id": "battle_s3_10815_1_1-01",
+      "desc": "",
+      "dlg": "<color=#36e7dc>鬼火腰击。</color>"
+    },
+    {
+      "id": "battle_s3_10815_1_1-02",
+      "desc": "",
+      "dlg": "<color=#36e7dc>鬼火腰击。</color>"
+    },
+    {
+      "id": "battle_s3_10815_1_2-02",
+      "desc": "",
+      "dlg": "<color=#36e7dc>变形三手。</color>"
+    },
+    {
+      "id": "battle_s3_10815_1_2-02",
+      "desc": "",
+      "dlg": "<color=#36e7dc>三手。</color>"
+    },
+    {
+      "id": "battle_s3_10815_1_3-01",
+      "desc": "",
+      "dlg": "<color=#36e7dc>相战！</color>"
+    },
+    {
+      "id": "battle_s3_10815_1_3-02",
+      "desc": "",
+      "dlg": "<color=#36e7dc>相战。</color>"
+    },
+    {
+      "id": "battle_s3_10815_1_4-01",
+      "desc": "",
+      "dlg": "<color=#36e7dc>清潾火！</color>"
+    },
+    {
+      "id": "battle_s3_10815_1_4-03",
+      "desc": "",
+      "dlg": "<color=#36e7dc>清潾火！</color>"
+    },
+    {
+      "id": "battle_s3_10815_1_5",
+      "desc": "",
+      "dlg": "<color=#36e7dc>鬼火腰击。变形三手。</color>"
+    },
+    {
+      "id": "battle_special_10815_1",
+      "desc": "",
+      "dlg": "<color=#36e7dc>既然无暇回顾过去，那便只有向前开辟道路。</color>"
+    },
+    {
+      "id": "battle_special_10815_2",
+      "desc": "",
+      "dlg": "<color=#36e7dc>已事先判断好了形势。</color>"
+    },
+    {
+      "id": "battle_special_10815_3_1",
+      "desc": "",
+      "dlg": "<color=#36e7dc>肉斩！</color>"
+    },
+    {
+      "id": "battle_special_10815_3_2",
+      "desc": "",
+      "dlg": "<color=#36e7dc>骨断！</color>"
     },
     {
       "id": "battle_select_10901_1",
