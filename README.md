@@ -1,6 +1,4 @@
-<div align="center">
-
-# <img src="https://lz.qaiu.top/parser?url=https://folkskill.lanzoum.com/iZ3FJ3ieytsh&pwd=f3ae" width="48" height="48" style="vertical-align: middle;"> FaustLauncher
+# <img src="https://github.com/user-attachments/assets/61ef5c44-e6c9-468e-b6dd-7f1cfafe57e7" width="48" height="48" style="vertical-align: middle;"> FaustLauncher
 
 **浮士德启动器 — 您人生中绝无仅有的完美启动器**
 
@@ -47,7 +45,7 @@
 
 | 主界面 | Mod 管理 | 美化效果 |
 |:---:|:---:|:---:|
-| ![主界面](https://lz.qaiu.top/parser?url=https://folkskill.lanzoum.com/iPk0K3rxi51i&pwd=31pj) | ![拓展管理](https://lz.qaiu.top/parser?url=https://folkskill.lanzoum.com/iwZcf3rxi52j&pwd=3qdb) | ![关于](https://lz.qaiu.top/parser?url=https://folkskill.lanzoum.com/i40pe3rxi54b&pwd=95bx) |
+| ![主界面](https://github.com/user-attachments/assets/c915905c-182e-467c-bdb2-0b3b6356808d) | ![拓展管理](https://github.com/user-attachments/assets/0f2ccf53-d963-44e0-a3b2-acb9a903c0f5) | ![关于](https://github.com/user-attachments/assets/aad39817-d476-4c02-8f40-5c28e4ad647c) |
 
 ---
 
