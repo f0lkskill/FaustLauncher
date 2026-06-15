@@ -147,3 +147,5 @@ lang/*
 mods/*
 addons/*
 backup_resources/*
+
+resources/*
