@@ -11,7 +11,7 @@ class FontSelectorGUI:
         self.root.withdraw()  # 先隐藏窗口，防止闪烁
 
         self.root.title("字体替换工具")
-        self.root.geometry("700x600")
+        self.root.geometry("500x600")
         self.root.resizable(True, True)
         self.parent = window  # 保存父窗口引用
         self.root.configure(bg=self.parent.lighten_bg_color)  # 继承父窗口的背景颜色
@@ -56,19 +56,6 @@ class FontSelectorGUI:
 
     def create_widgets(self):
         """创建界面组件"""
-        # 主标题
-        title_frame = tk.Frame(self.root, bg=self.parent.lighten_bg_color)
-        title_frame.pack(fill=tk.X, padx=20, pady=(20, 10))
-        
-        title_label = tk.Label(title_frame, text="字体替换工具", 
-                              font=('Microsoft YaHei UI', 18, 'bold'),
-                              bg=self.parent.lighten_bg_color, fg='#ecf0f1')
-        title_label.pack()
-        
-        subtitle_label = tk.Label(title_frame, text="管理 Context 和 Title 字体文件",
-                                 font=('Microsoft YaHei UI', 10),
-                                 bg=self.parent.lighten_bg_color, fg='#bdc3c7')
-        subtitle_label.pack(pady=(5, 0))
         
         # 主内容区域
         main_frame = tk.Frame(self.root, bg=self.parent.bg_color)
@@ -77,13 +64,6 @@ class FontSelectorGUI:
         # 创建选项卡
         notebook = ttk.Notebook(main_frame)
         notebook.pack(fill=tk.BOTH, expand=True)
-        
-        # 设置选项卡样式
-        style = ttk.Style()
-        style.configure('TNotebook', background=self.parent.bg_color)
-        style.configure('TNotebook.Tab', background=self.parent.lighten_bg_color, foreground='#ecf0f1',
-                       padding=[15, 5], font=('Microsoft YaHei UI', 10))
-        style.map('TNotebook.Tab', background=[('selected', '#3498db')])
         
         # Context字体选项卡
         context_frame = tk.Frame(notebook, bg=self.parent.bg_color)
@@ -94,18 +74,6 @@ class FontSelectorGUI:
         title_frame = tk.Frame(notebook, bg=self.parent.bg_color)
         notebook.add(title_frame, text="Title 字体")
         self.create_font_tab(title_frame, "Title", self.title_font_path, self.title_preview_data)
-        
-        # 状态栏
-        status_frame = tk.Frame(self.root, bg=self.parent.lighten_bg_color, height=30)
-        status_frame.pack(fill=tk.X, side=tk.BOTTOM)
-        status_frame.pack_propagate(False)
-        
-        self.status_var = tk.StringVar()
-        self.status_var.set("就绪")
-        status_label = tk.Label(status_frame, textvariable=self.status_var,
-                               font=('Microsoft YaHei UI', 9),
-                               bg=self.parent.lighten_bg_color, fg='#95a5a6', anchor=tk.W)
-        status_label.pack(fill=tk.X, padx=20, pady=5)
         
     def create_font_tab(self, parent, font_type, font_path, preview_data):
         """创建字体选项卡"""
@@ -130,7 +98,7 @@ class FontSelectorGUI:
         
         # 预览区域
         preview_frame = tk.Frame(parent, bg=self.parent.bg_color)
-        preview_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        preview_frame.pack(fill=tk.BOTH, expand=True, padx=2, pady=2)
         
         preview_label = tk.Label(preview_frame, text="字体预览",
                                font=('Microsoft YaHei UI', 12, 'bold'),
@@ -138,12 +106,12 @@ class FontSelectorGUI:
         preview_label.pack(fill=tk.X)
         
         # 为每个选项卡创建独立的预览画布
-        canvas_frame = tk.Frame(preview_frame, bg=self.parent.lighten_bg_color, relief=tk.RAISED, borderwidth=2)
-        canvas_frame.pack(fill=tk.BOTH, expand=True, pady=(5, 0))
+        canvas_frame = tk.Frame(preview_frame, bg=self.parent.lighten_bg_color, relief=tk.RAISED, borderwidth=1)
+        canvas_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 0))
         
-        preview_canvas = tk.Canvas(canvas_frame, width=600, height=200, 
+        preview_canvas = tk.Canvas(canvas_frame, width=600, height=250, 
                                   bg=self.parent.lighten_bg_color, highlightthickness=0)
-        preview_canvas.pack(fill=tk.BOTH, expand=True, padx=2, pady=2)
+        preview_canvas.pack(fill=tk.BOTH, expand=True, padx=1, pady=1)
         preview_data['canvas'] = preview_canvas
         
         # 按钮区域
@@ -153,7 +121,7 @@ class FontSelectorGUI:
         # 创建按钮
         self.create_button(button_frame, "选择字体文件", 
                           lambda: self.select_font_file(font_type, font_path, preview_data),
-                          side=tk.LEFT, padx=(0, 10))
+                          anchor=tk.CENTER, padx=(0, 0))
 
         # TODO 完成重置功能
         # self.create_button(button_frame, "重置为默认", 
@@ -226,7 +194,7 @@ class FontSelectorGUI:
         """更新字体预览"""
         try:
             # 创建更大的预览图像
-            img = Image.new('RGB', (600, 200), color=self.parent.lighten_bg_color)
+            img = Image.new('RGB', (600, 450), color=self.parent.lighten_bg_color)
             draw = ImageDraw.Draw(img)
             
             # 加载字体 - 使用更大的字号
@@ -235,11 +203,15 @@ class FontSelectorGUI:
             font_small = ImageFont.truetype(font_path, 16)
             
             # 绘制预览文本 - 更好的布局
-            draw.text((20, 20), f"{font_type} 字体预览", font=font_large, fill='#ecf0f1')
-            draw.text((20, 70), "中文预览：你好，世界！这是一段测试文本", font=font_medium, fill='#bdc3c7')
-            draw.text((20, 100), "English: Hello World! This is a test text", font=font_medium, fill='#bdc3c7')
-            draw.text((20, 130), "数字符号：1234567890 !@#$%^&*()", font=font_small, fill='#95a5a6')
-            draw.text((20, 155), "字体路径：" + os.path.basename(font_path), font=font_small, fill='#7f8c8d')
+            draw.text((20, 15), f"{font_type} 字体预览", font=font_large, fill='#ecf0f1')
+            draw.text((20, 60), "中文预览：你好，世界！这是一段测试文本", font=font_medium, fill='#bdc3c7')
+            draw.text((20, 88), "English: Hello World! This is a test text", font=font_medium, fill='#bdc3c7')
+            draw.text((20, 116), "日本語: こんにちは、世界！これはテストテキストです", font=font_medium, fill='#bdc3c7')
+            draw.text((20, 144), "한국어: 안녕하세요, 세계! 이것은 테스트 텍스트입니다", font=font_medium, fill='#bdc3c7')
+            draw.text((20, 172), "数字符号：1234567890+-x÷＞＜≤≥Σ²³", font=font_small, fill='#95a5a6')
+            draw.text((20, 196), "特殊字符：!@#$%^&*()_+-=[]{}|;:'\",.<>/?", font=font_small, fill='#95a5a6')
+            draw.text((20, 220), "emoji字符：😊 😂 😃 😄 �️ 😁 😍 😎 😐 😞 😯 😭 😢 😄 😅 😃 😄 😅 😃 😄 😅 😃 😄 😅 😃 😄 😅 😃 😄 😅 😃 😄 😅 😃 😄 😅 😃 😅 😃 😄 😅 😃 �", font=font_small, fill='#95a5a6')
+            draw.text((20, 244), "字体路径：" + os.path.basename(font_path), font=font_small, fill='#7f8c8d')
             
             # 显示图像到对应的画布
             photo = ImageTk.PhotoImage(img)
@@ -255,7 +227,7 @@ class FontSelectorGUI:
     
     def show_error_preview(self, font_type, preview_data, error_msg=None):
         """显示错误预览"""
-        img = Image.new('RGB', (600, 200), color=self.parent.lighten_bg_color)
+        img = Image.new('RGB', (600, 250), color=self.parent.lighten_bg_color)
         draw = ImageDraw.Draw(img)
         
         # 使用系统默认字体
@@ -323,12 +295,10 @@ class FontSelectorGUI:
                 
                 # 更新显示
                 self.update_font_info(font_type, target_path, preview_data)
-                self.status_var.set(f"✓ {font_type}字体替换成功！")
                 messagebox.showinfo("成功", 
                                   f"{font_type}字体已成功替换！")
                 
             except Exception as e:
-                self.status_var.set(f"✗ 字体替换失败: {str(e)}")
                 messagebox.showerror("错误", 
                                    f"字体文件无效或替换失败:\n{str(e)}\n"
                                    f"请确保选择的是有效的TrueType字体文件(.ttf)")
@@ -343,12 +313,10 @@ class FontSelectorGUI:
             
             # 更新显示
             self.update_font_info(font_type, target_path, preview_data)
-            self.status_var.set(f"✓ {font_type}字体已重置为默认")
             messagebox.showinfo("成功", 
                               f"{font_type}字体已重置为默认状态")
             
         except Exception as e:
-            self.status_var.set(f"✗ 重置失败: {str(e)}")
             messagebox.showerror("错误", f"重置字体失败:\n{str(e)}")
     
     def run(self):
