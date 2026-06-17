@@ -149,3 +149,4 @@ addons/*
 backup_resources/*
 
 resources/*
+build_*/
