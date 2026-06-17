@@ -29,7 +29,7 @@
 | 项目 | 信息 |
 |:---|:---|
 | 🏷️ 当前版本 | `v0.6.0-pre.4` |
-| 📅 最后更新 | 2026-06-15 |
+| 📅 最后更新 | 2026-06-16 |
 | 🛠️ 开发状态 | 积极开发中 |
 | 🎯 目标平台 | Windows 10 / 11 |
 | 📜 开源协议 | MIT |
@@ -127,5 +127,5 @@
 
 <div align="center">
   <sub>Built with ❤️ for Limbus Company players.</sub><br>
-  <sub>© 2025 FaustLauncher Contributors</sub>
+  <sub> 2025 FaustLauncher Contributors</sub>
 </div>
