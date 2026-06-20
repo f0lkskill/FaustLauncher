@@ -1,7 +1,5 @@
 import tkinter as tk
 import threading
-import os
-import sys
 import time
 from functions.base.window_ulits import center_window
 from functions.base.settings_manager import get_settings_manager
@@ -207,8 +205,11 @@ class DownloadGUI:
         animate()
 
     def _on_file_var_changed(self, *args):
-        if hasattr(self, 'file_item'):
-            self.canvas.itemconfig(self.file_item, text=self.current_file_var.get())
+        try:
+            if hasattr(self, 'file_item'):
+                self.canvas.itemconfig(self.file_item, text=self.current_file_var.get())
+        except Exception:
+            pass
 
     def update_progress(self, percent, downloaded, total, speed):
         if hasattr(self, 'progress_fg'):
@@ -273,11 +274,11 @@ class DownloadGUI:
         try:
             success = download_func(self, self.config_path) # type: ignore
             if success:
-                self.root.after(300, self.root.destroy)
+                self.root.after(1000, self.root.destroy)
             else:
                 self.current_file_var.set("下载失败，请检查错误信息")
                 time.sleep(3)
-                self.root.after(300, self.root.destroy)
+                self.root.after(1000, self.root.destroy)
         except Exception as e:
             self.current_file_var.set(f"下载过程中出现错误: {e}")
         finally:

@@ -36,7 +36,7 @@
         "name": "启用终端输入效果（实验性）",
         "type": "boolean",
         "default": false,
-        "value": true,
+        "value": false,
         "description": "是否启用终端打字机输入效果功能\n若启用后, 终端文本将逐渐显示。\n注意: 这个功能有一定缺陷，可能会导致终端文本显示不完整。",
         "page": "通用"
     },
@@ -162,7 +162,7 @@
         "name": "欢迎音效",
         "type": "string",
         "default": "assets/voices/welcome_1.wav",
-        "value": "assets/voices/welcome_2.wav",
+        "value": "assets/voices/welcome_1.wav",
         "description": "启动器欢迎音效的文件路径\n可以替换为你喜欢的音效文件\n仅支持wav格式\n如果不想要欢迎音效, 可以将其设置为空字符串",
         "page": "其它"
     },
@@ -188,8 +188,8 @@
     "version_info": {
         "name": "版本信息",
         "type": "UNABLE_TO_EDIT",
-        "default": "V0.6.0-pre.4",
-        "value": "V0.6.0-pre.4",
+        "default": "V0.6.0-pre.5",
+        "value": "V0.6.0-pre.5",
         "description": "当前应用程序的版本信息"
     },
     "mems": {
@@ -199,7 +199,7 @@
             "tray_hint": false
         },
         "value": {
-            "tray_hint": true
+            "tray_hint": false
         },
         "description": "程序运行时的缓存数据\n不建议修改"
     }
