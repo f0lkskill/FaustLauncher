@@ -1,9 +1,9 @@
 from functions.webFunc import *
 from json import loads
-from functions.web_update.zeroasso_dow import download_and_extract_gui
 from functions.base.settings_manager import get_settings_manager
 from threading import Thread
 from tkinter import messagebox
+from functions.web_update.zeroasso_dow import download_and_extract_gui
 
 settings_manager = get_settings_manager()
 

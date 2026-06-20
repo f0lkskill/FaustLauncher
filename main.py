@@ -37,6 +37,35 @@ settings_manager = get_settings_manager()
 bg_color:str = settings_manager.get_setting("bg_color") # type: ignore
 VERSION_INFO:str = settings_manager.get_setting("version_info") # type: ignore
 
+if os.path.exists("updater.vbs"):
+    # 删除旧的更新脚本
+    os.remove("updater.vbs")
+    
+# 检测是否有已经正在运行的程序系统线程
+import ctypes
+# 创建单实例检测函数
+def check_single_instance():
+    """通过窗口标题检测是否已有实例在运行，如果有则恢复窗口并返回True"""
+    user32 = ctypes.windll.user32
+
+    hwnd = user32.FindWindowA(None, "Faust Launcher".encode('utf-8'))
+
+    if hwnd:
+        print(f"找到已运行的窗口，句柄: {hwnd}，准备恢复窗口")
+
+        # 根据窗口状态选择不同的恢复方式
+        if user32.IsIconic(hwnd):
+            # 窗口被最小化到任务栏 -> SW_RESTORE
+            user32.ShowWindow(hwnd, 9)
+        elif not user32.IsWindowVisible(hwnd):
+            # 窗口被隐藏（withdraw） -> SW_SHOW，不改变尺寸位置
+            user32.ShowWindow(hwnd, 5)
+
+        user32.SetForegroundWindow(hwnd)
+        return True
+
+    return False
+
 class FaustLauncherApp:
     def __init__(self, root: tk.Tk, on_initialized=None):
         global bg_color
@@ -62,6 +91,7 @@ class FaustLauncherApp:
         self.current_bg_index = 0
         self.current_bg_image = None
         self.current_blurred_bg = None
+        self._last_sound_ms = 0
         self.load_background_images()
         self.bg_color = bg_color
         self.lighten_bg_color = self.lighten_color(self.bg_color, 5)
@@ -117,6 +147,7 @@ class FaustLauncherApp:
         
         # 绑定分页切换事件
         self.notebook.bind("<<NotebookTabChanged>>", self.on_tab_changed)
+        self.root.bind_all("<ButtonPress-1>", self._on_global_click)   # 左键按下
 
         # 绑定关闭按钮事件
         def check_close():
@@ -155,6 +186,26 @@ class FaustLauncherApp:
         
         # 延迟调用初始化完成回调，确保界面完全渲染
         self.root.after(500, self._notify_initialized)
+    
+    def _on_global_click(self, event):
+        """全局点击事件处理：播放音效。"""
+
+        # 1) 节流：30ms 以内的连续点击忽略，防止拖拽/高频事件疯狂播放
+        import time
+        now_ms = int(time.time() * 1000)
+        if now_ms - self._last_sound_ms < 30:
+            return
+        self._last_sound_ms = now_ms
+
+        # 2) 排除某些不想播放的情况（可选，按需保留）
+        # event.widget 是被点到的控件，你可以按类型/名称过滤
+        widget_name = getattr(event.widget, 'winfo_class', lambda: '')()
+        # 例如：Toplevel / Frame 等空白容器被点到时不播放，只在"可交互控件"上播
+        container_classes = {'Frame', 'TFrame', 'Canvas', 'Toplevel',
+                             'Labelframe', 'TLabelframe', 'Panedwindow',
+                             'TPanedwindow'}
+        if widget_name not in container_classes:
+            play_sound("assets/voices/click.wav")
 
     def init_tray(self):
         """初始化托盘程序"""
@@ -373,7 +424,7 @@ class FaustLauncherApp:
 
     def on_tab_changed(self, event):
         """标签页切换时的动画效果"""
-        play_sound("assets/voices/click.wav")
+        # play_sound("assets/voices/click.wav")
         
         # 获取当前选中的标签页
         current_tab = self.notebook.index(self.notebook.select())
@@ -534,8 +585,9 @@ class FaustLauncherApp:
         # 配置自定义主题
         style.theme_use('clam')
         
+        # 配置 TNotebook 样式外描边为相似颜色
         style.configure('TNotebook', background=self.lighten_bg_color, borderwidth=0)
-        style.configure('TNotebook.Tab', background=self.lighten_bg_color, foreground='#ecf0f1',
+        style.configure('TNotebook.Tab', background=self.lighten_bg_color, foreground='#ecf0f1',borderwidth=0,
                        padding=[15, 5], font=('Microsoft YaHei UI', 10))
         style.map('TNotebook.Tab', background=[('selected', self.bg_color)])
         
@@ -554,7 +606,7 @@ class FaustLauncherApp:
                        foreground=self.darken_color(self.bg_color, 0.3),
                        bordercolor=self.lighten_color(self.lighten_bg_color, 40),
                        relief='raised',
-                       borderwidth=2)
+                       borderwidth=1)
         style.configure("Custom.TLabelframe.Label",
                        background=self.lighten_bg_color,
                        foreground=self.lighten_color(self.lighten_bg_color, 40),
@@ -780,7 +832,7 @@ class FaustLauncherApp:
             card_frame = tk.Frame(features_container, 
                                 bg=feature['color'],
                                 relief='raised',
-                                borderwidth=2)
+                                borderwidth=1)
             card_frame.grid(row=row, column=col, padx=10, pady=10, sticky="nsew")
             card_frame.grid_propagate(False)
             card_frame.configure(width=200, height=120)
@@ -900,7 +952,7 @@ class FaustLauncherApp:
         # ========== 4. 底部操作按钮（居中 + 悬停反馈） ==========
         btn_frame = tk.Frame(frost, bg=self.bg_color)
         frost.create_window(340, 480, window=btn_frame, anchor=tk.N,
-                            width=480, height=45, tags=("content_win",))
+                            width=350, height=45, tags=("content_win",))
         
         buttons_data = [
             ("🌐 bilibili", self.open_website, "#22c9e6", "#1a9bbf"),
@@ -914,8 +966,8 @@ class FaustLauncherApp:
             btn = tk.Button(btn_frame, text=text, command=cmd,
                            bg=color, fg='white', bd=0, cursor='hand2',
                            font=('Microsoft YaHei UI', 9, 'bold'),
-                           padx=16, pady=6)
-            btn.pack(side=tk.LEFT, padx=6, expand=True)
+                           padx=3, pady=6)
+            btn.pack(side=tk.LEFT, expand=True)
             
             # ── 悬停效果（参考 version_info.py: on_enter / on_leave） ──
             btn.bind("<Enter>", lambda e, b=btn, hc=hover_color: b.config(bg=hc))
@@ -1125,21 +1177,9 @@ def download_and_launch(obj = None, need_run_game=False):
         src_full = os.path.join(download_path, 'LimbusCompany_Data', 'Lang', 'LLC_zh-CN')
         print(f"[调试] 下载源路径: {src_full!r} 存在: {os.path.exists(src_full)}")
 
+
+        # 0. 下载翻译
         from functions.web_update.zeroasso_dow import main_gui as download_translation
-
-        # 0. 检查必要的资源内容：
-        from functions.web_update.zeroasso_dow import DownloadGUI, download_and_extract_gui
-        from functions.base.update_resource import check_resource_update
-        gui_res = DownloadGUI(root, 'resources/', False, download_func=download_and_extract_gui)
-        dt = threading.Thread(target=check_resource_update, args=(gui_res,)).start()
-
-        while gui_res.is_downloading:
-            sleep(1)
-            
-        del dt
-        gui_res.root.destroy()
-
-        # 1. 下载翻译
         print("开始下载零协会汉化包...")
         sys.path.append('functions')
         gui = download_translation(root, download_path) # type: ignore
@@ -1150,6 +1190,18 @@ def download_and_launch(obj = None, need_run_game=False):
         
         del dt
         print("零协会汉化包下载完成")
+
+        # 1. 检查必要的资源内容：
+        from functions.web_update.zeroasso_dow import DownloadGUI, download_and_extract_gui
+        from functions.base.update_resource import check_resource_update
+        gui_res = DownloadGUI(root, 'resources/', False, download_func=download_and_extract_gui)
+        dt = threading.Thread(target=check_resource_update, args=(gui_res,)).start()
+
+        while gui_res.is_downloading:
+            sleep(1)
+            
+        del dt
+        gui_res.root.destroy()
         
         # 2. 下载气泡
         print("开始下载气泡...")
@@ -1231,6 +1283,11 @@ def download_and_launch(obj = None, need_run_game=False):
 def main():
     """主函数"""
     global root
+
+    # 检测是否已有实例在运行
+    if check_single_instance():
+        # 已有实例，退出当前进程
+        os._exit(0)
 
     # 创建主窗口
     root = tk.Tk()

@@ -16,6 +16,7 @@ import shutil
 import os
 
 try:
+    print(f"尝试删除原有的版本文件夹：{f'build_{version_info}'}")
     os.rmdir(f'build_{version_info}')
     print(f"已删除原有的版本文件夹：{f'build_{version_info}'}")
 except:
@@ -42,7 +43,8 @@ shutil.copytree('config', f'build_{version_info}\\config', dirs_exist_ok=True)
 
 print("复制资源文件...")
 os.makedirs(f'build_{version_info}\\resources', exist_ok=True)
-shutil.copytree('resources\\7-zip', f'build_{version_info}\\resources', dirs_exist_ok=True)
+os.makedirs(f'build_{version_info}\\resources\\7-zip', exist_ok=True)
+shutil.copytree('resources\\7-zip', f'build_{version_info}\\resources\\7-zip', dirs_exist_ok=True)
 
 # 复制许可证和md文件
 print("复制许可证和md文件...")

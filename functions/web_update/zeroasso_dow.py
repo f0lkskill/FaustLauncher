@@ -1,8 +1,8 @@
 import os
+import time
 import requests
 import subprocess
 from functions.pages.download.download_gui import DownloadGUI
-import time
 from functions.web_update.github_ulits import GitHubReleaseFetcher
 from functions.web_update.dow_ulits import check_need_up_translate
 from functions.base.settings_manager import get_settings_manager
@@ -381,17 +381,16 @@ def download_and_extract_gui(gui:DownloadGUI, config_path: str = "", download_fi
     if download_files:
         is_custome = True
     else:
-        print("使用默认下载文件列表")
         download_files = [
-            {
-                'name': 'TTF 字体文件',
-                'url': 'https://lz.qaiu.top/parser?url=https://folkskill.lanzoum.com/irAGt3iha71c&pwd=3z4n',
-                'temp_filename': 'LLCCN-Font.7z'
-            },
             {
                 'name': '零协会汉化包',
                 'url': '',  # URL将在后续代码中动态设置
                 'temp_filename': 'LimbusLocalize_latest.7z'
+            },
+            {
+                'name': 'TTF 字体文件',
+                'url': 'https://lz.qaiu.top/parser?url=https://folkskill.lanzoum.com/irAGt3iha71c&pwd=3z4n',
+                'temp_filename': 'LLCCN-Font.7z'
             }
         ]
     
@@ -485,9 +484,6 @@ def download_and_extract_gui(gui:DownloadGUI, config_path: str = "", download_fi
         except Exception as e:
             print(e)
         finally:
-            # 清理临时文件
-            if auto_close:
-                gui.root.destroy()  # 关闭下载界面
             cleanup_temp_files(temp_file)
     
     # 创建配置文件（只在至少一个文件处理成功时创建）
