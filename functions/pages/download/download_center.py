@@ -93,6 +93,66 @@ class DownloadCenterPage:
     def load_all_data(self):
         self.load_addon_data()
         self.load_mod_data()
+        
+    def smoth_mousewheel(self, event, canvas, anim_state):
+        # 1) 取消正在进行的动画
+        if anim_state['after_id'] is not None:
+            try:
+                canvas.after_cancel(anim_state['after_id'])
+            except Exception:
+                pass
+            anim_state['after_id'] = None
+
+        # 2) 计算目标位置
+        try:
+            region = canvas.cget('scrollregion')
+            if region:
+                parts = list(map(int, region.split()))
+                region_h = parts[3] - parts[1]
+            else:
+                region_h = 0
+        except (tk.TclError, ValueError):
+            region_h = 0
+
+        win_h = max(canvas.winfo_height(), 1)
+        delta_steps = int(-1 * (event.delta / 120))  # Windows: ±120
+        px = delta_steps * max(win_h * 0.18, self._anim_px_per_unit)
+
+        if region_h > win_h:
+            delta_frac = px / (region_h - win_h)
+        else:
+            delta_frac = 0.0
+
+        try:
+            current_frac = float(canvas.yview()[0])
+        except (tk.TclError, Exception):
+            current_frac = 0.0
+
+        anim_state['target_frac'] = max(0.0, min(1.0, current_frac + delta_frac))
+        anim_state['start_frac'] = current_frac
+        anim_state['step_count'] = 0
+        anim_state['total_steps'] = self._anim_steps
+
+        # 3) 启动逐帧动画（ease-in-out cubic）
+        def _step():
+            anim_state['step_count'] += 1
+            t = anim_state['step_count'] / anim_state['total_steps']
+            eased = t * t * (3 - 2 * t) if t < 1 else 1.0
+
+            new_frac = anim_state['start_frac'] + (anim_state['target_frac'] - anim_state['start_frac']) * eased
+            new_frac = max(0.0, min(1.0, new_frac))
+
+            try:
+                canvas.yview_moveto(new_frac)
+            except tk.TclError:
+                return
+
+            if anim_state['step_count'] < anim_state['total_steps'] and abs(anim_state['target_frac'] - new_frac) > 0.0008:
+                anim_state['after_id'] = canvas.after(12, _step)
+            else:
+                anim_state['after_id'] = None
+
+        _step()
 
     def setup_ui(self):
         # 创建设置内容容器, 居中显示
@@ -144,64 +204,7 @@ class DownloadCenterPage:
         anim_state = {'target_frac': 0.0, 'step_count': 0, 'total_steps': self._anim_steps, 'after_id': None}
 
         def _on_mousewheel(event):
-            # 1) 取消正在进行的动画
-            if anim_state['after_id'] is not None:
-                try:
-                    canvas.after_cancel(anim_state['after_id'])
-                except Exception:
-                    pass
-                anim_state['after_id'] = None
-
-            # 2) 计算目标位置
-            try:
-                region = canvas.cget('scrollregion')
-                if region:
-                    parts = list(map(int, region.split()))
-                    region_h = parts[3] - parts[1]
-                else:
-                    region_h = 0
-            except (tk.TclError, ValueError):
-                region_h = 0
-
-            win_h = max(canvas.winfo_height(), 1)
-            delta_steps = int(-1 * (event.delta / 120))  # Windows: ±120
-            px = delta_steps * max(win_h * 0.18, self._anim_px_per_unit)
-
-            if region_h > win_h:
-                delta_frac = px / (region_h - win_h)
-            else:
-                delta_frac = 0.0
-
-            try:
-                current_frac = float(canvas.yview()[0])
-            except (tk.TclError, Exception):
-                current_frac = 0.0
-
-            anim_state['target_frac'] = max(0.0, min(1.0, current_frac + delta_frac))
-            anim_state['start_frac'] = current_frac
-            anim_state['step_count'] = 0
-            anim_state['total_steps'] = self._anim_steps
-
-            # 3) 启动逐帧动画（ease-in-out cubic）
-            def _step():
-                anim_state['step_count'] += 1
-                t = anim_state['step_count'] / anim_state['total_steps']
-                eased = t * t * (3 - 2 * t) if t < 1 else 1.0
-
-                new_frac = anim_state['start_frac'] + (anim_state['target_frac'] - anim_state['start_frac']) * eased
-                new_frac = max(0.0, min(1.0, new_frac))
-
-                try:
-                    canvas.yview_moveto(new_frac)
-                except tk.TclError:
-                    return
-
-                if anim_state['step_count'] < anim_state['total_steps'] and abs(anim_state['target_frac'] - new_frac) > 0.0008:
-                    anim_state['after_id'] = canvas.after(12, _step)
-                else:
-                    anim_state['after_id'] = None
-
-            _step()
+            self.smoth_mousewheel(event, canvas, anim_state)
 
         self._addon_wheel_handler = _on_mousewheel
 
@@ -248,67 +251,10 @@ class DownloadCenterPage:
         anim_state = {'target_frac': 0.0, 'step_count': 0, 'total_steps': self._anim_steps, 'after_id': None}
 
         def _on_mousewheel(event):
-            # 1) 取消正在进行的动画
-            if anim_state['after_id'] is not None:
-                try:
-                    canvas.after_cancel(anim_state['after_id'])
-                except Exception:
-                    pass
-                anim_state['after_id'] = None
-
-            # 2) 计算目标位置
-            try:
-                region = canvas.cget('scrollregion')
-                if region:
-                    parts = list(map(int, region.split()))
-                    region_h = parts[3] - parts[1]
-                else:
-                    region_h = 0
-            except (tk.TclError, ValueError):
-                region_h = 0
-
-            win_h = max(canvas.winfo_height(), 1)
-            delta_steps = int(-1 * (event.delta / 120))  # Windows: ±120
-            px = delta_steps * max(win_h * 0.18, self._anim_px_per_unit)
-
-            if region_h > win_h:
-                delta_frac = px / (region_h - win_h)
-            else:
-                delta_frac = 0.0
-
-            try:
-                current_frac = float(canvas.yview()[0])
-            except (tk.TclError, Exception):
-                current_frac = 0.0
-
-            anim_state['target_frac'] = max(0.0, min(1.0, current_frac + delta_frac))
-            anim_state['start_frac'] = current_frac
-            anim_state['step_count'] = 0
-            anim_state['total_steps'] = self._anim_steps
-
-            # 3) 启动逐帧动画（ease-in-out cubic）
-            def _step():
-                anim_state['step_count'] += 1
-                t = anim_state['step_count'] / anim_state['total_steps']
-                eased = t * t * (3 - 2 * t) if t < 1 else 1.0
-
-                new_frac = anim_state['start_frac'] + (anim_state['target_frac'] - anim_state['start_frac']) * eased
-                new_frac = max(0.0, min(1.0, new_frac))
-
-                try:
-                    canvas.yview_moveto(new_frac)
-                except tk.TclError:
-                    return
-
-                if anim_state['step_count'] < anim_state['total_steps'] and abs(anim_state['target_frac'] - new_frac) > 0.0008:
-                    anim_state['after_id'] = canvas.after(12, _step)
-                else:
-                    anim_state['after_id'] = None
-
-            _step()
+            self.smoth_mousewheel(event, canvas, anim_state)
 
         self._mod_wheel_handler = _on_mousewheel
-
+        
         canvas.bind("<MouseWheel>", _on_mousewheel)
         self.mod_scrollable_frame.bind("<MouseWheel>", _on_mousewheel)
         # 递归绑定已有的子控件
