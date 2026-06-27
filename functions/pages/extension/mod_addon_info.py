@@ -183,12 +183,14 @@ class ModAddonManagerPage:
                 if aurl:
                     tk.Label(af, text=aurl, font=('微软雅黑', 8), bg=self.bg_color, fg='#95a5a6').pack(side=tk.LEFT)
 
-        if item_type == 'mod':
-            file_names = info.get('file_names', [])
-            if file_names:
-                tk.Label(scroll_frame, text="文件", **sep).pack(fill=tk.X, pady=(8, 3))
-                for fn in file_names:
-                    tk.Label(scroll_frame, text=f"  • {fn}", **body).pack(fill=tk.X)
+        # 0.6.0-pre.6 取消显示文件列表
+        # if item_type == 'mod':
+        #     file_names = info.get('file_names', [])
+        #     if file_names:
+        #         tk.Label(scroll_frame, text="文件", **sep).pack(fill=tk.X, pady=(8, 3))
+        #         for fn in file_names:
+        #             tk.Label(scroll_frame, text=f"  • {fn}", **body).pack(fill=tk.X)
+        
         settings = info.get('settings', {})
 
         if settings:

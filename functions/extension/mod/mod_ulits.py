@@ -3,6 +3,7 @@ import json
 import shutil
 from typing import List, Dict, Any
 from functions.base.settings_manager import SettingsManager
+from subprocess import call, CREATE_NO_WINDOW
 
 class ModManager:
     mod_dir = 'mods'
@@ -64,7 +65,34 @@ class ModManager:
         for mod_path in self.get_mod_path():
             
             mod_name = os.path.basename(mod_path)
+            
             try:
+                try:
+                    # 删除 安装/卸载 脚本的 pause 命令, 可读可写模式
+                    # 用 r+ 模式打开文件（可读可写）
+                    for file_name in ['Installer.bat', 'Uninstaller.bat']:
+                        with open(os.path.join(mod_path, file_name), 'r+', encoding='utf-8') as f:
+                            content = f.read()  # 读取全部内容
+                            content = content.replace('pause', '')
+                            f.seek(0)          # 回到文件开头
+                            f.write(content)   # 写入新内容
+                            f.truncate()       # 截断多余内容（如果新内容比旧内容短）
+                            
+                except Exception as e:
+                    print(f"删除脚本pause命令时出错: {e}")
+                    
+                # 获取mod信息
+                mod_info = self.get_mod_info(mod_name)
+                if mod_info.get('settings', {}).get('enable', False):
+                    # 启用mod，载入文件
+                    # 执行安装脚本
+                    call([os.path.join(mod_path, 'Installer.bat')], shell=True, creationflags=CREATE_NO_WINDOW)
+                    print(f"成功加载Mod贴图资源: {mod_name}")
+                else:
+                    # 禁用mod
+                    call([os.path.join(mod_path, 'Uninstaller.bat')], shell=True, creationflags=CREATE_NO_WINDOW)
+                    print(f"成功卸载Mod贴图资源: {mod_name}")
+            
                 # 获取mod信息
                 mod_info = self.get_mod_info(mod_name)
                 
@@ -104,7 +132,7 @@ class ModManager:
                             print(f"卸载 Mod 文件: {target_file}")
 
             except Exception as e:
-                print(f"加载Mod {mod_name} 失败: {e}")
+                print(f"处理Mod {mod_name} 失败: {e}")
         
         return loaded_mods
         

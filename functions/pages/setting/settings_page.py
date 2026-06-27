@@ -179,7 +179,7 @@ class SettingsPage:
                                          'anim_id': None}
 
         def _on_mousewheel(event):
-            smooth_scroll(self, canvas, event.delta)
+            smooth_scroll(self, canvas, event.delta, self._anim_states[id(canvas)])
 
         canvas.bind("<MouseWheel>", _on_mousewheel)
         scrollable_frame.bind("<MouseWheel>", _on_mousewheel)

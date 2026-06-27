@@ -8,16 +8,16 @@ from subprocess import Popen
 from functions.pages.setting.settings_page import init_settings_page
 from functions.base.settings_manager import get_settings_manager
 from functions.pages.notice.loading_info import create_simple_splash
-from functions.base.window_ulits import center_window
 from functions.web_update.sql_manager import notify_new_version
 from functions.update.version_ulits import check_version_update
+from functions.base.window_ulits import center_window
 from functions.base.sound_ulits import play_sound
+from rich import print
 from functions.extension.addon.addon_ulit import AddonManager
 from functions.pages.terminal.terminal_redirect import TerminalRedirector
 from threading import Thread
-import urllib3
 import traceback
-from rich import print
+import urllib3
 
 # 禁用 urllib3 的警告
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -1193,7 +1193,7 @@ def download_and_launch(obj = None, need_run_game=False):
 
         # 1. 检查必要的资源内容：
         from functions.web_update.zeroasso_dow import DownloadGUI, download_and_extract_gui
-        from functions.base.update_resource import check_resource_update
+        from functions.web_update.update_resource import check_resource_update
         gui_res = DownloadGUI(root, 'resources/', False, download_func=download_and_extract_gui)
         dt = threading.Thread(target=check_resource_update, args=(gui_res,)).start()
 

@@ -1,12 +1,12 @@
 import tkinter as tk
 
 
-def smooth_scroll(self, canvas, delta):
+def smooth_scroll(self, canvas, delta, anim_state):
     """在指定 canvas 上触发一次平滑滚动"""
     # Windows 下 delta = ±120 的倍数
     unit = int(delta / 120) if abs(delta) >= 120 else (1 if delta > 0 else -1)
 
-    state = self._anim_states.get(id(canvas))
+    state = anim_state
     if state is None:
         # 退化到瞬时滚动
         canvas.yview_scroll(-unit * 5, "units")
@@ -38,7 +38,7 @@ def smooth_scroll(self, canvas, delta):
             region_h = 0
     except (tk.TclError, ValueError):
         region_h = 0
-
+        
     win_h = max(canvas.winfo_height(), 1)
     # 每格滚动窗口高度的 ~18%
     px_per_unit = max(win_h * 0.18, 36)

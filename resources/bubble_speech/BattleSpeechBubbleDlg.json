@@ -1256,6 +1256,9 @@
       "dlg": "<color=#a65411>不是……虫子！</color>"
     },
 
+
+
+
     {
       "id": "battle_select_10101_1",
       "desc": "############ LCB 罪人 李箱 1 ############",
@@ -2379,7 +2382,7 @@
     {
       "id": "battle_special_10213_1",
       "desc": "",
-      "dlg": "<color=#ffbfb4>箭无虚发。</color>"
+      "dlg": "<color=#ffbfb4>必定命中。</color>"
     },
     {
       "id": "battle_special_10213_3",
@@ -2867,11 +2870,6 @@
     },
     {
       "id": "battle_s3_10310_1_3-01",
-      "desc": "",
-      "dlg": "<color=#ffef23>被刺穿吧！</color>"
-    },
-    {
-      "id": "battle_s3_10310_1_3",
       "desc": "",
       "dlg": "<color=#ffef23>被刺穿吧！</color>"
     },
@@ -6632,7 +6630,7 @@
       "dlg": "<color=#36e7dc>变形三手。</color>"
     },
     {
-      "id": "battle_s3_10815_1_2-02",
+      "id": "battle_s3_10815_1_2-03",
       "desc": "",
       "dlg": "<color=#36e7dc>三手。</color>"
     },
@@ -9195,6 +9193,196 @@
       "id": "battle_special_11215_4",
       "desc": "",
       "dlg": "<color=#3fa8f3>自充能，启动。</color>"
+    },
+    {
+      "id": "battle_select_10716_1",
+      "desc": "############ 蜘蛛巢 拇指子辈 希斯克利夫 16 [N] ############",
+      "dlg": "<color=#f15d55>面对强者时，不要以力相抗，而是用剑尖挑开化解……面对多数敌人时要压低身姿……</color>"
+    },
+    {
+      "id": "battle_endcommand_10716_1",
+      "desc": "",
+      "dlg": "<color=#f15d55>观察这份轨迹回想起来吧。</color>"
+    },
+    {
+      "id": "battle_enemy_break_10716_1",
+      "desc": "",
+      "dlg": "<color=#f15d55>尽好职责。</color>"
+    },
+    {
+      "id": "battle_kill_10716_1",
+      "desc": "",
+      "dlg": "<color=#f15d55>只是重演罢了。</color>"
+    },
+    {
+      "id": "battle_break_10716_1",
+      "desc": "",
+      "dlg": "<color=#f15d55>呼……</color>"
+    },
+    {
+      "id": "battle_dead_10716_1",
+      "desc": "",
+      "dlg": "<color=#f15d55>是因为……还没完成的缘故……</color>"
+    },
+    {
+      "id": "battle_special_10716_1",
+      "desc": "",
+      "dlg": "<color=#f15d55>这样一来就是一对一了……</color>"
+    },
+    {
+      "id": "battle_special_10716_2",
+      "desc": "",
+      "dlg": "<color=#f15d55>……别想过去。</color>"
+    },
+    {
+      "id": "battle_special_10716_4",
+      "desc": "",
+      "dlg": "<color=#f15d55>解体完毕。同样的招数已经行不通了。</color>"
+    },
+    {
+      "id": "battle_s3_10716_1_1",
+      "desc": "",
+      "dlg": "<color=#f15d55>以与你无限相似的角度与速度。</color>"
+    },
+    {
+      "id": "battle_s3_10716_1_1-02",
+      "desc": "",
+      "dlg": "<color=#f15d55>猎人！</color>"
+    },
+    {
+      "id": "battle_s3_10716_1_2",
+      "desc": "",
+      "dlg": "<color=#f15d55>巴勒莫解体剑术。</color>"
+    },
+    {
+      "id": "battle_s3_10716_1_2-01",
+      "desc": "",
+      "dlg": "<color=#f15d55>解鹿！</color>"
+    },
+    {
+      "id": "battle_s3_10716_1_2-02",
+      "desc": "",
+      "dlg": "<color=#f15d55>演示完毕。</color>"
+    },
+    {
+      "id": "battle_select_10916_1",
+      "desc": "############ 蜘蛛巢 拇指父辈 罗佳 16 [N] ############",
+      "dlg": "<color=#ee342b>太碍事了，滚开。啧。所以说没经历过战争的家伙就是……</color>"
+    },
+    {
+      "id": "battle_endcommand_10916_1",
+      "desc": "",
+      "dlg": "<color=#ee342b>有自信就接接看吧。</color>"
+    },
+    {
+      "id": "battle_enemy_break_10916_1",
+      "desc": "",
+      "dlg": "<color=#ee342b>再这样下去你可是会死的哦？</color>"
+    },
+    {
+      "id": "battle_kill_10916_1",
+      "desc": "",
+      "dlg": "<color=#ee342b>哈！下一个。</color>"
+    },
+    {
+      "id": "battle_break_10916_1",
+      "desc": "",
+      "dlg": "<color=#ee342b>这个疯……</color>"
+    },
+    {
+      "id": "battle_dead_10916_1",
+      "desc": "",
+      "dlg": "<color=#ee342b>……我，我居然输了……？这算什么……狗……</color>"
+    },
+    {
+      "id": "battle_special_10916_1",
+      "desc": "",
+      "dlg": "<color=#ee342b>怎么？打不中吗？</color>"
+    },
+    {
+      "id": "battle_special_10916_1_2",
+      "desc": "",
+      "dlg": "<color=#ee342b>慢吞吞的。</color>"
+    },
+    {
+      "id": "battle_special_10916_1_3",
+      "desc": "",
+      "dlg": "<color=#ee342b>这也太明显了吧~</color>"
+    },
+    {
+      "id": "battle_special_10916_1_4",
+      "desc": "",
+      "dlg": "<color=#ee342b>我全都看得一清二楚。</color>"
+    },
+    {
+      "id": "battle_special_10916_1_5",
+      "desc": "",
+      "dlg": "<color=#ee342b>我早说过了吧。太慢了。</color>"
+    },
+    {
+      "id": "battle_special_10916_2",
+      "desc": "",
+      "dlg": "<color=#ee342b>……啧。才用了几下就。</color>"
+    },
+    {
+      "id": "battle_special_10916_3",
+      "desc": "",
+      "dlg": "<color=#ee342b>哈！轮到我了~？</color>"
+    },
+    {
+      "id": "battle_special_10916_4",
+      "desc": "",
+      "dlg": "<color=#ee342b>教材。这很难吗？</color>"
+    },
+    {
+      "id": "battle_special_10916_5",
+      "desc": "",
+      "dlg": "<color=#ee342b>烦死了，烦死了啊！良秀那家伙，还有你，全都烦死了！！！</color>"
+    },
+    {
+      "id": "battle_special_10916_5_2",
+      "desc": "",
+      "dlg": "<color=#ee342b>我爱恨就恨！我恨所有那该死的家族！还有你们！全部！</color>"
+    },
+    {
+      "id": "battle_special_10916_6",
+      "desc": "",
+      "dlg": "<color=#ee342b>下一个人出来。嘛，结果……肯定是明摆着的了。</color>"
+    },
+    {
+      "id": "battle_special_10916_7",
+      "desc": "",
+      "dlg": "<color=#ee342b>我像是会死在这种破地方的人吗？</color>"
+    },
+    {
+      "id": "battle_special_10916_8",
+      "desc": "",
+      "dlg": "<color=#ee342b>哈。果然变成这样了。蠢货。连这都撑不住……</color>"
+    },
+    {
+      "id": "battle_special_10916_9",
+      "desc": "",
+      "dlg": "<color=#ee342b>心脏！瞄准心脏！</color>"
+    },
+    {
+      "id": "battle_s2_10916_1_3",
+      "desc": "",
+      "dlg": "<color=#ee342b>还敢东张西望，滚去死吧。</color>"
+    },
+    {
+      "id": "battle_s3_10916_1_1",
+      "desc": "",
+      "dlg": "<color=#ee342b>哈哈哈哈哈！</color>"
+    },
+    {
+      "id": "battle_s3_10916_1_1-01",
+      "desc": "",
+      "dlg": "<color=#ee342b>狩猎结束。</color>"
+    },
+    {
+      "id": "battle_s3_10916_1_1-02",
+      "desc": "",
+      "dlg": "<color=#ee342b>把你们统统解体！</color>"
     }
   ]
 }

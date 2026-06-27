@@ -283,3 +283,4 @@ class DownloadGUI:
             self.current_file_var.set(f"下载过程中出现错误: {e}")
         finally:
             self.is_downloading = False
+            self.root.after(1000, self.root.destroy)
