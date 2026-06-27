@@ -1,5 +1,7 @@
+import json
 import logging
 import lzma
+import time
 from zipfile import ZipFile
 
 import UnityPy
@@ -38,10 +40,17 @@ def compress_lunartique_mod(zip_path: str, output: str):
         if len(vanilla_paths) == 0:
             raise Exception("No asset files found")
 
+        manifest = {
+            "carra_format_version": 3,
+            "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "bundles": {},
+        }
+
         for vanilla_path in vanilla_paths:
             parts = vanilla_path.split("/")[-3:]
             with root.open(vanilla_path, "r") as f:
                 env = UnityPy.load(f)
+                _record_bundle_version(manifest, parts[1], env)
 
                 for obj in env.objects:
                     data = obj.get_raw_data()
@@ -53,6 +62,7 @@ def compress_lunartique_mod(zip_path: str, output: str):
                 parts = modded_path.split("/")[-3:]
                 with root.open(modded_path, "r") as f:
                     env = UnityPy.load(f)
+                    _record_bundle_version(manifest, parts[1], env)
 
                     for obj in env.objects:
                         data = obj.get_raw_data()
@@ -62,7 +72,35 @@ def compress_lunartique_mod(zip_path: str, output: str):
                             continue
                         if key not in vanilla_dict:
                             logging.info("* New object found: %s","/".join(parts))
+                        # manifest entry: bundle_subfolder/path_id.type_id -> byte_size/class_id
+                        asset_key = f"{parts[1]}/{obj.path_id}.{obj.type_id}"
+                        manifest["bundles"].setdefault(parts[1], {}).setdefault("assets", {})[asset_key] = {
+                            "byte_size": len(data),
+                            "class_id": obj.type_id,
+                        }
                         key += f".{obj.type_id}"
                         with z.open(key, "w") as z_f:
                             logging.info("* Writing %s", key)
                             z_f.write(lzma.compress(data, preset=9, format=lzma.FORMAT_XZ))
+
+            # 最后写入 manifest，便于 patch 时读取版本信息
+            z.writestr("_manifest.json", json.dumps(manifest, ensure_ascii=False, indent=2))
+
+
+def _record_bundle_version(manifest: dict, bundle_subfolder: str, env):
+    """从 UnityPy Environment 中提取 Unity 引擎版本与 SerializedFile header 版本。"""
+    bundle = manifest["bundles"].setdefault(bundle_subfolder, {})
+    if "unity_version" in bundle:
+        return
+    try:
+        bundle["unity_version"] = getattr(env.file, "version_engine", "") or ""
+        bundle["version_player"] = getattr(env.file, "version_player", "") or ""
+        # 找到第一个 SerializedFile 的 header version
+        for sub in getattr(env.file, "files", {}).values():
+            header = getattr(sub, "header", None)
+            if header is not None:
+                bundle["serialized_file_version"] = getattr(header, "version", 0)
+                bundle["unity_version"] = getattr(sub, "unity_version", bundle.get("unity_version", ""))
+                break
+    except Exception as e:
+        logging.debug("Cannot record bundle version for %s: %s", bundle_subfolder, e)

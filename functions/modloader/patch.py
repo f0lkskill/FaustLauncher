@@ -1,4 +1,5 @@
 import glob
+import json
 import xxhash
 import lzma
 import os.path
@@ -13,6 +14,74 @@ from UnityPy.streams import EndianBinaryReader
 from compress import compress_lunartique_mod
 
 import UnityPy
+
+
+# ---------- 版本/尺寸兼容辅助 ----------
+
+def load_bundle_versions(env):
+    """从 UnityPy Environment 中读取 Unity 引擎版本与 SerializedFile header 版本。"""
+    info = {"unity_version": "", "serialized_file_version": 0}
+    try:
+        info["unity_version"] = getattr(env.file, "version_engine", "") or ""
+        for sub in getattr(env.file, "files", {}).values():
+            header = getattr(sub, "header", None)
+            if header is not None:
+                info["serialized_file_version"] = getattr(header, "version", 0)
+                info["unity_version"] = getattr(sub, "unity_version", info["unity_version"])
+                break
+    except Exception:
+        pass
+    return info
+
+
+def load_carra_manifest(mod_asset_root: str, bundle_name: str) -> dict:
+    """尝试从模组解压目录里读取 _manifest.json（兼容旧版 carra 无 manifest 的场景）。"""
+    candidate = os.path.join(mod_asset_root, bundle_name, "_manifest.json")
+    if os.path.isfile(candidate):
+        try:
+            with open(candidate, "rb") as mf:
+                return json.load(mf)
+        except Exception as e:
+            logging.info("- Manifest parse failed, ignoring: %s", e)
+    return {}
+
+
+def safe_set_raw_data(obj: ObjectReader, data: bytes, manifest: dict, bundle_info: dict, asset_key: str):
+    """对比 manifest 记录的 byte_size 与当前对象的 byte_size，安全地写入原始数据。
+
+    策略：
+      - 完全一致：直接 set_raw_data(data)；
+      - 否则：按当前对象的 byte_size 截断或尾部零填充，
+        避免 UnityPy 保存时大小不一致导致 bundle 校验失败或游戏崩溃。
+    """
+    current_size = getattr(obj, "byte_size", 0)
+    asset_entry = manifest.get(asset_key, {}) if manifest else {}
+    old_size = asset_entry.get("byte_size", 0)
+
+    # 没有 manifest / 完全匹配 -> 直接写
+    if not manifest or old_size == 0 or old_size == current_size:
+        obj.set_raw_data(data)
+        return
+
+    # 尺寸变化，按当前对象要求的 byte_size 对齐
+    data_len = len(data)
+    if data_len == current_size:
+        obj.set_raw_data(data)
+        return
+
+    if data_len > current_size:
+        logging.warning(
+            "- Asset size mismatch: modded=%d, current=%d; truncating to current size (path_id=%s)",
+            data_len, current_size, asset_key,
+        )
+        obj.set_raw_data(data[:current_size])
+    else:
+        logging.warning(
+            "- Asset size mismatch: modded=%d, current=%d; zero-padding (path_id=%s)",
+            data_len, current_size, asset_key,
+        )
+        obj.set_raw_data(data + b"\x00" * (current_size - data_len))
+
 
 
 def bundle_data_paths(appdata: str = os.getenv("APPDATA")):
@@ -84,6 +153,24 @@ def cleanup_assets(bundle_data=bundle_data_paths):
 
 
 def patch_bundle_asset(env: UnityPy.Environment, mod_path: str):
+    bundle_name = os.path.basename(os.path.normpath(mod_path))
+    bundle_info = load_bundle_versions(env)
+    # manifest 解压在 mod_asset_root/{bundle_name_parent}/下一级
+    mod_root = os.path.dirname(mod_path)
+    manifest = load_carra_manifest(mod_root, bundle_name)
+    bundle_manifest = manifest.get("bundles", {}).get(bundle_name, {}) if manifest else {}
+    asset_manifest = bundle_manifest.get("assets", {}) if bundle_manifest else {}
+
+    # 若 manifest 与当前 Unity 版本差异则打印一次警告
+    if manifest:
+        old_uv = bundle_manifest.get("unity_version", "")
+        cur_uv = bundle_info.get("unity_version", "")
+        if old_uv and cur_uv and old_uv != cur_uv:
+            logging.warning(
+                "- Unity engine version mismatch: modded=%s current=%s; applying size-safe injection",
+                old_uv, cur_uv,
+            )
+
     for f in env.file.files.values():
         if not isinstance(f, SerializedFile):
             logging.info("Expected serialized file but got a %s instead?? Skipped", type(f))
@@ -112,7 +199,13 @@ def patch_bundle_asset(env: UnityPy.Environment, mod_path: str):
                     logging.info("- Mismatching asset type, vanilla: %d, modded: %d, skipped", obj.type_id, type_id)
                     continue
                 with open(mod_part_path, "rb") as mf:
-                    obj.set_raw_data(lzma.decompress(mf.read(), format=lzma.FORMAT_XZ))
+                    safe_set_raw_data(
+                        obj,
+                        lzma.decompress(mf.read(), format=lzma.FORMAT_XZ),
+                        asset_manifest,
+                        bundle_info,
+                        f"{bundle_name}/{path_id}.{type_id}",
+                    )
             elif type_id > 0:
                 logging.info("- Adding unused mod asset of type %d: %s", type_id, mod_part_path)
                 reader = EndianBinaryReader(bytes(bytearray(1024)))

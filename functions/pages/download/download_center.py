@@ -4,7 +4,7 @@ import os, shutil
 import threading
 from PIL import Image, ImageTk
 import requests
-from functions.base.web_trigger import WebTrigger
+from functions.web_update.web_trigger import WebTrigger
 from functions.extension.mod.mod_ulits import ModManager
 from functions.extension.addon.addon_ulit import AddonManager
 from functions.base.color_ulits import darken_color, lighten_color
@@ -95,6 +95,7 @@ class DownloadCenterPage:
         self.load_mod_data()
         
     def smoth_mousewheel(self, event, canvas, anim_state):
+        """平滑滚动鼠标滚轮事件处理函数。"""
         # 1) 取消正在进行的动画
         if anim_state['after_id'] is not None:
             try:
@@ -500,15 +501,20 @@ class DownloadCenterPage:
         for mod in mod_page_data:
             self.create_mod_card(mod)
 
-        # ===== 关键修复：所有卡片创建完毕后，再次递归绑定滚轮事件 =====
+        # ===== 所有卡片创建完毕后，再次递归绑定滚轮事件 =====
         if hasattr(self, '_mod_wheel_handler'):
             self._bind_mousewheel_recursive(self.mod_scrollable_frame,
                                             self._mod_wheel_handler)
 
-    def create_addon_card(self, addon):
-        # 卡片外框：使用 _card_bg + _card_border 做清晰描边
+    def create_addon_card(self, addon:dict):
+        unable_download = addon.get('disabled', False)
+        card_bg = self._card_bg if not unable_download else darken_color(self._card_bg, 0.5)
+        text_color = '#ffffff' if not unable_download else '#bdc3c7'
+        darken_text_color = darken_color(text_color, 0.8)
+        
+        # 卡片外框：使用 card_bg + card_border 做清晰描边
         addon_frame = tk.Frame(self.addon_scrollable_frame,
-                               bg=self._card_bg,
+                               bg=card_bg,
                                relief='flat',
                                borderwidth=0,
                                highlightthickness=1,
@@ -516,32 +522,34 @@ class DownloadCenterPage:
         addon_frame.pack(fill=tk.X, padx=22, pady=8)
 
         # 插件头部（包含图标和标题）
-        header_frame = tk.Frame(addon_frame, bg=self._card_bg)
+        header_frame = tk.Frame(addon_frame, bg=card_bg)
         header_frame.pack(fill=tk.X, padx=16, pady=(6, 2))
 
         # 下载并显示图标
-        icon_path = self.download_icon(addon.get('icon_url'), addon.get('name', 'unknown'))
+        icon_path = self.download_icon(addon.get('icon_url', ''),  addon.get('name', 'unknown'))
         if icon_path and os.path.exists(icon_path):
             try:
                 image = Image.open(icon_path)
                 image = image.resize((64, 64), Image.Resampling.LANCZOS)
                 icon = ImageTk.PhotoImage(image)
-                icon_label = tk.Label(header_frame, image=icon, bg=self._card_bg)
+                icon_label = tk.Label(header_frame, image=icon, bg=card_bg)
                 icon_label.image = icon  # type: ignore
                 icon_label.pack(side=tk.LEFT, padx=(0, 12))
             except Exception as e:
                 print(f"加载图标失败: {e}")
 
         # 名称和版本
-        title_version_frame = tk.Frame(header_frame, bg=self._card_bg)
+        title_version_frame = tk.Frame(header_frame, bg=card_bg)
         title_version_frame.pack(side=tk.LEFT, fill=tk.X, expand=True)
 
         # 插件标题
         addon_name = addon.get('name', '未知插件')
+        if unable_download:
+            addon_name = f"{addon_name} (暂不可用)"
         title_label = tk.Label(title_version_frame,
                              text=addon_name,
                              font=('Microsoft YaHei UI', 11, 'bold'),
-                             bg=self._card_bg, fg='#ffffff')
+                             bg=card_bg, fg=text_color)
         title_label.pack(anchor=tk.W, pady=(0, 2))
 
         # 插件版本
@@ -549,7 +557,7 @@ class DownloadCenterPage:
         version_label = tk.Label(title_version_frame,
                                text=f"版本: {version}",
                                font=('Microsoft YaHei UI', 9),
-                               bg=self._card_bg, fg='#bdc3c7')
+                               bg=card_bg, fg=darken_text_color)
         version_label.pack(anchor=tk.W)
 
         # 插件描述
@@ -557,30 +565,30 @@ class DownloadCenterPage:
         desc_label = tk.Label(addon_frame,
                             text=description,
                             font=('Microsoft YaHei UI', 9),
-                            bg=self._card_bg, fg='#bdc3c7',
+                            bg=card_bg, fg=darken_text_color,
                             wraplength=500, justify=tk.LEFT)
         desc_label.pack(anchor=tk.W, padx=16, pady=(0, 5))
 
         # 插件作者
         authors = addon.get('authors', {})
         if authors:
-            authors_frame = tk.Frame(addon_frame, bg=self._card_bg)
+            authors_frame = tk.Frame(addon_frame, bg=card_bg)
             authors_frame.pack(fill=tk.X, padx=16, pady=(0, 5))
 
             authors_label = tk.Label(authors_frame,
                                    text="作者:",
                                    font=('Microsoft YaHei UI', 9, 'bold'),
-                                   bg=self._card_bg, fg='#ecf0f1')
+                                   bg=card_bg, fg=darken_text_color)
             authors_label.pack(anchor=tk.W, pady=(0, 2))
 
             for author_name, author_url in authors.items():
-                author_frame = tk.Frame(authors_frame, bg=self._card_bg)
+                author_frame = tk.Frame(authors_frame, bg=card_bg)
                 author_frame.pack(anchor=tk.W, pady=1)
 
                 author_name_label = tk.Label(author_frame,
                                            text=author_name,
                                            font=('Microsoft YaHei UI', 9),
-                                           bg=self._card_bg, fg='#3498db',
+                                           bg=card_bg, fg='#3498db',
                                            cursor='hand2')
                 author_name_label.pack(side=tk.LEFT, padx=(0, 5))
                 author_name_label.bind('<Button-1>', lambda e, url=author_url: self.open_url(url))
@@ -589,7 +597,7 @@ class DownloadCenterPage:
                     url_label = tk.Label(author_frame,
                                        text=author_url,
                                        font=('Microsoft YaHei UI', 8),
-                                       bg=self._card_bg, fg='#bdc3c7')
+                                       bg=card_bg, fg=darken_text_color)
                     url_label.pack(side=tk.LEFT)
 
         # 下载次数
@@ -597,31 +605,38 @@ class DownloadCenterPage:
         download_count_label = tk.Label(header_frame,
                                        text=f"下载次数: {download_count}",
                                        font=('Microsoft YaHei UI', 8),
-                                       bg=self._card_bg, fg='#bdc3c7')
+                                       bg=card_bg, fg=darken_text_color)
         download_count_label.pack(anchor=tk.E, padx=10, pady=(0, 2))
 
         # 操作按钮
-        buttons_frame = tk.Frame(addon_frame, bg=self._card_bg)
+        buttons_frame = tk.Frame(addon_frame, bg=card_bg)
         buttons_frame.pack(fill=tk.X, padx=16, pady=(2, 8))
 
         download_button = tk.Button(buttons_frame,
                                  text="📥 下载",
                                  command=lambda a=addon: self.download_addon(a),
                                  font=('Microsoft YaHei UI', 9),
-                                 bg='#27ae60', fg='#ffffff',
+                                 bg='#27ae60', fg=text_color,
                                  activebackground=darken_color('#27ae60', 0.85),
-                                 activeforeground='#ffffff',
+                                 activeforeground=text_color,
                                  relief='flat', borderwidth=0,
                                  cursor='hand2',
                                  highlightthickness=1,
                                  highlightbackground=darken_color('#27ae60', 0.7),
-                                 padx=16, pady=4)
+                                 padx=16, pady=4,
+                                 state=tk.DISABLED if unable_download else tk.NORMAL
+        )
         download_button.pack(side=tk.RIGHT, padx=5)
 
-    def create_mod_card(self, mod):
-        # 卡片外框：使用 _card_bg + _card_border 做清晰描边
+    def create_mod_card(self, mod:dict):
+        unable_download = mod.get('disabled', False)
+        card_bg = self._card_bg if not unable_download else darken_color(self._card_bg, 0.5)
+        text_color = '#ffffff' if not unable_download else '#bdc3c7'
+        darken_text_color = darken_color(text_color, 0.8)
+        
+        # 卡片外框：使用 card_bg + card_border 做清晰描边
         mod_frame = tk.Frame(self.mod_scrollable_frame,
-                             bg=self._card_bg,
+                             bg=card_bg,
                              relief='flat',
                              borderwidth=0,
                              highlightthickness=1,
@@ -629,32 +644,34 @@ class DownloadCenterPage:
         mod_frame.pack(fill=tk.X, padx=22, pady=8)
 
         # Mod头部（包含图标和标题）
-        header_frame = tk.Frame(mod_frame, bg=self._card_bg)
+        header_frame = tk.Frame(mod_frame, bg=card_bg)
         header_frame.pack(fill=tk.X, padx=16, pady=(6, 2))
 
         # 下载并显示图标
-        icon_path = self.download_icon(mod.get('icon_url'), mod.get('name', 'unknown'))
+        icon_path = self.download_icon(mod.get('icon_url', ''), mod.get('name', 'unknown'))
         if icon_path and os.path.exists(icon_path):
             try:
                 image = Image.open(icon_path)
                 image = image.resize((64, 64), Image.Resampling.LANCZOS)
                 icon = ImageTk.PhotoImage(image)
-                icon_label = tk.Label(header_frame, image=icon, bg=self._card_bg)
+                icon_label = tk.Label(header_frame, image=icon, bg=card_bg)
                 icon_label.image = icon  # type: ignore
                 icon_label.pack(side=tk.LEFT, padx=(0, 12))
             except Exception as e:
                 print(f"加载图标失败: {e}")
 
         # 名称和版本
-        title_version_frame = tk.Frame(header_frame, bg=self._card_bg)
+        title_version_frame = tk.Frame(header_frame, bg=card_bg)
         title_version_frame.pack(side=tk.LEFT, fill=tk.X, expand=True)
 
         # Mod标题
         mod_name = mod.get('name', '未知Mod')
+        if unable_download:
+            mod_name = f"{mod_name} (暂不可用)"
         title_label = tk.Label(title_version_frame,
                              text=mod_name,
                              font=('Microsoft YaHei UI', 11, 'bold'),
-                             bg=self._card_bg, fg='#ffffff')
+                             bg=card_bg, fg=text_color)
         title_label.pack(anchor=tk.W, pady=(0, 2))
 
         # Mod版本
@@ -662,7 +679,7 @@ class DownloadCenterPage:
         version_label = tk.Label(title_version_frame,
                                text=f"版本: {version}",
                                font=('Microsoft YaHei UI', 9),
-                               bg=self._card_bg, fg='#bdc3c7')
+                               bg=card_bg, fg=darken_text_color)
         version_label.pack(anchor=tk.W)
 
         # Mod描述
@@ -670,30 +687,30 @@ class DownloadCenterPage:
         desc_label = tk.Label(mod_frame,
                             text=description,
                             font=('Microsoft YaHei UI', 9),
-                            bg=self._card_bg, fg='#bdc3c7',
+                            bg=card_bg, fg=darken_text_color,
                             wraplength=500, justify=tk.LEFT)
         desc_label.pack(anchor=tk.W, padx=16, pady=(0, 5))
 
         # Mod作者
         authors = mod.get('authors', {})
         if authors:
-            authors_frame = tk.Frame(mod_frame, bg=self._card_bg)
+            authors_frame = tk.Frame(mod_frame, bg=card_bg)
             authors_frame.pack(fill=tk.X, padx=16, pady=(0, 5))
 
             authors_label = tk.Label(authors_frame,
                                    text="作者:",
                                    font=('Microsoft YaHei UI', 9, 'bold'),
-                                   bg=self._card_bg, fg='#ecf0f1')
+                                   bg=card_bg, fg=darken_text_color)
             authors_label.pack(anchor=tk.W, pady=(0, 2))
 
             for author_name, author_url in authors.items():
-                author_frame = tk.Frame(authors_frame, bg=self._card_bg)
+                author_frame = tk.Frame(authors_frame, bg=card_bg)
                 author_frame.pack(anchor=tk.W, pady=1)
 
                 author_name_label = tk.Label(author_frame,
                                            text=author_name,
                                            font=('Microsoft YaHei UI', 9),
-                                           bg=self._card_bg, fg='#3498db',
+                                           bg=card_bg, fg='#3498db',
                                            cursor='hand2')
                 author_name_label.pack(side=tk.LEFT, padx=(0, 5))
                 author_name_label.bind('<Button-1>', lambda e, url=author_url: self.open_url(url))
@@ -702,7 +719,7 @@ class DownloadCenterPage:
                     url_label = tk.Label(author_frame,
                                        text=author_url,
                                        font=('Microsoft YaHei UI', 8),
-                                       bg=self._card_bg, fg='#bdc3c7')
+                                       bg=card_bg, fg=darken_text_color)
                     url_label.pack(side=tk.LEFT)
 
         # 下载次数
@@ -710,28 +727,29 @@ class DownloadCenterPage:
         download_count_label = tk.Label(header_frame,
                                        text=f"下载次数: {download_count}",
                                        font=('Microsoft YaHei UI', 8),
-                                       bg=self._card_bg, fg='#bdc3c7')
+                                       bg=card_bg, fg=darken_text_color)
         download_count_label.pack(anchor=tk.E, padx=10, pady=(0, 2))
 
         # 操作按钮
-        buttons_frame = tk.Frame(mod_frame, bg=self._card_bg)
+        buttons_frame = tk.Frame(mod_frame, bg=card_bg)
         buttons_frame.pack(fill=tk.X, padx=16, pady=(2, 8))
 
         download_button = tk.Button(buttons_frame,
                                  text="📥 下载",
                                  command=lambda m=mod: self.download_mod(m),
                                  font=('Microsoft YaHei UI', 9),
-                                 bg='#27ae60', fg='#ffffff',
+                                 bg='#27ae60', fg=text_color,
                                  activebackground=darken_color('#27ae60', 0.85),
-                                 activeforeground='#ffffff',
+                                 activeforeground=text_color,
                                  relief='flat', borderwidth=0,
+                                 state=tk.DISABLED if unable_download else tk.NORMAL,
                                  cursor='hand2',
                                  highlightthickness=1,
                                  highlightbackground=darken_color('#27ae60', 0.7),
                                  padx=16, pady=4)
         download_button.pack(side=tk.RIGHT, padx=5)
 
-    def download_icon(self, icon_url, item_name):
+    def download_icon(self, icon_url:str, item_name:str):
         if not icon_url:
             return None
 
@@ -848,6 +866,8 @@ class DownloadCenterPage:
             mod_name = os.path.basename(mod_path)
 
             mod_info = ModManager.get_mod_info(mod_name)
+            if mod_info.get('disabled', False):
+                continue
             version = mod_info.get('version', 'unknown')
 
             for page in self.mod_data:
@@ -865,6 +885,8 @@ class DownloadCenterPage:
 
         for addon_name in addon_names:
             addon_info: dict = am.get_addon_info(addon_name)  # type: ignore
+            if addon_info.get('disabled', False):
+                continue
             version = addon_info.get('version', 'unknown')
             for page in self.addon_data:
                 for web_addon_data in page:
