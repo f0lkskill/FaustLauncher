@@ -88,38 +88,38 @@ class WebTrigger:
         try:
             pages = self.get_note_info_addon()
             for page in pages[1:]:  # 跳过第一页的总页数信息
-                addons:list[dict] = loads(page['content'])
-                # 按下载次数降序排序
-                addons.sort(key=lambda x: x.get('download_count', 0), reverse=True)
-                
-                for addon in addons:
-                    if addon.get('disabled', False):
-                        # 被禁用插件默认排序在最后
-                        addons.append(addon)
-                        addons.remove(addon)
-                
+                addons: list[dict] = loads(page['content'])
+                # 按下载次数降序排序，被禁用插件默认排序在最后
+                addons.sort(key=lambda x: (x.get('disabled', False), -x.get('download_count', 0)))
                 page['content'] = dumps(addons, indent=4, ensure_ascii=False)
             # 更新排序后的插件信息
             self.addon_info.update_note_content(dumps(pages, indent=4, ensure_ascii=False))
             print("插件信息按下载次数排序完成")
         except Exception as e:
             print(f"排序插件信息时出错: {e}")
-        
+
         # 排序mod信息
         try:
             pages = self.get_note_info_mod()
+            mods: list[dict] = []
             for page in pages[1:]:  # 跳过第一页的总页数信息
-                mods:list[dict] = loads(page['content'])
-                # 按下载次数降序排序
-                mods.sort(key=lambda x: x.get('download_count', 0), reverse=True)
-                
-                for mod in mods:
-                    if mod.get('disabled', False):
-                        # 被禁用mod默认排序在最后
-                        mods.append(mod)
-                        mods.remove(mod)
-                
-                page['content'] = dumps(mods, indent=4, ensure_ascii=False)
+                for m in loads(page['content']):
+                    mods.append(m)
+
+            # 按下载次数降序排序，被禁用mod默认排序在最后
+            mods.sort(key=lambda x: (x.get('disabled', False), -x.get('download_count', 0)))
+
+            new_pages = []
+            # 五个五个分页，每五个放在一个list中
+            total_page = len(mods) // 5 + (1 if len(mods) % 5 != 0 else 0)
+            for i in range(total_page):
+                new_pages.append(mods[i * 5:(i + 1) * 5])
+
+            # 用 enumerate 安全地按索引分配内容，避免 index() 查找导致的错误
+            for idx, page in enumerate(pages[1:], start=0):
+                if idx < len(new_pages):
+                    page['content'] = dumps(new_pages[idx], indent=4, ensure_ascii=False)
+
             # 更新排序后的mod信息
             self.mod_info.update_note_content(dumps(pages, indent=4, ensure_ascii=False))
             print("Mod信息按下载次数排序完成")

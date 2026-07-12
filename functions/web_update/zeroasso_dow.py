@@ -481,13 +481,15 @@ def download_and_extract_gui(gui:DownloadGUI, config_path: str = "", download_fi
             
             success_count += 1
             
+            
         except Exception as e:
             print(e)
         finally:
             cleanup_temp_files(temp_file)
-            gui.is_downloading = False
-            gui.root.after(1000, gui.root.destroy)
-            print('cleanup temp files')
+            # print('cleanup temp files')
+    
+    # gui.is_downloading = False
+    # gui.root.after(1000, gui.root.destroy)
     
     # 创建配置文件（只在至少一个文件处理成功时创建）
     if success_count > 0 and not is_custome:

@@ -885,11 +885,12 @@ class DownloadCenterPage:
 
         for addon_name in addon_names:
             addon_info: dict = am.get_addon_info(addon_name)  # type: ignore
-            if addon_info.get('disabled', False):
-                continue
             version = addon_info.get('version', 'unknown')
             for page in self.addon_data:
                 for web_addon_data in page:
+                    if web_addon_data.get('disabled', False):
+                        # 云端插件已禁用，跳过
+                        continue
                     if web_addon_data['name'] == addon_info['name']:
                         if web_addon_data['version'] != version:
                             print(f"检测到插件: {addon_info['name']}，当前版本: {version}，网络版本: {web_addon_data['version']}, 准备下载更新...")

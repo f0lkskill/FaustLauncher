@@ -217,16 +217,68 @@ class FaustLauncherApp:
             pystray.MenuItem('隐藏', self.root.withdraw),
         ]
 
-        addon_items = []
+        # 插件子菜单项列表，仅用于当前次构建菜单
+        self.addon_menu_items: list = []
 
-        self.addon_manager = AddonManager(addon_items)
+        # 注意：**不**把 main.py 的 addon_menu_items 传给 AddonManager，
+        # AddonManager 内部使用独立的 custom_tray_items 列表来保存插件注册的项，
+        # build_addon_menu() 在每次构建菜单时通过 get_custom_tray_items() 读取它们，
+        # 然后合并到 addon_menu_items 中。这样 build_addon_menu 可以随意 clear 自己的列表，
+        # 而不会意外清空插件注册的项。
+        self.addon_manager = AddonManager([], app=self)
         self.addon_manager.run_all_addon()
 
-        addon_menu = pystray.Menu(*addon_items)
-        root_menu = pystray.MenuItem("插件", action=addon_menu)
+        def build_addon_menu() -> pystray.Menu:
+            """动态构造插件子菜单内容"""
+            # 先清空旧项目，再根据当前扫描到的插件生成
+            self.addon_menu_items.clear()
+
+            # --- 第一部分：自动扫描的插件（点击运行该插件）---
+            auto_items: list = []
+            for addon in self.addon_manager.get_all_addons(): # type: ignore
+                name = addon['name']
+                try:
+                    enabled = bool(addon.get('info', {}).get('settings', {}).get('enable', True))
+                except Exception:
+                    enabled = True
+
+                def _make_runner(n: str):
+                    def _run(icon=None, item=None):
+                        try:
+                            self.addon_manager.run_addon(n) # type: ignore
+                        except Exception as e:
+                            print(f"手动运行插件 {n} 失败: {e}")
+                    return _run
+
+                label = f"🔧 {name}" if enabled else f"⚙️ {name} (已禁用)"
+                auto_items.append(pystray.MenuItem(label, _make_runner(name)))
+
+            # --- 第二部分：插件主动注册的自定义项 ---
+            custom_items = self.addon_manager.get_custom_tray_items() # type: ignore
+
+            # 合并两部分
+            self.addon_menu_items.extend(auto_items)
+            if custom_items:
+                # 添加分隔线（使用一个不可点击的项作为分隔）
+                if auto_items:
+                    self.addon_menu_items.append(pystray.MenuItem(
+                        '─── 自定义项 ───', None, enabled=False))
+                self.addon_menu_items.extend(custom_items)
+
+            if not self.addon_menu_items:
+                self.addon_menu_items.append(pystray.MenuItem('（暂无可用插件）', None, enabled=False))
+
+            return pystray.Menu(*self.addon_menu_items)
+
+        # 使用 lambda 让插件子菜单支持动态生成
+        def addon_menu_lambda(icon=None, item=None):
+            return build_addon_menu()
+
+        # 使用 pystray.Menu 的回调式构造，让菜单在每次打开时重建
+        root_menu = pystray.MenuItem('插件', lambda icon, item: build_addon_menu())
         menu_items.append(root_menu)
-        # menu_items.append(pystray.MenuItem('重载插件', self.addon_manager.run_all_addon))
-        menu_items.append(pystray.MenuItem('退出', lambda:os._exit(0)))
+        menu_items.append(pystray.MenuItem('重载插件', lambda icon=None, item=None: self._on_reload_addons()))
+        menu_items.append(pystray.MenuItem('退出', lambda: os._exit(0)))
 
         menu = pystray.Menu(*menu_items)
         self.tray = pystray.Icon(
@@ -238,6 +290,19 @@ class FaustLauncherApp:
 
         # 在单独线程中运行托盘图标
         threading.Thread(target=self.tray.run, daemon=True).start()
+
+    def _on_reload_addons(self):
+        """重载插件的统一入口：先清理旧实例、重新扫描、重新加载"""
+        try:
+            self.addon_manager.reload_all_addons() # type: ignore
+            # 手动触发一次托盘菜单刷新（若支持）
+            if hasattr(self, 'tray') and self.tray is not None:
+                try:
+                    self.tray.update_menu()
+                except Exception:
+                    pass
+        except Exception as e:
+            print(f"重载插件时发生错误: {e}")
 
     def _notify_initialized(self):
         """通知应用程序初始化完成"""
@@ -272,7 +337,7 @@ class FaustLauncherApp:
         """初始化插件&mod管理页面"""
         try:
             from functions.pages.extension.mod_addon_info import init_mod_addon_manager
-            self.mod_addon_page = init_mod_addon_manager(self.mod_addon_frame, self.bg_color, self.lighten_bg_color)
+            self.mod_addon_page = init_mod_addon_manager(self.mod_addon_frame, self.bg_color, self.lighten_bg_color, self)
         except Exception as e:
             print(f"初始化插件&mod管理页面失败: {e}")
             # 创建错误提示
@@ -1058,7 +1123,7 @@ class FaustLauncherApp:
 
     def check_settings(self):
         global settings_manager
-        version_info = settings_manager.get_setting("version_info")
+        # version_info = settings_manager.get_setting("version_info")
 
         if not settings_manager.get_setting("game_path"):
             print("错误: 未配置游戏路径")
@@ -1072,13 +1137,17 @@ class FaustLauncherApp:
             else:
                 print("错误: 未选择游戏文件")
                 os._exit(-1)
-
-
+                
+        mems:dict = settings_manager.get_setting('mems') # type: ignore
+        has_notify = mems.get('version_notify_flag') # type: ignore
         has_update, latest_info, name = check_version_update(self.root) # type: ignore
         if has_update:
             print(f"启动器的新版本已经发布: {name}")
         latest_info['version_name'] = name # type: ignore
-        notify_new_version(name, root = self.root, has_new_version = True, latest_info = latest_info, info = '发现新版本' if has_update else '已是最新版本') # type: ignore
+        if not has_notify:
+            notify_new_version(name, root = self.root, has_new_version = True, latest_info = latest_info, info = '发现新版本' if has_update else '已是最新版本')
+            mems['version_notify_flag'] = True
+            settings_manager.set_setting('mems', mems)
 
         # 检查是否有命令行参数
         if len(sys.argv) > 1 or not os.path.exists("lang/LLC_zh-CN"):
