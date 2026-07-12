@@ -12,9 +12,10 @@ def sync_settings():
     with open(TARGET_CONFIG_FILE, 'r', encoding='utf-8') as f:
         target_config = json.load(f)
 
+    # 不能同步版本信息，否则意味着重复的更新。
+    black_keys = ['version_info']
     for key, value in current_config.items():
-        if key == 'version_info':
-            # 不能同步版本信息，否则意味着重复的更新。
+        if key in black_keys:
             continue
         if key in target_config:
             try:

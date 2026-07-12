@@ -7,8 +7,9 @@ from functions.extension.addon.addon_ulit import AddonManager
 from functions.extension.mod.mod_ulits import ModManager
 
 class ModAddonManagerPage:
-    def __init__(self, parent_frame, bg_color, lighten_bg_color):
+    def __init__(self, parent_frame, bg_color, lighten_bg_color, app):
         self.parent = parent_frame
+        self.app = app
         self.bg_color = bg_color
         self.lighten_bg_color = lighten_bg_color
         self.addon_manager = AddonManager([])
@@ -258,6 +259,8 @@ class ModAddonManagerPage:
             
             # 刷新插件列表
             self.refresh_addons_tab()
+            
+            self.app._on_reload_addons()
             
         except Exception as e:
             print(f"更新插件设置失败: {e}")
@@ -514,6 +517,6 @@ class ModAddonManagerPage:
         self.refresh_addons_tab()
         self.refresh_mods_tab()
 
-def init_mod_addon_manager(parent_frame, bg_color, lighten_bg_color):
+def init_mod_addon_manager(parent_frame, bg_color, lighten_bg_color, app):
     """初始化插件&mod管理器页面"""
-    return ModAddonManagerPage(parent_frame, bg_color, lighten_bg_color)
+    return ModAddonManagerPage(parent_frame, bg_color, lighten_bg_color, app)

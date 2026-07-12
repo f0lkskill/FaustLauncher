@@ -3,7 +3,7 @@
         "name": "游戏路径",
         "type": "string",
         "default": "",
-        "value": "D:/steam/steamapps/common/Limbus Company/",
+        "value": "",
         "description": "游戏安装路径, 请确保路径正确\n否则可能导致启动失败和其他错误问题",
         "page": "通用"
     },
@@ -28,7 +28,7 @@
             "关闭程序"
         ],
         "default": 0,
-        "value": 1,
+        "value": 0,
         "description": "退出程序后, 程序将如何操作\n最小化到系统托盘: 程序将最小化到系统托盘, 并继续运行\n关闭程序: 程序将立即关闭",
         "page": "通用"
     },
@@ -122,7 +122,7 @@
         "name": "启用Mod功能（实验性）",
         "type": "boolean",
         "default": false,
-        "value": true,
+        "value": false,
         "description": "是否加载 Mod\n注意: 由于游戏切换了新的引擎，导致大部分mod已经完全失效，不建议您启用 Mod 加载。\n我们将会在接下来的版本进行修复。",
         "page": "Mod"
     },
@@ -162,7 +162,7 @@
         "name": "欢迎音效",
         "type": "string",
         "default": "assets/voices/welcome_1.wav",
-        "value": "assets/voices/welcome_2.wav",
+        "value": "assets/voices/welcome_1.wav",
         "description": "启动器欢迎音效的文件路径\n可以替换为你喜欢的音效文件\n仅支持wav格式\n如果不想要欢迎音效, 可以将其设置为空字符串",
         "page": "其它"
     },
@@ -170,7 +170,7 @@
         "name": "全局音效音量",
         "type": "float",
         "default": 0.5,
-        "value": 0.8,
+        "value": 0.5,
         "description": "全局音效音量\n越大的值意味着音效声音越大",
         "min": 0.0,
         "max": 1.0,
@@ -199,18 +199,20 @@
     "version_info": {
         "name": "版本信息",
         "type": "UNABLE_TO_EDIT",
-        "default": "V0.6.0-pre.5",
-        "value": "V0.6.0-pre.5",
+        "default": "V0.6.0-pre.6.fix.1",
+        "value": "V0.6.0-pre.6.fix.1",
         "description": "当前应用程序的版本信息"
     },
     "mems": {
         "name": "程序缓存",
         "type": "UNABLE_TO_EDIT",
         "default": {
-            "tray_hint": false
+            "tray_hint": false,
+            "version_notify_flag": false
         },
         "value": {
-            "tray_hint": true
+            "tray_hint": false,
+            "version_notify_flag": false
         },
         "description": "程序运行时的缓存数据\n不建议修改"
     }

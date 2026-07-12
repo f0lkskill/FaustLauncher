@@ -54,8 +54,9 @@ def check_resource_update(dow_root):
 
     for res in data:
         # print(f"检查资源 {res}，云端版本: {data[res]['version_info']}，本地版本: {local_data[res]['version_info']}")
-        if data[res]['version_info'] != local_data[res]['version_info']:
-            up_list.append(res)
+        up_list.append(res)
+        
+    # print(up_list)
 
     for res in up_list:
         if data[res]['version_info'] != local_data[res]['version_info']:
