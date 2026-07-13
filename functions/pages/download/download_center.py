@@ -783,6 +783,8 @@ class DownloadCenterPage:
 
     def download_addon(self, addon):
         # 准备下载信息
+        import time
+        
         download_url = addon.get('dowload_url')
         if not download_url:
             messagebox.showerror("错误", "插件下载链接无效")
@@ -799,7 +801,7 @@ class DownloadCenterPage:
             shutil.rmtree('addons/' + addon.get('name', 'unknown'))
         except:
             pass
-
+        
         # 导入下载模块并执行下载
         try:
             from functions.web_update.zeroasso_dow import download_and_extract_gui, DownloadGUI
@@ -807,9 +809,15 @@ class DownloadCenterPage:
 
             print(f"准备下载插件: {addon.get('name', 'unknown')}，下载链接: {download_url}")
 
+            def temp_func(gui, addon_path, download_files):
+                download_and_extract_gui(gui, addon_path, download_files)
+                time.sleep(1)
+                print('插件下载完成, 正在重载所有插件...')
+                self.root._on_reload_addons()
+                
             # 更新状态栏
-            gui = DownloadGUI(self.root.root, addon_path, False, download_func=download_and_extract_gui)
-            thread = threading.Thread(target=download_and_extract_gui, args=(gui, addon_path, download_files), daemon=True)
+            gui = DownloadGUI(self.root.root, addon_path, False, download_func=temp_func)
+            thread = threading.Thread(target=temp_func, args=(gui, addon_path, download_files), daemon=True)
             thread.start()
 
         except Exception as e:
@@ -817,7 +825,7 @@ class DownloadCenterPage:
         finally:
             # 恢复状态栏
             pass
-
+        
         threading.Thread(target=self.web_trigger.add_download_nummber_addon, args=(addon.get('name', None),)).start()  # 增加下载次数
         threading.Thread(target=self.refresh_center).start()  # 刷新界面显示最新下载次数
 

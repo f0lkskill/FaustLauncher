@@ -253,12 +253,12 @@ class AddonManager:
 
         info = self.get_addon_info(addon_name)
         if info is None:
-            print(f"插件 {addon_name} 信息读取失败，跳过运行")
+            print(f"插件 {addon_name} 信息读取失败，跳过载入")
             return False
 
         try:
             if not bool(info.get("settings", {}).get("enable", True)):
-                print(f"插件 {addon_name} 被禁用，跳过运行")
+                print(f"插件 {addon_name} 被禁用，跳过载入")
                 return False
         except Exception:
             pass
