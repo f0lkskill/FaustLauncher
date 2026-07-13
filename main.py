@@ -1340,6 +1340,10 @@ def download_and_launch(obj = None, need_run_game=False):
         
         # 有参数或需要运行游戏
         if obj is not None:
+            # 重载插件
+            print('正在进行启动游戏前进行重载插件事件中...')
+            obj._on_reload_addons()
+            
             launcher = GameLauncher(obj.addon_manager)
         else:
             launcher = GameLauncher()

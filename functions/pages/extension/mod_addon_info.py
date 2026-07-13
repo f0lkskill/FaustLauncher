@@ -506,6 +506,7 @@ class ModAddonManagerPage:
             if self.addon_manager.remove_addon(addon_name):
                 # 刷新插件列表
                 self.refresh_addons_tab()
+                self.app._on_reload_addons()
             else:
                 messagebox.showerror("错误", f"删除插件 {addon_name} 失败")
     
