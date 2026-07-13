@@ -79,6 +79,8 @@ class FaustLauncherApp:
 
         center_window(self.root, False)
         
+        self.root.attributes('-topmost', True)
+        
         # 设置应用程序图标
         try:
             if os.path.exists("assets/images/icon/icon.ico"):
@@ -306,6 +308,8 @@ class FaustLauncherApp:
 
     def _notify_initialized(self):
         """通知应用程序初始化完成"""
+        self.root.attributes('-topmost', False)
+        
         # 确保界面已经完全渲染
         self.root.update_idletasks()
         self.root.update()

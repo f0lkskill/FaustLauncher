@@ -488,8 +488,9 @@ def download_and_extract_gui(gui:DownloadGUI, config_path: str = "", download_fi
             cleanup_temp_files(temp_file)
             # print('cleanup temp files')
     
-    # gui.is_downloading = False
-    # gui.root.after(1000, gui.root.destroy)
+    if auto_close:
+        gui.is_downloading = False
+        gui.root.after(1000, gui.root.destroy)
     
     # 创建配置文件（只在至少一个文件处理成功时创建）
     if success_count > 0 and not is_custome:

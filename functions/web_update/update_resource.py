@@ -35,7 +35,7 @@ def update_resource(dow_root, download_files:list, res:str, auto_close:bool = Tr
     download_thread.start()
     while download_thread.is_alive():
         sleep(1)
-        # print(f"下载资源 {res} 正在进行中...")
+        print(f"下载资源 {res} 正在进行中...")
     local_data[res]['version_info'] = data[res]['version_info']
     if auto_close:
         download_gui.is_downloading = False
