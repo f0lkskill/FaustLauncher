@@ -5,11 +5,16 @@
     - `center_window(self)`: 用于将窗口居中显示。
 """
 
-def center_window(root, auto_deiconify=True):
+def center_window(root, auto_deiconify=True, size = None):
     """居中显示窗口"""
     root.update_idletasks()
-    screen_width = root.winfo_screenwidth()
-    screen_height = root.winfo_screenheight()
+    
+    if not size:
+        screen_width = root.winfo_screenwidth()
+        screen_height = root.winfo_screenheight()
+    else:
+        screen_width, screen_height = size
+        
     x = (screen_width - root.winfo_width()) // 2
     y = (screen_height - root.winfo_height()) // 2
     root.geometry(f"+{x}+{y}")

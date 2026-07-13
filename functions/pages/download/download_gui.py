@@ -26,17 +26,20 @@ class DownloadGUI:
     def __init__(self, parent, config_path: str = "", auto_start: bool = True,
                  download_func=None):
         self.root = tk.Toplevel(parent)
+        self.root.attributes('-alpha', 0.0)
         self.root.withdraw()
+        
         self.root.title("下载中...")
 
         W, H = 500, 280
         self.root.geometry(f"{W}x{H}")
         self.root.overrideredirect(True)
         self.root.wm_attributes('-transparentcolor', TRANSPARENT)
-        self.root.attributes('-alpha', 0.0)
         self.root.attributes('-topmost', True)
         self.root.configure(bg=TRANSPARENT)
 
+        center_window(self.root)
+        
         self.canvas = tk.Canvas(self.root, bg=TRANSPARENT,
                                 highlightthickness=0, width=W, height=H)
         self.canvas.pack(fill='both', expand=True)
@@ -44,7 +47,6 @@ class DownloadGUI:
         self.canvas.bind('<Button-1>', self._start_drag)
         self.canvas.bind('<B1-Motion>', self._do_drag)
 
-        center_window(self.root)
 
         self.config_path = config_path
         self.is_downloading = True
