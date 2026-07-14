@@ -119,10 +119,10 @@
         "page": "美化"
     },
     "enable_mods": {
-        "name": "启用Mod功能（实验性）",
+        "name": "启用Mod功能",
         "type": "boolean",
-        "default": false,
-        "value": false,
+        "default": true,
+        "value": true,
         "description": "是否加载 Mod\n注意: 由于游戏切换了新的引擎，导致大部分mod已经完全失效，不建议您启用 Mod 加载。\n我们将会在接下来的版本进行修复。",
         "page": "Mod"
     },

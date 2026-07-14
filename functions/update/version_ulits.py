@@ -26,11 +26,11 @@ def download_new_version(dow_root, download_files:list):
     sync_settings()
     print("设置项同步完成...")
     
-    updater_exe_path = "cache/new_version/FaustLauncher/updater.vbs"
+    updater_exe_path = "updater.vbs"
     
     # 运行vbs更新器
     if os.path.exists(updater_exe_path):
-        subprocess.Popen(['start', updater_exe_path], shell=True)
+        subprocess.Popen(['start', updater_exe_path], shell=True, cwd=f"cache/new_version/FaustLauncher")
     else:
         print("未找到更新器，无法继续安装新版本。")
     

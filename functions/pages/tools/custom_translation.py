@@ -1,938 +1,1972 @@
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import ttk, messagebox, simpledialog
 import os
 import json
-import re
 from threading import Thread
 from functions.base.window_ulits import center_window
 
+
+DEFAULT_NAV_ITEMS = [
+    {"name": "剧情对话", "path": "LLC_zh-CN/StoryData"},
+    {"name": "战斗提示", "path": "LLC_zh-CN/BattleHint.json"},
+    {"name": "战斗关键词", "path": "LLC_zh-CN/BattleKeywords.json"},
+    {"name": "单位关键词", "path": "LLC_zh-CN/UnitKeyword.json"},
+    {"name": "剧本事件", "path": "LLC_zh-CN/AbEvents.json"},
+    {"name": "人格对话", "path": "LLC_zh-CN/BattleAnnouncerDlg"},
+    {"name": "阿勃拉对话", "path": "LLC_zh-CN/AbDlg_Faust.json"},
+    {"name": "故事剧场主", "path": "LLC_zh-CN/StoryTheaterMain.json"},
+    {"name": "UI文本", "path": "LLC_zh-CN/StoryUIText.json"},
+    {"name": "镜牢地牢", "path": "LLC_zh-CN/TutorialMirrorDungeon.json"},
+]
+
+NAV_CONFIG_FILE = "lang/_nav_config.json"
+
+# ========== 功能开关 / 黑名单 ==========
+_NAV_ENABLED = False  # 导航栏功能 (测试功能，默认关闭)
+HIDDEN_KEYS = {"id", "usage", "personalityid", "voicefile"}
+
+# ================= 颜色工具 =================
+def _darken(color, factor):
+    try:
+        if color.startswith('#') and len(color) >= 7:
+            r = int(color[1:3], 16)
+            g = int(color[3:5], 16)
+            b = int(color[5:7], 16)
+            r = max(0, min(255, int(r * factor)))
+            g = max(0, min(255, int(g * factor)))
+            b = max(0, min(255, int(b * factor)))
+            return f"#{r:02x}{g:02x}{b:02x}"
+    except Exception:
+        pass
+    return '#1e1e1e'
+
+
+def _lighten(color, factor):
+    try:
+        if color.startswith('#') and len(color) >= 7:
+            r = int(color[1:3], 16)
+            g = int(color[3:5], 16)
+            b = int(color[5:7], 16)
+            r = max(0, min(255, int(r + (255 - r) * factor)))
+            g = max(0, min(255, int(g + (255 - g) * factor)))
+            b = max(0, min(255, int(b + (255 - b) * factor)))
+            return f"#{r:02x}{g:02x}{b:02x}"
+    except Exception:
+        pass
+    return '#3a3a3a'
+
+
+class CollapsiblePane(tk.Frame):
+    """可折叠的层级面板 - 替代原生 Treeview"""
+
+    def __init__(self, master, title, root_app, bg_color=None,
+                 is_container=False, is_root=False, meta=None):
+        super().__init__(master, bd=0, highlightthickness=0,
+                         bg=bg_color or root_app.bg_color)
+        self.root_app = root_app
+        self.is_container = is_container
+        self.is_expanded = True
+        self.meta = meta or {}
+
+        header_bg = bg_color or root_app.lighten_bg_color
+        body_bg = _darken(header_bg, 0.88)
+        self.body_bg = body_bg
+        self.configure(bg=header_bg if is_container else body_bg)
+
+        # -------- 头部（可点击折叠/展开）--------
+        self.header = tk.Frame(self, bg=header_bg, bd=0, highlightthickness=0)
+        self.header.pack(fill=tk.X, side=tk.TOP)
+
+        self.toggle_lbl = tk.Label(self.header, text="▼" if is_container else "",
+                                   bg=header_bg,
+                                   fg='#7be2f7',
+                                   font=('Microsoft YaHei UI', 9, 'bold'),
+                                   cursor='hand2' if is_container else 'arrow',
+                                   padx=6)
+        self.toggle_lbl.pack(side=tk.LEFT)
+        if is_container:
+            self.toggle_lbl.bind("<Button-1>", lambda e: self.toggle())
+
+        self.title_lbl = tk.Label(self.header, text=title, bg=header_bg,
+                                  fg='#ecf0f1',
+                                  font=('Microsoft YaHei UI', 9, 'bold'),
+                                  anchor='w', cursor='hand2' if is_container else 'arrow')
+        self.title_lbl.pack(side=tk.LEFT, padx=(0, 6))
+        if is_container:
+            self.title_lbl.bind("<Button-1>", lambda e: self.toggle())
+
+        self.info_lbl = tk.Label(self.header, text="", bg=header_bg,
+                                 fg='#95a5a6', font=('Microsoft YaHei UI', 8))
+        self.info_lbl.pack(side=tk.RIGHT, padx=10)
+
+        # -------- 内容容器 --------
+        self.body = tk.Frame(self, bg=body_bg, bd=0, highlightthickness=0)
+        self.body.pack(fill=tk.X, side=tk.TOP, padx=6, pady=(2, 4))
+
+        # 折叠线（装饰性左侧竖线）
+        self._left_line = tk.Frame(self.body, bg='#3498db', width=2, bd=0, highlightthickness=0)
+        self._left_line.pack(side=tk.LEFT, fill=tk.Y)
+        self.body_inner = tk.Frame(self.body, bg=body_bg, bd=0, highlightthickness=0)
+        self.body_inner.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(6, 0))
+
+        if is_root:
+            self.configure(bg=root_app.bg_color)
+            self.header.configure(bg=root_app.lighten_bg_color)
+
+    def set_info(self, text, color='#95a5a6'):
+        self.info_lbl.config(text=text, fg=color)
+
+    def set_title(self, text):
+        self.title_lbl.config(text=text)
+
+    def toggle(self):
+        if self.is_expanded:
+            self.collapse()
+        else:
+            self.expand()
+
+    def collapse(self):
+        if not self.is_expanded:
+            return
+        self.body.pack_forget()
+        self.toggle_lbl.config(text="▶")
+        self.is_expanded = False
+
+    def expand(self):
+        if self.is_expanded:
+            return
+        self.body.pack(fill=tk.X, side=tk.TOP, padx=6, pady=(2, 4))
+        self.toggle_lbl.config(text="▼")
+        self.is_expanded = True
+
+
 class CustomTranslationTool:
-    """自定义汉化工具类"""
-    
+    """自定义汉化工具 - 全 GUI 版"""
+
     def __init__(self, root, parent_window):
         self.root = root
-        self.parent_window = parent_window
-        self.current_file = None
-        self.original_data = {}
-        self.changes = {}
-        self.changes_file = "lang/changes.json"
-        self.lang_dir = "lang"
-        self.undo_stack = []  # 撤销栈
-        self.redo_stack = []  # 重做栈
-        self.current_content = ""  # 当前编辑内容
-
-        self.parent_window = tk.Toplevel(self.parent_window)
+        self.parent_window = tk.Toplevel(parent_window)
+        self.parent_window.geometry("1300x800")
+        self.parent_window.minsize(900, 600)
         self.parent_window.withdraw()
-        self.parent_window.geometry("900x600")
         center_window(self.parent_window, False)
-
-        self.parent_window.title("🔧 自定义汉化工具")
-        
-        # 设置窗口图标
+        self.parent_window.title("自定义汉化工具 - 加载中...")
+        self.parent_window.configure(bg=root.bg_color)
         try:
             if os.path.exists("assets/images/icon/icon.ico"):
                 self.parent_window.iconbitmap("assets/images/icon/icon.ico")
-        except:
+        except Exception:
             pass
 
-        # 确保lang目录存在
+        # 先隐藏窗口，等文件树异步加载完成后再显示
+        self._tree_loading_done = False
+
+        self.current_file = None
+        self.original_data = {}
+        self.modified_data = {}
+        self.changes = {}
+        self.changes_file = "lang/changes.json"
+        self.lang_dir = "lang"
+        self.nav_items = []
+        self._all_panes = []
+        self._search_keyword = ""
+        self._only_modified = False
+        self._loading_overlay = None
+        self._current_original_data = None  # 多线程加载保存临时数据
+
+        # 常用颜色
+        self.bg = root.bg_color
+        self.bg_light = root.lighten_bg_color
+        self.bg_dark = _darken(root.bg_color, 0.78)
+        self.bg_darker = _darken(root.bg_color, 0.6)
+
+        # 显示隐藏键的开关（默认不显示黑名单中的键）
+        self._show_hidden_keys_var = tk.BooleanVar(value=False)
+
         os.makedirs(self.lang_dir, exist_ok=True)
+        self._ensure_changes_file()
+        self._load_existing_changes()
+        if _NAV_ENABLED:
+            self._load_nav_config()
+        self._init_ui()
+        # 异步加载文件树，加载完成后再显示窗口
+        self._refresh_file_tree_and_show()
 
-        
-        # 确保changes.json文件存在
-        self.ensure_changes_file()
-        
-        # 初始化界面
-        self.init_ui()
-        
-        # 加载现有的修改记录
-        self.load_existing_changes()
-        
-        # 刷新文件树
-        self.refresh_file_tree()
+    def _refresh_file_tree_and_show(self):
+        """异步构建文件树，构建完成后显示窗口"""
+        for item in self.file_tree.get_children():
+            self.file_tree.delete(item)
+        root_node = self.file_tree.insert('', 'end', text=" lang",
+                                          values=("", "dir"))
+        self.file_tree.item(root_node, open=True)
+        # 使用线程构建，构建完成后通过 after(0, ...) 回到主线程显示窗口
+        def build_and_notify():
+            try:
+                self._build_tree(root_node, self.lang_dir)
+            except Exception as e:
+                print(f"[CustomTranslationTool] 构建文件树失败: {e}")
+            finally:
+                # 回到主线程，显示窗口
+                self.parent_window.after(0, self._on_tree_loaded)
 
-        self.cycle_update()
-    
-    def ensure_changes_file(self):
-        """确保changes.json文件存在"""
+        Thread(target=build_and_notify, daemon=True).start()
+
+    def _on_tree_loaded(self):
+        """文件树加载完成：显示窗口"""
+        self._tree_loading_done = True
+        try:
+            self.parent_window.title("自定义汉化工具")
+            self.parent_window.deiconify()
+            self.parent_window.lift()
+            self.parent_window.focus_force()
+            self.status_label.config(text="文件树加载完成")
+        except Exception:
+            pass
+
+    # ======================= 文件系统辅助 =======================
+    def _ensure_changes_file(self):
         os.makedirs(os.path.dirname(self.changes_file), exist_ok=True)
         if not os.path.exists(self.changes_file):
             with open(self.changes_file, 'w', encoding='utf-8') as f:
                 json.dump({}, f, ensure_ascii=False, indent=4)
-    
-    def load_existing_changes(self):
-        """加载现有的修改记录"""
+
+    def _load_existing_changes(self):
         try:
             with open(self.changes_file, 'r', encoding='utf-8') as f:
                 self.changes = json.load(f)
         except Exception as e:
             print(f"加载修改记录失败: {e}")
             self.changes = {}
-    
-    def init_ui(self):
-        """初始化用户界面"""
-        # 创建主容器 - 使用parent_window作为父容器
-        main_container = tk.Frame(self.parent_window, bg=self.root.bg_color)
+
+    def _save_changes_to_file(self):
+        try:
+            with open(self.changes_file, 'w', encoding='utf-8') as f:
+                json.dump(self.changes, f, ensure_ascii=False, indent=4)
+        except Exception as e:
+            print(f"保存修改记录失败: {e}")
+
+    def _load_nav_config(self):
+        try:
+            if os.path.exists(NAV_CONFIG_FILE):
+                with open(NAV_CONFIG_FILE, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    self.nav_items = data.get("items", list(DEFAULT_NAV_ITEMS))
+                    return
+        except Exception as e:
+            print(f"加载导航配置失败: {e}")
+        self.nav_items = list(DEFAULT_NAV_ITEMS)
+
+    def _save_nav_config(self):
+        try:
+            with open(NAV_CONFIG_FILE, 'w', encoding='utf-8') as f:
+                json.dump({"items": self.nav_items}, f, ensure_ascii=False, indent=4)
+        except Exception as e:
+            print(f"保存导航配置失败: {e}")
+
+    # ======================= "加载中" 遮罩 =======================
+    def _show_loading(self, text="加载中..."):
+        if self._loading_overlay is not None:
+            try:
+                self._loading_overlay.destroy()
+            except Exception:
+                pass
+        overlay = tk.Frame(self.data_canvas.master if hasattr(self, 'data_canvas') else self.parent_window,
+                           bg='black', bd=0, highlightthickness=0)
+        overlay.place(x=0, y=0, relwidth=1, relheight=1)
+        overlay.tkraise()
+        overlay.configure(bg=self.bg)
+
+        label = tk.Label(overlay, text=f"⏳ {text}",
+                         bg=self.bg, fg='#7be2f7',
+                         font=('Microsoft YaHei UI', 14, 'bold'))
+        label.place(relx=0.5, rely=0.5, anchor='center')
+        self._loading_overlay = overlay
+        self.parent_window.update_idletasks()
+
+    def _hide_loading(self):
+        if self._loading_overlay is not None:
+            try:
+                self._loading_overlay.destroy()
+            except Exception:
+                pass
+            self._loading_overlay = None
+
+    # ======================= UI 构建 =======================
+    def _init_ui(self):
+        main_container = tk.Frame(self.parent_window, bg=self.bg, bd=0, highlightthickness=0)
         main_container.pack(fill=tk.BOTH, expand=True)
 
-        # 创建左右分栏容器
-        split_frame = tk.Frame(main_container, bg=self.root.bg_color)
+        # 顶部导航栏（仅当 _NAV_ENABLED=True 时启用，作为测试功能）
+        if _NAV_ENABLED:
+            top_bar = tk.Frame(main_container, bg=self.bg_dark, height=54,
+                               bd=0, highlightthickness=0)
+            top_bar.pack(fill=tk.X, side=tk.TOP)
+            top_bar.pack_propagate(False)
+
+            tk.Label(top_bar, text="⚡ 快速导航:", bg=self.bg_dark, fg='#ecf0f1',
+                     font=('Microsoft YaHei UI', 10, 'bold')).pack(side=tk.LEFT, padx=12)
+
+            nav_canvas = tk.Canvas(top_bar, bg=self.bg_dark, highlightthickness=0,
+                                   height=52)
+            nav_canvas.pack(side=tk.LEFT, fill=tk.X, expand=True)
+
+            nav_scrollbar = ttk.Scrollbar(top_bar, orient=tk.HORIZONTAL,
+                                          command=nav_canvas.xview)
+            nav_scrollbar.pack(side=tk.BOTTOM, fill=tk.X)
+            nav_canvas.configure(xscrollcommand=nav_scrollbar.set)
+
+            self.nav_inner = tk.Frame(nav_canvas, bg=self.bg_dark, bd=0,
+                                      highlightthickness=0)
+            nav_canvas.create_window((0, 0), window=self.nav_inner, anchor='nw')
+            self.nav_inner.bind("<Configure>",
+                                lambda e: nav_canvas.configure(
+                                    scrollregion=nav_canvas.bbox("all")))
+
+            tk.Button(top_bar, text="+添加当前",
+                      command=self._add_current_to_nav,
+                      bg='#27ae60', fg='white',
+                      font=('Microsoft YaHei UI', 9, 'bold'),
+                      relief='flat', padx=12, pady=6,
+                      cursor='hand2',
+                      activebackground='#1e8449',
+                      activeforeground='white').pack(side=tk.RIGHT, padx=4)
+
+            tk.Button(top_bar, text="管理导航",
+                      command=self._manage_nav_dialog,
+                      bg='#3498db', fg='white',
+                      font=('Microsoft YaHei UI', 9, 'bold'),
+                      relief='flat', padx=12, pady=6,
+                      cursor='hand2',
+                      activebackground='#2874a6',
+                      activeforeground='white').pack(side=tk.RIGHT, padx=4)
+
+            self._refresh_nav_bar()
+
+        # 主体双栏
+        split_frame = tk.Frame(main_container, bg=self.bg, bd=0, highlightthickness=0)
         split_frame.pack(fill=tk.BOTH, expand=True)
-        
-        # 左侧文件树区域
-        left_frame = tk.Frame(split_frame, bg=self.root.lighten_bg_color, relief='raised', borderwidth=1)
-        left_frame.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 5))
+
+        self._build_left_panel(split_frame)
+        self._build_right_panel(split_frame)
+
+    def _build_left_panel(self, parent):
+        left_frame = tk.Frame(parent, bg=self.bg_light, width=310, bd=0, highlightthickness=0)
+        left_frame.pack(side=tk.LEFT, fill=tk.Y)
         left_frame.pack_propagate(False)
-        left_frame.configure(width=300)
-        
-        # 左侧标题
-        left_title = tk.Label(left_frame, text="📁 文件树", 
-                             bg=self.root.lighten_bg_color, fg='white', 
-                             font=('Microsoft YaHei UI', 11, 'bold'))
-        left_title.pack(pady=10)
-        
-        # 搜索框和刷新按钮在同一行
-        search_refresh_frame = tk.Frame(left_frame, bg=self.root.lighten_bg_color)
-        search_refresh_frame.pack(fill=tk.X, padx=10, pady=5)
-        
+
+        # 标题
+        title_bar = tk.Frame(left_frame, bg=self.bg_dark, height=42, bd=0, highlightthickness=0)
+        title_bar.pack(fill=tk.X, side=tk.TOP)
+        title_bar.pack_propagate(False)
+        tk.Label(title_bar, text="📁 文件目录",
+                 bg=self.bg_dark, fg='#ecf0f1',
+                 font=('Microsoft YaHei UI', 10, 'bold')).pack(side=tk.LEFT, padx=12)
+
         # 搜索框
-        search_label = tk.Label(search_refresh_frame, text="🔍 搜索:", 
-                               bg=self.root.lighten_bg_color, fg='white',
-                               font=('Microsoft YaHei UI', 9))
-        search_label.pack(side=tk.LEFT)
-        
+        search_wrap = tk.Frame(left_frame, bg=self.bg_light, bd=0, highlightthickness=0)
+        search_wrap.pack(fill=tk.X, padx=10, pady=8)
+
+        tk.Label(search_wrap, text="🔍", bg=self.bg_light,
+                 fg='#7be2f7', font=('Microsoft YaHei UI', 10)).pack(side=tk.LEFT)
+
         self.search_var = tk.StringVar()
-        self.search_entry = tk.Entry(search_refresh_frame, textvariable=self.search_var,
-                                    bg='#1e1e1e', fg='white', insertbackground='white',
-                                    width=15)
-        self.search_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(5, 5))
-        self.search_entry.bind('<KeyRelease>', self.on_search_changed)
-        
-        # 紧凑的刷新按钮
-        refresh_btn = tk.Button(search_refresh_frame, text="↻",
-                               command=self.refresh_file_tree,
-                               bg='#3498db', fg='white',
-                               font=('Microsoft YaHei UI', 9),
-                               relief='flat', width=3)
-        refresh_btn.pack(side=tk.RIGHT)
-        
-        # 文件树容器
-        tree_frame = tk.Frame(left_frame, bg=self.root.lighten_bg_color)
-        tree_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
-        
-        # 文件树滚动条
-        tree_scrollbar = ttk.Scrollbar(tree_frame)
-        tree_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-        
+        entry = tk.Entry(search_wrap, textvariable=self.search_var,
+                         bg=self.bg_darker, fg='white', insertbackground='white',
+                         relief='flat',
+                         font=('Microsoft YaHei UI', 10))
+        entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=6, ipady=3)
+        entry.bind('<KeyRelease>', self._on_search_changed)
+
+        # 刷新按钮
+        tk.Button(left_frame, text="↻ 刷新文件树",
+                  command=self._refresh_file_tree,
+                  bg='#3498db', fg='white',
+                  font=('Microsoft YaHei UI', 9, 'bold'),
+                  relief='flat', cursor='hand2',
+                  activebackground='#2874a6',
+                  activeforeground='white').pack(fill=tk.X, padx=10, pady=(0, 6),
+                                                  ipady=3)
+
         # 文件树
-        self.file_tree = ttk.Treeview(tree_frame, 
-                                     yscrollcommand=tree_scrollbar.set,
-                                     selectmode='browse')
-        self.file_tree.pack(fill=tk.BOTH, expand=True)
-        
-        # 绑定事件 - 修复：添加双击事件绑定
-        self.file_tree.bind('<<TreeviewSelect>>', self.on_tree_selected)
-        self.file_tree.bind('<Double-1>', self.on_tree_double_click)  # 添加双击事件
-        
-        tree_scrollbar.config(command=self.file_tree.yview)
-        
-        # 配置树形样式
-        style = ttk.Style()
-        style.configure("Treeview", 
-                        background="#1e1e1e", 
-                        foreground="white", 
-                        fieldbackground="#1e1e1e")
-        style.configure("Treeview.Heading", 
-                        background=self.root.lighten_bg_color, 
-                        foreground="white")
-        
-        # 右侧编辑区域
-        right_frame = tk.Frame(split_frame, bg=self.root.lighten_bg_color, relief='raised', borderwidth=1)
+        tree_frame = tk.Frame(left_frame, bg=self.bg_light, bd=0, highlightthickness=0)
+        tree_frame.pack(fill=tk.BOTH, expand=True, padx=6, pady=6)
+
+        tree_style = ttk.Style()
+        # 使用 clam 主题以获得更好的背景色控制
+        try:
+            tree_style.theme_use('clam')
+        except Exception:
+            pass
+        tree_style.configure("Custom.Treeview",
+                             background=self.bg_darker, foreground='#ecf0f1',
+                             fieldbackground=self.bg_darker, rowheight=26,
+                             borderwidth=0, bd=0)
+        tree_style.map('Custom.Treeview',
+                       background=[('selected', '#3498db')],
+                       foreground=[('selected', 'white')])
+        tree_style.configure("Custom.Treeview.Heading",
+                             background=self.bg_light,
+                             foreground="white")
+
+        self.file_tree = ttk.Treeview(tree_frame, style="Custom.Treeview",
+                                      selectmode='browse', show='tree')
+        self.file_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        self.file_tree.bind('<<TreeviewSelect>>', self._on_tree_selected)
+
+        tree_scroll = ttk.Scrollbar(tree_frame, orient=tk.VERTICAL,
+                                    command=self.file_tree.yview)
+        tree_scroll.pack(side=tk.RIGHT, fill=tk.Y)
+        self.file_tree.configure(yscrollcommand=tree_scroll.set)
+
+    def _build_right_panel(self, parent):
+        right_frame = tk.Frame(parent, bg=self.bg, bd=0, highlightthickness=0)
         right_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
-        
-        # 右侧标题和工具栏
-        toolbar_frame = tk.Frame(right_frame, bg=self.root.lighten_bg_color)
-        toolbar_frame.pack(fill=tk.X, padx=10, pady=10)
-        
-        right_title = tk.Label(toolbar_frame, text="📝 编辑区域", 
-                              bg=self.root.lighten_bg_color, fg='white',
-                              font=('Microsoft YaHei UI', 11, 'bold'))
-        right_title.pack(side=tk.LEFT)
-        
-        # 跳转工具栏
-        jump_frame = tk.Frame(toolbar_frame, bg=self.root.lighten_bg_color)
-        jump_frame.pack(side=tk.RIGHT)
-        
-        jump_label = tk.Label(jump_frame, text="跳转到行:", 
-                             bg=self.root.lighten_bg_color, fg='white',
-                             font=('Microsoft YaHei UI', 9))
-        jump_label.pack(side=tk.LEFT, padx=(0, 5))
-        
-        self.line_var = tk.StringVar()
-        self.line_entry = tk.Entry(jump_frame, textvariable=self.line_var,
-                                  bg='#1e1e1e', fg='white', insertbackground='white',
-                                  width=8)
-        self.line_entry.pack(side=tk.LEFT, padx=(0, 5))
-        self.line_entry.bind('<Return>', self.jump_to_line)
-        
-        jump_btn = tk.Button(jump_frame, text="跳转",
-                            command=self.jump_to_line,
-                            bg='#3498db', fg='white',
-                            font=('Microsoft YaHei UI', 8),
-                            relief='flat', padx=5)
-        jump_btn.pack(side=tk.LEFT)
-        
-        # 搜索工具栏
-        search_tool_frame = tk.Frame(toolbar_frame, bg=self.root.lighten_bg_color)
-        search_tool_frame.pack(side=tk.RIGHT, padx=20)
-        
-        search_tool_label = tk.Label(search_tool_frame, text="查找:", 
-                                    bg=self.root.lighten_bg_color, fg='white',
-                                    font=('Microsoft YaHei UI', 9))
-        search_tool_label.pack(side=tk.LEFT, padx=(0, 5))
-        
-        self.search_text_var = tk.StringVar()
-        self.search_text_entry = tk.Entry(search_tool_frame, textvariable=self.search_text_var,
-                                         bg='#1e1e1e', fg='white', insertbackground='white',
-                                         width=15)
-        self.search_text_entry.pack(side=tk.LEFT, padx=(0, 5))
-        self.search_text_entry.bind('<Return>', self.find_text)
-        
-        find_btn = tk.Button(search_tool_frame, text="查找",
-                            command=self.find_text,
-                            bg='#3498db', fg='white',
-                            font=('Microsoft YaHei UI', 8),
-                            relief='flat', padx=5)
-        find_btn.pack(side=tk.LEFT)
-        
-        # 当前文件路径显示
-        self.current_file_label = tk.Label(right_frame, 
-                                          text="未选择文件",
-                                          bg=self.root.lighten_bg_color, fg='#95a5a6',
-                                          font=('Microsoft YaHei UI', 9),
-                                          justify=tk.LEFT)
-        self.current_file_label.pack(pady=5, padx=10, anchor=tk.W)
-        
-        # 编辑容器
-        edit_container = tk.Frame(right_frame, bg=self.root.lighten_bg_color)
-        edit_container.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
-        
-        # 创建行号框架
-        line_frame = tk.Frame(edit_container, bg='#1e1e1e')
-        line_frame.pack(fill=tk.BOTH, expand=True)
-        
-        # 行号文本框
-        self.line_numbers = tk.Text(line_frame, 
-                                   width=4, 
-                                   bg=self.root.lighten_bg_color, 
-                                   fg='#95a5a6',
-                                   font=('Consolas', 10),
-                                   state='disabled',
-                                   padx=5, 
-                                   pady=5)
-        self.line_numbers.pack(side=tk.LEFT, fill=tk.Y)
-        
-        # JSON编辑区域
-        edit_frame = tk.Frame(line_frame, bg='#1e1e1e')
-        edit_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        
-        # 滚动条
-        edit_scrollbar = ttk.Scrollbar(edit_frame)
-        edit_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-        
-        # 文本编辑框
-        self.json_text = tk.Text(edit_frame,
-                                bg='#1e1e1e', fg='white',
-                                font=('Consolas', 10),
-                                yscrollcommand=self.on_text_scroll,
-                                wrap=tk.NONE,
-                                undo=True)
-        self.json_text.pack(fill=tk.BOTH, expand=True)
-        
-        # 启用撤销/重做
-        self.json_text.bind('<Control-z>', self.undo)
-        self.json_text.bind('<Control-y>', self.redo)
-        self.json_text.bind('<Control-Z>', self.undo)
-        self.json_text.bind('<Control-Y>', self.redo)
-        self.json_text.bind('<KeyRelease>', self.on_text_change)
-        
-        edit_scrollbar.config(command=self.on_scrollbar_move)
-        
-        # 操作按钮区域
-        button_frame = tk.Frame(right_frame, bg=self.root.lighten_bg_color)
-        button_frame.pack(pady=10)
-        
-        # 撤销按钮
-        undo_btn = tk.Button(button_frame, text="↶ 撤销 (Ctrl+Z)",
-                            command=self.undo,
-                            bg='#f39c12', fg='white',
-                            font=('Microsoft YaHei UI', 9),
-                            relief='flat', padx=10, pady=5)
-        undo_btn.pack(side=tk.LEFT, padx=5)
-        
-        # 重做按钮
-        redo_btn = tk.Button(button_frame, text="↷ 重做 (Ctrl+Y)",
-                            command=self.redo,
-                            bg='#f39c12', fg='white',
-                            font=('Microsoft YaHei UI', 9),
-                            relief='flat', padx=10, pady=5)
-        redo_btn.pack(side=tk.LEFT, padx=5)
-        
-        # 保存按钮
-        save_btn = tk.Button(button_frame, text="💾 保存修改",
-                            command=self.save_json_changes,
-                            bg='#27ae60', fg='white',
-                            font=('Microsoft YaHei UI', 10, 'bold'),
-                            relief='flat', padx=15, pady=8)
-        save_btn.pack(side=tk.LEFT, padx=5)
-        
-        # 重置按钮
-        reset_btn = tk.Button(button_frame, text="🔄 重置编辑",
-                             command=self.reset_json_edits,
-                             bg='#e74c3c', fg='white',
-                             font=('Microsoft YaHei UI', 10, 'bold'),
-                             relief='flat', padx=15, pady=8)
-        reset_btn.pack(side=tk.LEFT, padx=5)
-        
-        # 状态标签
-        self.status_label = tk.Label(right_frame, 
-                                    text="就绪",
-                                    bg=self.root.lighten_bg_color, fg='#95a5a6',
-                                    font=('Microsoft YaHei UI', 9))
-        self.status_label.pack(pady=5)
-    
-    def refresh_file_tree(self):
-        """刷新文件树"""
-        print("开始刷新文件树...")
-        
-        # 检查lang目录是否存在
-        if not os.path.exists(self.lang_dir):
-            messagebox.showerror("错误", f"lang目录不存在: {self.lang_dir}")
+
+        # 顶部信息栏
+        info_bar = tk.Frame(right_frame, bg=self.bg_dark, height=42, bd=0, highlightthickness=0)
+        info_bar.pack(fill=tk.X, side=tk.TOP)
+        info_bar.pack_propagate(False)
+
+        self.current_file_label = tk.Label(info_bar,
+                                            text="📄 未选择文件",
+                                            bg=self.bg_dark, fg='#f1c40f',
+                                            font=('Microsoft YaHei UI', 10, 'bold'),
+                                            anchor='w', justify=tk.LEFT)
+        self.current_file_label.pack(side=tk.LEFT, padx=12)
+
+        self.changes_count_label = tk.Label(info_bar, text="",
+                                            bg=self.bg_dark, fg='#2ecc71',
+                                            font=('Microsoft YaHei UI', 9, 'bold'))
+        self.changes_count_label.pack(side=tk.RIGHT, padx=12)
+
+        # 工具栏
+        tool_bar = tk.Frame(right_frame, bg=self.bg_light, height=46, bd=0, highlightthickness=0)
+        tool_bar.pack(fill=tk.X, side=tk.TOP)
+        tool_bar.pack_propagate(False)
+
+        tk.Label(tool_bar, text="🔎 搜索键/值:",
+                 bg=self.bg_light, fg='#ecf0f1',
+                 font=('Microsoft YaHei UI', 9, 'bold')).pack(side=tk.LEFT,
+                                                              padx=(12, 0), pady=10)
+
+        self.data_search_var = tk.StringVar()
+        data_search_entry = tk.Entry(tool_bar, textvariable=self.data_search_var,
+                                     bg=self.bg_darker, fg='white',
+                                     insertbackground='white',
+                                     relief='flat', width=28,
+                                     font=('Microsoft YaHei UI', 10))
+        data_search_entry.pack(side=tk.LEFT, padx=6, pady=10, ipady=3)
+        # 支持回车触发搜索（不再用 KeyRelease 事件循环）
+        data_search_entry.bind('<Return>',
+                               lambda e: self._on_data_search_changed())
+
+        search_btn = tk.Button(tool_bar, text="🔍 搜索",
+                              command=self._on_data_search_changed,
+                              bg='#2e86de', fg='white',
+                              relief='flat', padx=10, pady=2,
+                              cursor='hand2',
+                              activebackground='#1b4f72',
+                              activeforeground='white',
+                              font=('Microsoft YaHei UI', 9, 'bold'))
+        search_btn.pack(side=tk.LEFT, pady=10, padx=(0, 6))
+
+        tk.Button(tool_bar, text="✖ 清除",
+                   command=self._clear_data_search,
+                   bg='#6c7a7d', fg='white',
+                   relief='flat', padx=8, pady=2,
+                   cursor='hand2',
+                   activebackground='#4e5b5d',
+                   activeforeground='white',
+                   font=('Microsoft YaHei UI', 9)).pack(side=tk.LEFT, pady=10,
+                                                          padx=(0, 4))
+
+        self.only_modified_var = tk.BooleanVar(value=False)
+        tk.Checkbutton(tool_bar, text="仅显示已修改",
+                       variable=self.only_modified_var,
+                       bg=self.bg_light, fg='#ecf0f1',
+                       selectcolor=self.bg_darker, activebackground=self.bg_light,
+                       activeforeground='#ecf0f1',
+                       command=self._on_data_search_changed,
+                       font=('Microsoft YaHei UI', 9)).pack(side=tk.LEFT,
+                                                           padx=8, pady=10)
+
+        tk.Checkbutton(tool_bar, text="显示隐藏键",
+                       variable=self._show_hidden_keys_var,
+                       bg=self.bg_light, fg='#ecf0f1',
+                       selectcolor=self.bg_darker, activebackground=self.bg_light,
+                       activeforeground='#ecf0f1',
+                       command=self._on_data_search_changed,
+                       font=('Microsoft YaHei UI', 9)).pack(side=tk.LEFT,
+                                                           padx=8, pady=10)
+
+        # 右侧操作按钮
+        tk.Button(tool_bar, text="⊞ 全部展开",
+                  command=self._expand_all,
+                  bg='#9b59b6', fg='white',
+                  font=('Microsoft YaHei UI', 9, 'bold'),
+                  relief='flat', cursor='hand2',
+                  activebackground='#7d3c98',
+                  activeforeground='white').pack(side=tk.RIGHT, padx=(4, 12), pady=10,
+                                                ipady=2)
+
+        tk.Button(tool_bar, text="⊟ 全部折叠",
+                  command=self._collapse_all,
+                  bg='#7f8c8d', fg='white',
+                  font=('Microsoft YaHei UI', 9, 'bold'),
+                  relief='flat', cursor='hand2',
+                  activebackground='#6c7a7d',
+                  activeforeground='white').pack(side=tk.RIGHT, padx=4, pady=10,
+                                                ipady=2)
+
+        # 数据编辑区 - 虚拟滚动 (Virtual Scroll) 模式：
+        # 1) 先将整个 JSON 扁平化为轻量 entries 列表（仅存元数据，不创建控件）
+        # 2) Canvas 只在可视范围内动态创建/销毁控件，支持数十万级条目
+        data_container = tk.Frame(right_frame, bg=self.bg, bd=0, highlightthickness=0)
+        data_container.pack(fill=tk.BOTH, expand=True)
+        self._init_virtual_scroll(data_container)
+
+        # 底部操作按钮
+        bottom_bar = tk.Frame(right_frame, bg=self.bg_dark, height=72, bd=0, highlightthickness=0)
+        bottom_bar.pack(fill=tk.X, side=tk.BOTTOM)
+        bottom_bar.pack_propagate(False)
+
+        btn_row = tk.Frame(bottom_bar, bg=self.bg_dark, bd=0, highlightthickness=0)
+        btn_row.pack(pady=14)
+
+        tk.Button(btn_row, text="💾 保存修改记录",
+                  command=self._save_json_changes,
+                  bg='#27ae60', fg='white',
+                  font=('Microsoft YaHei UI', 10, 'bold'),
+                  relief='flat', padx=22, pady=7,
+                  cursor='hand2',
+                  activebackground='#1e8449',
+                  activeforeground='white').pack(side=tk.LEFT, padx=5)
+
+        tk.Button(btn_row, text="🔄 重置当前文件",
+                  command=self._reset_current_file,
+                  bg='#e67e22', fg='white',
+                  font=('Microsoft YaHei UI', 10, 'bold'),
+                  relief='flat', padx=22, pady=7,
+                  cursor='hand2',
+                  activebackground='#ba4a00',
+                  activeforeground='white').pack(side=tk.LEFT, padx=5)
+
+        tk.Button(btn_row, text="🗑 清空全部修改记录",
+                  command=self._reset_all_changes,
+                  bg='#e74c3c', fg='white',
+                  font=('Microsoft YaHei UI', 10, 'bold'),
+                  relief='flat', padx=22, pady=7,
+                  cursor='hand2',
+                  activebackground='#b03a2e',
+                  activeforeground='white').pack(side=tk.LEFT, padx=5)
+
+        tk.Button(btn_row, text="📂 打开修改记录目录",
+                  command=self._open_changes_dir,
+                  bg='#8e44ad', fg='white',
+                  font=('Microsoft YaHei UI', 10, 'bold'),
+                  relief='flat', padx=22, pady=7,
+                  cursor='hand2',
+                  activebackground='#6c3483',
+                  activeforeground='white').pack(side=tk.LEFT, padx=5)
+
+        self.status_label = tk.Label(right_frame,
+                                     text="就绪 - 双击编辑按钮可编辑字段，键名不可修改",
+                                     bg=self.bg, fg='#95a5a6',
+                                     font=('Microsoft YaHei UI', 9))
+        self.status_label.pack(pady=3)
+
+    # ======================= 导航栏 =======================
+    def _refresh_nav_bar(self):
+        for w in self.nav_inner.winfo_children():
+            w.destroy()
+        if not self.nav_items:
+            tk.Label(self.nav_inner,
+                     text="(暂无导航项)",
+                     bg=self.bg_dark, fg='#95a5a6',
+                     font=('Microsoft YaHei UI', 9)).pack(side=tk.LEFT, padx=10,
+                                                         pady=10)
             return
-        
-        # 清空树形结构
+        for item in self.nav_items:
+            tk.Button(self.nav_inner, text=item["name"],
+                      command=lambda p=item["path"]: self._jump_to_nav_path(p),
+                      bg='#3498db', fg='white',
+                      font=('Microsoft YaHei UI', 9, 'bold'),
+                      relief='flat', padx=14, pady=7,
+                      cursor='hand2',
+                      activebackground='#2874a6',
+                      activeforeground='white').pack(side=tk.LEFT, padx=3, pady=5)
+
+    def _jump_to_nav_path(self, relative_path):
+        full_path = os.path.join(self.lang_dir, relative_path)
+        if os.path.isdir(full_path):
+            messagebox.showinfo("提示",
+                                f"请展开文件树中的目录选择文件:\n{relative_path}")
+        elif os.path.isfile(full_path):
+            self._load_json_file(full_path)
+        else:
+            messagebox.showwarning("警告", f"未找到文件: {full_path}")
+
+    def _add_current_to_nav(self):
+        if not self.current_file:
+            messagebox.showwarning("警告", "请先选择一个文件")
+            return
+        relative = os.path.relpath(self.current_file, self.lang_dir)
+        default_name = os.path.basename(self.current_file).replace('.json', '')
+        name = simpledialog.askstring("添加导航项", "输入导航项名称:",
+                                      initialvalue=default_name,
+                                      parent=self.parent_window)
+        if not name:
+            return
+        self.nav_items.append({"name": name, "path": relative})
+        self._save_nav_config()
+        self._refresh_nav_bar()
+        self.status_label.config(text=f"已添加导航项: {name}")
+
+    def _manage_nav_dialog(self):
+        dialog = tk.Toplevel(self.parent_window)
+        dialog.title("管理导航项")
+        dialog.geometry("640x540")
+        dialog.configure(bg=self.bg)
+        dialog.transient(self.parent_window)
+        dialog.grab_set()
+        center_window(dialog, False)
+
+        tk.Label(dialog, text="导航项列表 (可上下移动 / 删除):",
+                 bg=self.bg, fg='white',
+                 font=('Microsoft YaHei UI', 10, 'bold')).pack(pady=10)
+
+        list_frame = tk.Frame(dialog, bg=self.bg, bd=0, highlightthickness=0)
+        list_frame.pack(fill=tk.BOTH, expand=True, padx=12)
+
+        listbox = tk.Listbox(list_frame, bg=self.bg_darker, fg='white',
+                             font=('Microsoft YaHei UI', 10),
+                             selectbackground='#3498db', relief='flat',
+                             height=14, bd=0, highlightthickness=0)
+        listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar = ttk.Scrollbar(list_frame, command=listbox.yview)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        listbox.configure(yscrollcommand=scrollbar.set)
+
+        def _refresh():
+            listbox.delete(0, tk.END)
+            for item in self.nav_items:
+                listbox.insert(tk.END, f"  {item['name']:20s}  →  {item['path']}")
+
+        _refresh()
+
+        btn_frame = tk.Frame(dialog, bg=self.bg, bd=0, highlightthickness=0)
+        btn_frame.pack(fill=tk.X, padx=12, pady=10)
+
+        def move_up():
+            sel = listbox.curselection()
+            if not sel or sel[0] == 0:
+                return
+            i = sel[0]
+            self.nav_items[i], self.nav_items[i - 1] = self.nav_items[i - 1], self.nav_items[i]
+            _refresh()
+            listbox.selection_set(i - 1)
+
+        def move_down():
+            sel = listbox.curselection()
+            if not sel or sel[0] >= len(self.nav_items) - 1:
+                return
+            i = sel[0]
+            self.nav_items[i], self.nav_items[i + 1] = self.nav_items[i + 1], self.nav_items[i]
+            _refresh()
+            listbox.selection_set(i + 1)
+
+        def delete_item():
+            sel = listbox.curselection()
+            if not sel:
+                return
+            del self.nav_items[sel[0]]
+            _refresh()
+
+        def add_new():
+            name = simpledialog.askstring("新增导航", "名称:", parent=dialog)
+            if not name:
+                return
+            path = simpledialog.askstring("新增导航",
+                                          "相对路径 (如 LLC_zh-CN/UnitKeyword.json):",
+                                          parent=dialog)
+            if not path:
+                return
+            self.nav_items.append({"name": name, "path": path})
+            _refresh()
+
+        def reset_default():
+            if messagebox.askyesno("确认", "恢复默认导航项列表？"):
+                self.nav_items = list(DEFAULT_NAV_ITEMS)
+                _refresh()
+
+        for label, cmd, color in [
+            ("↑上移", move_up, '#3498db'),
+            ("↓下移", move_down, '#3498db'),
+            ("🗑 删除", delete_item, '#e74c3c'),
+            ("➕新增", add_new, '#27ae60'),
+            ("↺恢复默认", reset_default, '#9b59b6'),
+        ]:
+            tk.Button(btn_frame, text=label, command=cmd,
+                      bg=color, fg='white', relief='flat',
+                      cursor='hand2',
+                      activebackground='#1e2a38',
+                      activeforeground='white').pack(side=tk.LEFT, padx=4, ipady=3)
+
+        def on_ok():
+            self._save_nav_config()
+            self._refresh_nav_bar()
+            dialog.destroy()
+
+        def on_cancel():
+            self._load_nav_config()
+            dialog.destroy()
+
+        bottom_frame = tk.Frame(dialog, bg=self.bg, bd=0, highlightthickness=0)
+        bottom_frame.pack(fill=tk.X, pady=12)
+        tk.Button(bottom_frame, text="确定", command=on_ok,
+                  bg='#27ae60', fg='white', relief='flat',
+                  cursor='hand2', width=12).pack(side=tk.LEFT, padx=60, ipady=4)
+        tk.Button(bottom_frame, text="取消", command=on_cancel,
+                  bg='#7f8c8d', fg='white', relief='flat',
+                  cursor='hand2', width=12).pack(side=tk.RIGHT, padx=60, ipady=4)
+
+    # ======================= 文件树 =======================
+    def _refresh_file_tree(self):
         for item in self.file_tree.get_children():
             self.file_tree.delete(item)
-        
-        # 添加根节点
-        root_node = self.file_tree.insert('', 'end', text="lang", values=("lang", True))
-        print("添加根节点: lang")
-        
-        # 递归构建文件树
-        from threading import Thread
-        Thread(target=self.build_tree, args=(root_node, self.lang_dir)).start()
-        
-        # 展开根节点
+        root_node = self.file_tree.insert('', 'end', text=" lang",
+                                          values=("", "dir"))
+        Thread(target=self._build_tree, args=(root_node, self.lang_dir),
+               daemon=True).start()
         self.file_tree.item(root_node, open=True)
-        
         self.status_label.config(text="文件树已刷新")
-        print("文件树刷新完成")
-    
-    def build_tree(self, parent, path):
-        """递归构建文件树"""
-        self.parent_window.withdraw()
-        self.parent_window.after(1000, self.parent_window.deiconify)
 
+    def _build_tree(self, parent, path):
         try:
-            items = os.listdir(path)
-            print(f"扫描目录 {path}, 找到 {len(items)} 个项目")
-            
-            # 先按字母顺序排序
-            items.sort(key=lambda x: x.lower())
-            
-            # 先添加目录，再添加文件
+            items = sorted(os.listdir(path), key=lambda x: x.lower())
             dirs = []
             files = []
-            
             for item in items:
+                if item.startswith('_'):
+                    continue
                 item_path = os.path.join(path, item)
                 if os.path.isdir(item_path):
                     dirs.append(item)
                 elif item.lower().endswith('.json') and item != 'changes.json':
                     files.append(item)
-            
-            # 添加目录
+
             for dir_name in dirs:
                 dir_path = os.path.join(path, dir_name)
-                relative_path = os.path.relpath(dir_path, self.lang_dir)
-                node = self.file_tree.insert(parent, 'end', text=dir_name, 
-                                            values=(relative_path, True))
-                # print(f"添加目录节点: {dir_name}")
-                self.build_tree(node, dir_path)
-            
-            # 添加文件
+                relative = os.path.relpath(dir_path, self.lang_dir)
+                node = self.file_tree.insert(parent, 'end',
+                                             text=f"  📂  {dir_name}",
+                                             values=(relative, "dir"))
+                self._build_tree(node, dir_path)
+
             for file_name in files:
                 file_path = os.path.join(path, file_name)
-                relative_path = os.path.relpath(file_path, self.lang_dir)
-                self.file_tree.insert(parent, 'end', text=file_name, 
-                                     values=(relative_path, False))
-                
+                relative = os.path.relpath(file_path, self.lang_dir)
+                has_changes = relative in self.changes
+                prefix = "✨  " if has_changes else "    "
+                self.file_tree.insert(parent, 'end',
+                                      text=f"  {prefix}{file_name}",
+                                      values=(relative, "file"))
         except Exception as e:
             print(f"构建文件树错误: {e}")
-   
-    def on_tree_selected(self, event):
-        """处理树形选择事件"""
-        print("树形选择事件触发")
+
+    def _on_tree_selected(self, event):
         selection = self.file_tree.selection()
         if selection:
             item = selection[0]
             values = self.file_tree.item(item, 'values')
-            if values:
-                print(f"选中项值: {values}")
-                # 修复：正确处理字符串和布尔值的判断
-                is_directory = values[1] if isinstance(values[1], bool) else values[1] == 'True'
-                if not is_directory:  # 如果是文件而不是目录
-                    file_path = os.path.join(self.lang_dir, values[0])
-                    print(f"加载文件: {file_path}")
-                    self.load_json_file(file_path)
-                else:
-                    print("选中的是目录，不加载文件")
-    
-    def on_tree_double_click(self, event):
-        """处理树形双击事件"""
-        print("树形双击事件触发")
-        selection = self.file_tree.selection()
-        if selection:
-            item = selection[0]
-            values = self.file_tree.item(item, 'values')
-            if values:
-                # 修复：正确处理字符串和布尔值的判断
-                is_directory = values[1] if isinstance(values[1], bool) else values[1] == 'True'
-                if not is_directory:  # 如果是文件而不是目录
-                    file_path = os.path.join(self.lang_dir, values[0])
-                    print(f"双击加载文件: {file_path}")
-                    self.load_json_file(file_path)
-    
-    def on_search_changed(self, event):
-        """处理搜索框内容变化"""
-        search_text = self.search_var.get().lower()
-        if not search_text:
-            # 清空搜索，显示所有文件
-            for item in self.file_tree.get_children():
-                self.file_tree.item(item, open=True)
-            return
-        
-        # 隐藏所有节点
+            if values and len(values) >= 2 and values[1] == "file":
+                file_path = os.path.join(self.lang_dir, values[0])
+                self._load_json_file(file_path)
+
+    def _on_search_changed(self, event):
+        keyword = self.search_var.get().lower().strip()
         for item in self.file_tree.get_children():
-            self.hide_unmatched_items(item, search_text)
-    
-    def hide_unmatched_items(self, item, search_text):
-        """隐藏不匹配搜索条件的项目"""
-        item_text = self.file_tree.item(item, 'text').lower()
-        values = self.file_tree.item(item, 'values')
-        
-        if search_text in item_text:
-            # 显示匹配的项目及其父级
-            self.file_tree.item(item, open=True)
-            parent = self.file_tree.parent(item)
-            while parent:
-                self.file_tree.item(parent, open=True)
-                parent = self.file_tree.parent(parent)
-            return True
-        
-        # 检查子项
-        has_matching_child = False
+            self._filter_tree_items(item, keyword)
+        if keyword:
+            for item in self.file_tree.get_children():
+                self._expand_matching_parents(item, keyword)
+
+    def _filter_tree_items(self, item, keyword):
+        text = self.file_tree.item(item, 'text').lower()
+        has_matching = False
         for child in self.file_tree.get_children(item):
-            if self.hide_unmatched_items(child, search_text):
-                has_matching_child = True
-        
-        if has_matching_child:
-            self.file_tree.item(item, open=True)
+            if self._filter_tree_items(child, keyword):
+                has_matching = True
+        if not keyword or keyword in text or has_matching:
+            self.file_tree.reattach(item, self.file_tree.parent(item),
+                                    self.file_tree.index(item))
             return True
         else:
+            self.file_tree.detach(item)
             return False
-    
-    def on_text_scroll(self, *args):
-        """处理文本滚动事件"""
-        # 更新行号
-        self.update_line_numbers()
-        # 调用原始滚动命令
-        if hasattr(self, '_scroll_command'):
-            self._scroll_command(*args) # type: ignore
-    
-    def on_scrollbar_move(self, *args):
-        """处理滚动条移动事件"""
-        self.json_text.yview(*args)
-        self.update_line_numbers()
-    
-    def update_line_numbers(self):
-        """更新行号显示"""
-        # 获取当前可见行范围
-        first_visible_line = self.json_text.yview()[0]
-        last_visible_line = self.json_text.yview()[1]
-        
-        # 获取总行数
-        total_lines = int(self.json_text.index('end-1c').split('.')[0])
-        
-        # 计算可见行号
-        first_line = int(first_visible_line * total_lines) + 1
-        last_line = int(last_visible_line * total_lines)
-        
-        # 生成行号文本
-        line_numbers_text = '\n'.join(str(i) for i in range(first_line, last_line + 1))
-        
-        # 更新行号文本框
-        self.line_numbers.config(state='normal')
-        self.line_numbers.delete(1.0, tk.END)
-        self.line_numbers.insert(1.0, line_numbers_text)
-        self.line_numbers.config(state='disabled')
-    
-    def on_text_change(self, event):
-        """处理文本内容变化"""
-        # 保存当前内容到撤销栈
-        current_content = self.json_text.get(1.0, tk.END)
-        if current_content != self.current_content:
-            if self.current_content:
-                self.undo_stack.append(self.current_content)
-                self.redo_stack.clear()  # 清空重做栈
-            self.current_content = current_content
-    
-    def undo(self, event=None):
-        """撤销操作"""
-        if self.undo_stack:
-            previous_content = self.undo_stack.pop()
-            self.redo_stack.append(self.current_content)
-            self.json_text.delete(1.0, tk.END)
-            self.json_text.insert(1.0, previous_content)
-            self.current_content = previous_content
-            self.status_label.config(text="已撤销")
-            self.apply_json_syntax_highlighting()
-    
-    def redo(self, event=None):
-        """重做操作"""
-        if self.redo_stack:
-            next_content = self.redo_stack.pop()
-            self.undo_stack.append(self.current_content)
-            self.json_text.delete(1.0, tk.END)
-            self.json_text.insert(1.0, next_content)
-            self.current_content = next_content
-            self.status_label.config(text="已重做")
-            self.apply_json_syntax_highlighting()
-    
-    def jump_to_line(self, event=None):
-        """跳转到指定行"""
-        try:
-            line_num = int(self.line_var.get())
-            if line_num > 0:
-                self.json_text.see(f"{line_num}.0")
-                self.json_text.mark_set("insert", f"{line_num}.0")
-                self.json_text.focus()
-                self.status_label.config(text=f"已跳转到第 {line_num} 行")
-        except ValueError:
-            messagebox.showerror("错误", "请输入有效的行号")
-    
-    def find_text(self, event=None):
-        """查找文本"""
-        search_text = self.search_text_var.get()
-        if not search_text:
-            return
-        
-        # 从当前光标位置开始搜索
-        start_pos = self.json_text.index("insert")
-        end_pos = self.json_text.index("end")
-        
-        # 搜索文本
-        pos = self.json_text.search(search_text, start_pos, end_pos)
-        
-        if pos:
-            # 选中找到的文本
-            end_pos = f"{pos}+{len(search_text)}c"
-            self.json_text.tag_remove("sel", 1.0, "end")
-            self.json_text.tag_add("sel", pos, end_pos)
-            self.json_text.mark_set("insert", pos)
-            self.json_text.see(pos)
-            self.json_text.focus()
-            self.status_label.config(text=f"已找到: {search_text}")
-        else:
-            self.status_label.config(text="未找到匹配的文本")
-    
-    def load_json_file(self, file_path):
-        """加载JSON文件到编辑框"""
-        print(f"开始加载文件: {file_path}")
-        
-        # 检查文件是否存在
-        if not os.path.exists(file_path):
-            messagebox.showerror("错误", f"文件不存在: {file_path}")
-            return
-        
-        try:
-            # 读取原始JSON文件
-            with open(file_path, 'r', encoding='utf-8') as f:
-                original_data = json.load(f)
-            
-            print(f"原始文件读取成功，数据长度: {len(str(original_data))}")
-            
-            # 保存原始数据
-            self.original_data = original_data
-            self.current_file = file_path
-            
-            # 应用changes.json中的修改
-            modified_data = self.apply_changes(original_data, file_path)
-            print(f"应用修改后数据长度: {len(str(modified_data))}")
-            
-            # 格式化JSON用于编辑
-            formatted_json = self.format_json_for_editing(modified_data)
-            print(f"格式化后JSON长度: {len(formatted_json)}")
-            
-            # 清空编辑框并插入内容
-            self.json_text.delete(1.0, tk.END)
-            self.json_text.insert(1.0, formatted_json)
-            
-            # 应用语法高亮
-            # TODO 当文件内容太多的时候，语法高亮会非常卡顿，暂时注释掉
-            Thread(target=self.apply_json_syntax_highlighting).start()
-            
-            # 更新当前文件显示
-            relative_path = os.path.relpath(file_path, self.lang_dir)
-            self.current_file_label.config(text=f"当前文件: {relative_path}")
-            
-            # 更新状态
-            self.status_label.config(text="文件加载成功")
-            print("文件加载完成")
-            
-        except Exception as e:
-            error_msg = f"加载文件失败: {str(e)}"
-            print(error_msg)
-            messagebox.showerror("错误", error_msg)
 
-    def apply_changes(self, original_data, file_path):
-        """应用changes.json中的修改"""
-        relative_path = os.path.relpath(file_path, self.lang_dir)
-        
-        if relative_path in self.changes:
-            changes = self.changes[relative_path]
-            return self.recursive_apply_changes(original_data, changes)
-        
-        return original_data
-    
-    def recursive_apply_changes(self, original, changes):
-        """递归应用修改 - 适配包含id键值对的修改记录结构"""
+    def _expand_matching_parents(self, item, keyword):
+        text = self.file_tree.item(item, 'text').lower()
+        for child in self.file_tree.get_children(item):
+            if self._expand_matching_parents(child, keyword):
+                self.file_tree.item(item, open=True)
+                return True
+        if keyword in text:
+            self.file_tree.item(self.file_tree.parent(item), open=True)
+            return True
+        return False
+
+    # ======================= 加载 JSON (多线程) =======================
+    def _load_json_file(self, file_path):
+        """后台线程读取 JSON 并构建视图，避免大文件阻塞 UI"""
+
+        def _worker():
+            try:
+                # 1. 读取文件
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    loaded_data = json.load(f)
+
+                # 2. 深拷贝
+                modified = self._deep_copy(loaded_data)
+                # 3. 应用已有的 changes
+                self._apply_changes_to_data_standalone(modified, file_path)
+
+                # 保存到主线程
+                self._current_original_data = loaded_data
+                self._current_modified_data = modified
+                self._current_file_path = file_path
+
+                # 回到主线程更新 UI
+                self.parent_window.after(0, self._finish_loading_file)
+            except Exception as e:
+                err = str(e)
+                self.parent_window.after(0, lambda: self._fail_loading_file(err))
+
+        self._show_loading(f"加载 {os.path.basename(file_path)} 中...")
+        Thread(target=_worker, daemon=True).start()
+
+    def _finish_loading_file(self):
+        self.original_data = self._current_original_data
+        self.modified_data = self._current_modified_data
+        self.current_file = self._current_file_path
+
+        relative = os.path.relpath(self.current_file, self.lang_dir)
+        self.current_file_label.config(text=f"📄 当前文件: {relative}")
+
+        self.data_search_var.set("")
+        self.only_modified_var.set(False)
+        self._search_keyword = ""
+        self._only_modified = False
+
+        # 构建数据视图（若文件很大，也放到线程 + 分批，但这里直接构建）
+        self._refresh_data_view(preserve_scroll=False)  # 新文件 → 滚到顶部
+        self._hide_loading()
+        self.status_label.config(text=f"加载成功: {relative}")
+
+    def _fail_loading_file(self, err):
+        self._hide_loading()
+        messagebox.showerror("错误", f"加载文件失败: {err}")
+
+    def _apply_changes_to_data_standalone(self, data, file_path):
+        relative = os.path.relpath(file_path, self.lang_dir)
+        if relative in self.changes:
+            self._recursive_apply(data, self.changes[relative])
+
+    def _deep_copy(self, data):
+        if isinstance(data, dict):
+            return {k: self._deep_copy(v) for k, v in data.items()}
+        elif isinstance(data, list):
+            return [self._deep_copy(v) for v in data]
+        else:
+            return data
+
+    def _recursive_apply(self, original, changes):
         if isinstance(original, dict) and isinstance(changes, dict):
-            result = {}
-            for key, value in original.items():
-                if key in changes:
-                    # 如果changes中有对应的键，应用修改
-                    if isinstance(value, (dict, list)) and isinstance(changes[key], (dict, list)):
-                        result[key] = self.recursive_apply_changes(value, changes[key])
+            for k, v in changes.items():
+                if k in original:
+                    if isinstance(original[k], (dict, list)) and isinstance(v, (dict, list)):
+                        self._recursive_apply(original[k], v)
                     else:
-                        result[key] = changes[key]
-                else:
-                    result[key] = value
-            return result
+                        original[k] = v
         elif isinstance(original, list) and isinstance(changes, list):
-            result = []
-            has_applied_changes = False
-            
-            # 首先处理包含id的修改记录
-            for change_item in changes:
-                if isinstance(change_item, dict) and 'id' in change_item:
-                    # 这是包含id的修改记录
-                    target_id = change_item['id']
-                    change_data = change_item.get('changes', {})
-                    action = change_item.get('action', 'modified')  # 默认为修改操作
-                    
-                    # 在原始列表中查找匹配id的项
-                    found = False
-                    for i, original_item in enumerate(original):
-                        if (isinstance(original_item, dict) and 
-                            original_item.get('id') == target_id):
-                            found = True
-                            
-                            if action == 'deleted':
-                                # 删除操作：跳过该项
-                                pass
-                            elif action == 'added':
-                                # 新增操作：添加修改后的项
-                                result.append(change_data)
-                            else:
-                                # 修改操作：应用修改
-                                if isinstance(original_item, (dict, list)) and isinstance(change_data, (dict, list)):
-                                    result.append(self.recursive_apply_changes(original_item, change_data))
-                                else:
-                                    result.append(change_data)
-                            has_applied_changes = True
-                            break
-                    
-                    # 如果没有找到匹配项且是新增操作，则添加新项
-                    if not found and action == 'added':
-                        result.append(change_data)
-                        has_applied_changes = True
-            
-            # 如果没有应用任何包含id的修改，或者还有未处理的项，使用原来的逻辑
-            if not has_applied_changes:
-                for i, item in enumerate(original):
-                    if i < len(changes):
-                        if isinstance(item, (dict, list)) and isinstance(changes[i], (dict, list)):
-                            result.append(self.recursive_apply_changes(item, changes[i]))
+            id_map = {}
+            for idx, item in enumerate(original):
+                if isinstance(item, dict) and 'id' in item:
+                    id_map[str(item['id'])] = idx
+            for change in changes:
+                if isinstance(change, dict) and 'id' in change and 'changes' in change:
+                    target_id = str(change['id'])
+                    change_data = change.get('changes', {})
+                    if target_id in id_map:
+                        orig_item = original[id_map[target_id]]
+                        if isinstance(orig_item, (dict, list)) and isinstance(change_data, (dict, list)):
+                            self._recursive_apply(orig_item, change_data)
                         else:
-                            result.append(changes[i])
-                    else:
-                        result.append(item)
-            else:
-                # 处理未被修改的项（未被标记为删除的项）
-                for i, original_item in enumerate(original):
-                    if isinstance(original_item, dict) and 'id' in original_item:
-                        # 检查该项是否已经被处理过
-                        item_id = original_item['id']
-                        already_processed = False
-                        for change_item in changes:
-                            if (isinstance(change_item, dict) and 
-                                change_item.get('id') == item_id and
-                                change_item.get('action') != 'deleted'):
-                                already_processed = True
-                                break
-                        
-                        if not already_processed:
-                            result.append(original_item)
-                    else:
-                        # 对于不包含id的项，检查是否在修改范围内
-                        if i < len(changes) and not isinstance(changes[i], dict):
-                            # 使用原来的逻辑处理
-                            if isinstance(original_item, (dict, list)) and isinstance(changes[i], (dict, list)):
-                                result.append(self.recursive_apply_changes(original_item, changes[i]))
-                            else:
-                                result.append(changes[i])
-                        else:
-                            result.append(original_item)
-            
-            return result
-        else:
-            return original
-    
-    def format_json_for_editing(self, data):
-        """格式化JSON用于编辑"""
-        return json.dumps(data, ensure_ascii=False, indent=4)
-    
-    def apply_json_syntax_highlighting(self):
-        """应用JSON语法高亮"""
-        return
-        # 卡顿问题待解决
+                            original[id_map[target_id]] = change_data
 
-        # 配置标签
-        self.json_text.tag_configure("key", foreground="#7be2f7")      # 粉色
-        self.json_text.tag_configure("string", foreground="#ffdb4b")   # 黄色
-        self.json_text.tag_configure("number", foreground="#96f993")   # 紫色
-        self.json_text.tag_configure("boolean", foreground="#ff5555")  # 红色
-        self.json_text.tag_configure("null", foreground="#ff5555")     # 红色
-        
-        # 清除现有标签
-        for tag in self.json_text.tag_names():
-            self.json_text.tag_remove(tag, 1.0, tk.END)
-        
-        # 获取文本内容
-        content = self.json_text.get(1.0, tk.END)
-        
-        # 匹配JSON键
-        key_pattern = r'"([^"]+)"\s*:'
-        for match in re.finditer(key_pattern, content):
-            start = f"1.0+{match.start()}c"
-            end = f"1.0+{match.end()}c"
-            self.json_text.tag_add("key", start, end)
-        
-        # 匹配字符串值
-        string_pattern = r':\s*"([^"]*)"'
-        for match in re.finditer(string_pattern, content):
-            start = f"1.0+{match.start()+2}c"  # 跳过冒号和空格
-            end = f"1.0+{match.end()-1}c"      # 跳过引号
-            self.json_text.tag_add("string", start, end)
-        
-        # 匹配数字
-        number_pattern = r':\s*(\d+(?:\.\d+)?)'
-        for match in re.finditer(number_pattern, content):
-            start = f"1.0+{match.start()+2}c"  # 跳过冒号和空格
-            end = f"1.0+{match.end()}c"
-            self.json_text.tag_add("number", start, end)
-        
-        # 匹配布尔值
-        boolean_pattern = r':\s*(true|false)'
-        for match in re.finditer(boolean_pattern, content, re.IGNORECASE):
-            start = f"1.0+{match.start()+2}c"  # 跳过冒号和空格
-            end = f"1.0+{match.end()}c"
-            self.json_text.tag_add("boolean", start, end)
-        
-        # 匹配null
-        null_pattern = r':\s*(null)'
-        for match in re.finditer(null_pattern, content, re.IGNORECASE):
-            start = f"1.0+{match.start()+2}c"  # 跳过冒号和空格
-            end = f"1.0+{match.end()}c"
-            self.json_text.tag_add("null", start, end)
-    
-    def save_json_changes(self):
-        """保存JSON修改"""
+    # ======================= 数据视图 (虚拟滚动 Virtual Scroll) =======================
+
+    # 每个条目的高度（像素），由虚拟滚动统一使用
+    _ROW_HEIGHT = 36
+    # 可视区域外额外渲染的条目数（缓冲，避免滚动时看到空白）
+    _BUFFER_ROWS = 30
+
+    def _init_virtual_scroll(self, parent):
+        """初始化虚拟滚动的 Canvas + Scrollbar + 事件绑定"""
+        self.data_canvas = tk.Canvas(parent, bg=self.bg,
+                                     highlightthickness=0, bd=0)
+        self.data_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        data_scroll = ttk.Scrollbar(parent, orient=tk.VERTICAL,
+                                    command=self.data_canvas.yview)
+        data_scroll.pack(side=tk.RIGHT, fill=tk.Y)
+
+        # 渲染缓存：{entry_index: (canvas_item_id, frame_widget)}
+        # 关键：必须同时保存 canvas item ID（整数）和 widget，否则
+        # canvas.delete(widget) 不可靠——Tk canvas 需要 item ID 才能正确删除
+        self._rendered_widgets = {}
+        # 扁平化条目
+        self._flat_entries = []
+        # 防止递归重渲染
+        self._in_render = False
+        # 记录 entries 总数（变化时才更新 scrollregion）
+        self._entries_count = 0
+        # 延迟渲染调度 id，用于合并多次滚动/resize 事件
+        self._pending_render_id = None
+
+        def _tracked_yscroll(*args):
+            """yview 回调：更新滚动条 + 延迟重渲染
+            直接在这里调用 _render_visible 会导致 scrollregion→yview 链死循环
+            """
+            data_scroll.set(*args)
+            if hasattr(self, '_flat_entries') and self._flat_entries:
+                self._schedule_render()
+
+        self.data_canvas.configure(yscrollcommand=_tracked_yscroll)
+
+        # Canvas 配置事件（大小变化）
+        self.data_canvas.bind("<Configure>", self._on_virtual_canvas_configure)
+        # 滚动时重渲染
+        self.data_canvas.bind("<Enter>",
+                              lambda e: self.data_canvas.bind_all("<MouseWheel>",
+                                                                  self._on_virtual_mousewheel))
+        self.data_canvas.bind("<Leave>",
+                              lambda e: self.data_canvas.unbind_all("<MouseWheel>"))
+
+    def _on_virtual_mousewheel(self, event):
+        """鼠标滚轮事件 - 只在编辑区聚焦时触发"""
+        try:
+            x, y = event.x_root, event.y_root
+            wx = self.data_canvas.winfo_rootx()
+            wy = self.data_canvas.winfo_rooty()
+            ww = self.data_canvas.winfo_width()
+            wh = self.data_canvas.winfo_height()
+            if wx <= x <= wx + ww and wy <= y <= wy + wh:
+                self.data_canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+                self._schedule_render()
+        except Exception:
+            pass
+
+    def _on_virtual_canvas_configure(self, event):
+        """Canvas 大小改变时：更新渲染窗口宽度 + 延迟重渲染"""
+        try:
+            for item_id, widget in list(self._rendered_widgets.values()):
+                try:
+                    self.data_canvas.itemconfigure(item_id, width=event.width)
+                except Exception:
+                    pass
+            self._schedule_render()
+        except Exception:
+            pass
+
+    def _schedule_render(self):
+        """合并多次滚动/resize 事件，延迟统一渲染，避免 UI 抖动"""
+        if self._in_render:
+            return
+        if self._pending_render_id is not None:
+            try:
+                self.parent_window.after_cancel(self._pending_render_id)
+            except Exception:
+                pass
+        self._pending_render_id = self.parent_window.after(
+            30, self._render_visible)
+
+    def _flatten_data(self):
+        """核心：把整个 JSON 树扁平化为一维条目列表（纯数据，不创建控件）。
+        每个 entry 是一个 dict，包含渲染时所需的全部元数据。
+        通过 self._collapsed_paths 集合来跳过已折叠容器的子项。"""
+        entries = []
+        if not hasattr(self, '_collapsed_paths'):
+            self._collapsed_paths = set()
+
+        def walk(current, original, title, depth, dict_key=None,
+                 list_index=None, id_value=None, is_root=False,
+                 parent_path=""):
+            is_container = isinstance(current, (dict, list))
+            # 键黑名单过滤（只对有 dict_key 的叶子生效；容器的键如 "id" 不是常见情形
+            # 这里为保守起见只过滤叶子节点的键）
+            if not is_container and dict_key is not None:
+                if not self._show_hidden_keys_var.get() and dict_key in HIDDEN_KEYS:
+                    return  # 跳过隐藏的叶子
+
+            # 对叶子节点做"仅显示已修改"和"搜索"过滤
+            if not is_container:
+                is_modified = (original != current)
+                if self._only_modified and not is_modified:
+                    return
+                value_str = str(current)
+                text_to_search = f"{str(dict_key)} {value_str}".lower()
+                if self._search_keyword and self._search_keyword not in text_to_search:
+                    return
+
+            # 计算此容器的唯一 path（用于折叠/展开记忆）
+            path = parent_path + "/" + (str(dict_key) if dict_key is not None else
+                                         (f"[{list_index}]" if list_index is not None else "root"))
+
+            entry = {
+                'title': title,
+                'current': current,
+                'original': original,
+                'depth': depth,
+                'is_container': is_container,
+                'is_root': is_root,
+                'dict_key': dict_key,
+                'list_index': list_index,
+                'id_value': str(id_value) if id_value is not None else None,
+                'expanded': (path not in self._collapsed_paths),
+                'is_container_header': is_container,
+                'path': path,
+            }
+
+            # 对容器内部内容做同样的过滤；若容器过滤后内容为空则跳过
+            if is_container:
+                entries.append(entry)  # 先放入容器头
+                # 如果容器被折叠，直接跳过子项遍历
+                if path in self._collapsed_paths and not is_root:
+                    return
+                has_visible_child = False
+                if isinstance(current, dict):
+                    show_hidden = self._show_hidden_keys_var.get()
+                    for k, v in current.items():
+                        if not show_hidden and k in HIDDEN_KEYS and not isinstance(v, (dict, list)):
+                            continue
+                        orig_v = original.get(k) if isinstance(original, dict) else None
+                        child_id = v if k == 'id' else None
+                        before = len(entries)
+                        walk(v, orig_v, k, depth + 1,
+                             dict_key=k, id_value=child_id, parent_path=path)
+                        if len(entries) > before:
+                            has_visible_child = True
+                else:  # list
+                    has_ids = all(isinstance(it, dict) and 'id' in it for it in current)
+                    for i, item in enumerate(current):
+                        orig_item = original[i] if (
+                            isinstance(original, list) and i < len(original)) else None
+                        sub_id = None
+                        if isinstance(item, dict) and 'id' in item:
+                            sub_id = str(item['id'])
+                        if has_ids and sub_id is not None:
+                            sub_title = f"[{i + 1}] id = {sub_id}"
+                        elif isinstance(item, dict):
+                            keys = ", ".join(list(item.keys())[:4])
+                            if len(item) > 4:
+                                keys += "..."
+                            sub_title = f"[{i + 1}] {{ {keys} }}"
+                        elif isinstance(item, list):
+                            sub_title = f"[{i + 1}] [ ... {len(item)} 项 ]"
+                        else:
+                            sub_title = f"[{i + 1}] {str(item)[:50]}"
+                        before = len(entries)
+                        walk(item, orig_item, sub_title, depth + 1,
+                             list_index=i, id_value=sub_id, parent_path=path)
+                        if len(entries) > before:
+                            has_visible_child = True
+                # 如果容器过滤后没有可见子项，把它自己也移除（除非是根）
+                if not has_visible_child and not is_root:
+                    entries.pop()
+            else:
+                entries.append(entry)
+
+        if self.current_file and (isinstance(self.modified_data, (dict, list))):
+            walk(self.modified_data, self.original_data,
+                 "📄 JSON 内容", 0, is_root=True)
+
+        return entries
+
+    def _render_visible(self):
+        """虚拟滚动核心：根据 yview 位置，只渲染可见 + 缓冲范围内的条目
+        关键修复：
+        1. _rendered_widgets 存储 (canvas_item_id:int, widget) 元组
+        2. 销毁时必须 canvas.delete(item_id) + widget.destroy()，缺一不可
+        3. scrollregion 仅在条目数变化时更新，避免触发 yview 回调死循环
+        """
+        if not hasattr(self, '_flat_entries') or self._in_render:
+            return
+        self._in_render = True
+        self._pending_render_id = None
+        try:
+            canvas = self.data_canvas
+            total = len(self._flat_entries)
+            if total == 0:
+                # 清空所有已渲染控件
+                for item_id, widget in list(self._rendered_widgets.values()):
+                    try:
+                        canvas.delete(item_id)
+                    except Exception:
+                        pass
+                    try:
+                        widget.destroy()
+                    except Exception:
+                        pass
+                self._rendered_widgets.clear()
+                canvas.configure(scrollregion=(0, 0, 0, 0))
+                return
+
+            # 仅在总数变化时更新 scrollregion（减少 yview 回调链）
+            if self._entries_count != total:
+                self._entries_count = total
+                canvas.configure(scrollregion=(0, 0, 0, total * self._ROW_HEIGHT))
+
+            # 可视范围 [first_index, last_index)
+            canvas_h = canvas.winfo_height()
+            if canvas_h <= 1:
+                canvas_h = 600  # canvas 尚未布局，给一个默认值
+            view_top = canvas.canvasy(0)
+            view_bottom = canvas.canvasy(canvas_h)
+            first_idx = max(0, int(view_top // self._ROW_HEIGHT) - self._BUFFER_ROWS)
+            last_idx = min(total, int((view_bottom + self._ROW_HEIGHT - 1)
+                                      // self._ROW_HEIGHT) + self._BUFFER_ROWS)
+
+            # 销毁不再在可视范围内的控件
+            for idx in list(self._rendered_widgets.keys()):
+                if idx < first_idx or idx >= last_idx:
+                    item_id, widget = self._rendered_widgets[idx]
+                    try:
+                        canvas.delete(item_id)
+                    except Exception:
+                        pass
+                    try:
+                        widget.destroy()
+                    except Exception:
+                        pass
+                    del self._rendered_widgets[idx]
+
+            # 渲染新进入可视范围的条目
+            canvas_width = max(100, canvas.winfo_width())
+            for idx in range(first_idx, last_idx):
+                if idx in self._rendered_widgets:
+                    continue
+                if idx >= len(self._flat_entries):
+                    break
+                entry = self._flat_entries[idx]
+                y = idx * self._ROW_HEIGHT
+                widget = self._create_row_widget(entry, idx, canvas_width)
+                if widget is not None:
+                    # 关键：canvas.create_window 返回 item ID（整数），必须保存
+                    item_id = canvas.create_window(0, y, window=widget,
+                                                   anchor='nw', width=canvas_width)
+                    self._rendered_widgets[idx] = (item_id, widget)
+        finally:
+            self._in_render = False
+
+    def _create_row_widget(self, entry, index, canvas_width):
+        """为单个 entry 创建一行控件"""
+        depth = entry['depth']
+        is_container = entry['is_container']
+        is_root = entry['is_root']
+        bg_color = self._get_depth_color(depth)
+        row_bg = _darken(bg_color, 0.92) if is_container else bg_color
+
+        frame = tk.Frame(self.data_canvas, bg=row_bg, bd=0,
+                         highlightthickness=0, height=self._ROW_HEIGHT)
+        frame.pack_propagate(False)
+
+        # 缩进
+        indent_px = depth * 14
+        if indent_px > 0:
+            tk.Frame(frame, bg=row_bg, width=indent_px,
+                     bd=0, highlightthickness=0).pack(side=tk.LEFT)
+
+        # 左侧蓝色竖线（装饰）
+        if depth > 0 or is_container:
+            line = tk.Frame(frame, bg='#3498db', width=2,
+                            bd=0, highlightthickness=0)
+            line.pack(side=tk.LEFT, fill=tk.Y)
+            line.pack_propagate(False)
+
+        if is_container:
+            # 容器头部：▼/▶ + 标题 + 信息
+            toggle_text = "▼" if entry['expanded'] else "▶"
+            toggle = tk.Label(frame, text=toggle_text,
+                              bg=row_bg, fg='#7be2f7',
+                              font=('Microsoft YaHei UI', 9, 'bold'),
+                              cursor='hand2', padx=6)
+            toggle.pack(side=tk.LEFT)
+            toggle.bind("<Button-1>",
+                        lambda e, i=index: self._toggle_container(i))
+
+            title_label = tk.Label(frame, text=entry['title'],
+                                   bg=row_bg, fg='#ecf0f1',
+                                   font=('Microsoft YaHei UI', 9, 'bold'),
+                                   anchor='w', cursor='hand2')
+            title_label.pack(side=tk.LEFT, padx=(2, 8))
+            title_label.bind("<Button-1>",
+                             lambda e, i=index: self._toggle_container(i))
+
+            # 统计容器信息（延迟计算，只看当前层级）
+            info_text = ""
+            current = entry['current']
+            if isinstance(current, dict):
+                info_text = f"{len(current)} 项"
+            elif isinstance(current, list):
+                info_text = f"{len(current)} 项"
+            if info_text:
+                tk.Label(frame, text=info_text,
+                         bg=row_bg, fg='#95a5a6',
+                         font=('Microsoft YaHei UI', 8)).pack(side=tk.RIGHT, padx=12)
+
+        else:
+            # 叶子节点：键名 + 值 + 编辑按钮
+            dict_key = entry['dict_key']
+            is_modified = (entry['original'] != entry['current'])
+            key_text = str(dict_key) if dict_key is not None else "(值)"
+            key_color = '#f1c40f' if is_modified else '#ecf0f1'
+
+            key_label = tk.Label(frame, text=f"🔑 {key_text}",
+                                 bg=row_bg, fg=key_color,
+                                 font=('Microsoft YaHei UI', 9, 'bold'),
+                                 anchor='w')
+            key_label.pack(side=tk.LEFT, padx=(4, 10))
+
+            if is_modified:
+                tk.Label(frame, text="●", bg=row_bg,
+                         fg='#e67e22', font=('Microsoft YaHei UI', 12)).pack(
+                    side=tk.RIGHT, padx=(4, 4))
+
+            # 编辑按钮（放在右侧，确保不被挤掉）
+            if dict_key == 'id':
+                tk.Label(frame, text="[只读·id]",
+                         bg=row_bg, fg='#bdc3c7',
+                         font=('Microsoft YaHei UI', 8)).pack(side=tk.RIGHT, padx=8)
+            else:
+                btn_text = "✏ 已修改" if is_modified else "✏ 编辑"
+                btn_color = '#e67e22' if is_modified else '#27ae60'
+                btn_hover = '#ba4a00' if is_modified else '#1e8449'
+                btn = tk.Button(frame, text=btn_text,
+                                bg=btn_color, fg='white',
+                                relief='flat', padx=10, pady=0,
+                                cursor='hand2',
+                                activebackground=btn_hover,
+                                activeforeground='white',
+                                font=('Microsoft YaHei UI', 8, 'bold'))
+                btn.configure(command=lambda k=dict_key,
+                                       cv=entry['current'],
+                                       ov=entry['original'],
+                                       iv=entry['id_value'],
+                                       li=entry['list_index'],
+                                       d=depth: self._open_edit_dialog(k, cv, ov, iv, li, d))
+                btn.pack(side=tk.RIGHT, padx=(6, 8))
+
+            # 值文本（填充中间空间，不挤按钮）
+            value_str = str(entry['current'])
+            short_text = value_str if len(value_str) < 80 else value_str[:77] + "..."
+            val_color = '#f1c40f' if is_modified else '#ecf0f1'
+            value_label = tk.Label(frame, text=short_text,
+                                   bg=row_bg, fg=val_color,
+                                   font=('Microsoft YaHei UI', 9),
+                                   anchor='w', justify=tk.LEFT)
+            value_label.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=4)
+
+        # 绑定鼠标滚轮（让行内控件也能滚动编辑区）
+        def _row_mousewheel(event):
+            self._on_virtual_mousewheel(event)
+
+        self._bind_to_hierarchy(frame, _row_mousewheel)
+        return frame
+
+    def _bind_to_hierarchy(self, widget, handler):
+        """递归绑定鼠标滚轮事件到 widget 及其子控件"""
+        try:
+            widget.bind("<MouseWheel>", handler)
+        except Exception:
+            pass
+        try:
+            for child in widget.winfo_children():
+                self._bind_to_hierarchy(child, handler)
+        except Exception:
+            pass
+
+    def _toggle_container(self, index):
+        """点击容器头部时切换展开/折叠
+        采用"path 指纹集合"方案：切换后调用 _refresh_data_view 彻底清空+重建，
+        避免折叠时子项控件仍然驻留在 canvas 上导致的幽灵控件问题"""
+        if not hasattr(self, '_collapsed_paths'):
+            self._collapsed_paths = set()
+        if index < 0 or index >= len(self._flat_entries):
+            return
+        entry = self._flat_entries[index]
+        if not entry['is_container']:
+            return
+        target_path = entry['path']
+        if target_path in self._collapsed_paths:
+            self._collapsed_paths.remove(target_path)
+        else:
+            self._collapsed_paths.add(target_path)
+
+        # 折叠/展开后结构变化 → 用 _refresh_data_view 彻底清空重建
+        # 先传 target_path，刷新后再找到这个条目的新索引，滚动到它
+        self._refresh_data_view_with_target(target_path=target_path)
+
+    def _refresh_data_view_with_target(self, target_path=None):
+        """刷新并滚动到指定 path 的条目（折叠/展开后定位用）"""
+        # 先刷新，用 preserve_scroll
+        saved_fraction = 0.0
+        try:
+            if hasattr(self, 'data_canvas'):
+                saved_fraction = self.data_canvas.yview()[0]
+        except Exception:
+            saved_fraction = 0.0
+
+        # 调用标准刷新逻辑（但不立即恢复滚动）
+        self._refresh_data_view(preserve_scroll=False)
+
+        # 如果指定了 target_path，在新列表中找到它的新索引
+        if target_path is not None and hasattr(self, '_flat_entries') and self._flat_entries:
+            target_idx = None
+            for i, e in enumerate(self._flat_entries):
+                if e.get('path') == target_path:
+                    target_idx = i
+                    break
+            total = len(self._flat_entries)
+            if target_idx is not None and total > 0:
+                # 滚动到这个条目，让它位于可视区域顶部
+                top_y = target_idx * self._ROW_HEIGHT
+                total_height = total * self._ROW_HEIGHT
+                if total_height > 0:
+                    self.data_canvas.yview_moveto(top_y / total_height)
+                # 重新渲染可视范围内的新位置
+                self._render_visible()
+                return
+        # 如果没找到目标，恢复之前的滚动比例
+        if hasattr(self, '_flat_entries') and self._flat_entries:
+            self.data_canvas.yview_moveto(saved_fraction)
+            self._render_visible()
+
+    def _refresh_data_view(self, preserve_scroll=True, target_index=None):
+        """虚拟滚动版：完全刷新（编辑后/搜索后/切换文件时调用）
+        关键：用 canvas.delete('all') 彻底清空，不留幽灵控件；
+        preserve_scroll=True 时保存并恢复用户滚动位置；
+        target_index=N 时滚动到第 N 个条目（常用于折叠/展开后定位）"""
+        # 1) 保存当前 yview 位置（[0, 1] 的归一化比例）
+        saved_fraction = 0.0
+        try:
+            if preserve_scroll and hasattr(self, 'data_canvas'):
+                saved_fraction = self.data_canvas.yview()[0]
+        except Exception:
+            saved_fraction = 0.0
+
+        # 2) 彻底清空 canvas + 销毁所有 widget（避免幽灵控件堆积）
+        try:
+            self.data_canvas.delete('all')
+        except Exception:
+            pass
+        # 同时 destroy 所有子 widget（安全兜底）
+        try:
+            for child in self.data_canvas.winfo_children():
+                try:
+                    child.destroy()
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        self._rendered_widgets.clear()
+
+        if not self.current_file:
+            # 未选择文件：放一个提示
+            self._flat_entries = []
+            self._entries_count = 0
+            self.data_canvas.configure(scrollregion=(0, 0, 0, 300))
+            hint = tk.Label(self.data_canvas,
+                            text="\n  请从左侧文件树选择一个 JSON 文件开始编辑\n",
+                            bg=self.bg, fg='#95a5a6',
+                            font=('Microsoft YaHei UI', 13, 'bold'))
+            cw = self.data_canvas.winfo_width()
+            hint_x = cw // 2 if cw > 0 else 400
+            item_id = self.data_canvas.create_window(hint_x, 60, window=hint, anchor='n')
+            self._rendered_widgets[-1] = (item_id, hint)
+            self.status_label.config(text="就绪 - 虚拟滚动模式已启用")
+            return
+
+        self._search_keyword = self.data_search_var.get().lower().strip()
+        self._only_modified = self.only_modified_var.get()
+
+        # 3) 扁平化（纯数据，不生成控件 - 这是最快的一步）
+        self._flat_entries = self._flatten_data()
+
+        # 4) 计数修改
+        total_modified = 0
+        for e in self._flat_entries:
+            if not e['is_container'] and e['original'] != e['current']:
+                total_modified += 1
+        if total_modified > 0:
+            self.changes_count_label.config(
+                text=f"✏ 已修改 {total_modified} 项 (需点击 [保存到 changes.json] 确认)")
+        else:
+            self.changes_count_label.config(text="")
+
+        # 5) 首次渲染可视范围 + 恢复滚动位置
+        self._entries_count = 0  # 强制 _render_visible 重新计算 scrollregion
+        self._in_render = False
+        self._render_visible()
+
+        # 6) 恢复滚动：优先 target_index，其次恢复之前的比例
+        total = len(self._flat_entries)
+        if target_index is not None and total > 0:
+            # 滚动到指定条目（让它出现在可视区域顶部附近）
+            idx = max(0, min(int(target_index), total - 1))
+            top_y = idx * self._ROW_HEIGHT
+            total_height = total * self._ROW_HEIGHT
+            if total_height > 0:
+                self.data_canvas.yview_moveto(top_y / total_height)
+        elif preserve_scroll and total > 0:
+            # 恢复之前的归一化滚动位置
+            self.data_canvas.yview_moveto(saved_fraction)
+        else:
+            self.data_canvas.yview_moveto(0)
+
+        self.status_label.config(
+            text=f"虚拟滚动模式：共 {total} 个条目，"
+                 f"仅渲染可视范围内控件")
+
+    # ======================= 颜色/样式 =======================
+
+    def _get_depth_color(self, depth):
+        """根据深度在 lighten_bg_color 基础上渐暗"""
+        base = self.bg_light
+        factor = max(0.55, 0.92 - depth * 0.05)
+        return _darken(base, factor)
+
+    def _build_pane(self, parent, current_data, original_data,
+                    title, depth, changes_count,
+                    is_root=False, dict_key=None, list_index=None,
+                    id_value=None):
+        """递归构建可折叠面板"""
+        bg_color = self._get_depth_color(depth)
+        is_container = isinstance(current_data, (dict, list))
+
+        pane = CollapsiblePane(parent, title, self.root,
+                               bg_color=bg_color, is_container=is_container,
+                               is_root=is_root,
+                               meta={'dict_key': dict_key,
+                                     'list_index': list_index,
+                                     'id_value': id_value,
+                                     'depth': depth})
+        pane.pack(fill=tk.X, padx=8, pady=3)
+        self._all_panes.append(pane)
+
+        if isinstance(current_data, dict):
+            total = len(current_data)
+            modified_count = 0
+            visible_count = 0
+            show_hidden = self._show_hidden_keys_var.get()
+            for k, v in current_data.items():
+                # 键黑名单过滤：除非勾选"显示隐藏键"，否则跳过 HIDDEN_KEYS 中的键
+                if not show_hidden and k in HIDDEN_KEYS:
+                    continue
+                orig_v = original_data.get(k) if isinstance(original_data, dict) else None
+                is_id = (k == 'id')
+                if self._build_pane(pane.body_inner, v, orig_v,
+                                    k, depth + 1, changes_count,
+                                    dict_key=k,
+                                    id_value=(v if is_id else None)):
+                    visible_count += 1
+                if orig_v != v:
+                    modified_count += 1
+
+            info_parts = []
+            if total > 0:
+                info_parts.append(f"{total} 项")
+            if modified_count > 0:
+                info_parts.append(f"{modified_count} 已修改")
+            if info_parts:
+                pane.set_info(" / ".join(info_parts),
+                              '#e67e22' if modified_count > 0 else '#95a5a6')
+
+            if visible_count == 0 and not is_root:
+                pane.destroy()
+                return False
+            return True
+
+        elif isinstance(current_data, list):
+            total = len(current_data)
+            modified_count = 0
+            visible_count = 0
+            has_ids = all(isinstance(it, dict) and 'id' in it for it in current_data)
+
+            for i, item in enumerate(current_data):
+                orig_item = original_data[i] if (
+                        isinstance(original_data, list) and i < len(original_data)) else None
+                item_id = None
+                if isinstance(item, dict) and 'id' in item:
+                    item_id = str(item['id'])
+
+                if has_ids and item_id is not None:
+                    sub_title = f"[{i + 1}] id = {item_id}"
+                elif isinstance(item, dict):
+                    keys = ", ".join(list(item.keys())[:4])
+                    if len(item) > 4:
+                        keys += "..."
+                    sub_title = f"[{i + 1}] {{ {keys} }}"
+                elif isinstance(item, list):
+                    sub_title = f"[{i + 1}] [ ... {len(item)} 项 ]"
+                else:
+                    sub_title = f"[{i + 1}] {str(item)[:50]}"
+
+                if self._build_pane(pane.body_inner, item, orig_item,
+                                    sub_title, depth + 1, changes_count,
+                                    list_index=i, id_value=item_id):
+                    visible_count += 1
+                if orig_item != item:
+                    modified_count += 1
+
+            info_parts = []
+            if total > 0:
+                info_parts.append(f"{total} 项")
+            if modified_count > 0:
+                info_parts.append(f"{modified_count} 已修改")
+            if info_parts:
+                pane.set_info(" / ".join(info_parts),
+                              '#e67e22' if modified_count > 0 else '#95a5a6')
+
+            if visible_count == 0 and not is_root:
+                pane.destroy()
+                return False
+            return True
+
+        else:
+            # 叶子节点：渲染为一行
+            is_id_field = (dict_key == 'id')
+            is_modified = (original_data != current_data)
+            if is_modified:
+                changes_count[0] += 1
+
+            # 键黑名单过滤（叶子节点）
+            if not self._show_hidden_keys_var.get() and dict_key in HIDDEN_KEYS:
+                return False
+
+            # 搜索过滤
+            value_str = str(current_data)
+            text_to_search = f"{str(dict_key)} {value_str}".lower()
+            if self._only_modified and not is_modified:
+                return False
+            if self._search_keyword and self._search_keyword not in text_to_search:
+                return False
+
+            # 构建一行
+            row_bg = pane.body_bg
+            row = tk.Frame(pane.body_inner, bg=row_bg, bd=0, highlightthickness=0)
+            row.pack(fill=tk.X, padx=2, pady=1)
+
+            # 键名：不使用固定 width，改用 pad 限制
+            key_text = str(dict_key) if dict_key is not None else "(值)"
+            key_color = '#f1c40f' if is_modified else '#ecf0f1'
+
+            # 左侧：键名
+            key_label = tk.Label(row, text=f"🔑 {key_text}",
+                                 bg=row_bg, fg=key_color,
+                                 font=('Microsoft YaHei UI', 9, 'bold'),
+                                 anchor='w', justify=tk.LEFT)
+            key_label.pack(side=tk.LEFT, padx=(4, 10), pady=4)
+
+            # 修改标记（放在右侧）
+            if is_modified:
+                tk.Label(row, text="●", bg=row_bg, fg='#e67e22',
+                         font=('Microsoft YaHei UI', 12)).pack(side=tk.RIGHT, padx=(4, 8), pady=4)
+
+            # 值显示
+            if is_id_field or not isinstance(current_data, str):
+                # 只读字段：显示截断文字 + 类型标注
+                short_text = value_str if len(value_str) < 60 else value_str[:57] + "..."
+                val_color = '#bdc3c7'
+                # 中间使用可扩展的 Label，让按钮固定在右侧
+                value_label = tk.Label(row, text=short_text, bg=row_bg, fg=val_color,
+                                       font=('Microsoft YaHei UI', 9),
+                                       anchor='w', justify=tk.LEFT)
+                value_label.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=4, pady=4)
+
+                type_label = tk.Label(row,
+                                      text=f"[只读·{type(current_data).__name__}]",
+                                      bg=row_bg, fg='#7f8c8d',
+                                      font=('Microsoft YaHei UI', 8))
+                type_label.pack(side=tk.RIGHT, padx=(4, 8), pady=4)
+            else:
+                # 可编辑：先放按钮（RIGHT），然后用 expand 文本填充中间
+                btn_text = "✏ 已修改" if is_modified else "✏ 编辑"
+                btn_color = '#e67e22' if is_modified else '#27ae60'
+                btn_hover = '#ba4a00' if is_modified else '#1e8449'
+
+                # 先放按钮到最右边，保证不被挤掉
+                edit_btn = tk.Button(row, text=btn_text,
+                                     command=lambda k=dict_key, cv=current_data,
+                                                    ov=original_data, lv=id_value,
+                                                    li=list_index, d=depth:
+                                     self._open_edit_dialog(k, cv, ov, lv, li, d),
+                                     bg=btn_color, fg='white',
+                                     font=('Microsoft YaHei UI', 8, 'bold'),
+                                     relief='flat', padx=12, pady=2,
+                                     cursor='hand2',
+                                     activebackground=btn_hover,
+                                     activeforeground='white')
+                edit_btn.pack(side=tk.RIGHT, padx=(4, 8), pady=3)
+
+                # 再用扩展 Label 显示文字截断（不会挤掉按钮）
+                short_text = value_str if len(value_str) < 80 else value_str[:77] + "..."
+                val_color = '#f1c40f' if is_modified else '#ecf0f1'
+                value_label = tk.Label(row, text=short_text, bg=row_bg, fg=val_color,
+                                       font=('Microsoft YaHei UI', 9),
+                                       anchor='w', justify=tk.LEFT)
+                value_label.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=4, pady=4)
+
+            self._all_panes.append(row)
+            return True
+
+    # ======================= 编辑对话框 =======================
+    def _open_edit_dialog(self, dict_key, current_value, original_value,
+                          id_value, list_index, depth):
+        if dict_key == 'id':
+            messagebox.showinfo("提示", "'id' 字段用于定位记录，不可修改")
+            return
+
+        dialog = tk.Toplevel(self.parent_window)
+        dialog.title(f"编辑字段: {dict_key}")
+        dialog.geometry("720x500")
+        dialog.minsize(600, 400)
+        dialog.configure(bg=self.bg)
+        dialog.transient(self.parent_window)
+        dialog.grab_set()
+        center_window(dialog, False)
+
+        # 顶部栏
+        header = tk.Frame(dialog, bg=self.bg_dark, height=48, bd=0, highlightthickness=0)
+        header.pack(fill=tk.X, side=tk.TOP)
+        header.pack_propagate(False)
+        tk.Label(header,
+                 text=f"  字段: {dict_key}  |  类型: {type(current_value).__name__}",
+                 bg=self.bg_dark, fg='#f1c40f',
+                 font=('Microsoft YaHei UI', 10, 'bold')).pack(side=tk.LEFT, padx=12)
+        if id_value is not None:
+            tk.Label(header, text=f"所在记录 id: {id_value}  ",
+                     bg=self.bg_dark, fg='#7be2f7',
+                     font=('Microsoft YaHei UI', 9)).pack(side=tk.RIGHT, padx=12)
+
+        # 主内容区 - 限制高度，避免挤出按钮
+        body = tk.Frame(dialog, bg=self.bg, bd=0, highlightthickness=0)
+        body.pack(fill=tk.BOTH, expand=True, padx=14, pady=10)
+
+        # 原始值
+        tk.Label(body, text="📖 原始值 (作为参考，只读):",
+                 bg=self.bg, fg='#95a5a6',
+                 font=('Microsoft YaHei UI', 9, 'bold')).pack(anchor='w')
+
+        orig_frame = tk.Frame(body, bg=self.bg_darker, bd=0, highlightthickness=0)
+        orig_frame.pack(fill=tk.X, pady=(4, 10))
+        orig_text = tk.Text(orig_frame, height=5, bg=self.bg_darker, fg='#ecf0f1',
+                            font=('Microsoft YaHei UI', 10), wrap=tk.WORD,
+                            relief='flat', padx=10, pady=8)
+        orig_text.pack(fill=tk.BOTH, expand=True)
+        orig_text.insert("1.0", str(original_value) if original_value is not None else "")
+        orig_text.config(state='disabled')
+
+        # 新值
+        tk.Label(body, text="✏ 新值 (可编辑，点击保存后会写入修改记录):",
+                 bg=self.bg, fg='#7be2f7',
+                 font=('Microsoft YaHei UI', 9, 'bold')).pack(anchor='w')
+
+        new_frame = tk.Frame(body, bg=self.bg_darker, bd=0, highlightthickness=0)
+        new_frame.pack(fill=tk.BOTH, expand=True, pady=(4, 0))
+        new_text = tk.Text(new_frame, height=8, bg=self.bg_darker, fg='white',
+                           insertbackground='white',
+                           font=('Microsoft YaHei UI', 10), wrap=tk.WORD,
+                           relief='flat', padx=10, pady=8,
+                           highlightthickness=1,
+                           highlightbackground='#3498db',
+                           highlightcolor='#3498db')
+        new_text.pack(fill=tk.BOTH, expand=True)
+        new_text.insert("1.0", str(current_value))
+        new_text.focus_set()
+
+        # 底部按钮栏 - 固定在底部
+        btn_row = tk.Frame(dialog, bg=self.bg_dark, bd=0, highlightthickness=0, height=62)
+        btn_row.pack(fill=tk.X, side=tk.BOTTOM)
+        btn_row.pack_propagate(False)
+
+        btn_inner = tk.Frame(btn_row, bg=self.bg_dark, bd=0, highlightthickness=0)
+        btn_inner.pack(pady=14)
+
+        def on_save():
+            new_value = new_text.get("1.0", tk.END).rstrip('\n')
+            if isinstance(current_value, bool):
+                try:
+                    lower = new_value.lower()
+                    if lower not in ('true', 'false'):
+                        raise ValueError
+                    new_value = (lower == 'true')
+                except Exception:
+                    messagebox.showerror("错误", "布尔值必须为 true 或 false")
+                    return
+            elif isinstance(current_value, int):
+                try:
+                    new_value = int(new_value)
+                except Exception:
+                    messagebox.showerror("错误", f"请输入有效的整数 (int)")
+                    return
+            elif isinstance(current_value, float):
+                try:
+                    new_value = float(new_value)
+                except Exception:
+                    messagebox.showerror("错误", f"请输入有效的数字 (float)")
+                    return
+
+            self._apply_edit(dict_key, new_value, depth, list_index, id_value)
+            self._refresh_data_view()
+            dialog.destroy()
+
+        def on_reset():
+            new_text.delete("1.0", tk.END)
+            new_text.insert("1.0", str(original_value) if original_value is not None else "")
+
+        tk.Button(btn_inner, text="💾 保存修改", command=on_save,
+                  bg='#27ae60', fg='white', relief='flat',
+                  cursor='hand2', padx=22, pady=6,
+                  font=('Microsoft YaHei UI', 10, 'bold'),
+                  activebackground='#1e8449',
+                  activeforeground='white').pack(side=tk.LEFT, padx=8)
+
+        tk.Button(btn_inner, text="↺ 恢复原始值", command=on_reset,
+                  bg='#e67e22', fg='white', relief='flat',
+                  cursor='hand2', padx=22, pady=6,
+                  font=('Microsoft YaHei UI', 10, 'bold'),
+                  activebackground='#ba4a00',
+                  activeforeground='white').pack(side=tk.LEFT, padx=8)
+
+        tk.Button(btn_inner, text="取消", command=dialog.destroy,
+                  bg='#7f8c8d', fg='white', relief='flat',
+                  cursor='hand2', padx=22, pady=6,
+                  font=('Microsoft YaHei UI', 10, 'bold'),
+                  activebackground='#6c7a7d',
+                  activeforeground='white').pack(side=tk.LEFT, padx=8)
+
+    def _apply_edit(self, dict_key, new_value, depth, list_index, id_value):
+        """根据 id_value / list_index 精准定位更新"""
+        success = False
+        try:
+            if id_value is not None:
+                def find_by_id(data):
+                    if isinstance(data, list):
+                        for item in data:
+                            if isinstance(item, dict) and str(item.get('id')) == str(id_value):
+                                if dict_key in item:
+                                    item[dict_key] = new_value
+                                    return True
+                            if isinstance(item, (dict, list)):
+                                if find_by_id(item):
+                                    return True
+                    elif isinstance(data, dict):
+                        if str(data.get('id')) == str(id_value):
+                            if dict_key in data:
+                                data[dict_key] = new_value
+                                return True
+                        for v in data.values():
+                            if isinstance(v, (dict, list)):
+                                if find_by_id(v):
+                                    return True
+                    return False
+                success = find_by_id(self.modified_data)
+            elif list_index is not None:
+                def find_by_index(data, remaining):
+                    if isinstance(data, list):
+                        if remaining == 0 and list_index < len(data):
+                            item = data[list_index]
+                            if isinstance(item, dict) and dict_key in item:
+                                item[dict_key] = new_value
+                                return True
+                        for it in data:
+                            if isinstance(it, (dict, list)):
+                                if find_by_index(it, remaining - 1):
+                                    return True
+                    elif isinstance(data, dict):
+                        for v in data.values():
+                            if isinstance(v, (dict, list)):
+                                if find_by_index(v, remaining):
+                                    return True
+                    return False
+                success = find_by_index(self.modified_data, max(0, depth - 1))
+            else:
+                def find_first(data, visited=None):
+                    if visited is None:
+                        visited = set()
+                    if id(data) in visited:
+                        return False
+                    visited.add(id(data))
+                    if isinstance(data, dict):
+                        if dict_key in data:
+                            data[dict_key] = new_value
+                            return True
+                        for v in data.values():
+                            if isinstance(v, (dict, list)):
+                                if find_first(v, visited):
+                                    return True
+                    elif isinstance(data, list):
+                        for item in data:
+                            if isinstance(item, (dict, list)):
+                                if find_first(item, visited):
+                                    return True
+                    return False
+                success = find_first(self.modified_data)
+        except Exception as e:
+            messagebox.showerror("错误", f"应用修改时出错: {e}")
+            return
+
+        if success:
+            self.status_label.config(
+                text=f"已更新字段 '{dict_key}'，请点击 [保存修改记录] 按钮确认保存")
+        else:
+            messagebox.showerror("错误", "无法定位到要修改的字段，请尝试重新加载文件")
+
+    # ======================= 搜索/展开/折叠 =======================
+    def _on_data_search_changed(self, event=None):
+        if self.current_file:
+            self._refresh_data_view(preserve_scroll=False)  # 搜索 → 滚到顶部
+
+    def _clear_data_search(self):
+        self.data_search_var.set("")
+        self._search_keyword = ""
+        if self.current_file:
+            self._refresh_data_view(preserve_scroll=False)  # 清除搜索 → 滚到顶部
+
+    def _expand_all(self):
+        """虚拟滚动版：清空 _collapsed_paths，完全刷新"""
+        if not hasattr(self, '_collapsed_paths'):
+            self._collapsed_paths = set()
+        self._collapsed_paths.clear()
+        self._refresh_data_view()
+
+    def _collapse_all(self):
+        """虚拟滚动版：把所有非根容器 path 加入集合，完全刷新"""
+        if not hasattr(self, '_collapsed_paths'):
+            self._collapsed_paths = set()
+        if hasattr(self, '_flat_entries') and self._flat_entries:
+            for e in self._flat_entries:
+                if e['is_container'] and not e['is_root']:
+                    self._collapsed_paths.add(e['path'])
+        self._refresh_data_view()
+
+    # ======================= 保存 / 重置 =======================
+    def _save_json_changes(self):
         if not self.current_file:
             messagebox.showwarning("警告", "请先选择一个文件")
             return
-        
         try:
-            # 获取编辑框内容
-            content = self.json_text.get(1.0, tk.END).strip()
-            
-            # 验证JSON格式
-            try:
-                edited_data = json.loads(content)
-            except json.JSONDecodeError as e:
-                messagebox.showerror("错误", f"JSON格式错误: {str(e)}")
-                return
-            
-            # 验证数据结构是否一致
-            if not self.validate_data_structure(self.original_data, edited_data):
-                messagebox.showerror("错误", "数据结构不一致！请确保只修改值内容，不要删除或添加键")
-                return
-            
-            # 比较并保存修改
-            self.compare_and_save_changes(edited_data)
-            
-            self.status_label.config(text="修改已保存")
-            messagebox.showinfo("成功", "修改已保存到changes.json")
-            
-        except Exception as e:
-            error_msg = f"保存失败: {str(e)}"
-            print(error_msg)
-            messagebox.showerror("错误", error_msg)
-    
-    def validate_data_structure(self, original, edited):
-        """验证数据结构是否一致"""
-        if type(original) != type(edited):
-            return False
-        
-        if isinstance(original, dict):
-            if set(original.keys()) != set(edited.keys()):
-                return False
-            
-            for key in original:
-                if not self.validate_data_structure(original[key], edited[key]):
-                    return False
-                    
-        elif isinstance(original, list):
-            if len(original) != len(edited):
-                return False
-            
-            for i in range(len(original)):
-                if not self.validate_data_structure(original[i], edited[i]):
-                    return False
-        
-        return True
-    
-    def compare_and_save_changes(self, edited_data):
-        """比较并保存修改"""
-        relative_path = os.path.relpath(self.current_file, self.lang_dir) # type: ignore
-        
-        # 比较修改
-        changes = self.find_changes(self.original_data, edited_data)
-        
-        if changes:
-            self.changes[relative_path] = changes
-        elif relative_path in self.changes:
-            # 如果没有修改，删除该文件的修改记录
-            del self.changes[relative_path]
-        
-        # 保存到文件
-        with open(self.changes_file, 'w', encoding='utf-8') as f:
-            json.dump(self.changes, f, ensure_ascii=False, indent=4)
-    
-    def find_changes(self, original, edited):
-        """查找修改 - 记录实际修改的值，同时记录id键值对以便识别具体修改内容"""
-        if isinstance(original, dict) and isinstance(edited, dict):
-            changes = {}
-            for key in original:
-                if key in edited:
-                    child_changes = self.find_changes(original[key], edited[key])
-                    if child_changes is not None:
-                        changes[key] = child_changes
-                # 不再记录被删除的键，因为我们不允许删除键
-            
-            # 检查是否有新增的键（不应该发生，因为验证过结构一致）
-            for key in edited:
-                if key not in original:
-                    changes[key] = edited[key]  # 新增的键
-            
-            return changes if changes else None
-            
-        elif isinstance(original, list) and isinstance(edited, list):
-            changes = []
-            has_changes = False
-            
-            for i in range(min(len(original), len(edited))):
-                # 检查当前列表项是否为字典且包含id键
-                if (isinstance(original[i], dict) and isinstance(edited[i], dict) and 
-                    'id' in original[i] and 'id' in edited[i]):
-                    # 对于包含id的字典项，记录修改时同时记录id
-                    child_changes = self.find_changes(original[i], edited[i])
-                    if child_changes is not None:
-                        # 创建一个包含id和修改内容的记录
-                        change_record = {
-                            'id': original[i]['id'],  # 记录原始id
-                            'changes': child_changes
-                        }
-                        changes.append(change_record)
-                        has_changes = True
-                else:
-                    # 对于不包含id的列表项，使用原来的逻辑
-                    child_changes = self.find_changes(original[i], edited[i])
-                    if child_changes is not None:
-                        changes.append(child_changes)
-                        has_changes = True
-            
-            # 处理长度不一致的情况
-            if len(edited) > len(original):
-                # 新增的元素
-                for i in range(len(original), len(edited)):
-                    if isinstance(edited[i], dict) and 'id' in edited[i]:
-                        # 对于包含id的新增字典项，记录id和完整内容
-                        change_record = {
-                            'id': edited[i]['id'],
-                            'changes': edited[i],
-                            'action': 'added'  # 标记为新增
-                        }
-                        changes.append(change_record)
-                    else:
-                        changes.append(edited[i])
-                    has_changes = True
-            elif len(edited) < len(original):
-                # 删除的元素（不应该发生，但我们记录为None）
-                for i in range(len(edited), len(original)):
-                    if isinstance(original[i], dict) and 'id' in original[i]:
-                        # 对于包含id的被删除字典项，记录id
-                        change_record = {
-                            'id': original[i]['id'],
-                            'action': 'deleted'  # 标记为删除
-                        }
-                        changes.append(change_record)
-                    else:
-                        changes.append(None)
-                    has_changes = True
-            
-            return changes if has_changes else None
-            
-        else:
-            # 基本类型 - 只有当值确实改变时才记录
-            return edited if original != edited else None
-
-    def reset_json_edits(self):
-        """撤销所有修改"""
-        if self.current_file:
-            relative_path = os.path.relpath(self.current_file, self.lang_dir) # type: ignore
-            if relative_path in self.changes:
-                del self.changes[relative_path]
-                with open(self.changes_file, 'w', encoding='utf-8') as f:
-                    json.dump(self.changes, f, ensure_ascii=False, indent=4)
-                self.load_json_file(self.current_file)  # 重新加载原始文件
-                self.status_label.config(text="所有修改已撤销")
-                messagebox.showinfo("成功", "所有修改已撤销")
+            relative = os.path.relpath(self.current_file, self.lang_dir)
+            diff = self._compute_diff(self.original_data, self.modified_data)
+            if diff is None:
+                if relative in self.changes:
+                    del self.changes[relative]
+                    self._save_changes_to_file()
+                messagebox.showinfo("信息", "当前文件无修改 (未与原始数据产生差异)")
+                self.status_label.config(text="没有修改需要保存")
             else:
-                messagebox.showinfo("信息", "没有任何修改需要撤销")
+                self.changes[relative] = diff
+                self._save_changes_to_file()
+                self.status_label.config(text=f"修改内容已保存，文件: {relative}")
+                messagebox.showinfo("成功",
+                                    f"✏ 修改内容已保存\n\n文件: {relative}")
+            self._refresh_file_tree()
+        except Exception as e:
+            messagebox.showerror("错误", f"保存失败: {e}")
+
+    def _compute_diff(self, original, modified):
+        if isinstance(original, dict) and isinstance(modified, dict):
+            changes = {}
+            for k, v in modified.items():
+                if k in original:
+                    sub = self._compute_diff(original[k], v)
+                    if sub is not None:
+                        changes[k] = sub
+                else:
+                    changes[k] = v
+            return changes if changes else None
+        elif isinstance(original, list) and isinstance(modified, list):
+            has_ids = all(isinstance(it, dict) and 'id' in it for it in original)
+            if has_ids:
+                id_to_orig = {str(item['id']): item for item in original}
+                changes_list = []
+                for item in modified:
+                    if not isinstance(item, dict) or 'id' not in item:
+                        continue
+                    item_id = str(item['id'])
+                    if item_id in id_to_orig:
+                        sub = self._compute_diff(id_to_orig[item_id], item)
+                        if sub is not None:
+                            changes_list.append({
+                                'id': item_id,
+                                'changes': sub,
+                                'action': 'modified'
+                            })
+                return changes_list if changes_list else None
+            else:
+                changes_list = []
+                min_len = min(len(original), len(modified))
+                for i in range(min_len):
+                    sub = self._compute_diff(original[i], modified[i])
+                    if sub is not None:
+                        changes_list.append(sub)
+                return changes_list if changes_list else None
         else:
+            return modified if original != modified else None
+
+    def _reset_current_file(self):
+        if not self.current_file:
             messagebox.showwarning("警告", "请先选择一个文件")
-        
-    def cycle_update(self):
-        """循环更新"""
-    
-        #TODO 优化卡顿
+            return
+        if not messagebox.askyesno("确认", "确定要撤销当前文件的所有修改吗？"):
+            return
+        relative = os.path.relpath(self.current_file, self.lang_dir)
+        if relative in self.changes:
+            del self.changes[relative]
+            self._save_changes_to_file()
+        self.modified_data = self._deep_copy(self.original_data)
+        self._refresh_data_view()
+        self._refresh_file_tree()
+        self.status_label.config(text="当前文件的修改已撤销")
 
-        Thread(target=self.apply_json_syntax_highlighting).start()
-        Thread(target=self.update_line_numbers).start()
+    def _reset_all_changes(self):
+        if not messagebox.askyesno("确认",
+                                   "确定要清空整个修改记录吗？此操作不可恢复！"):
+            return
+        self.changes = {}
+        self._save_changes_to_file()
+        if self.current_file:
+            self.modified_data = self._deep_copy(self.original_data)
+            self._refresh_data_view()
+        self._refresh_file_tree()
+        self.status_label.config(text="所有修改记录已清空")
 
-        self.parent_window.after(10000, self.cycle_update)
+    def _open_changes_dir(self):
+        """打开修改记录文件所在目录"""
+        try:
+            abs_path = os.path.abspath(self.changes_file)
+            dir_path = os.path.dirname(abs_path)
+            if os.path.exists(dir_path):
+                os.startfile(dir_path)
+            else:
+                messagebox.showerror("错误", f"目录不存在: {dir_path}")
+        except Exception as e:
+            messagebox.showerror("错误", f"打开目录失败: {e}")
 
 def open_custom_translation_tool(root):
-    CustomTranslationTool(root, root.root)
+    """
+    main.py 调用入口。
+    root 需提供: bg_color, lighten_bg_color 等界面属性。
+    """
+    CustomTranslationTool(root, root.root if hasattr(root, 'root') else root)
