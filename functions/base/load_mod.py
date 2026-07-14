@@ -14,7 +14,7 @@ _game_path: str = _settings.get_setting('game_path')  # type: ignore
 def launch_game_process():
     """启动游戏进程：无 mod 时直接通过 Steam 启动，有 mod 时通过 mod loader 启动。"""
     if not _settings.get_setting("enable_mods"):
-        print("未启用 mod, 直接启动游戏...")
+        print("启动器设置项禁用了 mod 加载功能, 直接启动游戏...\n (如有需要, 请在设置项启用 mod 加载功能)")
         subprocess.Popen(['start', f'steam://rungameid/{STEAM_APP_ID}'], shell=True)
         return True
 
