@@ -26,13 +26,20 @@ def download_new_version(dow_root, download_files:list):
     sync_settings()
     print("设置项同步完成...")
     
-    updater_exe_path = "updater.vbs"
+    new_version_dir = os.path.abspath("cache/new_version/FaustLauncher")
+    updater_vbs_path = os.path.join(new_version_dir, "updater.vbs")
     
     # 运行vbs更新器
-    if os.path.exists(updater_exe_path):
-        subprocess.Popen(['start', updater_exe_path], shell=True, cwd=f"cache/new_version/FaustLauncher")
+    if os.path.exists(updater_vbs_path):
+        print(f"正在启动更新器: {updater_vbs_path}")
+        # 使用 wscript.exe 运行 vbs，避免依赖文件关联；close_fds=True 确保子进程独立于父进程
+        subprocess.Popen(
+            ['wscript.exe', updater_vbs_path],
+            cwd=new_version_dir,
+            close_fds=True
+        )
     else:
-        print("未找到更新器，无法继续安装新版本。")
+        print(f"未找到更新器: {updater_vbs_path}，无法继续安装新版本。")
     
     os._exit(0)
 

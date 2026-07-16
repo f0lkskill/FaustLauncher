@@ -19,7 +19,7 @@ DEFAULT_NAV_ITEMS = [
     {"name": "镜牢地牢", "path": "LLC_zh-CN/TutorialMirrorDungeon.json"},
 ]
 
-NAV_CONFIG_FILE = "lang/_nav_config.json"
+NAV_CONFIG_FILE = "lang/nav_config.json"
 
 # ========== 功能开关 / 黑名单 ==========
 _NAV_ENABLED = False  # 导航栏功能 (测试功能，默认关闭)
@@ -533,13 +533,22 @@ class CustomTranslationTool:
         btn_row = tk.Frame(bottom_bar, bg=self.bg_dark, bd=0, highlightthickness=0)
         btn_row.pack(pady=14)
 
-        tk.Button(btn_row, text="💾 保存修改记录",
+        tk.Button(btn_row, text="💾 保存当前文件",
                   command=self._save_json_changes,
                   bg='#27ae60', fg='white',
                   font=('Microsoft YaHei UI', 10, 'bold'),
                   relief='flat', padx=22, pady=7,
                   cursor='hand2',
                   activebackground='#1e8449',
+                  activeforeground='white').pack(side=tk.LEFT, padx=5)
+
+        tk.Button(btn_row, text="💾 保存所有已修改文件",
+                  command=self._save_all_changes,
+                  bg='#2980b9', fg='white',
+                  font=('Microsoft YaHei UI', 10, 'bold'),
+                  relief='flat', padx=22, pady=7,
+                  cursor='hand2',
+                  activebackground='#1f618d',
                   activeforeground='white').pack(side=tk.LEFT, padx=5)
 
         tk.Button(btn_row, text="🔄 重置当前文件",
@@ -741,6 +750,36 @@ class CustomTranslationTool:
         self.file_tree.item(root_node, open=True)
         self.status_label.config(text="文件树已刷新")
 
+    def _refresh_file_tree_async(self):
+        """异步刷新文件树（带遮罩），避免大目录时 UI 卡顿"""
+        self._show_loading("刷新文件树中...")
+
+        def _worker():
+            try:
+                # 在主线程清空 Treeview（Treeview 操作必须在主线程）
+                def _clear_and_build():
+                    for item in self.file_tree.get_children():
+                        self.file_tree.delete(item)
+                    root_node = self.file_tree.insert('', 'end', text=" lang",
+                                                      values=("", "dir"))
+                    self.file_tree.item(root_node, open=True)
+                    # _build_tree 本身已是线程化的
+                    Thread(target=lambda: (self._build_tree(root_node, self.lang_dir),
+                                           self.parent_window.after(0, self._on_tree_refresh_done)),
+                           daemon=True).start()
+
+                self.parent_window.after(0, _clear_and_build)
+            except Exception as e:
+                print(f"[refresh_file_tree_async] 错误: {e}")
+                self.parent_window.after(0, self._on_tree_refresh_done)
+
+        Thread(target=_worker, daemon=True).start()
+
+    def _on_tree_refresh_done(self):
+        """文件树刷新完成回调"""
+        self._hide_loading()
+        self.status_label.config(text="文件树刷新完成")
+
     def _build_tree(self, parent, path):
         try:
             items = sorted(os.listdir(path), key=lambda x: x.lower())
@@ -767,7 +806,7 @@ class CustomTranslationTool:
                 file_path = os.path.join(path, file_name)
                 relative = os.path.relpath(file_path, self.lang_dir)
                 has_changes = relative in self.changes
-                prefix = "✨  " if has_changes else "    "
+                prefix = "✏  " if has_changes else "    "
                 self.file_tree.insert(parent, 'end',
                                       text=f"  {prefix}{file_name}",
                                       values=(relative, "file"))
@@ -818,7 +857,21 @@ class CustomTranslationTool:
 
     # ======================= 加载 JSON (多线程) =======================
     def _load_json_file(self, file_path):
-        """后台线程读取 JSON 并构建视图，避免大文件阻塞 UI"""
+        """后台线程读取 JSON 并构建视图，避免大文件阻塞 UI。
+        关键：切换文件前先把当前文件的修改同步到 changes（内存），
+        这样切回来时不会丢失用户已做的编辑。"""
+
+        # 切换之前：如果当前文件有未保存的修改，先同步到 self.changes（内存层）
+        if self.current_file and self.original_data is not None and self.modified_data is not None:
+            try:
+                relative = os.path.relpath(self.current_file, self.lang_dir)
+                diff = self._compute_diff(self.original_data, self.modified_data)
+                if diff is not None:
+                    self.changes[relative] = diff  # 只改内存，不写磁盘
+                elif relative in self.changes:
+                    del self.changes[relative]
+            except Exception:
+                pass
 
         def _worker():
             try:
@@ -892,10 +945,10 @@ class CustomTranslationTool:
             id_map = {}
             for idx, item in enumerate(original):
                 if isinstance(item, dict) and 'id' in item:
-                    id_map[str(item['id'])] = idx
+                    id_map[item['id']] = idx  # 保留原始 id 类型
             for change in changes:
                 if isinstance(change, dict) and 'id' in change and 'changes' in change:
-                    target_id = str(change['id'])
+                    target_id = change['id']  # 保留原始 id 类型
                     change_data = change.get('changes', {})
                     if target_id in id_map:
                         orig_item = original[id_map[target_id]]
@@ -908,8 +961,9 @@ class CustomTranslationTool:
 
     # 每个条目的高度（像素），由虚拟滚动统一使用
     _ROW_HEIGHT = 36
-    # 可视区域外额外渲染的条目数（缓冲，避免滚动时看到空白）
-    _BUFFER_ROWS = 30
+    # 可视区域外额外渲染的条目数（缓冲，避免滚动时立刻看到空白）
+    # 与可视区域行数成正比，不盲目用大数字
+    _BUFFER_ROWS = 50
 
     def _init_virtual_scroll(self, parent):
         """初始化虚拟滚动的 Canvas + Scrollbar + 事件绑定"""
@@ -989,7 +1043,7 @@ class CustomTranslationTool:
             except Exception:
                 pass
         self._pending_render_id = self.parent_window.after(
-            30, self._render_visible)
+            15, self._render_visible)
 
     def _flatten_data(self):
         """核心：把整个 JSON 树扁平化为一维条目列表（纯数据，不创建控件）。
@@ -1015,7 +1069,12 @@ class CustomTranslationTool:
                 if self._only_modified and not is_modified:
                     return
                 value_str = str(current)
-                text_to_search = f"{str(dict_key)} {value_str}".lower()
+                # 搜索范围：键名 + 值 + 所在记录的 id（如果有）
+                search_parts = [str(dict_key) if dict_key is not None else "",
+                                value_str]
+                if id_value is not None:
+                    search_parts.append(str(id_value))
+                text_to_search = " ".join(search_parts).lower()
                 if self._search_keyword and self._search_keyword not in text_to_search:
                     return
 
@@ -1041,8 +1100,10 @@ class CustomTranslationTool:
             # 对容器内部内容做同样的过滤；若容器过滤后内容为空则跳过
             if is_container:
                 entries.append(entry)  # 先放入容器头
-                # 如果容器被折叠，直接跳过子项遍历
-                if path in self._collapsed_paths and not is_root:
+                # 如果容器被折叠（且不是搜索/仅修改模式），直接跳过子项遍历
+                # —— 搜索/过滤模式下强制展开，否则匹配项可能被隐藏
+                force_expand = bool(self._search_keyword) or self._only_modified
+                if not force_expand and path in self._collapsed_paths and not is_root:
                     return
                 has_visible_child = False
                 if isinstance(current, dict):
@@ -1264,7 +1325,9 @@ class CustomTranslationTool:
                                        ov=entry['original'],
                                        iv=entry['id_value'],
                                        li=entry['list_index'],
-                                       d=depth: self._open_edit_dialog(k, cv, ov, iv, li, d))
+                                       d=depth,
+                                       p=entry['path']:
+                    self._open_edit_dialog(k, cv, ov, iv, li, d, p))
                 btn.pack(side=tk.RIGHT, padx=(6, 8))
 
             # 值文本（填充中间空间，不挤按钮）
@@ -1297,9 +1360,8 @@ class CustomTranslationTool:
             pass
 
     def _toggle_container(self, index):
-        """点击容器头部时切换展开/折叠
-        采用"path 指纹集合"方案：切换后调用 _refresh_data_view 彻底清空+重建，
-        避免折叠时子项控件仍然驻留在 canvas 上导致的幽灵控件问题"""
+        """点击容器头部切换展开/折叠。
+        用 yview 比例保留滚动位置，不做 target_path 定位，避免视觉上跳到顶部。"""
         if not hasattr(self, '_collapsed_paths'):
             self._collapsed_paths = set()
         if index < 0 or index >= len(self._flat_entries):
@@ -1313,86 +1375,66 @@ class CustomTranslationTool:
         else:
             self._collapsed_paths.add(target_path)
 
-        # 折叠/展开后结构变化 → 用 _refresh_data_view 彻底清空重建
-        # 先传 target_path，刷新后再找到这个条目的新索引，滚动到它
-        self._refresh_data_view_with_target(target_path=target_path)
-
-    def _refresh_data_view_with_target(self, target_path=None):
-        """刷新并滚动到指定 path 的条目（折叠/展开后定位用）"""
-        # 先刷新，用 preserve_scroll
-        saved_fraction = 0.0
+        # 用 yview 比例保留滚动（折叠/展开时总数变化，像素值会变）
         try:
-            if hasattr(self, 'data_canvas'):
-                saved_fraction = self.data_canvas.yview()[0]
+            saved_fraction = self.data_canvas.yview()[0]
         except Exception:
             saved_fraction = 0.0
 
-        # 调用标准刷新逻辑（但不立即恢复滚动）
-        self._refresh_data_view(preserve_scroll=False)
+        self._refresh_data_view(preserve_scroll_fraction=saved_fraction)
 
-        # 如果指定了 target_path，在新列表中找到它的新索引
-        if target_path is not None and hasattr(self, '_flat_entries') and self._flat_entries:
-            target_idx = None
-            for i, e in enumerate(self._flat_entries):
-                if e.get('path') == target_path:
-                    target_idx = i
-                    break
-            total = len(self._flat_entries)
-            if target_idx is not None and total > 0:
-                # 滚动到这个条目，让它位于可视区域顶部
-                top_y = target_idx * self._ROW_HEIGHT
-                total_height = total * self._ROW_HEIGHT
-                if total_height > 0:
-                    self.data_canvas.yview_moveto(top_y / total_height)
-                # 重新渲染可视范围内的新位置
-                self._render_visible()
-                return
-        # 如果没找到目标，恢复之前的滚动比例
-        if hasattr(self, '_flat_entries') and self._flat_entries:
-            self.data_canvas.yview_moveto(saved_fraction)
-            self._render_visible()
+    def _refresh_data_view(self, preserve_scroll=True, target_index=None,
+                            target_path=None, preserve_scroll_pixel=None,
+                            preserve_scroll_fraction=None):
+        """虚拟滚动版：刷新数据视图。
+        参数优先级（从高到低）：
+        1. target_path / target_index → 定位到特定条目（编辑后用）
+        2. preserve_scroll_fraction → 按比例保留（折叠/展开时用，最可靠）
+        3. preserve_scroll_pixel → 按像素保留（结构不变时用）
+        4. preserve_scroll=True → 按 yview()[0] 比例保留（默认）
+        5. preserve_scroll=False → 滚到顶部
+        """
+        canvas = self.data_canvas
 
-    def _refresh_data_view(self, preserve_scroll=True, target_index=None):
-        """虚拟滚动版：完全刷新（编辑后/搜索后/切换文件时调用）
-        关键：用 canvas.delete('all') 彻底清空，不留幽灵控件；
-        preserve_scroll=True 时保存并恢复用户滚动位置；
-        target_index=N 时滚动到第 N 个条目（常用于折叠/展开后定位）"""
-        # 1) 保存当前 yview 位置（[0, 1] 的归一化比例）
+        # 保存当前滚动位置（多种方式）
         saved_fraction = 0.0
         try:
-            if preserve_scroll and hasattr(self, 'data_canvas'):
-                saved_fraction = self.data_canvas.yview()[0]
+            if preserve_scroll:
+                saved_fraction = canvas.yview()[0]
         except Exception:
             saved_fraction = 0.0
 
-        # 2) 彻底清空 canvas + 销毁所有 widget（避免幽灵控件堆积）
+        saved_pixel = None
+        if preserve_scroll_pixel is not None:
+            saved_pixel = float(preserve_scroll_pixel)
+
+        # 2) 只销毁我们自己追踪的已渲染控件，减少撕裂
         try:
-            self.data_canvas.delete('all')
-        except Exception:
-            pass
-        # 同时 destroy 所有子 widget（安全兜底）
-        try:
-            for child in self.data_canvas.winfo_children():
+            for idx in list(self._rendered_widgets.keys()):
+                item_id, widget = self._rendered_widgets[idx]
                 try:
-                    child.destroy()
+                    canvas.delete(item_id)
                 except Exception:
                     pass
+                try:
+                    widget.destroy()
+                except Exception:
+                    pass
+            self._rendered_widgets.clear()
         except Exception:
             pass
-        self._rendered_widgets.clear()
 
         if not self.current_file:
-            # 未选择文件：放一个提示
             self._flat_entries = []
             self._entries_count = 0
-            self.data_canvas.configure(scrollregion=(0, 0, 0, 300))
-            hint = tk.Label(self.data_canvas,
+            canvas.configure(scrollregion=(0, 0, 0, 300))
+            hint = tk.Label(canvas,
                             text="\n  请从左侧文件树选择一个 JSON 文件开始编辑\n",
                             bg=self.bg, fg='#95a5a6',
                             font=('Microsoft YaHei UI', 13, 'bold'))
-            cw = self.data_canvas.winfo_width()
+            cw = canvas.winfo_width()
             hint_x = cw // 2 if cw > 0 else 400
-            item_id = self.data_canvas.create_window(hint_x, 60, window=hint, anchor='n')
+            item_id = canvas.create_window(hint_x, 60, window=hint, anchor='n')
             self._rendered_widgets[-1] = (item_id, hint)
             self.status_label.config(text="就绪 - 虚拟滚动模式已启用")
             return
@@ -1414,25 +1456,54 @@ class CustomTranslationTool:
         else:
             self.changes_count_label.config(text="")
 
-        # 5) 首次渲染可视范围 + 恢复滚动位置
-        self._entries_count = 0  # 强制 _render_visible 重新计算 scrollregion
+        total = len(self._flat_entries)
+        self._entries_count = 0  # 让 _render_visible 重新计算 scrollregion
+
+        # 先设置 yview 位置，再渲染 —— 让 render 从正确的可视范围开始
+        # 优先级：target_path/target_index (定位) > preserve_scroll_fraction > saved_pixel > preserve_scroll
+        if total > 0:
+            if target_path is not None:
+                # 定位到指定 path：让它出现在可视区域 1/3 处，不贴顶
+                target_idx = None
+                for i, e in enumerate(self._flat_entries):
+                    if e.get('path') == target_path:
+                        target_idx = i
+                        break
+                if target_idx is not None:
+                    total_height = total * self._ROW_HEIGHT
+                    if total_height > 0:
+                        top_y = max(0, target_idx * self._ROW_HEIGHT - self._ROW_HEIGHT * 2)
+                        canvas.yview_moveto(max(0.0, top_y / total_height))
+                elif preserve_scroll:
+                    canvas.yview_moveto(saved_fraction)
+                else:
+                    canvas.yview_moveto(0)
+            elif target_index is not None:
+                idx = max(0, min(int(target_index), total - 1))
+                top_y = max(0, idx * self._ROW_HEIGHT - self._ROW_HEIGHT * 2)
+                total_height = total * self._ROW_HEIGHT
+                if total_height > 0:
+                    canvas.yview_moveto(top_y / total_height)
+            elif preserve_scroll_fraction is not None:
+                # **关键修复：** 折叠/展开时条目总数变化，像素值会变，
+                # 但 yview 比例不变，直接用比例保留最准确
+                canvas.yview_moveto(max(0.0, min(1.0, float(preserve_scroll_fraction))))
+            elif saved_pixel is not None:
+                # 按像素保留（结构不变时用）
+                total_height = total * self._ROW_HEIGHT
+                if total_height > 0:
+                    ratio = max(0.0, min(1.0, saved_pixel / total_height))
+                    canvas.yview_moveto(ratio)
+            elif preserve_scroll:
+                canvas.yview_moveto(saved_fraction)
+            else:
+                canvas.yview_moveto(0)
+        else:
+            canvas.yview_moveto(0)
+
+        # 6) 渲染可视范围内的控件
         self._in_render = False
         self._render_visible()
-
-        # 6) 恢复滚动：优先 target_index，其次恢复之前的比例
-        total = len(self._flat_entries)
-        if target_index is not None and total > 0:
-            # 滚动到指定条目（让它出现在可视区域顶部附近）
-            idx = max(0, min(int(target_index), total - 1))
-            top_y = idx * self._ROW_HEIGHT
-            total_height = total * self._ROW_HEIGHT
-            if total_height > 0:
-                self.data_canvas.yview_moveto(top_y / total_height)
-        elif preserve_scroll and total > 0:
-            # 恢复之前的归一化滚动位置
-            self.data_canvas.yview_moveto(saved_fraction)
-        else:
-            self.data_canvas.yview_moveto(0)
 
         self.status_label.config(
             text=f"虚拟滚动模式：共 {total} 个条目，"
@@ -1632,7 +1703,7 @@ class CustomTranslationTool:
 
     # ======================= 编辑对话框 =======================
     def _open_edit_dialog(self, dict_key, current_value, original_value,
-                          id_value, list_index, depth):
+                          id_value, list_index, depth, entry_path=None):
         if dict_key == 'id':
             messagebox.showinfo("提示", "'id' 字段用于定位记录，不可修改")
             return
@@ -1727,8 +1798,10 @@ class CustomTranslationTool:
                     messagebox.showerror("错误", f"请输入有效的数字 (float)")
                     return
 
-            self._apply_edit(dict_key, new_value, depth, list_index, id_value)
-            self._refresh_data_view()
+            self._apply_edit(dict_key, new_value, depth, list_index, id_value,
+                             entry_path=entry_path)
+            # 保存修改后立刻刷新视图，让"已修改"标记正确
+            self._refresh_data_view(preserve_scroll=False, target_path=entry_path)
             dialog.destroy()
 
         def on_reset():
@@ -1756,11 +1829,77 @@ class CustomTranslationTool:
                   activebackground='#6c7a7d',
                   activeforeground='white').pack(side=tk.LEFT, padx=8)
 
-    def _apply_edit(self, dict_key, new_value, depth, list_index, id_value):
-        """根据 id_value / list_index 精准定位更新"""
+    def _apply_edit(self, dict_key, new_value, depth, list_index, id_value,
+                     entry_path=None):
+        """精准定位并更新 JSON 中某一个字段。
+        用 entry_path（来自被点击的 entry）逐层导航，避免全局 id 搜索的误匹配。"""
+        def _navigate_and_set(data, path_parts, value):
+            """path_parts: 解析后的路径（已过滤 root 前缀）
+            例：修改 items 列表中第 0 个 dict 的 name 字段 → ["items", "[0]", "name"]
+            例：修改顶层 key "version" → ["version"]
+            """
+            if not path_parts:
+                return False
+            # 先导航到父对象
+            parent = data
+            for part in path_parts[:-1]:
+                if part.startswith("[") and part.endswith("]"):
+                    # list 索引/按 id 查找
+                    idx_str = part[1:-1]
+                    try:
+                        idx = int(idx_str)
+                        if isinstance(parent, list) and 0 <= idx < len(parent):
+                            parent = parent[idx]
+                        else:
+                            return False
+                    except ValueError:
+                        # 非纯数字 → 在 list 中按 id 字段查找
+                        if isinstance(parent, list):
+                            found = None
+                            for item in parent:
+                                if isinstance(item, dict) and str(item.get('id')) == idx_str:
+                                    found = item
+                                    break
+                            if found is not None:
+                                parent = found
+                            else:
+                                return False
+                        else:
+                            return False
+                else:
+                    # dict key
+                    if isinstance(parent, dict) and part in parent:
+                        parent = parent[part]
+                    else:
+                        return False
+            # 在父对象上写入最后一段
+            last = path_parts[-1]
+            if last.startswith("[") and last.endswith("]"):
+                idx_str = last[1:-1]
+                try:
+                    idx = int(idx_str)
+                    if isinstance(parent, list) and 0 <= idx < len(parent):
+                        parent[idx] = value
+                        return True
+                except ValueError:
+                    return False
+            elif isinstance(parent, dict):
+                parent[last] = value
+                return True
+            return False
+
         success = False
         try:
-            if id_value is not None:
+            if entry_path:
+                parts = [p for p in entry_path.split("/") if p]
+                # **关键修复：** "root" 是 walk 虚拟出来的根节点名，真实数据
+                # 在 self.modified_data 顶层就直接是数据，没有 "root" 这一层。
+                # 如果 path 以 "root" 开头，必须把它去掉，否则会尝试去找
+                # self.modified_data["root"]，这会失败。
+                if parts and parts[0] == "root":
+                    parts = parts[1:]
+                success = _navigate_and_set(self.modified_data, parts, new_value)
+            elif id_value is not None:
                 def find_by_id(data):
                     if isinstance(data, list):
                         for item in data:
@@ -1802,30 +1941,11 @@ class CustomTranslationTool:
                     return False
                 success = find_by_index(self.modified_data, max(0, depth - 1))
             else:
-                def find_first(data, visited=None):
-                    if visited is None:
-                        visited = set()
-                    if id(data) in visited:
-                        return False
-                    visited.add(id(data))
-                    if isinstance(data, dict):
-                        if dict_key in data:
-                            data[dict_key] = new_value
-                            return True
-                        for v in data.values():
-                            if isinstance(v, (dict, list)):
-                                if find_first(v, visited):
-                                    return True
-                    elif isinstance(data, list):
-                        for item in data:
-                            if isinstance(item, (dict, list)):
-                                if find_first(item, visited):
-                                    return True
-                    return False
-                success = find_first(self.modified_data)
+                if isinstance(self.modified_data, dict) and dict_key in self.modified_data:
+                    self.modified_data[dict_key] = new_value
+                    success = True
         except Exception as e:
-            messagebox.showerror("错误", f"应用修改时出错: {e}")
-            return
+            print(f"[_apply_edit] 错误: {e}")
 
         if success:
             self.status_label.config(
@@ -1842,7 +1962,11 @@ class CustomTranslationTool:
         self.data_search_var.set("")
         self._search_keyword = ""
         if self.current_file:
-            self._refresh_data_view(preserve_scroll=False)  # 清除搜索 → 滚到顶部
+            try:
+                pixel_top = self.data_canvas.canvasy(0)
+            except Exception:
+                pixel_top = 0
+            self._refresh_data_view(preserve_scroll_pixel=pixel_top)
 
     def _expand_all(self):
         """虚拟滚动版：清空 _collapsed_paths，完全刷新"""
@@ -1862,6 +1986,83 @@ class CustomTranslationTool:
         self._refresh_data_view()
 
     # ======================= 保存 / 重置 =======================
+
+    def _refresh_tree_markers(self):
+        """轻量级刷新文件树的 ✏ 标记（不重建树）。"""
+        try:
+            def _walk(node):
+                values = self.file_tree.item(node, 'values')
+                if values and len(values) >= 2 and values[1] == "file":
+                    # 文件节点：根据是否在 self.changes 中决定前缀
+                    relative = values[0]
+                    # 从当前文本中提取文件名（去除前缀修饰）
+                    current_text = self.file_tree.item(node, 'text')
+                    # 找文件名起始位置：简单策略是找 ".json" 前后的内容
+                    # 更可靠：直接用 relative 的 basename
+                    file_name = os.path.basename(relative) or relative
+                    has_changes = relative in self.changes
+                    prefix = "✏  " if has_changes else "    "
+                    self.file_tree.item(node, text=f"  {prefix}{file_name}")
+                # 递归处理子节点
+                for child in self.file_tree.get_children(node):
+                    _walk(child)
+
+            for root_node in self.file_tree.get_children(''):
+                _walk(root_node)
+        except Exception as e:
+            print(f"[_refresh_tree_markers] 错误: {e}")
+
+    def _save_all_changes(self):
+        """保存所有文件的修改（把内存中 modified_data 和 original_data 的 diff 写到 changes.json）。
+        只处理用户当前打开过的文件。对于 self.changes 中已有但用户未打开的文件，保持原样。"""
+        if not self.changes and not (self.current_file and self.original_data is not None):
+            messagebox.showinfo("信息", "当前没有检测到任何修改")
+            return
+
+        # 当前文件的修改也要同步（如果用户没点"保存当前文件"就直接点这个按钮）
+        saved_any = False
+        file_list = []
+
+        # 1) 同步当前文件到 changes 内存
+        if self.current_file and self.original_data is not None and self.modified_data is not None:
+            try:
+                relative = os.path.relpath(self.current_file, self.lang_dir)
+                diff = self._compute_diff(self.original_data, self.modified_data)
+                if diff is not None:
+                    self.changes[relative] = diff
+                elif relative in self.changes:
+                    del self.changes[relative]
+            except Exception:
+                pass
+
+        # 2) 遍历 self.changes，逐个检查对应文件是否真的有修改
+        #    这里策略：直接把 self.changes 里所有文件写盘（最安全）
+        if self.changes:
+            try:
+                self._save_changes_to_file()
+                saved_any = True
+                file_list = list(self.changes.keys())
+            except Exception as e:
+                messagebox.showerror("错误", f"保存失败: {e}")
+                return
+
+        if saved_any and file_list:
+            names = "\n".join(f"  • {n}" for n in file_list[:10])
+            extra = f"\n  ... 还有 {len(file_list) - 10} 个" if len(file_list) > 10 else ""
+            messagebox.showinfo("成功",
+                                f"✏ 已保存 {len(file_list)} 个文件的修改:\n\n{names}{extra}")
+            self.status_label.config(text=f"已保存 {len(file_list)} 个文件的修改")
+        else:
+            messagebox.showinfo("信息", "当前没有检测到任何修改")
+
+        # 刷新标记 + 编辑区（不重建文件树）
+        self._refresh_tree_markers()
+        try:
+            pixel_top = self.data_canvas.canvasy(0)
+        except Exception:
+            pixel_top = 0
+        self._refresh_data_view(preserve_scroll_pixel=pixel_top)
+
     def _save_json_changes(self):
         if not self.current_file:
             messagebox.showwarning("警告", "请先选择一个文件")
@@ -1881,7 +2082,14 @@ class CustomTranslationTool:
                 self.status_label.config(text=f"修改内容已保存，文件: {relative}")
                 messagebox.showinfo("成功",
                                     f"✏ 修改内容已保存\n\n文件: {relative}")
-            self._refresh_file_tree()
+            # 保存后不要刷新文件树 —— 目录结构没变，不需要重建
+            # 只需要刷新 ✏ 标记 + 编辑区
+            self._refresh_tree_markers()
+            try:
+                pixel_top = self.data_canvas.canvasy(0)
+            except Exception:
+                pixel_top = 0
+            self._refresh_data_view(preserve_scroll_pixel=pixel_top)
         except Exception as e:
             messagebox.showerror("错误", f"保存失败: {e}")
 
@@ -1899,17 +2107,17 @@ class CustomTranslationTool:
         elif isinstance(original, list) and isinstance(modified, list):
             has_ids = all(isinstance(it, dict) and 'id' in it for it in original)
             if has_ids:
-                id_to_orig = {str(item['id']): item for item in original}
+                id_to_orig = {item['id']: item for item in original}  # 保留原始 id 类型
                 changes_list = []
                 for item in modified:
                     if not isinstance(item, dict) or 'id' not in item:
                         continue
-                    item_id = str(item['id'])
+                    item_id = item['id']  # 保留原始 id 类型 (int/str)
                     if item_id in id_to_orig:
                         sub = self._compute_diff(id_to_orig[item_id], item)
                         if sub is not None:
                             changes_list.append({
-                                'id': item_id,
+                                'id': item_id,  # 保留原始 id 类型
                                 'changes': sub,
                                 'action': 'modified'
                             })
@@ -1936,8 +2144,12 @@ class CustomTranslationTool:
             del self.changes[relative]
             self._save_changes_to_file()
         self.modified_data = self._deep_copy(self.original_data)
-        self._refresh_data_view()
-        self._refresh_file_tree()
+        self._refresh_tree_markers()
+        try:
+            pixel_top = self.data_canvas.canvasy(0)
+        except Exception:
+            pixel_top = 0
+        self._refresh_data_view(preserve_scroll_pixel=pixel_top)
         self.status_label.config(text="当前文件的修改已撤销")
 
     def _reset_all_changes(self):
@@ -1948,8 +2160,12 @@ class CustomTranslationTool:
         self._save_changes_to_file()
         if self.current_file:
             self.modified_data = self._deep_copy(self.original_data)
-            self._refresh_data_view()
-        self._refresh_file_tree()
+            self._refresh_tree_markers()
+            try:
+                pixel_top = self.data_canvas.canvasy(0)
+            except Exception:
+                pixel_top = 0
+            self._refresh_data_view(preserve_scroll_pixel=pixel_top)
         self.status_label.config(text="所有修改记录已清空")
 
     def _open_changes_dir(self):
