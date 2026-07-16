@@ -1,6 +1,6 @@
 <div align="center">
 
-# <img src="https://github.com/user-attachments/assets/61ef5c44-e6c9-468e-b6dd-7f1cfafe57e7" width="48" height="48" style="vertical-align: middle;"> **FaustLauncher**
+# <img src="https://github.com/f0lkskill/FaustLauncher/blob/main/assets/images/icon/icon.png" width="48" height="48" style="vertical-align: middle;"> **FaustLauncher**
 
 ### *浮士德启动器 — 您人生中绝无仅有的完美启动器*
 
