@@ -106,7 +106,7 @@ class FaustLauncherApp:
         self.bg_canvas = tk.Canvas(self.container, highlightthickness=0)
         self.bg_canvas.place(x=0, y=0, relwidth=1, relheight=1)
         
-        # 创建内容 Canvas（显示毛玻璃背景图片 - 参考 loading_info.py 模糊+暗化方案）
+        # 创建内容 Canvas
         self.content_canvas = tk.Canvas(self.container, highlightthickness=0, bg=self.bg_color)
         self.content_canvas.place(relx=0.5, rely=0.5, anchor=tk.CENTER, width=700, height=600)
         
@@ -1372,7 +1372,6 @@ def main():
 
     # 创建启动画面
     splash, splash_root = create_simple_splash(root)
-
     
     # 定义应用程序初始化完成回调
     def on_app_initialized():
@@ -1380,7 +1379,7 @@ def main():
         # 确保主窗口已经完全显示
         root.update_idletasks()
         root.update()
-        
+
         # 等待一小段时间确保界面完全渲染
         root.after(4000, lambda: root.deiconify())
 

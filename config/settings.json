@@ -3,7 +3,7 @@
         "name": "游戏路径",
         "type": "string",
         "default": "",
-        "value": "",
+        "value": "D:/steam/steamapps/common/Limbus Company/",
         "description": "游戏安装路径, 请确保路径正确\n否则可能导致启动失败和其他错误问题",
         "page": "通用"
     },
@@ -44,7 +44,7 @@
         "name": "用户名",
         "type": "string",
         "default": "Player",
-        "value": "Player",
+        "value": "folkskill",
         "description": "你的用户名，将显示在边狱巴士的个人车票上",
         "page": "美化"
     },
@@ -199,8 +199,8 @@
     "version_info": {
         "name": "版本信息",
         "type": "UNABLE_TO_EDIT",
-        "default": "V0.6.0-pre.6.fix.2",
-        "value": "V0.6.0-pre.6.fix.2",
+        "default": "V0.6.0-pre.6.fix.4",
+        "value": "V0.6.0-pre.6.fix.4",
         "description": "当前应用程序的版本信息"
     },
     "mems": {
