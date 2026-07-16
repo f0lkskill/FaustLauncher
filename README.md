@@ -6,7 +6,7 @@
 
 <br>
 
-[![版本](https://img.shields.io/badge/版本-v0.6.0--pre.6.fix.1-blue?style=for-the-badge&logo=git)](https://github.com/f0lkskill/FaustLauncher/releases)
+[![版本](https://img.shields.io/badge/版本-v0.6.0--pre.6.fix.3-blue?style=for-the-badge&logo=git)](https://github.com/f0lkskill/FaustLauncher/releases)
 [![许可证](https://img.shields.io/badge/许可证-MIT-green?style=for-the-badge&logo=opensourceinitiative)](https://github.com/f0lkskill/FaustLauncher/blob/main/LICENSE)
 [![状态](https://img.shields.io/badge/状态-开发中-orange?style=for-the-badge&logo=githubactions)](https://github.com/f0lkskill/FaustLauncher)
 [![平台](https://img.shields.io/badge/平台-Windows-lightgrey?style=for-the-badge&logo=windows)]()
@@ -28,8 +28,8 @@
 
 | 项目 | 信息 |
 |:---|:---|
-| 🏷️ 当前版本 | `v0.6.0-pre.6.fix.1` |
-| 📅 最后更新 | 2026-07-12 |
+| 🏷️ 当前版本 | `v0.6.0-pre.6.fix.3` |
+| 📅 最后更新 | 2026-07-14 |
 | 🛠️ 开发状态 | 积极开发中 |
 | 🎯 目标平台 | Windows 10 / 11 |
 | 📜 开源协议 | MIT |
@@ -49,7 +49,7 @@
 
 | 功能模块 | 说明 | 状态 |
 |:---|:---|:---:|
-| 🎮 **Mod 管理** | 添加 / 删除 / 启用 / 禁用 Mod | 🚧 暂不可用 |
+| 🎮 **Mod 管理** | 添加 / 删除 / 启用 / 禁用 Mod | ✅ 可用 |
 | 🎨 **气泡渐变色** | 为气泡文本添加渐变色彩 | ✅ 可用 |
 | ⚙️ **设置中心** | 自定义用户名、车票显示等 | ✅ 可用 |
 | 🔗 **超链接创建器** | 移动资源文件夹并创建符号链接，释放 C 盘空间 | ✅ 可用 |
@@ -97,11 +97,8 @@
 
 ## 📥 下载与更新
 
-- 🔔 **最新版本**：`v0.6.0-pre.5`
 - 🔄 **更新方式**：支持自动更新（预发布版本也可通过自动更新获取）
 - 📦 **手动下载**：[Releases 页面](https://github.com/f0lkskill/FaustLauncher/releases)
-
-> 🚧 **注意**：由于游戏引擎更新，当前 **Mod 相关功能暂时不可用**，将在后续版本逐步修复。
 
 <br>
 
