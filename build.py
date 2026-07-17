@@ -8,7 +8,7 @@ version_info = settings_manager.get_setting("version_info")
 
 print("开始构建FaustLauncher...")
 
-subprocess.call(["pyinstaller", "--noconfirm", "--onedir", "--windowed", "--name", "FaustLauncher", "--icon","E:\\projects\\python\\FaustLauncher\\assets\\images\\icon\\icon.ico", "E:\\projects\\python\\FaustLauncher\\main.py"])
+subprocess.call(["pyinstaller", "--noconfirm", "--onedir", "--windowed", "--name", "FaustLauncher", "--icon","assets\\images\\icon\\icon.ico", "main.py"])
 
 print(f"准备将构建好的FaustLauncher复制到版本文件夹...")
 

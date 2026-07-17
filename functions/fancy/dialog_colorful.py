@@ -150,7 +150,7 @@ def process_dlg_text(dlg_text: str, gradient_rate: float = 2.0) -> str:
 def create_gradient_test_gui(window, root):
     """创建渐变文本测试GUI界面"""
     import tkinter as tk
-    from tkinter import ttk, scrolledtext, colorchooser, font
+    from tkinter import scrolledtext, colorchooser, font
     import os
     
     # 颜色选择函数（与main.py保持一致）
@@ -187,10 +187,8 @@ def create_gradient_test_gui(window, root):
             html_text.delete("1.0", tk.END)
             html_text.insert("1.0", processed_text)
             html_text.config(state=tk.DISABLED)
-            
-            status_label.config(text="预览已更新")
         except Exception as e:
-            status_label.config(text=f"错误: {str(e)}")
+            print(f"更新预览时出错: {e}")
     
     # 复制功能
     def copy_html():
@@ -199,11 +197,8 @@ def create_gradient_test_gui(window, root):
             if html_content:
                 root.clipboard_clear()
                 root.clipboard_append(html_content)
-                status_label.config(text="已复制到剪贴板")
-            else:
-                status_label.config(text="没有内容可复制")
         except Exception as e:
-            status_label.config(text=f"复制失败: {str(e)}")
+            pass
     
     # 重置功能
     def reset_settings():
@@ -221,7 +216,7 @@ def create_gradient_test_gui(window, root):
     root = tk.Toplevel(root)
     root.withdraw()
     root.title("渐变文本生成工具")
-    root.geometry("600x700")
+    root.geometry("600x750")
     root.resizable(True, True)
 
     center_window(root)
@@ -234,16 +229,16 @@ def create_gradient_test_gui(window, root):
         pass
     
     # 设置样式（与main.py保持一致）
-    style = ttk.Style()
-    style.theme_use('clam')
+    # style = ttk.Style()
+    # style.theme_use('clam')
     
-    # 配置样式（使用main.py的颜色方案）
-    style.configure("TFrame", background=window.bg_color)
-    style.configure("TLabel", background=window.bg_color, foreground='white', font=('Microsoft YaHei UI', 10))
-    style.configure("TButton", background='#3498db', foreground='white', font=('Microsoft YaHei UI', 9, 'bold'))
-    style.configure("TLabelframe", background='#f8f9fa', foreground=window.lighten_bg_color)
-    style.configure("TLabelframe.Label", background='#f8f9fa', foreground=window.lighten_bg_color, font=('Microsoft YaHei UI', 11, 'bold'))
-    style.configure("TScale", background=window.bg_color)
+    # # 配置样式（使用main.py的颜色方案）
+    # style.configure("TFrame", background=window.bg_color)
+    # style.configure("TLabel", background=window.bg_color, foreground='white', font=('Microsoft YaHei UI', 10))
+    # style.configure("TButton", background='#3498db', foreground='white', font=('Microsoft YaHei UI', 9, 'bold'))
+    # style.configure("TLabelframe", background='#f8f9fa', foreground=window.lighten_bg_color)
+    # style.configure("TLabelframe.Label", background='#f8f9fa', foreground=window.lighten_bg_color, font=('Microsoft YaHei UI', 11, 'bold'))
+    # style.configure("TScale", background=window.bg_color)
     
     # 创建变量
     start_color_var = tk.StringVar(value="#00fff7")
@@ -259,15 +254,6 @@ def create_gradient_test_gui(window, root):
     main_frame.columnconfigure(0, weight=1)
     main_frame.rowconfigure(3, weight=1)
     main_frame.rowconfigure(5, weight=1)
-    
-    # 标题（使用main.py的标题样式）
-    title_font = font.Font(family='Microsoft YaHei UI', size=18, weight='bold')
-    title_label = tk.Label(main_frame, 
-                          text="✨ 渐变文本生成工具 ✨", 
-                          bg=window.bg_color, 
-                          fg='white', 
-                          font=title_font)
-    title_label.grid(row=0, column=0, columnspan=3, pady=(0, 30))
     
     # 颜色选择区域（使用卡片式设计）
     color_frame = tk.Frame(main_frame, bg='#f8f9fa', relief='raised', borderwidth=2, padx=15, pady=15)
@@ -385,7 +371,7 @@ def create_gradient_test_gui(window, root):
                          relief='flat', padx=15, pady=8, cursor='hand2')
     close_btn.pack(side=tk.LEFT)
     
-    # 添加按钮悬停效果（与main.py保持一致）
+    # 添加按钮悬停效果
     def on_enter(btn, original_color):
         btn.configure(bg=darken_color(original_color))
     
@@ -393,7 +379,7 @@ def create_gradient_test_gui(window, root):
         btn.configure(bg=original_color)
     
     def darken_color(hex_color, factor=0.8):
-        """颜色变暗函数（与main.py保持一致）"""
+        """颜色变暗函数"""
         hex_color = hex_color.lstrip('#')
         rgb = tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
         darkened = tuple(int(c * factor) for c in rgb)
@@ -409,20 +395,15 @@ def create_gradient_test_gui(window, root):
     close_btn.bind("<Enter>", lambda e: on_enter(close_btn, '#e74c3c'))
     close_btn.bind("<Leave>", lambda e: on_leave(close_btn, '#e74c3c'))
     
-    # 状态栏
-    status_label = tk.Label(main_frame, text="✨ 准备就绪", bg=window.bg_color, fg='#ecf0f1', 
-                           font=('Microsoft YaHei UI', 9))
-    status_label.grid(row=6, column=0, columnspan=3, sticky=tk.W, pady=(15, 0))
-    
     # 初始更新预览
     update_preview()
     
     return root
 
-def test_color_gradient_gui(root):
+def test_color_gradient_gui(UI):
     """启动渐变文本测试GUI"""
     try:
-        root = create_gradient_test_gui(root, root.root)
+        root = create_gradient_test_gui(UI, UI.root)
         root.mainloop()
         return True
     except Exception as e:

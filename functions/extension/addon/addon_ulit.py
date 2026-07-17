@@ -1,8 +1,6 @@
 import os
 import json
-import importlib
 import sys
-import threading
 from types import ModuleType
 from typing import Dict, List, Optional, Any
 
@@ -23,6 +21,9 @@ class AddonManager:
         self.menu_items = menu_items if menu_items is not None else []
         self.app = app  # FaustLauncherApp 实例，用于触发托盘菜单重建等
         self.gamestart_funcs: List[Any] = []
+        self.del_funcs: List[Dict[str, Any]] = []  # 记录插件注册的删除回调函数
+        self.enabled_funcs: List[Dict[str, Any]] = []  # 记录插件注册的启用回调函数
+        self.disabled_funcs: List[Dict[str, Any]] = []  # 记录插件注册的禁用回调函数
         self.addon_paths: List[str] = []
         self.addon_names: List[str] = []
         self.loaded_modules: Dict[str, ModuleType] = {}  # 已加载的插件模块引用
@@ -305,6 +306,32 @@ class AddonManager:
         except Exception as e:
             print(f"插件 {addon_name} 载入失败: {e}")
             return False
+        
+    def when_addon_enabled(self, addon_name: str) -> None:
+        """
+        当插件被启用时调用的回调函数。
+        插件可以在其 scr.py 中注册此回调，以便在启用时执行特定操作。
+        """
+        for enabled_func in self.enabled_funcs:
+            if enabled_func.get('name') == addon_name and enabled_func.get('func'):
+                try:
+                    enabled_func['func']()
+                    print(f"插件 {addon_name} 的启用回调已执行")
+                except Exception as e:
+                    print(f"执行插件 {addon_name} 的启用回调失败: {e}")
+                    
+    def when_addon_disabled(self, addon_name: str) -> None:
+        """
+        当插件被禁用时调用的回调函数。
+        插件可以在其 scr.py 中注册此回调，以便在禁用时执行特定操作。
+        """
+        for disabled_func in self.disabled_funcs:
+            if disabled_func.get('name') == addon_name and disabled_func.get('func'):
+                try:
+                    disabled_func['func']()
+                    print(f"插件 {addon_name} 的禁用回调已执行")
+                except Exception as e:
+                    print(f"执行插件 {addon_name} 的禁用回调失败: {e}")
 
     def unload_all_addons(self) -> None:
         """
@@ -327,6 +354,9 @@ class AddonManager:
 
         self.loaded_modules.clear()
         self.gamestart_funcs.clear()
+        self.del_funcs.clear()
+        self.enabled_funcs.clear()
+        self.disabled_funcs.clear()
         # 同时清空插件注册的自定义托盘项，避免重载后出现重复项
         self.clear_custom_tray_items()
 
@@ -390,6 +420,16 @@ class AddonManager:
         Returns:
             是否删除成功
         """
+        # print(self.del_funcs)
+        for del_func in self.del_funcs:
+            # print(f"检查插件 {addon_name} 的删除回调注册: {del_func}")
+            if del_func.get('name') == addon_name and del_func.get('func'):
+                try:
+                    del_func['func']()
+                    print(f"插件 {addon_name} 的删除回调已执行")
+                except Exception as e:
+                    print(f"执行插件 {addon_name} 的删除回调失败: {e}")
+        
         addon_path = self.get_addon_path(addon_name)
         if not addon_path:
             print(f"插件 {addon_name} 不存在")
