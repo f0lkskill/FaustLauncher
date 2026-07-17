@@ -1,0 +1,83 @@
+{
+  "name": "LLC BABEL Python 配置",
+  "description": "边狱公司网络连接优选工具配置",
+  "version": "1.0.0",
+  "cloudflare": {
+    "domains": [
+      "download.limbuscompanycdn.org",
+      "downloadcommon.limbuscompanycdn.org",
+      "downloadfmod.limbuscompanycdn.org"
+    ],
+    "test_url": "https://cf.xiu2.xyz/url",
+    "cfst_args": {
+      "delay_tests": 2,
+      "download_nodes": 25,
+      "download_time": 5,
+      "packet_loss_threshold": 0
+    }
+  },
+  "cloudfront": {
+    "endpoints": {
+      "www": {
+        "domain": "www.limbuscompanyapi.com",
+        "probe_url": "https://www.limbuscompanyapi.com/"
+      },
+      "notice": {
+        "domain": "notice.limbuscompanyapi.com",
+        "probe_url": "https://notice.limbuscompanyapi.com/"
+      }
+    },
+    "optimization": {
+      "max_concurrency": 6,
+      "finalist_count": 5,
+      "final_attempts": 3,
+      "probe_timeout": 4.0,
+      "overall_timeout": 45.0
+    }
+  },
+  "dns": {
+    "sources": [
+      {
+        "name": "系统 DNS",
+        "type": "system",
+        "timeout": 3.0
+      },
+      {
+        "name": "阿里 DoH",
+        "type": "doh",
+        "url": "https://dns.alidns.com/resolve",
+        "timeout": 3.0
+      },
+      {
+        "name": "DNSPod DoH",
+        "type": "doh",
+        "url": "https://doh.pub/dns-query",
+        "timeout": 3.0
+      }
+    ],
+    "max_candidates": 24
+  },
+  "hosts": {
+    "markers": {
+      "cf": {
+        "start": "# START-OF-LLC-BABEL-CF",
+        "end": "# END-OF-LLC-BABEL-CF"
+      },
+      "amazon": {
+        "start": "# START-OF-LLC-BABEL-AMAZON",
+        "end": "# END-OF-LLC-BABEL-AMAZON"
+      }
+    },
+    "backup_suffix": "hosts.llcbabel.bak"
+  },
+  "ui": {
+    "show_progress": true,
+    "log_level": "info",
+    "colors": {
+      "success": "green",
+      "warning": "yellow",
+      "error": "red",
+      "info": "cyan"
+    }
+  }
+}
