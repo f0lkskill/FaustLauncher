@@ -3,7 +3,6 @@ from tkinter import ttk, messagebox
 import os
 import json
 from PIL import Image, ImageTk
-from functions.extension.addon.addon_ulit import AddonManager
 from functions.extension.mod.mod_ulits import ModManager
 
 class ModAddonManagerPage:
@@ -12,7 +11,7 @@ class ModAddonManagerPage:
         self.app = app
         self.bg_color = bg_color
         self.lighten_bg_color = lighten_bg_color
-        self.addon_manager = AddonManager([])
+        self.addon_manager = app.core.addon_manager
         self.addon_page = 0
         self.mod_page = 0
         self.items_per_page = 5
@@ -253,6 +252,14 @@ class ModAddonManagerPage:
             
             info['settings'][setting_key] = new_value
             
+            # print(addon)
+            if info['settings'].get('enable'):
+                print(f"插件 {addon['name']} 已被启用，触发启用回调")
+                self.addon_manager.when_addon_enabled(addon['name'])
+            else:
+                print(f"插件 {addon['name']} 已被禁用，触发禁用回调")
+                self.addon_manager.when_addon_disabled(addon['name'])
+            
             # 保存更新后的信息
             with open(addon_info_path, 'w', encoding='utf-8') as f:
                 json.dump(info, f, indent=4, ensure_ascii=False)
@@ -260,7 +267,7 @@ class ModAddonManagerPage:
             # 刷新插件列表
             self.refresh_addons_tab()
             
-            self.app._on_reload_addons()
+            self.app.core._on_reload_addons()
             
         except Exception as e:
             print(f"更新插件设置失败: {e}")
@@ -506,7 +513,7 @@ class ModAddonManagerPage:
             if self.addon_manager.remove_addon(addon_name):
                 # 刷新插件列表
                 self.refresh_addons_tab()
-                self.app._on_reload_addons()
+                self.app.core._on_reload_addons()
             else:
                 messagebox.showerror("错误", f"删除插件 {addon_name} 失败")
     

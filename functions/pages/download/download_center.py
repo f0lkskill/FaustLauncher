@@ -779,7 +779,7 @@ class DownloadCenterPage:
 
     def refresh_center(self):
         self.load_data()  # 重新加载数据
-        self.root.mod_addon_page.refresh_all_tabs()  # 刷新列表
+        self.root.core.refresh_all_tabs()  # 刷新列表
 
     def download_addon(self, addon):
         # 准备下载信息
@@ -813,7 +813,7 @@ class DownloadCenterPage:
                 download_and_extract_gui(gui, addon_path, download_files)
                 time.sleep(1)
                 print('插件下载完成, 正在重载所有插件...')
-                self.root._on_reload_addons()
+                self.root.core._on_reload_addons()
                 
             # 更新状态栏
             gui = DownloadGUI(self.root.root, addon_path, False, download_func=temp_func)

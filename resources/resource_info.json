@@ -10,5 +10,9 @@
     "siner_skill_info": {
         "version_info": "0.0.9",
         "name": "技能信息资源包"
+    },
+    "llc_babel": {
+        "version_info": "0.0.1",
+        "name": "零协会优选CDN工具"
     }
 }
