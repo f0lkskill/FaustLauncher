@@ -210,8 +210,10 @@ class FaustLauncherCore:
             print(f"启动器的新版本已经发布: {name}")
         latest_info['version_name'] = name
         if not has_notify:
+            print('发现新版本，创建版本详细介绍窗口。')
+            # print(f'参数: {name}, {has_update}, {latest_info}')
             notify_new_version(name, root=self.root, has_new_version=has_update, 
-                            latest_info=latest_info, info='发现新版本' if has_update else '已是最新版本')
+                            latest_info=latest_info, info='发现新版本' if has_update else '已是最新版本', must_show=True)
             mems['version_notify_flag'] = True
             self.settings_manager.set_setting('mems', mems)
         
