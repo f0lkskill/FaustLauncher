@@ -35,7 +35,7 @@ class DownloadGUI:
         self.root.geometry(f"{W}x{H}")
         self.root.overrideredirect(True)
         self.root.wm_attributes('-transparentcolor', TRANSPARENT)
-        self.root.attributes('-topmost', True)
+        # self.root.attributes('-topmost', True)
         self.root.configure(bg=TRANSPARENT)
 
         center_window(self.root)
