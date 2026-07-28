@@ -23,10 +23,12 @@ class ModAddonManagerPage:
         self.refresh_all_tabs()
     
     def create_widgets(self):
-        """创建页面控件"""
+        """创建页面控件 - 现代化风格"""
         
-        # 创建设置内容容器, 居中显示
-        content_frame = tk.Frame(self.parent, bg=self.lighten_bg_color, relief='groove', borderwidth=1)
+        # 现代化内容容器
+        content_frame = tk.Frame(self.parent, bg=self.lighten_bg_color, 
+                                 highlightthickness=1,
+                                 highlightbackground=self.darken_color(self.lighten_bg_color, 0.7))
         content_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=10)
         
         # 创建标签页控件
@@ -65,37 +67,49 @@ class ModAddonManagerPage:
         self.show_mods()
     
     def create_styled_button(self, parent, text, command, color):
-        """创建样式统一的按钮"""
+        """创建现代化样式按钮"""
+        
+        # 现代化配色映射
+        color_map = {
+            '#27ae60': '#10b981',  # 绿色
+            '#2980b9': '#3b82f6',  # 蓝色
+            '#8e44ad': '#8b5cf6',  # 紫色
+            '#c0392b': '#ef4444',  # 红色
+            '#f39c12': '#f59e0b',  # 橙色
+            '#2c3e50': '#475569',  # 深灰
+        }
+        modern_color = color_map.get(color, color)
+        hover_color = self.darken_color(modern_color)
         
         btn = tk.Button(parent, text=text, command=command,
-                       font=('Microsoft YaHei UI', 10, 'bold'),
-                       bg=color, fg='white',
-                       activebackground=self.darken_color(color),
-                       activeforeground='white',
-                       relief=tk.RAISED, borderwidth=2,
-                       padx=12, pady=6,
+                       font=('Microsoft YaHei UI', 9, 'bold'),
+                       bg=modern_color, fg='#f8fafc', # type: ignore
+                       activebackground=hover_color,
+                       activeforeground='#f8fafc',
+                       relief=tk.FLAT, borderwidth=0,
+                       padx=16, pady=8,
                        cursor='hand2')
         
         # 添加悬停效果
         def on_enter(e):
-            btn.config(bg=self.darken_color(color))
+            btn.config(bg=hover_color)
         def on_leave(e):
-            btn.config(bg=color)
+            btn.config(bg=modern_color) # type: ignore
         
         btn.bind("<Enter>", on_enter)
         btn.bind("<Leave>", on_leave)
         
         return btn
     
-    def darken_color(self, color):
-        """加深颜色"""
+    def darken_color(self, color, factor=0.85):
+        """加深颜色 - 现代化算法"""
         if color.startswith('#'):
             r = int(color[1:3], 16)
             g = int(color[3:5], 16)
             b = int(color[5:7], 16)
-            r = max(0, r - 30)
-            g = max(0, g - 30)
-            b = max(0, b - 30)
+            r = max(0, int(r * factor))
+            g = max(0, int(g * factor))
+            b = max(0, int(b * factor))
             return f"#{r:02x}{g:02x}{b:02x}"
         return color
     

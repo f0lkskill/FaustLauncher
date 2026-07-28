@@ -5,8 +5,9 @@ class WebTrigger:
     """Web触发器，负责获取来自Web的插件和mod信息"""
     
     def __init__(self, ):
-        self.addon_info = Note("FaustLauncher.addons.info")
+        self.addon_info = Note("FaustLauncher.addon.info")
         self.mod_info = Note("FaustLauncher.mod.info")
+        
         self.sort_info_by_download_number()
 
     def refersh_note_info(self):
@@ -25,12 +26,12 @@ class WebTrigger:
     def get_addon_info(self, page: int = 0):
         """获取插件信息"""
         self.addon_info._fetch_note_info_write()
-        return loads(loads(self.addon_info.note_content)[page]['content'])
+        return loads(self.addon_info.note_content)[page]
     
     def get_mod_info(self, page: int = 0):
         """获取mod信息"""
         self.mod_info._fetch_note_info_write()
-        return loads(loads(self.mod_info.note_content)[page]['content'])
+        return loads(self.mod_info.note_content)[page]
     
     def fectch_all_addon_info(self) -> list[dict]:
         """获取所有插件信息"""
@@ -55,11 +56,11 @@ class WebTrigger:
 
         pages = self.get_note_info_addon()
         for page in pages[1:]:  # 跳过第一页的总页数信息
-                addons = loads(page['content'])
+                addons = page
                 for addon in addons:
                     if addon['name'] == addon_name:
                         addon['download_count'] += 1
-                        page['content'] = dumps(addons, indent=4, ensure_ascii=False)
+                        page = dumps(addons, indent=4, ensure_ascii=False)
                         self.addon_info.update_note_content(dumps(pages, indent=4, ensure_ascii=False))
                         break
                         
@@ -72,11 +73,11 @@ class WebTrigger:
         
         pages = self.get_note_info_mod()
         for page in pages[1:]:  # 跳过第一页的总页数信息
-            mods = loads(page['content'])
+            mods = page
             for mod in mods:
                 if mod['name'] == mod_name:
                     mod['download_count'] += 1
-                    page['content'] = dumps(mods, indent=4, ensure_ascii=False)
+                    page = dumps(mods, indent=4, ensure_ascii=False)
                     self.mod_info.update_note_content(dumps(pages, indent=4, ensure_ascii=False))
                     break
         
@@ -88,10 +89,10 @@ class WebTrigger:
         try:
             pages = self.get_note_info_addon()
             for page in pages[1:]:  # 跳过第一页的总页数信息
-                addons: list[dict] = loads(page['content'])
+                addons: list[dict] = page
                 # 按下载次数降序排序，被禁用插件默认排序在最后
                 addons.sort(key=lambda x: (x.get('disabled', False), -x.get('download_count', 0)))
-                page['content'] = dumps(addons, indent=4, ensure_ascii=False)
+                page = dumps(addons, indent=4, ensure_ascii=False)
             # 更新排序后的插件信息
             self.addon_info.update_note_content(dumps(pages, indent=4, ensure_ascii=False))
             print("插件信息按下载次数排序完成")
@@ -103,7 +104,7 @@ class WebTrigger:
             pages = self.get_note_info_mod()
             mods: list[dict] = []
             for page in pages[1:]:  # 跳过第一页的总页数信息
-                for m in loads(page['content']):
+                for m in page:
                     mods.append(m)
 
             # 按下载次数降序排序，被禁用mod默认排序在最后
@@ -118,7 +119,7 @@ class WebTrigger:
             # 用 enumerate 安全地按索引分配内容，避免 index() 查找导致的错误
             for idx, page in enumerate(pages[1:], start=0):
                 if idx < len(new_pages):
-                    page['content'] = dumps(new_pages[idx], indent=4, ensure_ascii=False)
+                    page = dumps(new_pages[idx], indent=4, ensure_ascii=False)
 
             # 更新排序后的mod信息
             self.mod_info.update_note_content(dumps(pages, indent=4, ensure_ascii=False))

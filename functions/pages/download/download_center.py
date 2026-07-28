@@ -44,23 +44,24 @@ class DownloadCenterPage:
         self.root.root.after(3000, self.total_detect_update)
 
     def _configure_scrollbar_style(self):
-        """配置风格一致的自定义滚动条样式。"""
+        """配置现代化自定义滚动条样式。"""
         try:
             style = ttk.Style()
 
             thumb_normal = darken_color(self.lighten_bg_color, 0.75)
-            thumb_active = '#3498db'
+            thumb_active = '#6366f1'  # 现代靛蓝色
             trough_color = darken_color(self.bg_color, 0.7)
 
             try:
                 style.configure('Download.Vertical.TScrollbar',
                                 background=thumb_normal,
                                 bordercolor=thumb_normal,
-                                arrowcolor='#bdc3c7',
+                                arrowcolor='#94a3b8',
                                 troughcolor=trough_color,
                                 gripcount=0,
                                 relief='flat',
-                                borderwidth=0)
+                                borderwidth=0,
+                                width=8)
                 style.map('Download.Vertical.TScrollbar',
                           background=[('active', thumb_active),
                                       ('disabled', thumb_normal)])
@@ -68,11 +69,12 @@ class DownloadCenterPage:
                 style.configure('Download.Horizontal.TScrollbar',
                                 background=thumb_normal,
                                 bordercolor=thumb_normal,
-                                arrowcolor='#bdc3c7',
+                                arrowcolor='#94a3b8',
                                 troughcolor=trough_color,
                                 gripcount=0,
                                 relief='flat',
-                                borderwidth=0)
+                                borderwidth=0,
+                                width=8)
                 style.map('Download.Horizontal.TScrollbar',
                           background=[('active', thumb_active),
                                       ('disabled', thumb_normal)])
@@ -380,45 +382,45 @@ class DownloadCenterPage:
         )
         page_label.pack(side=tk.LEFT, padx=10)
 
-        # 上一页按钮
+        # 上一页按钮 - 现代化样式
         prev_button = tk.Button(
             pagination_frame,
-            text="上一页",
+            text="← 上一页",
             command=lambda: self.display_addon_page(page_num - 1) if page_num > 1 else None,
-            bg=self.lighten_bg_color,
-            fg='#ffffff',
-            activebackground=darken_color(self.lighten_bg_color, 0.9),
-            activeforeground='#ffffff',
+            bg='#475569',
+            fg='#f8fafc',
+            activebackground='#334155',
+            activeforeground='#f8fafc',
             relief=tk.FLAT,
             borderwidth=0,
             cursor='hand2',
-            highlightthickness=1,
-            highlightbackground=darken_color(self.lighten_bg_color, 0.7),
-            padx=12,
-            pady=5,
-            font=('Microsoft YaHei UI', 9)
+            padx=14,
+            pady=6,
+            font=('Microsoft YaHei UI', 9, 'bold')
         )
-        prev_button.pack(side=tk.LEFT, padx=5)
+        prev_button.pack(side=tk.LEFT, padx=6)
+        prev_button.bind("<Enter>", lambda e, b=prev_button: b.configure(bg='#334155'))
+        prev_button.bind("<Leave>", lambda e, b=prev_button: b.configure(bg='#475569'))
 
-        # 下一页按钮
+        # 下一页按钮 - 现代化样式
         next_button = tk.Button(
             pagination_frame,
-            text="下一页",
+            text="下一页 →",
             command=lambda: self.display_addon_page(page_num + 1) if page_num < len(self.addon_data) else None,
-            bg=self.lighten_bg_color,
-            fg='#ffffff',
-            activebackground=darken_color(self.lighten_bg_color, 0.9),
-            activeforeground='#ffffff',
+            bg='#475569',
+            fg='#f8fafc',
+            activebackground='#334155',
+            activeforeground='#f8fafc',
             relief=tk.FLAT,
             borderwidth=0,
             cursor='hand2',
-            highlightthickness=1,
-            highlightbackground=darken_color(self.lighten_bg_color, 0.7),
-            padx=12,
-            pady=5,
-            font=('Microsoft YaHei UI', 9)
+            padx=14,
+            pady=6,
+            font=('Microsoft YaHei UI', 9, 'bold')
         )
-        next_button.pack(side=tk.LEFT, padx=5)
+        next_button.pack(side=tk.LEFT, padx=6)
+        next_button.bind("<Enter>", lambda e, b=next_button: b.configure(bg='#334155'))
+        next_button.bind("<Leave>", lambda e, b=next_button: b.configure(bg='#475569'))
 
         # 显示插件列表
         for addon in addon_page_data:
@@ -457,45 +459,45 @@ class DownloadCenterPage:
         )
         page_label.pack(side=tk.LEFT, padx=10)
 
-        # 上一页按钮
+        # 上一页按钮 - 现代化样式
         prev_button = tk.Button(
             pagination_frame,
-            text="上一页",
+            text="← 上一页",
             command=lambda: self.display_mod_page(page_num - 1) if page_num > 1 else None,
-            bg=self.lighten_bg_color,
-            fg='#ffffff',
-            activebackground=darken_color(self.lighten_bg_color, 0.9),
-            activeforeground='#ffffff',
+            bg='#475569',
+            fg='#f8fafc',
+            activebackground='#334155',
+            activeforeground='#f8fafc',
             relief=tk.FLAT,
             borderwidth=0,
             cursor='hand2',
-            highlightthickness=1,
-            highlightbackground=darken_color(self.lighten_bg_color, 0.7),
-            padx=12,
-            pady=5,
-            font=('Microsoft YaHei UI', 9)
+            padx=14,
+            pady=6,
+            font=('Microsoft YaHei UI', 9, 'bold')
         )
-        prev_button.pack(side=tk.LEFT, padx=5)
+        prev_button.pack(side=tk.LEFT, padx=6)
+        prev_button.bind("<Enter>", lambda e, b=prev_button: b.configure(bg='#334155'))
+        prev_button.bind("<Leave>", lambda e, b=prev_button: b.configure(bg='#475569'))
 
-        # 下一页按钮
+        # 下一页按钮 - 现代化样式
         next_button = tk.Button(
             pagination_frame,
-            text="下一页",
+            text="下一页 →",
             command=lambda: self.display_mod_page(page_num + 1) if page_num < len(self.mod_data) else None,
-            bg=self.lighten_bg_color,
-            fg='#ffffff',
-            activebackground=darken_color(self.lighten_bg_color, 0.9),
-            activeforeground='#ffffff',
+            bg='#475569',
+            fg='#f8fafc',
+            activebackground='#334155',
+            activeforeground='#f8fafc',
             relief=tk.FLAT,
             borderwidth=0,
             cursor='hand2',
-            highlightthickness=1,
-            highlightbackground=darken_color(self.lighten_bg_color, 0.7),
-            padx=12,
-            pady=5,
-            font=('Microsoft YaHei UI', 9)
+            padx=14,
+            pady=6,
+            font=('Microsoft YaHei UI', 9, 'bold')
         )
-        next_button.pack(side=tk.LEFT, padx=5)
+        next_button.pack(side=tk.LEFT, padx=6)
+        next_button.bind("<Enter>", lambda e, b=next_button: b.configure(bg='#334155'))
+        next_button.bind("<Leave>", lambda e, b=next_button: b.configure(bg='#475569'))
 
         # 显示Mod列表
         for mod in mod_page_data:
@@ -612,21 +614,23 @@ class DownloadCenterPage:
         buttons_frame = tk.Frame(addon_frame, bg=card_bg)
         buttons_frame.pack(fill=tk.X, padx=16, pady=(2, 8))
 
+        # 现代化下载按钮
         download_button = tk.Button(buttons_frame,
                                  text="📥 下载",
                                  command=lambda a=addon: self.download_addon(a),
-                                 font=('Microsoft YaHei UI', 9),
-                                 bg='#27ae60', fg=text_color,
-                                 activebackground=darken_color('#27ae60', 0.85),
-                                 activeforeground=text_color,
+                                 font=('Microsoft YaHei UI', 9, 'bold'),
+                                 bg='#10b981', fg='#f8fafc',
+                                 activebackground='#059669',
+                                 activeforeground='#f8fafc',
                                  relief='flat', borderwidth=0,
                                  cursor='hand2',
-                                 highlightthickness=1,
-                                 highlightbackground=darken_color('#27ae60', 0.7),
-                                 padx=16, pady=4,
+                                 padx=18, pady=5,
                                  state=tk.DISABLED if unable_download else tk.NORMAL
         )
         download_button.pack(side=tk.RIGHT, padx=5)
+        if not unable_download:
+            download_button.bind("<Enter>", lambda e, b=download_button: b.configure(bg='#059669'))
+            download_button.bind("<Leave>", lambda e, b=download_button: b.configure(bg='#10b981'))
 
     def create_mod_card(self, mod:dict):
         unable_download = mod.get('disabled', False)
@@ -734,20 +738,22 @@ class DownloadCenterPage:
         buttons_frame = tk.Frame(mod_frame, bg=card_bg)
         buttons_frame.pack(fill=tk.X, padx=16, pady=(2, 8))
 
+        # 现代化下载按钮
         download_button = tk.Button(buttons_frame,
                                  text="📥 下载",
                                  command=lambda m=mod: self.download_mod(m),
-                                 font=('Microsoft YaHei UI', 9),
-                                 bg='#27ae60', fg=text_color,
-                                 activebackground=darken_color('#27ae60', 0.85),
-                                 activeforeground=text_color,
+                                 font=('Microsoft YaHei UI', 9, 'bold'),
+                                 bg='#10b981', fg='#f8fafc',
+                                 activebackground='#059669',
+                                 activeforeground='#f8fafc',
                                  relief='flat', borderwidth=0,
                                  state=tk.DISABLED if unable_download else tk.NORMAL,
                                  cursor='hand2',
-                                 highlightthickness=1,
-                                 highlightbackground=darken_color('#27ae60', 0.7),
-                                 padx=16, pady=4)
+                                 padx=18, pady=5)
         download_button.pack(side=tk.RIGHT, padx=5)
+        if not unable_download:
+            download_button.bind("<Enter>", lambda e, b=download_button: b.configure(bg='#059669'))
+            download_button.bind("<Leave>", lambda e, b=download_button: b.configure(bg='#10b981'))
 
     def download_icon(self, icon_url:str, item_name:str):
         if not icon_url:
