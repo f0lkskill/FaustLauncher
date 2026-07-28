@@ -45,7 +45,7 @@ class FaustLauncherUI:
     def _setup_window(self):
         """设置主窗口基础配置"""
         self.root.title("Faust Launcher")
-        self.root.geometry("800x700")
+        self.root.geometry("850x730")
         self.root.resizable(False, False)
         
         center_window(self.root, False)
@@ -58,38 +58,100 @@ class FaustLauncherUI:
             pass
         
     def _setup_styles(self):
-        """设置应用程序样式"""
+        """设置应用程序样式 - 现代化风格"""
         style = ttk.Style()
-        style.theme_use('clam')
         
-        style.configure('TNotebook', background=self.core.lighten_bg_color, borderwidth=0)
-        style.configure('TNotebook.Tab', background=self.core.lighten_bg_color, 
-                        foreground='#ecf0f1', borderwidth=0,
-                        padding=[15, 5], font=('Microsoft YaHei UI', 10))
-        style.map('TNotebook.Tab', background=[('selected', self.core.bg_color)])
+        # 尝试使用现代主题，按优先级排序
+        modern_themes = ['vista', 'xpnative', 'winnative', 'clam', 'default']
+        available_themes = style.theme_names()
+        selected_theme = 'clam'  # 默认回退
+        for theme in modern_themes:
+            if theme in available_themes:
+                selected_theme = theme
+                break
+        style.theme_use(selected_theme)
         
+        # 现代化配色方案
+        self._accent_color = '#6366f1'  # 现代靛蓝色
+        self._accent_hover = '#4f46e5'
+        self._accent_light = '#818cf8'
+        self._text_primary = '#f8fafc'  # 近白色
+        self._text_secondary = '#cbd5e1'  # 浅灰色
+        self._text_muted = '#94a3b8'  # 柔和灰
+        self._surface_color = self.core.lighten_bg_color
+        self._card_bg = self.core.bg_color
+        
+        # 标签页样式 - 现代化扁平设计
+        style.configure('TNotebook', 
+                       background=self._surface_color, 
+                       borderwidth=1)
+        
+        style.configure('TNotebook.Tab', 
+                       background=self._surface_color,
+                       foreground=self._text_secondary, 
+                       borderwidth=0,
+                       padding=[10, 10], 
+                       font=('Microsoft YaHei UI', 10),
+                       focuscolor='')
+        
+        style.map('TNotebook.Tab', 
+                  background=[('selected', self._card_bg), ('active', self.core.lighten_color(self._surface_color, 8))],
+                  foreground=[('selected', self._accent_light), ('active', self._text_primary)],
+                  expand=[('selected', [2, 2, 2, 0])])
+        
+        # 标签样式
         style.configure("Title.TLabel",
-                    background=self.core.bg_color,
-                    foreground='white',
-                    font=('Microsoft YaHei UI', 23, 'bold'))
-        style.configure("Subtitle.TLabel",
-                    background=self.core.bg_color,
-                    foreground='white',
-                    font=('Microsoft YaHei UI', 12))
-        style.configure("Custom.TLabelframe",
-                    background=self.core.lighten_bg_color,
-                    foreground=self.core.darken_color(self.core.bg_color, 0.3),
-                    bordercolor=self.core.lighten_color(self.core.lighten_bg_color, 40),
-                    relief='raised',
-                    borderwidth=1)
-        style.configure("Custom.TLabelframe.Label",
-                    background=self.core.lighten_bg_color,
-                    foreground=self.core.lighten_color(self.core.lighten_bg_color, 40),
-                    font=('微软雅黑', 11, 'bold'))
+                    background=self._card_bg,
+                    foreground=self._text_primary,
+                    font=('Microsoft YaHei UI', 24, 'bold'))
         
-        self.title_font = font.Font(family='Microsoft YaHei UI', size=18, weight='bold')
-        self.subtitle_font = font.Font(family='Microsoft YaHei UI', size=12)
+        style.configure("Subtitle.TLabel",
+                    background=self._card_bg,
+                    foreground=self._text_secondary,
+                    font=('Microsoft YaHei UI', 13))
+        
+        # 现代化 LabelFrame - 无边框卡片式设计
+        style.configure("Custom.TLabelframe",
+                    background=self._surface_color,
+                    foreground=self._text_secondary,
+                    bordercolor=self.core.lighten_color(self._surface_color, 15),
+                    relief='flat',
+                    borderwidth=0)
+        
+        style.configure("Custom.TLabelframe.Label",
+                    background=self._surface_color,
+                    foreground=self._accent_light,
+                    font=('Microsoft YaHei UI', 11, 'bold'))
+        
+        # 现代化按钮样式
+        style.configure('Modern.TButton',
+                       font=('Microsoft YaHei UI', 10, 'bold'),
+                       foreground=self._text_primary,
+                       background=self._accent_color,
+                       borderwidth=0,
+                       focuscolor='',
+                       padding=[20, 8])
+        
+        style.map('Modern.TButton',
+                  background=[('active', self._accent_hover), ('pressed', self._accent_light)],
+                  foreground=[('active', self._text_primary)])
+        
+        # 滚动条样式 - 现代细滚动条
+        style.configure('Modern.Vertical.TScrollbar',
+                       background=self.core.darken_color(self._surface_color, 0.85),
+                       troughcolor=self.core.darken_color(self._surface_color, 0.85),
+                       borderwidth=0,
+                       width=8,
+                       arrowsize=0)
+        
+        style.map('Modern.Vertical.TScrollbar',
+                  background=[('active', self._accent_color), ('pressed', self._accent_light)])
+        
+        # 字体配置
+        self.title_font = font.Font(family='Microsoft YaHei UI', size=20, weight='bold')
+        self.subtitle_font = font.Font(family='Microsoft YaHei UI', size=13)
         self.normal_font = font.Font(family='Microsoft YaHei UI', size=10)
+        self.button_font = font.Font(family='Microsoft YaHei UI', size=10, weight='bold')
         
     def _create_ui_structure(self):
         """创建UI结构框架"""
@@ -102,9 +164,9 @@ class FaustLauncherUI:
         self.content_canvas = tk.Canvas(self.container, highlightthickness=0, bg=self.core.bg_color)
         self.content_canvas.place(relx=0.5, rely=0.5, anchor=tk.CENTER, width=700, height=600)
         
-        self.notebook = ttk.Notebook(self.content_canvas)
+        self.notebook = ttk.Notebook(self.content_canvas, padding=-2)
         self.content_canvas.create_window(350, 300, window=self.notebook,
-                                        anchor=tk.CENTER, width=680, height=580)
+                                        anchor=tk.CENTER, width=680, height=560)
         
         self.page_frames = {
             'home': tk.Frame(self.notebook, bg=self.core.bg_color),
@@ -341,24 +403,38 @@ class FaustLauncherUI:
         self.root.after(30000, self.rotate_background)
         
     def create_status_bar(self):
-        """创建底部状态栏"""
-        status_frame = tk.Frame(self.page_frames['home'], bg=self.core.lighten_bg_color, height=30)
+        """创建底部状态栏 - 现代化风格"""
+        # 现代化状态栏配色
+        status_bg = self.core.darken_color(self.core.lighten_bg_color, 0.9)
+        text_secondary = '#94a3b8'
+        text_muted = '#64748b'
+        accent_green = '#10b981'
+        
+        status_frame = tk.Frame(self.page_frames['home'], bg=status_bg, height=32)
         status_frame.pack(fill='x', side='bottom')
         status_frame.pack_propagate(False)
         
-        status_label = tk.Label(status_frame,
-                            text="🟢 就绪",
-                            bg=self.core.lighten_bg_color,
-                            fg='#bdc3c7',
+        # 状态指示器 - 带颜色圆点
+        status_container = tk.Frame(status_frame, bg=status_bg)
+        status_container.pack(side='left', padx=12)
+        
+        status_dot = tk.Label(status_container, text="●", bg=status_bg, fg=accent_green,
+                             font=('Microsoft YaHei UI', 8))
+        status_dot.pack(side='left')
+        
+        status_label = tk.Label(status_container,
+                            text="就绪",
+                            bg=status_bg,
+                            fg=text_secondary,
                             font=('Microsoft YaHei UI', 9))
-        status_label.pack(side='left', padx=10)
+        status_label.pack(side='left', padx=(4, 0))
         
         version_label = tk.Label(status_frame,
-                                text=f"版本 {self.core.version_info}",
-                                bg=self.core.lighten_bg_color,
-                                fg='#95a5a6',
+                                text=f"v{self.core.version_info}",
+                                bg=status_bg,
+                                fg=text_muted,
                                 font=('Microsoft YaHei UI', 9))
-        version_label.pack(side='right', padx=10)
+        version_label.pack(side='right', padx=12)
 
 
 def check_single_instance():

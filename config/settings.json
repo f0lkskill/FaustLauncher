@@ -3,7 +3,7 @@
         "name": "游戏路径",
         "type": "string",
         "default": "",
-        "value": "",
+        "value": "D:/steam/steamapps/common/Limbus Company/",
         "description": "游戏安装路径, 请确保路径正确\n否则可能导致启动失败和其他错误问题",
         "page": "通用"
     },
@@ -28,7 +28,7 @@
             "关闭程序"
         ],
         "default": 0,
-        "value": 0,
+        "value": 1,
         "description": "退出程序后, 程序将如何操作\n最小化到系统托盘: 程序将最小化到系统托盘, 并继续运行\n关闭程序: 程序将立即关闭",
         "page": "通用"
     },
@@ -211,8 +211,8 @@
             "version_notify_flag": false
         },
         "value": {
-            "tray_hint": false,
-            "version_notify_flag": false
+            "tray_hint": true,
+            "version_notify_flag": true
         },
         "description": "程序运行时的缓存数据\n不建议修改"
     }

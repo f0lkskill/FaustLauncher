@@ -340,7 +340,7 @@ def get_download_path_ByNote() -> tuple[str, str] | None:
 def get_download_path_ByGhProxy() -> tuple[str, str] | None:
     from webFunc import Note
     from json import loads
-    note = Note("FaustLauncher", 'AutoTranslate')
+    note = Note("FaustLauncher")
     note.fetch_note_info()
 
     # print("获取到笔记内容:", note.note_content)

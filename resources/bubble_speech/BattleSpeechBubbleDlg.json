@@ -1890,6 +1890,71 @@
       "dlg": "<color=#2590f4>啊，堂吉诃德……</color><color=#cce7ff><size=60%><i>*哔哔声*</i></size></color><color=#2590f4>是啊，如果这次战斗能够顺利结束……我会表扬你的。</color>"
     },
     {
+      "id": "battle_select_10116_1",
+      "desc": "############ LCE E.G.O::次元撕裂者 李箱 16 ############",
+      "dlg": "<color=#4d19e6>路途尚远。</color>"
+    },
+    {
+      "id": "battle_endcommand_10116_1",
+      "desc": "",
+      "dlg": "<color=#4d19e6>去处已定。</color>"
+    },
+    {
+      "id": "battle_enemy_break_10116_1",
+      "desc": "",
+      "dlg": "<color=#4d19e6>甚至无法记忆。</color>"
+    },
+    {
+      "id": "battle_kill_10116_1",
+      "desc": "",
+      "dlg": "<color=#4d19e6>被忘却的名字。</color>"
+    },
+    {
+      "id": "battle_break_10116_1",
+      "desc": "",
+      "dlg": "<color=#4d19e6>呃……</color>"
+    },
+    {
+      "id": "battle_dead_10116_1",
+      "desc": "",
+      "dlg": "<color=#4d19e6>最终……还是收敛为此结论吗。</color>"
+    },
+    {
+      "id": "battle_special_10116_1_1",
+      "desc": "패시브 효과로 차원 표류 버프를 소모하여 1스킬 발동시 버전1",
+      "dlg": "<color=#4d19e6>潜伏于裂隙之中……</color>"
+    },
+    {
+      "id": "battle_special_10116_1_2",
+      "desc": "패시브 효과로 차원 표류 버프를 소모하여 1스킬 발동시 버전2",
+      "dlg": "<color=#4d19e6>坐标已更新。</color>"
+    },
+    {
+      "id": "battle_special_10116_1_3",
+      "desc": "패시브 효과로 차원 표류 버프를 소모하여 1스킬 발동시 버전3",
+      "dlg": "<color=#4d19e6>跃迁成功。</color>"
+    },
+    {
+      "id": "battle_s2_10116_1_1",
+      "desc": "2스킬 사용시 1버전",
+      "dlg": "<color=#4d19e6>在所赋予的最大速度下。</color>"
+    },
+    {
+      "id": "battle_s3_10116_1_1",
+      "desc": "3스킬 사용시 1버전",
+      "dlg": "<color=#4d19e6>一点与三线之交点……</color>"
+    },
+    {
+      "id": "battle_s3_10116_1_2",
+      "desc": "3스킬 사용시 2버전",
+      "dlg": "<color=#4d19e6>交叉吧。</color>"
+    },
+    {
+      "id": "battle_special_10116_2",
+      "desc": "使用强化3技能时",
+      "dlg": "<color=#4d19e6>反刍四色的次元。</color>"
+    },
+    {
       "id": "battle_select_10201_1",
       "desc": "############ LCB 罪人 浮士德 1 ############",
       "dlg": "<color=#ffbfb4>有什么事吗，经理？</color>"
@@ -2582,7 +2647,7 @@
     {
       "id": "battle_special_10216_3",
       "desc": "",
-      "dlg": "<color=#f9bc06>做得很好。来辅助吧。</color>"
+      "dlg": "<color=#f9bc06>做得很好。我来辅助吧。</color>"
     },
     {
       "id": "battle_special_10216_4",
@@ -4446,7 +4511,7 @@
     {
       "id": "battle_special_10513_4",
       "desc": "",
-      "dlg": "<color=#c50d0c>温热的血……渗入全身。</color>"
+      "dlg": "<color=#c50d0c>温暖的血……渗入全身。</color>"
     },
     {
       "id": "battle_special_10513_5",
@@ -5142,7 +5207,7 @@
     {
       "id": "battle_noneready_10613_1-01",
       "desc": "battle_noneready_10613_1-01",
-      "dlg": "<color=#5bffde>斩尽敌人之前，不得退却。</color>"
+      "dlg": "<color=#5bffde>斩尽敌人之前，不得撤退。</color>"
     },
     {
       "id": "battle_s3-2_10613_1_6",
@@ -6362,7 +6427,7 @@
     {
       "id": "battle_special_10808_1-03",
       "desc": "",
-      "dlg": "<color=#ff9500>哈，追踪那家伙！</color>"
+      "dlg": "<color=#ff9500>哈，给我追！</color>"
     },
     {
       "id": "battle_s3_10808_1_1-01",
@@ -6507,7 +6572,7 @@
     {
       "id": "battle_s3_10811_1_3-02",
       "desc": "",
-      "dlg": "<color=#ff9500>黑云翻墨！</color>"
+      "dlg": "<color=#ff9500>墨染。</color>"
     },
     {
       "id": "battle_special_10811_1",
@@ -7282,7 +7347,7 @@
     {
       "id": "battle_s3_10913_1_1",
       "desc": "",
-      "dlg": "<color=#3675e3>干脆……</color>"
+      "dlg": "<color=#3675e3>干脆就……</color>"
     },
     {
       "id": "battle_s3_10913_1_3",
@@ -8847,7 +8912,7 @@
     {
       "id": "battle_special_11115_4",
       "desc": "",
-      "dlg": "<color=#db19e6>都做到这个份上了，那也该撕掉一层包装纸了！</color>"
+      "dlg": "<color=#db19e6>都做到这个份上了，那也该拆开一层包装纸了！</color>"
     },
     {
       "id": "battle_special_11115_5",
@@ -9157,7 +9222,7 @@
     {
       "id": "battle_s3_11209_2",
       "desc": "",
-      "dlg": "<color=#a65411>就是要害吧！</color>"
+      "dlg": "<color=#a65411>正中要害。</color>"
     },
     {
       "id": "battle_select_11210_1",

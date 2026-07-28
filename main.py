@@ -1,5 +1,5 @@
 """
-Faust Launcher - 优化版主入口
+Faust Launcher - 主入口
 
 优化内容：
 1. 模块化拆分：将页面加载逻辑分离到 PageLoader

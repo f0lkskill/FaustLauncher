@@ -4,7 +4,7 @@ from functions.base.settings_manager import get_settings_manager
 from functions.base.color_ulits import darken_color as _darken, lighten_color as _lighten
 from functions.base.animation_ulits import smooth_scroll
 
-# ===== 统一字体配置 =====
+# ===== 统一字体配置 - 现代化 =====
 _TITLE_FONT = ('Microsoft YaHei UI', 12, 'bold')
 _DESC_FONT = ('Microsoft YaHei UI', 9)
 _CONTROL_FONT = ('Microsoft YaHei UI', 10)
@@ -12,13 +12,14 @@ _SMALL_FONT = ('Microsoft YaHei UI', 9)
 _BUTTON_FONT = ('Microsoft YaHei UI', 9, 'bold')
 _BIG_BUTTON_FONT = ('Microsoft YaHei UI', 11, 'bold')
 
-# ===== 颜色配置 =====
-_ACCENT_COLOR = '#3498db'
-_WARN_COLOR = '#e67e22'
-_DANGER_COLOR = '#f39c12'
-_TEXT_PRIMARY = '#ffffff'
-_TEXT_SECONDARY = '#d5dbdb'
-_TEXT_MUTED = '#95a5a6'
+# ===== 现代化颜色配置 =====
+_ACCENT_COLOR = '#6366f1'  # 现代靛蓝色
+_ACCENT_HOVER = '#4f46e5'
+_WARN_COLOR = '#f59e0b'    # 现代橙色
+_DANGER_COLOR = '#ef4444'  # 现代红色
+_TEXT_PRIMARY = '#f8fafc'  # 近白色
+_TEXT_SECONDARY = '#cbd5e1'  # 浅灰色
+_TEXT_MUTED = '#94a3b8'    # 柔和灰
 
 
 class SettingsPage:
@@ -115,18 +116,19 @@ class SettingsPage:
         button_frame = tk.Frame(content_frame, bg=self.lighten_bg_color)
         button_frame.pack(fill=tk.X, pady=(6, 0), padx=10)
 
+        # 现代化重置所有设置按钮
         reset_all_btn = tk.Button(button_frame, text="↺ 重置所有设置",
                                   command=self.reset_all_settings,
                                   font=_BIG_BUTTON_FONT,
-                                  bg=_WARN_COLOR, fg=_TEXT_PRIMARY,
-                                  activebackground='#d35400',
+                                  bg='#f59e0b', fg=_TEXT_PRIMARY,
+                                  activebackground='#d97706',
                                   activeforeground=_TEXT_PRIMARY,
                                   relief='flat', borderwidth=0,
                                   cursor='hand2',
-                                  padx=24, pady=6,
-                                  highlightthickness=1,
-                                  highlightbackground=self._darken(_WARN_COLOR, 0.8))
+                                  padx=28, pady=8)
         reset_all_btn.pack(anchor=tk.CENTER, padx=10)
+        reset_all_btn.bind("<Enter>", lambda e, b=reset_all_btn: b.configure(bg='#d97706'))
+        reset_all_btn.bind("<Leave>", lambda e, b=reset_all_btn: b.configure(bg='#f59e0b'))
 
     def group_settings_by_page(self):
         """按page分组设置项"""
@@ -271,18 +273,19 @@ class SettingsPage:
             elif setting_type == 'combobox':
                 self.create_combobox_control(setting_frame, key, setting_info, current_value)
 
+            # 现代化重置按钮
             reset_btn = tk.Button(setting_frame, text="↺ 重置",
                                   command=lambda k=key: self.reset_setting(k),
                                   font=_SMALL_FONT,
-                                  bg=_DANGER_COLOR, fg=_TEXT_PRIMARY,
-                                  activebackground='#c0392b',
+                                  bg='#dc2626', fg=_TEXT_PRIMARY,
+                                  activebackground='#b91c1c',
                                   activeforeground=_TEXT_PRIMARY,
                                   relief='flat', borderwidth=0,
                                   cursor='hand2',
-                                  padx=10, pady=3,
-                                  highlightthickness=1,
-                                  highlightbackground=self._darken(_DANGER_COLOR, 0.8))
+                                  padx=12, pady=4)
             reset_btn.pack(anchor=tk.E, pady=(6, 0))
+            reset_btn.bind("<Enter>", lambda e, b=reset_btn: b.configure(bg='#b91c1c'))
+            reset_btn.bind("<Leave>", lambda e, b=reset_btn: b.configure(bg='#dc2626'))
 
         tk.Frame(parent, bg=self.bg_color, height=10).pack(fill=tk.X)
 

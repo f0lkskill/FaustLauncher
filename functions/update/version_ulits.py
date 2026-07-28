@@ -51,8 +51,7 @@ def check_version_update(root):
     version_note = Note('FaustLauncher.version_info')
     version_note.fetch_note_info()
     version_info = version_note.note_content
-
-    version_info = loads(loads(version_info)[0]['content'])
+    version_info = loads(version_info) # type: ignore
 
     if version_info['latest_release_version'] != current_version:
         print(f"检测到启动器新版本: {version_info['latest_release_version']}，当前版本: {current_version}")

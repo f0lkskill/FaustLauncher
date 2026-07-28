@@ -495,9 +495,9 @@ class ModManager:
         self.status_var.set(f"📋 已复制文件名: {original_filename}")
 
     def set_style(self):
-        """设置样式"""
-        style = ttk.Style()
-        style.theme_use('clam')
+        """设置样式 - 使用独立样式不干扰主窗口"""
+        # 不修改全局主题，只配置Treeview样式
+        style = ttk.Style(self.window)
         
         # 配置Treeview样式
         style.configure('Treeview', 

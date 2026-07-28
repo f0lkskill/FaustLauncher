@@ -173,7 +173,9 @@ class CustomTranslationTool:
         self._only_modified = False
         self._loading_overlay = None
         self._current_original_data = None  # 多线程加载保存临时数据
-
+        self._current_modified_data = None
+        self._current_file_path = None
+        
         # 常用颜色
         self.bg = root.bg_color
         self.bg_light = root.lighten_bg_color
@@ -390,23 +392,24 @@ class CustomTranslationTool:
         # 文件树
         tree_frame = tk.Frame(left_frame, bg=self.bg_light, bd=0, highlightthickness=0)
         tree_frame.pack(fill=tk.BOTH, expand=True, padx=6, pady=6)
+        
 
-        tree_style = ttk.Style()
-        # 使用 clam 主题以获得更好的背景色控制
-        try:
-            tree_style.theme_use('clam')
-        except Exception:
-            pass
-        tree_style.configure("Custom.Treeview",
-                             background=self.bg_darker, foreground='#ecf0f1',
-                             fieldbackground=self.bg_darker, rowheight=26,
-                             borderwidth=0, bd=0)
-        tree_style.map('Custom.Treeview',
-                       background=[('selected', '#3498db')],
-                       foreground=[('selected', 'white')])
-        tree_style.configure("Custom.Treeview.Heading",
-                             background=self.bg_light,
-                             foreground="white")
+        # tree_style = ttk.Style()
+        # # 使用 clam 主题以获得更好的背景色控制
+        # try:
+        #     tree_style.theme_use('clam')
+        # except Exception:
+        #     pass
+        # tree_style.configure("Custom.Treeview",
+        #                      background=self.bg_darker, foreground='#ecf0f1',
+        #                      fieldbackground=self.bg_darker, rowheight=26,
+        #                      borderwidth=0, bd=0)
+        # tree_style.map('Custom.Treeview',
+        #                background=[('selected', '#3498db')],
+        #                foreground=[('selected', 'white')])
+        # tree_style.configure("Custom.Treeview.Heading",
+        #                      background=self.bg_light,
+        #                      foreground="white")
 
         self.file_tree = ttk.Treeview(tree_frame, style="Custom.Treeview",
                                       selectmode='browse', show='tree')
@@ -886,8 +889,8 @@ class CustomTranslationTool:
 
                 # 保存到主线程
                 self._current_original_data = loaded_data
-                self._current_modified_data = modified
-                self._current_file_path = file_path
+                self._current_modified_data = modified # type: ignore
+                self._current_file_path = file_path # type: ignore
 
                 # 回到主线程更新 UI
                 self.parent_window.after(0, self._finish_loading_file)
@@ -900,10 +903,10 @@ class CustomTranslationTool:
 
     def _finish_loading_file(self):
         self.original_data = self._current_original_data
-        self.modified_data = self._current_modified_data
-        self.current_file = self._current_file_path
+        self.modified_data = self._current_modified_data # type: ignore
+        self.current_file = self._current_file_path # type: ignore
 
-        relative = os.path.relpath(self.current_file, self.lang_dir)
+        relative = os.path.relpath(self.current_file, self.lang_dir) # type: ignore
         self.current_file_label.config(text=f"📄 当前文件: {relative}")
 
         self.data_search_var.set("")

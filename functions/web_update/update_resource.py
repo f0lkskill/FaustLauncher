@@ -1,5 +1,5 @@
 from functions.webFunc import Note
-from functions.web_update.zeroasso_dow import download_and_extract_gui
+from functions.web_update.zeroasso_dow import download_and_extract_gui, DownloadGUI
 from json import loads,dumps
 from threading import Thread
 
@@ -7,7 +7,9 @@ note = Note("FaustLauncher.res_info")
 note.fetch_note_info()
 
 note_content = note.note_content
-data:dict = loads(loads(note_content)[0]['content'])
+data:dict = loads(note_content)
+
+download_gui:DownloadGUI = None # type: ignore
 
 # 不存在文件时，创建空字典
 try:
@@ -23,7 +25,9 @@ if local_data_str.strip() == "":
 else:
     local_data:dict = loads(local_data_str)
 
-def update_resource(dow_root, download_files:list, res:str, auto_close:bool = True):
+def update_resource(dow_root:DownloadGUI, download_files:list, res:str, auto_close:bool = True):
+    global download_gui
+    
     import shutil,os
     from time import sleep
     try:
@@ -35,13 +39,14 @@ def update_resource(dow_root, download_files:list, res:str, auto_close:bool = Tr
     download_thread.start()
     while download_thread.is_alive():
         sleep(1)
-        print(f"下载资源 {res} 正在进行中...")
+        # print(f"下载资源 {res} 正在进行中...")
     local_data[res]['version_info'] = data[res]['version_info']
     if auto_close:
         download_gui.is_downloading = False
 
 def check_resource_update(dow_root):
-
+    global download_gui
+    
     thread_count = 0
     download_files = []
     up_list = []
@@ -71,6 +76,10 @@ def check_resource_update(dow_root):
             update_resource(dow_root, download_files, res, auto_close)
         else:
             print(f"资源 {res} 已为最新，无需更新。")
+    
+    if download_gui is not None:
+        # 关闭下载窗口
+        download_gui.is_downloading = False
 
     # 保存更新后的本地资源信息
     with open("resources/resource_info.json",'w',encoding='utf-8') as f:

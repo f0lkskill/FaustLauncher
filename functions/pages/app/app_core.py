@@ -24,7 +24,7 @@ class FaustLauncherCore:
         self.addon_manager: AddonManager = None  # type: ignore
         self.page_loader:PageLoader = None  # type: ignore
         self.terminal_redirector:TerminalRedirector = None  # type: ignore
-        self.terminal_text: tk.Text = None  # type: ignore
+        self.terminal_text:tk.Text = None  # type: ignore
         
         self.background_images = []
         self.current_bg_index = 0
@@ -37,6 +37,10 @@ class FaustLauncherCore:
         self.load_background_images()
         
         self.root: tk.Tk = None  # type: ignore
+        
+    def refresh_all_tabs(self):
+        """刷新所有标签页"""
+        self.page_loader.pages['mod_addon'].refresh_all_tabs()
 
     def load_background_images(self):
         """加载背景图片"""

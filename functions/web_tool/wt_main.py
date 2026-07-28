@@ -21,18 +21,14 @@ import re
 import shutil
 import socket
 import ssl
-import subprocess
 import sys
-import tempfile
 import time
 import urllib.request
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Set, Tuple
-from urllib.parse import urlencode
 
-import urllib.error
 
 
 # ============== 配置 ==============
