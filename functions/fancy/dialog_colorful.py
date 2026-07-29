@@ -4,6 +4,7 @@ import re
 from typing import List, Dict, Tuple
 from functions.base.settings_manager import get_settings_manager
 from functions.base.window_ulits import center_window
+from functions.base.color_scheme import C
 
 
 def hex_to_rgb(hex_color: str) -> Tuple[int, int, int]:
@@ -202,10 +203,10 @@ def create_gradient_test_gui(window, root):
     
     # 重置功能
     def reset_settings():
-        start_color_var.set("#00fff7")
-        end_color_var.set("#ffffff")
-        start_color_canvas.configure(bg="#ffffff")
-        end_color_canvas.configure(bg="#ffffff")
+        start_color_var.set(C.CYAN)
+        end_color_var.set(C.TEXT_WHITE)
+        start_color_canvas.configure(bg=C.TEXT_WHITE)
+        end_color_canvas.configure(bg=C.TEXT_WHITE)
         gradient_scale.set(2.0)
         gradient_value_label.config(text="0.1")
         text_entry.delete("1.0", tk.END)
@@ -241,8 +242,8 @@ def create_gradient_test_gui(window, root):
     # style.configure("TScale", background=window.bg_color)
     
     # 创建变量
-    start_color_var = tk.StringVar(value="#00fff7")
-    end_color_var = tk.StringVar(value="#ffffff")
+    start_color_var = tk.StringVar(value=C.CYAN)
+    end_color_var = tk.StringVar(value=C.TEXT_WHITE)
     
     # 创建主容器（使用main.py的深蓝色背景）
     main_frame = tk.Frame(root, bg=window.bg_color, padx=20, pady=20)
@@ -274,7 +275,7 @@ def create_gradient_test_gui(window, root):
     start_color_canvas.grid(row=1, column=1, sticky=tk.W, padx=(0, 15))
     
     start_color_btn = tk.Button(color_frame, text="选择颜色", command=choose_start_color,
-                               bg='#3498db', fg='white', font=('Microsoft YaHei UI', 9, 'bold'),
+                               bg=C.LEGACY_BLUE, fg=C.TEXT_WHITE, font=('Microsoft YaHei UI', 9, 'bold'),
                                relief='flat', padx=10, pady=3, cursor='hand2')
     start_color_btn.grid(row=1, column=2, padx=(0, 30))
     

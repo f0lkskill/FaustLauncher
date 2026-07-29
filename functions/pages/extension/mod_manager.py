@@ -6,6 +6,7 @@ import os
 import shutil
 from pathlib import Path
 from functions.base.window_ulits import center_window
+from functions.base.color_scheme import C, darken_color
 
 class ModManager:
     def __init__(self, parent_root, parent):
@@ -44,13 +45,13 @@ class ModManager:
         
         title_label = tk.Label(title_frame, text="🎮 Mod管理器", 
                               font=('Microsoft YaHei UI', 20, 'bold'),
-                              bg=parent.bg_color, fg='#ecf0f1')
+                              bg=parent.bg_color, fg=C.TEXT_PRIMARY)
         title_label.pack(pady=5)
         
         # 创建路径显示
         path_label = tk.Label(title_frame, text=f"Mod目录: {self.mod_dir}",
                              font=('Microsoft YaHei UI', 10),
-                             bg=parent.bg_color, fg='#bdc3c7')
+                              bg=parent.bg_color, fg=C.TEXT_SECONDARY)
         path_label.pack()
         
         self.set_style()
@@ -90,48 +91,48 @@ class ModManager:
         
         # 添加文件按钮
         add_button = self.create_styled_button(toolbar_inner, "📁 添加文件", 
-                                             self.add_files_dialog, '#3498db')
+                                              self.add_files_dialog, C.LEGACY_BLUE)
         add_button.pack(side=tk.LEFT, padx=5)
         
         # 刷新按钮
         refresh_button = self.create_styled_button(toolbar_inner, "🔄 刷新", 
-                                                 self.refresh_file_list, '#9b59b6')
+                                                  self.refresh_file_list, C.PURPLE)
         refresh_button.pack(side=tk.LEFT, padx=5)
         
         # 启用选中按钮
         enable_button = self.create_styled_button(toolbar_inner, " 启用选中", 
-                                                self.enable_selected, '#27ae60')
+                                                self.enable_selected, C.LEGACY_GREEN)
         enable_button.pack(side=tk.LEFT, padx=5)
         
         # 禁用选中按钮
         disable_button = self.create_styled_button(toolbar_inner, "⛔ 禁用选中", 
-                                                 self.disable_selected, '#e67e22')
+                                                 self.disable_selected, C.WARNING)
         disable_button.pack(side=tk.LEFT, padx=5)
         
         # 打开目录按钮
         open_dir_button = self.create_styled_button(toolbar_inner, "📂 打开目录", 
-                                                  self.open_mod_directory, '#f39c12')
+                                                  self.open_mod_directory, C.ORANGE)
         open_dir_button.pack(side=tk.LEFT, padx=5)
         
         # 删除选中按钮
         delete_button = self.create_styled_button(toolbar_inner, "🗑️ 删除选中", 
-                                                self.delete_selected, '#e74c3c')
+                                                self.delete_selected, C.DANGER)
         delete_button.pack(side=tk.LEFT, padx=5)
     
     def create_styled_button(self, parent, text, command, color):
         """创建样式统一的按钮"""
         btn = tk.Button(parent, text=text, command=command,
                        font=('Microsoft YaHei UI', 10, 'bold'),
-                       bg=color, fg='white',
-                       activebackground=self.darken_color(color),
-                       activeforeground='white',
+                        bg=color, fg=C.TEXT_WHITE,
+                        activebackground=darken_color(color),
+                        activeforeground=C.TEXT_WHITE,
                        relief=tk.RAISED, borderwidth=2,
                        padx=12, pady=6,
                        cursor='hand2')
         
         # 添加悬停效果
         def on_enter(e):
-            btn.config(bg=self.darken_color(color))
+            btn.config(bg=darken_color(color))
         def on_leave(e):
             btn.config(bg=color)
         
@@ -139,18 +140,6 @@ class ModManager:
         btn.bind("<Leave>", on_leave)
         
         return btn
-    
-    def darken_color(self, color):
-        """加深颜色"""
-        if color.startswith('#'):
-            r = int(color[1:3], 16)
-            g = int(color[3:5], 16)
-            b = int(color[5:7], 16)
-            r = max(0, r - 30)
-            g = max(0, g - 30)
-            b = max(0, b - 30)
-            return f"#{r:02x}{g:02x}{b:02x}"
-        return color
     
     def create_file_list(self):
         """创建文件列表"""
@@ -199,7 +188,7 @@ class ModManager:
         self.status_var.set("就绪 - 双击文件可打开，右键点击可快速操作")
         status_label = tk.Label(status_frame, textvariable=self.status_var,
                                font=('Microsoft YaHei UI', 9),
-                               bg=self.parent.bg_color, fg='#95a5a6', anchor=tk.W)
+                                bg=self.parent.bg_color, fg=C.TEXT_MUTED, anchor=tk.W)
         status_label.pack(fill=tk.X, padx=10, pady=5)
     
     def show_context_menu(self, event):
@@ -210,7 +199,7 @@ class ModManager:
             
             # 创建右键菜单
             menu = tk.Menu(self.window, tearoff=0, bg=self.parent.bg_color, fg='#ecf0f1',
-                          activebackground=self.parent.lighten_bg_color, activeforeground='white')
+                          activebackground=self.parent.lighten_bg_color,                           activeforeground=C.TEXT_WHITE)
             
             filename = self.tree.item(item, 'text').split(' ', 1)[1]
             file_path = os.path.join(self.mod_dir, filename)
@@ -502,19 +491,19 @@ class ModManager:
         # 配置Treeview样式
         style.configure('Treeview', 
                        background=self.parent.bg_color,
-                       foreground='#ecf0f1',
+                       foreground=C.TEXT_PRIMARY,
                        fieldbackground=self.parent.bg_color,
                        borderwidth=0)
         
         style.configure('Treeview.Heading',
                        background=self.parent.bg_color,
-                       foreground='#ecf0f1',
+                       foreground=C.TEXT_PRIMARY,
                        relief='flat',
                        borderwidth=0)
         
         style.map('Treeview', 
                  background=[('selected', self.parent.lighten_bg_color)],
-                 foreground=[('selected', 'white')])
+                  foreground=[('selected', C.TEXT_WHITE)])
 
 def open_mod_manager(parent):
     """打开Mod管理器"""

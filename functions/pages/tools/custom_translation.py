@@ -4,6 +4,7 @@ import os
 import json
 from threading import Thread
 from functions.base.window_ulits import center_window
+from functions.base.color_scheme import C, darken_color, lighten_color
 
 
 DEFAULT_NAV_ITEMS = [
@@ -22,38 +23,8 @@ DEFAULT_NAV_ITEMS = [
 NAV_CONFIG_FILE = "lang/nav_config.json"
 
 # ========== 功能开关 / 黑名单 ==========
-_NAV_ENABLED = False  # 导航栏功能 (测试功能，默认关闭)
+_NAV_ENABLED = False
 HIDDEN_KEYS = {"id", "usage", "personalityid", "voicefile"}
-
-# ================= 颜色工具 =================
-def _darken(color, factor):
-    try:
-        if color.startswith('#') and len(color) >= 7:
-            r = int(color[1:3], 16)
-            g = int(color[3:5], 16)
-            b = int(color[5:7], 16)
-            r = max(0, min(255, int(r * factor)))
-            g = max(0, min(255, int(g * factor)))
-            b = max(0, min(255, int(b * factor)))
-            return f"#{r:02x}{g:02x}{b:02x}"
-    except Exception:
-        pass
-    return '#1e1e1e'
-
-
-def _lighten(color, factor):
-    try:
-        if color.startswith('#') and len(color) >= 7:
-            r = int(color[1:3], 16)
-            g = int(color[3:5], 16)
-            b = int(color[5:7], 16)
-            r = max(0, min(255, int(r + (255 - r) * factor)))
-            g = max(0, min(255, int(g + (255 - g) * factor)))
-            b = max(0, min(255, int(b + (255 - b) * factor)))
-            return f"#{r:02x}{g:02x}{b:02x}"
-    except Exception:
-        pass
-    return '#3a3a3a'
 
 
 class CollapsiblePane(tk.Frame):
@@ -69,7 +40,7 @@ class CollapsiblePane(tk.Frame):
         self.meta = meta or {}
 
         header_bg = bg_color or root_app.lighten_bg_color
-        body_bg = _darken(header_bg, 0.88)
+        body_bg = darken_color(header_bg, 0.88)
         self.body_bg = body_bg
         self.configure(bg=header_bg if is_container else body_bg)
 
@@ -179,8 +150,8 @@ class CustomTranslationTool:
         # 常用颜色
         self.bg = root.bg_color
         self.bg_light = root.lighten_bg_color
-        self.bg_dark = _darken(root.bg_color, 0.78)
-        self.bg_darker = _darken(root.bg_color, 0.6)
+        self.bg_dark = darken_color(root.bg_color, 0.78)
+        self.bg_darker = darken_color(root.bg_color, 0.6)
 
         # 显示隐藏键的开关（默认不显示黑名单中的键）
         self._show_hidden_keys_var = tk.BooleanVar(value=False)
@@ -1239,7 +1210,7 @@ class CustomTranslationTool:
         is_container = entry['is_container']
         is_root = entry['is_root']
         bg_color = self._get_depth_color(depth)
-        row_bg = _darken(bg_color, 0.92) if is_container else bg_color
+        row_bg = darken_color(bg_color, 0.92) if is_container else bg_color
 
         frame = tk.Frame(self.data_canvas, bg=row_bg, bd=0,
                          highlightthickness=0, height=self._ROW_HEIGHT)
@@ -1518,7 +1489,7 @@ class CustomTranslationTool:
         """根据深度在 lighten_bg_color 基础上渐暗"""
         base = self.bg_light
         factor = max(0.55, 0.92 - depth * 0.05)
-        return _darken(base, factor)
+        return darken_color(base, factor)
 
     def _build_pane(self, parent, current_data, original_data,
                     title, depth, changes_count,

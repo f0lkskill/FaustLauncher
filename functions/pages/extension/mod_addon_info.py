@@ -4,6 +4,9 @@ import os
 import json
 from PIL import Image, ImageTk
 from functions.extension.mod.mod_ulits import ModManager
+from functions.base.color_scheme import C, darken_color, border_color
+from functions.base.custom_notebook import CustomNotebook
+from functions.base.style_utils import apply_scrollbar_style, RoundedFrame, RoundedButton
 
 class ModAddonManagerPage:
     def __init__(self, parent_frame, bg_color, lighten_bg_color, app):
@@ -19,20 +22,19 @@ class ModAddonManagerPage:
         self.all_mods = []
         self.addon_enabled = {}
         self.mod_enabled = {}
+        self._scrollbar_style = apply_scrollbar_style(
+            'ModAddon.Vertical.TScrollbar', bg_color, C.ACCENT)
         self.create_widgets()
         self.refresh_all_tabs()
     
     def create_widgets(self):
-        """创建页面控件 - 现代化风格"""
-        
-        # 现代化内容容器
-        content_frame = tk.Frame(self.parent, bg=self.lighten_bg_color, 
-                                 highlightthickness=1,
-                                 highlightbackground=self.darken_color(self.lighten_bg_color, 0.7))
+        content_frame = RoundedFrame(self.parent,
+                                     bg=self.lighten_bg_color,
+                                     border_color=border_color(self.lighten_bg_color),
+                                     radius=8)
         content_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=10)
         
-        # 创建标签页控件
-        self.notebook = ttk.Notebook(content_frame)
+        self.notebook = CustomNotebook(content_frame.inner, bg=self.lighten_bg_color, accent=C.ACCENT)
         self.notebook.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
         
         # 创建插件管理标签页
@@ -71,15 +73,15 @@ class ModAddonManagerPage:
         
         # 现代化配色映射
         color_map = {
-            '#27ae60': '#10b981',  # 绿色
-            '#2980b9': '#3b82f6',  # 蓝色
-            '#8e44ad': '#8b5cf6',  # 紫色
-            '#c0392b': '#ef4444',  # 红色
-            '#f39c12': '#f59e0b',  # 橙色
-            '#2c3e50': '#475569',  # 深灰
+            '#27ae60': C.LEGACY_GREEN_HOVER,
+            '#2980b9': C.ACCENT_SECONDARY,
+            '#8e44ad': C.PURPLE,
+            '#c0392b': C.DANGER,
+            '#f39c12': C.ORANGE,
+            '#2c3e50': C.GRAY_DARK,
         }
         modern_color = color_map.get(color, color)
-        hover_color = self.darken_color(modern_color)
+        hover_color = darken_color(modern_color)
         
         btn = tk.Button(parent, text=text, command=command,
                        font=('Microsoft YaHei UI', 9, 'bold'),
@@ -102,16 +104,7 @@ class ModAddonManagerPage:
         return btn
     
     def darken_color(self, color, factor=0.85):
-        """加深颜色 - 现代化算法"""
-        if color.startswith('#'):
-            r = int(color[1:3], 16)
-            g = int(color[3:5], 16)
-            b = int(color[5:7], 16)
-            r = max(0, int(r * factor))
-            g = max(0, int(g * factor))
-            b = max(0, int(b * factor))
-            return f"#{r:02x}{g:02x}{b:02x}"
-        return color
+        return darken_color(color, factor)
     
     def show_addons(self):
         """显示插件管理列表"""
@@ -159,15 +152,16 @@ class ModAddonManagerPage:
         title_frame.pack(side=tk.LEFT, fill=tk.X, expand=True)
         version = info.get('version', '')
         tk.Label(title_frame, text=display_name,
-                 font=('微软雅黑', 14, 'bold'), bg=self.lighten_bg_color, fg='white', anchor=tk.W).pack(fill=tk.X)
+                 font=('微软雅黑', 14, 'bold'), bg=self.lighten_bg_color, fg=C.TEXT_WHITE, anchor=tk.W).pack(fill=tk.X)
         if version:
             tk.Label(title_frame, text=f"版本: {version}",
-                     font=('微软雅黑', 9), bg=self.lighten_bg_color, fg='#95a5a6', anchor=tk.W).pack(fill=tk.X)
+                     font=('微软雅黑', 9), bg=self.lighten_bg_color, fg=C.TEXT_MUTED, anchor=tk.W).pack(fill=tk.X)
             
         e_var = tk.BooleanVar(value=enabled)
                 
         canvas = tk.Canvas(main, bg=self.bg_color, highlightthickness=0)
-        scrollbar = ttk.Scrollbar(main, orient="vertical", command=canvas.yview)
+        scrollbar = ttk.Scrollbar(main, orient="vertical", command=canvas.yview,
+                                  style='ModAddon.Vertical.TScrollbar')
         scroll_frame = tk.Frame(canvas, bg=self.bg_color, padx=10, pady=10, border=1)
         scroll_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
         canvas.create_window((0, 0), window=scroll_frame, anchor="nw")
@@ -191,11 +185,11 @@ class ModAddonManagerPage:
             for aname, aurl in authors.items():
                 af = tk.Frame(scroll_frame, bg=self.bg_color)
                 af.pack(fill=tk.X, pady=1)
-                al = tk.Label(af, text=aname, font=('微软雅黑', 9), bg=self.bg_color, fg='#3498db', cursor='hand2')
+                al = tk.Label(af, text=aname, font=('微软雅黑', 9), bg=self.bg_color, fg=C.ACCENT_SECONDARY, cursor='hand2')
                 al.pack(side=tk.LEFT, padx=(10, 5))
                 al.bind('<Button-1>', lambda e, u=aurl: self.open_url(u))
                 if aurl:
-                    tk.Label(af, text=aurl, font=('微软雅黑', 8), bg=self.bg_color, fg='#95a5a6').pack(side=tk.LEFT)
+                    tk.Label(af, text=aurl, font=('微软雅黑', 8), bg=self.bg_color, fg=C.TEXT_MUTED).pack(side=tk.LEFT)
 
         # 0.6.0-pre.6 取消显示文件列表
         # if item_type == 'mod':
@@ -214,36 +208,49 @@ class ModAddonManagerPage:
             for sk, sv in settings.items():
                 sr = tk.Frame(sf, bg=self.bg_color)
                 sr.pack(fill=tk.X, pady=3)
-                tk.Label(sr, text=sk, font=('微软雅黑', 9), bg=self.bg_color, fg='#ecf0f1', width=18, anchor=tk.W).pack(side=tk.LEFT, padx=5)
+                tk.Label(sr, text=sk, font=('微软雅黑', 9), bg=self.bg_color, fg=C.TEXT_PRIMARY, width=18, anchor=tk.W).pack(side=tk.LEFT, padx=5)
 
                 if isinstance(sv, bool):
                     var = tk.BooleanVar(value=sv)
                     cb = tk.Checkbutton(sr, variable=var, font=('Microsoft YaHei UI', 10),
-                                        bg=self.bg_color, fg='white', selectcolor='#3498db',
+                                        bg=self.bg_color, fg=C.TEXT_WHITE, selectcolor='#3498db',
                                         activebackground=self.bg_color, activeforeground='white',
                                         command=lambda it=item, k=sk, v=var:
                                             self.on_addon_setting_change(it, k, v) if item_type == 'addon'
                                             else self.on_mod_setting_change(it, k, v))
                     cb.pack(side=tk.LEFT, padx=5)
                 else:
-                    ent = tk.Entry(sr, font=('Microsoft YaHei UI', 10), width=28, bg=self.bg_color, fg='white', relief='flat', borderwidth=1)
+                    ent = tk.Entry(sr, font=('Microsoft YaHei UI', 10), width=28, bg=self.bg_color, fg=C.TEXT_WHITE, relief='flat', borderwidth=1)
                     ent.insert(0, sv)
                     ent.pack(side=tk.LEFT, padx=5, fill=tk.X, expand=True)
                     ent.bind('<KeyRelease>', lambda e, it=item, k=sk, entr=ent:
                         self.on_addon_setting_change(it, k, entr) if item_type == 'addon'
                         else self.on_mod_setting_change(it, k, entr))
                     
-        bf = {'font': ('Microsoft YaHei UI', 9), 'fg': 'white', 'relief': tk.FLAT, 'padx': 12, 'pady': 4, 'cursor': 'hand2'}
-
         # 插件按钮
         if item_type == 'addon':
-            tk.Button(title_frame, text="▶ 运行", command=lambda: self.run_addon(item['name']), bg='#3498db', **bf).pack(side=tk.LEFT, padx=3)
+            run_btn = RoundedButton(title_frame, text="▶ 运行",
+                                   command=lambda: self.run_addon(item['name']),
+                                   width=90,                                 height=30,
+                                   bg=C.ACCENT_SECONDARY, hover_bg=darken_color(C.ACCENT_SECONDARY),
+                                   font=('Microsoft YaHei UI', 9, 'bold'), radius=7)
+            run_btn.pack(side=tk.LEFT, padx=3)
             
-        tk.Button(title_frame, text="📂 打开目录", command=lambda: self.open_addon_folder(item['path']), bg='#f39c12', **bf).pack(side=tk.LEFT, padx=3)
+        open_btn = RoundedButton(title_frame, text="📂 打开目录",
+                                command=lambda: self.open_addon_folder(item['path']),
+                                width=105,                                 height=30,
+                                bg=C.ORANGE, hover_bg=darken_color(C.ORANGE),
+                                font=('Microsoft YaHei UI', 9, 'bold'), radius=8)
+        open_btn.pack(side=tk.LEFT, padx=3)
+        
         del_cmd = self.delete_addon if item_type == 'addon' else self.delete_mod
         del_text = "🗑️ 删除插件" if item_type == 'addon' else "🗑️ 删除Mod"
-        tk.Button(title_frame, text=del_text, command=lambda: (del_cmd(item['name']), detail.destroy()),
-                  bg='#e74c3c', **bf).pack(side=tk.RIGHT, padx=3)
+        del_btn = RoundedButton(title_frame, text=del_text,
+                               command=lambda: (del_cmd(item['name']), detail.destroy()),
+                               width=115,                                 height=30,
+                               bg=C.DANGER, hover_bg=darken_color(C.DANGER),
+                               font=('Microsoft YaHei UI', 9, 'bold'), radius=8)
+        del_btn.pack(side=tk.RIGHT, padx=3)
 
     def on_addon_setting_change(self, addon, setting_key, value_var):
         """插件设置变更事件"""
@@ -403,16 +410,22 @@ class ModAddonManagerPage:
             f.pack_propagate(False)
 
         total = max(1, (len(items) + self.items_per_page - 1) // self.items_per_page)
-        bcfg = {'font': ('Microsoft YaHei UI', 9), 'bg': self.lighten_bg_color, 'fg': 'white',
-                'relief': tk.FLAT, 'padx': 10, 'pady': 2, 'cursor': 'hand2'}
         
         prev_cmd = self._addon_prev_page if item_type == 'addon' else self._mod_prev_page
         next_cmd = self._addon_next_page if item_type == 'addon' else self._mod_next_page
 
-        tk.Button(page_frame, text="◀ 上一页", command=prev_cmd, **bcfg).pack(side=tk.LEFT, padx=10)
+        prev_btn = RoundedButton(page_frame, text="◀ 上一页", command=prev_cmd,
+                                width=90,                                 height=30,
+                                bg=self.lighten_bg_color,
+                                font=('Microsoft YaHei UI', 9), radius=7)
+        prev_btn.pack(side=tk.LEFT, padx=10)
         tk.Label(page_frame, text=f"{page + 1} / {total}", font=('Microsoft YaHei UI', 10),
-                 bg=self.bg_color, fg='#bdc3c7').pack(side=tk.LEFT, expand=True)
-        tk.Button(page_frame, text="下一页 ▶", command=next_cmd, **bcfg).pack(side=tk.RIGHT, padx=10)
+                 bg=self.bg_color, fg=C.TEXT_SECONDARY).pack(side=tk.LEFT, expand=True)
+        next_btn = RoundedButton(page_frame, text="下一页 ▶", command=next_cmd,
+                                width=90,                                 height=30,
+                                bg=self.lighten_bg_color,
+                                font=('Microsoft YaHei UI', 9), radius=7)
+        next_btn.pack(side=tk.RIGHT, padx=10)
 
     def _create_compact_row(self, parent, item, item_type, enabled_dict):
         name_key = item['name']
@@ -445,7 +458,7 @@ class ModAddonManagerPage:
         title_text = f"{display_name}" + (f"  v{version}" if version else "")
 
         tk.Label(info_frame, text=title_text, font=('微软雅黑', 10, 'bold'),
-                 bg=self.bg_color, fg='white', anchor=tk.W).pack(fill=tk.X)
+                 bg=self.bg_color, fg=C.TEXT_WHITE, anchor=tk.W).pack(fill=tk.X)
         
         desc_raw = item['info'].get('desc', '无描述')
         desc_line = desc_raw.replace('\n', ' ').replace('\r', ' ').strip()
@@ -453,17 +466,18 @@ class ModAddonManagerPage:
             desc_line = desc_line[:30] + '...'
 
         tk.Label(info_frame, text=desc_line, font=('微软雅黑', 8),
-                 bg=self.bg_color, fg='#95a5a6', anchor=tk.W).pack(fill=tk.X)
+                 bg=self.bg_color, fg=C.TEXT_MUTED, anchor=tk.W).pack(fill=tk.X)
         
         status_text = '● 已启用' if enabled else '● 已禁用'
         status_color = '#2ecc71' if enabled else '#e74c3c'
         tk.Label(row, text=status_text, font=('微软雅黑', 8, 'bold'),
                  bg=self.bg_color, fg=status_color).pack(side=tk.RIGHT, padx=(0, 5))
         
-        detail_btn = tk.Button(row, text='⋯', font=('微软雅黑', 12, 'bold'),
-                               bg=self.bg_color, fg='#bdc3c7', relief=tk.FLAT,
-                               cursor='hand2', padx=8,
-                               command=lambda i=item, t=item_type: self._show_detail(i, t))
+        detail_btn = RoundedButton(row, text='⋯',
+                                   command=lambda i=item, t=item_type: self._show_detail(i, t),
+                                   width=32,                                 height=30,
+                                   bg=self.bg_color, fg=C.TEXT_SECONDARY,
+                                   font=('微软雅黑', 12, 'bold'), radius=6)
         detail_btn.pack(side=tk.RIGHT, padx=(0, 5))
     
     def on_mod_setting_change(self, mod, setting_key, value_var):
