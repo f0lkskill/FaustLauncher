@@ -3,7 +3,7 @@
         "name": "游戏路径",
         "type": "string",
         "default": "",
-        "value": "",
+        "value": "D:/steam/steamapps/common/Limbus Company/",
         "description": "游戏安装路径, 请确保路径正确\n否则可能导致启动失败和其他错误问题",
         "page": "通用"
     },
@@ -162,7 +162,7 @@
         "name": "欢迎音效",
         "type": "string",
         "default": "assets/voices/welcome_1.wav",
-        "value": "assets/voices/welcome_1.wav",
+        "value": "assets/voices/welcome_2.wav",
         "description": "启动器欢迎音效的文件路径\n可以替换为你喜欢的音效文件\n仅支持wav格式\n如果不想要欢迎音效, 可以将其设置为空字符串",
         "page": "其它"
     },
@@ -211,8 +211,7 @@
             "version_notify_flag": false
         },
         "value": {
-            "tray_hint": false,
-            "version_notify_flag": false
+            "tray_hint": true
         },
         "description": "程序运行时的缓存数据\n不建议修改"
     }

@@ -8,6 +8,8 @@ import os
 import webbrowser
 
 
+downloading = False
+
 class PageLoader:
     """页面加载器 - 负责按需加载和初始化各个页面"""
     
@@ -929,13 +931,13 @@ def download_and_launch(obj=None, need_run_game=False):
         main_root = obj.root if obj else None
         
         gui = download_translation(main_root, download_path)
-        dt = Thread(target=gui.root.mainloop)
 
         while gui.is_downloading:
             sleep(1)
         
-        del dt
         print("零协会汉化包下载完成")
+
+        sleep(1.5)
 
         gui_res = DownloadGUI(main_root, 'resources/', False, download_func=download_and_extract_gui)
         dt = Thread(target=check_resource_update, args=(gui_res,)).start()
@@ -1006,6 +1008,3 @@ def download_and_launch(obj=None, need_run_game=False):
         return
     finally:
         downloading = False
-
-
-downloading = False
