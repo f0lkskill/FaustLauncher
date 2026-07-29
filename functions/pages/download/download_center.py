@@ -7,7 +7,9 @@ import requests
 from functions.web_update.web_trigger import WebTrigger
 from functions.extension.mod.mod_ulits import ModManager
 from functions.extension.addon.addon_ulit import AddonManager
-from functions.base.color_ulits import darken_color, lighten_color
+from functions.base.color_scheme import C, ThemeColors, darken_color, lighten_color, border_color
+from functions.base.custom_notebook import CustomNotebook
+from functions.base.style_utils import apply_scrollbar_style, RoundedFrame, RoundedButton
 
 
 class DownloadCenterPage:
@@ -27,10 +29,10 @@ class DownloadCenterPage:
 
         # 派生颜色常量（卡片底色/描边）
         self._card_bg = lighten_color(self.bg_color, 5)
-        self._card_border = darken_color(self.bg_color, 0.55)
+        self._card_border = border_color(self._card_bg)
 
-        # 配置 ttk 滚动条自定义样式（与设置页风格保持一致）
-        self._configure_scrollbar_style()
+        self._scrollbar_style = apply_scrollbar_style(
+            'Download.Vertical.TScrollbar', self.bg_color, C.ACCENT)
 
         # 平滑滚动动画状态
         self._anim_steps = 12        # 动画帧数
@@ -42,46 +44,6 @@ class DownloadCenterPage:
         # 初始化时自动获取列表
         self.root.root.after(1000, self.load_all_data)
         self.root.root.after(3000, self.total_detect_update)
-
-    def _configure_scrollbar_style(self):
-        """配置现代化自定义滚动条样式。"""
-        try:
-            style = ttk.Style()
-
-            thumb_normal = darken_color(self.lighten_bg_color, 0.75)
-            thumb_active = '#6366f1'  # 现代靛蓝色
-            trough_color = darken_color(self.bg_color, 0.7)
-
-            try:
-                style.configure('Download.Vertical.TScrollbar',
-                                background=thumb_normal,
-                                bordercolor=thumb_normal,
-                                arrowcolor='#94a3b8',
-                                troughcolor=trough_color,
-                                gripcount=0,
-                                relief='flat',
-                                borderwidth=0,
-                                width=8)
-                style.map('Download.Vertical.TScrollbar',
-                          background=[('active', thumb_active),
-                                      ('disabled', thumb_normal)])
-
-                style.configure('Download.Horizontal.TScrollbar',
-                                background=thumb_normal,
-                                bordercolor=thumb_normal,
-                                arrowcolor='#94a3b8',
-                                troughcolor=trough_color,
-                                gripcount=0,
-                                relief='flat',
-                                borderwidth=0,
-                                width=8)
-                style.map('Download.Horizontal.TScrollbar',
-                          background=[('active', thumb_active),
-                                      ('disabled', thumb_normal)])
-            except tk.TclError:
-                pass
-        except Exception:
-            pass
 
     def _bind_mousewheel_recursive(self, widget, handler):
         """递归绑定鼠标滚轮事件到 widget 及其所有子控件。"""
@@ -158,14 +120,13 @@ class DownloadCenterPage:
         _step()
 
     def setup_ui(self):
-        # 创建设置内容容器, 居中显示
-        content_frame = tk.Frame(self.parent, bg=self.lighten_bg_color,
-                                 highlightthickness=1,
-                                 highlightbackground=darken_color(self.lighten_bg_color, 0.65))
+        content_frame = RoundedFrame(self.parent,
+                                     bg=self.lighten_bg_color,
+                                     border_color=border_color(self.lighten_bg_color),
+                                     radius=8)
         content_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=10)
 
-        # 创建标签页控件
-        self.notebook = ttk.Notebook(content_frame)
+        self.notebook = CustomNotebook(content_frame.inner, bg=self.bg_color, accent=C.ACCENT)
         self.notebook.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
 
         # 创建插件下载标签页
@@ -182,7 +143,7 @@ class DownloadCenterPage:
         # 创建滚动区域
         canvas = tk.Canvas(addons_frame, bg=self.bg_color,
                            highlightthickness=1,
-                           highlightbackground=darken_color(self.bg_color, 0.68),
+                           highlightbackground=darken_color(self.bg_color, 0.9),
                            bd=0)
         scrollbar = ttk.Scrollbar(addons_frame, orient="vertical",
                                   command=canvas.yview,
@@ -229,7 +190,7 @@ class DownloadCenterPage:
         # 创建滚动区域
         canvas = tk.Canvas(mods_frame, bg=self.bg_color,
                            highlightthickness=1,
-                           highlightbackground=darken_color(self.bg_color, 0.68),
+                           highlightbackground=darken_color(self.bg_color, 0.9),
                            bd=0)
         scrollbar = ttk.Scrollbar(mods_frame, orient="vertical",
                                   command=canvas.yview,
@@ -305,7 +266,7 @@ class DownloadCenterPage:
             self.addon_scrollable_frame,
             text="加载中...",
             bg=self.bg_color,
-            fg='#ffffff',
+            fg=C.TEXT_WHITE,
             font=('Microsoft YaHei UI', 11, 'bold')
         )
         loading_label.pack(pady=40)
@@ -334,7 +295,7 @@ class DownloadCenterPage:
             self.mod_scrollable_frame,
             text="加载中...",
             bg=self.bg_color,
-            fg='#ffffff',
+            fg=C.TEXT_WHITE,
             font=('Microsoft YaHei UI', 11, 'bold')
         )
         loading_label.pack(pady=40)
@@ -362,7 +323,7 @@ class DownloadCenterPage:
             empty_label = tk.Label(self.addon_scrollable_frame,
                                    text="未获取到插件数据\n请检查网络连接后重试",
                                    font=('Microsoft YaHei UI', 10),
-                                   bg=self.bg_color, fg='#bdc3c7')
+                                   bg=self.bg_color, fg=C.TEXT_SECONDARY)
             empty_label.pack(expand=True, pady=50)
             return
 
@@ -377,50 +338,30 @@ class DownloadCenterPage:
             pagination_frame,
             text=f"第 {page_num} 页，共 {len(self.addon_data)} 页",
             bg=self.bg_color,
-            fg='#ffffff',
+            fg=C.TEXT_WHITE,
             font=('Microsoft YaHei UI', 9)
         )
         page_label.pack(side=tk.LEFT, padx=10)
 
-        # 上一页按钮 - 现代化样式
-        prev_button = tk.Button(
-            pagination_frame,
+        # 上一页按钮 - 圆角样式
+        prev_button = RoundedButton(pagination_frame,
             text="← 上一页",
             command=lambda: self.display_addon_page(page_num - 1) if page_num > 1 else None,
-            bg='#475569',
-            fg='#f8fafc',
-            activebackground='#334155',
-            activeforeground='#f8fafc',
-            relief=tk.FLAT,
-            borderwidth=0,
-            cursor='hand2',
-            padx=14,
-            pady=6,
-            font=('Microsoft YaHei UI', 9, 'bold')
-        )
+            width=90, height=30,
+            bg=C.GRAY_DARK, hover_bg=C.GRAY_DARKER,
+            font=('Microsoft YaHei UI', 9, 'bold'),
+            radius=8)
         prev_button.pack(side=tk.LEFT, padx=6)
-        prev_button.bind("<Enter>", lambda e, b=prev_button: b.configure(bg='#334155'))
-        prev_button.bind("<Leave>", lambda e, b=prev_button: b.configure(bg='#475569'))
 
-        # 下一页按钮 - 现代化样式
-        next_button = tk.Button(
-            pagination_frame,
+        # 下一页按钮 - 圆角样式
+        next_button = RoundedButton(pagination_frame,
             text="下一页 →",
             command=lambda: self.display_addon_page(page_num + 1) if page_num < len(self.addon_data) else None,
-            bg='#475569',
-            fg='#f8fafc',
-            activebackground='#334155',
-            activeforeground='#f8fafc',
-            relief=tk.FLAT,
-            borderwidth=0,
-            cursor='hand2',
-            padx=14,
-            pady=6,
-            font=('Microsoft YaHei UI', 9, 'bold')
-        )
+            width=90, height=30,
+            bg=C.GRAY_DARK, hover_bg=C.GRAY_DARKER,
+            font=('Microsoft YaHei UI', 9, 'bold'),
+            radius=8)
         next_button.pack(side=tk.LEFT, padx=6)
-        next_button.bind("<Enter>", lambda e, b=next_button: b.configure(bg='#334155'))
-        next_button.bind("<Leave>", lambda e, b=next_button: b.configure(bg='#475569'))
 
         # 显示插件列表
         for addon in addon_page_data:
@@ -439,7 +380,7 @@ class DownloadCenterPage:
             empty_label = tk.Label(self.mod_scrollable_frame,
                                    text="未获取到Mod数据\n请检查网络连接后重试",
                                    font=('Microsoft YaHei UI', 10),
-                                   bg=self.bg_color, fg='#bdc3c7')
+                                   bg=self.bg_color, fg=C.TEXT_SECONDARY)
             empty_label.pack(expand=True, pady=50)
             return
 
@@ -454,50 +395,30 @@ class DownloadCenterPage:
             pagination_frame,
             text=f"第 {page_num} 页，共 {len(self.mod_data)} 页",
             bg=self.bg_color,
-            fg='#ffffff',
+            fg=C.TEXT_WHITE,
             font=('Microsoft YaHei UI', 9)
         )
         page_label.pack(side=tk.LEFT, padx=10)
 
-        # 上一页按钮 - 现代化样式
-        prev_button = tk.Button(
-            pagination_frame,
+        # 上一页按钮 - 圆角样式
+        prev_button = RoundedButton(pagination_frame,
             text="← 上一页",
             command=lambda: self.display_mod_page(page_num - 1) if page_num > 1 else None,
-            bg='#475569',
-            fg='#f8fafc',
-            activebackground='#334155',
-            activeforeground='#f8fafc',
-            relief=tk.FLAT,
-            borderwidth=0,
-            cursor='hand2',
-            padx=14,
-            pady=6,
-            font=('Microsoft YaHei UI', 9, 'bold')
-        )
+            width=90, height=30,
+            bg=C.GRAY_DARK, hover_bg=C.GRAY_DARKER,
+            font=('Microsoft YaHei UI', 9, 'bold'),
+            radius=8)
         prev_button.pack(side=tk.LEFT, padx=6)
-        prev_button.bind("<Enter>", lambda e, b=prev_button: b.configure(bg='#334155'))
-        prev_button.bind("<Leave>", lambda e, b=prev_button: b.configure(bg='#475569'))
 
-        # 下一页按钮 - 现代化样式
-        next_button = tk.Button(
-            pagination_frame,
+        # 下一页按钮 - 圆角样式
+        next_button = RoundedButton(pagination_frame,
             text="下一页 →",
             command=lambda: self.display_mod_page(page_num + 1) if page_num < len(self.mod_data) else None,
-            bg='#475569',
-            fg='#f8fafc',
-            activebackground='#334155',
-            activeforeground='#f8fafc',
-            relief=tk.FLAT,
-            borderwidth=0,
-            cursor='hand2',
-            padx=14,
-            pady=6,
-            font=('Microsoft YaHei UI', 9, 'bold')
-        )
+            width=90, height=30,
+            bg=C.GRAY_DARK, hover_bg=C.GRAY_DARKER,
+            font=('Microsoft YaHei UI', 9, 'bold'),
+            radius=8)
         next_button.pack(side=tk.LEFT, padx=6)
-        next_button.bind("<Enter>", lambda e, b=next_button: b.configure(bg='#334155'))
-        next_button.bind("<Leave>", lambda e, b=next_button: b.configure(bg='#475569'))
 
         # 显示Mod列表
         for mod in mod_page_data:
@@ -520,7 +441,7 @@ class DownloadCenterPage:
                                relief='flat',
                                borderwidth=0,
                                highlightthickness=1,
-                               highlightbackground=self._card_border)
+                               highlightbackground=border_color(self._card_bg))
         addon_frame.pack(fill=tk.X, padx=22, pady=8)
 
         # 插件头部（包含图标和标题）
@@ -590,7 +511,7 @@ class DownloadCenterPage:
                 author_name_label = tk.Label(author_frame,
                                            text=author_name,
                                            font=('Microsoft YaHei UI', 9),
-                                           bg=card_bg, fg='#3498db',
+                                           bg=card_bg, fg=C.ACCENT_SECONDARY,
                                            cursor='hand2')
                 author_name_label.pack(side=tk.LEFT, padx=(0, 5))
                 author_name_label.bind('<Button-1>', lambda e, url=author_url: self.open_url(url))
@@ -614,23 +535,18 @@ class DownloadCenterPage:
         buttons_frame = tk.Frame(addon_frame, bg=card_bg)
         buttons_frame.pack(fill=tk.X, padx=16, pady=(2, 8))
 
-        # 现代化下载按钮
-        download_button = tk.Button(buttons_frame,
+        # 圆角下载按钮
+        is_disabled = unable_download
+        download_button = RoundedButton(buttons_frame,
                                  text="📥 下载",
-                                 command=lambda a=addon: self.download_addon(a),
+                                 command=None if is_disabled else lambda a=addon: self.download_addon(a),
+                                 width=90, height=30,
+                                 bg=C.GRAY_DARK if is_disabled else C.SUCCESS,
+                                 hover_bg=C.GRAY_DARKER if is_disabled else C.SUCCESS_HOVER,
                                  font=('Microsoft YaHei UI', 9, 'bold'),
-                                 bg='#10b981', fg='#f8fafc',
-                                 activebackground='#059669',
-                                 activeforeground='#f8fafc',
-                                 relief='flat', borderwidth=0,
-                                 cursor='hand2',
-                                 padx=18, pady=5,
-                                 state=tk.DISABLED if unable_download else tk.NORMAL
-        )
+                                 radius=8,
+                                 state='disabled' if is_disabled else 'normal')
         download_button.pack(side=tk.RIGHT, padx=5)
-        if not unable_download:
-            download_button.bind("<Enter>", lambda e, b=download_button: b.configure(bg='#059669'))
-            download_button.bind("<Leave>", lambda e, b=download_button: b.configure(bg='#10b981'))
 
     def create_mod_card(self, mod:dict):
         unable_download = mod.get('disabled', False)
@@ -714,7 +630,7 @@ class DownloadCenterPage:
                 author_name_label = tk.Label(author_frame,
                                            text=author_name,
                                            font=('Microsoft YaHei UI', 9),
-                                           bg=card_bg, fg='#3498db',
+                                           bg=card_bg, fg=C.ACCENT_SECONDARY,
                                            cursor='hand2')
                 author_name_label.pack(side=tk.LEFT, padx=(0, 5))
                 author_name_label.bind('<Button-1>', lambda e, url=author_url: self.open_url(url))
@@ -738,22 +654,18 @@ class DownloadCenterPage:
         buttons_frame = tk.Frame(mod_frame, bg=card_bg)
         buttons_frame.pack(fill=tk.X, padx=16, pady=(2, 8))
 
-        # 现代化下载按钮
-        download_button = tk.Button(buttons_frame,
+        # 圆角下载按钮
+        is_disabled = unable_download
+        download_button = RoundedButton(buttons_frame,
                                  text="📥 下载",
-                                 command=lambda m=mod: self.download_mod(m),
+                                 command=None if is_disabled else lambda m=mod: self.download_mod(m),
+                                 width=90, height=30,
+                                 bg=C.GRAY_DARK if is_disabled else C.SUCCESS,
+                                 hover_bg=C.GRAY_DARKER if is_disabled else C.SUCCESS_HOVER,
                                  font=('Microsoft YaHei UI', 9, 'bold'),
-                                 bg='#10b981', fg='#f8fafc',
-                                 activebackground='#059669',
-                                 activeforeground='#f8fafc',
-                                 relief='flat', borderwidth=0,
-                                 state=tk.DISABLED if unable_download else tk.NORMAL,
-                                 cursor='hand2',
-                                 padx=18, pady=5)
+                                 radius=8,
+                                 state='disabled' if is_disabled else 'normal')
         download_button.pack(side=tk.RIGHT, padx=5)
-        if not unable_download:
-            download_button.bind("<Enter>", lambda e, b=download_button: b.configure(bg='#059669'))
-            download_button.bind("<Leave>", lambda e, b=download_button: b.configure(bg='#10b981'))
 
     def download_icon(self, icon_url:str, item_name:str):
         if not icon_url:

@@ -1,20 +1,23 @@
 import tkinter as tk
 from tkinter import ttk, font, messagebox
 import os
-import sys
+import random
 import ctypes
 from PIL import Image, ImageTk, ImageFilter
 from threading import Thread
 import pystray
 import urllib3
 from functions.base.window_ulits import center_window
+from functions.base.color_scheme import C, ThemeColors, darken_color
+from functions.base.custom_notebook import CustomNotebook
+from functions.base.style_utils import apply_scrollbar_style
 from functions.pages.app.page_loader import PageLoader
 from functions.extension.addon.addon_ulit import AddonManager
 from functions.pages.app.app_core import FaustLauncherCore
 
 
+# 禁用警告
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-
 
 class FaustLauncherUI:
     """应用程序UI类"""
@@ -26,10 +29,11 @@ class FaustLauncherUI:
         
         self.lighten_bg_color = self.core.lighten_bg_color
         self.bg_color = self.core.bg_color
+        self.theme = ThemeColors(self.core.bg_color)
         
         self.tab_frost_canvases = []
         
-        self.notebook: tk.Notebook = None # type: ignore
+        self.notebook: CustomNotebook = None # type: ignore
         self.container: tk.Frame = None # type: ignore
         self.bg_canvas:tk.Canvas = None # type: ignore
         self.content_canvas:tk.Canvas = None # type: ignore
@@ -61,45 +65,18 @@ class FaustLauncherUI:
         """设置应用程序样式 - 现代化风格"""
         style = ttk.Style()
         
-        # 尝试使用现代主题，按优先级排序
-        modern_themes = ['vista', 'xpnative', 'winnative', 'clam', 'default']
-        available_themes = style.theme_names()
-        selected_theme = 'clam'  # 默认回退
-        for theme in modern_themes:
-            if theme in available_themes:
-                selected_theme = theme
-                break
-        style.theme_use(selected_theme)
+        style.theme_use('clam')
         
-        # 现代化配色方案
-        self._accent_color = '#6366f1'  # 现代靛蓝色
-        self._accent_hover = '#4f46e5'
-        self._accent_light = '#818cf8'
-        self._text_primary = '#f8fafc'  # 近白色
-        self._text_secondary = '#cbd5e1'  # 浅灰色
-        self._text_muted = '#94a3b8'  # 柔和灰
-        self._surface_color = self.core.lighten_bg_color
-        self._card_bg = self.core.bg_color
+        self._accent_color = C.ACCENT
+        self._accent_hover = C.ACCENT_HOVER
+        self._accent_light = C.ACCENT_LIGHT
+        self._text_primary = C.TEXT_PRIMARY
+        self._text_secondary = C.TEXT_SECONDARY
+        self._text_muted = C.TEXT_MUTED
+        self._surface_color = self.theme.surface
+        self._card_bg = self.theme.card_bg
         
-        # 标签页样式 - 现代化扁平设计
-        style.configure('TNotebook', 
-                       background=self._surface_color, 
-                       borderwidth=1)
-        
-        style.configure('TNotebook.Tab', 
-                       background=self._surface_color,
-                       foreground=self._text_secondary, 
-                       borderwidth=0,
-                       padding=[10, 10], 
-                       font=('Microsoft YaHei UI', 10),
-                       focuscolor='')
-        
-        style.map('TNotebook.Tab', 
-                  background=[('selected', self._card_bg), ('active', self.core.lighten_color(self._surface_color, 8))],
-                  foreground=[('selected', self._accent_light), ('active', self._text_primary)],
-                  expand=[('selected', [2, 2, 2, 0])])
-        
-        # 标签样式
+        # 标签样式 (ttk Label)
         style.configure("Title.TLabel",
                     background=self._card_bg,
                     foreground=self._text_primary,
@@ -114,7 +91,7 @@ class FaustLauncherUI:
         style.configure("Custom.TLabelframe",
                     background=self._surface_color,
                     foreground=self._text_secondary,
-                    bordercolor=self.core.lighten_color(self._surface_color, 15),
+                     bordercolor=self.theme.surface_lighten(15),
                     relief='flat',
                     borderwidth=0)
         
@@ -137,15 +114,39 @@ class FaustLauncherUI:
                   foreground=[('active', self._text_primary)])
         
         # 滚动条样式 - 现代细滚动条
-        style.configure('Modern.Vertical.TScrollbar',
-                       background=self.core.darken_color(self._surface_color, 0.85),
-                       troughcolor=self.core.darken_color(self._surface_color, 0.85),
-                       borderwidth=0,
-                       width=8,
-                       arrowsize=0)
+        self._scrollbar_style = apply_scrollbar_style(
+            'App.Vertical.TScrollbar', self.core.bg_color, self._accent_color)
         
-        style.map('Modern.Vertical.TScrollbar',
-                  background=[('active', self._accent_color), ('pressed', self._accent_light)])
+        # Combobox 现代化样式
+        combo_bg = self.theme.surface_lighten(8)
+        combo_field = self.theme.surface_lighten(4)
+        combo_dark = darken_color(combo_field, 0.95)
+        style.configure('App.TCombobox',
+                       fieldbackground=combo_field,
+                       background=combo_bg,
+                       foreground=self._text_primary,
+                       arrowcolor=self._text_secondary,
+                       darkcolor=combo_dark,
+                       lightcolor=combo_field,
+                       bordercolor=self.theme.surface_lighten(18),
+                       relief='flat',
+                       borderwidth=1,
+                       selectbackground=self._accent_color,
+                       selectforeground=self._text_primary,
+                       font=('Microsoft YaHei UI', 10))
+        style.map('App.TCombobox',
+                  fieldbackground=[('readonly', combo_field),
+                                   ('disabled', darken_color(combo_field, 0.7))],
+                  background=[('active', combo_bg)],
+                  bordercolor=[('focus', self._accent_color),
+                              ('active', self.theme.surface_lighten(25))],
+                  foreground=[('disabled', self._text_muted)],
+                  arrowcolor=[('disabled', self._text_muted)])
+        
+        self.root.bind_class('TCombobox', '<MouseWheel>', lambda e: 'break')
+        self.root.tk.call('bind', 'TCombobox', '<MouseWheel>', 'break')
+        self.root.tk.call('bind', 'TCombobox', '<Button-4>', 'break')
+        self.root.tk.call('bind', 'TCombobox', '<Button-5>', 'break')
         
         # 字体配置
         self.title_font = font.Font(family='Microsoft YaHei UI', size=20, weight='bold')
@@ -155,7 +156,7 @@ class FaustLauncherUI:
         
     def _create_ui_structure(self):
         """创建UI结构框架"""
-        self.container = tk.Frame(self.root, bg=self.core.darken_color(self.core.bg_color, 0.7))
+        self.container = tk.Frame(self.root, bg=self.theme.darken(0.7))
         self.container.pack(fill=tk.BOTH, expand=True)
         
         self.bg_canvas = tk.Canvas(self.container, highlightthickness=0)
@@ -164,7 +165,8 @@ class FaustLauncherUI:
         self.content_canvas = tk.Canvas(self.container, highlightthickness=0, bg=self.core.bg_color)
         self.content_canvas.place(relx=0.5, rely=0.5, anchor=tk.CENTER, width=700, height=600)
         
-        self.notebook = ttk.Notebook(self.content_canvas, padding=-2)
+        self.notebook = CustomNotebook(
+            self.content_canvas, bg=self.core.bg_color, accent=self._accent_color)
         self.content_canvas.create_window(350, 300, window=self.notebook,
                                         anchor=tk.CENTER, width=680, height=560)
         
@@ -232,8 +234,7 @@ class FaustLauncherUI:
             self.on_initialized()
         
     def on_tab_changed(self, event):
-        """标签页切换时的处理"""
-        current_tab = self.notebook.index(self.notebook.select()) # type: ignore
+        current_tab = self.notebook.current_index
         
         if current_tab == 3:
             mod_addon_page = self.core.page_loader.get_page('mod_addon')
@@ -403,12 +404,10 @@ class FaustLauncherUI:
         self.root.after(30000, self.rotate_background)
         
     def create_status_bar(self):
-        """创建底部状态栏 - 现代化风格"""
-        # 现代化状态栏配色
-        status_bg = self.core.darken_color(self.core.lighten_bg_color, 0.9)
-        text_secondary = '#94a3b8'
+        status_bg = self.theme.darken(0.85)
+        text_secondary = C.TEXT_MUTED
         text_muted = '#64748b'
-        accent_green = '#10b981'
+        accent_green = C.SUCCESS
         
         status_frame = tk.Frame(self.page_frames['home'], bg=status_bg, height=32)
         status_frame.pack(fill='x', side='bottom')
@@ -455,5 +454,3 @@ def check_single_instance():
         return True
     
     return False
-
-import random

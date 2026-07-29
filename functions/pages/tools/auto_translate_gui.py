@@ -3,6 +3,8 @@ from tkinter import ttk, messagebox
 import threading
 from functions.translate.auto_translate import auto_translate
 from functions.base.window_ulits import center_window
+from functions.base.color_scheme import C
+from functions.base.style_utils import apply_scrollbar_style
 import datetime
 
 class AutoTranslateGUI:
@@ -26,10 +28,10 @@ class AutoTranslateGUI:
         # 设置颜色主题
         self.bg_color = window.bg_color if hasattr(window, 'bg_color') else '#1a1a1a'
         self.lighten_bg_color = window.lighten_bg_color if hasattr(window, 'lighten_bg_color') else '#2a2a2a'
-        self.text_color = '#ffffff'
-        self.accent_color = '#3498db'
-        self.success_color = '#27ae60'
-        self.error_color = '#e74c3c'
+        self.text_color = C.TEXT_WHITE
+        self.accent_color = C.LEGACY_BLUE
+        self.success_color = C.LEGACY_GREEN
+        self.error_color = C.DANGER
         
         # 配置样式
         self.configure_styles()
@@ -64,7 +66,7 @@ class AutoTranslateGUI:
         
         style.configure('Subtitle.TLabel',
                        background=self.bg_color,
-                       foreground='#bdc3c7',
+                        foreground=C.TEXT_SECONDARY,
                        font=('Microsoft YaHei UI', 11))
         
         # 配置按钮样式
@@ -75,7 +77,7 @@ class AutoTranslateGUI:
                        font=('Microsoft YaHei UI', 10, 'bold'))
         
         style.map('Primary.TButton',
-                 background=[('active', '#2980b9'), ('pressed', '#21618c')])
+                  background=[('active', C.LEGACY_BLUE_HOVER), ('pressed', '#21618c')])
         
         style.configure('Secondary.TButton',
                        background=self.lighten_bg_color,
@@ -86,24 +88,19 @@ class AutoTranslateGUI:
         style.map('Secondary.TButton',
                  background=[('active', '#3a3a3a'), ('pressed', '#4a4a4a')])
         
-        # 配置进度条样式
         style.configure('Custom.Horizontal.TProgressbar',
                        background=self.accent_color,
                        troughcolor=self.lighten_bg_color,
                        borderwidth=0,
                        lightcolor=self.accent_color,
                        darkcolor=self.accent_color)
-        
-        # 配置滚动条样式
-        style.configure('Custom.Vertical.TScrollbar',
-                       background=self.lighten_bg_color,
-                       troughcolor=self.bg_color,
-                       bordercolor=self.bg_color,
-                       arrowcolor=self.text_color)
     
     def create_widgets(self):
         # 设置主窗口背景色
         self.root.configure(bg=self.bg_color)
+        
+        self._scrollbar_style = apply_scrollbar_style(
+            'Custom.Vertical.TScrollbar', self.bg_color, self.accent_color)
         
         # 主框架
         main_frame = ttk.Frame(self.root, padding="25", style='Dark.TFrame')
@@ -136,7 +133,7 @@ class AutoTranslateGUI:
         
         # 翻译模式选择
         self.mode_combo_box = ttk.Combobox(blacklist_frame, values=["仅主线剧情"],
-                                      state="readonly", style='Secondary.TButton')
+                                      state="readonly", style='App.TCombobox')
         self.mode_combo_box.current(0)
         self.mode_combo_box.pack(fill=tk.X, pady=5)
         

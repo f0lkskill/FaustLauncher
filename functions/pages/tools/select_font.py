@@ -4,6 +4,8 @@ import os
 import shutil
 from PIL import Image, ImageTk, ImageFont, ImageDraw
 from functions.base.window_ulits import center_window
+from functions.base.color_scheme import C
+from functions.base.custom_notebook import CustomNotebook
 
 class FontSelectorGUI:
     def __init__(self, window, root):
@@ -62,7 +64,7 @@ class FontSelectorGUI:
         main_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=10)
         
         # 创建选项卡
-        notebook = ttk.Notebook(main_frame)
+        notebook = CustomNotebook(main_frame, bg=self.parent.bg_color, accent=C.ACCENT)
         notebook.pack(fill=tk.BOTH, expand=True)
         
         # Context字体选项卡
@@ -83,7 +85,7 @@ class FontSelectorGUI:
         
         info_label = tk.Label(info_frame, text=f"{font_type} 字体信息",
                              font=('Microsoft YaHei UI', 12, 'bold'),
-                             bg=self.parent.bg_color, fg='#ecf0f1', anchor=tk.W)
+                              bg=self.parent.bg_color, fg=C.TEXT_PRIMARY, anchor=tk.W)
         info_label.pack(fill=tk.X)
         
         # 为每个选项卡创建独立的信息文本框
@@ -102,7 +104,7 @@ class FontSelectorGUI:
         
         preview_label = tk.Label(preview_frame, text="字体预览",
                                font=('Microsoft YaHei UI', 12, 'bold'),
-                               bg=self.parent.lighten_bg_color, fg='#ecf0f1', anchor=tk.W)
+                               bg=self.parent.lighten_bg_color, fg=C.TEXT_PRIMARY, anchor=tk.W)
         preview_label.pack(fill=tk.X)
         
         # 为每个选项卡创建独立的预览画布
@@ -135,18 +137,18 @@ class FontSelectorGUI:
         """创建样式统一的按钮"""
         btn = tk.Button(parent, text=text, command=command,
                        font=('Microsoft YaHei UI', 10),
-                       bg='#3498db', fg='white',
-                       activebackground='#2980b9',
-                       activeforeground='white',
+                        bg=C.LEGACY_BLUE, fg=C.TEXT_WHITE,
+                        activebackground=C.LEGACY_BLUE_HOVER,
+                        activeforeground=C.TEXT_WHITE,
                        relief=tk.RAISED, borderwidth=2,
                        padx=15, pady=8)
         btn.pack(**pack_args)
         
         # 添加悬停效果
         def on_enter(e):
-            btn.config(bg='#2980b9')
+            btn.config(bg=C.LEGACY_BLUE_HOVER)
         def on_leave(e):
-            btn.config(bg='#3498db')
+            btn.config(bg=C.LEGACY_BLUE)
         
         btn.bind("<Enter>", on_enter)
         btn.bind("<Leave>", on_leave)
@@ -203,14 +205,14 @@ class FontSelectorGUI:
             font_small = ImageFont.truetype(font_path, 16)
             
             # 绘制预览文本 - 更好的布局
-            draw.text((20, 15), f"{font_type} 字体预览", font=font_large, fill='#ecf0f1')
-            draw.text((20, 60), "中文预览：你好，世界！这是一段测试文本", font=font_medium, fill='#bdc3c7')
-            draw.text((20, 88), "English: Hello World! This is a test text", font=font_medium, fill='#bdc3c7')
-            draw.text((20, 116), "日本語: こんにちは、世界！これはテストテキストです", font=font_medium, fill='#bdc3c7')
-            draw.text((20, 144), "한국어: 안녕하세요, 세계! 이것은 테스트 텍스트입니다", font=font_medium, fill='#bdc3c7')
-            draw.text((20, 172), "数字符号：1234567890+-x÷＞＜≤≥Σ²³", font=font_small, fill='#95a5a6')
-            draw.text((20, 196), "特殊字符：!@#$%^&*()_+-=[]{}|;:'\",.<>/?", font=font_small, fill='#95a5a6')
-            draw.text((20, 220), "emoji字符：😊 😂 😃 😄 �️ 😁 😍 😎 😐 😞 😯 😭 😢 😄 😅 😃 😄 😅 😃 😄 😅 😃 😄 😅 😃 😄 😅 😃 😄 😅 😃 😄 😅 😃 😄 😅 😃 😅 😃 😄 😅 😃 �", font=font_small, fill='#95a5a6')
+            draw.text((20, 15), f"{font_type} 字体预览", font=font_large, fill=C.TEXT_PRIMARY)
+            draw.text((20, 60), "中文预览：你好，世界！这是一段测试文本", font=font_medium, fill=C.TEXT_SECONDARY)
+            draw.text((20, 88), "English: Hello World! This is a test text", font=font_medium, fill=C.TEXT_SECONDARY)
+            draw.text((20, 116), "日本語: こんにちは、世界！これはテストテキストです", font=font_medium, fill=C.TEXT_SECONDARY)
+            draw.text((20, 144), "한국어: 안녕하세요, 세계! 이것은 테스트 텍스트입니다", font=font_medium, fill=C.TEXT_SECONDARY)
+            draw.text((20, 172), "数字符号：1234567890+-x÷＞＜≤≥Σ²³", font=font_small, fill=C.TEXT_MUTED)
+            draw.text((20, 196), "特殊字符：!@#$%^&*()_+-=[]{}|;:'\",.<>/?", font=font_small, fill=C.TEXT_MUTED)
+            draw.text((20, 220), "emoji字符：😊 😂 😃 😄 �️ 😁 😍 😎 😐 😞 😯 😭 😢 😄 😅 😃 😄 😅 😃 😄 😅 😃 😄 😅 😃 😄 😅 😃 😄 😅 😃 😄 😅 😃 😅 😃 😄 😅 😃 �", font=font_small, fill=C.TEXT_MUTED)
             draw.text((20, 244), "字体路径：" + os.path.basename(font_path), font=font_small, fill='#7f8c8d')
             
             # 显示图像到对应的画布
@@ -243,23 +245,23 @@ class FontSelectorGUI:
         
         # 绘制错误信息
         if font_large:
-            draw.text((20, 30), f"{font_type} 字体", font=font_large, fill='#e74c3c')
-            draw.text((20, 70), "字体不存在或已损坏", font=font_large, fill='#e74c3c')
+            draw.text((20, 30), f"{font_type} 字体", font=font_large, fill=C.DANGER)
+            draw.text((20, 70), "字体不存在或已损坏", font=font_large, fill=C.DANGER)
             
             if error_msg:
-                draw.text((20, 110), f"错误: {error_msg}", font=font_large, fill='#e67e22')
+                draw.text((20, 110), f"错误: {error_msg}", font=font_large, fill=C.WARNING)
             else:
-                draw.text((20, 110), "请选择有效的字体文件进行替换", font=font_large, fill='#95a5a6')
+                draw.text((20, 110), "请选择有效的字体文件进行替换", font=font_large, fill=C.TEXT_MUTED)
             
             draw.text((20, 150), "支持的格式: .ttf 字体文件", font=font_large, fill='#7f8c8d')
         else:
             # 如果没有字体，直接绘制文本
-            draw.text((20, 30), f"{font_type} 字体", fill='#e74c3c')
-            draw.text((20, 70), "字体不存在或已损坏", fill='#e74c3c')
+            draw.text((20, 30), f"{font_type} 字体", fill=C.DANGER)
+            draw.text((20, 70), "字体不存在或已损坏", fill=C.DANGER)
             if error_msg:
-                draw.text((20, 110), f"错误: {error_msg}", fill='#e67e22')
+                draw.text((20, 110), f"错误: {error_msg}", fill=C.WARNING)
             else:
-                draw.text((20, 110), "请选择有效的字体文件进行替换", fill='#95a5a6')
+                draw.text((20, 110), "请选择有效的字体文件进行替换", fill=C.TEXT_MUTED)
             draw.text((20, 150), "支持的格式: .ttf 字体文件", fill='#7f8c8d')
         
         # 显示图像到对应的画布

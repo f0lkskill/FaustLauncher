@@ -1,7 +1,9 @@
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, colorchooser
 from functions.base.settings_manager import get_settings_manager
-from functions.base.color_ulits import darken_color as _darken, lighten_color as _lighten
+from functions.base.color_scheme import C, ThemeColors, border_color
+from functions.base.custom_notebook import CustomNotebook
+from functions.base.style_utils import apply_scrollbar_style, RoundedFrame, RoundedButton
 from functions.base.animation_ulits import smooth_scroll
 
 # ===== 统一字体配置 - 现代化 =====
@@ -12,97 +14,41 @@ _SMALL_FONT = ('Microsoft YaHei UI', 9)
 _BUTTON_FONT = ('Microsoft YaHei UI', 9, 'bold')
 _BIG_BUTTON_FONT = ('Microsoft YaHei UI', 11, 'bold')
 
-# ===== 现代化颜色配置 =====
-_ACCENT_COLOR = '#6366f1'  # 现代靛蓝色
-_ACCENT_HOVER = '#4f46e5'
-_WARN_COLOR = '#f59e0b'    # 现代橙色
-_DANGER_COLOR = '#ef4444'  # 现代红色
-_TEXT_PRIMARY = '#f8fafc'  # 近白色
-_TEXT_SECONDARY = '#cbd5e1'  # 浅灰色
-_TEXT_MUTED = '#94a3b8'    # 柔和灰
-
 
 class SettingsPage:
     def __init__(self, parent_frame, bg_color, lighten_bg_color):
-        """初始化设置页面"""
-        self._darken = _darken
-        self._lighten = _lighten
-        
         self.parent = parent_frame
         self.settings_manager = get_settings_manager()
         self.setting_widgets = {}
         self.bg_color = bg_color
         self.lighten_bg_color = lighten_bg_color
-        # 计算卡片底色（略亮于面板底色，形成对比但不突兀）
-        self._card_bg = self._lighten(self.bg_color, 5)
-        # 卡片描边颜色（明显比卡片深，有清晰边界感）
-        self._card_border = self._darken(self.bg_color, 0.55)
-        # 输入框底色
-        self._entry_bg = self._darken(self.bg_color, 0.78)
-        # 滚动槽颜色
-        self._trough_color = self._darken(self.bg_color, 0.7)
+        self.theme = ThemeColors(bg_color)
+        self._card_bg = self.theme.surface
+        self._card_border = self.theme.card_border
+        self._entry_bg = self.theme.entry_bg
+        self._trough_color = self.theme.trough
 
         self._anim_states = {}
         self._canvas_list = []
 
-        self._configure_ttk_styles()
+        self._scrollbar_style = apply_scrollbar_style(
+            'Settings.Vertical.TScrollbar', bg_color, C.ACCENT)
 
         self.create_widgets()
         self.auto_refresh()
 
-    # ttk 样式
-    def _configure_ttk_styles(self):
-        """仅美化自定义 ttk 滚动条"""
-        try:
-            style = ttk.Style()
-
-            # 滑块 hover 时的强调色
-            thumb_active = _ACCENT_COLOR
-            thumb_normal = self._darken(self.lighten_bg_color, 0.75)
-            trough = self._trough_color
-
-            try:
-                style.configure('Settings.Vertical.TScrollbar',
-                                background=thumb_normal,
-                                bordercolor=thumb_normal,
-                                arrowcolor=_TEXT_SECONDARY,
-                                troughcolor=trough,
-                                gripcount=0,
-                                relief='flat',
-                                borderwidth=0)
-                style.map('Settings.Vertical.TScrollbar',
-                          background=[('active', thumb_active),
-                                      ('disabled', thumb_normal)])
-
-                style.configure('Settings.Horizontal.TScrollbar',
-                                background=thumb_normal,
-                                bordercolor=thumb_normal,
-                                arrowcolor=_TEXT_SECONDARY,
-                                troughcolor=trough,
-                                gripcount=0,
-                                relief='flat',
-                                borderwidth=0)
-                style.map('Settings.Horizontal.TScrollbar',
-                          background=[('active', thumb_active),
-                                      ('disabled', thumb_normal)])
-            except tk.TclError:
-                pass
-        except Exception:
-            pass
-
     def create_widgets(self):
-        """创建设置页面控件"""
-        # 外层带描边的容器（使用 lighten_bg_color 作为面板底色）
-        outer_frame = tk.Frame(self.parent, bg=self.lighten_bg_color,
-                               highlightthickness=1,
-                               highlightbackground=self._darken(self.lighten_bg_color, 0.65))
+        outer_frame = RoundedFrame(self.parent,
+                                   bg=self.lighten_bg_color,
+                                   border_color=border_color(self.lighten_bg_color),
+                                   radius=8)
         outer_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=10)
 
-        content_frame = tk.Frame(outer_frame, bg=self.lighten_bg_color)
+        content_frame = tk.Frame(outer_frame.inner, bg=self.lighten_bg_color)
         content_frame.pack(fill=tk.BOTH, expand=True, padx=12, pady=12)
 
         # 创建标签页
-        self.notebook = ttk.Notebook(content_frame)
+        self.notebook = CustomNotebook(content_frame, bg=self.bg_color, accent=C.ACCENT)
         self.notebook.pack(fill=tk.BOTH, expand=True, padx=2, pady=(0, 8))
 
         settings_by_page = self.group_settings_by_page()
@@ -116,19 +62,15 @@ class SettingsPage:
         button_frame = tk.Frame(content_frame, bg=self.lighten_bg_color)
         button_frame.pack(fill=tk.X, pady=(6, 0), padx=10)
 
-        # 现代化重置所有设置按钮
-        reset_all_btn = tk.Button(button_frame, text="↺ 重置所有设置",
-                                  command=self.reset_all_settings,
-                                  font=_BIG_BUTTON_FONT,
-                                  bg='#f59e0b', fg=_TEXT_PRIMARY,
-                                  activebackground='#d97706',
-                                  activeforeground=_TEXT_PRIMARY,
-                                  relief='flat', borderwidth=0,
-                                  cursor='hand2',
-                                  padx=28, pady=8)
+        # 圆角重置按钮
+        reset_all_btn = RoundedButton(button_frame, text="↺ 重置所有设置",
+                                      command=self.reset_all_settings,
+                                      width=180, height=36,
+                                      bg=C.WARNING,
+                                      hover_bg=C.WARNING_HOVER,
+                                      font=_BIG_BUTTON_FONT,
+                                      radius=7)
         reset_all_btn.pack(anchor=tk.CENTER, padx=10)
-        reset_all_btn.bind("<Enter>", lambda e, b=reset_all_btn: b.configure(bg='#d97706'))
-        reset_all_btn.bind("<Leave>", lambda e, b=reset_all_btn: b.configure(bg='#f59e0b'))
 
     def group_settings_by_page(self):
         """按page分组设置项"""
@@ -150,7 +92,7 @@ class SettingsPage:
 
         canvas = tk.Canvas(canvas_holder, bg=self.bg_color,
                            highlightthickness=1,
-                           highlightbackground=self._darken(self.bg_color, 0.68),
+                           highlightbackground=border_color(self.bg_color),
                            bd=0)
         scrollbar = ttk.Scrollbar(canvas_holder, orient="vertical",
                                   command=canvas.yview,
@@ -218,9 +160,11 @@ class SettingsPage:
             state['current'] = target
 
     def _bind_mousewheel_recursive(self, widget, handler):
-        """递归绑定鼠标滚轮事件到 widget 及其所有子控件"""
+        """递归绑定鼠标滚轮事件，跳过 Combobox/Spinbox 等表单控件"""
         try:
-            widget.bind("<MouseWheel>", handler)
+            klass = widget.winfo_class()
+            if klass not in ('TCombobox', 'TSpinbox'):
+                widget.bind("<MouseWheel>", handler)
         except tk.TclError:
             pass
         for child in widget.winfo_children():
@@ -239,8 +183,8 @@ class SettingsPage:
             card_frame = tk.Frame(parent, bg=self._card_bg,
                                   relief='flat', borderwidth=0,
                                   highlightthickness=1,
-                                  highlightbackground=self._card_border)
-            card_frame.pack(fill=tk.X, padx=22, pady=7)
+                                  highlightbackground=border_color(self._card_bg))
+            card_frame.pack(fill=tk.X, padx=18, pady=6)
 
             setting_frame = tk.Frame(card_frame, bg=self._card_bg)
             setting_frame.pack(fill=tk.X, padx=16, pady=12)
@@ -249,14 +193,14 @@ class SettingsPage:
             title_label = tk.Label(setting_frame,
                                    text=setting_name,
                                    font=_TITLE_FONT,
-                                   bg=self._card_bg, fg=_TEXT_PRIMARY)
+                                   bg=self._card_bg, fg=C.TEXT_PRIMARY)
             title_label.pack(anchor=tk.W, pady=(0, 4))
 
             if 'description' in setting_info and setting_info['description'] != setting_name:
                 desc_label = tk.Label(setting_frame,
                                       text=setting_info['description'],
                                       font=_DESC_FONT,
-                                      bg=self._card_bg, fg=_TEXT_SECONDARY,
+                                      bg=self._card_bg, fg=C.TEXT_SECONDARY,
                                       wraplength=600, justify=tk.LEFT)
                 desc_label.pack(anchor=tk.W, pady=(0, 8))
 
@@ -273,19 +217,15 @@ class SettingsPage:
             elif setting_type == 'combobox':
                 self.create_combobox_control(setting_frame, key, setting_info, current_value)
 
-            # 现代化重置按钮
-            reset_btn = tk.Button(setting_frame, text="↺ 重置",
-                                  command=lambda k=key: self.reset_setting(k),
-                                  font=_SMALL_FONT,
-                                  bg='#dc2626', fg=_TEXT_PRIMARY,
-                                  activebackground='#b91c1c',
-                                  activeforeground=_TEXT_PRIMARY,
-                                  relief='flat', borderwidth=0,
-                                  cursor='hand2',
-                                  padx=12, pady=4)
+            # 圆角重置按钮
+            reset_btn = RoundedButton(setting_frame, text="↺ 重置",
+                                      command=lambda k=key: self.reset_setting(k),
+                                      width=70, height=26,
+                                      bg=C.DANGER_HOVER,
+                                      hover_bg=C.DANGER_DARK,
+                                      font=_SMALL_FONT,
+                                      radius=6)
             reset_btn.pack(anchor=tk.E, pady=(6, 0))
-            reset_btn.bind("<Enter>", lambda e, b=reset_btn: b.configure(bg='#b91c1c'))
-            reset_btn.bind("<Leave>", lambda e, b=reset_btn: b.configure(bg='#dc2626'))
 
         tk.Frame(parent, bg=self.bg_color, height=10).pack(fill=tk.X)
 
@@ -296,6 +236,7 @@ class SettingsPage:
         options = setting_info.get('options', [])
         combobox = ttk.Combobox(control_frame,
                                 values=options,
+                                style='App.TCombobox',
                                 font=_CONTROL_FONT,
                                 state='readonly',
                                 width=45)
@@ -328,10 +269,10 @@ class SettingsPage:
                                   variable=var,
                                   command=lambda: self.on_boolean_change(key, var),
                                   font=_CONTROL_FONT,
-                                  bg=self._card_bg, fg=_TEXT_PRIMARY,
-                                  selectcolor=_ACCENT_COLOR,
+                                  bg=self._card_bg, fg=C.TEXT_PRIMARY,
+                                  selectcolor=C.ACCENT,
                                   activebackground=self._card_bg,
-                                  activeforeground=_TEXT_PRIMARY,
+                                  activeforeground=C.TEXT_PRIMARY,
                                   cursor='hand2',
                                   highlightthickness=0, bd=0)
         checkbox.pack(anchor=tk.W)
@@ -347,36 +288,32 @@ class SettingsPage:
                              width=45,
                              relief='flat',
                              bg=self._entry_bg,
-                             fg=_TEXT_PRIMARY,
-                             insertbackground=_TEXT_PRIMARY,
+                             fg=C.TEXT_PRIMARY,
+                             insertbackground=C.TEXT_PRIMARY,
                              highlightthickness=1,
                              highlightbackground=self._card_border,
-                             highlightcolor=_ACCENT_COLOR)
+                             highlightcolor=C.ACCENT)
             entry.insert(0, current_value)
             entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 8))
 
-            browse_btn = tk.Button(control_frame, text="  浏览  ",
-                                   command=lambda: self.browse_game_path(entry),
-                                   font=_BUTTON_FONT,
-                                   bg=_ACCENT_COLOR, fg=_TEXT_PRIMARY,
-                                   activebackground='#2980b9',
-                                   activeforeground=_TEXT_PRIMARY,
-                                   relief='flat', borderwidth=0,
-                                   cursor='hand2',
-                                   padx=12, pady=4,
-                                   highlightthickness=1,
-                                   highlightbackground=self._darken(_ACCENT_COLOR, 0.8))
+            browse_btn = RoundedButton(control_frame, text="浏览",
+                                       command=lambda: self.browse_game_path(entry),
+                                       width=60, height=26,
+                                       bg=C.ACCENT,
+                                       hover_bg=C.LEGACY_BLUE_HOVER,
+                                       font=_BUTTON_FONT,
+                                       radius=6)
             browse_btn.pack(side=tk.RIGHT)
         else:
             entry = tk.Entry(control_frame,
                              font=_CONTROL_FONT,
                              relief='flat',
                              bg=self._entry_bg,
-                             fg=_TEXT_PRIMARY,
-                             insertbackground=_TEXT_PRIMARY,
+                             fg=C.TEXT_PRIMARY,
+                             insertbackground=C.TEXT_PRIMARY,
                              highlightthickness=1,
                              highlightbackground=self._card_border,
-                             highlightcolor=_ACCENT_COLOR)
+                             highlightcolor=C.ACCENT)
             entry.insert(0, current_value)
             entry.pack(fill=tk.X, expand=True)
             entry.bind('<KeyRelease>', lambda e, k=key: self.on_string_change(k, entry))
@@ -398,13 +335,13 @@ class SettingsPage:
         value_label = tk.Label(control_frame,
                                text=value_text,
                                font=_SMALL_FONT,
-                               bg=self._card_bg, fg=_TEXT_MUTED)
+                               bg=self._card_bg, fg=C.TEXT_MUTED)
         value_label.pack(anchor=tk.W, pady=(0, 2))
 
         range_label = tk.Label(control_frame,
                                text=f"范围: {min_val} ~ {max_val}  (步长: {step})",
                                font=('Microsoft YaHei UI', 8),
-                               bg=self._card_bg, fg=_TEXT_MUTED)
+                               bg=self._card_bg, fg=C.TEXT_MUTED)
         range_label.pack(anchor=tk.E, pady=(0, 2))
 
         # 滑动条：槽色与卡片底色形成对比
@@ -417,9 +354,9 @@ class SettingsPage:
                          command=lambda v, k=key, l=value_label, is_int=is_int:
                              self.on_scale_change(k, v, l, is_int),
                          bg=self._card_bg,
-                         fg=_TEXT_PRIMARY,
+                         fg=C.TEXT_PRIMARY,
                          troughcolor=self._trough_color,
-                         activebackground=_ACCENT_COLOR,
+                         activebackground=C.ACCENT,
                          highlightthickness=1,
                          highlightbackground=self._card_border,
                          cursor='hand2',
@@ -443,29 +380,25 @@ class SettingsPage:
         color_entry = tk.Entry(control_frame, font=_CONTROL_FONT, width=12,
                                relief='flat',
                                bg=self._entry_bg,
-                               fg=_TEXT_PRIMARY,
-                               insertbackground=_TEXT_PRIMARY,
+                               fg=C.TEXT_PRIMARY,
+                               insertbackground=C.TEXT_PRIMARY,
                                highlightthickness=1,
                                highlightbackground=self._card_border,
-                               highlightcolor=_ACCENT_COLOR)
+                               highlightcolor=C.ACCENT)
         color_entry.insert(0, current_value)
         color_entry.pack(side=tk.LEFT, padx=(0, 8))
         color_entry.bind('<KeyRelease>',
                          lambda e, k=key, ce=color_entry, cf=color_frame:
                              self.on_color_entry_change(k, ce, cf))
 
-        color_btn = tk.Button(control_frame, text="  选择颜色  ",
-                              command=lambda k=key, ce=color_entry, cf=color_frame:
-                                  self.on_color_button_click(k, ce, cf),
-                              font=_BUTTON_FONT,
-                              bg=_ACCENT_COLOR, fg=_TEXT_PRIMARY,
-                              activebackground='#2980b9',
-                              activeforeground=_TEXT_PRIMARY,
-                              relief='flat', borderwidth=0,
-                              cursor='hand2',
-                              padx=10, pady=4,
-                              highlightthickness=1,
-                              highlightbackground=self._darken(_ACCENT_COLOR, 0.8))
+        color_btn = RoundedButton(control_frame, text="选择颜色",
+                                  command=lambda k=key, ce=color_entry, cf=color_frame:
+                                      self.on_color_button_click(k, ce, cf),
+                                  width=80, height=26,
+                                  bg=C.ACCENT,
+                                  hover_bg=C.LEGACY_BLUE_HOVER,
+                                  font=_BUTTON_FONT,
+                                  radius=6)
         color_btn.pack(side=tk.LEFT)
 
         self.setting_widgets[key] = color_entry

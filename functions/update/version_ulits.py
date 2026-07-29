@@ -12,16 +12,25 @@ def download_new_version(dow_root, download_files:list):
     from time import sleep
     print("正在更新启动器版本...")
     os.makedirs(f"cache/new_version", exist_ok=True)
+    
     download_gui = dow_root
+    download_gui.root.deiconify()
+    
     download_thread = Thread(target=download_and_extract_gui, args=(download_gui,f"cache/new_version", download_files, False))
     download_thread.start()
+    
     while download_thread.is_alive():
         sleep(1)
-
-
+    
+    target_exe = os.path.abspath("cache/new_version/FaustLauncher/FaustLauncher.exe")
+    if not os.path.exists(target_exe):
+        print(f"更新下载失败，未找到新版本可执行文件: {target_exe}")
+        download_gui.current_file_var.set("更新失败，请稍后重试")
+        download_gui.root.after(3000, download_gui.root.destroy)
+        return
+    
     print("新版本下载完成，正在准备安装...")
     
-    # 同步两个版本的设置
     from functions.update.sync_setting import sync_settings
     sync_settings()
     print("设置项同步完成...")
@@ -67,6 +76,11 @@ def check_version_update(root):
             "name": f"FaustLauncher_{version_info['latest_release_version']} 安装包",
             "temp_filename": f"FaustLauncher_{version_info['latest_release_version'].replace('.','_')}.zip"
         }]
+        
+        # 遗留测试
+        # print(version_info['versions'][version_info['latest_release_version']])
+        # print(version_info['latest_release_version'])
+        
         Thread(target=download_new_version, args=(gui_dow, download_files)).start()
         need_update = True
     else:

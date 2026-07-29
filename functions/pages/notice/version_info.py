@@ -4,6 +4,7 @@ import os
 import re
 from functions.base.window_ulits import center_window
 from functions.base.settings_manager import get_settings_manager
+from functions.base.color_scheme import C
 
 bg_color:str = get_settings_manager().get_setting('bg_color') # type: ignore
 version_info:str = get_settings_manager().get_setting('version_info') # type: ignore
@@ -21,40 +22,35 @@ def _setup_markdown_tags(tw):
     F = ('Microsoft YaHei',)
 
     # 1. 基础样式（优先级最低）
-    tw.tag_configure("normal", font=(*F, 10), foreground='#D3D3D3')
+    tw.tag_configure("normal", font=(*F, 10), foreground=C.MARKDOWN_NORMAL)
     tw.tag_configure("list_item", lmargin1=20, lmargin2=35,
-                     font=(*F, 10), foreground='#D3D3D3')
-    tw.tag_configure("hr", foreground='#475569', spacing1=5, spacing3=5)
+                     font=(*F, 10), foreground=C.MARKDOWN_NORMAL)
+    tw.tag_configure("hr", foreground=C.GRAY_DARK, spacing1=5, spacing3=5)
 
-    # 2. 引用块（独立使用，不与 italic 组合）
-    tw.tag_configure("blockquote", background='#334155',
-                     lmargin1=15, lmargin2=15, foreground='#94a3b8',
+    tw.tag_configure("blockquote", background=C.MARKDOWN_QUOTE_BG,
+                     lmargin1=15, lmargin2=15, foreground=C.MARKDOWN_QUOTE_FG,
                      font=(*F, 10, 'italic'), spacing1=2, spacing3=2)
 
-    # 3. 代码块 / 表格
     tw.tag_configure("code_block", font=('Consolas', 9),
-                     background='#1e293b', foreground='#e2e8f0',
+                     background=C.MARKDOWN_CODE_BG, foreground=C.MARKDOWN_CODE_FG,
                      lmargin1=20, lmargin2=20, spacing1=2, spacing3=2)
     tw.tag_configure("table_cell", font=('Consolas', 9),
-                     background='#1e293b', foreground='#e2e8f0')
+                     background=C.MARKDOWN_CODE_BG, foreground=C.MARKDOWN_CODE_FG)
 
-    # 4. 任务列表
-    tw.tag_configure("task_checked", foreground='#22c55e', font=(*F, 10))
-    tw.tag_configure("task_unchecked", foreground='#94a3b8', font=(*F, 10))
+    tw.tag_configure("task_checked", foreground=C.MARKDOWN_CHECKED, font=(*F, 10))
+    tw.tag_configure("task_unchecked", foreground=C.MARKDOWN_UNCHECKED, font=(*F, 10))
 
-    # 5. 标题（字体比基础大，自己带 bold，不与内联 bold 冲突）
-    tw.tag_configure("h1", font=(*F, 16, 'bold'), foreground='#f8fafc',
+    tw.tag_configure("h1", font=(*F, 16, 'bold'), foreground=C.MARKDOWN_H1,
                      spacing1=12, spacing3=6)
-    tw.tag_configure("h2", font=(*F, 14, 'bold'), foreground='#e2e8f0',
+    tw.tag_configure("h2", font=(*F, 14, 'bold'), foreground=C.MARKDOWN_H2,
                      spacing1=10, spacing3=4)
-    tw.tag_configure("h3", font=(*F, 12, 'bold'), foreground='#cbd5e1',
+    tw.tag_configure("h3", font=(*F, 12, 'bold'), foreground=C.MARKDOWN_H3,
                      spacing1=6, spacing3=3)
 
-    # 6. 行内代码 / 链接 / 删除线（只设置颜色/下划线/删除线，不改字体族+大小）
     tw.tag_configure("code_inline", font=('Consolas', 9),
-                     background='#334155', foreground='#f87171')
-    tw.tag_configure("link", foreground='#3b82f6', underline=True)
-    tw.tag_configure("strikethrough", overstrike=True, foreground='#94a3b8')
+                     background=C.MARKDOWN_QUOTE_BG, foreground='#f87171')
+    tw.tag_configure("link", foreground=C.ACCENT_SECONDARY, underline=True)
+    tw.tag_configure("strikethrough", overstrike=True, foreground=C.MARKDOWN_UNCHECKED)
 
     # 7. 内联格式（优先级最高，必须最后定义，以便覆盖 normal 的 font 设置）
     tw.tag_configure("bold", font=(*F, 10, 'bold'))
@@ -432,6 +428,7 @@ def _insert_inline(tw, text, base_tag):
         # 格式："italic 文字"、"bold 文字"、"bold_italic 文字"（支持中英文括号）
         if re.match(r'^(?:[(（]?)?(bold_italic|bold|italic)[)）]?\s+', text[i:], re.IGNORECASE):
             match = re.match(r'^(?:[(（]?)?(bold_italic|bold|italic)[)）]?\s+', text[i:], re.IGNORECASE)
+            assert match is not None
             fmt_keyword = match.group(1).lower()
             fmt_map = {'bold': 'bold', 'italic': 'italic', 'bold_italic': 'bold_italic'}
             target_fmt = fmt_map[fmt_keyword]
@@ -652,14 +649,14 @@ def show_version_update_dialog(current_version, latest_info, info='发现新版�
         main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
         
         # 标题区域
-        title_frame = tk.Frame(main_frame, bg='#3b82f6', height=45)
+        title_frame = tk.Frame(main_frame, bg=C.ACCENT_SECONDARY, height=45)
         title_frame.pack(fill=tk.X, padx=0, pady=0)
         title_frame.pack_propagate(False)
         
         # 标题文本
         title_label = tk.Label(title_frame, text="🎉 版本信息 🎉", 
                               font=('Microsoft YaHei', 16, 'bold'), 
-                              bg='#3b82f6', fg='white')
+                               bg=C.ACCENT_SECONDARY, fg=C.TEXT_WHITE)
         title_label.pack(expand=True)
         
         # 版本信息区域
@@ -677,7 +674,7 @@ def show_version_update_dialog(current_version, latest_info, info='发现新版�
         new_version_label = tk.Label(version_frame, 
                                    text=f"最新版本: {latest_info['version_name']}", 
                                    font=('Microsoft YaHei', 12, 'bold'),
-                                   bg=bg_color, fg='#059669')
+                                    bg=bg_color, fg=C.SUCCESS_HOVER)
         new_version_label.pack(anchor=tk.W, pady=(5, 0))
         
         # 分隔线
@@ -691,7 +688,7 @@ def show_version_update_dialog(current_version, latest_info, info='发现新版�
         # 介绍标题
         desc_title_label = tk.Label(description_frame, text="📋 版本介绍",
                                   font=('Microsoft YaHei', 12, 'bold'),
-                                  bg=bg_color, fg="#eaeaea")
+                                   bg=bg_color, fg=C.TEXT_PRIMARY)
         desc_title_label.pack(anchor=tk.W)
         
         # 介绍内容文本框（支持滚动）
@@ -707,7 +704,7 @@ def show_version_update_dialog(current_version, latest_info, info='发现新版�
                           wrap=tk.WORD, 
                           font=('Microsoft YaHei', 10),
                           bg=bg_color, 
-                          fg="#D3D3D3",
+                           fg=C.MARKDOWN_NORMAL,
                           relief='flat',
                           padx=10, pady=10,
                           yscrollcommand=scrollbar.set)
@@ -733,7 +730,7 @@ def show_version_update_dialog(current_version, latest_info, info='发现新版�
             time_label = tk.Label(time_frame, 
                                 text=f"🕐 发布时间: {time_text}",
                                 font=('Microsoft YaHei', 9),
-                                bg=bg_color, fg='#94a3b8')
+                                bg=bg_color, fg=C.TEXT_MUTED)
             time_label.pack(anchor=tk.W, side=tk.LEFT)
         
         # B站链接（如果有）
@@ -744,7 +741,7 @@ def show_version_update_dialog(current_version, latest_info, info='发现新版�
             link_label = tk.Label(link_frame, 
                                 text="🔗 相关链接:",
                                 font=('Microsoft YaHei', 9),
-                                bg=bg_color, fg='#94a3b8')
+                                bg=bg_color, fg=C.TEXT_MUTED)
             link_label.pack(anchor=tk.W, side=tk.LEFT)
             
             # 创建可点击的链接标签
@@ -755,7 +752,7 @@ def show_version_update_dialog(current_version, latest_info, info='发现新版�
             link_button = tk.Label(link_frame, 
                                  text=latest_info['bilibili_url'],
                                  font=('Microsoft YaHei', 9, 'underline'),
-                                 bg=bg_color, fg='#3b82f6',
+                                 bg=bg_color, fg=C.ACCENT_SECONDARY,
                                  cursor='hand2')
             link_button.pack(anchor=tk.W, pady=(2, 0))
             link_button.bind('<Button-1>', lambda e: open_bilibili())
@@ -768,8 +765,8 @@ def show_version_update_dialog(current_version, latest_info, info='发现新版�
         ok_button = tk.Button(button_frame, 
                             text="确定", 
                             font=('Microsoft YaHei', 10, 'bold'),
-                            bg='#3b82f6', 
-                            fg='white',
+                            bg=C.ACCENT_SECONDARY, 
+                            fg=C.TEXT_WHITE,
                             relief='flat',
                             padx=30,
                             command=root.destroy)
@@ -777,10 +774,10 @@ def show_version_update_dialog(current_version, latest_info, info='发现新版�
         
         # 添加悬停效果
         def on_enter(e):
-            ok_button.config(bg='#2563eb')
+            ok_button.config(bg=C.INFO_HOVER)
         
         def on_leave(e):
-            ok_button.config(bg='#3b82f6')
+            ok_button.config(bg=C.ACCENT_SECONDARY)
         
         ok_button.bind("<Enter>", on_enter)
         ok_button.bind("<Leave>", on_leave)

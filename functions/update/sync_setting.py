@@ -4,8 +4,16 @@ CURRENT_COFIG_FILE = "config/settings.json"
 TARGET_CONFIG_FILE = "cache/new_version/FaustLauncher/config/settings.json"
 
 import json
+import os
 
 def sync_settings():
+    if not os.path.exists(CURRENT_COFIG_FILE):
+        print(f"跳过设置同步：源文件不存在 {CURRENT_COFIG_FILE}")
+        return
+    if not os.path.exists(TARGET_CONFIG_FILE):
+        print(f"跳过设置同步：目标文件不存在 {TARGET_CONFIG_FILE}")
+        return
+    
     with open(CURRENT_COFIG_FILE, 'r', encoding='utf-8') as f:
         current_config = json.load(f)
 

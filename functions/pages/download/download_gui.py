@@ -3,6 +3,7 @@ import threading
 import time
 from functions.base.window_ulits import center_window
 from functions.base.settings_manager import get_settings_manager
+from functions.base.color_scheme import C, ThemeColors
 
 BG_COLOR: str = get_settings_manager().get_setting("bg_color") # type: ignore
 _bg_blur_raw: int = get_settings_manager().get_setting("bg_gaussian_blur") # type: ignore
@@ -14,12 +15,12 @@ def _parse_rgb(hex_color: str):
     return tuple(int(h[i:i + 2], 16) for i in (0, 2, 4))
 
 
-TRANSPARENT = '#010203'
-ACCENT = '#4a9eff'
-TEXT_PRIMARY = "#eaeaea"
-TEXT_SECONDARY = "#ffffff"
+TRANSPARENT = C.TRANSPARENT
+ACCENT = C.DOWNLOAD_ACCENT
+TEXT_PRIMARY = C.TEXT_PRIMARY
+TEXT_SECONDARY = C.TEXT_WHITE
 TEXT_MUTED = "#c2dcff"
-BAR_BG = '#21262d'
+BAR_BG = C.DOWNLOAD_BAR_BG
 
 
 class DownloadGUI:

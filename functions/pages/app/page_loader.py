@@ -6,6 +6,8 @@ import traceback
 from rich import print
 import os
 import webbrowser
+from functions.base.color_scheme import C, ThemeColors, lighten_color, border_color
+from functions.base.style_utils import RoundedFrame, ModernButton, RoundedButton
 
 
 downloading = False
@@ -120,15 +122,15 @@ class PageLoader:
             return lambda: show_auto_translate_gui(self.app, source_path, target_path)
         
         # 现代化配色方案
-        accent_indigo = '#6366f1'
-        accent_purple = '#8b5cf6'
-        accent_blue = '#3b82f6'
-        accent_green = '#10b981'
-        accent_orange = '#f59e0b'
-        accent_red = '#ef4444'
-        accent_cyan = '#06b6d4'
-        accent_pink = '#ec4899'
-        accent_gray = '#6b7280'
+        accent_indigo = C.ACCENT
+        accent_purple = C.PURPLE
+        accent_blue = C.ACCENT_SECONDARY
+        accent_green = C.SUCCESS
+        accent_orange = C.ORANGE
+        accent_red = C.DANGER
+        accent_cyan = C.CYAN
+        accent_pink = C.PINK
+        accent_gray = C.GRAY
         
         tools = [
             {"name": "🔧 自定义汉化", "description": "编辑lang目录下的JSON文件\n实现自定义的汉化修改。",
@@ -174,7 +176,7 @@ class PageLoader:
                                 relief='flat',
                                 borderwidth=0,
                                 highlightthickness=1,
-                                highlightbackground=self.core.lighten_color(card_bg, 20))
+                                highlightbackground=self.core.lighten_color(card_bg, 22))
             card_frame.grid(row=row, column=col, padx=8, pady=8, sticky="nsew")
             
             card_inner = tk.Frame(card_frame, bg=card_bg)
@@ -183,37 +185,28 @@ class PageLoader:
             title_label = tk.Label(card_inner, 
                                 text=tool['name'],
                                 bg=card_bg,
-                                fg='#f8fafc',
+                                fg=C.TEXT_PRIMARY,
                                 font=('Microsoft YaHei UI', 11, 'bold'))
             title_label.pack(pady=(4, 6))
             
             desc_label = tk.Label(card_inner, 
                                 text=tool['description'],
                                 bg=card_bg,
-                                fg='#cbd5e1',
+                                fg=C.TEXT_SECONDARY,
                                 font=('Microsoft YaHei UI', 9),
-                                wraplength=160,
+                                wraplength=190,
                                 justify=tk.CENTER)
             desc_label.pack(pady=4)
             
-            # 现代化按钮 - 扁平设计
-            action_button = tk.Button(card_inner, 
-                                    text="打开",
-                                    command=tool['command'],
-                                    bg=tool['color'],
-                                    fg='#ffffff',
-                                    font=('Microsoft YaHei UI', 9, 'bold'),
-                                    relief='flat',
-                                    padx=16,
-                                    pady=5,
-                                    cursor='hand2',
-                                    activebackground=self.core.lighten_color(tool['color'], 15),
-                                    activeforeground='#ffffff',
-                                    borderwidth=0)
+            # 现代化圆角按钮
+            action_button = RoundedButton(card_inner, text="打开",
+                                         command=tool['command'],
+                                         width=80,                                          height=30,
+                                         bg=tool['color'],
+                                         hover_bg=self.core.lighten_color(tool['color'], 10),
+                                         font=('Microsoft YaHei UI', 9, 'bold'),
+                                         radius=6)
             action_button.pack(pady=(8, 4))
-            
-            action_button.bind("<Enter>", lambda e, b=action_button, c=tool['color']: b.configure(bg=self.core.lighten_color(c, 10)))
-            action_button.bind("<Leave>", lambda e, b=action_button, c=tool['color']: b.configure(bg=c))
         
         for i in range(num_cols):
             tools_container.columnconfigure(i, weight=1, uniform="tool_col")
@@ -236,89 +229,88 @@ class PageLoader:
                         anchor=tk.CENTER, justify=tk.CENTER, width=600,
                         tags=("home_desc",))
         
-        quick_actions_frame = ttk.LabelFrame(self.app.page_frames['home'], text="  🚀 快速操作", style="Custom.TLabelframe")
-        quick_actions_frame.pack(padx=30, pady=(115, 10))
+        from functions.base.style_utils import RoundedFrame
         
-        button_container = tk.Frame(quick_actions_frame, bg=self.core.lighten_bg_color)
-        button_container.pack(pady=15, padx=10)
+        quick_actions_frame = RoundedFrame(self.app.page_frames['home'],
+                                           bg=self.core.lighten_bg_color,
+                                           border_color=self.core.lighten_color(self.core.lighten_bg_color, 25),
+                                           radius=8)
+        quick_actions_frame.pack(padx=30, pady=(115, 6), fill=tk.X)
+        
+        tk.Label(quick_actions_frame.inner, text="🚀 快速操作",
+                bg=self.core.lighten_bg_color, fg=C.ACCENT_LIGHT,
+                font=('Microsoft YaHei UI', 11, 'bold')).pack(anchor='w', padx=8, pady=(4, 0))
+        
+        button_container = tk.Frame(quick_actions_frame.inner, bg=self.core.lighten_bg_color)
+        button_container.pack(pady=8, padx=10)
         
         from threading import Thread
         
         # 现代化主按钮配色
         buttons_data = [
-            {"text": "🚀 启动游戏", "command": lambda: Thread(target=download_and_launch, kwargs={"need_run_game": True, 'obj': self.app}).start(), "color": "#3b82f6", "hover": "#2563eb"},
-            {"text": "🎯 汉化更新", "command": self.core.update_translation, "color": "#10b981", "hover": "#059669"},
-            {"text": "📚 使用帮助", "command": self.core.show_help, "color": "#8b5cf6", "hover": "#7c3aed"}
+            {"text": "🚀 启动游戏", "command": lambda: Thread(target=download_and_launch, kwargs={"need_run_game": True, 'obj': self.app}).start(), "color": C.ACCENT_SECONDARY, "hover": C.INFO_HOVER},
+            {"text": "🎯 汉化更新", "command": self.core.update_translation, "color": C.SUCCESS, "hover": C.SUCCESS_HOVER},
+            {"text": "📚 使用帮助", "command": self.core.show_help, "color": C.PURPLE, "hover": C.PURPLE_HOVER}
         ]
         
         for i, btn_data in enumerate(buttons_data):
-            button = tk.Button(button_container, 
-                            text=btn_data["text"],
-                            command=btn_data["command"],
-                            bg=btn_data["color"],
-                            fg='#ffffff',
-                            font=('Microsoft YaHei UI', 10, 'bold'),
-                            relief='flat',
-                            padx=24,
-                            pady=12,
-                            cursor='hand2',
-                            borderwidth=0,
-                            activebackground=btn_data["hover"],
-                            activeforeground='#ffffff')
-            button.pack(side=tk.LEFT, padx=12)
-            button.bind("<Enter>", lambda e, b=button, h=btn_data["hover"]: b.configure(bg=h))
-            button.bind("<Leave>", lambda e, b=button, c=btn_data["color"]: b.configure(bg=c))
+            button = RoundedButton(button_container,
+                                   text=btn_data["text"],
+                                   command=btn_data["command"],
+                                   width=150, height=40,
+                                   bg=btn_data["color"],
+                                   hover_bg=btn_data["hover"],
+                                   font=('Microsoft YaHei UI', 10, 'bold'),
+                                   radius=9)
+            button.pack(side=tk.LEFT, padx=8)
+        
+        quick_actions_frame.fit_content()
         
         self.app.create_status_bar()
         
-        terminal_frame = ttk.LabelFrame(self.app.page_frames['home'], text="  💻 迷你终端", style="Custom.TLabelframe")
-        terminal_frame.pack(fill=tk.BOTH, expand=True, padx=30, pady=15)
+        terminal_frame = RoundedFrame(self.app.page_frames['home'],
+                                      bg=self.core.lighten_bg_color,
+                                      border_color=self.core.lighten_color(self.core.lighten_bg_color, 25),
+                                      radius=8)
+        terminal_frame.pack(fill=tk.BOTH, expand=True, padx=30, pady=(0, 15))
         
-        terminal_toolbar = tk.Frame(terminal_frame, bg=self.core.lighten_bg_color)
-        terminal_toolbar.pack(fill=tk.X, padx=5, pady=5)
+        # 终端顶部栏：标签在左，按钮在右
+        terminal_header = tk.Frame(terminal_frame.inner, bg=self.core.lighten_bg_color)
+        terminal_header.pack(fill=tk.X, padx=10, pady=(6, 0))
         
-        # 现代化终端工具栏按钮
-        clear_button = tk.Button(terminal_toolbar, 
-                                text="🗑️ 清空",
-                                command=self.core.clear_terminal,
-                                bg='#ef4444',
-                                fg='#ffffff',
-                                font=('Microsoft YaHei UI', 9, 'bold'),
-                                relief='flat',
-                                padx=12,
-                                pady=5,
-                                borderwidth=0,
-                                cursor='hand2',
-                                activebackground='#dc2626')
-        clear_button.pack(side=tk.LEFT, padx=4)
-        clear_button.bind("<Enter>", lambda e, b=clear_button: b.configure(bg='#dc2626'))
-        clear_button.bind("<Leave>", lambda e, b=clear_button: b.configure(bg='#ef4444'))
+        tk.Label(terminal_header, text="💻 迷你终端",
+                bg=self.core.lighten_bg_color, fg=C.ACCENT_LIGHT,
+                font=('Microsoft YaHei UI', 11, 'bold')).pack(side=tk.LEFT)
         
-        copy_button = tk.Button(terminal_toolbar,
-                                text="📋 复制",
-                                command=self.core.copy_terminal_content,
-                                bg='#3b82f6',
-                                fg='#ffffff',
-                                font=('Microsoft YaHei UI', 9, 'bold'),
-                                relief='flat',
-                                padx=12,
-                                pady=5,
-                                borderwidth=0,
-                                cursor='hand2',
-                                activebackground='#2563eb')
-        copy_button.pack(side=tk.LEFT, padx=4)
-        copy_button.bind("<Enter>", lambda e, b=copy_button: b.configure(bg='#2563eb'))
-        copy_button.bind("<Leave>", lambda e, b=copy_button: b.configure(bg='#3b82f6'))
+        copy_button = RoundedButton(terminal_header,
+                                    text="📋 复制",
+                                    command=self.core.copy_terminal_content,
+                                    width=70, height=26,
+                                    bg=C.ACCENT_SECONDARY,
+                                    hover_bg=C.INFO_HOVER,
+                                    font=('Microsoft YaHei UI', 9, 'bold'),
+                                    radius=6)
+        copy_button.pack(side=tk.RIGHT, padx=(4, 0))
         
-        terminal_container = tk.Frame(terminal_frame, bg='#1e1e1e')
+        clear_button = RoundedButton(terminal_header,
+                                     text="🗑️ 清空",
+                                     command=self.core.clear_terminal,
+                                     width=70, height=26,
+                                     bg=C.DANGER,
+                                     hover_bg=C.DANGER_HOVER,
+                                     font=('Microsoft YaHei UI', 9, 'bold'),
+                                     radius=6)
+        clear_button.pack(side=tk.RIGHT, padx=4)
+        
+        terminal_container = tk.Frame(terminal_frame.inner, bg=C.TERMINAL_BG)
         terminal_container.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
         
-        scrollbar = ttk.Scrollbar(terminal_container)
+        scrollbar = ttk.Scrollbar(terminal_container, style='App.Vertical.TScrollbar')
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         
         self.core.terminal_text = tk.Text(terminal_container,
-                                        bg="#1e1e1e",
-                                        fg="#ffffff",
+                                        bg=C.TERMINAL_BG,
+                                        fg=C.TERMINAL_TEXT,
                                         font=('微软雅黑', 10),
                                         yscrollcommand=scrollbar.set,
                                         wrap=tk.WORD,
@@ -329,11 +321,11 @@ class PageLoader:
         scrollbar.config(command=self.core.terminal_text.yview)
         self.core.terminal_text.config(state=tk.DISABLED)
         
-        self.core.terminal_text.tag_config("info", foreground="#ffffff")
-        self.core.terminal_text.tag_config("error", foreground="#ff6b6b")
-        self.core.terminal_text.tag_config("success", foreground="#4bff4e")
-        self.core.terminal_text.tag_config("warning", foreground="#f9ca24")
-        self.core.terminal_text.tag_config("wait", foreground="#4ecbff")
+        self.core.terminal_text.tag_config("info", foreground=C.TERMINAL_INFO)
+        self.core.terminal_text.tag_config("error", foreground=C.TERMINAL_ERROR)
+        self.core.terminal_text.tag_config("success", foreground=C.TERMINAL_SUCCESS)
+        self.core.terminal_text.tag_config("warning", foreground=C.TERMINAL_WARNING)
+        self.core.terminal_text.tag_config("wait", foreground=C.TERMINAL_LINK)
         
         self.core.setup_terminal_redirect()
         self.core.add_terminal_message("🚀 Faust Launcher 已启动")
@@ -354,12 +346,12 @@ class PageLoader:
         
         # 现代化功能卡片配色
         features = [
-            {"name": "📁 游戏目录", "description": "边狱巴士的游戏目录", "color": "#f59e0b"},
-            {"name": "🔄 零协会", "description": "一个伟大的社区", "color": "#ef4444"},
-            {"name": "📒 气泡文本", "description": "气泡mod的汉化版本\n提取码：fib6", "color": "#3b82f6"},
-            {"name": "📝 维基", "description": "边狱巴士的灰机wiki", "color": "#10b981"},
-            {"name": "📖 N网", "description": "下载边狱巴士mod", "color": "#8b5cf6"},
-            {"name": "📦 Github", "description": "查看本项目源码", "color": "#6b7280"}
+            {"name": "📁 游戏目录", "description": "边狱巴士的游戏目录", "color": C.ORANGE},
+            {"name": "🔄 零协会", "description": "一个伟大的社区", "color": C.DANGER},
+            {"name": "📒 气泡文本", "description": "气泡mod的汉化版本\n提取码：fib6", "color": C.ACCENT_SECONDARY},
+            {"name": "📝 维基", "description": "边狱巴士的灰机wiki", "color": C.SUCCESS},
+            {"name": "📖 N网", "description": "下载边狱巴士mod", "color": C.PURPLE},
+            {"name": "📦 Github", "description": "查看本项目源码", "color": C.GRAY}
         ]
         
         for i, feature in enumerate(features):
@@ -373,7 +365,7 @@ class PageLoader:
                                 relief='flat',
                                 borderwidth=0,
                                 highlightthickness=1,
-                                highlightbackground=self.core.lighten_color(card_bg, 20))
+                                highlightbackground=self.core.lighten_color(card_bg, 22))
             card_frame.grid(row=row, column=col, padx=12, pady=12, sticky="nsew")
             card_frame.grid_propagate(False)
             card_frame.configure(width=195, height=130)
@@ -381,35 +373,28 @@ class PageLoader:
             title_label = tk.Label(card_frame, 
                                 text=feature['name'],
                                 bg=card_bg,
-                                fg='#f8fafc',
+                                fg=C.TEXT_PRIMARY,
                                 font=('Microsoft YaHei UI', 11, 'bold'))
             title_label.pack(pady=(18, 6))
             
             desc_label = tk.Label(card_frame, 
                                 text=feature['description'],
                                 bg=card_bg,
-                                fg='#cbd5e1',
+                                fg=C.TEXT_SECONDARY,
                                 font=('Microsoft YaHei UI', 9),
-                                wraplength=170,
+                                wraplength=190,
                                 justify=tk.CENTER)
             desc_label.pack(pady=4)
             
-            # 现代化按钮
-            action_button = tk.Button(card_frame, 
-                                    text="打开",
-                                    command=lambda f=feature: self.core.open_feature(f),
-                                    bg=feature['color'],
-                                    fg='#ffffff',
-                                    font=('Microsoft YaHei UI', 9, 'bold'),
-                                    relief='flat',
-                                    padx=16,
-                                    pady=5,
-                                    borderwidth=0,
-                                    cursor='hand2',
-                                    activebackground=self.core.lighten_color(feature['color'], 15))
+            # 现代化圆角按钮
+            action_button = RoundedButton(card_frame, text="打开",
+                                         command=lambda f=feature: self.core.open_feature(f),
+                                         width=80,                                          height=30,
+                                         bg=feature['color'],
+                                         hover_bg=self.core.lighten_color(feature['color'], 10),
+                                         font=('Microsoft YaHei UI', 9, 'bold'),
+                                         radius=6)
             action_button.pack(pady=(8, 12))
-            action_button.bind("<Enter>", lambda e, b=action_button, c=feature['color']: b.configure(bg=self.core.lighten_color(c, 10)))
-            action_button.bind("<Leave>", lambda e, b=action_button, c=feature['color']: b.configure(bg=c))
         
         for i in range(3):
             features_container.columnconfigure(i, weight=1)
@@ -427,12 +412,12 @@ class PageLoader:
         # 使用程序主题色
         bg_color = self.core.bg_color
         lighten_bg = self.core.lighten_bg_color
-        text_primary = '#f8fafc'
-        text_secondary = '#cbd5e1'
-        text_muted = '#94a3b8'
-        accent_blue = '#3b82f6'
-        accent_green = '#10b981'
-        accent_cyan = '#06b6d4'
+        text_primary = C.TEXT_PRIMARY
+        text_secondary = C.TEXT_SECONDARY
+        text_muted = C.TEXT_MUTED
+        accent_blue = C.ACCENT_SECONDARY
+        accent_green = C.SUCCESS
+        accent_cyan = C.CYAN
         
         # 贡献者数据
         contributors = [
@@ -486,17 +471,19 @@ class PageLoader:
         ]
         
         # 主容器
-        main_container = tk.Frame(frost, bg=bg_color)
+        main_container = RoundedFrame(frost, bg=bg_color,
+                                      border_color=lighten_color(bg_color, 22),
+                                      radius=8, padx=4, pady=4)
         frost.create_window(340, 20, window=main_container, anchor=tk.N,
                             width=640, height=500, tags=("content_win",))
         
         # 顶部标签栏
-        tab_frame = tk.Frame(main_container, bg=lighten_bg, height=42)
+        tab_frame = tk.Frame(main_container.inner, bg=lighten_bg, height=38)
         tab_frame.pack(fill=tk.X, side=tk.TOP)
         tab_frame.pack_propagate(False)
         
         # 内容区域
-        content_frame = tk.Frame(main_container, bg=bg_color)
+        content_frame = tk.Frame(main_container.inner, bg=bg_color)
         content_frame.pack(fill=tk.BOTH, expand=True)
         
         # 当前选中的标签
@@ -572,7 +559,8 @@ class PageLoader:
         
         # 创建滚动区域
         canvas = tk.Canvas(parent, bg=bg_color, highlightthickness=0)
-        scrollbar = ttk.Scrollbar(parent, orient="vertical", command=canvas.yview)
+        scrollbar = ttk.Scrollbar(parent, orient="vertical", command=canvas.yview,
+                                  style='App.Vertical.TScrollbar')
         scrollable_frame = tk.Frame(canvas, bg=bg_color)
         
         scrollable_frame.bind(
@@ -583,7 +571,7 @@ class PageLoader:
         canvas.create_window((0, 0), window=scrollable_frame, anchor="nw", width=600)
         canvas.configure(yscrollcommand=scrollbar.set)
         
-        # 绑定鼠标滚轮事件到所有子控件
+        # 绑定鼠标滚轮事件到画布及所有子控件
         def on_mousewheel(event):
             canvas.yview_scroll(int(-1*(event.delta/120)), "units")
         
@@ -592,6 +580,9 @@ class PageLoader:
             for child in widget.winfo_children():
                 bind_mousewheel(child)
         
+        canvas.bind("<MouseWheel>", on_mousewheel)
+        parent.bind("<MouseWheel>", on_mousewheel)
+        scrollbar.bind("<MouseWheel>", on_mousewheel)
         bind_mousewheel(scrollable_frame)
         
         canvas.pack(side="left", fill="both", expand=True, padx=10, pady=10)
@@ -636,7 +627,7 @@ class PageLoader:
         
         # 文本标签样式
         desc_text.tag_configure("h2", font=('Microsoft YaHei UI', 11, 'bold'),
-                            foreground='#fbbf24', spacing1=6, spacing3=3)
+                            foreground=C.MARKDOWN_H2_COLOR, spacing1=6, spacing3=3)
         desc_text.tag_configure("h3", font=('Microsoft YaHei UI', 10, 'bold'),
                             foreground=accent_green, spacing1=4, spacing3=2)
         desc_text.tag_configure("normal", foreground=text_secondary,
@@ -666,23 +657,20 @@ class PageLoader:
         btn_inner_frame.pack(expand=True)
         
         buttons_data = [
-            ("🌐 B站", self.core.open_website, "#06b6d4", "#0891b2"),
-            ("💌 反馈", self.core.send_feedback, accent_blue, "#2563eb"),
-            ("📦 GitHub", lambda: self.core.open_feature({"name": "📦 Github"}), "#475569", "#334155"),
+            ("🌐 B站", self.core.open_website, C.CYAN, C.CYAN_HOVER),
+            ("💌 反馈", self.core.send_feedback, C.ACCENT_SECONDARY, C.INFO_HOVER),
+            ("📦 GitHub", lambda: self.core.open_feature({"name": "📦 Github"}), C.GRAY_DARK, C.GRAY_DARKER),
             ("📄 更新", lambda: notify_new_version(
-                current_version_name=self.core.version_info, info='版本信息', root=self.app.root), accent_green, "#059669"),
+                current_version_name=self.core.version_info, info='版本信息', root=self.app.root), C.SUCCESS, C.SUCCESS_HOVER),
         ]
         
         for text, cmd, color, hover_color in buttons_data:
-            btn = tk.Button(btn_inner_frame, text=text, command=cmd,
-                        bg=color, fg=text_primary, bd=0, cursor='hand2',
-                        font=('Microsoft YaHei UI', 9, 'bold'),
-                        padx=12, pady=6, borderwidth=0,
-                        activebackground=hover_color)
+            btn = RoundedButton(btn_inner_frame, text=text, command=cmd,
+                               width=80,                                          height=30,
+                                bg=color, hover_bg=hover_color,
+                                font=('Microsoft YaHei UI', 9, 'bold'),
+                                radius=6)
             btn.pack(side=tk.LEFT, padx=3)
-            
-            btn.bind("<Enter>", lambda e, b=btn, hc=hover_color: b.config(bg=hc))
-            btn.bind("<Leave>", lambda e, b=btn, oc=color: b.config(bg=oc))
     
     def _show_contributors(self, parent, contributors, bg_color, lighten_bg, text_primary, 
                           text_secondary, text_muted, accent_blue):
@@ -867,39 +855,37 @@ class PageLoader:
                 "email": "📧 邮箱"
             }
             link_colors = {
-                "github": ("#24292e", "#1a1e22"),
-                "blbl": ("#00a1d6", "#008cc7"),
-                "website": ("#10b981", "#059669"),
-                "twitter": ("#1da1f2", "#0d8ecf"),
-                "email": ("#ea4335", "#d33b28")
+                "github": C.LINK_COLORS["github"],
+                "blbl": C.LINK_COLORS["blbl"],
+                "website": C.LINK_COLORS["website"],
+                "twitter": C.LINK_COLORS["twitter"],
+                "email": C.LINK_COLORS["email"],
             }
             
             for link_type, url in contributor["links"].items():
                 color, hover = link_colors.get(link_type, (accent_blue, "#2563eb"))
                 text = link_icons.get(link_type, f"🔗 {link_type.capitalize()}")
                 
-                btn = tk.Button(links_frame, text=text,
-                              bg=color, fg=text_primary,
-                              font=('Microsoft YaHei UI', 9, 'bold'),
-                              relief=tk.FLAT, bd=0, cursor='hand2',
-                              padx=12, pady=5,
-                              command=lambda u=url: webbrowser.open(u))
+                btn = RoundedButton(links_frame, text=text,
+                                   command=lambda u=url: webbrowser.open(u),
+                                   width=100,                                          height=30,
+                                   bg=color, hover_bg=hover,
+                                   font=('Microsoft YaHei UI', 9, 'bold'),
+                                   radius=6)
                 btn.pack(side=tk.LEFT, padx=(0, 8))
-                btn.bind("<Enter>", lambda e, b=btn, h=hover: b.config(bg=h))
-                btn.bind("<Leave>", lambda e, b=btn, c=color: b.config(bg=c))
         
     def _show_page_error(self, frame, page_name: str, error: Exception):
         """显示页面加载错误"""
         error_label = tk.Label(frame, 
                             text=f"❌ {page_name}加载失败",
                             font=('Microsoft YaHei UI', 16),
-                            bg=self.core.bg_color, fg='white')
+                             bg=self.core.bg_color, fg=C.TEXT_WHITE)
         error_label.pack(expand=True)
         
         detail_label = tk.Label(frame, 
                                 text=str(error),
                                 font=('Microsoft YaHei UI', 10),
-                                bg=self.core.bg_color, fg='#bdc3c7')
+                                bg=self.core.bg_color, fg=C.TEXT_SECONDARY)
         detail_label.pack()
 
 
