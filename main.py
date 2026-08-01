@@ -7,12 +7,20 @@ Faust Launcher - 主入口
 3. 按需加载：支持延迟加载页面
 4. 解耦合：降低模块间依赖
 """
-
 import tkinter as tk
 import os
+import sys
 
 def main():
     """优化后的主函数"""
+    # 控制台切换为 UTF-8, 避免块状字符/emoji 在 GBK 控制台编码失败
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            if hasattr(stream, 'reconfigure'):
+                stream.reconfigure(encoding='utf-8', errors='replace')  # type: ignore
+        except Exception:
+            pass
+    
     from functions.pages.app.app_core import FaustLauncherCore
     from functions.pages.app.app_ui import FaustLauncherUI, check_single_instance
     from functions.pages.notice.loading_info import create_simple_splash

@@ -290,10 +290,18 @@ class FaustLauncherUI:
         def addon_menu_lambda(icon=None, item=None):
             return build_addon_menu()
         
+        def when_exit():
+            from functions.base.terminal_banner import get_banner
+            print(get_banner("\nGoodbye"))
+            import logging
+            logging.shutdown()
+            self.tray.stop()
+            os._exit(0)
+        
         root_menu = pystray.MenuItem('插件', lambda icon, item: build_addon_menu())
         menu_items.append(root_menu)
         menu_items.append(pystray.MenuItem('重载插件', lambda icon=None, item=None: self.core._on_reload_addons()))
-        menu_items.append(pystray.MenuItem('退出', lambda: os._exit(0)))
+        menu_items.append(pystray.MenuItem('退出', lambda: when_exit()))
         
         menu = pystray.Menu(*menu_items)
         self.tray = pystray.Icon(
