@@ -46,6 +46,8 @@ class ModernSplashScreen:
         self.canvas.pack(fill='both', expand=True)
 
         center_window(self.splash)
+        # self.splash.withdraw()
+        
         self._bg_photo = None       # 保存背景 PhotoImage 引用
         self._draw_background()
         self.create_ui_elements()

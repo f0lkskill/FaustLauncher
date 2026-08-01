@@ -1,4 +1,5 @@
 from functions.webFunc import Note
+from threading import Thread
 from json import loads, dumps
 
 class WebTrigger:
@@ -8,7 +9,8 @@ class WebTrigger:
         self.addon_info = Note("FaustLauncher.addon.info")
         self.mod_info = Note("FaustLauncher.mod.info")
         
-        self.sort_info_by_download_number()
+        sort_thread = Thread(target=self.sort_info_by_download_number)
+        sort_thread.start()
 
     def refresh_note_info(self):
         """刷新插件和mod信息"""
