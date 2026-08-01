@@ -77,8 +77,7 @@ def init_logger():
     _logger.addHandler(handler)
 
     _cleanup_logs()
-
-    _logger.info("=" * 50)
+    
     _logger.info("Faust Launcher 实例启动")
     _logger.info("日志文件: %s", fname)
     return _logger

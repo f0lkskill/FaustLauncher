@@ -142,7 +142,6 @@ class AddonManager:
 
     def _print_addon_status(self) -> None:
         """在终端输出当前插件加载状态（调试用）"""
-        print("=" * 40)
         print(f"共扫描到 {len(self.addon_names)} 个插件：")
         for name in self.addon_names:
             info = self.get_addon_info(name)
@@ -153,7 +152,6 @@ class AddonManager:
             status = "✅ 已启用" if enabled else "⛔ 已禁用"
             print(f"  {status}  {name}")
         print(f"插件自定义菜单项: {len(self.get_custom_tray_items())} 个")
-        print("=" * 40)
 
     def scan_addons(self) -> None:
         """
