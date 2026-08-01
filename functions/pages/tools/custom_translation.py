@@ -363,24 +363,21 @@ class CustomTranslationTool:
         # 文件树
         tree_frame = tk.Frame(left_frame, bg=self.bg_light, bd=0, highlightthickness=0)
         tree_frame.pack(fill=tk.BOTH, expand=True, padx=6, pady=6)
-        
 
-        # tree_style = ttk.Style()
-        # # 使用 clam 主题以获得更好的背景色控制
-        # try:
-        #     tree_style.theme_use('clam')
-        # except Exception:
-        #     pass
-        # tree_style.configure("Custom.Treeview",
-        #                      background=self.bg_darker, foreground='#ecf0f1',
-        #                      fieldbackground=self.bg_darker, rowheight=26,
-        #                      borderwidth=0, bd=0)
-        # tree_style.map('Custom.Treeview',
-        #                background=[('selected', '#3498db')],
-        #                foreground=[('selected', 'white')])
-        # tree_style.configure("Custom.Treeview.Heading",
-        #                      background=self.bg_light,
-        #                      foreground="white")
+        # 文件树样式 - 独立样式，不修改全局主题
+        tree_style = ttk.Style(self.parent_window)
+        tree_style.configure("Custom.Treeview",
+                             background=self.bg_darker, foreground='#ecf0f1',
+                             fieldbackground=self.bg_darker, rowheight=26,
+                             borderwidth=0, bd=0)
+        tree_style.map('Custom.Treeview',
+                       background=[('selected', '#3498db')],
+                       foreground=[('selected', 'white')])
+        tree_style.configure("Custom.Treeview.Heading",
+                             background=self.bg_light,
+                             foreground="white")
+        tree_style.configure("Custom.Treeview.Item",
+                             padding=(2, 2))
 
         self.file_tree = ttk.Treeview(tree_frame, style="Custom.Treeview",
                                       selectmode='browse', show='tree')

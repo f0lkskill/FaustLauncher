@@ -23,6 +23,10 @@ def main():
     if check_single_instance():
         os._exit(0)
     
+    # 初始化日志系统
+    from functions.base.log_manager import init_logger
+    init_logger()
+    
     # 删除旧的更新脚本
     if os.path.exists("updater.vbs"):
         os.remove("updater.vbs")

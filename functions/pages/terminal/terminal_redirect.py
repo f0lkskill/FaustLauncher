@@ -40,6 +40,11 @@ class TerminalRedirector:
     def write(self, message):
         """重定向write方法"""
         if message:
+            # 同时转发到原始控制台（cmd/终端），保证两边都能看到输出
+            self._forward_to_console(message)
+            # 写入日志系统
+            self._write_log(message)
+            
             # 添加到缓冲区
             self.buffer += message
             
@@ -52,16 +57,33 @@ class TerminalRedirector:
                 # 清空缓冲区
                 self.buffer = ""
     
+    def _forward_to_console(self, message):
+        """转发消息到原始控制台输出"""
+        try:
+            self.original_stdout.write(message)
+            self.original_stdout.flush()
+        except Exception:
+            pass
+    
+    def _write_log(self, message):
+        """写入日志文件"""
+        # 若原始 stdout 仍是重定向器(链式), 交由链路末端的重定向器记录, 避免重复
+        if isinstance(self.original_stdout, TerminalRedirector):
+            return
+        try:
+            from functions.base.log_manager import log_message
+            log_message(message)
+        except Exception:
+            pass
+    
     def _add_message_to_terminal(self, message):
         """添加格式化消息到终端（支持ANSI转义序列和打字机效果）"""
-        # 如果组件未初始化，直接输出到原始stdout
+        # 组件未初始化或已过滤的消息: 已转发到控制台, 不再输出到GUI
         if not self.initialized or not self.text_widget:
-            print(message, file=self.original_stdout)
             return
             
         # 过滤以 | 开头的消息（调试信息）
         if message.startswith('|'):
-            print(message[1:], file=self.original_stdout)
             return
             
         message = self.process_message(message)
