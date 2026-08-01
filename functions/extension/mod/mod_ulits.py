@@ -67,10 +67,22 @@ class ModManager:
             mod_name = os.path.basename(mod_path)
             
             try:
+                has_installer = False
+                has_uninstaller = False
                 try:
                     # 删除 安装/卸载 脚本的 pause 命令, 可读可写模式
                     # 用 r+ 模式打开文件（可读可写）
                     for file_name in ['Installer.bat', 'Uninstaller.bat']:
+                        if not os.path.exists(os.path.join(mod_path, file_name)):
+                            # 这个Mod没有安装/卸载脚本，跳过删除pause命令
+                            continue
+                        
+                        # 检查文件名，设置标志
+                        if file_name == 'Installer.bat':
+                            has_installer = True
+                        elif file_name == 'Uninstaller.bat':
+                            has_uninstaller = True
+                            
                         with open(os.path.join(mod_path, file_name), 'r+', encoding='utf-8') as f:
                             content = f.read()  # 读取全部内容
                             content = content.replace('pause', '')
@@ -83,15 +95,15 @@ class ModManager:
                     
                 # 获取mod信息
                 mod_info = self.get_mod_info(mod_name)
-                if mod_info.get('settings', {}).get('enable', False):
+                if mod_info.get('settings', {}).get('enable', False) and has_installer:
                     # 启用mod，载入文件
                     # 执行安装脚本
                     call([os.path.join(mod_path, 'Installer.bat')], shell=True, creationflags=CREATE_NO_WINDOW)
-                    print(f"成功加载Mod贴图资源: {mod_name}")
-                else:
+                    # print(f"成功加载Mod贴图资源: {mod_name}")
+                elif mod_info.get('settings', {}).get('enable', False) and has_uninstaller:
                     # 禁用mod
                     call([os.path.join(mod_path, 'Uninstaller.bat')], shell=True, creationflags=CREATE_NO_WINDOW)
-                    print(f"成功卸载Mod贴图资源: {mod_name}")
+                    # print(f"成功卸载Mod贴图资源: {mod_name}")
             
                 # 获取mod信息
                 mod_info = self.get_mod_info(mod_name)
@@ -157,7 +169,7 @@ class ModManager:
             
             # 检查源目录是否存在
             if not os.path.exists(lang_dir):
-                print(f"错误: 源目录不存在: {lang_dir}")
+                # print(f"{name} 没有额外的语言文件, 跳过复制语言文件。")
                 return
             
             target_lang_dir = os.path.join(game_path, 'LimbusCompany_Data', 'lang', 'LLC_zh-CN')
