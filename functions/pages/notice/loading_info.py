@@ -3,7 +3,7 @@ import time
 import threading
 import sys
 import os
-from functions.base.window_ulits import center_window
+from functions.base.window_utils import center_window
 from functions.base.settings_manager import get_settings_manager
 
 VERSION_INFO = get_settings_manager().get_setting("version_info")  # type: ignore

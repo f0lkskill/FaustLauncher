@@ -139,7 +139,7 @@ class PageLoader:
             {"name": "🚜 文件夹超链接", "description": "为文件夹制作超链接，\n达到转移空间的目的？",
              "color": accent_green, "command": self.core.folder_link},
             
-            {"name": "💻 渐变文本处理器", "description": "根据用户输入的文本生成渐变的 Untity 富文本。",
+            {"name": "💻 渐变文本处理器", "description": "根据用户输入的文本生成渐变的 Unity 富文本。",
              "color": accent_orange, "command": lambda: test_color_gradient_gui(self.app)},
             
             {"name": "📝 字体修改", "description": "修改汉化包的字体，\n使用你自己喜欢的字体包代替",
@@ -890,7 +890,7 @@ class PageLoader:
 def download_and_launch(obj=None, need_run_game=False):
     """下载翻译资源，然后可选地启动游戏"""
     from functions.base.game_launcher import GameLauncher
-    from functions.web_update.zeroasso_dow import main_gui as download_translation, check_need_up_translate, DownloadGUI, download_and_extract_gui
+    from functions.web_update.zeroasso_download import main_gui as download_translation, check_need_up_translate, DownloadGUI, download_and_extract_gui
     from functions.web_update.update_resource import check_resource_update
     from functions.fancy.bubble_transfer import main as download_bubble
     import os

@@ -1,42 +1,12 @@
-import json
 import os
 import re
 from typing import List, Dict, Tuple
 from functions.base.settings_manager import get_settings_manager
-from functions.base.window_ulits import center_window
-from functions.base.color_scheme import C
+from functions.base.window_utils import center_window
+from functions.base.color_scheme import C, darken_color
+from functions.base.common.color_utils import hex_to_rgb, rgb_to_hex, interpolate_color, is_white_color
+from functions.base.common.json_io import read_json, write_json
 
-
-def hex_to_rgb(hex_color: str) -> Tuple[int, int, int]:
-    """将十六进制颜色转换为RGB值"""
-    hex_color = hex_color.lstrip('#')
-    if len(hex_color) == 6:
-        r = int(hex_color[0:2], 16)
-        g = int(hex_color[2:4], 16)
-        b = int(hex_color[4:6], 16)
-    elif len(hex_color) == 3:
-        r = int(hex_color[0]*2, 16)
-        g = int(hex_color[1]*2, 16)
-        b = int(hex_color[2]*2, 16)
-    else:
-        r, g, b = 255, 255, 255  # 默认白色
-    return r, g, b
-
-def rgb_to_hex(rgb: Tuple[int, int, int]) -> str:
-    """将RGB值转换为十六进制颜色"""
-    return f"#{rgb[0]:02x}{rgb[1]:02x}{rgb[2]:02x}"
-
-def interpolate_color(start_rgb: Tuple[int, int, int], end_rgb: Tuple[int, int, int], 
-                     ratio: float) -> Tuple[int, int, int]:
-    """在两个颜色之间插值"""
-    r = int(start_rgb[0] + (end_rgb[0] - start_rgb[0]) * ratio)
-    g = int(start_rgb[1] + (end_rgb[1] - start_rgb[1]) * ratio)
-    b = int(start_rgb[2] + (end_rgb[2] - start_rgb[2]) * ratio)
-    return r, g, b
-
-def is_white_color(rgb: Tuple[int, int, int]) -> bool:
-    """检查颜色是否为白色"""
-    return rgb == (255, 255, 255)
 
 def extract_text_and_tags(text: str) -> List[Dict]:
     """提取文本和标签，将文本字符和HTML标签分开处理"""
@@ -379,13 +349,6 @@ def create_gradient_test_gui(window, root):
     def on_leave(btn, original_color):
         btn.configure(bg=original_color)
     
-    def darken_color(hex_color, factor=0.8):
-        """颜色变暗函数"""
-        hex_color = hex_color.lstrip('#')
-        rgb = tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
-        darkened = tuple(int(c * factor) for c in rgb)
-        return f'#{darkened[0]:02x}{darkened[1]:02x}{darkened[2]:02x}'
-    
     # 应用悬停效果
     copy_btn.bind("<Enter>", lambda e: on_enter(copy_btn, '#3498db'))
     copy_btn.bind("<Leave>", lambda e: on_leave(copy_btn, '#3498db'))
@@ -462,8 +425,7 @@ def process_json_file(file_path: str, gradient_rate: float = 2.0) -> bool:
     """
     try:
         # 读取JSON文件
-        with open(file_path, 'r', encoding='utf-8') as f:
-            data = json.load(f)
+        data = read_json(file_path)
         
         # 检查数据结构
         if 'dataList' not in data or not isinstance(data['dataList'], list):
@@ -484,8 +446,7 @@ def process_json_file(file_path: str, gradient_rate: float = 2.0) -> bool:
                     processed_count += 1
         
         # 保存处理后的文件
-        with open(file_path, 'w', encoding='utf-8') as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
+        write_json(file_path, data, indent=2)
         
         print(f"文件 {os.path.basename(file_path)} 处理完成")
         print(f"  处理了 {processed_count}/{total_count} 个条目")

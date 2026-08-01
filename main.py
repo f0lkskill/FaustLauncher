@@ -25,7 +25,7 @@ def main():
     from functions.pages.app.app_ui import FaustLauncherUI, check_single_instance
     from functions.pages.notice.loading_info import create_simple_splash
     from functions.base.settings_manager import get_settings_manager
-    from functions.base.sound_ulits import play_sound
+    from functions.base.sound_utils import play_sound
     
     # 检测是否已有实例在运行
     if check_single_instance():

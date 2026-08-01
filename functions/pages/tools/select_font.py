@@ -3,7 +3,7 @@ from tkinter import ttk, filedialog, messagebox
 import os
 import shutil
 from PIL import Image, ImageTk, ImageFont, ImageDraw
-from functions.base.window_ulits import center_window
+from functions.base.window_utils import center_window
 from functions.base.color_scheme import C
 from functions.base.custom_notebook import CustomNotebook
 

@@ -3,11 +3,11 @@ import sys
 from subprocess import Popen
 from threading import Thread
 from functions.base.settings_manager import get_settings_manager
-from functions.base.sound_ulits import play_sound
+from functions.base.sound_utils import play_sound
 from functions.base.color_scheme import lighten_color as _lighten_color, darken_color as _darken_color
 from rich import print
 import tkinter as tk
-from functions.extension.addon.addon_ulit import AddonManager
+from functions.extension.addon.addon_utils import AddonManager
 from functions.pages.terminal.terminal_redirect import TerminalRedirector
 from functions.pages.app.page_loader import PageLoader
 
@@ -206,7 +206,7 @@ class FaustLauncherCore:
                 
         mems: dict = self.settings_manager.get_setting('mems')  # type: ignore
         has_notify = mems.get('version_notify_flag')
-        from functions.update.version_ulits import check_version_update
+        from functions.update.version_utils import check_version_update
         from functions.web_update.sql_manager import notify_new_version
         
         has_update, latest_info, name = check_version_update(self.root)

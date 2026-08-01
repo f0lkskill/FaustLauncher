@@ -12,23 +12,6 @@ class Note:
     
     def fetch_note_info(self):
         """读取笔记内容"""
-        if self.read_only:
-            return self._fetch_note_info_ReadOnly()
-        else:
-            return self._fetch_note_info_write()
-    
-    def _fetch_note_info_write(self):
-        """写入模式读取"""
-        try:
-            r = requests.get(self.note_url, verify=False)
-            self.note_content = r.text
-            return {'note_content': self.note_content, 'note_id': self.note_name}
-        except:
-            self.note_content = ""
-            return {'note_content': "", 'note_id': self.note_name}
-    
-    def _fetch_note_info_ReadOnly(self):
-        """只读模式读取"""
         try:
             r = requests.get(self.note_url, verify=False)
             self.note_content = r.text

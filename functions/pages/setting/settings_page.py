@@ -4,7 +4,7 @@ from functions.base.settings_manager import get_settings_manager
 from functions.base.color_scheme import C, ThemeColors, border_color
 from functions.base.custom_notebook import CustomNotebook
 from functions.base.style_utils import apply_scrollbar_style, RoundedFrame, RoundedButton
-from functions.base.animation_ulits import smooth_scroll
+from functions.base.animation_utils import smooth_scroll
 
 # ===== 统一字体配置 - 现代化 =====
 _TITLE_FONT = ('Microsoft YaHei UI', 12, 'bold')

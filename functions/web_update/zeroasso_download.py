@@ -3,8 +3,8 @@ import time
 import requests
 import subprocess
 from functions.pages.download.download_gui import DownloadGUI
-from functions.web_update.github_ulits import GitHubReleaseFetcher
-from functions.web_update.dow_ulits import check_need_up_translate
+from functions.web_update.github_utils import GitHubReleaseFetcher
+from functions.web_update.download_utils import check_need_up_translate
 from functions.base.settings_manager import get_settings_manager
 
 # 7-Zip可执行文件路径
@@ -320,15 +320,16 @@ def download_file_with_gui(url, local_filename, gui, file_name):
         gui.current_file_var.set(f"❌ 下载过程中出现错误: {e}")
         # print(e)
 
-def get_download_path_ByNote() -> tuple[str, str] | None:
+def _fetch_download_path(note_name: str, pwd: str, get_path) -> tuple[str, str] | None:
+    """从云端笔记获取汉化包下载地址"""
     from webFunc import Note
     from json import loads
-    note = Note("FaustLauncher", 'AutoTranslate')
+    note = Note(note_name, pwd)
     note.fetch_note_info()
 
     # print("获取到笔记内容:", note.note_content)
     note = loads(note.note_content)
-    path = note['llc_download_mirror']['seven']['direct']
+    path = get_path(note)
     version = note['llc_version']
 
     if path:
@@ -336,24 +337,14 @@ def get_download_path_ByNote() -> tuple[str, str] | None:
         return (path, version)
     print("未获取到下载地址,失败...")
     return None
+
+def get_download_path_ByNote() -> tuple[str, str] | None:
+    return _fetch_download_path("FaustLauncher", "AutoTranslate",
+                                lambda n: n['llc_download_mirror']['seven']['direct'])
 
 def get_download_path_ByGhProxy() -> tuple[str, str] | None:
-    from webFunc import Note
-    from json import loads
-    note = Note("FaustLauncher")
-    note.fetch_note_info()
-
-    # print("获取到笔记内容:", note.note_content)
-    note = loads(note.note_content)
-    path = note['llc_download_url']['seven']
-    path = 'https://gh-proxy.org/' + path
-    version = note['llc_version']
-
-    if path:
-        print(f"成功获取到下载地址: {path}")
-        return (path, version)
-    print("未获取到下载地址,失败...")
-    return None
+    return _fetch_download_path("FaustLauncher", "",
+                                lambda n: 'https://gh-proxy.org/' + n['llc_download_url']['seven'])
     
 def download_and_extract_gui(gui:DownloadGUI, config_path: str = "", download_files = None, auto_close:bool = True) -> bool:
     """带GUI的下载和解压主函数"""
@@ -374,12 +365,12 @@ def download_and_extract_gui(gui:DownloadGUI, config_path: str = "", download_fi
     download_url = ""
     timeout_counter = 0
     need_update_translate = True
-    is_custome = False
+    is_custom = False
 
     
     # 定义要下载的文件列表
     if download_files:
-        is_custome = True
+        is_custom = True
     else:
         download_files = [
             {
@@ -493,7 +484,7 @@ def download_and_extract_gui(gui:DownloadGUI, config_path: str = "", download_fi
         gui.root.after(1000, gui.root.destroy)
     
     # 创建配置文件（只在至少一个文件处理成功时创建）
-    if success_count > 0 and not is_custome:
+    if success_count > 0 and not is_custom:
         create_config_file(game_path)
         return True
     else:
@@ -501,8 +492,8 @@ def download_and_extract_gui(gui:DownloadGUI, config_path: str = "", download_fi
             return True
         return False
 
-def main_gui(parrent, config_path: str = ""):
+def main_gui(parent, config_path: str = ""):
     """GUI入口点"""
-    gui = DownloadGUI(parrent, config_path, download_func=download_and_extract_gui)
+    gui = DownloadGUI(parent, config_path, download_func=download_and_extract_gui)
     
     return gui

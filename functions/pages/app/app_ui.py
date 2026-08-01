@@ -7,12 +7,12 @@ from PIL import Image, ImageTk, ImageFilter
 from threading import Thread
 import pystray
 import urllib3
-from functions.base.window_ulits import center_window
+from functions.base.window_utils import center_window
 from functions.base.color_scheme import C, ThemeColors, darken_color
 from functions.base.custom_notebook import CustomNotebook
 from functions.base.style_utils import apply_scrollbar_style
 from functions.pages.app.page_loader import PageLoader
-from functions.extension.addon.addon_ulit import AddonManager
+from functions.extension.addon.addon_utils import AddonManager
 from functions.pages.app.app_core import FaustLauncherCore
 
 
@@ -203,6 +203,8 @@ class FaustLauncherUI:
             if self.core.settings_manager.get_setting("after_gui_exit") == 0:
                 self.root.withdraw()
             else:
+                from functions.base.terminal_banner import get_banner_with_random_style
+                print('\n\n' + get_banner_with_random_style('GoodBye'))
                 self.root.destroy()
                 os._exit(0)
             
@@ -291,8 +293,8 @@ class FaustLauncherUI:
             return build_addon_menu()
         
         def when_exit():
-            from functions.base.terminal_banner import get_banner
-            print(get_banner("\nGoodbye"))
+            from functions.base.terminal_banner import get_banner_with_random_style
+            print('\n\n' + get_banner_with_random_style('GoodBye'))
             import logging
             logging.shutdown()
             self.tray.stop()

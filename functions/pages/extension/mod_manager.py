@@ -5,8 +5,9 @@ from tkinter import ttk, filedialog, messagebox
 import os
 import shutil
 from pathlib import Path
-from functions.base.window_ulits import center_window
+from functions.base.window_utils import center_window
 from functions.base.color_scheme import C, darken_color
+from functions.base.common.path_utils import get_mod_root_dir
 
 class ModManager:
     def __init__(self, parent_root, parent):
@@ -70,15 +71,7 @@ class ModManager:
     
     def get_mod_directory(self):
         """获取Mod目录路径"""
-        roaming_path = os.getenv('APPDATA')
-        mod_path = os.path.join(roaming_path, 'LimbusCompanyMods') # type: ignore
-        
-        # 如果目录不存在则创建
-        if not os.path.exists(mod_path):
-            os.makedirs(mod_path)
-            print(f"创建Mod目录: {mod_path}")
-        
-        return mod_path
+        return get_mod_root_dir()
     
     def create_toolbar(self):
         """创建工具栏"""

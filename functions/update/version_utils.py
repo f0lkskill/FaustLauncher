@@ -3,7 +3,7 @@ from json import loads
 from functions.base.settings_manager import get_settings_manager
 from threading import Thread
 from tkinter import messagebox
-from functions.web_update.zeroasso_dow import download_and_extract_gui
+from functions.web_update.zeroasso_download import download_and_extract_gui
 
 settings_manager = get_settings_manager()
 
@@ -68,7 +68,7 @@ def check_version_update(root):
             if not messagebox.askyesno("版本更新", f"检测到启动器新版本: {version_info['latest_release_version']}\n当前版本: {current_version}\n是否更新？"):
                 return need_update, version_info['versions'][version_info['latest_release_version']], version_info['latest_release_version']
             
-        from functions.web_update.zeroasso_dow import DownloadGUI
+        from functions.web_update.zeroasso_download import DownloadGUI
         gui_dow = DownloadGUI(root, 'cache/', False, download_func=download_and_extract_gui)
 
         download_files = [{

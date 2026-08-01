@@ -1,7 +1,7 @@
 import subprocess
 import os
 from functions.base.settings_manager import get_settings_manager
-from functions.extension.mod.mod_ulits import ModManager
+from functions.extension.mod.mod_utils import ModManager
 
 STEAM_APP_ID = "1973530"
 GAME_EXE = "LimbusCompany.exe"

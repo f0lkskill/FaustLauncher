@@ -3,7 +3,7 @@ from tkinter import ttk, messagebox, simpledialog
 import os
 import json
 from threading import Thread
-from functions.base.window_ulits import center_window
+from functions.base.window_utils import center_window
 from functions.base.color_scheme import C, darken_color, lighten_color
 
 

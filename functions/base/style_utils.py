@@ -30,7 +30,7 @@ def apply_scrollbar_style(style_name='App.Vertical.TScrollbar',
 
 
 def make_scrollbar(parent, orient='vertical', style_name='App.Vertical.TScrollbar', **kw):
-    return ttk.Scrollbar(parent, orient=orient, style=style_name, **kw)
+    return ttk.Scrollbar(parent, orient=orient, style=style_name, **kw) # type: ignore
 
 
 class RoundedFrame(tk.Canvas):
@@ -201,7 +201,7 @@ class ModernButton(tk.Button):
                  padx=16, pady=6, **kwargs):
         bg = bg or C.ACCENT
         hover_bg = hover_bg or darken_color(bg, 0.85)
-        super().__init__(master, text=text, command=command,
+        super().__init__(master, text=text, command=command, # type: ignore
                         bg=bg, fg=fg, font=font,
                         relief='flat', borderwidth=0,
                         padx=padx, pady=pady,

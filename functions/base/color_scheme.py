@@ -164,18 +164,6 @@ def border_color(bg: str) -> str:
 def make_card(parent, *, bg, border_color=None, border_width=1, **pack_kw):
     """创建带描边的现代化卡片容器"""
     import tkinter as tk
-    border_color = border_color or lighten_color(bg, 22)
-    card = tk.Frame(parent, bg=bg, relief='flat', borderwidth=0,
-                    highlightthickness=border_width,
-                    highlightbackground=border_color)
-    if pack_kw:
-        card.pack(**pack_kw)
-    return card
-
-
-def make_card(parent, *, bg, border_color=None, border_width=1, **pack_kw):
-    """创建带描边的现代化卡片容器"""
-    import tkinter as tk
     border_color = border_color or lighten_color(bg, 18)
     card = tk.Frame(parent, bg=bg, relief='flat', borderwidth=0,
                     highlightthickness=border_width,

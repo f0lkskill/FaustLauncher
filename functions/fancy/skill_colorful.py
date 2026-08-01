@@ -1,6 +1,6 @@
 from functions.fancy.dialog_colorful import apply_color_gradient_custom
 from functions.base.settings_manager import get_settings_manager
-from json import load,dump
+from functions.base.common.json_io import read_json, write_json
 
 settings_manager = get_settings_manager()
 skill_text_gradient_rate:float = settings_manager.get_setting("skill_text_gradient_rate") # type: ignore
@@ -30,7 +30,7 @@ def skill_color_process(gameLang: str):
     config_files = get_personality_skill_files("resources/siner_skill_info/")
 
     try:
-        sin_color = load(open("resources/siner_skill_info/sin_color.json",'r',encoding='utf-8'))
+        sin_color = read_json("resources/siner_skill_info/sin_color.json")
     except Exception as e:
         print(f"加载 sin_color.json 失败: {e}")
         return
@@ -50,11 +50,9 @@ def skill_color_process(gameLang: str):
             continue
 
         try:
-            with open(pf,'r',encoding='utf-8') as f:
-                pf_c = load(f)
+            pf_c = read_json(pf)
 
-            with open(cf_path,'r',encoding='utf-8') as f:
-                cf_c = load(f)
+            cf_c = read_json(cf_path)
 
             for skill_content in pf_c["dataList"]:
                 # print(f"处理技能 {skill_content['id']}")
@@ -99,10 +97,8 @@ def skill_color_process(gameLang: str):
                     }
                     cf_c.append(skill_info)
 
-                with open(pf, 'w', encoding='utf-8') as tar_file:
-                    dump(pf_c, tar_file, indent=2, ensure_ascii=False)
-                with open(cf_path, 'w', encoding='utf-8') as tar_file:
-                    dump(cf_c, tar_file, indent=2, ensure_ascii=False)
+                write_json(pf, pf_c, indent=2)
+                write_json(cf_path, cf_c, indent=2)
 
         except Exception as e:
             print(f"处理文件 {pf} 时出错: {e}")

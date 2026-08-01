@@ -78,9 +78,13 @@ def init_logger():
 
     _cleanup_logs()
     
-    from functions.base.terminal_banner import get_banner
-    print(get_banner("FaustLauncher"))
-    _logger.info(get_banner("\nFaustLauncher"))
+    from functions.base.terminal_banner import get_banner, get_random_font, get_random_color
+    font = get_random_font()
+    color = get_random_color()
+    text = get_banner("FaustLauncher", font=font, colors=color)
+    colorless_text = get_banner("FaustLauncher", font=font, colors="")
+    print(text)
+    _logger.info(f'\n' + colorless_text)
     _logger.info("Faust Launcher 实例启动")
     _logger.info("日志文件: %s", fname)
     return _logger

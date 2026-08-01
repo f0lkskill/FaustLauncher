@@ -2,7 +2,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 import threading
 from functions.translate.auto_translate import auto_translate
-from functions.base.window_ulits import center_window
+from functions.base.window_utils import center_window
 from functions.base.color_scheme import C
 from functions.base.style_utils import apply_scrollbar_style
 import datetime

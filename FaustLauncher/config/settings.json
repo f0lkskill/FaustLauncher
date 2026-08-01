@@ -56,7 +56,7 @@
         "description": "是否显示用户名在边狱巴士的个人车票上",
         "page": "美化"
     },
-    "enable_speical_tip": {
+    "enable_special_tip": {
         "name": "启用零协会私活Tip",
         "type": "boolean",
         "default": true,
