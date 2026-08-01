@@ -429,7 +429,7 @@ class FaustLauncherUI:
         status_label.pack(side='left', padx=(4, 0))
         
         version_label = tk.Label(status_frame,
-                                text=f"v{self.core.version_info}",
+                                text=f"{self.core.version_info}",
                                 bg=status_bg,
                                 fg=text_muted,
                                 font=('Microsoft YaHei UI', 9))

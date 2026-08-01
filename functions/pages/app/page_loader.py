@@ -6,8 +6,8 @@ import traceback
 from rich import print
 import os
 import webbrowser
-from functions.base.color_scheme import C, ThemeColors, lighten_color, border_color
-from functions.base.style_utils import RoundedFrame, ModernButton, RoundedButton
+from functions.base.color_scheme import C, lighten_color
+from functions.base.style_utils import RoundedFrame, RoundedButton
 
 
 downloading = False
@@ -404,9 +404,7 @@ class PageLoader:
         return features_container
         
     def _init_about_page(self):
-        """初始化关于页面 - 使用程序主题色"""
-        from functions.web_update.sql_manager import notify_new_version
-        
+        """初始化关于页面 - 使用程序主题色"""        
         frost = self.app.tab_frost_canvases[5]
         
         # 使用程序主题色
