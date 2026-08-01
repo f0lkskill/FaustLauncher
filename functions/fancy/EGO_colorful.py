@@ -109,9 +109,7 @@ def process_text_field(text: str, is_specified: bool) -> str:
 
 def main():
     """主函数"""
-    print("=" * 50)
     print("EGO技能文本颜色渐变处理器")
-    print("=" * 50)
     
     try:
         success = process_ego_json_files()

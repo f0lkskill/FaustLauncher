@@ -566,9 +566,7 @@ def process_temp_json_files(gradient_rate: float = 2.0) -> bool:
 
 def main():
     """主函数入口点"""
-    print("=" * 50)
     print("气泡文本 JSON 颜色渐变处理器")
-    print("=" * 50)
     try:
         gradient_rate = get_settings_manager().get_setting('bubble_text_gradient_rate')
         game_path = get_settings_manager().get_setting('game_path')
