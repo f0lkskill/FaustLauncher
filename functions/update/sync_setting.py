@@ -1,20 +1,20 @@
 # 同步两个版本的设置
 
-CURRENT_COFIG_FILE = "config/settings.json"
+CURRENT_CONFIG_FILE = "config/settings.json"
 TARGET_CONFIG_FILE = "cache/new_version/FaustLauncher/config/settings.json"
 
 import json
 import os
 
 def sync_settings():
-    if not os.path.exists(CURRENT_COFIG_FILE):
-        print(f"跳过设置同步：源文件不存在 {CURRENT_COFIG_FILE}")
+    if not os.path.exists(CURRENT_CONFIG_FILE):
+        print(f"跳过设置同步：源文件不存在 {CURRENT_CONFIG_FILE}")
         return
     if not os.path.exists(TARGET_CONFIG_FILE):
         print(f"跳过设置同步：目标文件不存在 {TARGET_CONFIG_FILE}")
         return
     
-    with open(CURRENT_COFIG_FILE, 'r', encoding='utf-8') as f:
+    with open(CURRENT_CONFIG_FILE, 'r', encoding='utf-8') as f:
         current_config = json.load(f)
 
     with open(TARGET_CONFIG_FILE, 'r', encoding='utf-8') as f:

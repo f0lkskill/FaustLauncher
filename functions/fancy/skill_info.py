@@ -1,5 +1,5 @@
-import json
 import os
+from functions.base.common.json_io import read_json, write_json
 
 
 def handle_skill_info(skill_name:str) -> str:
@@ -28,7 +28,7 @@ def handle_skill_info(skill_name:str) -> str:
         
         # 检查是否有百分号在后面
         # 获取 match 的结束位置
-        Mcolor_value = 10
+        max_color_value = 10
         end_pos = match.end()
         is_color = False
 
@@ -43,7 +43,7 @@ def handle_skill_info(skill_name:str) -> str:
         # 检查是否有百分号在后面
         if end_pos < len(skill_name) and skill_name[end_pos] == '%':
             # 如果有百分号，将其添加到数字后面
-            Mcolor_value = 100
+            max_color_value = 100
 
         try:
             number = float(number_str)
@@ -57,7 +57,7 @@ def handle_skill_info(skill_name:str) -> str:
             else:
                 # 正数：根据大小渐变，从白色到黄色
                 # 将数字映射到0-1的范围，假设最大值为100
-                normalized_value = min(number / Mcolor_value, 1.0)
+                normalized_value = min(number / max_color_value, 1.0)
                 
                 # 计算RGB值：白色(255,255,255)到黄色(255,255,0)的渐变
                 # 保持红色和绿色为255，蓝色从255渐变到0
@@ -94,7 +94,7 @@ def handle_skill_info(skill_name:str) -> str:
     
     return skill_name
 
-def handle_skill_strcture(skill_content:dict) -> dict: # type: ignore
+def handle_skill_structure(skill_content:dict) -> dict: # type: ignore
     # 处理技能信息, 提取需要的信息, 并返回一个字典
     dataList = skill_content["dataList"]
     for skill in dataList:
@@ -141,15 +141,13 @@ def handle_skill(translate_pack_path) -> None:
     file_list = get_skill_files(translate_pack_path)
     for file in file_list:
         file_path = os.path.join(translate_pack_path, file)
-        with open(file_path, 'r', encoding='utf-8') as f:
-            skill_content = json.load(f)
+        skill_content = read_json(file_path)
 
         # print(f"正在处理技能描述: {file}")
-        skill_content = handle_skill_strcture(skill_content)
+        skill_content = handle_skill_structure(skill_content)
         
         # 保存处理后的文件
-        with open(file_path, 'w', encoding='utf-8') as f:
-            json.dump(skill_content, f, ensure_ascii=False, indent=4)
+        write_json(file_path, skill_content, indent=4)
 
 if __name__ == '__main__':
     handle_skill("lang")

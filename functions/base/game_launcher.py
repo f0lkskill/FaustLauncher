@@ -123,7 +123,7 @@ class GameLauncher:
 
         steps = [
             ("复制汉化文件",      self._prepare_translation),
-            ("应用 Mod 修改",     self._apply_mod_changes),
+            ("应用拓展汉化修改",     self._apply_changes),
             ("应用美化功能",      self._apply_cosmetic_features),
             ("复制字体文件",      self._copy_fonts),
             ("创建零协会配置",     self._create_zeroasso_config),
@@ -164,23 +164,29 @@ class GameLauncher:
         print(f"[调试] _prepare_translation: 开始 copytree {self._lang_dir!r} -> {target!r}")
         shutil.copytree(self._lang_dir, target, dirs_exist_ok=True)
 
-    def _apply_mod_changes(self):
-        """应用所有启用 mod 的 changes.json 补丁到游戏语言文件。"""
-        from functions.extension.mod.mod_ulits import ModManager
+    def _apply_changes(self):
+        """应用所有启用 mod 和 插件 的 changes.json 补丁到游戏语言文件。"""
+        from functions.extension.mod.mod_utils import ModManager
 
         # 收集所有需要处理的目录
         dirs = []
-        if self._settings.get_setting('enable_mods'):
-            for sub_dir in os.listdir('mods'):
-                mod_info_path = os.path.join('mods', sub_dir, 'mod_info.json')
-                if not os.path.exists(mod_info_path):
-                    continue
-                mod_info = json.load(open(mod_info_path, 'r', encoding='utf-8'))
-                if mod_info.get('settings', {}).get('enable'):
-                    dirs.append(os.path.join('mods', sub_dir))
+        for dir in ['addons', 'mods']:
+            if self._settings.get_setting('enable_mods'):
+                for sub_dir in os.listdir(dir):
+                    info_path = os.path.join(dir, sub_dir, f'{dir.replace("s", "")}_info.json')
+                    if not os.path.exists(info_path):
+                        continue
+                    info = json.load(open(info_path, 'r', encoding='utf-8'))
+                    if info.get('settings', {}).get('enable'):
+                        dirs.append(os.path.join(dir, sub_dir))
+                    
+        #TODO 有点奇怪，先空着。
         dirs.append('lang')
+        
+        print(f"[调试] _apply_changes: 需要处理的目录: {dirs}")
 
-        ModManager.load_language('', self._lang_dir)
+        # 载入替换文件
+        ModManager.load_language('', 'lang')
 
         lang_data_dir = os.path.join(self._game_path, 'LimbusCompany_Data', 'Lang')
 
@@ -220,7 +226,7 @@ class GameLauncher:
             from functions.fancy.skill_info import handle_skill
             handle_skill(lang_path + '/')
 
-        if self._settings.get_setting('enable_speical_tip'):
+        if self._settings.get_setting('enable_special_tip'):
             from functions.fancy.hint_set import simple_replace
             simple_replace(os.path.join(lang_path, 'BattleHint.json'))
 
@@ -236,7 +242,7 @@ class GameLauncher:
 
     def _create_zeroasso_config(self):
         """创建零协会配置文件。"""
-        from functions.web_update.zeroasso_dow import create_config_file
+        from functions.web_update.zeroasso_download import create_config_file
         create_config_file(self._game_path)
 
     def _set_user_name(self):

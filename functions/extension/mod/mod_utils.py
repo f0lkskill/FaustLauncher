@@ -3,6 +3,7 @@ import json
 import shutil
 from typing import List, Dict, Any
 from functions.base.settings_manager import SettingsManager
+from functions.base.common.path_utils import get_mod_root_dir
 from subprocess import call, CREATE_NO_WINDOW
 
 class ModManager:
@@ -14,15 +15,7 @@ class ModManager:
 
     def get_mod_directory(self):
         """获取Mod目录路径"""
-        roaming_path = os.getenv('APPDATA')
-        mod_path = os.path.join(roaming_path, 'LimbusCompanyMods') # type: ignore
-        
-        # 如果目录不存在则创建
-        if not os.path.exists(mod_path):
-            os.makedirs(mod_path)
-            print(f"创建Mod目录: {mod_path}")
-        
-        return mod_path
+        return get_mod_root_dir()
     
     @staticmethod
     def get_mod_info(mod_name: str) -> Dict[str, Any]:

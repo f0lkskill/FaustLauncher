@@ -7,6 +7,8 @@ from zipfile import ZipFile
 import UnityPy
 from xxhash import xxh128
 
+from unity_utils import load_bundle_versions
+
 
 def scan_lunartique_mod_root(zip_file: ZipFile) -> str:
     names = set()
@@ -93,14 +95,9 @@ def _record_bundle_version(manifest: dict, bundle_subfolder: str, env):
     if "unity_version" in bundle:
         return
     try:
-        bundle["unity_version"] = getattr(env.file, "version_engine", "") or ""
-        bundle["version_player"] = getattr(env.file, "version_player", "") or ""
-        # 找到第一个 SerializedFile 的 header version
-        for sub in getattr(env.file, "files", {}).values():
-            header = getattr(sub, "header", None)
-            if header is not None:
-                bundle["serialized_file_version"] = getattr(header, "version", 0)
-                bundle["unity_version"] = getattr(sub, "unity_version", bundle.get("unity_version", ""))
-                break
+        info = load_bundle_versions(env)
+        bundle["unity_version"] = info["unity_version"]
+        bundle["version_player"] = info["version_player"]
+        bundle["serialized_file_version"] = info["serialized_file_version"]
     except Exception as e:
         logging.debug("Cannot record bundle version for %s: %s", bundle_subfolder, e)

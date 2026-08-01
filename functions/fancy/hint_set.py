@@ -1,31 +1,28 @@
-import json, os
+import os
 import random
+from functions.base.common.json_io import read_json, write_json
 
 def simple_replace(battlehint_path:str):
     """简单版本，直接替换BattleHint.json中的内容"""
 
     dir_path = os.path.dirname(battlehint_path)
     ui_file_path = os.path.join(dir_path, "LoginUIText.json")
-    with open(ui_file_path, 'r', encoding='utf-8') as f:
-        ui_data = json.load(f)
+    ui_data = read_json(ui_file_path)
     for k in ui_data["dataList"]:
         if k['id'] == 'loginui_loading_battlehint':
             k['content'] = '你知道吗？'
-    with open(ui_file_path, 'w', encoding='utf-8') as f:
-        json.dump(ui_data, f, ensure_ascii=False, indent=4)
+    write_json(ui_file_path, ui_data, indent=4)
 
     # 文件路径
     loadingtext_path = r"config\loadingText.json"
     
     # 读取loadingText.json
-    with open(loadingtext_path, 'r', encoding='utf-8') as f:
-        loading_data = json.load(f)
+    loading_data = read_json(loadingtext_path)
     
     loading_texts = loading_data["loadingTexts"]
     
     # 读取BattleHint.json
-    with open(battlehint_path, 'r', encoding='utf-8') as f:
-        battlehint_data = json.load(f)
+    battlehint_data = read_json(battlehint_path)
     
     data_list = battlehint_data["dataList"]
     
@@ -41,7 +38,6 @@ def simple_replace(battlehint_path:str):
         data_list[idx]["content"] = replacement_texts[i]
     
     # 保存修改后的文件
-    with open(battlehint_path, 'w', encoding='utf-8') as f:
-        json.dump(battlehint_data, f, ensure_ascii=False, indent=2)
+    write_json(battlehint_path, battlehint_data, indent=2)
     
     print(f"成功替换了 {num_replacements} 个 Tip 的内容！")

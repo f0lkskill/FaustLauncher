@@ -16,7 +16,7 @@ class CustomNotebook(tk.Frame):
         self._tab_hover_bg = self._blend(bg, self._accent, 0.06)
         self._tabs: list[dict] = []
         self._current_index = -1
-        self._tab_changed_callbacks: list[callable] = []
+        self._tab_changed_callbacks: list[callable] = [] # type: ignore
         
         self._tab_bar = tk.Frame(self, bg=bg, height=40, bd=0, highlightthickness=0)
         self._tab_bar.pack(fill=tk.X, side=tk.TOP)
@@ -121,7 +121,7 @@ class CustomNotebook(tk.Frame):
             )
         self.after(10, _place)
     
-    def bind(self, sequence: str, callback: callable, add=None):
+    def bind(self, sequence: str, callback: callable, add=None): # type: ignore
         if sequence == '<<NotebookTabChanged>>':
             self._tab_changed_callbacks.append(callback)
         else:

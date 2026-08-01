@@ -10,78 +10,68 @@ class WebTrigger:
         
         self.sort_info_by_download_number()
 
-    def refersh_note_info(self):
+    def refresh_note_info(self):
         """刷新插件和mod信息"""
-        self.addon_info._fetch_note_info_write()
-        self.mod_info._fetch_note_info_write()
+        self.addon_info.fetch_note_info()
+        self.mod_info.fetch_note_info()
+
+    def _get_note_info(self, note):
+        note.fetch_note_info()
+        return loads(note.note_content)
 
     def get_note_info_mod(self):
-        self.mod_info._fetch_note_info_write()
-        return loads(self.mod_info.note_content)
+        return self._get_note_info(self.mod_info)
     
     def get_note_info_addon(self):
-        self.addon_info._fetch_note_info_write()
-        return loads(self.addon_info.note_content)
+        return self._get_note_info(self.addon_info)
 
     def get_addon_info(self, page: int = 0):
         """获取插件信息"""
-        self.addon_info._fetch_note_info_write()
-        return loads(self.addon_info.note_content)[page]
+        return self._get_note_info(self.addon_info)[page]
     
     def get_mod_info(self, page: int = 0):
         """获取mod信息"""
-        self.mod_info._fetch_note_info_write()
-        return loads(self.mod_info.note_content)[page]
+        return self._get_note_info(self.mod_info)[page]
     
-    def fectch_all_addon_info(self) -> list[dict]:
+    def _fetch_all(self, get_page) -> list[dict]:
+        """获取所有分页信息"""
+        total_page = get_page(0)['total_page']
+        info_list = []
+        for page in range(1, total_page + 1):
+            info_list.append(get_page(page))
+        return info_list
+    
+    def fetch_all_addon_info(self) -> list[dict]:
         """获取所有插件信息"""
-        total_page = self.get_addon_info(0)['total_page']
-        addon_info_list = []
-        for page in range(1, total_page + 1):
-            addon_info_list.append(self.get_addon_info(page))
-        return addon_info_list
+        return self._fetch_all(self.get_addon_info)
     
-    def fectch_all_mod_info(self) -> list[dict]:
+    def fetch_all_mod_info(self) -> list[dict]:
         """获取所有mod信息"""
-        total_page = self.get_mod_info(0)['total_page']
-        mod_info_list = []
-        for page in range(1, total_page + 1):
-            mod_info_list.append(self.get_mod_info(page))
-        return mod_info_list
+        return self._fetch_all(self.get_mod_info)
     
-    def add_download_nummber_addon(self, addon_name: str):
-        """增加指定插件的下载次数"""
-        if not addon_name:
+    def _add_download_number(self, note, name: str):
+        """增加指定插件或mod的下载次数"""
+        if not name:
             return
 
-        pages = self.get_note_info_addon()
+        note.fetch_note_info()
+        pages = loads(note.note_content)
         for page in pages[1:]:  # 跳过第一页的总页数信息
-                addons = page
-                for addon in addons:
-                    if addon['name'] == addon_name:
-                        addon['download_count'] += 1
-                        page = dumps(addons, indent=4, ensure_ascii=False)
-                        self.addon_info.update_note_content(dumps(pages, indent=4, ensure_ascii=False))
-                        break
-                        
-        self.sort_info_by_download_number()
-
-    def add_download_nummber_mod(self, mod_name: str):
-        """增加指定mod的下载次数"""
-        if not mod_name:
-            return
-        
-        pages = self.get_note_info_mod()
-        for page in pages[1:]:  # 跳过第一页的总页数信息
-            mods = page
-            for mod in mods:
-                if mod['name'] == mod_name:
-                    mod['download_count'] += 1
-                    page = dumps(mods, indent=4, ensure_ascii=False)
-                    self.mod_info.update_note_content(dumps(pages, indent=4, ensure_ascii=False))
+            for item in page:
+                if item['name'] == name:
+                    item['download_count'] += 1
+                    note.update_note_content(dumps(pages, indent=4, ensure_ascii=False))
                     break
-        
+
         self.sort_info_by_download_number()
+
+    def add_download_number_addon(self, addon_name: str):
+        """增加指定插件的下载次数"""
+        self._add_download_number(self.addon_info, addon_name)
+
+    def add_download_number_mod(self, mod_name: str):
+        """增加指定mod的下载次数"""
+        self._add_download_number(self.mod_info, mod_name)
     
     def sort_info_by_download_number(self):
         """按下载次数排序插件和mod信息"""
@@ -92,7 +82,6 @@ class WebTrigger:
                 addons: list[dict] = page
                 # 按下载次数降序排序，被禁用插件默认排序在最后
                 addons.sort(key=lambda x: (x.get('disabled', False), -x.get('download_count', 0)))
-                page = dumps(addons, indent=4, ensure_ascii=False)
             # 更新排序后的插件信息
             self.addon_info.update_note_content(dumps(pages, indent=4, ensure_ascii=False))
             print("插件信息按下载次数排序完成")

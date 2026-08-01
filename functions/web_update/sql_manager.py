@@ -2,6 +2,7 @@ import pymysql
 import os
 import tkinter as tk
 from tkinter import ttk, messagebox, scrolledtext
+from functions.base.common.mysql_utils import connect_db
 
 def set_bubble_json_files(host, port, user, password, database, battle_speech_file, cultivation_file, mowe_file):
     """
@@ -19,15 +20,7 @@ def set_bubble_json_files(host, port, user, password, database, battle_speech_fi
     """
     try:
         # 连接MySQL数据库
-        connection = pymysql.connect(
-            host=host,
-            port=port,
-            user=user,
-            password=password,
-            database=database,
-            charset='utf8mb4',
-            cursorclass=pymysql.cursors.DictCursor
-        )
+        connection = connect_db(host, port, user, password, database)
         
         with connection.cursor() as cursor:
             # 检查表格是否存在
@@ -115,15 +108,7 @@ def get_bubble_json_files(host, port, user, password, database):
     """
     try:
         # 连接MySQL数据库
-        connection = pymysql.connect(
-            host=host,
-            port=port,
-            user=user,
-            password=password,
-            database=database,
-            charset='utf8mb4',
-            cursorclass=pymysql.cursors.DictCursor
-        )
+        connection = connect_db(host, port, user, password, database)
         
         with connection.cursor() as cursor:
             # 检查表格是否存在
@@ -320,15 +305,7 @@ def get_all_records(host, port, user, password, database):
     """
     try:
         # 连接MySQL数据库
-        connection = pymysql.connect(
-            host=host,
-            port=port,
-            user=user,
-            password=password,
-            database=database,
-            charset='utf8mb4',
-            cursorclass=pymysql.cursors.DictCursor
-        )
+        connection = connect_db(host, port, user, password, database)
         
         with connection.cursor() as cursor:
             # 检查表格是否存在
@@ -373,15 +350,7 @@ def create_version_table(host, port, user, password, database):
     """
     try:
         # 连接MySQL数据库
-        connection = pymysql.connect(
-            host=host,
-            port=port,
-            user=user,
-            password=password,
-            database=database,
-            charset='utf8mb4',
-            cursorclass=pymysql.cursors.DictCursor
-        )
+        connection = connect_db(host, port, user, password, database)
         
         with connection.cursor() as cursor:
             # 检查表格是否存在
@@ -439,15 +408,7 @@ def add_version(host, port, user, password, database, version_name, bilibili_url
     """
     try:
         # 连接MySQL数据库
-        connection = pymysql.connect(
-            host=host,
-            port=port,
-            user=user,
-            password=password,
-            database=database,
-            charset='utf8mb4',
-            cursorclass=pymysql.cursors.DictCursor
-        )
+        connection = connect_db(host, port, user, password, database)
         
         with connection.cursor() as cursor:
             # 如果设置为最新版本，先取消其他版本的最新标记
@@ -499,15 +460,7 @@ def update_version(host, port, user, password, database, version_id, version_nam
     """
     try:
         # 连接MySQL数据库
-        connection = pymysql.connect(
-            host=host,
-            port=port,
-            user=user,
-            password=password,
-            database=database,
-            charset='utf8mb4',
-            cursorclass=pymysql.cursors.DictCursor
-        )
+        connection = connect_db(host, port, user, password, database)
         
         with connection.cursor() as cursor:
             # 如果设置为最新版本，先取消其他版本的最新标记
@@ -560,15 +513,7 @@ def delete_version(host, port, user, password, database, version_id):
     """
     try:
         # 连接MySQL数据库
-        connection = pymysql.connect(
-            host=host,
-            port=port,
-            user=user,
-            password=password,
-            database=database,
-            charset='utf8mb4',
-            cursorclass=pymysql.cursors.DictCursor
-        )
+        connection = connect_db(host, port, user, password, database)
         
         with connection.cursor() as cursor:
             # 删除版本信息
@@ -608,15 +553,7 @@ def get_all_versions(host, port, user, password, database):
     """
     try:
         # 连接MySQL数据库
-        connection = pymysql.connect(
-            host=host,
-            port=port,
-            user=user,
-            password=password,
-            database=database,
-            charset='utf8mb4',
-            cursorclass=pymysql.cursors.DictCursor
-        )
+        connection = connect_db(host, port, user, password, database)
         
         with connection.cursor() as cursor:
             # 查询所有版本信息
@@ -653,15 +590,7 @@ def get_latest_version(host, port, user, password, database):
     """
     try:
         # 连接MySQL数据库
-        connection = pymysql.connect(
-            host=host,
-            port=port,
-            user=user,
-            password=password,
-            database=database,
-            charset='utf8mb4',
-            cursorclass=pymysql.cursors.DictCursor
-        )
+        connection = connect_db(host, port, user, password, database)
         
         with connection.cursor() as cursor:
             # 查询最新版本信息
@@ -703,15 +632,7 @@ def get_version_by_id(host, port, user, password, database, version_id):
     """
     try:
         # 连接MySQL数据库
-        connection = pymysql.connect(
-            host=host,
-            port=port,
-            user=user,
-            password=password,
-            database=database,
-            charset='utf8mb4',
-            cursorclass=pymysql.cursors.DictCursor
-        )
+        connection = connect_db(host, port, user, password, database)
         
         with connection.cursor() as cursor:
             # 根据ID查询版本信息

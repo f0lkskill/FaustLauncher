@@ -3,7 +3,7 @@ from tkinter import ttk, messagebox
 import os
 import json
 from PIL import Image, ImageTk
-from functions.extension.mod.mod_ulits import ModManager
+from functions.extension.mod.mod_utils import ModManager
 from functions.base.color_scheme import C, darken_color, border_color
 from functions.base.custom_notebook import CustomNotebook
 from functions.base.style_utils import apply_scrollbar_style, RoundedFrame, RoundedButton

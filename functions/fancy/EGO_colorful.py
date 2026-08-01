@@ -1,8 +1,8 @@
-import json
 import glob
 from typing import Dict, Any
 from functions.fancy.dialog_colorful import apply_color_gradient_custom
 from functions.base.settings_manager import get_settings_manager
+from functions.base.common.json_io import read_json, write_json
 
 settings_manager = get_settings_manager()
 
@@ -38,8 +38,7 @@ def process_single_json_file(file_path: str) -> bool:
     """处理单个JSON文件"""
     try:
         # 读取JSON文件
-        with open(file_path, 'r', encoding='utf-8') as f:
-            data = json.load(f)
+        data = read_json(file_path)
         
         # 处理dataList中的每个字典
         if 'dataList' in data and isinstance(data['dataList'], list):
@@ -47,8 +46,7 @@ def process_single_json_file(file_path: str) -> bool:
                 process_ego_item(item)
             
             # 保存修改后的数据
-            with open(file_path, 'w', encoding='utf-8') as f:
-                json.dump(data, f, ensure_ascii=False, indent=2)
+            write_json(file_path, data, indent=2)
             
             return True
         else:

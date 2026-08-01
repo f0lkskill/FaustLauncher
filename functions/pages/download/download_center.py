@@ -5,8 +5,8 @@ import threading
 from PIL import Image, ImageTk
 import requests
 from functions.web_update.web_trigger import WebTrigger
-from functions.extension.mod.mod_ulits import ModManager
-from functions.extension.addon.addon_ulit import AddonManager
+from functions.extension.mod.mod_utils import ModManager
+from functions.extension.addon.addon_utils import AddonManager
 from functions.base.color_scheme import C, ThemeColors, darken_color, lighten_color, border_color
 from functions.base.custom_notebook import CustomNotebook
 from functions.base.style_utils import apply_scrollbar_style, RoundedFrame, RoundedButton
@@ -58,7 +58,7 @@ class DownloadCenterPage:
         self.load_addon_data()
         self.load_mod_data()
         
-    def smoth_mousewheel(self, event, canvas, anim_state):
+    def smooth_mousewheel(self, event, canvas, anim_state):
         """平滑滚动鼠标滚轮事件处理函数。"""
         # 1) 取消正在进行的动画
         if anim_state['after_id'] is not None:
@@ -168,7 +168,7 @@ class DownloadCenterPage:
         anim_state = {'target_frac': 0.0, 'step_count': 0, 'total_steps': self._anim_steps, 'after_id': None}
 
         def _on_mousewheel(event):
-            self.smoth_mousewheel(event, canvas, anim_state)
+            self.smooth_mousewheel(event, canvas, anim_state)
 
         self._addon_wheel_handler = _on_mousewheel
 
@@ -215,7 +215,7 @@ class DownloadCenterPage:
         anim_state = {'target_frac': 0.0, 'step_count': 0, 'total_steps': self._anim_steps, 'after_id': None}
 
         def _on_mousewheel(event):
-            self.smoth_mousewheel(event, canvas, anim_state)
+            self.smooth_mousewheel(event, canvas, anim_state)
 
         self._mod_wheel_handler = _on_mousewheel
         
@@ -233,7 +233,7 @@ class DownloadCenterPage:
         # 在后台线程中加载数据
         def load_data_addon():
             try:
-                self.addon_data = self.web_trigger.fectch_all_addon_info()
+                self.addon_data = self.web_trigger.fetch_all_addon_info()
                 if self.addon_data:
                     self.display_addon_page(1)
                 else:
@@ -243,7 +243,7 @@ class DownloadCenterPage:
 
         def load_data_mod():
             try:
-                self.mod_data = self.web_trigger.fectch_all_mod_info()
+                self.mod_data = self.web_trigger.fetch_all_mod_info()
                 if self.mod_data:
                     self.display_mod_page(1)
                 else:
@@ -274,7 +274,7 @@ class DownloadCenterPage:
 
         def load_data_addon():
             try:
-                self.addon_data = self.web_trigger.fectch_all_addon_info()
+                self.addon_data = self.web_trigger.fetch_all_addon_info()
                 if self.addon_data:
                     self.display_addon_page(1)
                 else:
@@ -303,7 +303,7 @@ class DownloadCenterPage:
 
         def load_data_mod():
             try:
-                self.mod_data = self.web_trigger.fectch_all_mod_info()
+                self.mod_data = self.web_trigger.fetch_all_mod_info()
                 if self.mod_data:
                     self.display_mod_page(1)
                 else:
@@ -703,7 +703,7 @@ class DownloadCenterPage:
         # 准备下载信息
         import time
         
-        download_url = addon.get('dowload_url')
+        download_url = addon.get('download_url')
         if not download_url:
             messagebox.showerror("错误", "插件下载链接无效")
             return
@@ -722,7 +722,7 @@ class DownloadCenterPage:
         
         # 导入下载模块并执行下载
         try:
-            from functions.web_update.zeroasso_dow import download_and_extract_gui, DownloadGUI
+            from functions.web_update.zeroasso_download import download_and_extract_gui, DownloadGUI
             addon_path = "addons"
 
             print(f"准备下载插件: {addon.get('name', 'unknown')}，下载链接: {download_url}")
@@ -744,12 +744,12 @@ class DownloadCenterPage:
             # 恢复状态栏
             pass
         
-        threading.Thread(target=self.web_trigger.add_download_nummber_addon, args=(addon.get('name', None),)).start()  # 增加下载次数
+        threading.Thread(target=self.web_trigger.add_download_number_addon, args=(addon.get('name', None),)).start()  # 增加下载次数
         threading.Thread(target=self.refresh_center).start()  # 刷新界面显示最新下载次数
 
     def download_mod(self, mod):
         # 准备下载信息
-        download_url = mod.get('dowload_url')
+        download_url = mod.get('download_url')
         if not download_url:
             messagebox.showerror("错误", "Mod下载链接无效")
             return
@@ -768,7 +768,7 @@ class DownloadCenterPage:
 
         # 导入下载模块并执行下载
         try:
-            from functions.web_update.zeroasso_dow import download_and_extract_gui, DownloadGUI
+            from functions.web_update.zeroasso_download import download_and_extract_gui, DownloadGUI
             # 获取游戏路径
             mod_path = "mods"
 
@@ -782,7 +782,7 @@ class DownloadCenterPage:
             # 恢复状态栏
             pass
 
-        threading.Thread(target=self.web_trigger.add_download_nummber_mod, args=(mod.get('name', None),)).start()  # 增加下载次数
+        threading.Thread(target=self.web_trigger.add_download_number_mod, args=(mod.get('name', None),)).start()  # 增加下载次数
         threading.Thread(target=self.refresh_center).start()  # 刷新界面显示最新下载次数
 
     def detect_mod_update(self):

@@ -2,7 +2,7 @@ import tkinter as tk
 from tkinter import messagebox, ttk
 import os
 import re
-from functions.base.window_ulits import center_window
+from functions.base.window_utils import center_window
 from functions.base.settings_manager import get_settings_manager
 from functions.base.color_scheme import C
 
