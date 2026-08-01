@@ -78,6 +78,9 @@ def init_logger():
 
     _cleanup_logs()
     
+    from functions.base.terminal_banner import get_banner
+    print(get_banner("FaustLauncher"))
+    _logger.info(get_banner("\nFaustLauncher"))
     _logger.info("Faust Launcher 实例启动")
     _logger.info("日志文件: %s", fname)
     return _logger
@@ -96,6 +99,6 @@ def log_message(message):
     try:
         text = re.sub(r"\x1b\[[0-9;]*m", "", message).rstrip("\n")
         if text:
-            get_logger().info("%s", text)
+            get_logger().info("%s", text) # type: ignore
     except Exception:
         pass

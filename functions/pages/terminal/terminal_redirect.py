@@ -62,6 +62,13 @@ class TerminalRedirector:
         try:
             self.original_stdout.write(message)
             self.original_stdout.flush()
+        except UnicodeEncodeError:
+            try:
+                self.original_stdout.write(message.encode(
+                    'utf-8', errors='replace').decode('utf-8'))
+                self.original_stdout.flush()
+            except Exception:
+                pass
         except Exception:
             pass
     
