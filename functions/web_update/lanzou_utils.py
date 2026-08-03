@@ -37,7 +37,7 @@ LOGIN_URL = "https://pc.woozooo.com/account.php"
 MYDISK_URL = "https://pc.woozooo.com/mydisk.php"
 ACCOUNT_URL = "https://pc.woozooo.com/account.php"
 DO_LOAD_URL = "https://pc.woozooo.com/doupload.php"
-UPLOAD_URL = "https://pc.woozooo.com/fileup.php"
+UPLOAD_URL = "https://pc.woozooo.com/html5up.php"
 
 # 蓝奏云官方允许上传的文件格式
 ALLOW_UP_TYPES = [
@@ -366,23 +366,14 @@ def LoginByCookie(cookie):
 
 def _SetFolderID(session, folder_id):
     """
-    定位上传的目标文件夹（蓝奏云靠 cookie 中的 folder_id_c 记录当前目录）
-    :return: 成功返回 True，失败返回 False
+    切换上传的目标文件夹：蓝奏云通过 cookie 中的 folder_id_c 指定上传目录，
+    html5up.php 上传时即按该值写入对应文件夹。-1 表示根目录
+    :return: 恒为 True
     """
-    data = {'task': '47', 'folder_id': str(folder_id)}
     try:
-        response = session.post(DO_LOAD_URL, data=data, headers=headers, timeout=(10, 30))
+        session.post(DO_LOAD_URL, data={'task': '47', 'folder_id': str(folder_id)}, headers=headers, timeout=(10, 30))
     except requests.RequestException as e:
         print("_SetFolderID 请求失败：%s" % e)
-        return False
-    try:
-        j = json.loads(response.text)
-    except (ValueError, TypeError) as e:
-        print("_SetFolderID 响应解析失败：%s" % e)
-        return False
-    if j.get("zt") != 1:
-        print("_SetFolderID 失败：%s" % j.get("info"))
-        return False
     session.cookies.set("folder_id_c", str(folder_id))
     return True
 
@@ -414,6 +405,8 @@ def UploadFile(session, file_path, folder_id=-1):
     if not _SetFolderID(session, folder_id):
         ret["msg"] = "无法定位上传文件夹"
         return ret
+
+    _SetFolderID(session, folder_id)
 
     upload_headers = headers.copy()
     upload_headers["Referer"] = "https://pc.woozooo.com/mydisk.php"
@@ -450,9 +443,12 @@ def UploadFile(session, file_path, folder_id=-1):
         ret["msg"] = j.get("info") or "上传失败"
         return ret
     try:
-        ret["f_id"] = j["text"][0]["id"]
+        first = j["text"][0]
+        ret["f_id"] = first.get("id")
+        ret["share_url"] = str(first.get("is_newd", "")).rstrip("/") + "/" + first.get("f_id", "")
     except (KeyError, IndexError, TypeError):
         ret["f_id"] = None
+        ret["share_url"] = None
     ret["status"] = 1
     ret["msg"] = "success"
     return ret
