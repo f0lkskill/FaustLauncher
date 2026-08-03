@@ -33,13 +33,17 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install requests
+          pip install requests python-dotenv
 
       # 核心：安全检查新版本 + 有更新才运行脚本
       - name: Check latest release and run script
         env:
           ADDRESS: ${{ secrets.WEBNOTE_ADDRESS }}
           TARGET_REPO: LocalizeLimbusCompany/LocalizeLimbusCompany
+          # 蓝奏云上传凭据（浏览器登录 pan.lanzou.com 后 F12 复制 cookie，过期需更新）
+          LANZOU_YLOGIN: ${{ secrets.LANZOU_YLOGIN }}
+          LANZOU_YLOGINS: ${{ secrets.LANZOU_YLOGINS }}
+          LANZOU_PHPDISK_INFO: ${{ secrets.LANZOU_PHPDISK_INFO }}
         run: |
           python << 'PYTHON_CODE'
           import os

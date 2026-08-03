@@ -12,6 +12,7 @@ print(project_root)
 sys.path.append(project_root.as_posix())
 
 from functions.webFunc import *
+from LanzouUpload import LanzouUploader
 
 ADDRESS = "FaustLauncher"
 API_URL = "https://api.txttool.cn/netcut/note"
@@ -288,6 +289,23 @@ def main():
         current_data['llc_version'] = new_llc_version
         if need_update_llc:current_data['llc_last_update_time'] = datetime.now().isoformat()
         current_data['llc_mirror_update_time'] = datetime.now().isoformat()
+
+        # 上传到蓝奏云 LLC_lang 文件夹，并记录 lz.qaiu.top 解析链接（失败不阻断主流程）
+        lanzou_uploader = LanzouUploader()
+        if lanzou_uploader.login():
+            llc_lz_result = lanzou_uploader.upload(zip_asset.name)
+            llc_seven_lz_result = lanzou_uploader.upload(seven_zip_asset.name)
+            if llc_lz_result.get('success') and llc_seven_lz_result.get('success'):
+                current_data['lanzou_download_url'] = {
+                    'zip': llc_lz_result.get('parse_url'),
+                    'seven': llc_seven_lz_result.get('parse_url')
+                }
+                print(f"蓝奏云上传成功: {current_data['lanzou_download_url']}")
+            else:
+                print(f"蓝奏云上传失败: zip={llc_lz_result.get('error')}, "
+                      f"seven={llc_seven_lz_result.get('error')}，跳过蓝奏云镜像")
+        else:
+            print("蓝奏云登录失败，跳过蓝奏云镜像")
         
     if need_update_ourplay:
         print(f"OurPlay版本更新: {current_ourplay_version} -> {new_ourplay_version}")
