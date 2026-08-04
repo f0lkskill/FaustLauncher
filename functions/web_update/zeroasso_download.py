@@ -345,7 +345,11 @@ def get_download_path_ByNote() -> tuple[str, str] | None:
 def get_download_path_ByGhProxy() -> tuple[str, str] | None:
     return _fetch_download_path("FaustLauncher", "",
                                 lambda n: 'https://gh-proxy.org/' + n['llc_download_url']['seven'])
-    
+
+def get_download_path_ByLanzouyun() -> tuple[str, str] | None:
+    return _fetch_download_path("FaustLauncher", "",
+                                lambda n: n['lanzou_download_url']['seven'])
+
 def download_and_extract_gui(gui:DownloadGUI, config_path: str = "", download_files = None, auto_close:bool = True) -> bool:
     """带GUI的下载和解压主函数"""
     # 加载配置
@@ -428,13 +432,16 @@ def download_and_extract_gui(gui:DownloadGUI, config_path: str = "", download_fi
                         else:
                             print("检测到新版本，准备更新...")
 
-            elif download_way == 0 or download_way == 1:
-                if download_way == 1:
-                    print("使用upfile下载汉化文件...")
+            else:
+                if download_way == 2:
+                    print("使用 upfile 转存源下载")
                     result = get_download_path_ByNote()  
-                elif download_way == 0:
+                elif download_way == 1:
                     print('使用 gh-proxy 代理加速下载')
                     result = get_download_path_ByGhProxy()
+                elif download_way == 0:
+                    print('使用 lanzouyun 转存源下载')
+                    result = get_download_path_ByLanzouyun()
 
                 if result: # type: ignore
                     download_url, version = result
