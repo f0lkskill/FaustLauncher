@@ -11,13 +11,14 @@
         "name": "翻译下载方式",
         "type": "combobox",
         "options": [
+            "蓝奏云转存下载源(推荐)",
             "gh-proxy 代理加速下载",
             "upfile 动态更新下载源",
             "Github Releases 官方下载源(不推荐)"
         ],
         "default": 0,
         "value": 0,
-        "description": "翻译的下载方式\n推荐使用 gh-proxy 代理加速下载, 以获取最新的翻译内容\nGithub Releases 官方下载源可能会被墙, 导致下载失败\n若选择 Github Releases 官方下载源, 请确保网络环境可以访问 Github。",
+        "description": "翻译的下载方式\n推荐使用蓝奏云转存下载源, 以获取最新的翻译内容\nGithub Releases 官方下载源可能会被墙, 导致下载失败\n若选择 Github Releases 官方下载源, 请确保网络环境可以访问 Github。",
         "page": "通用"
     },
     "after_gui_exit": {
@@ -199,8 +200,8 @@
     "version_info": {
         "name": "版本信息",
         "type": "UNABLE_TO_EDIT",
-        "default": "V0.6.0-pre.7.HPB",
-        "value": "V0.6.0-pre.7.HPB",
+        "default": "V0.6.0-pre.7.fix.2",
+        "value": "V0.6.0-pre.7.fix.2",
         "description": "当前应用程序的版本信息"
     },
     "mems": {
