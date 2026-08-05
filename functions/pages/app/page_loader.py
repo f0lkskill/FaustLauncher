@@ -105,6 +105,7 @@ class PageLoader:
         from functions.pages.tools.auto_translate_gui import show_auto_translate_gui
         from functions.base.settings_manager import get_settings_manager
         from functions.web_tool.launch_babel import launch_babel
+        from functions.pages.tools.nyos_prescript import open_prescript_window
         
         settings_manager = get_settings_manager()
         
@@ -148,14 +149,14 @@ class PageLoader:
             {"name": "🔄 自动汉化", "description": "使用思知实现\n对游戏的补充汉化。",
              "color": accent_purple, "command": spawn_function_tr()},
             
+            {"name": "📖 今日指令", "description": "食指的最新指令，\n点击获取并等待解析。",
+             "color": accent_blue, "command": open_prescript_window},
+            
             {"name": "📦 Mod 管理器", "description": "管理边狱巴士的 Mod。\n",
              "color": accent_indigo, "command": self.core.open_mod_manager},
             
             {"name": "🚀 零协会CDN优选", "description": "自动选择最优质的CDN，优化游戏资源下载和服务器连接",
              "color": accent_cyan, "command": launch_babel},
-            
-            {"name": "🔧 正在制作的功能\n", "description": "此功能正在开发中...",
-             "color": accent_gray, "command": lambda: messagebox.showinfo("提示", "此功能正在开发中...")},
             
             {"name": "🔧 正在制作的功能\n", "description": "此功能正在开发中...",
              "color": accent_gray, "command": lambda: messagebox.showinfo("提示", "此功能正在开发中...")},
