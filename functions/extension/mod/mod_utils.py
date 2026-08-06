@@ -183,36 +183,56 @@ class ModManager:
         删除所有mod的文件
         """
         unloaded_mods = []
-        mods_dir = 'mods'
+        mods_dir = self.mod_dir
         
         # 遍历所有mod目录
         for mod_name in os.listdir(mods_dir):
-            mod_path = os.path.join(mods_dir, mod_name)
-            
-            # 检查是否是目录且存在mod_info.json
-            if os.path.isdir(mod_path) and os.path.exists(os.path.join(mod_path, 'mod_info.json')):
-                try:
-                    # 获取mod信息
-                    mod_info = self.get_mod_info(mod_name)
-                    file_names = mod_info.get('file_names', [])
-                    
-                    # 获取目标目录
-                    target_dir = self.get_mod_directory()
-                    
-                    # 删除文件
-                    for file_name in file_names:
-                        target_file = os.path.join(target_dir, file_name)
-                        
-                        if os.path.exists(target_file):
-                            os.remove(target_file)
-                            print(f"删除文件: {target_file}")
-                    
-                    unloaded_mods.append(mod_name)
-                    print(f"成功卸载Mod: {mod_name}")
-                except Exception as e:
-                    print(f"卸载Mod {mod_name} 失败: {e}")
+            result = self.unload_mod(mod_name)
+            if result:
+                unloaded_mods.append(result)
         
         return unloaded_mods
+
+    def unload_mod(self, mod_name:str):
+        """
+        卸载指定mod
+        Args:
+            mod_name (str): mod名称
+        """
+        mod_path = os.path.join(self.mod_dir, mod_name)
+
+        # 检查是否是目录且存在mod_info.json
+        if os.path.isdir(mod_path) and os.path.exists(os.path.join(mod_path, 'mod_info.json')):
+            try:
+                # 获取mod信息
+                mod_info = self.get_mod_info(mod_name)
+                file_names = mod_info.get('file_names', [])
+                
+                # 获取目标目录
+                target_dir = self.get_mod_directory()
+
+                if os.path.exists(
+                    os.path.join(mod_path, 'Uninstaller.bat')):
+                    # 执行卸载脚本
+                    call([os.path.join(mod_path, 'Uninstaller.bat')], 
+                         shell=True, creationflags=CREATE_NO_WINDOW)
+                    print(f"{mod_name} Mod 资源缓存成功清理")
+                else:
+                    # print(f"{mod_name} Mod 没有 Uninstaller.bat 脚本\n{os.path.join(target_dir, 'Uninstaller.bat')}")
+                    pass
+
+                # 删除文件
+                for file_name in file_names:
+                    target_file = os.path.join(target_dir, file_name)
+                    
+                    if os.path.exists(target_file):
+                        os.remove(target_file)
+                        print(f"删除文件: {target_file}")
+
+                print(f"成功卸载Mod: {mod_name}")
+                return mod_name
+            except Exception as e:
+                print(f"卸载Mod {mod_name} 失败: {e}")
     
     def get_all_mods(self) -> List[Dict[str, Any]]:
         """获取所有可用的mod信息"""

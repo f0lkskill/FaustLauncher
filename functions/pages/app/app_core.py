@@ -8,6 +8,7 @@ from functions.base.color_scheme import lighten_color as _lighten_color, darken_
 from rich import print
 import tkinter as tk
 from functions.extension.addon.addon_utils import AddonManager
+from functions.extension.mod.mod_utils import ModManager
 from functions.pages.terminal.terminal_redirect import TerminalRedirector
 from functions.pages.app.page_loader import PageLoader
 
@@ -23,6 +24,7 @@ class FaustLauncherCore:
         self.debug = debug
         self._last_sound_ms = 0
         self.addon_manager: AddonManager = None  # type: ignore
+        self.mod_manager: ModManager = None  # type: ignore
         self.page_loader:PageLoader = None  # type: ignore
         self.terminal_redirector:TerminalRedirector = None  # type: ignore
         self.terminal_text:tk.Text = None  # type: ignore

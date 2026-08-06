@@ -13,6 +13,7 @@ from functions.base.custom_notebook import CustomNotebook
 from functions.base.style_utils import apply_scrollbar_style
 from functions.pages.app.page_loader import PageLoader
 from functions.extension.addon.addon_utils import AddonManager
+from functions.extension.mod.mod_utils import ModManager
 from functions.pages.app.app_core import FaustLauncherCore
 
 
@@ -220,6 +221,7 @@ class FaustLauncherUI:
         self.addon_menu_items = []
         self.core.addon_manager = AddonManager([], app=self)
         self.core.addon_manager.run_all_addon()
+        self.core.mod_manager = ModManager()
         
         self.core.page_loader.load_all_pages()
         self.init_tray()
