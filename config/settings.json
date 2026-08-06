@@ -167,17 +167,6 @@
         "description": "启动器欢迎音效的文件路径\n可以替换为你喜欢的音效文件\n仅支持wav格式\n如果不想要欢迎音效, 可以将其设置为空字符串",
         "page": "其它"
     },
-    "sound_volume": {
-        "name": "全局音效音量",
-        "type": "float",
-        "default": 0.5,
-        "value": 0.5,
-        "description": "全局音效音量\n越大的值意味着音效声音越大",
-        "min": 0.0,
-        "max": 1.0,
-        "step": 0.1,
-        "page": "其它"
-    },
     "bg_gaussian_blur": {
         "name": "背景模糊",
         "type": "float",

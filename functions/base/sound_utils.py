@@ -1,338 +1,227 @@
+import io
+import os
 import struct
-import wave, time, os
+import tempfile
 import threading
-import ctypes
-import ctypes.wintypes
-
-from functions.base.settings_manager import get_settings_manager
-settings_manager = get_settings_manager()
-
-# ========== winmm.dll 常量 ==========
-WAVE_MAPPER = -1
-CALLBACK_NULL = 0
-MMSYSERR_NOERROR = 0
-WAVE_FORMAT_PCM = 1
-WHDR_DONE = 0x00000001
-
-# ========== 全局状态 ==========
-_winmm = None
-_player = None
-_player_lock = threading.Lock()
+import time
+import wave
+import winsound
 
 
-# ========== ctypes 数据结构 ==========
-class WAVEFORMATEX(ctypes.Structure):
-    _fields_ = [
-        ('wFormatTag',      ctypes.wintypes.WORD),
-        ('nChannels',       ctypes.wintypes.WORD),
-        ('nSamplesPerSec',  ctypes.wintypes.DWORD),
-        ('nAvgBytesPerSec', ctypes.wintypes.DWORD),
-        ('nBlockAlign',     ctypes.wintypes.WORD),
-        ('wBitsPerSample',  ctypes.wintypes.WORD),
-        ('cbSize',          ctypes.wintypes.WORD),
-    ]
+# ========== PCM 缓存 ==========
+_pcm_cache = {}  # path -> (rate, nch, sampwidth, samples:list[int])
 
 
-class WAVEHDR(ctypes.Structure):
-    pass
-WAVEHDR._fields_ = [
-    ('lpData',          ctypes.wintypes.LPSTR),
-    ('dwBufferLength',  ctypes.wintypes.DWORD),
-    ('dwBytesRecorded', ctypes.wintypes.DWORD),
-    ('dwUser',          ctypes.wintypes.DWORD),
-    ('dwFlags',         ctypes.wintypes.DWORD),
-    ('dwLoops',         ctypes.wintypes.DWORD),
-    ('lpNext',          ctypes.POINTER(WAVEHDR)),
-    ('reserved',        ctypes.wintypes.DWORD),
-]
+def _load_pcm(file_path):
+    """读取 WAV 为内存样本（16-bit 小端交错），结果缓存"""
+    item = _pcm_cache.get(file_path)
+    if item is None:
+        with wave.open(file_path, "rb") as wf:
+            rate = wf.getframerate()
+            nch = wf.getnchannels()
+            sw = wf.getsampwidth()
+            raw = wf.readframes(wf.getnframes())
+        if len(raw) > 8 * 1024 * 1024:
+            raw = raw[:8 * 1024 * 1024]
+        samples = list(struct.unpack(f"<{len(raw) // 2}h", raw)) if sw == 2 else None
+        item = (rate, nch, sw, samples)
+        _pcm_cache[file_path] = item
+    return item
 
 
-def _get_winmm():
-    """懒加载 winmm.dll 并声明参数类型（Windows 自带，无需额外安装）"""
-    global _winmm
-    if _winmm is None:
-        try:
-            w = ctypes.WinDLL('winmm')
-            DWORD_PTR = ctypes.c_size_t
-            w.waveOutOpen.argtypes = [
-                ctypes.POINTER(ctypes.wintypes.HANDLE),  # LPHWAVEOUT
-                ctypes.wintypes.UINT,                    # uDeviceID
-                ctypes.POINTER(WAVEFORMATEX),            # LPWAVEFORMATEX
-                DWORD_PTR,                               # dwCallback
-                DWORD_PTR,                               # dwInstance
-                DWORD_PTR,                               # fdwOpen
-            ]
-            w.waveOutOpen.restype = ctypes.wintypes.UINT
-            for name in ('waveOutClose', 'waveOutReset',
-                         'waveOutPrepareHeader', 'waveOutUnprepareHeader',
-                         'waveOutWrite'):
-                getattr(w, name).argtypes = [ctypes.wintypes.HANDLE,
-                                             ctypes.POINTER(WAVEHDR),
-                                             ctypes.wintypes.UINT]
-                getattr(w, name).restype = ctypes.wintypes.UINT
-            _winmm = w
-        except Exception as e:
-            print(f"加载 winmm.dll 失败: {e}")
-    return _winmm
+# ========== 混音播放线程 ==========
+class _MixerPlayer(threading.Thread):
+    """软件混音 + 异步播放线程。
 
-
-def _apply_volume_to_samples(raw_frames, volume, sampwidth):
-    """PCM 样本层面按 volume 缩放 —— 不污染系统其他音频的音量。"""
-    if volume >= 1.0 - 1e-6:
-        return raw_frames
-    if volume <= 0.0:
-        return b"\x00" * len(raw_frames)
-
-    if sampwidth == 2:
-        # 16-bit 有符号短整型（little-endian）—— 最常见
-        count = len(raw_frames) // 2
-        samples = struct.unpack(f"<{count}h", raw_frames)
-        scaled = [max(-32768, min(32767, int(s * volume))) for s in samples]
-        return struct.pack(f"<{count}h", *scaled)
-    if sampwidth == 1:
-        # 8-bit 无符号（中心 128）
-        samples = struct.unpack(f"<{len(raw_frames)}B", raw_frames)
-        scaled = [max(0, min(255, int((s - 128) * volume) + 128)) for s in samples]
-        return struct.pack(f"<{len(raw_frames)}B", *scaled)
-    # 其他位宽（如 32-bit）：按字节缩放
-    max_val = (1 << (sampwidth * 8 - 1)) - 1
-    min_val = -max_val - 1
-    result = bytearray(len(raw_frames))
-    total = len(raw_frames) // sampwidth
-    for i in range(total):
-        off = i * sampwidth
-        s = int.from_bytes(raw_frames[off:off + sampwidth], byteorder="little", signed=True)
-        s = max(min_val, min(max_val, int(s * volume)))
-        result[off:off + sampwidth] = s.to_bytes(sampwidth, byteorder="little", signed=True)
-    return bytes(result)
-
-
-# ========== 单例播放线程（设备复用，杜绝每点击一次开关设备的抖动/竞争）==========
-class _SoundPlayer(threading.Thread):
-    """串行播放器：
-    - 只打开一次 waveOut 设备并复用，避免快速点击时设备忙/并发 Reset 造成
-      无声、断断续续甚至崩溃；
-    - 所有 winmm 调用都在本线程内完成，stop_sound 只发信号，不再跨线程碰设备；
-    - 播放期间 hwout/buf/hdr 都挂在实例上，直到播完或被打断，防止 GC 提前回收。
+    同一时刻只能有一个 winsound 播放实例，且后发请求会排队等待，
+    因此"同时播放两个音效"必须在本线程内做样本级混音：
+    - 每段声音都以 PCM 样本常驻内存，按已播放帧数推进游标；
+    - 新声音到达时，把当前未播完的各层 + 新声音混成一段新 WAV，
+      在播放线程内 purge 旧实例并重新异步播放；
+    - 界面线程只发信号，从不触碰播放器内部状态。
     """
 
-    MAX_AUDIO_BYTES = 8 * 1024 * 1024  # 上限 8MB，防止超长 WAV 占内存
+    MAX_LAYERS = 6
 
     def __init__(self):
         super().__init__(daemon=True, name="sound-player")
         self._lock = threading.Lock()
-        self._target = None              # (seq, file_path, volume) 最新播放任务
         self._wake = threading.Event()
-        self._seq = 0
-        self._is_playing = False
-        # 以下 winmm 状态只在本线程内访问
-        self._winmm = None
-        self._hwout = ctypes.wintypes.HANDLE()
-        self._opened = False
-        self._wfx = None                 # 当前已打开的格式，用于对比
-        self._buf = None
-        self._hdr = None
+        self._pending = []     # 待提交路径
+        self._stop_flag = False
+        self._layers = []      # [(samples, consumed_frames)]
+        self._fmt = None       # (rate, nch, sw)
+        self._mix_start = 0.0
+        self._expected_end = 0.0
+        self._tmp_files = []   # 已交给 PlaySound 的临时混音文件
 
-    # ---------- 线程安全 API ----------
-    def play(self, file_path, volume):
+    # ---------- 界面线程 API ----------
+    def submit(self, file_path):
         with self._lock:
-            self._seq += 1
-            self._target = (self._seq, file_path, volume)
+            self._pending.append(file_path)
         self._wake.set()
-        return True
 
-    def stop(self):
-        """请求停止当前播放（不跨线程碰设备，由播放线程自行处理）"""
+    def request_stop(self):
         with self._lock:
-            self._seq += 1
-            self._target = None
+            self._stop_flag = True
+            self._pending.clear()
         self._wake.set()
 
     def is_playing(self):
-        return self._is_playing
+        return time.monotonic() < self._expected_end
 
-    # ---------- 播放主循环 ----------
+    # ---------- 播放线程 ----------
     def run(self):
-        self._winmm = _get_winmm()
-        if self._winmm is None:
-            return
         while True:
+            try:
+                self._process()
+            except Exception as e:
+                print(f"播放线程异常: {e}")
             self._wake.wait()
             self._wake.clear()
-            with self._lock:
-                target = self._target
-            if target is None:
-                continue
-            self._is_playing = True
+
+    def _process(self):
+        with self._lock:
+            pending = list(self._pending)
+            self._pending.clear()
+            stop_requested = self._stop_flag
+            self._stop_flag = False
+            layers = list(self._layers)
+            fmt = self._fmt
+            mix_start = self._mix_start
+
+        # 1) 推进各层已播放帧数
+        if layers and fmt is not None and mix_start:
+            elapsed = time.monotonic() - mix_start
+            advance = int(elapsed * fmt[0])
+            layers = [(s, c + advance) for s, c in layers]
+
+        # 2) 处理停止请求
+        if stop_requested:
+            layers = []
+            fmt = None
+            pending = []
+
+        # 3) 挂载新声音
+        for path in pending:
             try:
-                self._play_target(target)
+                rate, nch, sw, samples = _load_pcm(path)
             except Exception as e:
-                print(f"播放异常: {e}")
-            finally:
-                self._is_playing = False
+                print(f"读取音频失败 {path}: {e}")
+                continue
+            if samples is None:
+                print(f"不支持的音频格式（仅支持16bit WAV）: {path}")
+                continue
+            if fmt is None:
+                fmt = (rate, nch, sw)
+            if (rate, nch, sw) != fmt:
+                # 格式不同无法混音：只保留新声音
+                layers = [(samples, 0)]
+                fmt = (rate, nch, sw)
+            else:
+                layers.append((samples, 0))
+            if len(layers) > self.MAX_LAYERS:
+                layers = layers[-self.MAX_LAYERS:]
 
-    def _play_target(self, target):
-        seq, file_path, volume = target
-        if not file_path or not os.path.exists(file_path):
-            print(f"音频文件不存在: {file_path}")
-            return
+        # 4) 丢弃已播完的层
+        if fmt is not None:
+            nch = fmt[1]
+            layers = [(s, c) for s, c in layers if c * nch < len(s)]
 
-        try:
-            with wave.open(file_path, "rb") as wf:
-                nchannels = wf.getnchannels()
-                sampwidth = wf.getsampwidth()
-                framerate = wf.getframerate()
-                nframes = wf.getnframes()
-                raw = wf.readframes(nframes)
-        except Exception as e:
-            print(f"读取音频失败 {file_path}: {e}")
-            return
-
-        if not raw:
-            return
-        if len(raw) > self.MAX_AUDIO_BYTES:
-            raw = raw[:self.MAX_AUDIO_BYTES]
-
-        final_bytes = _apply_volume_to_samples(raw, volume, sampwidth)
-
-        wfx = WAVEFORMATEX()
-        wfx.wFormatTag = WAVE_FORMAT_PCM
-        wfx.nChannels = nchannels
-        wfx.nSamplesPerSec = framerate
-        wfx.wBitsPerSample = sampwidth * 8
-        wfx.nBlockAlign = nchannels * sampwidth
-        wfx.nAvgBytesPerSec = framerate * wfx.nBlockAlign
-
-        self._ensure_open(wfx)
-        if not self._opened:
-            return
-        # 清掉上一段可能未播完的缓冲
-        self._unprepare()
-
-        self._buf = ctypes.create_string_buffer(final_bytes)
-        self._hdr = WAVEHDR()
-        self._hdr.lpData = ctypes.cast(self._buf, ctypes.wintypes.LPSTR)
-        self._hdr.dwBufferLength = len(final_bytes)
-        self._hdr.dwBytesRecorded = 0
-        self._hdr.dwUser = 0
-        self._hdr.dwFlags = 0
-        self._hdr.dwLoops = 0
-
-        ret = self._winmm.waveOutPrepareHeader(
-            self._hwout, ctypes.byref(self._hdr), ctypes.sizeof(self._hdr))
-        if ret != MMSYSERR_NOERROR:
-            print(f"waveOutPrepareHeader 失败 (错误码={ret})")
-            self._unprepare()
-            return
-
-        ret = self._winmm.waveOutWrite(
-            self._hwout, ctypes.byref(self._hdr), ctypes.sizeof(self._hdr))
-        if ret != MMSYSERR_NOERROR:
-            print(f"waveOutWrite 失败 (错误码={ret})")
-            self._unprepare()
-            return
-
-        # 轮询等待播放完成；若期间出现更新的任务/停止，则立即放弃当前缓冲
-        total_sec = max(0.1, len(final_bytes) / max(1, wfx.nAvgBytesPerSec))
-        deadline = time.time() + total_sec + 0.5
-        while time.time() < deadline:
+        # 5) 混音并播放
+        self._purge()
+        if layers and fmt is not None:
+            wav_bytes = self._mix_to_wav(layers, fmt)
+            self._play_async(wav_bytes)
             with self._lock:
-                current = self._target
-            if current is None or current[0] != seq:
-                break
-            if self._hdr.dwFlags & WHDR_DONE:
-                break
-            time.sleep(0.005)
-        self._unprepare()
+                self._layers = layers
+                self._fmt = fmt
+                self._mix_start = time.monotonic()
+                remaining = max((len(s) - c * fmt[1]) / (fmt[0] * fmt[1])
+                                for s, c in layers)
+                self._expected_end = self._mix_start + remaining
+        else:
+            with self._lock:
+                self._layers = []
+                self._fmt = None
+                self._mix_start = 0.0
+                self._expected_end = 0.0
 
-    def _ensure_open(self, wfx):
-        if self._opened and self._same_format(self._wfx, wfx):
-            return
-        self._close()
-        ret = self._winmm.waveOutOpen(
-            ctypes.byref(self._hwout),
-            ctypes.wintypes.UINT(WAVE_MAPPER),
-            ctypes.byref(wfx),
-            ctypes.c_size_t(0),
-            ctypes.c_size_t(0),
-            ctypes.c_size_t(CALLBACK_NULL),
+    def _mix_to_wav(self, layers, fmt):
+        """把各层从当前游标起混合成一段 WAV 字节"""
+        rate, nch, sw = fmt
+        total_frames = 0
+        for samples, consumed in layers:
+            total_frames = max(total_frames, (len(samples) // nch) - consumed)
+        total_frames = min(total_frames, 10 * 60 * rate)  # 上限 10 分钟
+        mixed = [0] * (total_frames * nch)
+        for samples, consumed in layers:
+            off = consumed * nch
+            seg = samples[off:off + total_frames * nch]
+            for i, v in enumerate(seg):
+                mixed[i] += v
+        for i in range(len(mixed)):
+            v = mixed[i]
+            if v > 32767:
+                mixed[i] = 32767
+            elif v < -32768:
+                mixed[i] = -32768
+        pcm = struct.pack(f"<{len(mixed)}h", *mixed)
+        bio = io.BytesIO()
+        with wave.open(bio, "wb") as wf:
+            wf.setnchannels(nch)
+            wf.setsampwidth(sw)
+            wf.setframerate(rate)
+            wf.writeframes(pcm)
+        return bio.getvalue()
+
+    def _purge(self):
+        """停止当前异步播放，并清理旧临时文件（数据已载入内存，可安全删除）"""
+        try:
+            winsound.PlaySound(None, winsound.SND_PURGE)
+        except Exception:
+            pass
+        for p in self._tmp_files:
+            try:
+                os.remove(p)
+            except OSError:
+                pass
+        self._tmp_files = []
+
+    def _play_async(self, wav_bytes):
+        """混音结果写临时 WAV 文件，异步播放（SND_MEMORY 不允许 SND_ASYNC）"""
+        fd, path = tempfile.mkstemp(prefix="faust_snd_", suffix=".wav")
+        with os.fdopen(fd, "wb") as f:
+            f.write(wav_bytes)
+        winsound.PlaySound(
+            path,
+            winsound.SND_FILENAME | winsound.SND_ASYNC | winsound.SND_NODEFAULT,
         )
-        if ret != MMSYSERR_NOERROR:
-            print(f"waveOutOpen 失败 (错误码={ret})")
-            self._opened = False
-            self._wfx = None
-            return
-        self._opened = True
-        self._wfx = wfx
+        self._tmp_files.append(path)
 
-    def _same_format(self, a, b):
-        if a is None or b is None:
-            return False
-        return (a.nChannels == b.nChannels
-                and a.nSamplesPerSec == b.nSamplesPerSec
-                and a.wBitsPerSample == b.wBitsPerSample)
 
-    def _unprepare(self):
-        """Reset + Unprepare + 释放缓冲引用（只在本线程调用）"""
-        if not self._opened:
-            return
-        try:
-            self._winmm.waveOutReset(self._hwout)
-            if self._hdr is not None:
-                self._winmm.waveOutUnprepareHeader(
-                    self._hwout, ctypes.byref(self._hdr), ctypes.sizeof(self._hdr))
-                self._hdr = None
-            self._buf = None
-        except Exception:
-            pass
-
-    def _close(self):
-        if not self._opened:
-            return
-        try:
-            self._winmm.waveOutReset(self._hwout)
-            self._winmm.waveOutClose(self._hwout)
-        except Exception:
-            pass
-        self._opened = False
-        self._wfx = None
-        self._hdr = None
-        self._buf = None
+_player = None
+_player_lock = threading.Lock()
 
 
 def _get_player():
     global _player
     with _player_lock:
         if _player is None:
-            p = _SoundPlayer()
+            p = _MixerPlayer()
             p.start()
             _player = p
     return _player
 
 
 # ========== 对外 API ==========
-def play_sound(file_path, sound_volume=None):
-    """播放WAV音频文件（支持停止当前播放并播放新音频，支持音量控制 0.0 ~ 1.0）"""
-    if sound_volume is None:
-        # 注意：不能用 `or 0.5`，否则 0.0（静音）会被吞成 0.5
-        sound_volume = settings_manager.get_setting('sound_volume')
-    try:
-        sound_volume = float(sound_volume)
-    except (TypeError, ValueError):
-        sound_volume = 0.5
-    sound_volume = max(0.0, min(1.0, sound_volume))
-
-    # 音量 0 时不用播放
-    if sound_volume == 0.0:
-        stop_sound()
-        return True
-
+def play_sound(file_path):
+    """异步播放WAV音频文件，可与正在播放的音效混音同时出声"""
     if not file_path or not os.path.exists(file_path):
         print(f"音频文件不存在: {file_path}")
         return False
-
     try:
-        _get_player().play(file_path, sound_volume)
+        _get_player().submit(file_path)
         return True
     except Exception as e:
         print(f"播放失败: {e}")
@@ -340,10 +229,9 @@ def play_sound(file_path, sound_volume=None):
 
 
 def stop_sound():
-    """停止当前正在播放的音频"""
+    """停止全部音效（含待播）"""
     try:
-        player = _get_player()
-        player.stop()
+        _get_player().request_stop()
     except Exception:
         pass
     return True
