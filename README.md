@@ -6,7 +6,7 @@
 
 <br>
 
-[![版本](https://img.shields.io/badge/V0.6.0-pre.7.HPB-blue?style=for-the-badge&logo=git)](https://github.com/f0lkskill/FaustLauncher/releases)
+[![版本](https://img.shields.io/badge/V0.6.0-pre.7.fix.2-blue?style=for-the-badge&logo=git)](https://github.com/f0lkskill/FaustLauncher/releases)
 [![许可证](https://img.shields.io/badge/许可证-MIT-green?style=for-the-badge&logo=opensourceinitiative)](https://github.com/f0lkskill/FaustLauncher/blob/main/LICENSE)
 [![状态](https://img.shields.io/badge/状态-开发中-orange?style=for-the-badge&logo=githubactions)](https://github.com/f0lkskill/FaustLauncher)
 [![平台](https://img.shields.io/badge/平台-Windows-lightgrey?style=for-the-badge&logo=windows)]()
@@ -28,8 +28,8 @@
 
 | 项目 | 信息 |
 |:---|:---|
-| 🏷️ 当前版本 | `V0.6.0-pre.7.HPB` |
-| 📅 最后更新 | 2026-08-01 |
+| 🏷️ 当前版本 | `V0.6.0-pre.7.fix.2` |
+| 📅 最后更新 | 2026-08-06 |
 | 🛠️ 开发状态 | 积极开发中 |
 | 🎯 目标平台 | Windows 10 / 11 |
 | 📜 开源协议 | MIT |

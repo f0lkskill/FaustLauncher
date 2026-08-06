@@ -151,8 +151,10 @@ class BuildGUI:
         self.root.after(0, lambda: self._progress.configure(value=val))
 
     def _run_pyinstaller(self):
+        # 用当前解释器(venv)的 PyInstaller 构建, 避免裸 pyinstaller 命令解析到
+        # 其他环境的安装导致 cffi 等扩展模块漏收集(如缺 _cffi_backend)
         p = subprocess.Popen(
-            ['pyinstaller', '--noconfirm', 'FaustLauncher.spec'],
+            [sys.executable, '-m', 'PyInstaller', '--noconfirm', 'FaustLauncher.spec'],
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
             text=True, encoding='utf-8', errors='replace'
         )
@@ -299,6 +301,16 @@ class BuildGUI:
         except Exception as e:
             self._set_step(9, 'failed')
             self._set_status(f'复制 exe 失败: {e}', DANGER)
+            self._on_done(False)
+            return
+        # 同步本次构建的 _internal (exe 与内部模块须同源), 覆盖 build_temp 里的旧模板,
+        # 避免模板长期未更新导致扩展模块缺失(如 _cffi_backend)
+        try:
+            shutil.copytree('dist/FaustLauncher/_internal', f'build_{vi}/_internal',
+                            dirs_exist_ok=True)
+        except Exception as e:
+            self._set_step(9, 'failed')
+            self._set_status(f'同步 _internal 失败: {e}', DANGER)
             self._on_done(False)
             return
         self._set_step(9, 'done')
