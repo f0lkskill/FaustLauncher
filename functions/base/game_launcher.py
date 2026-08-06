@@ -59,44 +59,35 @@ def apply_changes_to_data(original_data, changes):
 
     elif isinstance(original_data, list) and isinstance(changes, list):
         result = []
-        if (len(original_data) > 0 and isinstance(original_data[0], dict)
-                and 'id' in original_data[0] and len(changes) > 0
-                and isinstance(changes[0], dict) and 'id' in changes[0]):
+        id_changes = {}
+        for change_item in changes:
+            if isinstance(change_item, dict) and 'id' in change_item and 'changes' in change_item:
+                change_id = change_item['id']
+                id_changes[change_id] = change_item['changes']
+                id_changes[str(change_id)] = change_item['changes']
 
-            original_dict = {item['id']: item for item in original_data if 'id' in item}
-            modified_ids = set()
-
-            for change_item in changes:
-                if isinstance(change_item, dict) and 'id' in change_item:
-                    change_id = change_item['id']
-                    modified_ids.add(change_id)
-                    if change_id in original_dict:
-                        original_item = original_dict[change_id]
-                        if 'changes' in change_item:
-                            modified_item = apply_changes_to_data(original_item, change_item['changes'])
-                            result.append(modified_item)
-                        else:
-                            result.append(original_item)
-                    else:
-                        result.append(change_item.get('changes', change_item))
-
+        if id_changes:
             for item in original_data:
                 if isinstance(item, dict) and 'id' in item:
-                    if item['id'] not in modified_ids:
+                    item_id = item['id']
+                    change_data = id_changes.get(item_id, id_changes.get(str(item_id)))
+                    if change_data is not None:
+                        result.append(apply_changes_to_data(item, change_data))
+                    else:
                         result.append(item)
                 else:
                     result.append(item)
             return result
-        else:
-            for i, item in enumerate(original_data):
-                if i < len(changes):
-                    if isinstance(item, (dict, list)) and isinstance(changes[i], (dict, list)):
-                        result.append(apply_changes_to_data(item, changes[i]))
-                    else:
-                        result.append(changes[i])
+
+        for i, item in enumerate(original_data):
+            if i < len(changes):
+                if isinstance(item, (dict, list)) and isinstance(changes[i], (dict, list)):
+                    result.append(apply_changes_to_data(item, changes[i]))
                 else:
-                    result.append(item)
-            return result
+                    result.append(changes[i])
+            else:
+                result.append(item)
+        return result
     else:
         return original_data
 
