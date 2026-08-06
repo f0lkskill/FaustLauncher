@@ -15,6 +15,7 @@ class ModAddonManagerPage:
         self.bg_color = bg_color
         self.lighten_bg_color = lighten_bg_color
         self.addon_manager = app.core.addon_manager
+        self.mod_manager:ModManager = app.core.mod_manager
         self.addon_page = 0
         self.mod_page = 0
         self.items_per_page = 5
@@ -81,7 +82,7 @@ class ModAddonManagerPage:
             '#2c3e50': C.GRAY_DARK,
         }
         modern_color = color_map.get(color, color)
-        hover_color = darken_color(modern_color)
+        hover_color = darken_color(modern_color) # type: ignore
         
         btn = tk.Button(parent, text=text, command=command,
                        font=('Microsoft YaHei UI', 9, 'bold'),
@@ -518,6 +519,7 @@ class ModAddonManagerPage:
         if os.path.exists(mod_path):
             if messagebox.askyesno("确认删除", f"确定要删除Mod {mod_name} 吗？"):
                 try:
+                    self.mod_manager.unload_mod(mod_name)
                     import shutil
                     shutil.rmtree(mod_path)
                     # 刷新Mod列表
