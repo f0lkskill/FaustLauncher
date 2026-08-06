@@ -1,5 +1,5 @@
 import struct
-import wave,time,os
+import wave, time, os
 import threading
 import ctypes
 import ctypes.wintypes
@@ -16,11 +16,11 @@ WHDR_DONE = 0x00000001
 
 # ========== 全局状态 ==========
 _winmm = None
-_current_playing = None
-_current_lock = threading.Lock()
+_player = None
+_player_lock = threading.Lock()
 
 
-# ========== ctypes 数据结构（解决自引用前向引用）==========
+# ========== ctypes 数据结构 ==========
 class WAVEFORMATEX(ctypes.Structure):
     _fields_ = [
         ('wFormatTag',      ctypes.wintypes.WORD),
@@ -48,11 +48,29 @@ WAVEHDR._fields_ = [
 
 
 def _get_winmm():
-    """懒加载 winmm.dll（Windows 自带，无需额外安装）"""
+    """懒加载 winmm.dll 并声明参数类型（Windows 自带，无需额外安装）"""
     global _winmm
     if _winmm is None:
         try:
-            _winmm = ctypes.windll.winmm
+            w = ctypes.WinDLL('winmm')
+            DWORD_PTR = ctypes.c_size_t
+            w.waveOutOpen.argtypes = [
+                ctypes.POINTER(ctypes.wintypes.HANDLE),  # LPHWAVEOUT
+                ctypes.wintypes.UINT,                    # uDeviceID
+                ctypes.POINTER(WAVEFORMATEX),            # LPWAVEFORMATEX
+                DWORD_PTR,                               # dwCallback
+                DWORD_PTR,                               # dwInstance
+                DWORD_PTR,                               # fdwOpen
+            ]
+            w.waveOutOpen.restype = ctypes.wintypes.UINT
+            for name in ('waveOutClose', 'waveOutReset',
+                         'waveOutPrepareHeader', 'waveOutUnprepareHeader',
+                         'waveOutWrite'):
+                getattr(w, name).argtypes = [ctypes.wintypes.HANDLE,
+                                             ctypes.POINTER(WAVEHDR),
+                                             ctypes.wintypes.UINT]
+                getattr(w, name).restype = ctypes.wintypes.UINT
+            _winmm = w
         except Exception as e:
             print(f"加载 winmm.dll 失败: {e}")
     return _winmm
@@ -89,158 +107,215 @@ def _apply_volume_to_samples(raw_frames, volume, sampwidth):
     return bytes(result)
 
 
-# ========== 播放线程（整块读取 + 整块 waveOutWrite：生命周期完全可控）==========
-class _WavePlayThread(threading.Thread):
-    """整块读取音频文件，一次性 waveOutWrite。
-    关键安全措施：将 hWaveOut/buf/hdr 保存在线程实例上，直到播放完全结束，
-    确保驱动消费期间 Python GC 不会回收它们。
+# ========== 单例播放线程（设备复用，杜绝每点击一次开关设备的抖动/竞争）==========
+class _SoundPlayer(threading.Thread):
+    """串行播放器：
+    - 只打开一次 waveOut 设备并复用，避免快速点击时设备忙/并发 Reset 造成
+      无声、断断续续甚至崩溃；
+    - 所有 winmm 调用都在本线程内完成，stop_sound 只发信号，不再跨线程碰设备；
+    - 播放期间 hwout/buf/hdr 都挂在实例上，直到播完或被打断，防止 GC 提前回收。
     """
 
     MAX_AUDIO_BYTES = 8 * 1024 * 1024  # 上限 8MB，防止超长 WAV 占内存
 
-    def __init__(self, file_path, volume):
-        super().__init__(daemon=True)
-        self.file_path = file_path
-        self.volume = float(volume)
-        self._stop_event = threading.Event()
-        # 以下成员保存关键对象引用，避免被 GC 提前回收（导致驱动读到野指针→崩溃）
-        self._hwout = ctypes.wintypes.HANDLE()
-        self._buf = None    # ctypes 缓冲：驱动在播放期间会读取它，必须存活
-        self._hdr = None    # WAVEHDR：驱动会读写 dwFlags 字段，必须存活
+    def __init__(self):
+        super().__init__(daemon=True, name="sound-player")
+        self._lock = threading.Lock()
+        self._target = None              # (seq, file_path, volume) 最新播放任务
+        self._wake = threading.Event()
+        self._seq = 0
+        self._is_playing = False
+        # 以下 winmm 状态只在本线程内访问
         self._winmm = None
+        self._hwout = ctypes.wintypes.HANDLE()
         self._opened = False
-        self._prepared = False
+        self._wfx = None                 # 当前已打开的格式，用于对比
+        self._buf = None
+        self._hdr = None
 
-    def stop_playback(self):
-        self._stop_event.set()
-        # 立刻在调用者线程尝试复位驱动（让它释放缓冲）
-        try:
-            if self._opened and self._winmm is not None:
-                self._winmm.waveOutReset(self._hwout)
-        except Exception:
-            pass
+    # ---------- 线程安全 API ----------
+    def play(self, file_path, volume):
+        with self._lock:
+            self._seq += 1
+            self._target = (self._seq, file_path, volume)
+        self._wake.set()
+        return True
 
+    def stop(self):
+        """请求停止当前播放（不跨线程碰设备，由播放线程自行处理）"""
+        with self._lock:
+            self._seq += 1
+            self._target = None
+        self._wake.set()
+
+    def is_playing(self):
+        return self._is_playing
+
+    # ---------- 播放主循环 ----------
     def run(self):
         self._winmm = _get_winmm()
         if self._winmm is None:
-            print("winmm.dll 不可用")
+            return
+        while True:
+            self._wake.wait()
+            self._wake.clear()
+            with self._lock:
+                target = self._target
+            if target is None:
+                continue
+            self._is_playing = True
+            try:
+                self._play_target(target)
+            except Exception as e:
+                print(f"播放异常: {e}")
+            finally:
+                self._is_playing = False
+
+    def _play_target(self, target):
+        seq, file_path, volume = target
+        if not file_path or not os.path.exists(file_path):
+            print(f"音频文件不存在: {file_path}")
             return
 
         try:
-            # 1) 读取整个 WAV 文件
-            with wave.open(self.file_path, "rb") as wf:
+            with wave.open(file_path, "rb") as wf:
                 nchannels = wf.getnchannels()
                 sampwidth = wf.getsampwidth()
                 framerate = wf.getframerate()
                 nframes = wf.getnframes()
-
                 raw = wf.readframes(nframes)
-
-            if not raw:
-                return
-
-            # 防超大文件（理论上 WAV 很少超过几 MB）
-            if len(raw) > self.MAX_AUDIO_BYTES:
-                raw = raw[:self.MAX_AUDIO_BYTES]
-
-            # 2) 在样本层面应用音量（缩放后得到最终要播放的 bytes）
-            final_bytes = _apply_volume_to_samples(raw, self.volume, sampwidth)
-
-            # 3) 准备 WAVEFORMATEX
-            wfx = WAVEFORMATEX()
-            wfx.wFormatTag = WAVE_FORMAT_PCM
-            wfx.nChannels = nchannels
-            wfx.nSamplesPerSec = framerate
-            wfx.wBitsPerSample = sampwidth * 8
-            wfx.nBlockAlign = nchannels * sampwidth
-            wfx.nAvgBytesPerSec = framerate * wfx.nBlockAlign
-            wfx.cbSize = 0
-
-            # 4) 打开 wave 输出设备
-            ret = self._winmm.waveOutOpen(
-                ctypes.byref(self._hwout),
-                ctypes.c_uint(WAVE_MAPPER),
-                ctypes.byref(wfx),
-                ctypes.c_ulong(0),
-                ctypes.c_ulong(0),
-                ctypes.c_ulong(CALLBACK_NULL),
-            )
-            if ret != MMSYSERR_NOERROR:
-                print(f"waveOutOpen 失败 (错误码={ret})")
-                return
-            self._opened = True
-
-            # 5) 创建缓冲 + header —— 保存在 self 上直到全部完成
-            #    这是根因修复：ctypes.create_string_buffer 返回的对象必须
-            #    至少活到驱动完成 waveOutWrite，否则驱动会读释放后的内存 → 崩溃。
-            self._buf = ctypes.create_string_buffer(final_bytes)
-            self._hdr = WAVEHDR()
-            self._hdr.lpData = ctypes.cast(self._buf, ctypes.wintypes.LPSTR)
-            self._hdr.dwBufferLength = len(final_bytes)
-            self._hdr.dwBytesRecorded = 0
-            self._hdr.dwUser = 0
-            self._hdr.dwFlags = 0
-            self._hdr.dwLoops = 0
-
-            # 6) PrepareHeader + Write
-            ret = self._winmm.waveOutPrepareHeader(
-                self._hwout, ctypes.byref(self._hdr), ctypes.sizeof(self._hdr)
-            )
-            if ret != MMSYSERR_NOERROR:
-                print(f"waveOutPrepareHeader 失败 (错误码={ret})")
-                return
-            self._prepared = True
-
-            ret = self._winmm.waveOutWrite(
-                self._hwout, ctypes.byref(self._hdr), ctypes.sizeof(self._hdr)
-            )
-            if ret != MMSYSERR_NOERROR:
-                print(f"waveOutWrite 失败 (错误码={ret})")
-                return
-
-            # 7) 轮询等待播放完成 / 收到停止信号
-            #    预估总时长（秒）+ 2 秒缓冲，给驱动一点时间处理尾部
-            total_sec = max(0.1, len(final_bytes) / max(1, wfx.nAvgBytesPerSec))
-            deadline = time.time() + total_sec + 2.0
-
-            while not self._stop_event.is_set() and time.time() < deadline:
-                if self._hdr.dwFlags & WHDR_DONE:
-                    break
-                time.sleep(0.01)
-
         except Exception as e:
-            print(f"播放异常: {e}")
-        finally:
-            # 8) 清理（无条件执行，保证驱动和内存都被正确释放）
-            try:
-                if self._opened and self._winmm is not None:
-                    # Reset：让驱动立即放弃当前 waveOutWrite，这样 UnprepareHeader 才能成功
-                    self._winmm.waveOutReset(self._hwout)
-                    if self._prepared and self._hdr is not None:
-                        self._winmm.waveOutUnprepareHeader(
-                            self._hwout, ctypes.byref(self._hdr), ctypes.sizeof(self._hdr)
-                        )
-                    self._winmm.waveOutClose(self._hwout)
-            except Exception:
-                pass
+            print(f"读取音频失败 {file_path}: {e}")
+            return
+
+        if not raw:
+            return
+        if len(raw) > self.MAX_AUDIO_BYTES:
+            raw = raw[:self.MAX_AUDIO_BYTES]
+
+        final_bytes = _apply_volume_to_samples(raw, volume, sampwidth)
+
+        wfx = WAVEFORMATEX()
+        wfx.wFormatTag = WAVE_FORMAT_PCM
+        wfx.nChannels = nchannels
+        wfx.nSamplesPerSec = framerate
+        wfx.wBitsPerSample = sampwidth * 8
+        wfx.nBlockAlign = nchannels * sampwidth
+        wfx.nAvgBytesPerSec = framerate * wfx.nBlockAlign
+
+        self._ensure_open(wfx)
+        if not self._opened:
+            return
+        # 清掉上一段可能未播完的缓冲
+        self._unprepare()
+
+        self._buf = ctypes.create_string_buffer(final_bytes)
+        self._hdr = WAVEHDR()
+        self._hdr.lpData = ctypes.cast(self._buf, ctypes.wintypes.LPSTR)
+        self._hdr.dwBufferLength = len(final_bytes)
+        self._hdr.dwBytesRecorded = 0
+        self._hdr.dwUser = 0
+        self._hdr.dwFlags = 0
+        self._hdr.dwLoops = 0
+
+        ret = self._winmm.waveOutPrepareHeader(
+            self._hwout, ctypes.byref(self._hdr), ctypes.sizeof(self._hdr))
+        if ret != MMSYSERR_NOERROR:
+            print(f"waveOutPrepareHeader 失败 (错误码={ret})")
+            self._unprepare()
+            return
+
+        ret = self._winmm.waveOutWrite(
+            self._hwout, ctypes.byref(self._hdr), ctypes.sizeof(self._hdr))
+        if ret != MMSYSERR_NOERROR:
+            print(f"waveOutWrite 失败 (错误码={ret})")
+            self._unprepare()
+            return
+
+        # 轮询等待播放完成；若期间出现更新的任务/停止，则立即放弃当前缓冲
+        total_sec = max(0.1, len(final_bytes) / max(1, wfx.nAvgBytesPerSec))
+        deadline = time.time() + total_sec + 0.5
+        while time.time() < deadline:
+            with self._lock:
+                current = self._target
+            if current is None or current[0] != seq:
+                break
+            if self._hdr.dwFlags & WHDR_DONE:
+                break
+            time.sleep(0.005)
+        self._unprepare()
+
+    def _ensure_open(self, wfx):
+        if self._opened and self._same_format(self._wfx, wfx):
+            return
+        self._close()
+        ret = self._winmm.waveOutOpen(
+            ctypes.byref(self._hwout),
+            ctypes.wintypes.UINT(WAVE_MAPPER),
+            ctypes.byref(wfx),
+            ctypes.c_size_t(0),
+            ctypes.c_size_t(0),
+            ctypes.c_size_t(CALLBACK_NULL),
+        )
+        if ret != MMSYSERR_NOERROR:
+            print(f"waveOutOpen 失败 (错误码={ret})")
             self._opened = False
-            self._prepared = False
-            # 清除对 buffer/header 的引用，让 GC 能回收它们（已安全：驱动已 Reset+Close）
+            self._wfx = None
+            return
+        self._opened = True
+        self._wfx = wfx
+
+    def _same_format(self, a, b):
+        if a is None or b is None:
+            return False
+        return (a.nChannels == b.nChannels
+                and a.nSamplesPerSec == b.nSamplesPerSec
+                and a.wBitsPerSample == b.wBitsPerSample)
+
+    def _unprepare(self):
+        """Reset + Unprepare + 释放缓冲引用（只在本线程调用）"""
+        if not self._opened:
+            return
+        try:
+            self._winmm.waveOutReset(self._hwout)
+            if self._hdr is not None:
+                self._winmm.waveOutUnprepareHeader(
+                    self._hwout, ctypes.byref(self._hdr), ctypes.sizeof(self._hdr))
+                self._hdr = None
             self._buf = None
-            self._hdr = None
-            # 从全局记录中清除自己
-            with _current_lock:
-                global _current_playing
-                if _current_playing is self:
-                    _current_playing = None
+        except Exception:
+            pass
+
+    def _close(self):
+        if not self._opened:
+            return
+        try:
+            self._winmm.waveOutReset(self._hwout)
+            self._winmm.waveOutClose(self._hwout)
+        except Exception:
+            pass
+        self._opened = False
+        self._wfx = None
+        self._hdr = None
+        self._buf = None
+
+
+def _get_player():
+    global _player
+    with _player_lock:
+        if _player is None:
+            p = _SoundPlayer()
+            p.start()
+            _player = p
+    return _player
 
 
 # ========== 对外 API ==========
 def play_sound(file_path, sound_volume=None):
     """播放WAV音频文件（支持停止当前播放并播放新音频，支持音量控制 0.0 ~ 1.0）"""
     if sound_volume is None:
-        sound_volume = settings_manager.get_setting('sound_volume') or 0.5
-
+        # 注意：不能用 `or 0.5`，否则 0.0（静音）会被吞成 0.5
+        sound_volume = settings_manager.get_setting('sound_volume')
     try:
         sound_volume = float(sound_volume)
     except (TypeError, ValueError):
@@ -257,12 +332,7 @@ def play_sound(file_path, sound_volume=None):
         return False
 
     try:
-        stop_sound()  # 停掉旧的
-        t = _WavePlayThread(file_path, sound_volume)
-        with _current_lock:
-            global _current_playing
-            _current_playing = t
-        t.start()
+        _get_player().play(file_path, sound_volume)
         return True
     except Exception as e:
         print(f"播放失败: {e}")
@@ -271,14 +341,9 @@ def play_sound(file_path, sound_volume=None):
 
 def stop_sound():
     """停止当前正在播放的音频"""
-    t = None
-    with _current_lock:
-        global _current_playing
-        t = _current_playing
-        _current_playing = None
-    if t is not None:
-        try:
-            t.stop_playback()
-        except Exception:
-            pass
+    try:
+        player = _get_player()
+        player.stop()
+    except Exception:
+        pass
     return True
