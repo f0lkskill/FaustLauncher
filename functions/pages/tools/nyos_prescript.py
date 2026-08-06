@@ -304,6 +304,18 @@ class NyosPrescriptApi:
         }
 
 
+def _msgbox(title, text, is_error=True):
+    """
+    原生消息框 (ctypes MessageBoxW), 不依赖 tkinter:
+    打包子进程里 tkinter messagebox 可能触发 0x80010108 崩溃
+    """
+    try:
+        import ctypes
+        ctypes.windll.user32.MessageBoxW(None, text, title, 0x10 if is_error else 0x40)
+    except Exception:
+        pass
+
+
 def run_prescript_window(debug: bool = False):
     """
     在当前进程内启动今日指令 pywebview 窗口
@@ -314,15 +326,19 @@ def run_prescript_window(debug: bool = False):
     """
     try:
         import webview
-    except ImportError as e:
-        from tkinter import messagebox
-        messagebox.showerror("今日指令", f"未安装 pywebview 依赖:\n{e}")
+    except BaseException as e:
+        import traceback
+        try:
+            with open(os.path.join(_PROJECT_ROOT, "nyos_window_error.log"), "a", encoding="utf-8") as f:
+                f.write("import webview failed:\n" + traceback.format_exc())
+        except Exception:
+            pass
+        _msgbox("今日指令", f"未安装 pywebview 依赖:\n{type(e).__name__}: {e}")
         raise SystemExit(1)
 
     html_path = os.path.join(_PROJECT_ROOT, "html", "nyos_prescript", "index.html")
     if not os.path.exists(html_path):
-        from tkinter import messagebox
-        messagebox.showerror("今日指令", f"找不到页面文件:\n{html_path}")
+        _msgbox("今日指令", f"找不到页面文件:\n{html_path}")
         raise SystemExit(1)
 
     try:
@@ -336,9 +352,15 @@ def run_prescript_window(debug: bool = False):
             background_color="#060f22",
         )
         webview.start(debug=debug)
-    except Exception as e:
-        from tkinter import messagebox
-        messagebox.showerror("今日指令", f"无法启动窗口:\n{e}")
+    except BaseException as e:
+        import traceback
+        try:
+            log_path = os.path.join(_PROJECT_ROOT, "nyos_window_error.log")
+            with open(log_path, "a", encoding="utf-8") as f:
+                f.write(traceback.format_exc())
+        except Exception:
+            pass
+        _msgbox("今日指令", f"无法启动窗口:\n{type(e).__name__}: {e}")
         raise SystemExit(1)
 
 
@@ -359,8 +381,7 @@ def open_prescript_window(debug: bool = False):
     else:
         script = os.path.join(_PROJECT_ROOT, "functions", "pages", "tools", "nyos_prescript.py")
         if not os.path.exists(script):
-            from tkinter import messagebox
-            messagebox.showerror("今日指令", f"找不到脚本:\n{script}")
+            _msgbox("今日指令", f"找不到脚本:\n{script}")
             return
         pythonw = os.path.join(os.path.dirname(sys.executable), "pythonw.exe")
         if not os.path.exists(pythonw):
@@ -374,8 +395,7 @@ def open_prescript_window(debug: bool = False):
     try:
         subprocess.Popen(cmd, cwd=_PROJECT_ROOT, creationflags=flags)
     except Exception as e:
-        from tkinter import messagebox
-        messagebox.showerror("今日指令", f"无法启动窗口进程:\n{e}")
+        _msgbox("今日指令", f"无法启动窗口进程:\n{e}")
 
 
 NyosPrescript.reload_data()
