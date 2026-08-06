@@ -218,6 +218,7 @@ class BuildGUI:
         self._set_status('复制资产文件...')
         try:
             shutil.copytree('assets', f'build_{vi}/assets', dirs_exist_ok=True)
+            shutil.copytree('html', f'build_{vi}/html', dirs_exist_ok=True)
         except Exception as e:
             self._set_step(4, 'failed')
             self._set_status(f'复制 assets 失败: {e}', DANGER)
@@ -333,7 +334,10 @@ if __name__ == '__main__':
     os.chdir(os.path.dirname(os.path.abspath(__file__)))
     try:
         from functions.base.settings_manager import get_settings_manager
-        vi = get_settings_manager().get_setting('version_info')
+        st = get_settings_manager()
+        st.reset_all_settings()
+        st.save_settings()
+        vi = st.get_setting('version_info')
     except Exception:
         vi = 'unknown'
     BuildGUI(vi).run()

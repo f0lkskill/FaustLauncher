@@ -3,7 +3,7 @@
         "name": "游戏路径",
         "type": "string",
         "default": "",
-        "value": "D:/steam/steamapps/common/Limbus Company/",
+        "value": "",
         "description": "游戏安装路径, 请确保路径正确\n否则可能导致启动失败和其他错误问题",
         "page": "通用"
     },
@@ -201,7 +201,8 @@
             "version_notify_flag": false
         },
         "value": {
-            "tray_hint": true
+            "tray_hint": false,
+            "version_notify_flag": false
         },
         "description": "程序运行时的缓存数据\n不建议修改"
     }
