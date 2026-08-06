@@ -226,6 +226,8 @@ class GameLauncher:
             from functions.fancy.skill_info import handle_skill
             handle_skill(lang_path + '/')
 
+        
+        print(self._settings.get_setting('enable_special_tip'))
         if self._settings.get_setting('enable_special_tip'):
             from functions.fancy.hint_set import simple_replace
             simple_replace(os.path.join(lang_path, 'BattleHint.json'))
