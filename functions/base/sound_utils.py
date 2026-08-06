@@ -1,3 +1,5 @@
+import ctypes
+import ctypes.wintypes
 import io
 import os
 import struct
@@ -5,7 +7,26 @@ import tempfile
 import threading
 import time
 import wave
-import winsound
+
+
+# ========== PlaySoundW（ctypes 直调系统 winmm.dll，避免打包时缺失 winsound）==========
+SND_FILENAME = 0x00020000
+SND_ASYNC = 0x00000001
+SND_NODEFAULT = 0x00000002
+SND_PURGE = 0x00000040
+
+_winmm = ctypes.WinDLL("winmm", use_last_error=True)
+_winmm.PlaySoundW.argtypes = [ctypes.c_wchar_p, ctypes.wintypes.HMODULE, ctypes.c_uint]
+_winmm.PlaySoundW.restype = ctypes.c_int
+
+
+def _playsound_wav(path_or_none, flags):
+    """等价 winsound.PlaySound(path_or_none, flags)，失败返回 False"""
+    result = _winmm.PlaySoundW(path_or_none, None, flags)
+    if not result:
+        print(f"PlaySoundW 失败 (error={ctypes.get_last_error()})")
+        return False
+    return True
 
 
 # ========== PCM 缓存 ==========
@@ -177,10 +198,7 @@ class _MixerPlayer(threading.Thread):
 
     def _purge(self):
         """停止当前异步播放，并清理旧临时文件（数据已载入内存，可安全删除）"""
-        try:
-            winsound.PlaySound(None, winsound.SND_PURGE)
-        except Exception:
-            pass
+        _playsound_wav(None, SND_PURGE)
         for p in self._tmp_files:
             try:
                 os.remove(p)
@@ -193,10 +211,7 @@ class _MixerPlayer(threading.Thread):
         fd, path = tempfile.mkstemp(prefix="faust_snd_", suffix=".wav")
         with os.fdopen(fd, "wb") as f:
             f.write(wav_bytes)
-        winsound.PlaySound(
-            path,
-            winsound.SND_FILENAME | winsound.SND_ASYNC | winsound.SND_NODEFAULT,
-        )
+        _playsound_wav(path, SND_FILENAME | SND_ASYNC | SND_NODEFAULT)
         self._tmp_files.append(path)
 
 

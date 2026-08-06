@@ -8,7 +8,11 @@ import random
 import subprocess
 import sys
 
-_PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", ".."))
+if getattr(sys, "frozen", False):
+    # 打包环境下模块在临时解压目录, 以 exe 所在目录为项目根目录 (config/html/assets 在 exe 旁)
+    _PROJECT_ROOT = os.path.dirname(os.path.abspath(sys.executable))
+else:
+    _PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", ".."))
 if _PROJECT_ROOT not in sys.path:
     sys.path.insert(0, _PROJECT_ROOT)
 
@@ -300,46 +304,14 @@ class NyosPrescriptApi:
         }
 
 
-def open_prescript_window(debug: bool = False):
+def run_prescript_window(debug: bool = False):
     """
-    打开今日指令窗口
+    在当前进程内启动今日指令 pywebview 窗口
 
-    说明: pywebview 6 要求 webview.start() 运行在主线程, 与 tkinter 主循环互斥,
-    故以独立子进程 (pythonw -m) 方式拉起窗口, 与启动器完全解耦。
-
-    Args:
-        debug (bool): 是否开启 pywebview 调试
+    源码模式: pythonw 子进程运行本脚本时调用; 打包模式: 主程序以
+    --nyos-window 参数重新拉起自身 exe 后, main() 再调用本函数,
+    不依赖外部 pythonw/解释器。
     """
-    if getattr(sys, "frozen", False):
-        from tkinter import messagebox
-        messagebox.showinfo("今日指令", "打包环境暂不支持独立窗口, 请直接运行源码版本。")
-        return
-
-    script = os.path.join(_PROJECT_ROOT, "functions", "pages", "tools", "nyos_prescript.py")
-    if not os.path.exists(script):
-        from tkinter import messagebox
-        messagebox.showerror("今日指令", f"找不到脚本:\n{script}")
-        return
-
-    pythonw = os.path.join(os.path.dirname(sys.executable), "pythonw.exe")
-    if not os.path.exists(pythonw):
-        pythonw = sys.executable
-
-    cmd = [pythonw, script]
-    if debug:
-        cmd.append("--debug")
-
-    flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-    try:
-        subprocess.Popen(cmd, cwd=_PROJECT_ROOT, creationflags=flags)
-    except Exception as e:
-        from tkinter import messagebox
-        messagebox.showerror("今日指令", f"无法启动窗口进程:\n{e}")
-
-
-NyosPrescript.reload_data()
-
-if __name__ == "__main__":
     try:
         import webview
     except ImportError as e:
@@ -363,8 +335,51 @@ if __name__ == "__main__":
             min_size=(480, 400),
             background_color="#060f22",
         )
-        webview.start(debug="--debug" in sys.argv)
+        webview.start(debug=debug)
     except Exception as e:
         from tkinter import messagebox
         messagebox.showerror("今日指令", f"无法启动窗口:\n{e}")
         raise SystemExit(1)
+
+
+def open_prescript_window(debug: bool = False):
+    """
+    打开今日指令窗口
+
+    说明: pywebview 6 要求 webview.start() 运行在主线程, 与 tkinter 主循环互斥,
+    故以独立子进程方式拉起窗口, 与启动器完全解耦:
+    - 源码模式: 用 pythonw 运行 nyos_prescript.py 子进程
+    - 打包模式 (sys.frozen): 用自身 exe 以 --nyos-window 参数二次启动原生子进程
+
+    Args:
+        debug (bool): 是否开启 pywebview 调试
+    """
+    if getattr(sys, "frozen", False):
+        cmd = [os.path.abspath(sys.executable), "--nyos-window"]
+    else:
+        script = os.path.join(_PROJECT_ROOT, "functions", "pages", "tools", "nyos_prescript.py")
+        if not os.path.exists(script):
+            from tkinter import messagebox
+            messagebox.showerror("今日指令", f"找不到脚本:\n{script}")
+            return
+        pythonw = os.path.join(os.path.dirname(sys.executable), "pythonw.exe")
+        if not os.path.exists(pythonw):
+            pythonw = sys.executable
+        cmd = [pythonw, script]
+
+    if debug:
+        cmd.append("--debug")
+
+    flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    try:
+        subprocess.Popen(cmd, cwd=_PROJECT_ROOT, creationflags=flags)
+    except Exception as e:
+        from tkinter import messagebox
+        messagebox.showerror("今日指令", f"无法启动窗口进程:\n{e}")
+
+
+NyosPrescript.reload_data()
+
+if __name__ == "__main__":
+    # 源码模式启动方式: 本脚本被 pythonw 子进程运行
+    run_prescript_window(debug="--debug" in sys.argv)

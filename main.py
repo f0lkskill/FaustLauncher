@@ -20,6 +20,13 @@ def main():
                 stream.reconfigure(encoding='utf-8', errors='replace')  # type: ignore
         except Exception:
             pass
+
+    # 今日指令独立窗口模式: 打包环境下由主 exe 以 --nyos-window 二次拉起自身,
+    # 直接运行 pywebview 窗口, 不进入 tkinter 主界面 (也需跳过单实例检测)
+    if "--nyos-window" in sys.argv:
+        from functions.pages.tools.nyos_prescript import run_prescript_window
+        run_prescript_window(debug="--debug" in sys.argv)
+        return
     
     from functions.pages.app.app_core import FaustLauncherCore
     from functions.pages.app.app_ui import FaustLauncherUI, check_single_instance
