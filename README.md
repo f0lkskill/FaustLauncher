@@ -30,7 +30,7 @@
 |:---|:---|
 | 🏷️ 当前版本 | `V0.6.0-pre.7.fix.2` |
 | 📅 最后更新 | 2026-08-06 |
-| 🛠️ 开发状态 | 积极开发中 |
+| 🛠️ 开发状态 | 开发中... |
 | 🎯 目标平台 | Windows 10 / 11 |
 | 📜 开源协议 | MIT |
 | 💬 交流反馈 | [Issues](https://github.com/f0lkskill/FaustLauncher/issues) · [Discussions](https://github.com/f0lkskill/FaustLauncher/discussions) |
