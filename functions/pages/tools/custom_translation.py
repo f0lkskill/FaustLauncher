@@ -207,6 +207,7 @@ class CustomTranslationTool:
         try:
             with open(self.changes_file, 'r', encoding='utf-8') as f:
                 self.changes = json.load(f)
+            self._normalize_changes_keys()
         except Exception as e:
             print(f"加载修改记录失败: {e}")
             self.changes = {}
@@ -217,6 +218,47 @@ class CustomTranslationTool:
                 json.dump(self.changes, f, ensure_ascii=False, indent=4)
         except Exception as e:
             print(f"保存修改记录失败: {e}")
+
+    def _normalize_change_path(self, path):
+        """统一 changes.json 里的相对路径，兼容 Windows 旧反斜杠键。"""
+        return os.path.normpath(path).replace("\\", "/")
+
+    def _relative_to_lang(self, path):
+        return self._normalize_change_path(os.path.relpath(path, self.lang_dir))
+
+    def _change_key_aliases(self, relative):
+        normalized = self._normalize_change_path(relative)
+        aliases = [normalized, normalized.replace("/", "\\")]
+        if relative not in aliases:
+            aliases.append(relative)
+        return aliases
+
+    def _normalize_changes_keys(self):
+        if not isinstance(self.changes, dict):
+            self.changes = {}
+            return
+        normalized_changes = {}
+        for key, value in self.changes.items():
+            normalized_changes[self._normalize_change_path(key)] = value
+        self.changes = normalized_changes
+
+    def _get_changes_for_relative(self, relative):
+        for key in self._change_key_aliases(relative):
+            if key in self.changes:
+                return self.changes[key]
+        return None
+
+    def _has_changes_for_relative(self, relative):
+        return self._get_changes_for_relative(relative) is not None
+
+    def _set_changes_for_relative(self, relative, diff):
+        for key in self._change_key_aliases(relative):
+            self.changes.pop(key, None)
+        self.changes[self._normalize_change_path(relative)] = diff
+
+    def _delete_changes_for_relative(self, relative):
+        for key in self._change_key_aliases(relative):
+            self.changes.pop(key, None)
 
     def _load_nav_config(self):
         try:
@@ -590,7 +632,7 @@ class CustomTranslationTool:
         if not self.current_file:
             messagebox.showwarning("警告", "请先选择一个文件")
             return
-        relative = os.path.relpath(self.current_file, self.lang_dir)
+        relative = self._relative_to_lang(self.current_file)
         default_name = os.path.basename(self.current_file).replace('.json', '')
         name = simpledialog.askstring("添加导航项", "输入导航项名称:",
                                       initialvalue=default_name,
@@ -767,7 +809,7 @@ class CustomTranslationTool:
 
             for dir_name in dirs:
                 dir_path = os.path.join(path, dir_name)
-                relative = os.path.relpath(dir_path, self.lang_dir)
+                relative = self._relative_to_lang(dir_path)
                 node = self.file_tree.insert(parent, 'end',
                                              text=f"  📂  {dir_name}",
                                              values=(relative, "dir"))
@@ -775,8 +817,8 @@ class CustomTranslationTool:
 
             for file_name in files:
                 file_path = os.path.join(path, file_name)
-                relative = os.path.relpath(file_path, self.lang_dir)
-                has_changes = relative in self.changes
+                relative = self._relative_to_lang(file_path)
+                has_changes = self._has_changes_for_relative(relative)
                 prefix = "✏  " if has_changes else "    "
                 self.file_tree.insert(parent, 'end',
                                       text=f"  {prefix}{file_name}",
@@ -835,12 +877,12 @@ class CustomTranslationTool:
         # 切换之前：如果当前文件有未保存的修改，先同步到 self.changes（内存层）
         if self.current_file and self.original_data is not None and self.modified_data is not None:
             try:
-                relative = os.path.relpath(self.current_file, self.lang_dir)
+                relative = self._relative_to_lang(self.current_file)
                 diff = self._compute_diff(self.original_data, self.modified_data)
                 if diff is not None:
-                    self.changes[relative] = diff  # 只改内存，不写磁盘
-                elif relative in self.changes:
-                    del self.changes[relative]
+                    self._set_changes_for_relative(relative, diff)  # 只改内存，不写磁盘
+                else:
+                    self._delete_changes_for_relative(relative)
             except Exception:
                 pass
 
@@ -874,7 +916,7 @@ class CustomTranslationTool:
         self.modified_data = self._current_modified_data # type: ignore
         self.current_file = self._current_file_path # type: ignore
 
-        relative = os.path.relpath(self.current_file, self.lang_dir) # type: ignore
+        relative = self._relative_to_lang(self.current_file) # type: ignore
         self.current_file_label.config(text=f"📄 当前文件: {relative}")
 
         self.data_search_var.set("")
@@ -892,9 +934,10 @@ class CustomTranslationTool:
         messagebox.showerror("错误", f"加载文件失败: {err}")
 
     def _apply_changes_to_data_standalone(self, data, file_path):
-        relative = os.path.relpath(file_path, self.lang_dir)
-        if relative in self.changes:
-            self._recursive_apply(data, self.changes[relative])
+        relative = self._relative_to_lang(file_path)
+        changes = self._get_changes_for_relative(relative)
+        if changes is not None:
+            self._recursive_apply(data, changes)
 
     def _deep_copy(self, data):
         if isinstance(data, dict):
@@ -917,16 +960,24 @@ class CustomTranslationTool:
             for idx, item in enumerate(original):
                 if isinstance(item, dict) and 'id' in item:
                     id_map[item['id']] = idx  # 保留原始 id 类型
-            for change in changes:
+            for key, value in list(id_map.items()):
+                id_map[str(key)] = value
+            for idx, change in enumerate(changes):
                 if isinstance(change, dict) and 'id' in change and 'changes' in change:
                     target_id = change['id']  # 保留原始 id 类型
                     change_data = change.get('changes', {})
-                    if target_id in id_map:
-                        orig_item = original[id_map[target_id]]
+                    target_idx = id_map.get(target_id, id_map.get(str(target_id)))
+                    if target_idx is not None:
+                        orig_item = original[target_idx]
                         if isinstance(orig_item, (dict, list)) and isinstance(change_data, (dict, list)):
                             self._recursive_apply(orig_item, change_data)
                         else:
-                            original[id_map[target_id]] = change_data
+                            original[target_idx] = change_data
+                elif idx < len(original):
+                    if isinstance(original[idx], (dict, list)) and isinstance(change, (dict, list)):
+                        self._recursive_apply(original[idx], change)
+                    else:
+                        original[idx] = change
 
     # ======================= 数据视图 (虚拟滚动 Virtual Scroll) =======================
 
@@ -1965,13 +2016,13 @@ class CustomTranslationTool:
                 values = self.file_tree.item(node, 'values')
                 if values and len(values) >= 2 and values[1] == "file":
                     # 文件节点：根据是否在 self.changes 中决定前缀
-                    relative = values[0]
+                    relative = self._normalize_change_path(values[0])
                     # 从当前文本中提取文件名（去除前缀修饰）
                     current_text = self.file_tree.item(node, 'text')
                     # 找文件名起始位置：简单策略是找 ".json" 前后的内容
                     # 更可靠：直接用 relative 的 basename
                     file_name = os.path.basename(relative) or relative
-                    has_changes = relative in self.changes
+                    has_changes = self._has_changes_for_relative(relative)
                     prefix = "✏  " if has_changes else "    "
                     self.file_tree.item(node, text=f"  {prefix}{file_name}")
                 # 递归处理子节点
@@ -1997,12 +2048,12 @@ class CustomTranslationTool:
         # 1) 同步当前文件到 changes 内存
         if self.current_file and self.original_data is not None and self.modified_data is not None:
             try:
-                relative = os.path.relpath(self.current_file, self.lang_dir)
+                relative = self._relative_to_lang(self.current_file)
                 diff = self._compute_diff(self.original_data, self.modified_data)
                 if diff is not None:
-                    self.changes[relative] = diff
-                elif relative in self.changes:
-                    del self.changes[relative]
+                    self._set_changes_for_relative(relative, diff)
+                else:
+                    self._delete_changes_for_relative(relative)
             except Exception:
                 pass
 
@@ -2039,16 +2090,15 @@ class CustomTranslationTool:
             messagebox.showwarning("警告", "请先选择一个文件")
             return
         try:
-            relative = os.path.relpath(self.current_file, self.lang_dir)
+            relative = self._relative_to_lang(self.current_file)
             diff = self._compute_diff(self.original_data, self.modified_data)
             if diff is None:
-                if relative in self.changes:
-                    del self.changes[relative]
-                    self._save_changes_to_file()
+                self._delete_changes_for_relative(relative)
+                self._save_changes_to_file()
                 messagebox.showinfo("信息", "当前文件无修改 (未与原始数据产生差异)")
                 self.status_label.config(text="没有修改需要保存")
             else:
-                self.changes[relative] = diff
+                self._set_changes_for_relative(relative, diff)
                 self._save_changes_to_file()
                 self.status_label.config(text=f"修改内容已保存，文件: {relative}")
                 messagebox.showinfo("成功",
@@ -2110,10 +2160,9 @@ class CustomTranslationTool:
             return
         if not messagebox.askyesno("确认", "确定要撤销当前文件的所有修改吗？"):
             return
-        relative = os.path.relpath(self.current_file, self.lang_dir)
-        if relative in self.changes:
-            del self.changes[relative]
-            self._save_changes_to_file()
+        relative = self._relative_to_lang(self.current_file)
+        self._delete_changes_for_relative(relative)
+        self._save_changes_to_file()
         self.modified_data = self._deep_copy(self.original_data)
         self._refresh_tree_markers()
         try:
