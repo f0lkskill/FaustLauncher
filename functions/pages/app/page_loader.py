@@ -284,7 +284,7 @@ class PageLoader:
                 font=('Microsoft YaHei UI', 11, 'bold')).pack(side=tk.LEFT)
         
         copy_button = RoundedButton(terminal_header,
-                                    text="📋 复制",
+                                    text="📋   复制",
                                     command=self.core.copy_terminal_content,
                                     width=70, height=26,
                                     bg=C.ACCENT_SECONDARY,
@@ -294,14 +294,14 @@ class PageLoader:
         copy_button.pack(side=tk.RIGHT, padx=(4, 0))
         
         clear_button = RoundedButton(terminal_header,
-                                     text="🗑️ 清空",
+                                     text="🗑️清空 ",
                                      command=self.core.clear_terminal,
                                      width=70, height=26,
                                      bg=C.DANGER,
                                      hover_bg=C.DANGER_HOVER,
                                      font=('Microsoft YaHei UI', 9, 'bold'),
                                      radius=6)
-        clear_button.pack(side=tk.RIGHT, padx=4)
+        clear_button.pack(side=tk.RIGHT, padx=(4, 0))
         
         terminal_container = tk.Frame(terminal_frame.inner, bg=C.TERMINAL_BG)
         terminal_container.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
