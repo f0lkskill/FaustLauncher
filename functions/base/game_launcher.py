@@ -185,20 +185,30 @@ class GameLauncher:
             changes_file = os.path.join(dir_path, 'changes.json')
             if not os.path.exists(changes_file):
                 continue
-            with open(changes_file, 'r', encoding='utf-8') as f:
-                changes_data = json.load(f)
+            try:
+                with open(changes_file, 'r', encoding='utf-8') as f:
+                    changes_data = json.load(f)
+            except Exception as e:
+                print(f"  警告: 无法解析 {changes_file}: {e}")
+                continue
             if not changes_data:
                 continue
+            if not isinstance(changes_data, dict):
+                print(f"  警告: {changes_file} 顶层必须是 {{\"相对路径\": 修改内容}} 对象, 实际是 {type(changes_data).__name__}, 已跳过")
+                continue
             for relative_path, file_changes in changes_data.items():
-                game_file = os.path.join(lang_data_dir, relative_path)
-                if not os.path.exists(game_file):
-                    print(f"  警告: 游戏目录中未找到 {relative_path}")
-                    continue
-                with open(game_file, 'r', encoding='utf-8') as f:
-                    original = json.load(f)
-                modified = apply_changes_to_data(original, file_changes)
-                with open(game_file, 'w', encoding='utf-8') as f:
-                    json.dump(modified, f, ensure_ascii=False, indent=4)
+                try:
+                    game_file = os.path.join(lang_data_dir, relative_path)
+                    if not os.path.exists(game_file):
+                        print(f"  警告: 游戏目录中未找到 {relative_path}")
+                        continue
+                    with open(game_file, 'r', encoding='utf-8') as f:
+                        original = json.load(f)
+                    modified = apply_changes_to_data(original, file_changes)
+                    with open(game_file, 'w', encoding='utf-8') as f:
+                        json.dump(modified, f, ensure_ascii=False, indent=4)
+                except Exception as e:
+                    print(f"  警告: 应用补丁 {relative_path} 失败: {e}")
 
     def _apply_cosmetic_features(self):
         """应用气泡渐变、EGO 样式、技能描述、提示替换、技能渐变色。"""
