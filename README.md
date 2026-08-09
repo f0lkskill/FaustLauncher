@@ -68,22 +68,19 @@
 | 📅 最后更新 | 2026-08-09 | 🎯 目标平台 | Windows 10 / 11 |
 | 🛠️ 技术栈 | Python · Tkinter · PyInstaller | 📜 开源协议 | MIT |
 | 💬 反馈 | [Issues](https://github.com/f0lkskill/FaustLauncher/issues) | 💭 交流 | [Discussions](https://github.com/f0lkskill/FaustLauncher/discussions) |
-
-> ⚠️ **Mod 兼容说明**：因游戏引擎更新，**大部分旧 Mod 已失效**，Mod 加载正在适配新引擎（预计后续版本修复），建议暂时关闭「启用 Mod 功能」。
-
 ---
 
 ## 🖼️ 界面预览
 
 > 截图取自版本 (V0.6.0-pre.7.fix.2)。
 
-| 主界面 — 快速启动与迷你终端 | 功能页 — 常用链接 | 工具页 — 工具集 |
+| 主界面 — 快速启动与迷你终端 | 插件和模组管理 | 社区下载中心 |
 |:---:|:---:|:---:|
-| ![主界面](previews/preview_1.png) | ![功能页](previews/preview_2.png) | ![工具页](previews/preview_3.png) |
+| ![主界面](previews/preview_1.png) | ![插件和模组管理](previews/preview_2.png) | ![社区下载中心](previews/preview_3.png) |
 
-| Mod 与插件管理 | 下载中心 |
-|:---:|:---:|
-| ![Mod 与插件管理](previews/preview_4.png) | ![下载中心](previews/preview_5.png) |
+| 关于界面 | 多样的个性化设置 | 丰富的工具组 |
+|:---:|:---:|:---:|
+| ![关于界面](previews/preview_4.png) | ![多种个性化设置](previews/preview_5.png) | ![丰富的工具组](previews/preview_6.png) |
 
 <br>
 
