@@ -14,7 +14,7 @@
 [![Stars](https://img.shields.io/github/stars/f0lkskill/FaustLauncher?style=for-the-badge&logo=github)](https://github.com/f0lkskill/FaustLauncher/stargazers)
 [![Downloads](https://img.shields.io/github/downloads/f0lkskill/FaustLauncher/total?style=for-the-badge&logo=github)](https://github.com/f0lkskill/FaustLauncher/releases)
 
-**📺 使用视频教程：可在程序「关于 → 程序介绍」页面中查看。**
+**📺  使用视频教程：可在程序「关于 → 程序介绍」页面中查看。**
 
 </div>
 
