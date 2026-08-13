@@ -133,6 +133,9 @@ ChineseFont.ttf
 ModLoader.zip
 7-Zip/
 
+# 云端配置（webnote 等地址/凭据，禁止上传 GitHub）
+config/web_config.json
+
 # Pyre type checker
 .pyre/
 ModLoader.zip

@@ -257,6 +257,11 @@ class BuildGUI:
             self._set_status(f'复制 config 失败: {e}', DANGER)
             self._on_done(False)
             return
+        # webnote 云端配置: 随 config 目录一并打入构建产物
+        if os.path.exists('config/web_config.json'):
+            self._log('✔ config/web_config.json 已包含在构建中\n', SUCCESS)
+        else:
+            self._log('⚠ 警告: 未找到 config/web_config.json, 云端功能(汉化更新/版本检查/下载中心)将不可用!\n', DANGER)
         self._set_step(6, 'done')
         self._set_progress(62)
 

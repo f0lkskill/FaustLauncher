@@ -14,7 +14,15 @@ sys.path.append(project_root.as_posix())
 from functions.webFunc import *
 from LanzouUpload import LanzouUploader
 
-ADDRESS = "FaustLauncher"
+ADDRESS = os.environ.get('ADDRESS', '')
+if not ADDRESS:
+    # 本地运行时从 config/web_config.json 读取（该文件已 gitignore，不会上传 GitHub）
+    try:
+        with open(project_root / 'config' / 'web_config.json', 'r', encoding='utf-8') as f:
+            _cfg = json.load(f)
+        ADDRESS = _cfg.get('webnote', {}).get('translation', {}).get('address', '')
+    except Exception:
+        pass
 API_URL = "https://api.txttool.cn/netcut/note"
 
 

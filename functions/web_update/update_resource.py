@@ -1,13 +1,14 @@
 from functions.webFunc import Note
+from functions.base.web_config import get_webnote
 from functions.web_update.zeroasso_download import download_and_extract_gui, DownloadGUI
 from json import loads,dumps
 from threading import Thread
 
-note = Note("FaustLauncher.res_info")
+note = Note(get_webnote('res_info')[0])
 note.fetch_note_info()
 
 note_content = note.note_content
-data:dict = loads(note_content)
+data:dict = loads(note_content) if note_content.strip() else {}
 
 download_gui:DownloadGUI = None # type: ignore
 
