@@ -180,11 +180,10 @@ class FaustLauncherCore:
         webbrowser.open("https://space.bilibili.com/599331034")
         
     def open_mod_manager(self):
-        """打开mod管理器"""
+        """打开mod管理器 (工具页卡片入口)"""
         try:
-            sys.path.append('functions')
-            from functions.pages.extension.mod_manager import open_mod_manager
-            open_mod_manager(self)
+            from functions.pages.tools.mod_manager_window import open_mod_manager_window
+            open_mod_manager_window(self)
         except Exception as e:
             print(f"打开mod管理器失败: {e}")
             from tkinter import messagebox

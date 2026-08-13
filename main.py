@@ -27,6 +27,23 @@ def main():
         from functions.pages.tools.nyos_prescript import run_prescript_window
         run_prescript_window(debug="--debug" in sys.argv)
         return
+
+    # 版本更新提示独立窗口模式: 与 --nyos-window 同一模式
+    if "--update-window" in sys.argv:
+        from functions.pages.notice.version_update_window import run_update_window
+        payload_b64 = None
+        if "--update-payload" in sys.argv:
+            idx = sys.argv.index("--update-payload")
+            if idx + 1 < len(sys.argv):
+                payload_b64 = sys.argv[idx + 1]
+        run_update_window(payload_b64, debug="--debug" in sys.argv)
+        return
+
+    # Mod管理器独立窗口模式: 与 --nyos-window 同一模式
+    if "--mod-manager-window" in sys.argv:
+        from functions.pages.tools.mod_manager_window import run_mod_manager_window
+        run_mod_manager_window(debug="--debug" in sys.argv)
+        return
     
     from functions.pages.app.app_core import FaustLauncherCore
     from functions.pages.app.app_ui import FaustLauncherUI, check_single_instance
