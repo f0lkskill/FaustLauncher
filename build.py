@@ -1,5 +1,9 @@
 """FaustLauncher 可视化构建工具"""
 import subprocess, shutil, os, sys, threading, time, queue
+import requests
+import json
+from datetime import datetime
+from functions.base.web_config import get_webnote
 
 ACCENT = '#6366f1'
 SUCCESS = '#10b981'
@@ -24,7 +28,68 @@ _BUILD_STEPS = [
     ('resources',  '复制资源文件'),
     ('docs',       '复制文档文件'),
     ('exe',        '复制可执行文件'),
+    ('upload_info', '上传版本信息'),
 ]
+
+
+def upload_version_info(address, version, log=None): # type: ignore
+    """上传版本信息到 webnote。
+
+    规则:
+    - 版本号已存在 → 跳过上传
+    - 只登记版本号与上传时间; 描述/下载链接预置空值键, 由开发者到服务器(textdb)上填写
+    - 不切换 latest_release_version 标签 (缺失时预置空值键, 由服务器侧填写)
+
+    address: webnote 笔记完整地址(如 FaustLauncher.version_info)
+    version: 要登记的版本号(如 V0.6.0-pre.7.fix.2)
+    log: 可选日志回调(text), 默认 print
+    """
+    if log is None:
+        def log(msg):
+            try:
+                print(msg, end='')
+            except UnicodeEncodeError:
+                print(msg.encode(sys.stdout.encoding or 'utf-8', 'replace')
+                          .decode(sys.stdout.encoding or 'utf-8'), end='')
+    try:
+        note_url = f'https://textdb.online/{address}'
+        print(f'获取云端版本信息: {note_url}')
+        r = requests.get(note_url, verify=False, timeout=20)
+        r.raise_for_status()
+        if not r.text.strip():
+            data = {'versions': {}}
+        else:
+            data = json.loads(r.text)
+        versions = data.get('versions', {})
+
+        if version in versions:
+            log(f'⏭ 版本 {version} 已存在于云端版本信息, 跳过上传\n')
+            return
+
+        # 新版本插入 dict 最前 (dict 顺序即 JSON 顺序, 保证最新版本在列表顶部)
+        new_versions = {version: {
+            'data': datetime.now().strftime('%Y-%m-%d-%H:%M:%S'),
+            'description': '',
+            'url': '',
+        }}
+        new_versions.update(versions)
+        data['versions'] = new_versions
+        # 最新版本标记: 不自动切换, 仅预置空值键供服务器侧填写
+        if not data.get('latest_release_version'):
+            data['latest_release_version'] = '' # type: ignore
+        new_content = json.dumps(data, ensure_ascii=False, indent=4)
+
+        print(f'上传版本信息: {version}')
+        ur = requests.post(f'https://textdb.online/update/?key={address}',
+                           data={'value': new_content},
+                           verify=False, timeout=30)
+        result = ur.json()
+        if result.get('status') == 1:
+            log(f'✔ 版本信息上传成功: {version}\n')
+        else:
+            log(f'✕ 版本信息上传失败: {result}\n')
+    except Exception as e:
+        log(f'⚠ 上传版本信息失败(不影响构建结果): {e}\n')
 
 
 class BuildGUI:
@@ -48,7 +113,7 @@ class BuildGUI:
 
     def _center_window(self):
         self.root.update_idletasks()
-        w, h = 600, 680
+        w, h = 600, 740
         sw = self.root.winfo_screenwidth()
         sh = self.root.winfo_screenheight()
         self.root.geometry(f'{w}x{h}+{(sw-w)//2}+{(sh-h)//2}')
@@ -61,6 +126,24 @@ class BuildGUI:
                 bg=BG, fg=TEXT, font=('Microsoft YaHei UI', 16, 'bold')).pack(anchor='w')
         tk.Label(header, text=f'目标版本: v{self.version_info}',
                 bg=BG, fg=MUTED, font=('Microsoft YaHei UI', 9)).pack(anchor='w')
+
+        # 版本信息地址输入框: 填了就用, 留空则回退到 config/web_config.json
+        default_addr = get_webnote('version_info')[0]
+        addr_row = tk.Frame(self.root, bg=BG)
+        addr_row.pack(fill=tk.X, padx=20, pady=(8, 0))
+        tk.Label(addr_row, text='版本信息地址:', bg=BG, fg=TEXT,
+                font=('Microsoft YaHei UI', 9)).pack(side=tk.LEFT)
+        self._version_addr_var = tk.StringVar()
+        tk.Entry(addr_row, textvariable=self._version_addr_var, bg=LOG_BG, fg=TEXT,
+                insertbackground=TEXT, relief='flat', highlightthickness=1,
+                highlightbackground=self._lighter(CARD_BG, 12),
+                font=('Consolas', 9)).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(10, 0))
+        if default_addr:
+            tk.Label(self.root, text=f'留空则使用配置文件地址: {default_addr}',
+                    bg=BG, fg=MUTED, font=('Microsoft YaHei UI', 8)).pack(anchor='w', padx=22)
+        else:
+            tk.Label(self.root, text='未配置版本信息地址, 留空则跳过上传',
+                    bg=BG, fg=MUTED, font=('Microsoft YaHei UI', 8)).pack(anchor='w', padx=22)
 
         card = tk.Frame(self.root, bg=CARD_BG, highlightthickness=1,
                        highlightbackground=self._lighter(CARD_BG, 12))
@@ -257,11 +340,11 @@ class BuildGUI:
             self._set_status(f'复制 config 失败: {e}', DANGER)
             self._on_done(False)
             return
-        # webnote 云端配置: 随 config 目录一并打入构建产物
+        # webnote 云端配置: 构建产物必须携带, 否则打包版所有网络 API 静默降级失败
         if os.path.exists('config/web_config.json'):
-            self._log('✔ config/web_config.json 已包含在构建中\n', SUCCESS)
+            self._log('✔ config/web_config.json 已随构建分发(打包版云端功能可用)\n', SUCCESS)
         else:
-            self._log('⚠ 警告: 未找到 config/web_config.json, 云端功能(汉化更新/版本检查/下载中心)将不可用!\n', DANGER)
+            self._log('⚠ 未发现 config/web_config.json, 云端功能将静默降级\n', DANGER)
         self._set_step(6, 'done')
         self._set_progress(62)
 
@@ -319,8 +402,39 @@ class BuildGUI:
             self._on_done(False)
             return
         self._set_step(9, 'done')
+        self._set_progress(92)
+
+        # ---- 上传版本信息 ----
+        self._set_step(10, 'running')
+        self._set_status('上传版本信息...')
+        self._upload_version_info()
+        self._set_step(10, 'done')
         self._set_progress(100)
         self._on_done(True)
+
+    def _read_version_addr(self):
+        """从主线程安全读取版本信息地址输入框的值"""
+        event = threading.Event()
+        result = {}
+
+        def _get():
+            try:
+                result['v'] = self._version_addr_var.get().strip()
+            except Exception:
+                result['v'] = ''
+            event.set()
+
+        self.root.after(0, _get)
+        event.wait(timeout=2)
+        return result.get('v', '')
+
+    def _upload_version_info(self):
+        """上传当前版本信息到 webnote, 详见 upload_version_info()。"""
+        address = self._read_version_addr() or get_webnote('version_info')[0]
+        if not address:
+            self._log('· 未填写版本信息地址, 跳过上传\n', MUTED)
+            return
+        upload_version_info(address, self.version_info, log=self._log)
 
     def _on_done(self, success):
         if success:

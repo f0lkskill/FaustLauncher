@@ -123,12 +123,11 @@ class FontSelectorGUI:
         # 创建按钮
         self.create_button(button_frame, "选择字体文件", 
                           lambda: self.select_font_file(font_type, font_path, preview_data),
-                          anchor=tk.CENTER, padx=(0, 0))
-
-        # TODO 完成重置功能
-        # self.create_button(button_frame, "重置为默认", 
-        #                   lambda: self.reset_font(font_type, font_path, preview_data),
-        #                   side=tk.LEFT)
+                          side=tk.LEFT, padx=(0, 8))
+        
+        self.create_button(button_frame, "删除当前字体", 
+                          lambda: self.delete_font(font_type, font_path, preview_data),
+                          side=tk.LEFT)
         
         # 初始化字体信息
         self.update_font_info(font_type, font_path, preview_data)
@@ -305,21 +304,22 @@ class FontSelectorGUI:
                                    f"字体文件无效或替换失败:\n{str(e)}\n"
                                    f"请确保选择的是有效的TrueType字体文件(.ttf)")
     
-    def reset_font(self, font_type, target_path, preview_data):
-        """重置字体为默认（删除当前字体）"""
+    def delete_font(self, font_type, target_path, preview_data):
+        """删除当前字体文件 (恢复为游戏默认字体)"""
+        if not os.path.exists(target_path):
+            messagebox.showinfo("提示", f"当前没有已替换的{font_type}字体文件，无需删除")
+            return
+        if not messagebox.askyesno("确认删除",
+                                   f"确定要删除 {font_type} 字体文件吗？\n\n"
+                                   f"文件: {target_path}\n"
+                                   f"删除后游戏将使用默认字体。"):
+            return
         try:
-            # 删除当前字体
-            if os.path.exists(target_path):
-                os.remove(target_path)
-            shutil.copy2("ChineseFont.ttf", target_path)
-            
-            # 更新显示
+            os.remove(target_path)
             self.update_font_info(font_type, target_path, preview_data)
-            messagebox.showinfo("成功", 
-                              f"{font_type}字体已重置为默认状态")
-            
+            messagebox.showinfo("成功", f"{font_type}字体已删除，游戏将使用默认字体")
         except Exception as e:
-            messagebox.showerror("错误", f"重置字体失败:\n{str(e)}")
+            messagebox.showerror("错误", f"删除字体失败:\n{str(e)}")
     
     def run(self):
         """运行GUI"""

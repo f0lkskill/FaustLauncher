@@ -53,6 +53,34 @@ def download_new_version(dow_root, download_files:list):
     
     os._exit(0)
 
+def _start_update_download(root, latest_entry, version_name):
+    """创建下载窗口并后台开始下载新版本 (须在 tkinter 主线程调用)"""
+    from functions.web_update.zeroasso_download import DownloadGUI
+    gui_dow = DownloadGUI(root, 'cache/', False, download_func=download_and_extract_gui)
+
+    download_files = [{
+        "url": latest_entry['url'],
+        "name": f"FaustLauncher_{version_name} 安装包",
+        "temp_filename": f"FaustLauncher_{version_name.replace('.','_')}.zip"
+    }]
+
+    Thread(target=download_new_version, args=(gui_dow, download_files)).start()
+
+
+def _on_update_choice(root, latest_entry, version_name, action):
+    """更新询问窗口关闭后的回调 (后台线程); 选择更新时回到主线程开始下载"""
+    if action != 'update':
+        print(f"[版本更新] 用户选择: {action or '未选择(窗口直接关闭或超时)'}")
+        return
+    if root is not None:
+        try:
+            root.after(0, _start_update_download, root, latest_entry, version_name)
+            return
+        except Exception:
+            pass
+    Thread(target=_start_update_download, args=(root, latest_entry, version_name)).start()
+
+
 def check_version_update(root):
 
     current_version: str = settings_manager.get_setting("version_info") # type: ignore
@@ -66,28 +94,39 @@ def check_version_update(root):
         return need_update, {}, current_version
     version_info = loads(version_info) # type: ignore
 
-    if version_info['latest_release_version'] != current_version:
-        print(f"检测到启动器新版本: {version_info['latest_release_version']}，当前版本: {current_version}")
-        if 'release' not in current_version:
-            if not messagebox.askyesno("版本更新", f"检测到启动器新版本: {version_info['latest_release_version']}\n当前版本: {current_version}\n是否更新？"):
-                return need_update, version_info['versions'][version_info['latest_release_version']], version_info['latest_release_version']
-            
-        from functions.web_update.zeroasso_download import DownloadGUI
-        gui_dow = DownloadGUI(root, 'cache/', False, download_func=download_and_extract_gui)
+    latest_release = (version_info.get('latest_release_version') or '').strip()
+    if not latest_release:
+        # 服务器侧尚未填写最新版本标记, 视为暂无更新
+        print("云端版本信息未填写最新版本 (latest_release_version 为空), 跳过更新检查")
+        return need_update, {}, current_version
 
-        download_files = [{
-            "url": version_info['versions'][version_info['latest_release_version']]['url'],
-            "name": f"FaustLauncher_{version_info['latest_release_version']} 安装包",
-            "temp_filename": f"FaustLauncher_{version_info['latest_release_version'].replace('.','_')}.zip"
-        }]
-        
-        # 遗留测试
-        # print(version_info['versions'][version_info['latest_release_version']])
-        # print(version_info['latest_release_version'])
-        
-        Thread(target=download_new_version, args=(gui_dow, download_files)).start()
-        need_update = True
+    if latest_release != current_version:
+        print(f"检测到启动器新版本: {latest_release}，当前版本: {current_version}")
+        latest_entry = version_info['versions'][latest_release]
+        if 'release' in current_version:
+            # 正式版: 不询问, 直接后台开始下载
+            _start_update_download(root, latest_entry, latest_release)
+            need_update = True
+        else:
+            # 测试版: 非阻塞弹窗询问 (主线程不被卡住), 窗口关闭后由回调决定是否下载
+            from functions.pages.notice.version_update_window import open_version_update_window
+            ok = open_version_update_window(
+                current_version,
+                {'version_name': latest_release,
+                 'description': latest_entry.get('description', ''),
+                 'date': latest_entry.get('data') or latest_entry.get('date'),
+                 'bilibili_url': latest_entry.get('url', '')},
+                info='版本更新', ask_update=True,
+                on_result=lambda action: _on_update_choice(
+                    root, latest_entry, latest_release, action))
+            if ok is None:
+                # 窗口无法启动: 回退到普通询问框
+                choice = messagebox.askyesno(
+                    "版本更新", f"检测到启动器新版本: {latest_release}\n当前版本: {current_version}\n是否更新？")
+                if choice:
+                    _start_update_download(root, latest_entry, latest_release)
+                    need_update = True
     else:
         print(f"当前启动器版本 {current_version} 已是最新版本，无需更新。")
     
-    return need_update, version_info['versions'][version_info['latest_release_version']], version_info['latest_release_version']
+    return need_update, version_info['versions'][latest_release], latest_release

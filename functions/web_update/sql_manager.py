@@ -556,8 +556,9 @@ def get_all_versions(host, port, user, password, database):
         connection = connect_db(host, port, user, password, database)
         
         with connection.cursor() as cursor:
-            # 查询所有版本信息
-            cursor.execute("SELECT * FROM faust_versions ORDER BY created_at DESC")
+            # 查询所有版本信息 (自增 id 严格单调, 保证最新版本永远在最前;
+            # created_at 为秒级精度, 同秒内插入时排序不可靠)
+            cursor.execute("SELECT * FROM faust_versions ORDER BY id DESC")
             results = cursor.fetchall()
             
             print(f"获取到 {len(results)} 个版本信息")
@@ -593,8 +594,8 @@ def get_latest_version(host, port, user, password, database):
         connection = connect_db(host, port, user, password, database)
         
         with connection.cursor() as cursor:
-            # 查询最新版本信息
-            cursor.execute("SELECT * FROM faust_versions WHERE is_latest = TRUE ORDER BY created_at DESC LIMIT 1")
+            # 查询最新版本信息 (多个候选时取自增 id 最大者)
+            cursor.execute("SELECT * FROM faust_versions WHERE is_latest = TRUE ORDER BY id DESC LIMIT 1")
             result = cursor.fetchone()
             
             if result:
@@ -940,16 +941,20 @@ def notify_new_version(current_version_name, info = '发现新版本', root = No
         current_version_name: 当前版本名称
     """
     try:
-        from functions.pages.notice.version_info import show_version_update_dialog
+        from functions.pages.notice.version_update_window import show_version_update_window, ask_window_just_opened
         from functions.base.settings_manager import get_settings_manager
         version_info:str = get_settings_manager().get_setting('version_info') # type: ignore
         if (has_new_version and latest_info) or must_show:
+            # 更新询问窗口 (ask_update) 刚打开时不重复弹详情窗口
+            if ask_window_just_opened():
+                print("版本更新询问窗口已弹出, 跳过重复的详情窗口")
+                return True
             # 显示消息框
             if not must_show and ("release" not in latest_info['version_name'] or "release" not in version_info): # type: ignore
                 # 不显示alpha版本更新提示
                 if "release" not in version_info:
                     messagebox.showwarning("警告", f"当前版本: {version_info}\n最新正式版本: {latest_info['version_name']}\n\n您正在使用测试版本，意味着该版本可能不稳定或包含未完成的功能。\n如果你是参与内测的用户,请将你遇到的问题反馈给开发者。") # type: ignore
-            show_version_update_dialog(current_version_name, latest_info, info, root)
+            show_version_update_window(current_version_name, latest_info, info, root)
             return True
         else:
             return False

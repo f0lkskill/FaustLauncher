@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>版本更新</title>
+<style>
+    * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+        user-select: none;
+    }
+
+    html, body {
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background: #000;
+        font-family: "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
+    }
+
+    body {
+        background: radial-gradient(120% 90% at 50% 30%, #04060c 0%, #010102 100%);
+        color: #d3d3d3;
+    }
+
+    #bgimg {
+        position: fixed;
+        right: -40px;
+        bottom: -40px;
+        width: min(30vw, 240px);
+        opacity: 0.08;
+        pointer-events: none;
+        object-fit: contain;
+        filter: drop-shadow(0 0 60px rgba(90, 160, 255, 0.25));
+    }
+
+    .wrap {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        padding: 24px 30px 20px;
+    }
+
+    /* ── 头部标题 ── */
+    .title-bar {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }
+
+    .title-bar .tag {
+        font-size: 14px;
+        color: #9fc9ff;
+        letter-spacing: 1px;
+        text-shadow: 0 0 8px rgba(130, 190, 255, 0.4);
+    }
+
+    .title-bar h1 {
+        font-size: 22px;
+        font-weight: bold;
+        color: #f4fbff;
+        letter-spacing: 2px;
+        text-shadow: 0 0 6px rgba(255, 255, 255, 0.3), 0 0 22px rgba(140, 190, 255, 0.35);
+    }
+
+    /* ── 版本信息区 ── */
+    .versions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 16px;
+    }
+
+    .chip {
+        padding: 7px 16px;
+        border-radius: 999px;
+        font-size: 13px;
+        font-weight: bold;
+        border: 1px solid rgba(148, 163, 184, 0.25);
+        background: rgba(255, 255, 255, 0.04);
+        color: #cbd5e1;
+        letter-spacing: 0.5px;
+    }
+
+    .chip.new {
+        border-color: rgba(16, 185, 129, 0.55);
+        background: rgba(16, 185, 129, 0.12);
+        color: #34d399;
+        box-shadow: 0 0 14px rgba(16, 185, 129, 0.18);
+    }
+
+    .meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 18px;
+        margin-top: 12px;
+        font-size: 12.5px;
+        color: #94a3b8;
+    }
+
+    .meta .row {
+        display: none;
+        align-items: center;
+        gap: 6px;
+    }
+
+    .meta .row.show {
+        display: flex;
+    }
+
+    .meta a {
+        color: #58a6ff;
+        text-decoration: none;
+        max-width: 320px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .meta a:hover {
+        text-decoration: underline;
+    }
+
+    /* ── GitHub 文档正文 ── */
+    .body {
+        flex: 1;
+        overflow-y: auto;
+        margin-top: 14px;
+        padding: 18px 24px;
+        background: rgba(255, 255, 255, 0.03);
+        border: 1px solid rgba(148, 163, 184, 0.14);
+        border-radius: 12px;
+        user-select: text;
+    }
+
+    .body::-webkit-scrollbar {
+        width: 8px;
+    }
+
+    .body::-webkit-scrollbar-thumb {
+        background: rgba(148, 163, 184, 0.25);
+        border-radius: 4px;
+    }
+
+    .body::-webkit-scrollbar-track {
+        background: transparent;
+    }
+
+    .markdown-body {
+        font-size: 13.5px;
+        line-height: 1.75;
+        color: #d3d3d3;
+        word-break: break-word;
+    }
+
+    .markdown-body h1 {
+        font-size: 20px;
+        color: #f8fafc;
+        margin: 16px 0 8px;
+        padding-bottom: 6px;
+        border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+    }
+
+    .markdown-body h2 {
+        font-size: 17px;
+        color: #e2e8f0;
+        margin: 14px 0 6px;
+    }
+
+    .markdown-body h3 {
+        font-size: 15px;
+        color: #cbd5e1;
+        margin: 12px 0 5px;
+    }
+
+    .markdown-body p {
+        margin: 8px 0;
+    }
+
+    .markdown-body blockquote {
+        margin: 10px 0;
+        padding: 8px 14px;
+        border-left: 4px solid #3b82f6;
+        background: rgba(51, 65, 85, 0.45);
+        color: #94a3b8;
+        font-style: italic;
+        border-radius: 0 8px 8px 0;
+    }
+
+    .markdown-body blockquote p {
+        margin: 0;
+    }
+
+    .markdown-body pre {
+        margin: 10px 0;
+        padding: 12px 14px;
+        background: #0d1117;
+        border: 1px solid rgba(148, 163, 184, 0.15);
+        border-radius: 8px;
+        overflow-x: auto;
+    }
+
+    .markdown-body code {
+        font-family: Consolas, "Courier New", monospace;
+        font-size: 12px;
+    }
+
+    .markdown-body p code, .markdown-body li code {
+        background: #1e293b;
+        padding: 1px 6px;
+        border-radius: 4px;
+        color: #f87171;
+    }
+
+    .markdown-body pre code {
+        color: #e2e8f0;
+        background: none;
+        padding: 0;
+    }
+
+    .markdown-body ul, .markdown-body ol {
+        margin: 8px 0;
+        padding-left: 24px;
+    }
+
+    .markdown-body li {
+        margin: 4px 0;
+    }
+
+    .markdown-body li.task {
+        list-style: none;
+        margin-left: -20px;
+    }
+
+    .markdown-body li.task input {
+        margin-right: 8px;
+        accent-color: #10b981;
+        vertical-align: middle;
+    }
+
+    .markdown-body table {
+        margin: 10px 0;
+        border-collapse: collapse;
+        font-size: 12.5px;
+    }
+
+    .markdown-body th, .markdown-body td {
+        border: 1px solid rgba(148, 163, 184, 0.25);
+        padding: 6px 12px;
+    }
+
+    .markdown-body th {
+        background: #1e293b;
+        color: #e2e8f0;
+    }
+
+    .markdown-body hr {
+        border: none;
+        border-top: 1px solid rgba(148, 163, 184, 0.25);
+        margin: 14px 0;
+    }
+
+    .markdown-body a {
+        color: #58a6ff;
+        text-decoration: none;
+    }
+
+    .markdown-body a:hover {
+        text-decoration: underline;
+    }
+
+    .markdown-body del {
+        color: #94a3b8;
+    }
+
+    /* ── 底部按钮 ── */
+    .btns {
+        display: flex;
+        justify-content: flex-end;
+        gap: 12px;
+        margin-top: 16px;
+    }
+
+    .btn {
+        border: none;
+        cursor: pointer;
+        font-family: inherit;
+        font-size: 13px;
+        font-weight: bold;
+        letter-spacing: 1px;
+        padding: 9px 28px;
+        border-radius: 8px;
+        color: #ffffff;
+        transition: background 0.15s ease, box-shadow 0.15s ease;
+    }
+
+    .btn-later {
+        background: #334155;
+    }
+
+    .btn-later:hover {
+        background: #475569;
+    }
+
+    .btn-update {
+        background: #10b981;
+        box-shadow: 0 0 14px rgba(16, 185, 129, 0.25);
+    }
+
+    .btn-update:hover {
+        background: #059669;
+    }
+</style>
+</head>
+<body>
+<img id="bgimg" alt="">
+<div class="wrap">
+    <div class="title-bar">
+        <span class="tag">🚀</span>
+        <h1 id="title">版本更新</h1>
+    </div>
+
+    <div class="versions">
+        <span class="chip" id="curVer">当前版本: -</span>
+        <span class="chip new" id="newVer">最新版本: -</span>
+    </div>
+
+    <div class="meta">
+        <div class="row" id="dateRow">
+            <span>🕐 发布时间:</span>
+            <span id="date"></span>
+        </div>
+        <div class="row" id="linkRow">
+            <span>🔗 相关链接:</span>
+            <a id="link" href="#" target="_blank"></a>
+        </div>
+    </div>
+
+    <div class="body">
+        <div class="markdown-body" id="markdown"><p>加载中...</p></div>
+    </div>
+
+    <div class="btns">
+        <button class="btn btn-later" id="btn-later" style="display:none" onclick="choose('later')">稍后再说</button>
+        <button class="btn btn-update" id="btn-update" style="display:none" onclick="choose('update')">立即更新</button>
+    </div>
+</div>
+
+<script>
+    "use strict";
+
+    const $ = (id) => document.getElementById(id);
+    let api = null;
+
+    function choose(action) {
+        if (!api) return;
+        try {
+            api.choose(action);
+        } catch (e) {
+            console.error(e);
+        }
+    }
+
+    async function loadBg() {
+        try {
+            const a = await api.assets();
+            if (a && a.bg) $("bgimg").src = a.bg;
+        } catch (e) {
+            console.error(e);
+        }
+    }
+
+    async function init() {
+        let d = {};
+        try {
+            d = await api.get_data();
+        } catch (e) {
+            console.error(e);
+            return;
+        }
+
+        $("title").textContent = d.title || "版本更新";
+        $("curVer").textContent = "当前版本: " + (d.current_version || "未知");
+        $("newVer").textContent = "最新版本: " + (d.new_version || "未知");
+
+        if (d.date) {
+            $("dateRow").classList.add("show");
+            $("date").textContent = d.date;
+        }
+        if (d.bilibili_url) {
+            $("linkRow").classList.add("show");
+            $("link").textContent = d.bilibili_url;
+            $("link").href = d.bilibili_url;
+        }
+
+        $("markdown").innerHTML = d.html || "<p>暂无介绍</p>";
+
+        // 仅更新询问模式显示按钮; 信息展示模式无按钮, 直接关闭窗口即可
+        if (d.ask_update && d.can_update) {
+            $("btn-later").style.display = "inline-block";
+            $("btn-update").style.display = "inline-block";
+        }
+
+        loadBg();
+    }
+
+    function tryInitApi() {
+        // api 对象在函数暴露前即为空对象 {}, 需确认目标函数已就绪再初始化 (避免竞态)
+        if (window.pywebview && window.pywebview.api
+                && typeof window.pywebview.api.get_data === 'function') {
+            api = window.pywebview.api;
+            init();
+            return true;
+        }
+        setTimeout(tryInitApi, 70);
+        return false;
+    }
+
+    window.addEventListener("pywebviewready", tryInitApi);
+    tryInitApi();
+</script>
+</body>
+</html>
