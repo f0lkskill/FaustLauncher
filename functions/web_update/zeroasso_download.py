@@ -6,6 +6,7 @@ from functions.pages.download.download_gui import DownloadGUI
 from functions.web_update.github_utils import GitHubReleaseFetcher
 from functions.web_update.download_utils import check_need_up_translate
 from functions.base.settings_manager import get_settings_manager
+from functions.base.web_config import get_webnote
 
 # 7-Zip可执行文件路径
 SEVEN_ZIP_PATH = r"resources\7-zip\7z.exe"
@@ -339,15 +340,18 @@ def _fetch_download_path(note_name: str, pwd: str, get_path) -> tuple[str, str] 
     return None
 
 def get_download_path_ByNote() -> tuple[str, str] | None:
-    return _fetch_download_path("FaustLauncher", "AutoTranslate",
+    address, pwd = get_webnote('translation')
+    return _fetch_download_path(address, pwd,
                                 lambda n: n['llc_download_mirror']['seven']['direct'])
 
 def get_download_path_ByGhProxy() -> tuple[str, str] | None:
-    return _fetch_download_path("FaustLauncher", "",
+    address, _ = get_webnote('translation')
+    return _fetch_download_path(address, "",
                                 lambda n: 'https://gh-proxy.org/' + n['llc_download_url']['seven'])
 
 def get_download_path_ByLanzouyun() -> tuple[str, str] | None:
-    return _fetch_download_path("FaustLauncher", "",
+    address, _ = get_webnote('translation')
+    return _fetch_download_path(address, "",
                                 lambda n: n['lanzou_download_url']['seven'])
 
 def download_and_extract_gui(gui:DownloadGUI, config_path: str = "", download_files = None, auto_close:bool = True) -> bool:

@@ -1,4 +1,5 @@
 from functions.webFunc import Note
+from functions.base.web_config import get_webnote
 from threading import Thread
 from json import loads, dumps
 
@@ -6,8 +7,8 @@ class WebTrigger:
     """Web触发器，负责获取来自Web的插件和mod信息"""
     
     def __init__(self, ):
-        self.addon_info = Note("FaustLauncher.addon.info")
-        self.mod_info = Note("FaustLauncher.mod.info")
+        self.addon_info = Note(get_webnote('addon_info')[0])
+        self.mod_info = Note(get_webnote('mod_info')[0])
         
         sort_thread = Thread(target=self.sort_info_by_download_number)
         sort_thread.start()
@@ -19,6 +20,8 @@ class WebTrigger:
 
     def _get_note_info(self, note):
         note.fetch_note_info()
+        if not note.note_content.strip():
+            return {}
         return loads(note.note_content)
 
     def get_note_info_mod(self):

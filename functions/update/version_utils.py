@@ -1,6 +1,7 @@
 from functions.webFunc import *
 from json import loads
 from functions.base.settings_manager import get_settings_manager
+from functions.base.web_config import get_webnote
 from threading import Thread
 from tkinter import messagebox
 from functions.web_update.zeroasso_download import download_and_extract_gui
@@ -57,9 +58,12 @@ def check_version_update(root):
     current_version: str = settings_manager.get_setting("version_info") # type: ignore
 
     need_update = False
-    version_note = Note('FaustLauncher.version_info')
+    version_note = Note(get_webnote('version_info')[0])
     version_note.fetch_note_info()
     version_info = version_note.note_content
+    if not version_info.strip():
+        print("获取版本信息失败 (webnote 不可用或未配置)")
+        return need_update, {}, current_version
     version_info = loads(version_info) # type: ignore
 
     if version_info['latest_release_version'] != current_version:
