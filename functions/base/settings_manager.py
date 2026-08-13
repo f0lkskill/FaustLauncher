@@ -7,23 +7,86 @@ class SettingsManager:
         self.config_path = config_path
         self.settings = {}
         self.load_settings()
-    
-    def load_settings(self):
-        """加载设置文件"""
+
+    # ── 防损坏读写 ────────────────────────────────────────────
+
+    def _is_valid_settings(self, data):
+        """校验配置数据结构是否有效（顶层必须是非空 dict）。"""
+        return isinstance(data, dict) and len(data) > 0
+
+    def _load_from_file(self, path):
+        """尝试从指定文件读取配置，文件缺失、解析失败或结构无效时返回 None。"""
         try:
-            if os.path.exists(self.config_path):
-                with open(self.config_path, 'r', encoding='utf-8') as f:
-                    self.settings = json.load(f)
+            if os.path.exists(path):
+                with open(path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                if self._is_valid_settings(data):
+                    return data
         except Exception as e:
-            print(f"加载设置失败: {e}")
-    
+            print(f"读取配置 {path} 失败: {e}")
+        return None
+
+    def load_settings(self):
+        """加载设置文件。
+
+        主文件损坏或为空时，自动从上次的备份 (.bak) 恢复并回写主文件，
+        保证意外关机导致的损坏不会丢失用户配置。
+        """
+        loaded = self._load_from_file(self.config_path)
+        if loaded is not None:
+            self.settings = loaded
+            return
+
+        backup_path = self.config_path + '.bak'
+        loaded = self._load_from_file(backup_path)
+        if loaded is not None:
+            print(f"配置主文件损坏或为空，已从备份恢复: {backup_path}")
+            self.settings = loaded
+            self.save_settings()
+            return
+
+        print("警告: 配置损坏且无可用备份，请检查 config/settings.json")
+        self.settings = {}
+
     def save_settings(self):
-        """保存设置到文件"""
+        """原子化保存设置到文件，防止断电/崩溃导致配置损坏。
+
+        流程: 备份当前有效配置 → 写入临时文件并刷盘 → 原子替换原文件。
+        若内存中的配置无效，拒绝保存，避免用空配置覆盖有效文件。
+        """
+        if not self._is_valid_settings(self.settings):
+            print("警告: 配置内容无效，拒绝保存，避免覆盖有效配置文件")
+            return False
         try:
             # 确保目录存在
             os.makedirs(os.path.dirname(self.config_path), exist_ok=True)
-            with open(self.config_path, 'w', encoding='utf-8') as f:
-                json.dump(self.settings, f, indent=4, ensure_ascii=False)
+
+            # 备份当前有效配置（断电时至少保留上一次的完整版本）
+            if os.path.exists(self.config_path):
+                try:
+                    with open(self.config_path, 'r', encoding='utf-8') as f:
+                        current = json.load(f)
+                    if self._is_valid_settings(current):
+                        with open(self.config_path + '.bak', 'w', encoding='utf-8') as f:
+                            json.dump(current, f, indent=4, ensure_ascii=False)
+                except Exception:
+                    pass  # 当前主文件无效时静默跳过备份（如自动恢复场景）
+
+            # 写入临时文件并刷盘，再原子替换，避免写入中断损坏主文件
+            dir_name = os.path.dirname(self.config_path) or '.'
+            tmp_path = os.path.join(dir_name, f'.settings_{os.getpid()}.tmp')
+            try:
+                with open(tmp_path, 'w', encoding='utf-8') as f:
+                    json.dump(self.settings, f, indent=4, ensure_ascii=False)
+                    f.flush()
+                    os.fsync(f.fileno())
+                os.replace(tmp_path, self.config_path)
+            finally:
+                if os.path.exists(tmp_path):
+                    try:
+                        os.remove(tmp_path)
+                    except OSError:
+                        pass
             return True
         except Exception as e:
             print(f"保存设置失败: {e}")
