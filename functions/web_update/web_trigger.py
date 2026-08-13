@@ -9,9 +9,10 @@ class WebTrigger:
     def __init__(self, ):
         self.addon_info = Note(get_webnote('addon_info')[0])
         self.mod_info = Note(get_webnote('mod_info')[0])
-        
-        sort_thread = Thread(target=self.sort_info_by_download_number)
-        sort_thread.start()
+
+        # 取消初始化排序
+        # sort_thread = Thread(target=self.sort_info_by_download_number)
+        # sort_thread.start()
 
     def refresh_note_info(self):
         """刷新插件和mod信息"""
