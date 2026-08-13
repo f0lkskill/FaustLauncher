@@ -97,6 +97,8 @@ def extract_with_7zip(archive_path, extract_path):
             return False
         
         # 使用7z.exe解压
+        # 注意: 7z 在中文系统上输出 GBK 文本, 不能用 utf-8 硬解码(会导致
+        # UnicodeDecodeError); 使用系统默认编码 + errors='replace' 兜底。
         result = subprocess.run([
             SEVEN_ZIP_PATH, 
             'x',           # 解压命令
@@ -104,7 +106,7 @@ def extract_with_7zip(archive_path, extract_path):
             f'-o{extract_path}',  # 输出目录
             '-y',          # 确认所有操作
             '-r'           # 递归处理子目录
-        ], capture_output=True, text=True, encoding='utf-8', creationflags=subprocess.CREATE_NO_WINDOW)
+        ], capture_output=True, text=True, errors='replace', creationflags=subprocess.CREATE_NO_WINDOW)
         
         if result.returncode == 0:
             print("7-Zip解压成功!")
