@@ -4,6 +4,7 @@
 
 ### *您人生中绝无仅有的完美启动器 —— 让每一个但丁都解放双手，专心坐牢*
 
+
 <br>
 
 [![版本](https://img.shields.io/badge/版本-V0.6.0--pre.7.fix.2-blue?style=for-the-badge&logo=git)](https://github.com/f0lkskill/FaustLauncher/releases)
@@ -13,7 +14,7 @@
 [![Stars](https://img.shields.io/github/stars/f0lkskill/FaustLauncher?style=for-the-badge&logo=github)](https://github.com/f0lkskill/FaustLauncher/stargazers)
 [![Downloads](https://img.shields.io/github/downloads/f0lkskill/FaustLauncher/total?style=for-the-badge&logo=github)](https://github.com/f0lkskill/FaustLauncher/releases)
 
-**📺 使用视频教程：可在程序「关于 → 程序介绍」页面中查看。**
+**📺  使用视频教程：可在程序「关于 → 程序介绍」页面中查看。**
 
 </div>
 
@@ -90,7 +91,7 @@
 
 ### 🚀 一键启动（流水线式）
 
-点击「🚀 启动游戏」，自动按顺序完成以下全部步骤 —— **无需任何手动操作**：
+点击「🚀 启动游戏」，自动按顺序完成以下全部步骤 — **无需任何手动操作**：
 
 | 步骤 | 内容 |
 |:---|:---|
