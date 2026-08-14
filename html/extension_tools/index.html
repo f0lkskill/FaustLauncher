@@ -1,0 +1,848 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>扩展工具</title>
+<style>
+    * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+        user-select: none;
+    }
+
+    html, body {
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background: #000;
+        font-family: "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
+    }
+
+    body {
+        background: radial-gradient(120% 90% at 50% 30%, #04060c 0%, #010102 100%);
+        color: #d3d3d3;
+    }
+
+    #bgimg {
+        position: fixed;
+        right: -40px;
+        bottom: -40px;
+        width: min(30vw, 240px);
+        opacity: 0.08;
+        pointer-events: none;
+        object-fit: contain;
+        filter: drop-shadow(0 0 60px rgba(90, 160, 255, 0.25));
+    }
+
+    .wrap {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        padding: 20px 28px 16px;
+    }
+
+    .head-title {
+        font-size: 17px;
+        font-weight: bold;
+        color: #f1f5f9;
+        letter-spacing: 1px;
+    }
+
+    .head-sub {
+        margin-top: 3px;
+        font-size: 12px;
+        color: #94a3b8;
+    }
+
+    /* ── 模式页签 ── */
+    .tabs {
+        display: flex;
+        gap: 8px;
+        margin-top: 14px;
+    }
+
+    .tab {
+        flex: 1;
+        padding: 10px 0;
+        text-align: center;
+        font-size: 13.5px;
+        font-weight: bold;
+        color: #94a3b8;
+        background: rgba(255, 255, 255, 0.03);
+        border: 1px solid rgba(148, 163, 184, 0.16);
+        border-radius: 10px;
+        cursor: pointer;
+        transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+    }
+
+    .tab:hover {
+        background: rgba(255, 255, 255, 0.06);
+        color: #e2e8f0;
+    }
+
+    .tab.active {
+        color: #0b1120;
+        background: linear-gradient(135deg, #818cf8, #6366f1);
+        border-color: #818cf8;
+    }
+
+    /* ── 区块 ── */
+    .sec {
+        display: none;
+        flex-direction: column;
+        flex: 1;
+        margin-top: 12px;
+        min-height: 0;
+    }
+
+    .sec.show { display: flex; }
+
+    .hint {
+        font-size: 12px;
+        color: #64748b;
+        line-height: 1.7;
+        margin-bottom: 10px;
+    }
+
+    .field {
+        margin-bottom: 10px;
+    }
+
+    .field-label {
+        font-size: 12.5px;
+        font-weight: bold;
+        color: #e2e8f0;
+        margin-bottom: 5px;
+    }
+
+    .row-input {
+        display: flex;
+        gap: 8px;
+    }
+
+    input[type="text"], textarea, select {
+        flex: 1;
+        width: 100%;
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid rgba(148, 163, 184, 0.22);
+        border-radius: 8px;
+        color: #e2e8f0;
+        font-family: inherit;
+        font-size: 13px;
+        padding: 8px 12px;
+        outline: none;
+        user-select: text;
+        transition: border-color 0.15s ease;
+    }
+
+    input[type="text"]:focus, textarea:focus {
+        border-color: rgba(99, 102, 241, 0.7);
+    }
+
+    textarea {
+        resize: none;
+        line-height: 1.6;
+    }
+
+    .btn {
+        border: none;
+        border-radius: 8px;
+        font-family: inherit;
+        font-size: 12.5px;
+        font-weight: bold;
+        padding: 8px 16px;
+        cursor: pointer;
+        color: #f1f5f9;
+        background: #334155;
+        transition: background 0.15s ease, opacity 0.15s ease;
+        white-space: nowrap;
+    }
+
+    .btn:hover { background: #475569; }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .btn-primary { background: #6366f1; }
+    .btn-primary:hover { background: #4f46e5; }
+
+    .btn-green { background: #10b981; }
+    .btn-green:hover { background: #059669; }
+
+    .btn-red { background: #ef4444; }
+    .btn-red:hover { background: #dc2626; }
+
+    .btn-sm { padding: 6px 12px; font-size: 12px; }
+
+    /* ── mods 下拉选择 ── */
+    select { flex: 0 0 auto; width: auto; max-width: 220px; cursor: pointer; }
+    select option { background: #0b1120; color: #e2e8f0; }
+
+    /* ── 预览 / 日志 ── */
+    .preview {
+        flex: 1;
+        min-height: 90px;
+        max-height: 180px;
+        overflow-y: auto;
+        background: rgba(4, 6, 12, 0.6);
+        border: 1px solid rgba(148, 163, 184, 0.14);
+        border-radius: 10px;
+        padding: 10px 14px;
+        font-size: 12.5px;
+        line-height: 1.8;
+        color: #cbd5e1;
+        white-space: pre-wrap;
+        word-break: break-all;
+        user-select: text;
+    }
+
+    .preview .kv { color: #94a3b8; }
+    .preview .kv b { color: #e2e8f0; }
+
+    .log {
+        flex: 1;
+        min-height: 60px;
+        max-height: 130px;
+        overflow-y: auto;
+        background: rgba(4, 6, 12, 0.6);
+        border: 1px solid rgba(148, 163, 184, 0.14);
+        border-radius: 10px;
+        padding: 8px 12px;
+        font-size: 12px;
+        line-height: 1.7;
+        color: #64748b;
+        white-space: pre-wrap;
+        word-break: break-all;
+        user-select: text;
+    }
+
+    .log.ok { color: #34d399; }
+    .log.err { color: #f87171; }
+
+    .action-row {
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+        margin-top: 10px;
+    }
+
+    /* ── 状态栏 ── */
+    .statusbar {
+        margin-top: 10px;
+        padding-top: 10px;
+        border-top: 1px solid rgba(148, 163, 184, 0.15);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        font-size: 12px;
+        color: #94a3b8;
+    }
+
+    .statusbar .msg {
+        color: #34d399;
+        max-width: 520px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .statusbar .msg.err { color: #f87171; }
+
+    /* ── 信息表单弹层 ── */
+    #formOverlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(4, 6, 12, 0.82);
+        backdrop-filter: blur(2px);
+        display: none;
+        align-items: center;
+        justify-content: center;
+        z-index: 900;
+    }
+
+    #formOverlay.show { display: flex; }
+
+    .form-card {
+        width: min(560px, 92vw);
+        max-height: 88vh;
+        display: flex;
+        flex-direction: column;
+        background: #0b1120;
+        border: 1px solid rgba(148, 163, 184, 0.25);
+        border-radius: 14px;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+    }
+
+    .form-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 14px 18px;
+        border-bottom: 1px solid rgba(148, 163, 184, 0.15);
+        font-size: 14px;
+        font-weight: bold;
+        color: #f1f5f9;
+    }
+
+    .form-body {
+        flex: 1;
+        overflow-y: auto;
+        padding: 14px 18px;
+    }
+
+    .form-body .field { margin-bottom: 12px; }
+
+    .form-foot {
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+        padding: 12px 18px;
+        border-top: 1px solid rgba(148, 163, 184, 0.15);
+    }
+
+    /* 文件勾选列表 */
+    .file-list {
+        max-height: 130px;
+        overflow-y: auto;
+        background: rgba(255, 255, 255, 0.03);
+        border: 1px solid rgba(148, 163, 184, 0.16);
+        border-radius: 8px;
+        padding: 6px 8px;
+    }
+
+    .file-list label {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 5px 6px;
+        font-size: 12.5px;
+        color: #cbd5e1;
+        cursor: pointer;
+        border-radius: 6px;
+    }
+
+    .file-list label:hover { background: rgba(255, 255, 255, 0.05); }
+
+    .file-list .extra { color: #f59e0b; }
+    .file-list .empty { color: #64748b; font-size: 12px; padding: 6px; }
+
+    .icon-hint { font-size: 11.5px; color: #64748b; margin-left: 8px; max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    .toast {
+        position: fixed;
+        bottom: 56px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: rgba(16, 185, 129, 0.15);
+        border: 1px solid rgba(16, 185, 129, 0.5);
+        color: #34d399;
+        font-size: 12.5px;
+        padding: 8px 20px;
+        border-radius: 999px;
+        opacity: 0;
+        transition: opacity 0.2s ease;
+        pointer-events: none;
+        z-index: 1000;
+    }
+
+    .toast.err {
+        background: rgba(239, 68, 68, 0.15);
+        border-color: rgba(239, 68, 68, 0.5);
+        color: #f87171;
+    }
+
+    .toast.show { opacity: 1; }
+
+    ::-webkit-scrollbar { width: 10px; }
+    ::-webkit-scrollbar-thumb { background: rgba(148, 163, 184, 0.5); border-radius: 5px; }
+    ::-webkit-scrollbar-thumb:hover { background: rgba(148, 163, 184, 0.75); }
+    ::-webkit-scrollbar-track { background: rgba(148, 163, 184, 0.08); border-radius: 5px; }
+</style>
+</head>
+<body>
+<img id="bgimg" alt="">
+<div class="wrap">
+    <div class="head-title">🧩 扩展工具</div>
+    <div class="head-sub">包装 Mod / 生成插件模板 / 发布 Mod 信息到云端</div>
+
+    <div class="tabs">
+        <div class="tab active" data-mode="1">📦 包装 Mod</div>
+        <div class="tab" data-mode="2">🧩 生成插件模板</div>
+        <div class="tab" data-mode="3">☁️ 发布 Mod 信息</div>
+    </div>
+
+    <!-- ══════════ 模式1: 包装 Mod ══════════ -->
+    <div class="sec show" id="sec-wrap">
+        <div class="hint">选择包含 Installer.bat、Assets 文件夹、Uninstaller.bat 的 Mod 原始文件夹，程序将复制到 mods/ 目录，并由你填写 mod_info.json 信息。</div>
+        <div class="field">
+            <div class="field-label">原始文件夹</div>
+            <div class="row-input">
+                <input type="text" id="wrap-folder" placeholder="未选择">
+                <button class="btn" id="wrap-browse">浏览...</button>
+                <select id="wrap-mods"></select>
+                <button class="btn btn-sm" id="wrap-from-mods">从 mods/ 选择</button>
+            </div>
+        </div>
+        <div class="action-row">
+            <button class="btn btn-primary" id="wrap-start">🚀 开始包装</button>
+        </div>
+    </div>
+
+    <!-- ══════════ 模式2: 生成插件模板 ══════════ -->
+    <div class="sec" id="sec-plugin">
+        <div class="hint">填写插件信息后，在 addons/ 目录下生成插件模板（scr.py、图标、addon_info.json），可直接在此基础上开发插件。</div>
+        <div class="field">
+            <div class="field-label">插件名称</div>
+            <div class="row-input">
+                <input type="text" id="plugin-name" placeholder="例如: MyPlugin">
+            </div>
+        </div>
+        <div class="action-row">
+            <button class="btn btn-green" id="plugin-start">✨ 生成模板</button>
+        </div>
+    </div>
+
+    <!-- ══════════ 模式3: 发布 Mod 信息 ══════════ -->
+    <div class="sec" id="sec-publish">
+        <div class="hint">选择 mods/ 下已包装的 Mod 文件夹，将 mod_info.json 信息发布到云端（web_config.json 中 mod_info 地址，dowload_url/icon_url 留空）。</div>
+        <div class="field">
+            <div class="field-label">Mod 文件夹</div>
+            <div class="row-input">
+                <input type="text" id="pub-folder" placeholder="未选择">
+                <button class="btn" id="pub-browse">浏览...</button>
+                <select id="pub-mods"></select>
+                <button class="btn btn-sm" id="pub-from-mods">从 mods/ 选择</button>
+            </div>
+        </div>
+        <div class="preview" id="pub-preview">尚未选择 Mod 文件夹</div>
+        <div class="action-row">
+            <button class="btn btn-primary" id="pub-upload">🚀 上传到云端</button>
+        </div>
+        <div class="log" id="pub-log"></div>
+    </div>
+
+    <div class="statusbar">
+        <span id="count">扩展工具</span>
+        <span class="msg" id="msg"></span>
+    </div>
+</div>
+
+<!-- ══════════ 信息填写表单弹层 ══════════ -->
+<div id="formOverlay">
+    <div class="form-card">
+        <div class="form-head">
+            <span id="form-title">填写信息</span>
+            <button class="btn btn-sm" id="form-close">✕</button>
+        </div>
+        <div class="form-body">
+            <div class="field">
+                <div class="field-label">名称</div>
+                <input type="text" id="form-name">
+            </div>
+            <div class="field">
+                <div class="field-label">描述</div>
+                <textarea id="form-desc" rows="3" placeholder="Mod / 插件功能说明..."></textarea>
+            </div>
+            <div class="field">
+                <div class="field-label">版本</div>
+                <input type="text" id="form-version" value="0.0.1">
+            </div>
+            <div class="field">
+                <div class="field-label">作者 (每行一个, 格式: 名字 或 名字|链接)</div>
+                <textarea id="form-authors" rows="2" placeholder="作者A|https://example.com&#10;作者B"></textarea>
+            </div>
+            <div class="field" id="form-files-field">
+                <div class="field-label">载入游戏的文件 (file_names)</div>
+                <div class="file-list" id="form-files"></div>
+                <div class="action-row" style="margin-top:6px">
+                    <button class="btn btn-sm" id="form-add-files">➕ 添加其他文件...</button>
+                </div>
+            </div>
+            <div class="field">
+                <div class="field-label">自定义图标 (可选)</div>
+                <div class="row-input">
+                    <button class="btn btn-sm" id="form-pick-icon">🎨 选择图标</button>
+                    <span class="icon-hint" id="form-icon-hint">不选择则自动生成默认图标</span>
+                </div>
+            </div>
+        </div>
+        <div class="form-foot">
+            <button class="btn" id="form-cancel">取消</button>
+            <button class="btn btn-primary" id="form-confirm">✔ 确认生成</button>
+        </div>
+    </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+    "use strict";
+
+    const $ = (id) => document.getElementById(id);
+    let api = null;
+
+    let toastTimer = null;
+    function showToast(text, isErr) {
+        const t = $("toast");
+        t.textContent = text;
+        t.className = "toast" + (isErr ? " err show" : " show");
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => { t.className = "toast" + (isErr ? " err" : ""); }, 2600);
+    }
+
+    function setMsg(text, isErr) {
+        const m = $("msg");
+        m.textContent = text || "";
+        m.className = "msg" + (isErr ? " err" : "");
+    }
+
+    function errText(e) {
+        return (e && (e.message || e)) || e;
+    }
+
+    /* ── 模式切换 ── */
+    const secIds = { "1": "sec-wrap", "2": "sec-plugin", "3": "sec-publish" };
+
+    function switchMode(mode) {
+        document.querySelectorAll(".tab").forEach((t) => {
+            t.classList.toggle("active", t.dataset.mode === mode);
+        });
+        for (const [m, id] of Object.entries(secIds)) {
+            $(id).classList.toggle("show", m === mode);
+        }
+        setMsg("");
+        // 每次切回相关模式时刷新 mods 选项 (目录可能已变化)
+        if (mode === "1") { fillModsSelect("wrap-mods", false); }
+        if (mode === "3") { fillModsSelect("pub-mods", true); }
+    }
+
+    document.querySelectorAll(".tab").forEach((t) => {
+        t.addEventListener("click", () => switchMode(t.dataset.mode));
+    });
+
+    /* ── mods 下拉填充 (wrappedOnly=true 时只列已包装的) ── */
+    async function fillModsSelect(selId, wrappedOnly) {
+        try {
+            const mods = await api.list_mods();
+            const sel = $(selId);
+            const prev = sel.value;
+            sel.innerHTML = "";
+            const usable = (mods || []).filter((m) => !wrappedOnly || m.wrapped);
+            if (!usable.length) {
+                const o = document.createElement("option");
+                o.value = "";
+                o.textContent = wrappedOnly ? "(mods/ 下暂无已包装 Mod)" : "(mods/ 下没有文件夹)";
+                sel.appendChild(o);
+                return;
+            }
+            usable.forEach((m) => {
+                const o = document.createElement("option");
+                o.value = m.path;
+                o.textContent = m.wrapped ? m.name : m.name + " (未打包)";
+                sel.appendChild(o);
+            });
+            if (prev) sel.value = prev;
+        } catch (e) {
+            console.error(e);
+        }
+    }
+
+    /* ── 文件夹选择通用 ── */
+    async function pickFolderAndSet(inputId, scanFn) {
+        try {
+            const path = await api.pick_folder();
+            if (!path) return;
+            $(inputId).value = path;
+            if (scanFn) await scanFn(path);
+        } catch (e) {
+            setMsg("选择文件夹失败: " + errText(e), true);
+        }
+    }
+
+    async function chooseFromMods(inputId, scanFn) {
+        const selId = inputId === "wrap-folder" ? "wrap-mods" : "pub-mods";
+        const sel = $(selId);
+        const path = sel.value;
+        if (!path) {
+            showToast("mods/ 下没有可选的 Mod", true);
+            return;
+        }
+        $(inputId).value = path;
+        if (scanFn) await scanFn(path);
+    }
+
+    /* 文件夹输入内容变化 (手动输入/粘贴) 时重新扫描/预览 */
+    function bindFolderInput(inputId, scanFn) {
+        const input = $(inputId);
+        let timer = null;
+        input.addEventListener("input", () => {
+            clearTimeout(timer);
+            timer = setTimeout(() => {
+                const v = input.value.trim();
+                if (v && scanFn) scanFn(v);
+            }, 350);
+        });
+        input.addEventListener("change", () => {
+            const v = input.value.trim();
+            if (v && scanFn) scanFn(v);
+        });
+    }
+
+    /* ── 模式1: 包装 Mod ── */
+    let wrapState = { files: [], extra: [] };  // extra: 绝对路径数组
+
+    async function scanWrapFolder(path) {
+        try {
+            const r = await api.scan_mod_files(path);
+            if (!r.ok) {
+                wrapState = { files: [], extra: [] };
+                setMsg(r.error, true);
+                return false;
+            }
+            wrapState = { files: r.files || [], extra: [] };
+            setMsg("");
+            return true;
+        } catch (e) {
+            setMsg("扫描失败: " + errText(e), true);
+            return false;
+        }
+    }
+
+    $("wrap-browse").addEventListener("click", () => pickFolderAndSet("wrap-folder", scanWrapFolder));
+    $("wrap-from-mods").addEventListener("click", () => chooseFromMods("wrap-folder", scanWrapFolder));
+
+    $("wrap-start").addEventListener("click", async () => {
+        const folder = $("wrap-folder").value.trim();
+        if (!folder) { setMsg("请先选择原始文件夹", true); return; }
+        if (!(await scanWrapFolder(folder))) return;
+        const base = folder.split(/[\\/]/).pop() || "";
+        openForm("wrap", base, wrapState.files, wrapState.extra);
+    });
+
+    /* ── 模式2: 生成插件 ── */
+    $("plugin-start").addEventListener("click", () => {
+        const name = $("plugin-name").value.trim();
+        if (!name) { setMsg("请先填写插件名称", true); return; }
+        openForm("plugin", name, [], []);
+    });
+
+    /* ── 模式3: 发布 Mod ── */
+    async function loadPublishPreview(path) {
+        try {
+            const r = await api.preview_mod(path);
+            if (!r.ok) {
+                $("pub-preview").textContent = r.error;
+                $("pub-preview").classList.add("err");
+                return false;
+            }
+            const i = r.info;
+            const lines = [
+                "名称: " + (i.name || ""),
+                "版本: " + ((i.version || "").trim() || "0.0.1"),
+                "作者: " + JSON.stringify(i.authors || {}),
+                "描述: " + ((i.desc || "").trim() || "(空)"),
+                "载入文件: " + ((i.file_names || []).join(", ") || "(空)"),
+                "",
+                "上传后: dowload_url / icon_url 留空, download_count=0, disabled=false",
+            ];
+            $("pub-preview").textContent = lines.join("\n");
+            $("pub-preview").classList.remove("err");
+            return true;
+        } catch (e) {
+            $("pub-preview").textContent = "预览失败: " + errText(e);
+            $("pub-preview").classList.add("err");
+            return false;
+        }
+    }
+
+    $("pub-browse").addEventListener("click", () => pickFolderAndSet("pub-folder", loadPublishPreview));
+    $("pub-from-mods").addEventListener("click", () => chooseFromMods("pub-folder", loadPublishPreview));
+
+    $("pub-upload").addEventListener("click", async () => {
+        const folder = $("pub-folder").value.trim();
+        if (!folder) { setMsg("请先选择 Mod 文件夹", true); return; }
+        if (!(await loadPublishPreview(folder))) return;
+        const btn = $("pub-upload");
+        btn.disabled = true;
+        btn.textContent = "上传中...";
+        $("pub-log").textContent = "";
+        $("pub-log").className = "log";
+        try {
+            const r = await api.publish_mod(folder);
+            const logEl = $("pub-log");
+            logEl.textContent = r.log || "";
+            logEl.className = "log " + (r.ok ? "ok" : "err");
+            setMsg(r.msg, !r.ok);
+            if (r.ok) showToast("发布成功: " + (r.info && r.info.name || ""));
+        } catch (e) {
+            setMsg("发布失败: " + errText(e), true);
+        } finally {
+            btn.disabled = false;
+            btn.textContent = "🚀 上传到云端";
+        }
+    });
+
+    /* ── 信息表单弹层 ── */
+    let formCtx = null;  // {type: 'wrap'|'plugin', files:[], extra:[], iconPath:''}
+
+    function openForm(type, nameDefault, files, extra) {
+        formCtx = { type, files: files || [], extra: extra || [], iconPath: "" };
+        $("form-title").textContent = type === "wrap" ? "填写信息 - 包装 Mod" : "填写信息 - 生成插件";
+        $("form-name").value = nameDefault;
+        $("form-desc").value = "";
+        $("form-version").value = "0.0.1";
+        $("form-authors").value = "";
+        $("form-icon-hint").textContent = "不选择则自动生成默认图标";
+        $("form-files-field").style.display = type === "wrap" ? "" : "none";
+        renderFormFiles();
+        $("formOverlay").classList.add("show");
+        $("form-name").focus();
+    }
+
+    function renderFormFiles() {
+        const box = $("form-files");
+        box.innerHTML = "";
+        const extraSet = new Set(formCtx.extra.map((p) => p.split(/[\\/]/).pop()));
+        if (!formCtx.files.length) {
+            const d = document.createElement("div");
+            d.className = "empty";
+            d.textContent = "未发现 .bank/.carra2 文件，可通过「添加其他文件」选择";
+            box.appendChild(d);
+            return;
+        }
+        formCtx.files.forEach((f) => {
+            const label = document.createElement("label");
+            const cb = document.createElement("input");
+            cb.type = "checkbox";
+            cb.checked = true;
+            cb.value = f;
+            const span = document.createElement("span");
+            span.textContent = f;
+            if (extraSet.has(f)) span.className = "extra";
+            label.appendChild(cb);
+            label.appendChild(span);
+            box.appendChild(label);
+        });
+    }
+
+    $("form-add-files").addEventListener("click", async () => {
+        try {
+            const paths = await api.pick_files();
+            if (!paths || !paths.length) return;
+            paths.forEach((p) => {
+                const base = p.split(/[\\/]/).pop();
+                if (!formCtx.files.includes(base)) {
+                    formCtx.files.push(base);
+                    formCtx.extra.push(p);
+                }
+            });
+            renderFormFiles();
+        } catch (e) {
+            showToast("添加文件失败: " + errText(e), true);
+        }
+    });
+
+    $("form-pick-icon").addEventListener("click", async () => {
+        try {
+            const path = await api.pick_icon();
+            if (!path) return;
+            formCtx.iconPath = path;
+            $("form-icon-hint").textContent = path;
+        } catch (e) {
+            showToast("选择图标失败: " + errText(e), true);
+        }
+    });
+
+    function parseAuthors() {
+        const authors = {};
+        $("form-authors").value.split("\n").forEach((line) => {
+            line = line.trim();
+            if (!line) return;
+            const idx = line.indexOf("|");
+            if (idx >= 0) {
+                authors[line.slice(0, idx).trim()] = line.slice(idx + 1).trim();
+            } else {
+                authors[line] = "";
+            }
+        });
+        return authors;
+    }
+
+    $("form-confirm").addEventListener("click", async () => {
+        const name = $("form-name").value.trim();
+        if (!name) { showToast("请填写名称", true); return; }
+        const data = {
+            name: name,
+            desc: $("form-desc").value.trim(),
+            version: $("form-version").value.trim() || "0.0.1",
+            authors: parseAuthors(),
+            icon_path: formCtx.iconPath || "",
+        };
+        const btn = $("form-confirm");
+        btn.disabled = true;
+        try {
+            let r;
+            if (formCtx.type === "wrap") {
+                data.folder = $("wrap-folder").value.trim();
+                data.files = Array.from(document.querySelectorAll("#form-files input:checked")).map((c) => c.value);
+                data.extra_files = formCtx.extra;
+                r = await api.wrap_mod(data);
+            } else {
+                r = await api.spawn_extension(data);
+            }
+            if (r.ok) {
+                $("formOverlay").classList.remove("show");
+                setMsg(r.msg);
+                showToast("生成成功");
+                fillModsSelect("wrap-mods", false);
+                fillModsSelect("pub-mods", true);
+            } else {
+                setMsg(r.msg, true);
+                showToast(r.msg, true);
+            }
+        } catch (e) {
+            setMsg("生成失败: " + errText(e), true);
+        } finally {
+            btn.disabled = false;
+        }
+    });
+
+    $("form-cancel").addEventListener("click", () => $("formOverlay").classList.remove("show"));
+    $("form-close").addEventListener("click", () => $("formOverlay").classList.remove("show"));
+
+    /* ── 初始化 ── */
+    async function loadBg() {
+        try {
+            const a = await api.assets();
+            if (a && a.bg) $("bgimg").src = a.bg;
+        } catch (e) {
+            console.error(e);
+        }
+    }
+
+    async function init() {
+        await fillModsSelect("wrap-mods", false);
+        await fillModsSelect("pub-mods", true);
+        bindFolderInput("wrap-folder", scanWrapFolder);
+        bindFolderInput("pub-folder", loadPublishPreview);
+        loadBg();
+    }
+
+    function tryInitApi() {
+        // api 对象在函数暴露前即为空对象 {}, 需确认目标函数已就绪再初始化 (避免竞态)
+        if (window.pywebview && window.pywebview.api
+                && typeof window.pywebview.api.list_mods === 'function') {
+            api = window.pywebview.api;
+            init();
+            return true;
+        }
+        setTimeout(tryInitApi, 70);
+        return false;
+    }
+
+    window.addEventListener("pywebviewready", tryInitApi);
+    tryInitApi();
+</script>
+</body>
+</html>

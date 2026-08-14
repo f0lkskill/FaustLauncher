@@ -142,10 +142,10 @@ class FaustLauncherCore:
             messagebox.showerror("错误", f"打开自定义汉化工具失败: {str(e)}")
 
     def open_post_extension_tools(self):
-        """打开扩展工具 (插件模板 / 包装 Mod)"""
+        """打开扩展工具 HTML 窗口 (插件模板 / 包装 Mod / 发布 Mod)"""
         try:
-            from functions.tools.post_extension_tools import post_extension_tools_gui
-            post_extension_tools_gui(self)
+            from functions.pages.tools.extension_tools_window import open_extension_tools_window
+            open_extension_tools_window(self)
             print("🧩 扩展工具已打开")
         except Exception as e:
             print(f"打开扩展工具失败: {e}")
