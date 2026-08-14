@@ -2,6 +2,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 import os, shutil
 import threading
+import hashlib
 from PIL import Image, ImageTk
 import requests
 from functions.web_update.web_trigger import WebTrigger
@@ -671,8 +672,10 @@ class DownloadCenterPage:
         if not icon_url:
             return None
 
-        # 生成图标缓存路径
-        icon_filename = f"{item_name.replace(' ', '_')}_icon.png"
+        # 图标缓存: 文件名含 icon_url 的哈希, URL 变更(重新上传/更换图标)后自动失效,
+        # 避免旧图标缓存导致界面一直显示过期图标
+        icon_url_hash = hashlib.md5(icon_url.encode('utf-8')).hexdigest()[:12]
+        icon_filename = f"{item_name.replace(' ', '_')}_{icon_url_hash}_icon.png"
         icon_path = os.path.join(self.icon_cache_dir, icon_filename)
 
         # 如果图标已存在，直接返回

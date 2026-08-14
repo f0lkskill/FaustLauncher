@@ -63,3 +63,9 @@ def get_webnote(key: str) -> tuple[str, str]:
     if isinstance(item, str):
         return (item, '')
     return ('', '')
+
+
+def get_lanzou_config() -> dict:
+    """获取蓝奏云上传配置 (phpdisk_info/ylogin/文件夹名)，未配置时返回空 dict。"""
+    data = get_web_config().get('lanzou', {})
+    return data if isinstance(data, dict) else {}

@@ -28,12 +28,34 @@ from functions.tools.post_extension_tools import (
     spawn_extension,
     wrap_mod,
     load_mod_info,
-    upload_mod_info,
+    publish_mod as _publish_mod_full,
     _scan_mod_files,
     _validate_wrap_source,
 )
 
 HTML_PATH = os.path.join(_PROJECT_ROOT, "html", "extension_tools", "index.html")
+
+
+# ============================================================
+# 页面通知 (进度/日志实时推送)
+# ============================================================
+
+def _safe_js_str(obj):
+    """json 转 JS 字面量, 处理 U+2028/2029 (JS 字符串字面量中的非法字符)"""
+    return json.dumps(obj, ensure_ascii=False).replace('\u2028', '\\u2028').replace('\u2029', '\\u2029')
+
+
+def _notify(func_name, arg):
+    """从 Python 侧调用页面 JS 全局函数 (发布进度/日志推送)"""
+    try:
+        import webview
+        for w in webview.windows:
+            try:
+                w.evaluate_js(f"window.{func_name} && window.{func_name}({_safe_js_str(arg)})")
+            except Exception:
+                pass
+    except Exception:
+        pass
 
 
 # ============================================================
@@ -168,11 +190,23 @@ class ExtensionToolsApi:
         return {'ok': True, 'info': info, 'error': ''}
 
     def publish_mod(self, folder):
-        """上传 Mod 信息到云端, 返回 {ok, msg, log, info}"""
+        """完整发布: 压缩+上传蓝奏云(图标→FaustLauncher.icons, 本体→FaustLauncher.Mods)
+        → 直链解析 URL → 发布 Mod 信息到云端 textdb
+        返回 {ok, msg, log, info}; 期间实时推送进度到页面 (__onPublishProgress/__onPublishLog)
+        """
         logs = []
+
+        def _log(s):
+            logs.append(s)
+            _notify("__onPublishLog", s)
+
+        def _progress(percent, text):
+            _notify("__onPublishProgress", {'percent': percent, 'text': text})
+
         info, err = load_mod_info(folder)
         try:
-            ok, msg = upload_mod_info(folder, log=logs.append)
+            ok, msg = _publish_mod_full(folder, log=_log, progress=_progress)
+            _progress(100, '完成')
             return {
                 'ok': ok,
                 'msg': msg,

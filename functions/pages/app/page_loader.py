@@ -156,13 +156,10 @@ class PageLoader:
              "color": accent_indigo, "command": self.core.open_mod_manager},
             
             {"name": "🧩 扩展工具", "description": "生成插件模板，\n或包装 Mod 为可分发格式。",
-             "color": accent_purple, "command": self.core.open_post_extension_tools},
+             "color": accent_pink, "command": self.core.open_post_extension_tools},
             
             {"name": "🚀 零协会CDN优选", "description": "自动选择最优质的CDN，优化游戏资源下载和服务器连接",
-             "color": accent_cyan, "command": launch_babel},
-            
-            {"name": "🔧 正在制作的功能\n", "description": "此功能正在开发中...",
-             "color": accent_gray, "command": lambda: messagebox.showinfo("提示", "此功能正在开发中...")},
+             "color": accent_cyan, "command": launch_babel}
         ]
         
         

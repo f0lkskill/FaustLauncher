@@ -3,18 +3,21 @@
 #? - 包装 Mod: 校验原始文件夹(须含 Installer.bat / Assets 文件夹 / Uninstaller.bat),
 #?   复制必需结构到 mods/, 按用户填写的信息生成 icon.png 与 mod_info.json
 #? - 生成插件模板: 在 addons/ 下生成 插件名/ 目录 (scr.py + icon.png + addon_info.json)
-#? - 发布 Mod 信息: 上传 mod_info.json 到 web_config.json 中 mod_info 指定的 textdb 笔记,
-#?   字段与云端现有 mod 一致 (dowload_url/icon_url 留空)
+#? - 发布 Mod 信息: 压缩 Mod 本体, 图标/压缩包上传到蓝奏云 (FaustLauncher.icons / FaustLauncher.Mods),
+#?   以 lz.qaiu.top 直链解析 URL 填写 dowload_url/icon_url, 再上传 mod_info 到 textdb
+#?   蓝奏云凭据 (phpdisk_info/ylogin) 配置于 config/web_config.json 的 lanzou 节
 
 import json
 import os
 import shutil
+import tempfile
+import zipfile
 
 import requests
 
 from PIL import Image, ImageDraw, ImageFont
 
-from functions.base.web_config import get_webnote
+from functions.base.web_config import get_webnote, get_lanzou_config
 
 MODS_DIR = 'mods'
 ADDONS_DIR = 'addons'
@@ -25,6 +28,7 @@ DEFAULT_ICON_ACCENT = (99, 102, 241, 255)
 PAGE_SIZE = 5  # 云端 mod 分页: 每页 5 个
 TEXTDB_READ = 'https://textdb.online/{address}'
 TEXTDB_UPDATE = 'https://textdb.online/update/?key={address}'
+PARSER_BASE = 'https://lz.qaiu.top/parser?url='  # 蓝奏云直链解析服务 (与其他 mod 条目一致)
 
 
 # ============================================================
@@ -254,12 +258,147 @@ def _fetch_mod_note(address):
     return data
 
 
-def upload_mod_info(mod_folder, address=None, log=None):
+# ============================================================
+# 蓝奏云上传 (图标 + Mod 压缩包)
+# ============================================================
+
+def _lanzou_session(log=None):
+    """按 web_config.json 的 lanzou 凭据登录蓝奏云, 返回 session (失败抛 RuntimeError)"""
+    cfg = get_lanzou_config()
+    cookie = {}
+    for key in ('phpdisk_info', 'ylogin', 'ylogins'):
+        if cfg.get(key):
+            cookie[key] = str(cfg[key])
+    if not cookie.get('phpdisk_info') or not cookie.get('ylogin'):
+        raise RuntimeError('web_config.json 未配置 lanzou 凭据 (phpdisk_info/ylogin)')
+    from functions.web_update.lanzou_utils import LoginByCookie
+    if log:
+        log('登录蓝奏云...')
+    session = LoginByCookie(cookie)
+    if not session:
+        raise RuntimeError('蓝奏云登录失败: cookie 已失效, 请更新 web_config.json 中的 lanzou 凭据')
+    return session
+
+
+def _zip_mod_folder(mod_folder, target_zip, arc_name=None, progress=None):
+    """把 mod 文件夹根目录下所有内容打包为 zip (按文件数回报进度)
+
+    zip 内所有条目置于 <arc_name>/ 顶层文件夹下 (与历史 mod 包格式一致:
+    下载器把 zip 解压到 mods/ 根目录, 顶层文件夹保证内容落进 mods/<名字>/)
+    """
+    folder = os.path.abspath(mod_folder)
+    if not os.path.isdir(folder):
+        raise RuntimeError(f'Mod 文件夹不存在: {folder}')
+    arc_name = (arc_name or os.path.basename(folder.rstrip('\\/')) or 'mod').strip().strip('/\\')
+    if not arc_name:
+        arc_name = 'mod'
+    files = []
+    for root, _dirs, fs in os.walk(folder):
+        for f in fs:
+            files.append(os.path.join(root, f))
+    if not files:
+        raise RuntimeError('Mod 文件夹为空, 无法打包')
+    with zipfile.ZipFile(target_zip, 'w', zipfile.ZIP_DEFLATED) as zf:
+        for i, full in enumerate(files):
+            arc = os.path.join(arc_name, os.path.relpath(full, folder)).replace('\\', '/')
+            zf.write(full, arc)
+            if progress:
+                progress((i + 1) / len(files) * 100, f'压缩中 {os.path.basename(full)} ({i + 1}/{len(files)})')
+
+
+def upload_mod_to_lanzou(mod_folder, log=None, progress=None):
+    """压缩 Mod 本体, 图标 → 蓝奏云 <icons_folder>, 压缩包 → 蓝奏云 <mods_folder>
+
+    progress: 可选回调 (percent: float 0~100, text: str)
+    返回 {'icon_url','dowload_url','icon_share_url','mod_share_url'} (均为 lz.qaiu.top 直链解析 URL)
+    """
+    if log is None:
+        log = print
+    info, err = load_mod_info(mod_folder)
+    if err:
+        raise RuntimeError(err)
+    name = info['name']
+    icon_path = os.path.join(mod_folder, 'icon.png')
+    if not os.path.isfile(icon_path):
+        raise RuntimeError(f'缺少图标文件: {icon_path} (请先包装 Mod 生成 icon.png)')
+
+    cfg = get_lanzou_config()
+    icons_folder = (cfg.get('icons_folder') or 'FaustLauncher.icons').strip()
+    mods_folder = (cfg.get('mods_folder') or 'FaustLauncher.Mods').strip()
+
+    from functions.web_update.lanzou_utils import GetOrCreateFolder, UploadFile
+    session = _lanzou_session(log)
+
+    tmpdir = tempfile.mkdtemp(prefix='fl_lanzou_')
+    try:
+        # 1. 压缩 Mod 本体
+        zip_path = os.path.join(tmpdir, f'{name}.zip')
+        log(f'压缩 Mod 本体: {name}.zip')
+        if progress:
+            progress(0, '压缩 Mod 本体...')
+        _zip_mod_folder(mod_folder, zip_path, arc_name=name, progress=progress)
+        log(f'压缩完成: {os.path.getsize(zip_path) / 1024.0:.1f} KB')
+
+        # 2. 图标上传
+        log(f'定位蓝奏云文件夹: {icons_folder}')
+        icon_fid = GetOrCreateFolder(session, icons_folder)
+        if not icon_fid:
+            raise RuntimeError(f'无法创建/定位蓝奏云文件夹: {icons_folder}')
+        log('上传图标...')
+        ret_icon = UploadFile(session, icon_path, folder_id=icon_fid,
+                              progress_callback=lambda p: progress and progress(p * 100, f'上传图标 {p * 100:.0f}%'))
+        if ret_icon.get('status') != 1:
+            raise RuntimeError(f'图标上传失败: {ret_icon.get("msg")}')
+        icon_share = ret_icon.get('share_url') or ''
+
+        # 3. 压缩包上传
+        log(f'定位蓝奏云文件夹: {mods_folder}')
+        mod_fid = GetOrCreateFolder(session, mods_folder)
+        if not mod_fid:
+            raise RuntimeError(f'无法创建/定位蓝奏云文件夹: {mods_folder}')
+        log('上传压缩包...')
+        ret_mod = UploadFile(session, zip_path, folder_id=mod_fid,
+                             progress_callback=lambda p: progress and progress(p * 100, f'上传压缩包 {p * 100:.0f}%'))
+        if ret_mod.get('status') != 1:
+            raise RuntimeError(f'压缩包上传失败: {ret_mod.get("msg")}')
+        mod_share = ret_mod.get('share_url') or ''
+
+        return {
+            'icon_url': PARSER_BASE + icon_share,
+            'dowload_url': PARSER_BASE + mod_share,
+            'icon_share_url': icon_share,
+            'mod_share_url': mod_share,
+        }
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+def publish_mod(mod_folder, address=None, log=None, progress=None):
+    """完整发布: 蓝奏云上传 (图标+压缩包) → 直链解析 URL → 发布 Mod 信息到 textdb
+
+    progress: 可选回调 (percent: float 0~100, text: str)
+    返回 (成功, 消息)
+    """
+    if log is None:
+        log = print
+    try:
+        urls = upload_mod_to_lanzou(mod_folder, log=log, progress=progress)
+        log(f'蓝奏云上传完成: 图标 {urls["icon_url"]}')
+        log(f'                本体 {urls["dowload_url"]}')
+        if progress:
+            progress(100, '更新云端 Mod 信息...')
+        return upload_mod_info(mod_folder, address=address, log=log, urls=urls)
+    except Exception as e:
+        return False, f'发布失败: {e}'
+
+
+def upload_mod_info(mod_folder, address=None, log=None, urls=None):
     """将 Mod 信息发布到 textdb (默认使用 web_config.json 中 mod_info 的地址)
 
-    - 字段与云端现有 mod 一致, dowload_url/icon_url 预置空值, 由服务器侧填写
+    - dowload_url/icon_url 取 urls (蓝奏云直链解析 URL), 未提供时留空
+    - 同名 Mod 视为更新: 替换信息/链接并置顶, 保留 download_count
     - 新 Mod 插入第 1 页最前, 并按每页 5 个重新分页, 更新 total_page/total_mods
-    - 云端格式异常或存在同名 Mod 时中止 (不会覆盖云端)
+    - 云端格式异常时中止 (不会覆盖云端)
 
     返回 (成功, 消息)
     """
@@ -275,6 +414,8 @@ def upload_mod_info(mod_folder, address=None, log=None):
     if not address:
         return False, 'web_config.json 未配置 mod_info 地址'
 
+    urls = urls or {}
+
     try:
         log(f'读取云端 Mod 信息: {TEXTDB_READ.format(address=address)}\n')
         data = _fetch_mod_note(address)
@@ -283,31 +424,35 @@ def upload_mod_info(mod_folder, address=None, log=None):
         if data is None:
             data = [{'total_page': 0, 'total_mods': 0}]
 
-        # 检查同名 Mod
+        # 检查同名 Mod: 存在则视为更新 (替换信息与链接, 保留 download_count)
+        old_count = 0
         for page in data[1:]:
             if not isinstance(page, list):
                 continue
             for m in page:
                 if isinstance(m, dict) and m.get('name') == name:
-                    return False, f'云端已存在同名 Mod: {name}, 已中止上传'
+                    old_count = m.get('download_count') or 0
 
-        # 新 Mod 条目 (dowload_url/icon_url 留空, 由服务器侧填写)
+        # Mod 条目 (dowload_url/icon_url 取蓝奏云直链解析 URL)
         item = {
             'name': name,
             'desc': (info.get('desc') or '').strip(),
             'authors': info.get('authors') or {},
             'version': (info.get('version') or '0.0.1').strip(),
-            'dowload_url': '',
-            'icon_url': '',
-            'download_count': 0,
+            'dowload_url': urls.get('dowload_url') or '',
+            'icon_url': urls.get('icon_url') or '',
+            'download_count': old_count,
             'disabled': False,
         }
 
-        # 新 Mod 置顶, 重新按每页 5 个分页
+        # 新 Mod 置顶, 重新按每页 5 个分页 (同名旧条目被替换)
         mods = [item]
         for page in data[1:]:
-            if isinstance(page, list):
-                mods.extend(m for m in page if isinstance(m, dict))
+            if not isinstance(page, list):
+                continue
+            for m in page:
+                if isinstance(m, dict) and m.get('name') != name:
+                    mods.append(m)
         new_pages = [mods[i * PAGE_SIZE:(i + 1) * PAGE_SIZE]
                      for i in range((len(mods) + PAGE_SIZE - 1) // PAGE_SIZE)]
         new_data = [{'total_page': len(new_pages), 'total_mods': len(mods)}] + new_pages
