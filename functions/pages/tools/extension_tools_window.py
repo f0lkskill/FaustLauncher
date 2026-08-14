@@ -1,7 +1,7 @@
 #! 扩展工具窗口 (工具页)
 #? 使用 pywebview 展示: html/extension_tools/index.html (与 Mod管理器同一深色 GitHub 风格)
 #? 三种模式:
-#? - 包装 Mod: 选择原始文件夹(Installer.bat / Assets / Uninstaller.bat) -> 填写信息表单 -> 复制到 mods/
+#? - 包装 Mod: 选择原始文件夹(标准: Installer.bat / Assets / Uninstaller.bat; 单文件类型: 仅 .bank/.carra2) -> 填写信息表单 -> 复制到 mods/
 #? - 生成插件模板: 填写插件信息 -> addons/ 下生成 scr.py + icon.png + addon_info.json
 #? - 发布 Mod 信息: 选择 mods/ 下的 Mod -> 上传 mod_info.json 到云端 textdb
 #? 后端操作全部位于 functions/tools/post_extension_tools.py
@@ -136,15 +136,24 @@ class ExtensionToolsApi:
 
     # ---- 包装 Mod ----
 
-    def scan_mod_files(self, folder):
-        """校验原始文件夹并扫描可载入文件, 返回 {ok, files, error}"""
-        err = _validate_wrap_source(folder)
-        if err:
-            return {'ok': False, 'files': [], 'error': err}
+    def scan_mod_files(self, folder, single_file=False):
+        """校验原始文件夹并扫描可载入文件, 返回 {ok, files, error}
+
+        single_file=True 时跳过 Installer.bat/Uninstaller.bat/Assets 必需结构检测
+        """
+        folder = (folder or '').strip()
+        if not folder:
+            return {'ok': False, 'files': [], 'error': '请先选择原始文件夹'}
+        if not os.path.isdir(folder):
+            return {'ok': False, 'files': [], 'error': f'原始文件夹不存在: {folder}'}
+        if not single_file:
+            err = _validate_wrap_source(folder)
+            if err:
+                return {'ok': False, 'files': [], 'error': err}
         return {'ok': True, 'files': _scan_mod_files(folder), 'error': ''}
 
     def wrap_mod(self, data):
-        """按表单填写的信息包装 Mod"""
+        """按表单填写的信息包装 Mod (single_file=True 为单文件 Mod 类型)"""
         try:
             data = data or {}
             info = {
@@ -157,7 +166,8 @@ class ExtensionToolsApi:
             }
             icon_path = data.get('icon_path') or None
             ok, msg = wrap_mod(data.get('folder', ''), info=info,
-                               icon_path=icon_path)
+                               icon_path=icon_path,
+                               single_file=bool(data.get('single_file')))
             return {'ok': ok, 'msg': msg}
         except Exception as e:
             return {'ok': False, 'msg': f'包装 Mod 失败: {e}'}
@@ -183,11 +193,16 @@ class ExtensionToolsApi:
     # ---- 发布 Mod ----
 
     def preview_mod(self, folder):
-        """读取 mod_info.json 用于预览, 返回 {ok, info, error}"""
+        """读取 mod_info.json 用于预览, 返回 {ok, info, max_size_mb, error}"""
         info, err = load_mod_info(folder)
         if err:
-            return {'ok': False, 'info': {}, 'error': err}
-        return {'ok': True, 'info': info, 'error': ''}
+            return {'ok': False, 'info': {}, 'max_size_mb': None, 'error': err}
+        try:
+            from functions.base.web_config import get_lanzou_config
+            max_mb = int(get_lanzou_config().get('max_size_mb') or 66)
+        except Exception:
+            max_mb = 66
+        return {'ok': True, 'info': info, 'max_size_mb': max_mb, 'error': ''}
 
     def publish_mod(self, folder):
         """完整发布: 压缩+上传蓝奏云(图标→FaustLauncher.icons, 本体→FaustLauncher.Mods)

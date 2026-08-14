@@ -139,17 +139,23 @@ def _validate_wrap_source(source_folder):
     return None
 
 
-def wrap_mod(source_folder, info=None, icon_path=None, extra_files=None):
+def wrap_mod(source_folder, info=None, icon_path=None, extra_files=None, single_file=False):
     """包装 Mod: 校验必需文件, 复制到 mods/ 下, 按表单填写的信息生成图标与 mod_info.json
 
     info: {'name','desc','version','authors','file_names'} (file_names 为用户勾选)
+    single_file: True=单文件 Mod 类型, 跳过 Installer.bat/Uninstaller.bat/Assets
+                 必需结构检测, 仅复制勾选的 .bank/.carra2 等单文件
     返回 (成功, 消息)
     """
-    err = _validate_wrap_source(source_folder)
-    if err:
-        return False, err
-
-    source = source_folder.strip()
+    source = (source_folder or '').strip()
+    if not source:
+        return False, '请先选择原始文件夹'
+    if not os.path.isdir(source):
+        return False, f'原始文件夹不存在: {source}'
+    if not single_file:
+        err = _validate_wrap_source(source)
+        if err:
+            return False, err
     info = info or {}
     extra_files = extra_files or info.get('extra_files') or []
     icon_path = icon_path or info.get('icon_path')
@@ -162,20 +168,23 @@ def wrap_mod(source_folder, info=None, icon_path=None, extra_files=None):
         if not os.path.isdir(MODS_DIR):
             os.makedirs(MODS_DIR)
         # 复制 mod 必需结构: Installer.bat / Uninstaller.bat / Assets / changes.json
+        # (单文件 Mod 跳过结构复制, 但仍做同名存在检查)
         if os.path.abspath(source) != os.path.abspath(target):
             if os.path.exists(target):
                 return False, f'mods 下已存在同名 Mod: {target}'
-            for entry in ('installer.bat', 'uninstaller.bat', 'assets', 'changes.json'):
-                real = entries.get(entry)
-                if not real:
-                    continue
-                src_entry = os.path.join(source, real)
-                dst_entry = os.path.join(target, real)
-                if os.path.isdir(src_entry):
-                    shutil.copytree(src_entry, dst_entry)
-                else:
-                    os.makedirs(os.path.dirname(dst_entry), exist_ok=True)
-                    shutil.copy2(src_entry, dst_entry)
+            os.makedirs(target, exist_ok=True)
+            if not single_file:
+                for entry in ('installer.bat', 'uninstaller.bat', 'assets', 'changes.json'):
+                    real = entries.get(entry)
+                    if not real:
+                        continue
+                    src_entry = os.path.join(source, real)
+                    dst_entry = os.path.join(target, real)
+                    if os.path.isdir(src_entry):
+                        shutil.copytree(src_entry, dst_entry)
+                    else:
+                        os.makedirs(os.path.dirname(dst_entry), exist_ok=True)
+                        shutil.copy2(src_entry, dst_entry)
         # 用户额外勾选的文件复制到 mod 根目录
         extra_names = []
         for f in extra_files:
@@ -205,6 +214,9 @@ def wrap_mod(source_folder, info=None, icon_path=None, extra_files=None):
         info_json['authors'] = info.get('authors') or {}
         info_json['version'] = (info.get('version') or '0.0.1').strip() or '0.0.1'
         info_json['file_names'] = file_names
+        info_json['settings'] = {'enable': True}
+        if single_file:
+            info_json['single_file'] = True
         with open(os.path.join(target, 'mod_info.json'), 'w', encoding='utf-8') as f:
             json.dump(info_json, f, ensure_ascii=False, indent=4)
         return True, f'Mod 包装完成: {target}'
@@ -311,6 +323,9 @@ def upload_mod_to_lanzou(mod_folder, log=None, progress=None):
 
     progress: 可选回调 (percent: float 0~100, text: str)
     返回 {'icon_url','dowload_url','icon_share_url','mod_share_url'} (均为 lz.qaiu.top 直链解析 URL)
+
+    失败时抛 RuntimeError, 异常对象带 partial_urls 属性 (已成功的上传链接,
+    如图标已上传而压缩包失败, 供调用方继续更新数据库)
     """
     if log is None:
         log = print
@@ -325,9 +340,17 @@ def upload_mod_to_lanzou(mod_folder, log=None, progress=None):
     cfg = get_lanzou_config()
     icons_folder = (cfg.get('icons_folder') or 'FaustLauncher.icons').strip()
     mods_folder = (cfg.get('mods_folder') or 'FaustLauncher.Mods').strip()
+    max_size_mb = int(cfg.get('max_size_mb') or 66)
 
     from functions.web_update.lanzou_utils import GetOrCreateFolder, UploadFile
     session = _lanzou_session(log)
+
+    partial = {}  # 已成功的上传结果 (上传中途失败时带回)
+
+    def _fail(msg):
+        e = RuntimeError(msg)
+        e.partial_urls = dict(partial)
+        raise e
 
     tmpdir = tempfile.mkdtemp(prefix='fl_lanzou_')
     try:
@@ -337,30 +360,43 @@ def upload_mod_to_lanzou(mod_folder, log=None, progress=None):
         if progress:
             progress(0, '压缩 Mod 本体...')
         _zip_mod_folder(mod_folder, zip_path, arc_name=name, progress=progress)
-        log(f'压缩完成: {os.path.getsize(zip_path) / 1024.0:.1f} KB')
+        zip_size_mb = os.path.getsize(zip_path) / 1024.0 / 1024.0
+        log(f'压缩完成: {zip_size_mb:.1f} MB')
+        # 压缩包超限时先记录, 图标仍照常上传 (保证云端条目有图标), 到压缩包步骤才报错
+        zip_too_big_msg = None
+        if zip_size_mb > max_size_mb:
+            zip_too_big_msg = (f'Mod 包 {zip_size_mb:.1f} MB 超过蓝奏云单文件上限 {max_size_mb} MB'
+                               f'（该账号实测约 66MB；可在 web_config.json 的 lanzou.max_size_mb 调整）')
+            log(f'⚠ {zip_too_big_msg}（压缩包无法上传，仍会先上传图标供数据库使用）')
 
         # 2. 图标上传
         log(f'定位蓝奏云文件夹: {icons_folder}')
         icon_fid = GetOrCreateFolder(session, icons_folder)
         if not icon_fid:
-            raise RuntimeError(f'无法创建/定位蓝奏云文件夹: {icons_folder}')
+            _fail(f'无法创建/定位蓝奏云文件夹: {icons_folder}')
         log('上传图标...')
         ret_icon = UploadFile(session, icon_path, folder_id=icon_fid,
                               progress_callback=lambda p: progress and progress(p * 100, f'上传图标 {p * 100:.0f}%'))
         if ret_icon.get('status') != 1:
-            raise RuntimeError(f'图标上传失败: {ret_icon.get("msg")}')
+            _fail(f'图标上传失败: {ret_icon.get("msg")}')
         icon_share = ret_icon.get('share_url') or ''
+        partial = {
+            'icon_url': PARSER_BASE + icon_share,
+            'icon_share_url': icon_share,
+        }
 
         # 3. 压缩包上传
+        if zip_too_big_msg:
+            _fail(zip_too_big_msg)
         log(f'定位蓝奏云文件夹: {mods_folder}')
         mod_fid = GetOrCreateFolder(session, mods_folder)
         if not mod_fid:
-            raise RuntimeError(f'无法创建/定位蓝奏云文件夹: {mods_folder}')
+            _fail(f'无法创建/定位蓝奏云文件夹: {mods_folder}')
         log('上传压缩包...')
-        ret_mod = UploadFile(session, zip_path, folder_id=mod_fid,
+        ret_mod = UploadFile(session, zip_path, folder_id=mod_fid, max_size_mb=max_size_mb,
                              progress_callback=lambda p: progress and progress(p * 100, f'上传压缩包 {p * 100:.0f}%'))
         if ret_mod.get('status') != 1:
-            raise RuntimeError(f'压缩包上传失败: {ret_mod.get("msg")}')
+            _fail(f'压缩包上传失败: {ret_mod.get("msg")}')
         mod_share = ret_mod.get('share_url') or ''
 
         return {
@@ -376,26 +412,40 @@ def upload_mod_to_lanzou(mod_folder, log=None, progress=None):
 def publish_mod(mod_folder, address=None, log=None, progress=None):
     """完整发布: 蓝奏云上传 (图标+压缩包) → 直链解析 URL → 发布 Mod 信息到 textdb
 
+    蓝奏云上传失败时不会中止: 仍会将 Mod 信息发布到云端数据库
+    (已成功的链接会填入; 缺失的 dowload_url/icon_url 沿用云端旧值),
+    返回 (False, 消息) 并在消息中同时说明上传失败原因与数据库更新结果。
+
     progress: 可选回调 (percent: float 0~100, text: str)
     返回 (成功, 消息)
     """
     if log is None:
         log = print
+    upload_err = None
+    urls = {}
     try:
         urls = upload_mod_to_lanzou(mod_folder, log=log, progress=progress)
-        log(f'蓝奏云上传完成: 图标 {urls["icon_url"]}')
-        log(f'                本体 {urls["dowload_url"]}')
-        if progress:
-            progress(100, '更新云端 Mod 信息...')
-        return upload_mod_info(mod_folder, address=address, log=log, urls=urls)
     except Exception as e:
-        return False, f'发布失败: {e}'
+        upload_err = str(e)
+        urls = getattr(e, 'partial_urls', None) or {}
+        log(f'⚠ 蓝奏云上传失败: {upload_err}')
+        log('继续发布 Mod 信息到云端（缺失链接将沿用云端旧值）...')
+    if urls:
+        log(f'图标链接: {urls.get("icon_url") or "(无, 沿用旧值)"}')
+        log(f'下载链接: {urls.get("dowload_url") or "(无, 沿用旧值)"}')
+    if progress:
+        progress(100, '更新云端 Mod 信息...')
+    ok, msg = upload_mod_info(mod_folder, address=address, log=log, urls=urls, keep_old_urls=True)
+    if upload_err:
+        return False, f'上传失败: {upload_err} | 但 Mod 信息已更新到云端: {msg}'
+    return ok, msg
 
 
-def upload_mod_info(mod_folder, address=None, log=None, urls=None):
+def upload_mod_info(mod_folder, address=None, log=None, urls=None, keep_old_urls=True):
     """将 Mod 信息发布到 textdb (默认使用 web_config.json 中 mod_info 的地址)
 
-    - dowload_url/icon_url 取 urls (蓝奏云直链解析 URL), 未提供时留空
+    - dowload_url/icon_url 取 urls (蓝奏云直链解析 URL), 未提供时留空;
+       keep_old_urls=True 且云端存在同名条目时, 缺失的链接沿用云端旧值
     - 同名 Mod 视为更新: 替换信息/链接并置顶, 保留 download_count
     - 新 Mod 插入第 1 页最前, 并按每页 5 个重新分页, 更新 total_page/total_mods
     - 云端格式异常时中止 (不会覆盖云端)
@@ -426,12 +476,23 @@ def upload_mod_info(mod_folder, address=None, log=None, urls=None):
 
         # 检查同名 Mod: 存在则视为更新 (替换信息与链接, 保留 download_count)
         old_count = 0
+        old_item = None
         for page in data[1:]:
             if not isinstance(page, list):
                 continue
             for m in page:
                 if isinstance(m, dict) and m.get('name') == name:
                     old_count = m.get('download_count') or 0
+                    old_item = m
+
+        # 缺失的链接沿用云端旧值 (上传失败后仍发布时, 保证下载链接不丢)
+        dowload_url = urls.get('dowload_url') or ''
+        icon_url = urls.get('icon_url') or ''
+        if keep_old_urls and old_item:
+            if not dowload_url:
+                dowload_url = old_item.get('dowload_url') or ''
+            if not icon_url:
+                icon_url = old_item.get('icon_url') or ''
 
         # Mod 条目 (dowload_url/icon_url 取蓝奏云直链解析 URL)
         item = {
@@ -439,8 +500,8 @@ def upload_mod_info(mod_folder, address=None, log=None, urls=None):
             'desc': (info.get('desc') or '').strip(),
             'authors': info.get('authors') or {},
             'version': (info.get('version') or '0.0.1').strip(),
-            'dowload_url': urls.get('dowload_url') or '',
-            'icon_url': urls.get('icon_url') or '',
+            'dowload_url': dowload_url,
+            'icon_url': icon_url,
             'download_count': old_count,
             'disabled': False,
         }

@@ -111,6 +111,32 @@
         margin-bottom: 10px;
     }
 
+    .radio-label {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 12.5px;
+        color: #cbd5e1;
+        cursor: pointer;
+        padding: 7px 10px;
+        border: 1px solid rgba(148, 163, 184, 0.16);
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.03);
+        flex: 1;
+        user-select: none;
+    }
+
+    .radio-label:has(input:checked) {
+        border-color: #6366f1;
+        color: #e2e8f0;
+        background: rgba(99, 102, 241, 0.12);
+    }
+
+    .radio-label input {
+        accent-color: #6366f1;
+        cursor: pointer;
+    }
+
     .field-label {
         font-size: 12.5px;
         font-weight: bold;
@@ -405,7 +431,14 @@
 
     <!-- ══════════ 模式1: 包装 Mod ══════════ -->
     <div class="sec show" id="sec-wrap">
-        <div class="hint">选择包含 Installer.bat、Assets 文件夹、Uninstaller.bat 的 Mod 原始文件夹，程序将复制到 mods/ 目录，并由你填写 mod_info.json 信息。</div>
+        <div class="hint">选择 Mod 原始文件夹复制到 mods/ 目录并填写 mod_info.json。<br>标准 Mod 需包含 Installer.bat、Assets 文件夹、Uninstaller.bat；单文件 Mod 仅需 .bank/.carra2 等文件，跳过结构检测。</div>
+        <div class="field">
+            <div class="field-label">Mod 类型</div>
+            <div class="row-input" style="gap:10px">
+                <label class="radio-label"><input type="radio" name="wrap-type" value="standard" checked>标准 Mod</label>
+                <label class="radio-label"><input type="radio" name="wrap-type" value="single">单文件 Mod</label>
+            </div>
+        </div>
         <div class="field">
             <div class="field-label">原始文件夹</div>
             <div class="row-input">
@@ -627,9 +660,14 @@
     /* ── 模式1: 包装 Mod ── */
     let wrapState = { files: [], extra: [] };  // extra: 绝对路径数组
 
+    function wrapIsSingleFile() {
+        const r = document.querySelector('input[name="wrap-type"]:checked');
+        return !!r && r.value === "single";
+    }
+
     async function scanWrapFolder(path) {
         try {
-            const r = await api.scan_mod_files(path);
+            const r = await api.scan_mod_files(path, wrapIsSingleFile());
             if (!r.ok) {
                 wrapState = { files: [], extra: [] };
                 setMsg(r.error, true);
@@ -647,6 +685,14 @@
     $("wrap-browse").addEventListener("click", () => pickFolderAndSet("wrap-folder", scanWrapFolder));
     $("wrap-from-mods").addEventListener("click", () => chooseFromMods("wrap-folder", scanWrapFolder));
 
+    /* 切换 Mod 类型时, 按新类型重新扫描当前文件夹 */
+    document.querySelectorAll('input[name="wrap-type"]').forEach((r) => {
+        r.addEventListener("change", () => {
+            const v = $("wrap-folder").value.trim();
+            if (v) scanWrapFolder(v);
+        });
+    });
+
     /* 下拉选择 Mod 时, 同步旁边的目录输入框并触发扫描 */
     $("wrap-mods").addEventListener("change", () => {
         const v = $("wrap-mods").value;
@@ -660,7 +706,7 @@
         if (!folder) { setMsg("请先选择原始文件夹", true); return; }
         if (!(await scanWrapFolder(folder))) return;
         const base = folder.split(/[\\/]/).pop() || "";
-        openForm("wrap", base, wrapState.files, wrapState.extra);
+        openForm("wrap", base, wrapState.files, wrapState.extra, wrapIsSingleFile());
     });
 
     /* ── 模式2: 生成插件 ── */
@@ -689,6 +735,7 @@
                 "",
                 "上传后: 图标 → 蓝奏云 FaustLauncher.icons, 压缩包 → FaustLauncher.Mods,",
                 "       dowload_url/icon_url = 直链解析链接, download_count=0, disabled=false",
+                "单文件上限: " + (r.max_size_mb || 66) + " MB (web_config.json → lanzou.max_size_mb, 该账号实测约 66MB)",
             ];
             $("pub-preview").textContent = lines.join("\n");
             $("pub-preview").classList.remove("err");
@@ -762,11 +809,13 @@
     };
 
     /* ── 信息表单弹层 ── */
-    let formCtx = null;  // {type: 'wrap'|'plugin', files:[], extra:[], iconPath:''}
+    let formCtx = null;  // {type: 'wrap'|'plugin', files:[], extra:[], iconPath:'', singleFile:false}
 
-    function openForm(type, nameDefault, files, extra) {
-        formCtx = { type, files: files || [], extra: extra || [], iconPath: "" };
-        $("form-title").textContent = type === "wrap" ? "填写信息 - 包装 Mod" : "填写信息 - 生成插件";
+    function openForm(type, nameDefault, files, extra, singleFile) {
+        formCtx = { type, files: files || [], extra: extra || [], iconPath: "", singleFile: !!singleFile };
+        $("form-title").textContent = type === "wrap"
+            ? (formCtx.singleFile ? "填写信息 - 包装单文件 Mod" : "填写信息 - 包装 Mod")
+            : "填写信息 - 生成插件";
         $("form-name").value = nameDefault;
         $("form-desc").value = "";
         $("form-version").value = "0.0.1";
@@ -865,6 +914,7 @@
                 data.folder = $("wrap-folder").value.trim();
                 data.files = Array.from(document.querySelectorAll("#form-files input:checked")).map((c) => c.value);
                 data.extra_files = formCtx.extra;
+                data.single_file = formCtx.singleFile;
                 r = await api.wrap_mod(data);
             } else {
                 r = await api.spawn_extension(data);
