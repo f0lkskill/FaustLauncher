@@ -155,6 +155,9 @@ class PageLoader:
             {"name": "📦 Mod 管理器", "description": "管理边狱巴士的 Mod。\n",
              "color": accent_indigo, "command": self.core.open_mod_manager},
             
+            {"name": "🧩 扩展工具", "description": "生成插件模板，\n或包装 Mod 为可分发格式。",
+             "color": accent_purple, "command": self.core.open_post_extension_tools},
+            
             {"name": "🚀 零协会CDN优选", "description": "自动选择最优质的CDN，优化游戏资源下载和服务器连接",
              "color": accent_cyan, "command": launch_babel},
             
