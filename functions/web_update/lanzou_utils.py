@@ -469,13 +469,15 @@ class _ProgressReader:
     def close(self):
         self.f.close()
 
-def UploadFile(session, file_path, folder_id=-1, progress_callback=None):
+def UploadFile(session, file_path, folder_id=-1, progress_callback=None, max_size_mb=66):
     """
     上传单个文件到蓝奏云指定文件夹（需先调用 Login / LoginByCookie）
     :param session: 已登录的 requests.Session
     :param file_path: 本地文件路径（建议绝对路径）
     :param folder_id: 目标文件夹 id，默认 -1（根目录）
     :param progress_callback: 可选回调(progress: float 0.0~1.0)，用于显示上传进度
+    :param max_size_mb: 单文件大小上限 (MB)，默认 66（该账号实测上传上限，VIP 可在
+                        web_config.json 的 lanzou.max_size_mb 调整）
     :return: {"status": 1, "msg": "success", "f_id": 文件id, "share_url": 分享链接} 成功；
              {"status": 0, "msg": 错误信息} 失败
     """
@@ -492,8 +494,10 @@ def UploadFile(session, file_path, folder_id=-1, progress_callback=None):
     if size == 0:
         ret["msg"] = "不能上传空文件"
         return ret
-    if size > 100 * 1024 * 1024:
-        ret["msg"] = "单个文件不能超过 100MB"
+    limit = max(int(max_size_mb or 100), 1) * 1024 * 1024
+    if size > limit:
+        ret["msg"] = "文件 %.1f MB 超过蓝奏云单文件上限 %d MB（可在 web_config.json 的 lanzou.max_size_mb 调整）" \
+                     % (size / 1024.0 / 1024.0, max_size_mb)
         return ret
     if not _SetFolderID(session, folder_id):
         ret["msg"] = "无法定位上传文件夹"
@@ -520,7 +524,25 @@ def UploadFile(session, file_path, folder_id=-1, progress_callback=None):
         return ret
     try:
         files = {"upload_file": (filename, f, "application/octet-stream")}
-        response = session.post(UPLOAD_URL, data=data, files=files, headers=upload_headers, timeout=(30, 600))
+        # 读超时设为 None(不限制): 大文件在慢速上行时仍可能耗时很久,
+        # 过短的读超时会在"正在正常上传"时误报 timeout
+        response = session.post(UPLOAD_URL, data=data, files=files,
+                                headers=upload_headers, timeout=(30, None))
+    except requests.exceptions.ReadTimeout:
+        ret["msg"] = "上传超时：长时间未收到服务器响应（网络过慢或文件过大，请重试；单文件上限 %d MB）" % max_size_mb
+        return ret
+    except requests.exceptions.ConnectionError as e:
+        # 实测: 蓝奏云会"静默拒收"超过账号上限的大文件(接收约 66MB 后停止读取),
+        # 客户端表现为 write/read 超时或连接中断, 上传进度却一直正常
+        try:
+            sent_mb = f.sent / 1024.0 / 1024.0
+            total_mb = f.size / 1024.0 / 1024.0
+            sent_hint = "已发送 %.1f/%.1f MB" % (sent_mb, total_mb)
+        except Exception:
+            sent_hint = "已发送部分数据"
+        ret["msg"] = "上传被中断（%s）：%s。蓝奏云会拒收超过账号上传上限的文件（该账号实测约 66MB），" \
+                     "可在 web_config.json 的 lanzou.max_size_mb 调整后重新发布" % (sent_hint, e)
+        return ret
     except requests.RequestException as e:
         ret["msg"] = "UploadFile 请求失败：%s" % e
         return ret

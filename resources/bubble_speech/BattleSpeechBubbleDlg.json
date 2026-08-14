@@ -7732,17 +7732,17 @@
     {
       "id": "battle_s3_11005_1_1",
       "desc": "",
-      "dlg": "<color=#8b9c15>将那秽物……</color>"
+      "dlg": "<color=#8b9c15>那秽物……</color>"
     },
     {
       "id": "battle_s3_11005_1_2",
       "desc": "",
-      "dlg": "<color=#8b9c15>……摘下来！</color>"
+      "dlg": "<color=#8b9c15>就由我来剥下！</color>"
     },
     {
       "id": "battle_s3_11005_1_2_Back",
       "desc": "",
-      "dlg": "<color=#8b9c15>…摘下来。</color>"
+      "dlg": "<color=#8b9c15>就由我来剥下。</color>"
     },
     {
       "id": "battle_select_11006_1",
