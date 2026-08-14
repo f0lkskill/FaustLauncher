@@ -227,6 +227,37 @@
         margin-top: 10px;
     }
 
+    /* ── 发布进度条 ── */
+    .progress-wrap {
+        margin-top: 10px;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+    }
+
+    .progress-bar {
+        height: 8px;
+        border-radius: 999px;
+        background: rgba(148, 163, 184, 0.15);
+        overflow: hidden;
+    }
+
+    .progress-fill {
+        height: 100%;
+        width: 0%;
+        border-radius: 999px;
+        background: linear-gradient(90deg, #6366f1, #10b981);
+        transition: width 0.2s ease;
+    }
+
+    .progress-text {
+        font-size: 11.5px;
+        color: #94a3b8;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
     /* ── 状态栏 ── */
     .statusbar {
         margin-top: 10px;
@@ -405,7 +436,7 @@
 
     <!-- ══════════ 模式3: 发布 Mod 信息 ══════════ -->
     <div class="sec" id="sec-publish">
-        <div class="hint">选择 mods/ 下已包装的 Mod 文件夹，将 mod_info.json 信息发布到云端（web_config.json 中 mod_info 地址，dowload_url/icon_url 留空）。</div>
+        <div class="hint">选择 mods/ 下已包装的 Mod 文件夹。发布时自动压缩 Mod 本体并上传蓝奏云（图标 → FaustLauncher.icons，压缩包 → FaustLauncher.Mods），以直链解析链接填写 dowload_url/icon_url 后连同 mod_info 发布到云端。</div>
         <div class="field">
             <div class="field-label">Mod 文件夹</div>
             <div class="row-input">
@@ -418,6 +449,10 @@
         <div class="preview" id="pub-preview">尚未选择 Mod 文件夹</div>
         <div class="action-row">
             <button class="btn btn-primary" id="pub-upload">🚀 上传到云端</button>
+        </div>
+        <div class="progress-wrap" id="pub-progress" style="display:none">
+            <div class="progress-bar"><div class="progress-fill" id="pub-progress-fill"></div></div>
+            <div class="progress-text" id="pub-progress-text"></div>
         </div>
         <div class="log" id="pub-log"></div>
     </div>
@@ -612,6 +647,14 @@
     $("wrap-browse").addEventListener("click", () => pickFolderAndSet("wrap-folder", scanWrapFolder));
     $("wrap-from-mods").addEventListener("click", () => chooseFromMods("wrap-folder", scanWrapFolder));
 
+    /* 下拉选择 Mod 时, 同步旁边的目录输入框并触发扫描 */
+    $("wrap-mods").addEventListener("change", () => {
+        const v = $("wrap-mods").value;
+        if (!v) return;
+        $("wrap-folder").value = v;
+        scanWrapFolder(v);
+    });
+
     $("wrap-start").addEventListener("click", async () => {
         const folder = $("wrap-folder").value.trim();
         if (!folder) { setMsg("请先选择原始文件夹", true); return; }
@@ -644,7 +687,8 @@
                 "描述: " + ((i.desc || "").trim() || "(空)"),
                 "载入文件: " + ((i.file_names || []).join(", ") || "(空)"),
                 "",
-                "上传后: dowload_url / icon_url 留空, download_count=0, disabled=false",
+                "上传后: 图标 → 蓝奏云 FaustLauncher.icons, 压缩包 → FaustLauncher.Mods,",
+                "       dowload_url/icon_url = 直链解析链接, download_count=0, disabled=false",
             ];
             $("pub-preview").textContent = lines.join("\n");
             $("pub-preview").classList.remove("err");
@@ -659,15 +703,29 @@
     $("pub-browse").addEventListener("click", () => pickFolderAndSet("pub-folder", loadPublishPreview));
     $("pub-from-mods").addEventListener("click", () => chooseFromMods("pub-folder", loadPublishPreview));
 
+    /* 下拉选择 Mod 时, 同步旁边的目录输入框并刷新预览 */
+    $("pub-mods").addEventListener("change", () => {
+        const v = $("pub-mods").value;
+        if (!v) return;
+        $("pub-folder").value = v;
+        loadPublishPreview(v);
+    });
+
     $("pub-upload").addEventListener("click", async () => {
         const folder = $("pub-folder").value.trim();
         if (!folder) { setMsg("请先选择 Mod 文件夹", true); return; }
         if (!(await loadPublishPreview(folder))) return;
         const btn = $("pub-upload");
+        const progress = $("pub-progress");
+        const fill = $("pub-progress-fill");
+        const ptext = $("pub-progress-text");
         btn.disabled = true;
         btn.textContent = "上传中...";
         $("pub-log").textContent = "";
         $("pub-log").className = "log";
+        progress.style.display = "";
+        fill.style.width = "0%";
+        ptext.textContent = "准备中...";
         try {
             const r = await api.publish_mod(folder);
             const logEl = $("pub-log");
@@ -680,8 +738,28 @@
         } finally {
             btn.disabled = false;
             btn.textContent = "🚀 上传到云端";
+            setTimeout(() => { progress.style.display = "none"; }, 3000);
         }
     });
+
+    /* 发布进度/日志实时推送 (Python 侧经 pywebview evaluate_js 调用) */
+    window.__onPublishProgress = function (p) {
+        const progress = $("pub-progress");
+        const fill = $("pub-progress-fill");
+        const ptext = $("pub-progress-text");
+        if (!progress || !fill || !ptext) return;
+        const pct = Math.max(0, Math.min(100, Math.round((p && p.percent) || 0)));
+        progress.style.display = "";
+        fill.style.width = pct + "%";
+        ptext.textContent = ((p && p.text) || "") + " " + pct + "%";
+    };
+
+    window.__onPublishLog = function (s) {
+        const el = $("pub-log");
+        if (!el) return;
+        el.textContent += (el.textContent ? "\n" : "") + String(s);
+        el.scrollTop = el.scrollHeight;
+    };
 
     /* ── 信息表单弹层 ── */
     let formCtx = null;  // {type: 'wrap'|'plugin', files:[], extra:[], iconPath:''}

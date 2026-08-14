@@ -46,7 +46,7 @@ ALLOW_UP_TYPES = [
     'xpa', 'cpk', 'lua', 'jar', 'dmg', 'ppt', 'pptx', 'xls', 'xlsx', 'mp3',
     'iso', 'img', 'gho', 'ttf', 'ttc', 'txf', 'dwg', 'bat', 'imazingapp', 'dll', 'crx',
     'xapk', 'conf', 'deb', 'rp', 'rpm', 'rplib', 'mobileconfig', 'appimage', 'lolgezi',
-    'fla'
+    'fla', 'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'ico', 'svg', 'psd'
 ]
 
 def PrepareData(url,pwd,pg=1):
@@ -377,13 +377,106 @@ def _SetFolderID(session, folder_id):
     session.cookies.set("folder_id_c", str(folder_id))
     return True
 
-def UploadFile(session, file_path, folder_id=-1):
+def GetFolderList(session, folder_id=-1):
+    """
+    获取指定文件夹下的子文件夹列表 (doupload.php task=47, 条目含 fol_id/name)
+    :param session: 已登录的 requests.Session
+    :param folder_id: 父文件夹 id，默认 -1（根目录）
+    :return: [{'id': str, 'name': str}, ...]；失败返回 None
+    """
+    try:
+        response = session.post(DO_LOAD_URL, data={'task': '47', 'folder_id': str(folder_id)},
+                                headers=headers, timeout=(10, 30))
+        j = json.loads(response.text)
+    except (requests.RequestException, ValueError, TypeError) as e:
+        print("GetFolderList 请求失败：%s" % e)
+        return None
+    if j.get("zt") == 1 and isinstance(j.get("text"), list):
+        return [{"id": str(f.get("fol_id")), "name": f.get("name")} for f in j["text"]]
+    if j.get("zt") == 2:  # 无子文件夹 (info 仅为面包屑)
+        return []
+    print("GetFolderList 返回异常：%s" % j)
+    return None
+
+def CreateFolder(session, folder_name, parent_id=-1):
+    """
+    创建文件夹 (task=2, 依次尝试 mydisk.php / doupload.php)
+    :param session: 已登录的 requests.Session
+    :param folder_name: 文件夹名称
+    :param parent_id: 父文件夹 id，默认 -1（根目录）
+    :return: 新文件夹 id (str)；失败返回 None
+    """
+    data = {'task': '2', 'folder_name': folder_name, 'folder_description': '', 'folder_id': str(parent_id)}
+    last_err = None
+    for url in (MYDISK_URL, DO_LOAD_URL):
+        try:
+            response = session.post(url, data=data, headers=headers, timeout=(10, 30))
+            j = json.loads(response.text)
+        except (requests.RequestException, ValueError, TypeError) as e:
+            last_err = e
+            continue
+        if j.get("zt") == 1:
+            text = j.get("text")
+            if isinstance(text, dict) and text.get("id") is not None:
+                return str(text["id"])
+            if isinstance(text, (int, str)):
+                return str(text)
+            if isinstance(text, list) and text:
+                return str(text[0].get("id"))
+        last_err = "zt != 1: %s" % j
+    print("CreateFolder 失败：%s" % last_err)
+    return None
+
+def GetOrCreateFolder(session, folder_name, parent_id=-1):
+    """按名称查找文件夹 (根目录及其一级子目录), 不存在时才创建; 返回文件夹 id (str) 或 None"""
+    folders = GetFolderList(session, parent_id)
+    if folders:
+        for f in folders:
+            if f.get("name") == folder_name:
+                return f.get("id")
+        # 根目录下找不到时, 在一级子目录中继续找, 避免对已有子文件夹重复创建
+        if str(parent_id) in ("-1", ""):
+            for f in folders:
+                subs = GetFolderList(session, f.get("id"))
+                if subs:
+                    for s in subs:
+                        if s.get("name") == folder_name:
+                            return s.get("id")
+    return CreateFolder(session, folder_name, parent_id)
+
+class _ProgressReader:
+    """可计算进度的文件读取器 (requests 通过 read() 读取, len() 提供 Content-Length)"""
+
+    def __init__(self, path, progress_callback=None):
+        self.f = open(path, "rb")
+        self.size = os.path.getsize(path)
+        self.sent = 0
+        self.cb = progress_callback
+
+    def read(self, n=-1):
+        data = self.f.read(n)
+        self.sent += len(data)
+        if self.cb:
+            try:
+                self.cb(min(self.sent / self.size, 1.0) if self.size else 0.0)
+            except Exception:
+                pass
+        return data
+
+    def __len__(self):
+        return self.size
+
+    def close(self):
+        self.f.close()
+
+def UploadFile(session, file_path, folder_id=-1, progress_callback=None):
     """
     上传单个文件到蓝奏云指定文件夹（需先调用 Login / LoginByCookie）
     :param session: 已登录的 requests.Session
     :param file_path: 本地文件路径（建议绝对路径）
     :param folder_id: 目标文件夹 id，默认 -1（根目录）
-    :return: {"status": 1, "msg": "success", "f_id": 文件id} 成功；
+    :param progress_callback: 可选回调(progress: float 0.0~1.0)，用于显示上传进度
+    :return: {"status": 1, "msg": "success", "f_id": 文件id, "share_url": 分享链接} 成功；
              {"status": 0, "msg": 错误信息} 失败
     """
     ret = {"status": 0, "msg": "", "f_id": None}
@@ -421,7 +514,7 @@ def UploadFile(session, file_path, folder_id=-1):
     }
 
     try:
-        f = open(file_path, "rb")
+        f = _ProgressReader(file_path, progress_callback)
     except OSError as e:
         ret["msg"] = "无法打开文件：%s" % e
         return ret
