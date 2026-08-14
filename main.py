@@ -45,6 +45,12 @@ def main():
         run_mod_manager_window(debug="--debug" in sys.argv)
         return
     
+    # 扩展工具独立窗口模式: 与 --mod-manager-window 同一模式
+    if "--extension-tools-window" in sys.argv:
+        from functions.pages.tools.extension_tools_window import run_extension_tools_window
+        run_extension_tools_window(debug="--debug" in sys.argv)
+        return
+    
     from functions.pages.app.app_core import FaustLauncherCore
     from functions.pages.app.app_ui import FaustLauncherUI, check_single_instance
     from functions.pages.notice.loading_info import create_simple_splash
