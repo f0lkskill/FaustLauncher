@@ -159,7 +159,9 @@ class FaustLauncherCore:
         
     def show_help(self):
         """显示帮助信息"""
-        Popen(["notepad", "README.md"], shell=True)
+        import webbrowser
+        webbrowser.open("https://www.showdoc.com.cn/faustlauncher/11559060627455094")
+        # Popen(["notepad", "README.md"], shell=True)
         
     def open_feature(self, feature):
         """打开指定功能"""
