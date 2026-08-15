@@ -334,15 +334,17 @@ class BuildGUI:
         except Exception:
             pass
         try:
-            shutil.copytree('config', f'build_{vi}/config', dirs_exist_ok=True)
+            # 排除 web_config.json: 云端配置由 spec 构建时内嵌进 exe (PYZ), 不以独立文件分发
+            shutil.copytree('config', f'build_{vi}/config', dirs_exist_ok=True,
+                            ignore=shutil.ignore_patterns('web_config.json'))
         except Exception as e:
             self._set_step(6, 'failed')
             self._set_status(f'复制 config 失败: {e}', DANGER)
             self._on_done(False)
             return
-        # webnote 云端配置: 构建产物必须携带, 否则打包版所有网络 API 静默降级失败
+        # webnote 云端配置: 由 FaustLauncher.spec 内嵌进 exe (PYZ), 不随构建产物分发独立文件
         if os.path.exists('config/web_config.json'):
-            self._log('✔ config/web_config.json 已随构建分发(打包版云端功能可用)\n', SUCCESS)
+            self._log('✔ web_config.json 已内嵌进 exe (PYZ)，不随构建产物分发\n', SUCCESS)
         else:
             self._log('⚠ 未发现 config/web_config.json, 云端功能将静默降级\n', DANGER)
         self._set_step(6, 'done')
