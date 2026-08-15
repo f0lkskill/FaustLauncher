@@ -21,7 +21,7 @@ _BUILD_STEPS = [
     ('pyinstaller', 'PyInstaller 打包'),
     ('cleanup',    '清理旧构建'),
     ('mkdir',      '创建版本目录'),
-    ('build_temp', '复制前置环境'),
+    ('build_temp', '复制运行环境'),
     ('assets',     '复制资产文件'),
     ('font',       '重置字体目录'),
     ('config',     '复制配置文件'),
@@ -234,10 +234,18 @@ class BuildGUI:
         self.root.after(0, lambda: self._progress.configure(value=val))
 
     def _run_pyinstaller(self):
-        # 用当前解释器(venv)的 PyInstaller 构建, 避免裸 pyinstaller 命令解析到
-        # 其他环境的安装导致 cffi 等扩展模块漏收集(如缺 _cffi_backend)
+        # 优先用项目 venv 运行 PyInstaller: 系统 python 可能缺 pystray 等依赖,
+        # 导致产物 _internal 缺模块 (旧 build_temp 模板掩盖了该问题, 现已废弃模板)
+        py = sys.executable
+        venv_py = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                               'venv', 'Scripts', 'python.exe')
+        if os.path.isfile(venv_py):
+            py = venv_py
+            self._log(f'· 使用项目 venv 解释器打包: {venv_py}\n')
+        else:
+            self._log(f'· 未找到项目 venv, 使用当前解释器: {sys.executable}\n')
         p = subprocess.Popen(
-            [sys.executable, '-m', 'PyInstaller', '--noconfirm', 'FaustLauncher.spec'],
+            [py, '-m', 'PyInstaller', '--noconfirm', 'FaustLauncher.spec'],
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
             text=True, encoding='utf-8', errors='replace'
         )
@@ -285,14 +293,45 @@ class BuildGUI:
         self._set_step(2, 'done')
         self._set_progress(30)
 
-        # ---- 复制前置环境 ----
+        # ---- 复制运行环境 (直接取自 PyInstaller 产物, build_temp 模板机制已废弃) ----
         self._set_step(3, 'running')
-        self._set_status('复制前置环境...')
+        self._set_status('复制运行环境 (来自 dist)...')
         try:
-            shutil.copytree('build_temp', f'build_{vi}', dirs_exist_ok=True)
+            if not os.path.isdir('dist/FaustLauncher/_internal'):
+                raise FileNotFoundError('未找到 dist/FaustLauncher/_internal')
+            # 1) PyInstaller 产物 _internal: 与本次 exe 同源的全新环境
+            shutil.copytree('dist/FaustLauncher/_internal', f'build_{vi}/_internal',
+                            dirs_exist_ok=True)
+            # 2) addons/mods 必须为空目录 (插件/模组由用户自行添加, 不随构建分发)
+            for d in ('addons', 'mods'):
+                os.makedirs(f'build_{vi}/{d}', exist_ok=True)
+            # 3) lang: 只创建空 LLC_zh-CN 目录 (翻译数据由云端下载,
+            #    changes.json/nav_config.json 等由工具在运行时生成, 均不随构建分发)
+            os.makedirs(f'build_{vi}/lang/LLC_zh-CN', exist_ok=True)
+            # 4) updater.vbs: 版本更新器必备 (由 wscript 运行, 把新版本文件覆盖到安装目录),
+            #    仅存于 build_temp 目录, 缺失则构建失败
+            if not os.path.isfile('build_temp/updater.vbs'):
+                raise FileNotFoundError('未找到 build_temp/updater.vbs (版本更新器必备)')
+            shutil.copy('build_temp/updater.vbs', f'build_{vi}/updater.vbs')
+            # 5) webFunc: 运行时代码以裸导入 (from webFunc import ...) 使用,
+            #    PyInstaller 不会收集为顶层模块, 必须放进 _internal 供 sys.path 解析
+            if os.path.isdir('functions/webFunc'):
+                shutil.copytree('functions/webFunc', f'build_{vi}/_internal/webFunc',
+                                dirs_exist_ok=True)
+            # 6) pystray: app_ui 顶层导入, 缺失会导致启动崩溃。纯 Python 模块编入 PYZ,
+            #    通过 PYZ-00.toc 校验是否被收集 (旧 build_temp 模板曾掩盖此问题)
+            _pyz_toc = os.path.join('build', 'FaustLauncher', 'PYZ-00.toc')
+            _pyz_txt = ''
+            try:
+                with open(_pyz_toc, 'r', encoding='utf-8', errors='replace') as _f:
+                    _pyz_txt = _f.read()
+            except Exception:
+                pass
+            if "'pystray'" not in _pyz_txt:
+                raise FileNotFoundError('PyInstaller 未收集 pystray (系统托盘不可用), 请用项目 venv 运行本构建工具')
         except Exception as e:
             self._set_step(3, 'failed')
-            self._set_status(f'复制 build_temp 失败: {e}', DANGER)
+            self._set_status(f'复制运行环境失败: {e}', DANGER)
             self._on_done(False)
             return
         self._set_step(3, 'done')
@@ -350,7 +389,7 @@ class BuildGUI:
         self._set_step(6, 'done')
         self._set_progress(62)
 
-        # ---- 复制资源 ----
+        # ---- 复制资源 (仅 7-zip; mod_loader/bubble_speech/llc_babel 等由云端按需下载) ----
         self._set_step(7, 'running')
         self._set_status('复制资源文件...')
         try:
@@ -391,16 +430,6 @@ class BuildGUI:
         except Exception as e:
             self._set_step(9, 'failed')
             self._set_status(f'复制 exe 失败: {e}', DANGER)
-            self._on_done(False)
-            return
-        # 同步本次构建的 _internal (exe 与内部模块须同源), 覆盖 build_temp 里的旧模板,
-        # 避免模板长期未更新导致扩展模块缺失(如 _cffi_backend)
-        try:
-            shutil.copytree('dist/FaustLauncher/_internal', f'build_{vi}/_internal',
-                            dirs_exist_ok=True)
-        except Exception as e:
-            self._set_step(9, 'failed')
-            self._set_status(f'同步 _internal 失败: {e}', DANGER)
             self._on_done(False)
             return
         self._set_step(9, 'done')

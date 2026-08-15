@@ -103,29 +103,24 @@ def check_version_update(root):
     if latest_release != current_version:
         print(f"检测到启动器新版本: {latest_release}，当前版本: {current_version}")
         latest_entry = version_info['versions'][latest_release]
-        if 'release' in current_version:
-            # 正式版: 不询问, 直接后台开始下载
-            _start_update_download(root, latest_entry, latest_release)
-            need_update = True
-        else:
-            # 测试版: 非阻塞弹窗询问 (主线程不被卡住), 窗口关闭后由回调决定是否下载
-            from functions.pages.notice.version_update_window import open_version_update_window
-            ok = open_version_update_window(
-                current_version,
-                {'version_name': latest_release,
-                 'description': latest_entry.get('description', ''),
-                 'date': latest_entry.get('data') or latest_entry.get('date'),
-                 'bilibili_url': latest_entry.get('url', '')},
-                info='版本更新', ask_update=True,
-                on_result=lambda action: _on_update_choice(
-                    root, latest_entry, latest_release, action))
-            if ok is None:
-                # 窗口无法启动: 回退到普通询问框
-                choice = messagebox.askyesno(
-                    "版本更新", f"检测到启动器新版本: {latest_release}\n当前版本: {current_version}\n是否更新？")
-                if choice:
-                    _start_update_download(root, latest_entry, latest_release)
-                    need_update = True
+        # 正式版/测试版统一询问用户, 不再自动更新
+        from functions.pages.notice.version_update_window import open_version_update_window
+        ok = open_version_update_window(
+            current_version,
+            {'version_name': latest_release,
+             'description': latest_entry.get('description', ''),
+             'date': latest_entry.get('data') or latest_entry.get('date'),
+             'bilibili_url': latest_entry.get('url', '')},
+            info='版本更新', ask_update=True,
+            on_result=lambda action: _on_update_choice(
+                root, latest_entry, latest_release, action))
+        if ok is None:
+            # 窗口无法启动: 回退到普通询问框
+            choice = messagebox.askyesno(
+                "版本更新", f"检测到启动器新版本: {latest_release}\n当前版本: {current_version}\n是否更新？")
+            if choice:
+                _start_update_download(root, latest_entry, latest_release)
+                need_update = True
     else:
         print(f"当前启动器版本 {current_version} 已是最新版本，无需更新。")
     
