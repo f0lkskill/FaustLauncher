@@ -27,11 +27,12 @@ from functions.base.common.path_utils import get_mod_root_dir
 
 HTML_PATH = os.path.join(_PROJECT_ROOT, "html", "mod_manager", "index.html")
 
-ALLOWED_EXTENSIONS = {'.bank', '.carra2'}
+ALLOWED_EXTENSIONS = {'.bank', '.carra2', '.rebank'}
 DISABLED_SUFFIX = '.disabled'
 EXT_INFO = {
     '.bank': {'icon': '🔊', 'type_label': '🎵 音效文件'},
     '.carra2': {'icon': '🖼️', 'type_label': '🖼️ 贴图文件'},
+    '.rebank': {'icon': '🧩', 'type_label': '🧩 rebank 差分文件'},
 }
 
 
@@ -146,6 +147,38 @@ def _delete_file(raw_name):
         return {'error': f"删除失败: {e}"}
 
 
+def _rebank_info(raw_name):
+    """查看 .rebank 差分内容 (调用 rebank info)"""
+    path = os.path.join(_get_mod_dir(), raw_name)
+    if not os.path.exists(path):
+        return {'error': f"文件不存在: {raw_name}"}
+    script = os.path.join(_PROJECT_ROOT, "functions", "modloader", "rebank.py")
+    py = os.path.join(_PROJECT_ROOT, "resources", "mod_loader", "_internal",
+                      "venv", "Bins", "python.exe")
+    if not os.path.exists(script):
+        return {'error': f"找不到 rebank 工具: {script}"}
+    if not os.path.exists(py):
+        py = sys.executable
+    code = ("import sys;"
+            "sys.path.insert(0, %r);"
+            "sys.argv = ['rebank.py', 'info', %r];"
+            "import runpy;"
+            "runpy.run_path(%r, run_name='__main__')" % (os.path.dirname(script), path, script))
+    try:
+        proc = subprocess.run(
+            [py, "-c", code],
+            capture_output=True, timeout=120,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        out = (proc.stdout or b"").decode("utf-8", "replace")
+        err = (proc.stderr or b"").decode("utf-8", "replace")
+        text = (out or err).strip()
+        if proc.returncode != 0 and not text:
+            return {'error': f"查看信息失败 (退出码 {proc.returncode})"}
+        return {'error': None, 'text': text or "(无输出)"}
+    except Exception as e:
+        return {'error': f"查看信息失败: {e}"}
+
+
 # ============================================================
 # pywebview js_api 与窗口
 # ============================================================
@@ -165,7 +198,7 @@ class ModManagerApi:
             paths = window.create_file_dialog(
                 webview.FileDialog.OPEN,
                 allow_multiple=True,
-                file_types=('Mod文件 (*.bank;*.carra2)',))
+                file_types=('Mod文件 (*.bank;*.carra2;*.rebank)',))
         except Exception as e:
             print(f"[Mod管理器] 打开文件对话框失败: {e}")
             return []
@@ -188,6 +221,9 @@ class ModManagerApi:
 
     def delete_file(self, raw_name):
         return _delete_file(raw_name)
+
+    def rebank_info(self, raw_name):
+        return _rebank_info(raw_name)
 
     def open_file(self, raw_name):
         """用资源管理器打开文件所在位置并选中该文件"""

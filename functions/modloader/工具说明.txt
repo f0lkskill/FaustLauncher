@@ -1,0 +1,39 @@
+工具文件夹说明
+====================================
+
+本文件夹是整套工具的运行本体，放到任何 Windows 机器都能直接用（装了 Python 就行）。
+DLL 已内置在文件夹里，工具会自动在自身所在目录找到它们，无需配置。
+
+【文件夹内容】
+  fmodbank.py / fmodbank.bat   工具一：bank 拆包、重打包
+  rebank.py   / rebank.bat    工具二：模组差分打包、修补、查看
+  fmod64.dll                   FMOD 运行时（拆包解码用）
+  fsbank64.dll                 FSBANK 编码库（重打包用）
+  libfsbvorbis64.dll           Vorbis 编码插件（vorbis 格式必需）
+
+【怎么用】
+  双击 .bat 会把命令转发给 python；更推荐在 cmd 里手动跑：
+    cd 工具目录
+    python rebank.py --help         看所有命令
+    python rebank.py compare --help 看对比打包参数
+    python rebank.py patch --help   看修补参数
+
+  常用三条：
+    python rebank.py compare 原版.bank 模组版.bank -o mod.rebank --name 模组名
+    python rebank.py patch   目标.bank -m mod.rebank -o .\build
+    python rebank.py info    mod.rebank
+
+【依赖】
+  - Windows 64 位 + Python 3.8+（命令行输入 python 能出版本号即可）
+  - 无需安装任何第三方库；DLL 已随包携带
+
+【完整说明】
+  工具功能、判定规则、验证记录、常见问题，看上一级目录的 README.md。
+
+【常见问题快查】
+  - 拆包后 wav 在 wav\<bank>[0]\ 里；每个 FSB 一个子目录 + 一个 txt 文件名清单
+  - 临时拆包目录默认在系统临时盘，空间不够加 --work-dir D:\tmp
+  - 加密 bank 用 -p 密码，或放 password.txt / <bank名>.txt
+  - 重打包默认 vorbis/q92，一般不用改
+  - 重打包编码线程默认自动用一半 CPU 核心，想手动指定加 -cpu 8（例如 python rebank.py patch ... -cpu 8）
+  - 解码（拆包）并行无收益（磁盘 I/O 瓶颈），多核优化集中在编码环节

@@ -37,6 +37,10 @@ def _start_with_mod_loader():
         return
 
     print("使用内置 mod loader 启动...")
-    loader = "resources/mod_loader/yisangModLoader.exe"
-    flags = subprocess.CREATE_NO_WINDOW if _settings.get_setting("hide_mod_load") else 0
-    subprocess.Popen([loader, game_exe], creationflags=flags)
+    loader_py = "resources/mod_loader/_internal/venv/Bins/python.exe"
+    loader_script = "resources/mod_loader/_internal/main.py"
+    proc = subprocess.Popen([loader_py, loader_script, game_exe],
+                            creationflags=subprocess.CREATE_NO_WINDOW)
+    if not _settings.get_setting("hide_mod_load"):
+        from functions.pages.tools.mod_loader_progress import open_mod_loader_progress
+        open_mod_loader_progress(proc.pid)
