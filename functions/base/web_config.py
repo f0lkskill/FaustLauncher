@@ -1,14 +1,23 @@
 """web 配置加载器 — 从 config/web_config.json 读取 webnote 等云端地址/凭据。
 
 config/web_config.json 已被 .gitignore 排除，不会随源码上传 GitHub。
-构建产物中同样携带该文件 (build.py 会复制 config 目录)，保证打包版云端功能可用。
-路径解析: 打包版按 exe 所在目录, 源码版按项目根目录 (与 cwd 无关)。
+打包版: 配置由 FaustLauncher.spec 在构建时内嵌进 exe (PYZ 内的 web_config_data
+模块)，不以独立文件随构建产物分发；exe 目录存在 config/web_config.json 时
+优先读取（本地覆盖/调试用），否则回退到内嵌配置。
+源码版: 按项目根目录读取 (与 cwd 无关)。
 文件缺失时静默降级（返回空值，不打印警告）；文件存在但格式错误时打印警告。
 """
 
 import json
 import os
 import sys
+
+# 打包版: 构建时内嵌的配置 (编译进 PYZ, 非独立文件)
+EMBEDDED_CONFIG = None
+try:
+    from web_config_data import EMBEDDED_CONFIG  # type: ignore
+except ImportError:
+    pass
 
 if getattr(sys, "frozen", False):
     _PROJECT_ROOT = os.path.dirname(os.path.abspath(sys.executable))
@@ -25,15 +34,21 @@ def get_web_config() -> dict:
     global _config_cache
     if _config_cache is not None:
         return _config_cache
+    data = None
     try:
         with open(CONFIG_PATH, 'r', encoding='utf-8') as f:
             data = json.load(f)
-        _config_cache = data if isinstance(data, dict) else {}
     except FileNotFoundError:
-        _config_cache = {}
+        pass
     except Exception as e:
         print(f"[警告] 读取 {CONFIG_PATH} 失败: {e} (相关云端功能将不可用)")
-        _config_cache = {}
+    if data is None and EMBEDDED_CONFIG:
+        try:
+            data = json.loads(EMBEDDED_CONFIG)
+        except Exception as e:
+            print(f"[警告] 解析内嵌云端配置失败: {e} (相关云端功能将不可用)")
+            data = None
+    _config_cache = data if isinstance(data, dict) else {}
     return _config_cache
 
 
