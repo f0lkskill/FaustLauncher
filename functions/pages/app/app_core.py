@@ -142,8 +142,20 @@ class FaustLauncherCore:
             messagebox.showerror("错误", f"打开自定义汉化工具失败: {str(e)}")
 
     def open_post_extension_tools(self):
-        """打开扩展工具 HTML 窗口 (插件模板 / 包装 Mod / 发布 Mod)"""
+        """打开扩展工具 HTML 窗口 (插件模板 / 包装 Mod / 发布 Mod), 需密钥验证"""
         try:
+            from tkinter import simpledialog, messagebox
+            from functions.base.web_config import get_web_config
+            secret = get_web_config().get('extension_tool_key')
+            if not secret:
+                messagebox.showerror("访问被拒绝", "未配置开发者工具密钥 (extension_tool_key), 无法访问")
+                return
+            answer = simpledialog.askstring("密钥验证", "请输入开发者工具密钥:", show='*', parent=self.root)
+            if answer is None:
+                return
+            if answer.strip() != str(secret):
+                messagebox.showerror("访问被拒绝", "密钥错误, 无法访问开发者工具")
+                return
             from functions.pages.tools.extension_tools_window import open_extension_tools_window
             open_extension_tools_window(self)
             print("🧩 扩展工具已打开")
@@ -206,17 +218,34 @@ class FaustLauncherCore:
         """检查设置"""
         if not self.settings_manager.get_setting("game_path"):
             print("错误: 未配置游戏路径")
-            from tkinter.filedialog import askopenfilename
-            file_path = askopenfilename(title="选择边狱巴士主程序", filetypes=[("边狱巴士主程序", "LimbusCompany.exe")])
-            if file_path:
-                self.settings_manager.set_setting("game_path", file_path.replace('LimbusCompany.exe', ''))
-                self.settings_manager.save_settings()
-                settings_page = self.page_loader.get_page('settings')  # type: ignore
-                if settings_page:
-                    settings_page.refresh_all_displays()
-            else:
-                print("错误: 未选择游戏文件")
-                os._exit(-1)
+            # 尝试通过 Steam VDF 自动定位边狱巴士, 找到后询问用户确认
+            from functions.base.steam_locator import find_steam_game_path
+            found = find_steam_game_path()
+            if found:
+                from tkinter import messagebox
+                if messagebox.askyesno("检测到边狱巴士",
+                                       f"已通过 Steam 检测到边狱巴士安装路径:\n{found}\n\n这是你的游戏路径吗？",
+                                       parent=self.root):
+                    self.settings_manager.set_setting("game_path", found)
+                    self.settings_manager.save_settings()
+                    settings_page = self.page_loader.get_page('settings')  # type: ignore
+                    if settings_page:
+                        settings_page.refresh_all_displays()
+                    found = None
+                else:
+                    print("用户未确认自动检测的路径, 回退到手动选择")
+            if found:
+                from tkinter.filedialog import askopenfilename
+                file_path = askopenfilename(title="选择边狱巴士主程序", filetypes=[("边狱巴士主程序", "LimbusCompany.exe")])
+                if file_path:
+                    self.settings_manager.set_setting("game_path", file_path.replace('LimbusCompany.exe', ''))
+                    self.settings_manager.save_settings()
+                    settings_page = self.page_loader.get_page('settings')  # type: ignore
+                    if settings_page:
+                        settings_page.refresh_all_displays()
+                else:
+                    print("错误: 未选择游戏文件")
+                    os._exit(-1)
                 
         mems: dict = self.settings_manager.get_setting('mems')  # type: ignore
         has_notify = mems.get('version_notify_flag')

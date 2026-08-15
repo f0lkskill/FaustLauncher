@@ -442,6 +442,21 @@ class PageLoader:
                 }
             },
             {
+                "name": "尘",
+                "role": "项目程序贡献者",
+                "description": "lc mod loader 手机版作者\n是一个准高三学生，神秘垃圾佬（并非佬），平时爱好是搞点小东西玩玩，仅贡献rebank加载机制\nfolkskill说我为什么没诋毁他，所以我要诋毁folkskill了\n你说得对，但是<浮士德加载器>是由folksgayo开发的一款练铜加载器，专门练难金银铜铁（金银铁不发音)，如果你有任何问题(包括怎么去道观）都不要找我，可以找folksgayo",
+                "icon": "assets/images/contributor/chen.png",
+                "links": {
+                    "blbl": "https://space.bilibili.com/1850598494"
+                }
+            },
+            {
+                "name": "Bob",
+                "role": "项目程序贡献者",
+                "description": "贡献修复了自定义汉化递归的问题。\n他说：“咕咕嘎嘎！”",
+                "icon": "assets/images/contributor/bob.png"
+            },
+            {
                 "name": "里诺Ariko",
                 "role": "民间有色战斗气泡文本作者",
                 "description": "里诺Ariko是社区的活跃成员之一，在b站发布了很多游戏内容的提前个人汉化版本。\n同时也在不断完善和更新自己的民间气泡汉化内容，感谢ta持续的为启动器提供的有色战斗气泡文本。",
@@ -486,7 +501,7 @@ class PageLoader:
         content_frame.pack(fill=tk.BOTH, expand=True)
         
         # 当前选中的标签
-        self._current_about_tab = tk.StringVar(value="program")
+        self._current_about_tab = tk.StringVar(value="contributors")
         
         def switch_tab(tab_name):
             self._current_about_tab.set(tab_name)
@@ -509,7 +524,7 @@ class PageLoader:
         ]
         
         for tab_id, tab_text in tabs:
-            is_active = tab_id == "program"
+            is_active = tab_id == "contributors"
             btn = tk.Button(tab_frame, text=tab_text,
                           bg=bg_color if is_active else lighten_bg,
                           fg=accent_blue if is_active else text_secondary,
@@ -531,8 +546,8 @@ class PageLoader:
             btn.bind("<Enter>", on_enter)
             btn.bind("<Leave>", on_leave)
         
-        # 初始显示程序介绍
-        self._show_about_content(content_frame, "program", contributors,
+        # 初始显示贡献者
+        self._show_about_content(content_frame, "contributors", contributors,
                                 bg_color, lighten_bg, text_primary, text_secondary, text_muted,
                                 accent_blue, accent_cyan, accent_green)
     
