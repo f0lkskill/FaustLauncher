@@ -1,10 +1,24 @@
 import os
 import json
+import hashlib
+import re
 import shutil
 from typing import List, Dict, Any
 from functions.base.settings_manager import SettingsManager
 from functions.base.common.path_utils import get_mod_root_dir
 from subprocess import call, CREATE_NO_WINDOW
+
+
+def _strip_suffix_number(name: str) -> str:
+    """去掉名字末尾的数字（同名 mod 的 1,2,3... 序列后缀）"""
+    m = re.match(r"^(.*?)(\d+)$", name)
+    return m.group(1) if m else name
+
+
+def _suffix_number(name: str) -> int:
+    """名字末尾的数字；没有数字的按 0"""
+    m = re.match(r"^(.*?)(\d+)$", name)
+    return int(m.group(2)) if m else 0
 
 class ModManager:
     mod_dir = 'mods'
@@ -53,7 +67,8 @@ class ModManager:
         读取每个mod_info.json里的settings键值来决定是否加载
         """
         loaded_mods = []
-        
+        used = {}  # 本次装载已占用的目标文件名 -> 源文件 md5 (同名 .bank 编号用)
+
         # 遍历所有mod目录
         for mod_path in self.get_mod_path():
             
@@ -112,8 +127,22 @@ class ModManager:
                     # 复制文件
                     for file_name in file_names:
                         source_file = os.path.join(mod_path, file_name)
-                        target_file = os.path.join(target_dir, file_name)
-                                            
+                        if not os.path.isfile(source_file):
+                            print(f"跳过缺失文件: {source_file}")
+                            continue
+
+                        if file_name.lower().endswith('.bank'):
+                            stem, ext = os.path.splitext(file_name)
+                            # 需求: mod 目录已有对应 rebank 差分则不处理
+                            if os.path.exists(os.path.join(target_dir, stem + '.rebank')):
+                                print(f"跳过 {file_name}: 已有对应 rebank 差分，无需复制")
+                                continue
+                            # 需求: 同名声音 mod 文件 → 名字末尾添加 1,2,3...
+                            target_file, file_name = self._unique_bank_name(
+                                target_dir, source_file, file_name, used)
+                        else:
+                            target_file = os.path.join(target_dir, file_name)
+
                         # 确保目标目录存在
                         os.makedirs(os.path.dirname(target_file), exist_ok=True)
 
@@ -140,6 +169,99 @@ class ModManager:
                 print(f"处理Mod {mod_name} 失败: {e}")
         
         return loaded_mods
+        
+    @staticmethod
+    def _file_md5(path: str, chunk: int = 1 << 20) -> str:
+        """计算文件 md5（用于区分同名文件是否同一内容）"""
+        h = hashlib.md5()
+        with open(path, "rb") as f:
+            while True:
+                b = f.read(chunk)
+                if not b:
+                    break
+                h.update(b)
+        return h.hexdigest()
+
+    @staticmethod
+    def _rebank_max_index(target_dir: str, base: str) -> int:
+        """目标目录中针对同一原版 bank 的 rebank 最大序号（无则 -1）。
+
+        家族 = 去掉末尾数字的 stem（X.assets1.rebank / X.assets.rebank -> X.assets）。
+        只统计启用状态的 .rebank（不含 .disabled）。
+        """
+        max_idx = -1
+        try:
+            for f in os.listdir(target_dir):
+                if not f.lower().endswith(".rebank"):
+                    continue
+                stem = f[:-len(".rebank")]
+                if _strip_suffix_number(stem) == base:
+                    max_idx = max(max_idx, _suffix_number(stem))
+        except OSError:
+            pass
+        return max_idx
+
+    @classmethod
+    def _unique_bank_name(cls, target_dir: str, source_file: str, file_name: str,
+                          used: Dict[str, str]):
+        """同名声音 mod 文件 → 名字末尾添加 1,2,3... 序列后缀。
+
+        规则（针对同一原版 bank 的多个 mod）：
+        - 目标目录已有同家族 rebank（如 X.assets1.rebank）时，新复制 bank 延续其
+          最大序号 +1（如 -> X.assets2.bank），保证应用顺序正确、不被旧 rebank 遮蔽；
+        - 自身序号已大于已有 rebank 最大序号则保留原名；
+        - 无 rebank 家族时：内容相同的同名文件原地覆盖（保持原名，避免每次启动都
+          累加编号），不同内容的同名文件在名字末尾加数字。
+        返回 (目标路径, 最终文件名)。
+        """
+        stem, ext = os.path.splitext(file_name)
+        src_md5 = cls._file_md5(source_file)
+
+        base = _strip_suffix_number(stem)
+        own_idx = _suffix_number(stem)
+        max_rebank_idx = cls._rebank_max_index(target_dir, base)
+
+        if max_rebank_idx >= 0 and own_idx <= max_rebank_idx:
+            # 与既有 rebank 针对同一原版: 延续索引, 新 bank 排到既有差分之后
+            num = 0
+            while True:
+                candidate = "%s%d%s" % (base, max_rebank_idx + 1 + num, ext)
+                if candidate in used and used[candidate] != src_md5:
+                    num += 1
+                    continue
+                target = os.path.join(target_dir, candidate)
+                if os.path.exists(target):
+                    try:
+                        if cls._file_md5(target) == src_md5:
+                            break  # 目标已存在且内容相同
+                    except OSError:
+                        pass
+                    num += 1
+                    continue
+                break
+            used[candidate] = src_md5
+            return os.path.join(target_dir, candidate), candidate
+
+        candidate = file_name
+        num = 0
+        while True:
+            if candidate in used:
+                if used[candidate] == src_md5:
+                    break  # 同一份文件再次复制，原地覆盖
+            else:
+                target = os.path.join(target_dir, candidate)
+                if os.path.exists(target):
+                    try:
+                        if cls._file_md5(target) == src_md5:
+                            break  # 目标已存在且内容相同，原地覆盖
+                    except OSError:
+                        pass
+                else:
+                    break
+            num += 1
+            candidate = "%s%d%s" % (stem, num, ext)
+        used[candidate] = src_md5
+        return os.path.join(target_dir, candidate), candidate
         
     @staticmethod
     def load_language(name: str, dir: str) -> None:

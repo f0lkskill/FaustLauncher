@@ -11,7 +11,6 @@
 #?   - 应用内: 工具页 -> 扩展工具 (同一 HTML 窗口, 子进程方式拉起)
 #?   - 代码调用: from extension_tools import spawn_extension, wrap_mod, upload_mod_info
 
-import os
 import sys
 
 from functions.pages.tools.extension_tools_window import (

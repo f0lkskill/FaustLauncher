@@ -44,6 +44,20 @@ def main():
         from functions.pages.tools.mod_manager_window import run_mod_manager_window
         run_mod_manager_window(debug="--debug" in sys.argv)
         return
+
+    # Mod加载器进度提示独立窗口模式: 与 --mod-manager-window 同一模式
+    if "--mod-loader-progress" in sys.argv:
+        from functions.pages.tools.mod_loader_progress import run_mod_loader_progress
+        loader_pid = 0
+        if "--pid" in sys.argv:
+            idx = sys.argv.index("--pid")
+            if idx + 1 < len(sys.argv):
+                try:
+                    loader_pid = int(sys.argv[idx + 1])
+                except ValueError:
+                    loader_pid = 0
+        run_mod_loader_progress(loader_pid, debug="--debug" in sys.argv)
+        return
     
     # 扩展工具独立窗口模式: 与 --mod-manager-window 同一模式
     if "--extension-tools-window" in sys.argv:
