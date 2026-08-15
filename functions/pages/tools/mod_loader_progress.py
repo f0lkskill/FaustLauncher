@@ -236,8 +236,10 @@ class LoaderProgressWindow:
         pid_alive = _pid_alive(self.pid)
 
         # 游戏启动 -> 窗口隐藏, 常驻等待恢复阶段
+        # 注意: 无论当前处于什么状态都要隐藏 (启动期 RESTORE 残留标记曾导致
+        # state 卡在 restoring, LAUNCH 永不隐藏窗口)
         if content == "LAUNCH":
-            if self.state == "loading":
+            if not self._closing and self.state != "launched":
                 self.state = "launched"
                 self.stage_lbl.config(text="启动游戏", fg=STAGE_FG)
                 self.detail_lbl.config(text="游戏运行中，游戏退出后将自动恢复原版文件", fg=DETAIL_FG)
@@ -249,8 +251,10 @@ class LoaderProgressWindow:
             return
 
         # 游戏退出、恢复原版文件 -> 重新弹出提示
+        # 加载阶段 (loading) 的 RESTORE 标记 (如启动期遗留清理) 直接忽略,
+        # 避免加载期间就弹出恢复提示 + 进度条来回动
         if content.startswith("RESTORE"):
-            if self.state != "restoring":
+            if self.state != "loading" and self.state != "restoring" and not self._closing:
                 self.state = "restoring"
                 self.root.deiconify()
                 self.root.attributes("-topmost", True)
