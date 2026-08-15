@@ -301,10 +301,25 @@ class LoaderProgressWindow:
         self._update_log()
 
 
+def _set_window_icon(root):
+    """设置窗口图标: 启动器以 cwd=项目根目录 拉起本窗口, 优先按 cwd 找 icon.png"""
+    try:
+        path = os.path.join(os.getcwd(), "assets", "images", "icon", "icon.png")
+        if not os.path.isfile(path):
+            path = os.path.join(_PROJECT_ROOT, "assets", "images", "icon", "icon.png")
+        if os.path.isfile(path):
+            img = tk.PhotoImage(file=path)
+            root.iconphoto(True, img)
+            root._icon_img = img  # 防止被垃圾回收
+    except Exception:
+        pass
+
+
 def run_mod_loader_progress(loader_pid=0, debug=False):
     """子进程入口: 运行进度提示窗口"""
     try:
         root = tk.Tk()
+        _set_window_icon(root)
         root.withdraw()
         LoaderProgressWindow(root, loader_pid)
         center_window(root)
