@@ -454,15 +454,11 @@ def check_single_instance():
     hwnd = user32.FindWindowA(None, "Faust Launcher".encode('utf-8'))
     
     if hwnd:
-        from rich import print
-        print(f"找到已运行的窗口，句柄: {hwnd}，准备恢复窗口")
-        
-        if user32.IsIconic(hwnd):
-            user32.ShowWindow(hwnd, 9)
-        elif not user32.IsWindowVisible(hwnd):
-            user32.ShowWindow(hwnd, 5)
-        
-        user32.SetForegroundWindow(hwnd)
+        user32.MessageBoxW(
+            None,
+            "已经有启动器实例在运行！请检查你的系统托盘！",
+            "Faust Launcher",
+            0x40)  # MB_ICONINFORMATION
         return True
     
     return False
