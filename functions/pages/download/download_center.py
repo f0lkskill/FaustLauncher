@@ -475,6 +475,12 @@ class DownloadCenterPage:
             except Exception as e:
                 print(f"加载图标失败: {e}")
         elif icon_path:
+            # 未缓存: 先放 64x64 透明占位在左侧, 下载完成后原地替换 (避免图标被排到标题右侧)
+            ph_img = ImageTk.PhotoImage(Image.new('RGBA', (64, 64), (0, 0, 0, 0)))
+            placeholder = tk.Label(header_frame, image=ph_img, bg=card_bg)
+            placeholder.image = ph_img  # type: ignore
+            placeholder._icon_placeholder = True  # type: ignore
+            placeholder.pack(side=tk.LEFT, padx=(0, 12))
             self._load_icon_async(addon.get('icon_url', ''), addon.get('name', 'unknown'),
                                   header_frame, card_bg, gen_key)
 
@@ -598,6 +604,12 @@ class DownloadCenterPage:
             except Exception as e:
                 print(f"加载图标失败: {e}")
         elif icon_path:
+            # 未缓存: 先放 64x64 透明占位在左侧, 下载完成后原地替换 (避免图标被排到标题右侧)
+            ph_img = ImageTk.PhotoImage(Image.new('RGBA', (64, 64), (0, 0, 0, 0)))
+            placeholder = tk.Label(header_frame, image=ph_img, bg=card_bg)
+            placeholder.image = ph_img  # type: ignore
+            placeholder._icon_placeholder = True  # type: ignore
+            placeholder.pack(side=tk.LEFT, padx=(0, 12))
             self._load_icon_async(mod.get('icon_url', ''), mod.get('name', 'unknown'),
                                   header_frame, card_bg, gen_key)
 
@@ -729,7 +741,7 @@ class DownloadCenterPage:
         threading.Thread(target=_work, daemon=True).start()
 
     def _show_icon(self, header_frame, icon_path:str, card_bg, gen_key):
-        """主线程: 把后台下载好的图标贴到卡片 (页面已切换/卡片已销毁则丢弃)"""
+        """主线程: 把后台下载好的图标贴到卡片左侧占位 (页面已切换/卡片已销毁则丢弃)"""
         try:
             if not self._is_current_gen(gen_key):
                 return
@@ -738,9 +750,18 @@ class DownloadCenterPage:
             image = Image.open(icon_path)
             image = image.resize((64, 64), Image.Resampling.LANCZOS)
             icon = ImageTk.PhotoImage(image)
-            icon_label = tk.Label(header_frame, image=icon, bg=card_bg)
-            icon_label.image = icon  # type: ignore
-            icon_label.pack(side=tk.LEFT, padx=(0, 12))
+            placeholder = None
+            for child in header_frame.winfo_children():
+                if isinstance(child, tk.Label) and getattr(child, '_icon_placeholder', False):
+                    placeholder = child
+                    break
+            if placeholder is not None and placeholder.winfo_exists():
+                placeholder.configure(image=icon)
+                placeholder.image = icon  # type: ignore
+            else:
+                icon_label = tk.Label(header_frame, image=icon, bg=card_bg)
+                icon_label.image = icon  # type: ignore
+                icon_label.pack(side=tk.LEFT, padx=(0, 12))
         except Exception as e:
             print(f"加载图标失败: {e}")
 
