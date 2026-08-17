@@ -473,7 +473,7 @@ class CustomTranslationTool:
         data_search_entry.bind('<Return>',
                                lambda e: self._on_data_search_changed())
 
-        search_btn = tk.Button(tool_bar, text="🔍 搜索",
+        search_btn = tk.Button(tool_bar, text="搜索",
                               command=self._on_data_search_changed,
                               bg='#2e86de', fg='white',
                               relief='flat', padx=10, pady=2,

@@ -155,9 +155,24 @@ class GameLauncher:
         print(f"[调试] _prepare_translation: 开始 copytree {self._lang_dir!r} -> {target!r}")
         shutil.copytree(self._lang_dir, target, dirs_exist_ok=True)
 
+    @staticmethod
+    def _list_changes_files(dir_path):
+        """列出目录下所有图层数据文件 (changes.json + changes_标记.json), 主文件在前;
+        changes_layers.json 是图层状态文件, 不算图层数据"""
+        from functions.pages.tools.custom_translation_window import _is_layer_changes_file
+        if not os.path.isdir(dir_path):
+            return []
+        files = [f for f in os.listdir(dir_path) if _is_layer_changes_file(f)]
+        files.sort(key=lambda f: (0, f) if f.lower() == "changes.json" else (1, f.lower()))
+        return files
+
     def _apply_changes(self):
-        """应用所有启用 mod 和 插件 的 changes.json 补丁到游戏语言文件。"""
+        """应用所有启用 mod 和 插件 的 changes*.json 补丁到游戏语言文件。
+        支持多个修改记录图层: changes.json + changes_标记.json (按名称排序, 后应用者覆盖);
+        changes_layers.json 中 visible=false 的图层跳过 (编辑器里的 PS 式图层可见性)。"""
         from functions.extension.mod.mod_utils import ModManager
+        from functions.pages.tools.custom_translation_window import CHANGES_PATTERN
+        import re
 
         # 收集所有需要处理的目录
         dirs = []
@@ -182,33 +197,56 @@ class GameLauncher:
         lang_data_dir = os.path.join(self._game_path, 'LimbusCompany_Data', 'Lang')
 
         for dir_path in dirs:
-            changes_file = os.path.join(dir_path, 'changes.json')
-            if not os.path.exists(changes_file):
-                continue
-            try:
-                with open(changes_file, 'r', encoding='utf-8') as f:
-                    changes_data = json.load(f)
-            except Exception as e:
-                print(f"  警告: 无法解析 {changes_file}: {e}")
-                continue
-            if not changes_data:
-                continue
-            if not isinstance(changes_data, dict):
-                print(f"  警告: {changes_file} 顶层必须是 {{\"相对路径\": 修改内容}} 对象, 实际是 {type(changes_data).__name__}, 已跳过")
-                continue
-            for relative_path, file_changes in changes_data.items():
+            # 读取图层可见性状态 (不存在 = 全部可见)
+            hidden_layers = set()
+            layer_state_file = os.path.join(dir_path, 'changes_layers.json')
+            if os.path.exists(layer_state_file):
                 try:
-                    game_file = os.path.join(lang_data_dir, relative_path)
-                    if not os.path.exists(game_file):
-                        print(f"  警告: 游戏目录中未找到 {relative_path}")
-                        continue
-                    with open(game_file, 'r', encoding='utf-8') as f:
-                        original = json.load(f)
-                    modified = apply_changes_to_data(original, file_changes)
-                    with open(game_file, 'w', encoding='utf-8') as f:
-                        json.dump(modified, f, ensure_ascii=False, indent=4)
+                    with open(layer_state_file, 'r', encoding='utf-8') as f:
+                        st = json.load(f)
+                    for marker, v in (st.items() if isinstance(st, dict) else []):
+                        visible = v.get('visible', True) if isinstance(v, dict) else bool(v)
+                        if not visible:
+                            hidden_layers.add(marker)
                 except Exception as e:
-                    print(f"  警告: 应用补丁 {relative_path} 失败: {e}")
+                    print(f"  警告: 解析 {layer_state_file} 失败: {e}")
+
+            changes_files = self._list_changes_files(dir_path)
+            if not changes_files:
+                continue
+
+            for changes_file in changes_files:
+                m = CHANGES_PATTERN.match(changes_file)
+                marker = m.group(1)[1:] if m and m.group(1) else ""
+                if marker in hidden_layers:
+                    print(f"  跳过隐藏图层: {changes_file}")
+                    continue
+
+                file_path = os.path.join(dir_path, changes_file)
+                try:
+                    with open(file_path, 'r', encoding='utf-8') as f:
+                        changes_data = json.load(f)
+                except Exception as e:
+                    print(f"  警告: 无法解析 {file_path}: {e}")
+                    continue
+                if not changes_data:
+                    continue
+                if not isinstance(changes_data, dict):
+                    print(f"  警告: {file_path} 顶层必须是 {{\"相对路径\": 修改内容}} 对象, 实际是 {type(changes_data).__name__}, 已跳过")
+                    continue
+                for relative_path, file_changes in changes_data.items():
+                    try:
+                        game_file = os.path.join(lang_data_dir, relative_path)
+                        if not os.path.exists(game_file):
+                            print(f"  警告: 游戏目录中未找到 {relative_path}")
+                            continue
+                        with open(game_file, 'r', encoding='utf-8') as f:
+                            original = json.load(f)
+                        modified = apply_changes_to_data(original, file_changes)
+                        with open(game_file, 'w', encoding='utf-8') as f:
+                            json.dump(modified, f, ensure_ascii=False, indent=4)
+                    except Exception as e:
+                        print(f"  警告: 应用补丁 {relative_path} 失败: {e}")
 
     def _apply_cosmetic_features(self):
         """应用气泡渐变、EGO 样式、技能描述、提示替换、技能渐变色。"""

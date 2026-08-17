@@ -130,11 +130,10 @@ class FaustLauncherCore:
             print(f"复制失败: {e}")
             
     def open_custom_translation_tool(self):
-        """打开自定义汉化工具"""
+        """打开自定义汉化工具 (HTML webview 窗口, 独立子进程)"""
         try:
-            sys.path.append('functions')
-            from functions.pages.tools.custom_translation import open_custom_translation_tool
-            open_custom_translation_tool(self)
+            from functions.pages.tools.custom_translation_window import open_custom_translation_window
+            open_custom_translation_window(self)
             print("🔧 自定义汉化工具已打开")
         except Exception as e:
             print(f"打开自定义汉化工具失败: {e}")
