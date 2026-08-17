@@ -7,7 +7,7 @@
 
 <br>
 
-[![版本](https://img.shields.io/badge/版本-V0.6.0--pre.7.fix.2-blue?style=for-the-badge&logo=git)](https://github.com/f0lkskill/FaustLauncher/releases)
+[![版本](https://img.shields.io/badge/版本-V0.6.1--release-blue?style=for-the-badge&logo=git)](https://github.com/f0lkskill/FaustLauncher/releases)
 [![许可证](https://img.shields.io/badge/许可证-MIT-green?style=for-the-badge&logo=opensourceinitiative)](LICENSE)
 [![状态](https://img.shields.io/badge/状态-开发中-orange?style=for-the-badge&logo=githubactions)](https://github.com/f0lkskill/FaustLauncher)
 [![平台](https://img.shields.io/badge/平台-Windows%2010%20%2F%2011-lightgrey?style=for-the-badge&logo=windows)](https://github.com/f0lkskill/FaustLauncher)
@@ -65,7 +65,7 @@
 
 | 项目 | 信息 | 项目 | 信息 |
 |:---|:---|:---|:---|
-| 🏷️ 当前版本 | `V0.6.0-pre.7.fix.2` | 🛠️ 开发状态 | 开发中... |
+| 🏷️ 当前版本 | `V0.6.1-release` | 🛠️ 开发状态 | 开发中... |
 | 📅 最后更新 | 2026-08-09 | 🎯 目标平台 | Windows 10 / 11 |
 | 🛠️ 技术栈 | Python · Tkinter · PyInstaller | 📜 开源协议 | MIT |
 | 💬 反馈 | [Issues](https://github.com/f0lkskill/FaustLauncher/issues) | 💭 交流 | [Discussions](https://github.com/f0lkskill/FaustLauncher/discussions) |
