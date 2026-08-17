@@ -1,12 +1,12 @@
 """
 Faust Launcher - 主入口
 
-优化内容：
 1. 模块化拆分：将页面加载逻辑分离到 PageLoader
 2. 职责分离：UI结构和业务逻辑分离，分为 app_core.py 和 app_ui.py
 3. 按需加载：支持延迟加载页面
 4. 解耦合：降低模块间依赖
 """
+
 import tkinter as tk
 import os
 import sys
@@ -63,6 +63,12 @@ def main():
     if "--extension-tools-window" in sys.argv:
         from functions.pages.tools.extension_tools_window import run_extension_tools_window
         run_extension_tools_window(debug="--debug" in sys.argv)
+        return
+
+    # 自定义汉化工具独立窗口模式: 与 --extension-tools-window 同一模式
+    if "--custom-translation-window" in sys.argv:
+        from functions.pages.tools.custom_translation_window import run_custom_translation_window
+        run_custom_translation_window(debug="--debug" in sys.argv)
         return
     
     from functions.pages.app.app_core import FaustLauncherCore

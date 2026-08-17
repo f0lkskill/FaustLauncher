@@ -4,7 +4,7 @@
         "name": "文本气泡资源包"
     },
     "mod_loader": {
-        "version_info": "0.1.0",
+        "version_info": "0.1.5",
         "name": "模组加载器组件"
     },
     "siner_skill_info": {
