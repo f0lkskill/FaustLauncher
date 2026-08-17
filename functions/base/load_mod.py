@@ -61,6 +61,7 @@ def _start_with_mod_loader():
 
     yisangModLoader.exe 是独立子进程 (内部自带运行环境, 与启动器无关联):
     启动器只负责把它拉起来, 不做任何进程间耦合, 进度窗口仅通过文件轮询观察。
+    hide_mod_load 设置只控制加载器自身的控制台窗口, 进度 GUI 窗口始终显示。
     """
     game_exe = os.path.join(_game_path, GAME_EXE)
 
@@ -75,9 +76,8 @@ def _start_with_mod_loader():
         print(f"使用内置 mod loader 启动: {builtin_exe}")
         flags = subprocess.CREATE_NO_WINDOW if _settings.get_setting("hide_mod_load") else 0
         proc = subprocess.Popen([builtin_exe, game_exe], creationflags=flags)
-        if not _settings.get_setting("hide_mod_load"):
-            from functions.pages.tools.mod_loader_progress import open_mod_loader_progress
-            open_mod_loader_progress(proc.pid)
+        from functions.pages.tools.mod_loader_progress import open_mod_loader_progress
+        open_mod_loader_progress(proc.pid)
         return
 
     print("使用内置 mod loader (venv 直跑) 启动...")
@@ -85,6 +85,5 @@ def _start_with_mod_loader():
     loader_script = "resources/mod_loader/_internal/main.py"
     proc = subprocess.Popen([loader_py, loader_script, game_exe],
                             creationflags=subprocess.CREATE_NO_WINDOW)
-    if not _settings.get_setting("hide_mod_load"):
-        from functions.pages.tools.mod_loader_progress import open_mod_loader_progress
-        open_mod_loader_progress(proc.pid)
+    from functions.pages.tools.mod_loader_progress import open_mod_loader_progress
+    open_mod_loader_progress(proc.pid)

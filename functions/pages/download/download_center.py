@@ -765,6 +765,13 @@ class DownloadCenterPage:
         }]
 
         try:
+            # 先卸载旧版本: 运行 Uninstaller.bat + 清理已复制的附属文件, 避免残留
+            from functions.extension.mod.mod_utils import ModManager
+            ModManager().unload_mod(mod.get('name', 'unknown'))
+        except Exception:
+            pass
+
+        try:
             shutil.rmtree('mods/' + mod.get('name', 'unknown'))
         except:
             pass
