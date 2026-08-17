@@ -543,6 +543,7 @@ def run_update_window(payload_b64=None, debug: bool = False):
         height=640,
         min_size=(440, 460),
         background_color="#060f22",
+        on_top=True,   # 系统级置顶 (WS_EX_TOPMOST), 不被其他窗口遮挡
     )
     x, y = _center_xy(560, 640)
     if x is not None and y is not None:

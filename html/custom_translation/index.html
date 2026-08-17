@@ -62,6 +62,15 @@
     input[type="text"]:focus, textarea:focus { border-color: rgba(99,102,241,0.7); }
     input[type="checkbox"] { accent-color: #6366f1; cursor: pointer; }
 
+    #tree-search-mode {
+        width: 66px; flex: none; appearance: none; -webkit-appearance: none;
+        padding: 7px 20px 7px 8px; text-align: left; cursor: pointer;
+        background-color: rgba(255,255,255,0.05);
+        background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%2394a3b8' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+        background-repeat: no-repeat; background-position: right 8px center;
+    }
+    #tree-search-mode:hover { border-color: rgba(99,102,241,0.7); }
+
     .tree-box { flex: 1; min-height: 0; overflow: auto; }
     .tree-row {
         display: flex; align-items: center; gap: 5px;
@@ -309,7 +318,13 @@
                 <span>📁 文件目录</span>
                 <button class="icon-btn" id="tree-refresh">↻ 刷新</button>
             </div>
-            <input type="text" id="tree-search" placeholder="搜索文件 / 目录名...">
+            <div style="display:flex; gap:6px; align-items:center;">
+                <input type="text" id="tree-search" placeholder="搜索文件 / 目录名...">
+                <select id="tree-search-mode" style="flex:none; width:64px;">
+                    <option value="name">名字</option>
+                    <option value="value">值</option>
+                </select>
+            </div>
             <div class="tree-box" id="tree"></div>
 
             <div class="panel-title">
@@ -423,6 +438,8 @@ function errText(e) { return (e && e.message) ? e.message : String(e); }
 const state = {
     treeNodes: [],       // get_tree() 的 nodes
     treeFilter: "",
+    treeFilterMode: "name",  // "name" | "value"
+    treeValuePaths: new Set(),
     treeCollapsed: null, // null=未初始化(首次加载默认全折叠); Set<目录path>
     currentRelative: null,
     // 列表分页
@@ -444,14 +461,19 @@ function buildTree(container, nodes, depth, parentMatch) {
     container.innerHTML = "";
     let any = false;
     const kw = state.treeFilter;
-    // 搜索时保持用户的折叠状态: 只遍历已展开的目录
+    const vm = state.treeFilterMode === "value";
+    // 搜索时保持用户的折叠状态: 只遍历已展开的目录 (值搜索同样只搜展开目录下的文件)
     const shown = [];
     function shouldShow(node, ancestorMatch) {
         if (node.type === "file") {
-            if (kw && !(node.name.toLowerCase().includes(kw) || ancestorMatch)) return false;
+            if (kw) {
+                if (vm) {
+                    if (!(state.treeValuePaths.has(node.path) || ancestorMatch)) return false;
+                } else if (!(node.name.toLowerCase().includes(kw) || ancestorMatch)) return false;
+            }
             return true;
         }
-        const nameHit = !!kw && node.name.toLowerCase().includes(kw);
+        const nameHit = !!kw && !vm && node.name.toLowerCase().includes(kw);
         const kids = node.children || [];
         if (kw && state.treeCollapsed.has(node.path)) {
             // 折叠目录: 不进入子内容, 仅目录名匹配时显示该目录本身
@@ -530,7 +552,7 @@ async function refreshTree(keepSelection) {
     try {
         const t = await api.get_tree();
         state.treeNodes = t.nodes || [];
-        // 首次加载: 全部默认折叠
+        // 首次加载: 全部默认折叠, 仅顶层 LLC_zh-CN 目录默认展开 (其子文件夹照常折叠)
         if (state.treeCollapsed === null) {
             const dirs = [];
             (function collect(ns) {
@@ -538,10 +560,14 @@ async function refreshTree(keepSelection) {
                     if (n.type === "dir") { dirs.push(n.path); collect(n.children || []); }
                 }
             })(state.treeNodes);
-            state.treeCollapsed = new Set(dirs);
+            state.treeCollapsed = new Set(dirs.filter(d => !(/^llc_zh/i.test(d) && d.indexOf("/") === -1)));
         }
         if (keepSelection) state.treeFilter = $("tree-search").value.trim().toLowerCase();
-        buildTree($("tree"), state.treeNodes, 0, false);
+        if (state.treeFilterMode === "value" && state.treeFilter) {
+            onTreeSearchInput();
+        } else {
+            buildTree($("tree"), state.treeNodes, 0, false);
+        }
     } catch (e) {
         showToast("加载文件树失败: " + errText(e), true);
     }
@@ -690,15 +716,24 @@ async function openFile(node) {
     state.currentRelative = node.path;
     $("file-label").textContent = "📄 " + node.path;
     state.collapsed = new Set();
-    // 新文件: 清空过滤条件并滚到顶部; 保持当前编辑模式
-    state.filters = { keyword: "", only_modified: false, show_hidden: false };
-    $("data-search").value = "";
     $("only-modified").checked = false;
     $("show-hidden").checked = false;
-    resetList(false);
     $("empty-hint").style.display = "none";
     if (state.mode === "json") loadRawJson();
-    await refreshTree(true);
+    // 值搜索模式下: 把树搜索关键字写入文件内搜索并自动筛选 (只触发一次加载, 避免并发竞态);
+    // 文件树只更新选中高亮, 不重新搜索
+    if (state.treeFilterMode === "value" && state.treeFilter) {
+        state.filters = { keyword: state.treeFilter, only_modified: false, show_hidden: false };
+        $("data-search").value = $("tree-search").value.trim();
+        resetList(false);
+        buildTree($("tree"), state.treeNodes, 0, false);
+    } else {
+        // 新文件: 清空过滤条件并滚到顶部; 保持当前编辑模式
+        state.filters = { keyword: "", only_modified: false, show_hidden: false };
+        $("data-search").value = "";
+        resetList(false);
+        await refreshTree(true);
+    }
     setStatus(`已加载: ${node.path}`);
 }
 function currentFilters() {
@@ -1199,12 +1234,45 @@ async function resetAll() {
 /* ─────────── 事件绑定 ─────────── */
 $("tree-refresh").addEventListener("click", () => refreshTree(true));
 let treeSearchTimer = null;
-$("tree-search").addEventListener("input", () => {
+function onTreeSearchInput() {
     clearTimeout(treeSearchTimer);
-    treeSearchTimer = setTimeout(() => {
-        state.treeFilter = $("tree-search").value.trim().toLowerCase();
+    state.treeFilter = $("tree-search").value.trim().toLowerCase();
+    if (state.treeFilterMode === "value") {
+        $("tree-search").placeholder = "搜索修改记录中的值...";
+        if (!state.treeFilter) {
+            state.treeValuePaths = new Set();
+            buildTree($("tree"), state.treeNodes, 0, false);
+            return;
+        }
+        treeSearchTimer = setTimeout(async () => {
+            $("tree").innerHTML = '<div class="tree-row" style="color:#64748b; padding-left:10px;">搜索中...</div>';
+            try {
+                const r = await api.search_values(state.treeFilter);
+                state.treeValuePaths = new Set(r.paths || []);
+            } catch (e) {
+                state.treeValuePaths = new Set();
+            }
+            buildTree($("tree"), state.treeNodes, 0, false);
+        }, 300);
+    } else {
+        $("tree-search").placeholder = "搜索文件 / 目录名...";
+        state.treeValuePaths = new Set();
+        treeSearchTimer = setTimeout(() => {
+            buildTree($("tree"), state.treeNodes, 0, false);
+        }, 150);
+    }
+}
+$("tree-search").addEventListener("input", onTreeSearchInput);
+$("tree-search-mode").addEventListener("change", () => {
+    state.treeFilterMode = $("tree-search-mode").value;
+    state.treeValuePaths = new Set();
+    $("tree-search").placeholder = state.treeFilterMode === "value"
+        ? "搜索修改记录中的值..." : "搜索文件 / 目录名...";
+    if (state.treeFilterMode === "value" && state.treeFilter) {
+        onTreeSearchInput();
+    } else {
         buildTree($("tree"), state.treeNodes, 0, false);
-    }, 150);
+    }
 });
 
 $("layer-add").addEventListener("click", async () => {

@@ -241,6 +241,39 @@ def _diff_has_path(diff, nav):
     return True
 
 
+def _patch_has_value(patch, kw):
+    """patch 中是否存在某个标量修改值包含关键字 (搜索全部修改记录的值)"""
+    if isinstance(patch, dict):
+        if "action" in patch and isinstance(patch.get("changes"), dict):
+            action = patch.get("action")
+            if action in ("added", "deleted", "replaced"):
+                for k, v in patch.items():
+                    if k == "changes":
+                        if _patch_has_value(v, kw):
+                            return True
+                    elif k != "action" and not isinstance(v, (dict, list)):
+                        if kw in str(v).lower():
+                            return True
+                return False
+            if action == "modified":
+                return _patch_has_value(patch.get("changes") or {}, kw)
+            return False
+        for v in patch.values():
+            if isinstance(v, (dict, list)):
+                if _patch_has_value(v, kw):
+                    return True
+            elif kw in str(v).lower():
+                return True
+    elif isinstance(patch, list):
+        for it in patch:
+            if isinstance(it, (dict, list)):
+                if _patch_has_value(it, kw):
+                    return True
+            elif kw in str(it).lower():
+                return True
+    return False
+
+
 def _diff_remove_aligned(diff, original, parts):
     """按原始数据对齐的路径段导航删除 diff 中的修改 (list 位置用 id 定位, 应对索引位移;
     未命中时严格返回原引用, 上层不会误判命中)。
@@ -522,6 +555,7 @@ class TranslationEngine:
         self.modified_data = None
         self.saved_view = None       # 所有可见层合并结果 (未写入层的临时修改基准)
         self._flat_cache = None
+        self._search_cache = None    # rel -> 原文小写全文 (值搜索用, 首次搜索时构建)
         self._filters = {"keyword": "", "only_modified": False,
                          "show_hidden": False, "collapsed": []}
         self._load_state()
@@ -1156,6 +1190,38 @@ class TranslationEngine:
 
         return {"root": "lang", "nodes": build(self.lang_dir)}
 
+    def search_values(self, keyword: str):
+        """全局搜索: 像文件内搜索那样逐文件处理 — 匹配每个 JSON 原文(键/id/值, 含未修改内容)
+        以及全部图层修改记录中的值, 返回匹配的文件路径列表 (包含匹配, 不区分大小写)"""
+        kw = (keyword or "").strip().lower()
+        if not kw:
+            return {"ok": True, "paths": []}
+        matches = set()
+        # 1) 各文件原文 (首次搜索时全量缓存, lang 源文件只读不变化)
+        if self._search_cache is None:
+            cache = {}
+            for root, dirs, files in os.walk(self.lang_dir):
+                dirs[:] = [d for d in dirs if not d.startswith("_")]
+                for fn in files:
+                    if not fn.lower().endswith(".json") or _is_changes_file(fn):
+                        continue
+                    rel = _normalize_path(os.path.relpath(os.path.join(root, fn), self.lang_dir))
+                    try:
+                        with open(os.path.join(root, fn), "r", encoding="utf-8") as f:
+                            cache[rel] = f.read().lower()
+                    except Exception:
+                        continue
+            self._search_cache = cache
+        for rel, text in self._search_cache.items():
+            if kw in text:
+                matches.add(rel)
+        # 2) 各图层修改记录中的值 (译文/新增内容可能不在原文中)
+        for patches in (self._layers or {}).values():
+            for relative, patch in patches.items():
+                if relative not in matches and _patch_has_value(patch, kw):
+                    matches.add(relative)
+        return {"ok": True, "paths": sorted(matches)}
+
     def get_raw_json(self):
         if self.modified_data is None:
             return {"ok": False, "msg": "请先打开一个文件"}
@@ -1205,6 +1271,12 @@ class CustomTranslationApi:
             return self.engine.get_tree()
         except Exception as e:
             return {"root": "lang", "nodes": [], "error": str(e)}
+
+    def search_values(self, keyword):
+        try:
+            return self.engine.search_values(keyword)
+        except Exception as e:
+            return {"ok": False, "paths": [], "error": str(e)}
 
     def list_layers(self):
         try:
