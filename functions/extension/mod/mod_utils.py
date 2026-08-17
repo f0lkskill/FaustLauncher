@@ -157,13 +157,8 @@ class ModManager:
                     print(f"成功加载Mod: {mod_name}")
                 else:
                     print(f"跳过Mod {mod_name}: 没有启用")
-                    # 删除所有文件
-                    target_dir = self.get_mod_directory()
-                    for file_name in file_names:
-                        target_file = os.path.join(target_dir, file_name)
-                        if os.path.exists(target_file):
-                            os.remove(target_file)
-                            print(f"卸载 Mod 文件: {target_file}")
+                    # 清理已复制文件/转换缓存/语言文件 (含 Uninstaller.bat)
+                    self.unload_mod(mod_name)
 
             except Exception as e:
                 print(f"处理Mod {mod_name} 失败: {e}")
@@ -333,23 +328,81 @@ class ModManager:
                 # 获取目标目录
                 target_dir = self.get_mod_directory()
 
+                # 1) 先执行卸载脚本 (清理 Installer.bat 复制到游戏目录的缓存)
                 if os.path.exists(
                     os.path.join(mod_path, 'Uninstaller.bat')):
-                    # 执行卸载脚本
                     call([os.path.join(mod_path, 'Uninstaller.bat')], 
                          shell=True, creationflags=CREATE_NO_WINDOW)
                     print(f"{mod_name} Mod 资源缓存成功清理")
-                else:
-                    # print(f"{mod_name} Mod 没有 Uninstaller.bat 脚本\n{os.path.join(target_dir, 'Uninstaller.bat')}")
-                    pass
 
-                # 删除文件
+                # 2) 删除复制到目标目录的文件: 同名 bank 可能已被改名为 X1/X2... 序列副本,
+                #    按 stem 家族 + 源文件 md5 匹配; 优先删同名副本, 否则删编号最大者,
+                #    避免误删其他 mod 的同名副本
                 for file_name in file_names:
-                    target_file = os.path.join(target_dir, file_name)
-                    
-                    if os.path.exists(target_file):
-                        os.remove(target_file)
-                        print(f"删除文件: {target_file}")
+                    source_file = os.path.join(mod_path, file_name)
+                    if not os.path.isfile(source_file):
+                        continue
+                    src_md5 = self._file_md5(source_file)
+                    stem, ext = os.path.splitext(file_name)
+                    base = _strip_suffix_number(stem)
+                    try:
+                        targets = os.listdir(target_dir)
+                    except OSError:
+                        continue
+                    exact = None
+                    best = None
+                    for target_name in targets:
+                        t_stem, t_ext = os.path.splitext(target_name)
+                        if t_ext.lower() != ext.lower():
+                            continue
+                        if _strip_suffix_number(t_stem) != base:
+                            continue
+                        target_file = os.path.join(target_dir, target_name)
+                        try:
+                            if self._file_md5(target_file) != src_md5:
+                                continue
+                        except OSError:
+                            continue
+                        if t_stem == stem:
+                            exact = target_name
+                            break
+                        idx = _suffix_number(t_stem)
+                        if best is None or idx > best[0]:
+                            best = (idx, target_name)
+                    chosen = exact if exact is not None else (best[1] if best else None)
+                    if chosen is None:
+                        continue
+                    chosen_file = os.path.join(target_dir, chosen)
+                    os.remove(chosen_file)
+                    print(f"删除文件: {chosen_file}")
+                    # 该 bank 被加载器转换后留下的差分缓存一并清理 (转换命名 = bank 同名)
+                    if os.path.splitext(chosen)[1].lower() == ".bank":
+                        cache = os.path.join(target_dir, os.path.splitext(chosen)[0] + ".rebank")
+                        if os.path.isfile(cache):
+                            try:
+                                os.remove(cache)
+                                print(f"删除缓存: {cache}")
+                            except OSError as e:
+                                print(f"删除缓存 {cache} 失败: {e}")
+
+                # 3) 清理 extra_files 合并进游戏 LLC_zh-CN 的语言文件 (内容一致才删)
+                lang_dir = os.path.join(mod_path, 'extra_files')
+                if os.path.isdir(lang_dir):
+                    try:
+                        game_path: str = SettingsManager().get_setting('game_path') # type: ignore
+                        target_lang_dir = os.path.join(game_path, 'LimbusCompany_Data', 'lang', 'LLC_zh-CN')
+                        for root, _, files in os.walk(lang_dir):
+                            for fn in files:
+                                src = os.path.join(root, fn)
+                                dst = os.path.join(target_lang_dir, os.path.relpath(src, lang_dir))
+                                try:
+                                    if os.path.isfile(dst) and self._file_md5(dst) == self._file_md5(src):
+                                        os.remove(dst)
+                                        print(f"删除语言文件: {dst}")
+                                except OSError:
+                                    pass
+                    except Exception as e:
+                        print(f"清理语言文件失败: {e}")
 
                 print(f"成功卸载Mod: {mod_name}")
                 return mod_name
