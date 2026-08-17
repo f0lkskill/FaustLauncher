@@ -28,6 +28,12 @@ class DownloadCenterPage:
         self.addon_data = []
         self.mod_data = []
 
+        # 后台图标加载: 页面代号计数 (翻页后过期旧图标的回调) + 下载去重
+        self._addon_page_gen = 0
+        self._mod_page_gen = 0
+        self._icon_pending = {}   # url hash -> [(header_frame, card_bg, gen_key), ...]
+        self._icon_lock = threading.Lock()
+
         # 派生颜色常量（卡片底色/描边）
         self._card_bg = lighten_color(self.bg_color, 5)
         self._card_border = border_color(self._card_bg)
@@ -331,6 +337,9 @@ class DownloadCenterPage:
         self.current_addon_page = page_num
         addon_page_data = self.addon_data[page_num - 1]
 
+        self._addon_page_gen += 1
+        addon_gen = self._addon_page_gen
+
         # 分页导航
         pagination_frame = tk.Frame(self.addon_scrollable_frame, bg=self.bg_color)
         pagination_frame.pack(fill=tk.X, padx=10, pady=(8, 4))
@@ -366,7 +375,7 @@ class DownloadCenterPage:
 
         # 显示插件列表
         for addon in addon_page_data:
-            self.create_addon_card(addon)
+            self.create_addon_card(addon, addon_gen)
 
         if hasattr(self, '_addon_wheel_handler'):
             self._bind_mousewheel_recursive(self.addon_scrollable_frame,
@@ -387,6 +396,9 @@ class DownloadCenterPage:
 
         self.current_mod_page = page_num
         mod_page_data = self.mod_data[page_num - 1]
+
+        self._mod_page_gen += 1
+        mod_gen = self._mod_page_gen
 
         # 分页导航
         pagination_frame = tk.Frame(self.mod_scrollable_frame, bg=self.bg_color)
@@ -423,14 +435,15 @@ class DownloadCenterPage:
 
         # 显示Mod列表
         for mod in mod_page_data:
-            self.create_mod_card(mod)
+            self.create_mod_card(mod, mod_gen)
 
         # ===== 所有卡片创建完毕后，再次递归绑定滚轮事件 =====
         if hasattr(self, '_mod_wheel_handler'):
             self._bind_mousewheel_recursive(self.mod_scrollable_frame,
                                             self._mod_wheel_handler)
 
-    def create_addon_card(self, addon:dict):
+    def create_addon_card(self, addon:dict, gen: int = None):
+        gen_key = ('addon', gen if gen is not None else self._addon_page_gen)
         unable_download = addon.get('disabled', False)
         card_bg = self._card_bg if not unable_download else darken_color(self._card_bg, 0.5)
         text_color = '#ffffff' if not unable_download else '#bdc3c7'
@@ -449,8 +462,8 @@ class DownloadCenterPage:
         header_frame = tk.Frame(addon_frame, bg=card_bg)
         header_frame.pack(fill=tk.X, padx=16, pady=(6, 2))
 
-        # 下载并显示图标
-        icon_path = self.download_icon(addon.get('icon_url', ''),  addon.get('name', 'unknown'))
+        # 下载并显示图标 (未缓存则后台线程加载, 不阻塞主线程)
+        icon_path = self._icon_cache_path(addon.get('icon_url', ''), addon.get('name', 'unknown'))
         if icon_path and os.path.exists(icon_path):
             try:
                 image = Image.open(icon_path)
@@ -461,6 +474,9 @@ class DownloadCenterPage:
                 icon_label.pack(side=tk.LEFT, padx=(0, 12))
             except Exception as e:
                 print(f"加载图标失败: {e}")
+        elif icon_path:
+            self._load_icon_async(addon.get('icon_url', ''), addon.get('name', 'unknown'),
+                                  header_frame, card_bg, gen_key)
 
         # 名称和版本
         title_version_frame = tk.Frame(header_frame, bg=card_bg)
@@ -549,7 +565,8 @@ class DownloadCenterPage:
                                  state='disabled' if is_disabled else 'normal')
         download_button.pack(side=tk.RIGHT, padx=5)
 
-    def create_mod_card(self, mod:dict):
+    def create_mod_card(self, mod:dict, gen: int = None):
+        gen_key = ('mod', gen if gen is not None else self._mod_page_gen)
         unable_download = mod.get('disabled', False)
         card_bg = self._card_bg if not unable_download else darken_color(self._card_bg, 0.5)
         text_color = '#ffffff' if not unable_download else '#bdc3c7'
@@ -568,8 +585,8 @@ class DownloadCenterPage:
         header_frame = tk.Frame(mod_frame, bg=card_bg)
         header_frame.pack(fill=tk.X, padx=16, pady=(6, 2))
 
-        # 下载并显示图标
-        icon_path = self.download_icon(mod.get('icon_url', ''), mod.get('name', 'unknown'))
+        # 下载并显示图标 (未缓存则后台线程加载, 不阻塞主线程)
+        icon_path = self._icon_cache_path(mod.get('icon_url', ''), mod.get('name', 'unknown'))
         if icon_path and os.path.exists(icon_path):
             try:
                 image = Image.open(icon_path)
@@ -580,6 +597,9 @@ class DownloadCenterPage:
                 icon_label.pack(side=tk.LEFT, padx=(0, 12))
             except Exception as e:
                 print(f"加载图标失败: {e}")
+        elif icon_path:
+            self._load_icon_async(mod.get('icon_url', ''), mod.get('name', 'unknown'),
+                                  header_frame, card_bg, gen_key)
 
         # 名称和版本
         title_version_frame = tk.Frame(header_frame, bg=card_bg)
@@ -668,15 +688,69 @@ class DownloadCenterPage:
                                  state='disabled' if is_disabled else 'normal')
         download_button.pack(side=tk.RIGHT, padx=5)
 
+    def _icon_cache_path(self, icon_url:str, item_name:str) -> str:
+        """图标缓存路径; 文件名为 URL 哈希 + 名称, URL 变更后自动失效"""
+        if not icon_url:
+            return ''
+        icon_url_hash = hashlib.md5(icon_url.encode('utf-8')).hexdigest()[:12]
+        icon_filename = f"{item_name.replace(' ', '_')}_{icon_url_hash}_icon.png"
+        return os.path.join(self.icon_cache_dir, icon_filename)
+
+    def _is_current_gen(self, gen_key):
+        """页面代号是否仍是当前页 (翻页后旧回调直接丢弃)"""
+        key, gen = gen_key
+        return gen is not None and getattr(self, f'_{key}_page_gen') == gen
+
+    def _load_icon_async(self, icon_url:str, item_name:str,
+                         header_frame, card_bg, gen_key):
+        """后台线程下载图标, 完成后切回主线程更新卡片; 同 URL 并发下载去重"""
+        key = hashlib.md5(icon_url.encode('utf-8')).hexdigest()
+        with self._icon_lock:
+            pending = self._icon_pending.get(key)
+            if pending is not None:
+                pending.append((header_frame, card_bg, gen_key))
+                return
+            self._icon_pending[key] = [(header_frame, card_bg, gen_key)]
+
+        def _work():
+            try:
+                icon_path = self.download_icon(icon_url, item_name)
+                with self._icon_lock:
+                    targets = self._icon_pending.pop(key, [])
+                if icon_path and os.path.exists(icon_path):
+                    for hf, bg, gk in targets:
+                        self.root.root.after(0, lambda f=hf, p=icon_path, b=bg, k=gk:
+                                             self._show_icon(f, p, b, k))
+            except Exception as e:
+                print(f"图标下载异常: {str(e)}")
+                with self._icon_lock:
+                    self._icon_pending.pop(key, None)
+
+        threading.Thread(target=_work, daemon=True).start()
+
+    def _show_icon(self, header_frame, icon_path:str, card_bg, gen_key):
+        """主线程: 把后台下载好的图标贴到卡片 (页面已切换/卡片已销毁则丢弃)"""
+        try:
+            if not self._is_current_gen(gen_key):
+                return
+            if not header_frame.winfo_exists():
+                return
+            image = Image.open(icon_path)
+            image = image.resize((64, 64), Image.Resampling.LANCZOS)
+            icon = ImageTk.PhotoImage(image)
+            icon_label = tk.Label(header_frame, image=icon, bg=card_bg)
+            icon_label.image = icon  # type: ignore
+            icon_label.pack(side=tk.LEFT, padx=(0, 12))
+        except Exception as e:
+            print(f"加载图标失败: {e}")
+
     def download_icon(self, icon_url:str, item_name:str):
         if not icon_url:
             return None
 
         # 图标缓存: 文件名含 icon_url 的哈希, URL 变更(重新上传/更换图标)后自动失效,
         # 避免旧图标缓存导致界面一直显示过期图标
-        icon_url_hash = hashlib.md5(icon_url.encode('utf-8')).hexdigest()[:12]
-        icon_filename = f"{item_name.replace(' ', '_')}_{icon_url_hash}_icon.png"
-        icon_path = os.path.join(self.icon_cache_dir, icon_filename)
+        icon_path = self._icon_cache_path(icon_url, item_name)
 
         # 如果图标已存在，直接返回
         if os.path.exists(icon_path):
