@@ -265,7 +265,7 @@
     .overlay.show { opacity: 1; visibility: visible; pointer-events: auto; }
     .modal {
         width: 640px; max-width: 92vw; max-height: 88vh; overflow: auto;
-        background: linear-gradient(180deg, #17171a, #0c0c0e);
+        background: #0e1117;
         border: 1px solid rgba(148,163,184,0.28); border-radius: 12px; padding: 16px;
         box-shadow: 0 18px 50px rgba(0,0,0,0.6);
         transform: translateY(14px) scale(0.96);
@@ -277,6 +277,7 @@
     .modal h3 { font-size: 14px; color: #f1f5f9; margin-bottom: 10px; }
     .modal .m-path { font-size: 11.5px; color: #94a3b8; margin-bottom: 8px; word-break: break-all; user-select: text; }
     .modal .f-label { font-size: 12px; font-weight: bold; color: #94a3b8; margin: 8px 0 4px; }
+    .modal input[readonly] { color: #94a3b8; background: rgba(255,255,255,0.03); }
     .modal pre {
         background: rgba(255,255,255,0.05); border: 1px solid rgba(148,163,184,0.22);
         border-radius: 8px; padding: 8px 10px; font-size: 12px; color: #cbd5e1;
@@ -316,7 +317,10 @@
         <aside class="left">
             <div class="panel-title">
                 <span>📁 文件目录</span>
-                <button class="icon-btn" id="tree-refresh">↻ 刷新</button>
+                <div style="display:flex; gap:6px;">
+                    <button class="icon-btn" id="tree-replace" title="全局值替换 (需先进行值搜索)">🔁 替换</button>
+                    <button class="icon-btn" id="tree-refresh">↻ 刷新</button>
+                </div>
             </div>
             <div style="display:flex; gap:6px; align-items:center;">
                 <input type="text" id="tree-search" placeholder="搜索文件 / 目录名...">
@@ -416,6 +420,24 @@
 </div>
 
 <div id="toast"></div>
+
+<!-- 全局值替换对话框 -->
+<div class="overlay" id="replace-overlay">
+    <div class="modal small">
+        <h3>🔁 全局值替换</h3>
+        <div class="f-label">待替换值 (来自值搜索, 不可编辑)</div>
+        <input type="text" id="replace-from" readonly>
+        <div class="f-label">替换为</div>
+        <input type="text" id="replace-to">
+        <div class="m-msg" style="margin-top:12px; font-size:12px; color:#64748b; line-height:1.7;">
+            只处理值搜索命中的文件, 所有字符串值中的匹配内容都会被替换 (不区分大小写)。
+        </div>
+        <div class="m-btns">
+            <button class="btn btn-green" id="replace-ok">✔ 替换</button>
+            <button class="btn" id="replace-cancel">取消</button>
+        </div>
+    </div>
+</div>
 
 <script>
 "use strict";
@@ -1233,6 +1255,34 @@ async function resetAll() {
 
 /* ─────────── 事件绑定 ─────────── */
 $("tree-refresh").addEventListener("click", () => refreshTree(true));
+$("tree-replace").addEventListener("click", () => {
+    if (state.treeFilterMode !== "value" || !state.treeFilter) {
+        showToast("请先切换到「值」搜索并输入关键字", true);
+        return;
+    }
+    $("replace-from").value = $("tree-search").value.trim();
+    $("replace-to").value = "";
+    $("replace-overlay").classList.add("show");
+    setTimeout(() => $("replace-to").focus(), 60);
+});
+$("replace-cancel").addEventListener("click", () => $("replace-overlay").classList.remove("show"));
+$("replace-overlay").addEventListener("click", (e) => {
+    if (e.target === $("replace-overlay")) $("replace-overlay").classList.remove("show");
+});
+$("replace-ok").addEventListener("click", async () => {
+    const to = $("replace-to").value.trim();
+    if (!to) { showToast("请输入替换为的内容", true); return; }
+    const from = $("replace-from").value.trim();
+    $("replace-overlay").classList.remove("show");
+    const r = await api.replace_values(from, to);
+    if (r.ok) {
+        showToast(r.msg);
+        await refreshTree(true);
+        if (state.currentRelative) await openFile({ path: state.currentRelative });
+    } else {
+        showToast(r.msg, true);
+    }
+});
 let treeSearchTimer = null;
 function onTreeSearchInput() {
     clearTimeout(treeSearchTimer);
