@@ -594,7 +594,7 @@ async function refreshTree(keepSelection) {
     try {
         const t = await api.get_tree();
         state.treeNodes = t.nodes || [];
-        // 首次加载: 全部默认折叠, 仅顶层 LLC_zh-CN 目录默认展开 (其子文件夹照常折叠)
+        // 首次加载: 全部默认折叠, 仅顶层汉化目录 (LLC_zh-CN / OurPlayHanHua) 默认展开
         if (state.treeCollapsed === null) {
             const dirs = [];
             (function collect(ns) {
@@ -602,7 +602,7 @@ async function refreshTree(keepSelection) {
                     if (n.type === "dir") { dirs.push(n.path); collect(n.children || []); }
                 }
             })(state.treeNodes);
-            state.treeCollapsed = new Set(dirs.filter(d => !(/^llc_zh/i.test(d) && d.indexOf("/") === -1)));
+            state.treeCollapsed = new Set(dirs.filter(d => !(/^(llc_zh|ourplayhanhua)/i.test(d) && d.indexOf("/") === -1)));
         }
         if (keepSelection) state.treeFilter = $("tree-search").value.trim().toLowerCase();
         if (state.treeFilterMode === "value" && state.treeFilter) {

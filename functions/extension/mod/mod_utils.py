@@ -6,6 +6,7 @@ import shutil
 from typing import List, Dict, Any
 from functions.base.settings_manager import SettingsManager
 from functions.base.common.path_utils import get_mod_root_dir
+from functions.web_update.translation_source import get_translation_dir_name as _translation_dir_name
 from subprocess import call, CREATE_NO_WINDOW
 
 
@@ -385,12 +386,13 @@ class ModManager:
                             except OSError as e:
                                 print(f"删除缓存 {cache} 失败: {e}")
 
-                # 3) 清理 extra_files 合并进游戏 LLC_zh-CN 的语言文件 (内容一致才删)
+                # 3) 清理 extra_files 合并进游戏汉化目录的语言文件 (内容一致才删)
                 lang_dir = os.path.join(mod_path, 'extra_files')
                 if os.path.isdir(lang_dir):
                     try:
                         game_path: str = SettingsManager().get_setting('game_path') # type: ignore
-                        target_lang_dir = os.path.join(game_path, 'LimbusCompany_Data', 'lang', 'LLC_zh-CN')
+                        target_lang_dir = os.path.join(game_path, 'LimbusCompany_Data', 'lang',
+                                                       _translation_dir_name())
                         for root, _, files in os.walk(lang_dir):
                             for fn in files:
                                 src = os.path.join(root, fn)

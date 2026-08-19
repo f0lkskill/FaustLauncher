@@ -463,7 +463,8 @@ def process_all_json_files(game_path: str, gradient_rate: float = 2.0) -> bool:
         gradient_rate: 渐变度，越大渐变越快（默认2.0）
     """
     # 目标目录
-    target_dir = os.path.join(game_path, 'LimbusCompany_Data', 'Lang', 'LLC_zh-CN')
+    from functions.web_update.translation_source import get_game_lang_dir
+    target_dir = get_game_lang_dir(game_path)
     
     if not os.path.exists(target_dir):
         print(f"目标目录不存在: {target_dir}")

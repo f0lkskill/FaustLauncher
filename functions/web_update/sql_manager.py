@@ -240,8 +240,9 @@ def download_bubble_files_to_game(host, port, user, password, database, game_pat
         print(f"游戏路径不存在: {game_path}")
         return False
     
-    # 目标目录：游戏目录下的LimbusCompany_Data/Lang/LLC_zh-CN
-    target_dir = os.path.join(game_path, 'LimbusCompany_Data', 'Lang', 'LLC_zh-CN')
+    # 目标目录：游戏目录下的 LimbusCompany_Data/Lang/<当前汉化目录名>
+    from functions.web_update.translation_source import get_game_lang_dir
+    target_dir = get_game_lang_dir(game_path)
     
     try:
         # 确保目标目录存在
