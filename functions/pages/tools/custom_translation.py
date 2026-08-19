@@ -7,18 +7,25 @@ from functions.base.window_utils import center_window
 from functions.base.color_scheme import C, darken_color, lighten_color
 
 
-DEFAULT_NAV_ITEMS = [
-    {"name": "剧情对话", "path": "LLC_zh-CN/StoryData"},
-    {"name": "战斗提示", "path": "LLC_zh-CN/BattleHint.json"},
-    {"name": "战斗关键词", "path": "LLC_zh-CN/BattleKeywords.json"},
-    {"name": "单位关键词", "path": "LLC_zh-CN/UnitKeyword.json"},
-    {"name": "剧本事件", "path": "LLC_zh-CN/AbEvents.json"},
-    {"name": "人格对话", "path": "LLC_zh-CN/BattleAnnouncerDlg"},
-    {"name": "阿勃拉对话", "path": "LLC_zh-CN/AbDlg_Faust.json"},
-    {"name": "故事剧场主", "path": "LLC_zh-CN/StoryTheaterMain.json"},
-    {"name": "UI文本", "path": "LLC_zh-CN/StoryUIText.json"},
-    {"name": "镜牢地牢", "path": "LLC_zh-CN/TutorialMirrorDungeon.json"},
-]
+def _make_default_nav_items():
+    """默认导航项 (汉化目录名跟随当前平台)"""
+    from functions.web_update.translation_source import get_translation_dir_name
+    d = get_translation_dir_name()
+    return [
+        {"name": "剧情对话", "path": f"{d}/StoryData"},
+        {"name": "战斗提示", "path": f"{d}/BattleHint.json"},
+        {"name": "战斗关键词", "path": f"{d}/BattleKeywords.json"},
+        {"name": "单位关键词", "path": f"{d}/UnitKeyword.json"},
+        {"name": "剧本事件", "path": f"{d}/AbEvents.json"},
+        {"name": "人格对话", "path": f"{d}/BattleAnnouncerDlg"},
+        {"name": "阿勃拉对话", "path": f"{d}/AbDlg_Faust.json"},
+        {"name": "故事剧场主", "path": f"{d}/StoryTheaterMain.json"},
+        {"name": "UI文本", "path": f"{d}/StoryUIText.json"},
+        {"name": "镜牢地牢", "path": f"{d}/TutorialMirrorDungeon.json"},
+    ]
+
+
+DEFAULT_NAV_ITEMS = _make_default_nav_items()
 
 NAV_CONFIG_FILE = "lang/nav_config.json"
 
@@ -705,11 +712,12 @@ class CustomTranslationTool:
             _refresh()
 
         def add_new():
+            from functions.web_update.translation_source import get_translation_dir_name
             name = simpledialog.askstring("新增导航", "名称:", parent=dialog)
             if not name:
                 return
             path = simpledialog.askstring("新增导航",
-                                          "相对路径 (如 LLC_zh-CN/UnitKeyword.json):",
+                                          f"相对路径 (如 {get_translation_dir_name()}/UnitKeyword.json):",
                                           parent=dialog)
             if not path:
                 return

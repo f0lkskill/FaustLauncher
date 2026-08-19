@@ -305,9 +305,10 @@ class BuildGUI:
             # 2) addons/mods 必须为空目录 (插件/模组由用户自行添加, 不随构建分发)
             for d in ('addons', 'mods'):
                 os.makedirs(f'build_{vi}/{d}', exist_ok=True)
-            # 3) lang: 只创建空 LLC_zh-CN 目录 (翻译数据由云端下载,
+            # 3) lang: 只创建空汉化目录 (默认零协会 LLC_zh-CN; 翻译数据由云端下载,
             #    changes.json/nav_config.json 等由工具在运行时生成, 均不随构建分发)
-            os.makedirs(f'build_{vi}/lang/LLC_zh-CN', exist_ok=True)
+            from functions.web_update.translation_source import get_translation_dir
+            os.makedirs(f'build_{vi}/{get_translation_dir()}', exist_ok=True)
             # 4) updater.vbs: 版本更新器必备 (由 wscript 运行, 把新版本文件覆盖到安装目录),
             #    仅存于 build_temp 目录, 缺失则构建失败
             if not os.path.isfile('build_temp/updater.vbs'):

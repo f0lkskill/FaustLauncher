@@ -5,6 +5,25 @@ from functions.base.common.json_io import read_json, write_json
 def handle_base_info(name:str) -> str:
     # 为原始的技能信息添加更好的样式
     
+    # 保护 C# 占位符 {0} / {1:xx}: 数字高亮与关键词替换不得破坏
+    # 占位符结构, 否则游戏 string.Format 会抛 FormatException
+    # (已发生过: {0} 被高亮成 {<color=#ffffff>0</color>} 导致战斗卡死)
+    import re as _re
+    placeholder_pattern = _re.compile(r'\{(\d+)(?::[^}]*)?\}')
+    placeholders = []
+    def _idx_to_chars(i: int) -> str:
+        # 编号转纯字母 (a, b, ..., z, aa, ...), 避免被数字高亮二次匹配
+        s = ""
+        i += 1
+        while i:
+            i, r = divmod(i - 1, 26)
+            s = chr(ord('a') + r) + s
+        return s
+    def _protect(m):
+        placeholders.append(m.group(0))
+        return f"\x00PLH_{_idx_to_chars(len(placeholders)-1)}_\x00"
+    name = placeholder_pattern.sub(_protect, name)
+
     # 逻辑性文本替换, 比如大于, 不少于等等.
     replace_dict = {
         "≥": ["不低于"],
@@ -107,7 +126,7 @@ def handle_base_info(name:str) -> str:
 
     special_keywords = {
         f"<u><color={deep_brown}>$</color></u>": 
-        ["自身","目标","行动槽","重复使用","基础威力","最终威力","硬币威力","拼点威力","混乱阈值","陷入混乱","混乱","回合结束","首个波次","首个回合","回合","波次","结束","首个","恐慌类型"],
+        ["自身","目标","行动槽","重复使用","基础威力","最终威力","拼点威力","混乱阈值","陷入混乱","混乱","回合结束","首个波次","首个回合","回合","波次","结束","首个","恐慌类型"],
         # f"<u>$</u>":
         # ["层数","强度","层","级"],
         f"<u><color={backup_color}>$</color></u>":
@@ -122,16 +141,20 @@ def handle_base_info(name:str) -> str:
         ["无法使用", "无法解除", "无法进入", "无法生效", "无法", "解除"],
         f"<u><color={use_color}>$</color></u>":
         ["正面命中", "反面命中", "命中", "正面", "反面"],
-        f"<u><color={damage_color}>$</color></u>":
-        ["伤害"],
+        # f"<u><color={damage_color}>$</color></u>":
+        # ["伤害"],
         f"<u><color={coin_color}>$</color></u>":
-        ["加算硬币","减算硬币","本硬币","硬币", "减算","加算"],
+        ["加算硬币","减算硬币","硬币威力","本硬币","硬币","减算","加算"],
     }
 
     for keyword, keywords in special_keywords.items():
         for k in keywords:
             name = name.replace(k, keyword.replace("$", k))
     
+    # 恢复被保护的 C# 占位符
+    for i, ph in enumerate(placeholders):
+        name = name.replace(f"\x00PLH_{_idx_to_chars(i)}_\x00", ph)
+
     return name
 
 def handle_skill_structure(skill_content:dict) -> dict: # type: ignore

@@ -118,8 +118,9 @@ class PageLoader:
         self.app.tab_frost_canvases.append(tools_frost)
         
         def spawn_function_tr():
+            from functions.web_update.translation_source import get_translation_dir
             source_path = f"{settings_manager.get_setting('game_path')}/LimbusCompany_Data/Assets/Resources_moved/Localize/en"
-            target_path = "lang/LLC_zh-CN"
+            target_path = get_translation_dir()
             return lambda: show_auto_translate_gui(self.app, source_path, target_path)
         
         # 现代化配色方案
@@ -922,10 +923,15 @@ def download_and_launch(obj=None, need_run_game=False):
     downloading = True
     
     try:
-        lang_path = 'lang/LLC_zh-CN'
+        from functions.web_update.translation_source import (
+            get_translation_dir, get_translation_dir_name, is_ourplay_source,
+            check_need_up_translate as need_up,
+        )
+        lang_path = get_translation_dir()
         download_path = 'lang'
+        is_ourplay = is_ourplay_source()
         
-        print("开始下载零协会汉化包...")
+        print(f"开始下载汉化包 (平台: {'OurPlay' if is_ourplay else '零协会'})...")
         sys.path.append('functions')
         
         main_root = obj.root if obj else None
@@ -935,7 +941,7 @@ def download_and_launch(obj=None, need_run_game=False):
         while gui.is_downloading:
             sleep(1)
         
-        print("零协会汉化包下载完成")
+        print("汉化包下载完成")
 
         sleep(1.5)
 
@@ -952,39 +958,52 @@ def download_and_launch(obj=None, need_run_game=False):
         download_bubble(download_path)
         print("气泡文本载入完成")
 
-        need_update = check_need_up_translate()
+        need_update = need_up()
 
         if need_update:
             print("检测到新的汉化版本，准备更新汉化文件...")
-            if os.path.exists(download_path + '/LimbusCompany_Data/Lang/LLC_zh-CN'):
-                if os.path.isdir(lang_path):
-                    try:
-                        shutil.rmtree(lang_path, ignore_errors=True)
-                    except Exception as e:
-                        print(f"删除目录 {lang_path} 时出错: {e}")
-                        traceback.print_exc()
-                elif os.path.exists(lang_path):
-                    os.remove(lang_path)
-                try:
-                    from functions.base.game_launcher import safe_merge_dirs
-                    safe_merge_dirs(
-                        os.path.join(download_path, 'LimbusCompany_Data', 'Lang', 'LLC_zh-CN'),
-                        lang_path
-                    )
-                except Exception as e:
-                    print(f"复制汉化文件时出错: {e}")
-                    traceback.print_exc()
+            if is_ourplay:
+                # OurPlay 平台: 下载流程已直接安装到 lang/<平台目录名>, 无需再合并
+                print(f"OurPlay 汉化包已安装到 {lang_path}")
             else:
-                print("错误: 未找到 lang 下的 LLC_zh-CN 文件夹")
+                src_lang = os.path.join(download_path, 'LimbusCompany_Data', 'Lang', get_translation_dir_name())
+                if os.path.exists(src_lang):
+                    if os.path.isdir(lang_path):
+                        try:
+                            shutil.rmtree(lang_path, ignore_errors=True)
+                        except Exception as e:
+                            print(f"删除目录 {lang_path} 时出错: {e}")
+                            traceback.print_exc()
+                    elif os.path.exists(lang_path):
+                        os.remove(lang_path)
+                    try:
+                        from functions.base.game_launcher import safe_merge_dirs
+                        safe_merge_dirs(
+                            src_lang,
+                            lang_path
+                        )
+                    except Exception as e:
+                        print(f"复制汉化文件时出错: {e}")
+                        traceback.print_exc()
+                else:
+                    print(f"错误: 未找到 lang 下的 {get_translation_dir_name()} 文件夹")
         else:
             print("当前汉化已是最新版本，无需更新")
 
-        if not os.path.exists('assets/Font/Context/ChineseFont.ttf'):
+        if not is_ourplay and not os.path.exists('assets/Font/Context/ChineseFont.ttf'):
             shutil.copytree('lang/Font', 'assets/Font', dirs_exist_ok=True)
             shutil.rmtree('lang/Font', ignore_errors=True)
 
+        # 零协 7z 解压到 lang/ 时会产生中间产物 lang/LimbusCompany_Data,
+        # 无论当前平台都必须清理 (平台切换后残留不会被旧逻辑清除)
         if os.path.exists(os.path.join(download_path, 'LimbusCompany_Data')):
-            shutil.rmtree(os.path.join(download_path, 'LimbusCompany_Data'), ignore_errors=True)
+            try:
+                shutil.rmtree(os.path.join(download_path, 'LimbusCompany_Data'), ignore_errors=True)
+            except Exception as e:
+                print(f"清理中间产物 {download_path}/LimbusCompany_Data 时出错: {e}")
+                traceback.print_exc()
+            if os.path.exists(os.path.join(download_path, 'LimbusCompany_Data')):
+                print(f"警告: {download_path}/LimbusCompany_Data 清理不完整, 建议关闭游戏后手动删除")
 
         print("汉化下载及处理全部完成！")
 

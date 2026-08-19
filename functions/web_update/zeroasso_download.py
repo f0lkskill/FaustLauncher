@@ -1,4 +1,5 @@
 import os
+import json
 import time
 import requests
 import subprocess
@@ -160,18 +161,19 @@ def create_config_file(game_path):
     try:
         config_path = os.path.join(game_path, 'LimbusCompany_Data', 'Lang', 'config.json')
         config_dir = os.path.dirname(config_path)
-        
+
         # 确保目录存在
         os.makedirs(config_dir, exist_ok=True)
-        
-        # 创建配置文件
-        config_content = """{
-    "lang": "LLC_zh-CN",
+
+        # 创建配置文件 (lang 目录名跟随当前汉化包平台方)
+        from functions.web_update.translation_source import get_translation_dir_name
+        config_content = f"""{{
+    "lang": "{get_translation_dir_name()}",
     "titleFont": "",
     "contextFont": "",
     "samplingPointSize": 78,
     "padding": 5
-}"""
+}}"""
         
         with open(config_path, 'w', encoding='utf-8') as f:
             f.write(config_content)
@@ -356,8 +358,84 @@ def get_download_path_ByLanzouyun() -> tuple[str, str] | None:
     return _fetch_download_path(address, "",
                                 lambda n: n['lanzou_download_url']['seven'])
 
+def _find_refer_root() -> str:
+    """为神人版查找基板包 (参考包): 优先游戏目录已有汉化, 其次 lang/ 下已有汉化"""
+    from functions.web_update.translation_source import (
+        get_translation_dir_name, get_translation_dir,
+    )
+    from functions.base.settings_manager import get_settings_manager as _gsm
+
+    game_path = _gsm().get_setting('game_path')
+    if game_path:
+        candidate = os.path.join(game_path, 'LimbusCompany_Data', 'Lang', get_translation_dir_name())
+        if os.path.isdir(candidate):
+            return candidate
+    candidate = os.path.abspath(get_translation_dir())
+    if os.path.isdir(candidate):
+        return candidate
+    return ""
+
+
+def _install_ourplay(gui, temp_file, game_path, version, is_god):
+    """下载并安装 OurPlay 汉化包 (结构处理 + 落到 lang/<平台目录名>), 成功返回 True"""
+    import json
+    from functions.web_update.ourplay_download import prepare_ourplay_dir
+    from functions.web_update.translation_source import get_translation_dir
+    from functions.base.game_launcher import safe_merge_dirs
+    import shutil as _shutil
+
+    gui.current_file_var.set("正在处理汉化包结构...")
+    ourplay_root = ""
+    temp_extract = ""
+    try:
+        # OurPlay 两版本 (普通/神人) 均为 transfile 结构, 都需要参考包转换
+        ourplay_root, temp_extract = prepare_ourplay_dir(
+            temp_file, refer_root=_find_refer_root())
+    except Exception as e:
+        gui.current_file_var.set(f"❌ 汉化包处理失败: {e}")
+        return False
+
+    try:
+        target = get_translation_dir()
+        if os.path.exists(target):
+            _shutil.rmtree(target, ignore_errors=True)
+        os.makedirs(target, exist_ok=True)
+        safe_merge_dirs(ourplay_root, target)
+        # 防御: 清理 Font 目录下的字体文件 (OurPlay 包不带字体, 不应混入其他汉化组字体)
+        removed_fonts = 0
+        for font_dir in ("Font", "Font/Context", "Font/Title"):
+            font_path = os.path.join(target, font_dir)
+            if os.path.isdir(font_path):
+                for fname in os.listdir(font_path):
+                    if fname.lower().endswith((".ttf", ".otf", ".ttc")):
+                        try:
+                            os.remove(os.path.join(font_path, fname))
+                            removed_fonts += 1
+                        except OSError:
+                            pass
+        if removed_fonts:
+            print(f"[OurPlay] 已移除汉化包中混入的字体文件: {removed_fonts} 个")
+        try:
+            info_dir = os.path.join(target, 'info')
+            os.makedirs(info_dir, exist_ok=True)
+            with open(os.path.join(info_dir, 'version.json'), 'w', encoding='utf-8') as f:
+                json.dump({"version": str(version)}, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            print(f"写入版本信息失败: {e}")
+            gui.current_file_var.set("❌ 汉化包已安装但版本信息写入失败, 下次将重新下载")
+            return False
+        return True
+    finally:
+        if temp_extract:
+            _shutil.rmtree(temp_extract, ignore_errors=True)
+
+
 def download_and_extract_gui(gui:DownloadGUI, config_path: str = "", download_files = None, auto_close:bool = True) -> bool:
-    """带GUI的下载和解压主函数"""
+    """带GUI的下载和解压主函数 (按汉化包平台方分支)"""
+    from functions.web_update.translation_source import (
+        get_translate_source, is_ourplay_source, is_god_source,
+        check_need_up_translate as need_up,
+    )
     # 加载配置
     game_path = config_path
     
@@ -370,6 +448,10 @@ def download_and_extract_gui(gui:DownloadGUI, config_path: str = "", download_fi
         gui.current_file_var.set(f"❌ 错误: 路径不存在: {game_path}")
         return False
 
+    source = get_translate_source()
+    is_ourplay = is_ourplay_source()
+    is_god = is_god_source()
+
     # 获取下载链接
     gui.current_file_var.set("正在链接浮务器...")
     download_url = ""
@@ -377,10 +459,17 @@ def download_and_extract_gui(gui:DownloadGUI, config_path: str = "", download_fi
     need_update_translate = True
     is_custom = False
 
-    
     # 定义要下载的文件列表
     if download_files:
         is_custom = True
+    elif is_ourplay:
+        download_files = [
+            {
+                'name': 'OurPlay 汉化包',
+                'url': '',  # URL将在后续代码中动态设置
+                'temp_filename': 'ourplay_translation.zip'
+            }
+        ]
     else:
         download_files = [
             {
@@ -406,91 +495,132 @@ def download_and_extract_gui(gui:DownloadGUI, config_path: str = "", download_fi
         if not gui.is_downloading:
             break
 
-        # 检查字体文件是否已存在
-        if os.path.exists("assets/Font/Context/ChineseFont.ttf") and \
+        # 检查字体文件是否已存在 (OurPlay 包自带字体, 无需额外下载)
+        if not is_ourplay and os.path.exists("assets/Font/Context/ChineseFont.ttf") and \
            file_info['name'] == 'TTF 字体文件':
             print("字体文件已存在, 无需下载.")
             success_count += 1
             continue
 
-        if file_info['name'] == '零协会汉化包':
-
-            if download_way == 2:
-                print("使用 GitHub Release 方式下载汉化文件...")
-
-                while not download_url:
-                    if timeout_counter >= 10:
-                        gui.current_file_var.set("❌ 获取GitHub Release信息失败，已达最大重试次数")
+        if is_ourplay:
+            # ── OurPlay 平台 ──────────────────────────────
+            if file_info['name'] == 'OurPlay 汉化包':
+                try:
+                    from functions.web_update.ourplay_download import get_ourplay_download_info
+                    gui.current_file_var.set("正在获取 OurPlay 汉化包下载信息...")
+                    info = get_ourplay_download_info(official=not is_god)
+                    if not info:
+                        gui.current_file_var.set("❌ 获取 OurPlay 下载信息失败")
                         return False
-                    
-                    download_url, name = get_github_release_url() # type: ignore
-
-                    if not download_url:
-                        timeout_counter += 1
-                        gui.current_file_var.set(f"❌ 获取GitHub Release信息失败，准备重试...\n(剩余次数 {10 - timeout_counter})")
-                        time.sleep(1)
-                    else:
-                        print (f"获取到下载链接: {download_url}\n 零协汉化版本号: {name}")
-                        file_info['url'] = download_url
-                        if not check_need_up_translate(name):
-                            print("当前已是最新汉化版本，无需更新。")
-                            need_update_translate = False
-                        else:
-                            print("检测到新版本，准备更新...")
-
-            else:
-                if download_way == 2:
-                    print("使用 upfile 转存源下载")
-                    result = get_download_path_ByNote()  
-                elif download_way == 1:
-                    print('使用 gh-proxy 代理加速下载')
-                    result = get_download_path_ByGhProxy()
-                elif download_way == 0:
-                    print('使用 lanzouyun 转存源下载')
-                    result = get_download_path_ByLanzouyun()
-
-                if result: # type: ignore
-                    download_url, version = result
-                    print (f"获取到下载链接: {download_url}\n 零协汉化版本号: {version}")
+                    download_url, md5, size, version = info
                     file_info['url'] = download_url
-                else:
-                    gui.current_file_var.set("❌ 获取下载地址失败")
+                    print(f"获取到 OurPlay 下载链接, 版本号: {version}")
+                    if not need_up(version):
+                        print("当前已是最新汉化版本，无需更新。")
+                        need_update_translate = False
+                    else:
+                        print("检测到新版本，准备更新...")
+                except Exception as e:
+                    print(f"获取 OurPlay 下载信息失败: {e}")
+                    gui.current_file_var.set(f"❌ 获取 OurPlay 下载信息失败: {e}")
                     return False
 
-                if not check_need_up_translate(version):
-                    print("当前已是最新汉化版本，无需更新。")
-                    need_update_translate = False
+            if not need_update_translate:
+                success_count += 1
+                continue
+
+            temp_file = os.path.join(temp_dir, file_info['temp_filename'])
+            try:
+                if not download_file_with_gui(file_info['url'], temp_file, gui, file_info['name']):
+                    continue
+                if not verify_download(temp_file):
+                    continue
+                if _install_ourplay(gui, temp_file, game_path, version, is_god):
+                    success_count += 1
+            except Exception as e:
+                print(e)
+            finally:
+                cleanup_temp_files(temp_file)
+        else:
+            # ── 零协会平台 (原有逻辑) ─────────────────────
+            if file_info['name'] == '零协会汉化包':
+
+                if download_way == 2:
+                    print("使用 GitHub Release 方式下载汉化文件...")
+
+                    while not download_url:
+                        if timeout_counter >= 10:
+                            gui.current_file_var.set("❌ 获取GitHub Release信息失败，已达最大重试次数")
+                            return False
+                        
+                        download_url, name = get_github_release_url() # type: ignore
+
+                        if not download_url:
+                            timeout_counter += 1
+                            gui.current_file_var.set(f"❌ 获取GitHub Release信息失败，准备重试...\n(剩余次数 {10 - timeout_counter})")
+                            time.sleep(1)
+                        else:
+                            print (f"获取到下载链接: {download_url}\n 零协汉化版本号: {name}")
+                            file_info['url'] = download_url
+                            if not check_need_up_translate(name):
+                                print("当前已是最新汉化版本，无需更新。")
+                                need_update_translate = False
+                            else:
+                                print("检测到新版本，准备更新...")
+
                 else:
-                    print("检测到新版本，准备更新...")
+                    if download_way == 2:
+                        print("使用 upfile 转存源下载")
+                        result = get_download_path_ByNote()  
+                    elif download_way == 1:
+                        print('使用 gh-proxy 代理加速下载')
+                        result = get_download_path_ByGhProxy()
+                    elif download_way == 0:
+                        print('使用 lanzouyun 转存源下载')
+                        result = get_download_path_ByLanzouyun()
 
-        if not need_update_translate and \
-            file_info['name'] == '零协会汉化包':
-            success_count += 1
-            continue
+                    if result: # type: ignore
+                        download_url, version = result
+                        print (f"获取到下载链接: {download_url}\n 零协汉化版本号: {version}")
+                        file_info['url'] = download_url
+                    else:
+                        gui.current_file_var.set("❌ 获取下载地址失败")
+                        return False
 
-        temp_file = os.path.join(temp_dir, file_info['temp_filename'])
-        
-        try:
-            # 下载文件
-            if not download_file_with_gui(file_info['url'], temp_file, gui, file_info['name']):
+                    if not check_need_up_translate(version):
+                        print("当前已是最新汉化版本，无需更新。")
+                        need_update_translate = False
+                    else:
+                        print("检测到新版本，准备更新...")
+
+            if not need_update_translate and \
+                file_info['name'] == '零协会汉化包':
+                success_count += 1
                 continue
+
+            temp_file = os.path.join(temp_dir, file_info['temp_filename'])
             
-            # 验证下载的文件
-            if not verify_download(temp_file):
-                continue
-            
-            # 解压文件
-            if not extract_7z_file(temp_file, game_path):
-                continue
-            
-            success_count += 1
-            
-            
-        except Exception as e:
-            print(e)
-        finally:
-            cleanup_temp_files(temp_file)
-            # print('cleanup temp files')
+            try:
+                # 下载文件
+                if not download_file_with_gui(file_info['url'], temp_file, gui, file_info['name']):
+                    continue
+                
+                # 验证下载的文件
+                if not verify_download(temp_file):
+                    continue
+                
+                # 解压文件
+                if not extract_7z_file(temp_file, game_path):
+                    continue
+                
+                success_count += 1
+                
+                
+            except Exception as e:
+                print(e)
+            finally:
+                cleanup_temp_files(temp_file)
+                # print('cleanup temp files')
     
     if auto_close:
         gui.is_downloading = False

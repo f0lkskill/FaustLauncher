@@ -3,6 +3,7 @@ import sys
 from subprocess import Popen
 from threading import Thread
 from functions.base.settings_manager import get_settings_manager
+from functions.web_update.translation_source import get_translation_dir
 from functions.base.sound_utils import play_sound
 from functions.base.color_scheme import lighten_color as _lighten_color, darken_color as _darken_color
 from rich import print
@@ -263,7 +264,7 @@ class FaustLauncherCore:
             mems['version_notify_flag'] = True
             self.settings_manager.set_setting('mems', mems)
         
-        if len(sys.argv) > 1 or not os.path.exists("lang/LLC_zh-CN"):
+        if len(sys.argv) > 1 or not os.path.exists(get_translation_dir()):
             from functions.pages.app.page_loader import download_and_launch
             Thread(target=download_and_launch).start()
         

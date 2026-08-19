@@ -10,12 +10,13 @@ def download_bubble_files(config_path: str = "") -> bool:
         print("未配置游戏路径，请在config/settings.json中设置game_path")
         return False
     
-    import shutil, glob
+    import shutil, glob, os
+    from functions.web_update.translation_source import get_translation_dir_name
     bubble_mod_files = glob.glob(f"resources/bubble_speech/*.json")
     try:
         for f in bubble_mod_files:
             print(f"处理气泡mod文件: {f}")
-            shutil.copy(f, game_path + '/LLC_zh-CN/')
+            shutil.copy(f, os.path.join(game_path, get_translation_dir_name()) + '/')
     except:pass
     return True
 

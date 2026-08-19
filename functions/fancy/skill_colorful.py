@@ -26,7 +26,8 @@ def get_personality_skill_files(path = "",head_str = "") -> list:
 
 def skill_color_process(gameLang: str):
     import os
-    package_files = get_personality_skill_files(gameLang, "LLC_zh-CN/Skills_")
+    from functions.web_update.translation_source import get_translation_dir_name
+    package_files = get_personality_skill_files(gameLang, get_translation_dir_name() + "/Skills_")
     config_files = get_personality_skill_files("resources/siner_skill_info/")
 
     try:

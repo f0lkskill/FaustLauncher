@@ -9,8 +9,9 @@ settings_manager = get_settings_manager()
 def process_ego_json_files():
     """处理所有EGO技能JSON文件，对name和abName字段应用颜色渐变效果"""
     global settings_manager
+    from functions.web_update.translation_source import get_translation_dir_name
 
-    base_path = f"{settings_manager.get_setting('game_path')}/LimbusCompany_Data/Lang/LLC_zh-CN/"
+    base_path = f"{settings_manager.get_setting('game_path')}/LimbusCompany_Data/Lang/{get_translation_dir_name()}/"
     
     # 定义JSON文件路径模式
     json_pattern = f"{base_path}Skills_Ego_Personality-*.json"

@@ -1,34 +1,13 @@
-from json import load
-import os
+from functions.web_update.translation_source import (
+    check_need_up_translate,
+    get_local_version,
+    get_translation_dir,
+    get_translation_dir_name,
+)
 
-def check_need_up_translate(version_info:str = "") -> bool:
-    try:
-        if not os.path.exists('lang/LLC_zh-CN/info/version.json'):
-            return True
-
-        if version_info != "":
-            version_timestamp = version_info
-        else:
-            version_timestamp = str(load(
-                open('lang/LimbusCompany_Data/Lang/LLC_zh-CN/info/version.json', 
-                    'r', encoding='utf-8')
-            )['version'])
-
-        now_timestamp = str(load(
-            open('lang/LLC_zh-CN/info/version.json', 
-                'r', encoding='utf-8')
-        )['version'])
-
-        version_info.strip()
-        now_timestamp.strip()
-
-        if version_timestamp != now_timestamp:
-            return True
-        
-        return False
-    
-    except (OSError, ValueError, KeyError):
-        return False
-
-if __name__ == '__main__':
-    print(check_need_up_translate("20250115"))
+__all__ = [
+    "check_need_up_translate",
+    "get_local_version",
+    "get_translation_dir",
+    "get_translation_dir_name",
+]

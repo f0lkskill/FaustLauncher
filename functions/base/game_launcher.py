@@ -104,7 +104,8 @@ class GameLauncher:
         self._settings = get_settings_manager()
         self._addon_manager = addon_manager
         self._game_path: str = self._settings.get_setting('game_path') or ''
-        self._lang_dir = 'lang/LLC_zh-CN'
+        from functions.web_update.translation_source import get_translation_dir
+        self._lang_dir = get_translation_dir()
 
     # ── 流水线入口 ──────────────────────────────────────────────
 
@@ -141,8 +142,9 @@ class GameLauncher:
     # ── 步骤实现 ────────────────────────────────────────────────
 
     def _prepare_translation(self):
-        """复制 lang/LLC_zh-CN 到游戏目录。"""
-        target = os.path.join(self._game_path, 'LimbusCompany_Data', 'Lang', 'LLC_zh-CN')
+        """复制当前平台的汉化目录到游戏目录。"""
+        from functions.web_update.translation_source import get_game_lang_dir
+        target = get_game_lang_dir(self._game_path)
         print(f"[调试] _prepare_translation: 游戏路径={self._game_path!r}")
         print(f"[调试] _prepare_translation: 源={os.path.abspath(self._lang_dir)!r} 存在={os.path.exists(self._lang_dir)} 是目录={os.path.isdir(self._lang_dir)}")
         print(f"[调试] _prepare_translation: 目标={target!r} 存在={os.path.exists(target)} 是目录={os.path.isdir(target)}")
@@ -197,17 +199,17 @@ class GameLauncher:
         lang_data_dir = os.path.join(self._game_path, 'LimbusCompany_Data', 'Lang')
 
         for dir_path in dirs:
-            # 读取图层可见性状态 (不存在 = 全部可见)
-            hidden_layers = set()
+            # 读取记录文件禁用状态 (不存在 = 全部参与合并)
+            disabled_layers = set()
             layer_state_file = os.path.join(dir_path, 'changes_layers.json')
             if os.path.exists(layer_state_file):
                 try:
                     with open(layer_state_file, 'r', encoding='utf-8') as f:
                         st = json.load(f)
                     for marker, v in (st.items() if isinstance(st, dict) else []):
-                        visible = v.get('visible', True) if isinstance(v, dict) else bool(v)
-                        if not visible:
-                            hidden_layers.add(marker)
+                        disabled = v.get('disabled', False) if isinstance(v, dict) else False
+                        if disabled:
+                            disabled_layers.add(marker)
                 except Exception as e:
                     print(f"  警告: 解析 {layer_state_file} 失败: {e}")
 
@@ -218,8 +220,8 @@ class GameLauncher:
             for changes_file in changes_files:
                 m = CHANGES_PATTERN.match(changes_file)
                 marker = m.group(1)[1:] if m and m.group(1) else ""
-                if marker in hidden_layers:
-                    print(f"  跳过隐藏图层: {changes_file}")
+                if marker in disabled_layers:
+                    print(f"  跳过禁用记录文件: {changes_file}")
                     continue
 
                 file_path = os.path.join(dir_path, changes_file)
@@ -250,7 +252,8 @@ class GameLauncher:
 
     def _apply_cosmetic_features(self):
         """应用气泡渐变、EGO 样式、技能描述、提示替换、技能渐变色。"""
-        lang_path = os.path.join(self._game_path, 'LimbusCompany_Data', 'Lang', 'LLC_zh-CN')
+        from functions.web_update.translation_source import get_game_lang_dir
+        lang_path = get_game_lang_dir(self._game_path)
         lang_root = os.path.join(self._game_path, 'LimbusCompany_Data', 'Lang')
 
         if self._settings.get_setting('enable_text_gradient'):
@@ -283,7 +286,8 @@ class GameLauncher:
 
     def _copy_fonts(self):
         """复制字体文件到游戏汉化目录。"""
-        target = os.path.join(self._game_path, 'LimbusCompany_Data', 'Lang', 'LLC_zh-CN', 'Font')
+        from functions.web_update.translation_source import get_game_lang_dir
+        target = os.path.join(get_game_lang_dir(self._game_path), 'Font')
         os.makedirs(target, exist_ok=True)
         shutil.copytree('assets/Font', target, dirs_exist_ok=True)
 
@@ -294,8 +298,9 @@ class GameLauncher:
 
     def _set_user_name(self):
         """将用户显示名称写入游戏的 UserInfo_Friends.json。"""
+        from functions.web_update.translation_source import get_game_lang_dir
         user_name = self._settings.get_setting('user_name')
-        file_path = os.path.join(self._game_path, 'LimbusCompany_Data', 'Lang', 'LLC_zh-CN', 'UserInfo_Friends.json')
+        file_path = os.path.join(get_game_lang_dir(self._game_path), 'UserInfo_Friends.json')
         with open(file_path, 'r', encoding='utf-8') as f:
             data = json.load(f)
         for item in data.get('dataList', []):
