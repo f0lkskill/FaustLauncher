@@ -419,7 +419,9 @@ def _install_ourplay(gui, temp_file, game_path, version, is_god):
             info_dir = os.path.join(target, 'info')
             os.makedirs(info_dir, exist_ok=True)
             with open(os.path.join(info_dir, 'version.json'), 'w', encoding='utf-8') as f:
-                json.dump({"version": str(version)}, f, ensure_ascii=False, indent=2)
+                json.dump({"version": str(version),
+                           "platform": "ourplay_god" if is_god else "ourplay_normal"},
+                          f, ensure_ascii=False, indent=2)
         except Exception as e:
             print(f"写入版本信息失败: {e}")
             gui.current_file_var.set("❌ 汉化包已安装但版本信息写入失败, 下次将重新下载")
@@ -525,7 +527,7 @@ def download_and_extract_gui(gui:DownloadGUI, config_path: str = "", download_fi
                     gui.current_file_var.set(f"❌ 获取 OurPlay 下载信息失败: {e}")
                     return False
 
-            if not need_update_translate:
+            if not need_update_translate and file_info['name'] == 'OurPlay 汉化包':
                 success_count += 1
                 continue
 
@@ -535,7 +537,13 @@ def download_and_extract_gui(gui:DownloadGUI, config_path: str = "", download_fi
                     continue
                 if not verify_download(temp_file):
                     continue
-                if _install_ourplay(gui, temp_file, game_path, version, is_god):
+                if file_info['name'] == 'OurPlay 汉化包':
+                    if _install_ourplay(gui, temp_file, game_path, version, is_god):
+                        success_count += 1
+                else:
+                    # 自定义资源 (资源更新流 mod_loader/siner_skill_info 等), 直接解压
+                    if not extract_7z_file(temp_file, game_path):
+                        continue
                     success_count += 1
             except Exception as e:
                 print(e)
