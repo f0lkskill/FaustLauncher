@@ -16,6 +16,19 @@ else:
 if _PROJECT_ROOT not in sys.path:
     sys.path.insert(0, _PROJECT_ROOT)
 
+
+def _center_xy(width, height):
+    """计算窗口居中的屏幕坐标 (Windows)"""
+    try:
+        import ctypes
+
+        user32 = ctypes.windll.user32
+        sw = user32.GetSystemMetrics(0)
+        sh = user32.GetSystemMetrics(1)
+        return max(0, (sw - width) // 2), max(0, (sh - height) // 2)
+    except Exception:
+        return None, None
+
 try:
     from functions.base.common.json_io import read_json
 except ImportError:
@@ -342,12 +355,16 @@ def run_prescript_window(debug: bool = False):
         raise SystemExit(1)
 
     try:
+        width, height = 640, 540
+        x, y = _center_xy(width, height)
         webview.create_window(
             "今日指令",
             html_path,
             js_api=NyosPrescriptApi(),
-            width=640,
-            height=540,
+            width=width,
+            height=height,
+            x=x,
+            y=y,
             min_size=(480, 400),
             background_color="#060f22",
         )
