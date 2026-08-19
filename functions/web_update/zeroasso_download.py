@@ -370,10 +370,88 @@ def _find_refer_root() -> str:
         candidate = os.path.join(game_path, 'LimbusCompany_Data', 'Lang', get_translation_dir_name())
         if os.path.isdir(candidate):
             return candidate
+        # 游戏目录兜底: 任意标准结构汉化 (用户手动装的零协常在 LLC_zh-CN)
+        for d in ("LLC_zh-CN", "OurPlayHanHua"):
+            p = os.path.join(game_path, 'LimbusCompany_Data', 'Lang', d)
+            if os.path.isdir(p):
+                return p
     candidate = os.path.abspath(get_translation_dir())
     if os.path.isdir(candidate):
         return candidate
+    # 兜底: 任意标准结构汉化包 (零协包最通用), 与当前平台目录名无关
+    for d in ("LLC_zh-CN", "OurPlayHanHua"):
+        p = os.path.abspath(os.path.join("lang", d))
+        if os.path.isdir(p):
+            return p
     return ""
+
+
+def _ensure_refer_root(gui) -> str:
+    """确保存在参考包 (标准结构汉化包, 用于 transfile 哈希文件重命名)
+
+    无参考包时自动下载零协会汉化包作为参考 (用户无感), 成功返回参考包目录,
+    失败返回空串。
+    """
+    refer = _find_refer_root()
+    if refer:
+        return refer
+
+    gui.current_file_var.set("未找到参考汉化包, 自动下载零协会汉化包作为文件映射参考...")
+    print("[OurPlay] 未找到参考包, 自动下载零协会汉化包作为文件映射参考...")
+    temp_file = ""
+    try:
+        download_url = ""
+        download_way = settings_manager.get_setting('translate_download_way')
+        try:
+            if download_way == 2:
+                download_url, _name = get_github_release_url()
+            elif download_way == 1:
+                result = get_download_path_ByGhProxy()
+                if result:
+                    download_url, _v = result
+            elif download_way == 0:
+                result = get_download_path_ByLanzouyun()
+                if result:
+                    download_url, _v = result
+        except Exception as e:
+            print(f"获取零协会下载地址失败: {e}")
+        if not download_url:
+            gui.current_file_var.set("❌ 自动获取参考包失败: 无法获取零协会下载地址")
+            return ""
+
+        temp_file = os.path.join('lang', 'LimbusLocalize_latest.7z')
+        os.makedirs('lang', exist_ok=True)
+        if not download_file_with_gui(download_url, temp_file, gui, '零协会汉化包(参考)'):
+            return ""
+        if not verify_download(temp_file):
+            return ""
+        if not extract_7z_file(temp_file, 'lang'):
+            return ""
+
+        # 解压产物: lang/LimbusCompany_Data/Lang/LLC_zh-CN -> lang/LLC_zh-CN
+        src = os.path.join('lang', 'LimbusCompany_Data', 'Lang', 'LLC_zh-CN')
+        target = os.path.abspath(os.path.join('lang', 'LLC_zh-CN'))
+        if not os.path.isdir(src):
+            gui.current_file_var.set("❌ 自动获取参考包失败: 解压产物结构异常")
+            return ""
+        from functions.base.game_launcher import safe_merge_dirs
+        if os.path.isdir(target):
+            import shutil as _sh
+            _sh.rmtree(target, ignore_errors=True)
+        safe_merge_dirs(src, target)
+        # 清理解压中间产物
+        leftover = os.path.join('lang', 'LimbusCompany_Data')
+        if os.path.exists(leftover):
+            import shutil as _sh2
+            _sh2.rmtree(leftover, ignore_errors=True)
+        print(f"[OurPlay] 参考包就绪: {target}")
+        return target
+    except Exception as e:
+        print(f"自动获取参考包失败: {e}")
+        return ""
+    finally:
+        if temp_file and os.path.exists(temp_file):
+            cleanup_temp_files(temp_file)
 
 
 def _install_ourplay(gui, temp_file, game_path, version, is_god):
@@ -388,11 +466,18 @@ def _install_ourplay(gui, temp_file, game_path, version, is_god):
     ourplay_root = ""
     temp_extract = ""
     try:
-        # OurPlay 两版本 (普通/神人) 均为 transfile 结构, 都需要参考包转换
+        # OurPlay 两版本 (普通/神人) 均为 transfile 结构, 都需要参考包转换;
+        # 参考包缺失时自动下载零协会汉化包作为参考
+        refer_root = _ensure_refer_root(gui)
+        if not refer_root:
+            gui.current_file_var.set("❌ 汉化包处理失败: 参考包获取失败, 无法重命名哈希文件")
+            print("❌ _install_ourplay: 参考包获取失败")
+            return False
         ourplay_root, temp_extract = prepare_ourplay_dir(
-            temp_file, refer_root=_find_refer_root())
+            temp_file, refer_root=refer_root)
     except Exception as e:
         gui.current_file_var.set(f"❌ 汉化包处理失败: {e}")
+        print(f"❌ _install_ourplay: 汉化包处理失败: {e}")
         return False
 
     try:
