@@ -1261,10 +1261,70 @@ class TranslationEngine:
                     matches.add(relative)
         return {"ok": True, "paths": sorted(matches)}
 
+    def _replace_in_relative(self, relative, kw, replacement):
+        """对单个文件执行值替换: 以全部修改记录合并结果为基准递归替换字符串值,
+        净差异写入 active 层并归一化其他记录文件同字段。返回替换次数"""
+        full = os.path.join(self.lang_dir, *relative.split("/"))
+        try:
+            with open(full, "r", encoding="utf-8") as f:
+                original = json.load(f)
+        except Exception:
+            return 0
+        if not isinstance(original, (dict, list)):
+            return 0
+        # 临时以该文件为当前文件, 复用修改记录合并/对齐逻辑
+        self.original_data = original
+        self.current_relative = relative
+        base = self._merge_relative(relative)
+        new_data = _deep_copy(base)
+        count = [0]
+        _replace_in_data(new_data, kw, replacement, count)
+        if count[0] == 0:
+            return 0
+        diff_base = self._merge_relative(relative, skip_layer=self._active)
+        diff, _ = _compute_diff(diff_base, new_data, [0])
+        if diff is not None:
+            marker = self._active
+            patches = self._layers.setdefault(marker, {})
+            old = patches.get(relative)
+            patches[relative] = _diff_union(old, diff) if old else diff
+            self._persist_layer(marker)
+            leaf_paths = _diff_leaf_paths(diff, original)
+            for omarker in self.layer_order():
+                if omarker == marker:
+                    continue
+                opatches = self._layers.get(omarker) or {}
+                opatch = opatches.get(relative)
+                if not opatch:
+                    continue
+                new_opatch = opatch
+                for leaf in leaf_paths:
+                    parts, ok = _resolve_parts(original, leaf)
+                    if not ok or not parts:
+                        continue
+                    sub, hit = _diff_remove_aligned(new_opatch, original, parts)
+                    if hit:
+                        new_opatch = sub
+                if new_opatch is not opatch:
+                    if new_opatch is None or not new_opatch:
+                        opatches.pop(relative, None)
+                    else:
+                        opatches[relative] = new_opatch
+                    self._persist_layer(omarker)
+        return count[0]
+
+    def _clear_current_state(self):
+        """批量替换后不保留"当前文件"状态 (前端会重新加载)"""
+        self.original_data = None
+        self.current_relative = None
+        self.modified_data = None
+        self.saved_view = None
+        self._invalidate_flat()
+
     def replace_values(self, keyword, replacement):
         """值替换: 只处理当前值搜索命中的文件。
-        对每个匹配文件: 以全部图层合并结果为基准递归替换字符串值 (不区分大小写),
-        净差异写入 active 层并归一化其他图层同字段 (与 _compute_and_save 同机制)"""
+        对每个匹配文件: 以全部修改记录合并结果为基准递归替换字符串值 (不区分大小写),
+        净差异写入 active 层并归一化其他记录文件同字段 (与 _compute_and_save 同机制)"""
         kw = (keyword or "").strip().lower()
         if not kw:
             return {"ok": False, "msg": "请先进行值搜索"}
@@ -1276,63 +1336,28 @@ class TranslationEngine:
         total = 0
         files = 0
         for relative in paths:
-            full = os.path.join(self.lang_dir, *relative.split("/"))
-            try:
-                with open(full, "r", encoding="utf-8") as f:
-                    original = json.load(f)
-            except Exception:
-                continue
-            if not isinstance(original, (dict, list)):
-                continue
-            # 临时以该文件为当前文件, 复用图层合并/对齐逻辑
-            self.original_data = original
-            self.current_relative = relative
-            base = self._merge_relative(relative)
-            new_data = _deep_copy(base)
-            count = [0]
-            _replace_in_data(new_data, kw, replacement, count)
-            if count[0] == 0:
-                continue
-            diff_base = self._merge_relative(relative, skip_layer=self._active)
-            diff, _ = _compute_diff(diff_base, new_data, [0])
-            if diff is not None:
-                marker = self._active
-                patches = self._layers.setdefault(marker, {})
-                old = patches.get(relative)
-                patches[relative] = _diff_union(old, diff) if old else diff
-                self._persist_layer(marker)
-                leaf_paths = _diff_leaf_paths(diff, original)
-                for omarker in self.layer_order():
-                    if omarker == marker:
-                        continue
-                    opatches = self._layers.get(omarker) or {}
-                    opatch = opatches.get(relative)
-                    if not opatch:
-                        continue
-                    new_opatch = opatch
-                    for leaf in leaf_paths:
-                        parts, ok = _resolve_parts(original, leaf)
-                        if not ok or not parts:
-                            continue
-                        sub, hit = _diff_remove_aligned(new_opatch, original, parts)
-                        if hit:
-                            new_opatch = sub
-                    if new_opatch is not opatch:
-                        if new_opatch is None or not new_opatch:
-                            opatches.pop(relative, None)
-                        else:
-                            opatches[relative] = new_opatch
-                        self._persist_layer(omarker)
-            total += count[0]
-            files += 1
-        # 批量替换后不保留"当前文件"状态 (前端会重新加载)
-        self.original_data = None
-        self.current_relative = None
-        self.modified_data = None
-        self.saved_view = None
-        self._invalidate_flat()
+            n = self._replace_in_relative(relative, kw, replacement)
+            if n > 0:
+                total += n
+                files += 1
+        self._clear_current_state()
         return {"ok": True, "msg": f"已替换 {total} 处 (涉及 {files} 个文件)",
                 "count": total, "files": files}
+
+    def replace_current_values(self, keyword, replacement):
+        """局部值替换: 只处理当前正在编辑的文件"""
+        kw = (keyword or "").strip().lower()
+        if not kw:
+            return {"ok": False, "msg": "请输入待替换值"}
+        if not isinstance(replacement, str):
+            replacement = str(replacement or "")
+        if self.current_relative is None:
+            return {"ok": False, "msg": "请先打开一个文件"}
+        relative = self.current_relative
+        n = self._replace_in_relative(relative, kw, replacement)
+        self._clear_current_state()
+        return {"ok": True, "msg": f"已替换 {n} 处" if n else "当前文件中没有匹配的内容",
+                "count": n}
 
     def get_raw_json(self):
         if self.modified_data is None:
@@ -1393,6 +1418,12 @@ class CustomTranslationApi:
     def replace_values(self, keyword, replacement):
         try:
             return self.engine.replace_values(keyword, replacement)
+        except Exception as e:
+            return {"ok": False, "msg": f"替换失败: {e}"}
+
+    def replace_current_values(self, keyword, replacement):
+        try:
+            return self.engine.replace_current_values(keyword, replacement)
         except Exception as e:
             return {"ok": False, "msg": f"替换失败: {e}"}
 
