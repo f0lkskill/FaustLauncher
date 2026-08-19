@@ -318,7 +318,7 @@
             <div class="panel-title">
                 <span>📁 文件目录</span>
                 <div style="display:flex; gap:6px;">
-                    <button class="icon-btn" id="tree-replace" title="全局值替换 (需先进行值搜索)">🔁 替换</button>
+                    <button class="icon-btn" id="tree-replace" title="全局值替换 (需先进行值搜索)">🔁 替换全局</button>
                     <button class="icon-btn" id="tree-refresh">↻ 刷新</button>
                 </div>
             </div>
@@ -357,6 +357,7 @@
                 <label><input type="checkbox" id="only-modified"> 仅显示已修改</label>
                 <label><input type="checkbox" id="show-hidden"> 显示隐藏键</label>
                 <span style="flex:1;"></span>
+                <button class="tbtn" id="btn-replace-cur">🔁 替换当前</button>
                 <button class="tbtn" id="btn-expand-all">⊞ 全部展开</button>
                 <button class="tbtn" id="btn-collapse-all">⊟ 全部折叠</button>
             </div>
@@ -435,6 +436,24 @@
         <div class="m-btns">
             <button class="btn btn-green" id="replace-ok">✔ 替换</button>
             <button class="btn" id="replace-cancel">取消</button>
+        </div>
+    </div>
+</div>
+
+<!-- 当前文件值替换对话框 -->
+<div class="overlay" id="replace-cur-overlay">
+    <div class="modal small">
+        <h3>🔁 替换当前文件</h3>
+        <div class="f-label">待替换值</div>
+        <input type="text" id="replace-cur-from">
+        <div class="f-label">替换为</div>
+        <input type="text" id="replace-cur-to">
+        <div class="m-msg" style="margin-top:12px; font-size:12px; color:#64748b; line-height:1.7;">
+            只处理当前正在编辑的文件, 所有字符串值中的匹配内容都会被替换 (不区分大小写)。
+        </div>
+        <div class="m-btns">
+            <button class="btn btn-green" id="replace-cur-ok">✔ 替换</button>
+            <button class="btn" id="replace-cur-cancel">取消</button>
         </div>
     </div>
 </div>
@@ -1296,6 +1315,40 @@ $("replace-ok").addEventListener("click", async () => {
     const from = $("replace-from").value.trim();
     $("replace-overlay").classList.remove("show");
     const r = await api.replace_values(from, to);
+    if (r.ok) {
+        showToast(r.msg);
+        await refreshTree(true);
+        if (state.currentRelative) await openFile({ path: state.currentRelative });
+    } else {
+        showToast(r.msg, true);
+    }
+});
+$("btn-replace-cur").addEventListener("click", () => {
+    if (!state.currentRelative) {
+        showToast("请先打开一个文件", true);
+        return;
+    }
+    $("replace-cur-from").value = "";
+    $("replace-cur-to").value = "";
+    $("replace-cur-overlay").classList.add("show");
+    setTimeout(() => $("replace-cur-from").focus(), 60);
+});
+$("replace-cur-cancel").addEventListener("click", () => $("replace-cur-overlay").classList.remove("show"));
+$("replace-cur-overlay").addEventListener("click", (e) => {
+    if (e.target === $("replace-cur-overlay")) $("replace-cur-overlay").classList.remove("show");
+});
+$("replace-cur-from").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") $("replace-cur-to").focus();
+});
+$("replace-cur-to").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") $("replace-cur-ok").click();
+});
+$("replace-cur-ok").addEventListener("click", async () => {
+    const from = $("replace-cur-from").value.trim();
+    if (!from) { showToast("请输入待替换值", true); return; }
+    const to = $("replace-cur-to").value.trim();
+    $("replace-cur-overlay").classList.remove("show");
+    const r = await api.replace_current_values(from, to);
     if (r.ok) {
         showToast(r.msg);
         await refreshTree(true);
