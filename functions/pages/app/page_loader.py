@@ -964,7 +964,12 @@ def download_and_launch(obj=None, need_run_game=False):
             print("检测到新的汉化版本，准备更新汉化文件...")
             if is_ourplay:
                 # OurPlay 平台: 下载流程已直接安装到 lang/<平台目录名>, 无需再合并
-                print(f"OurPlay 汉化包已安装到 {lang_path}")
+                if os.path.isdir(lang_path) and os.path.isfile(os.path.join(lang_path, 'info', 'version.json')):
+                    print(f"OurPlay 汉化包已安装到 {lang_path}")
+                else:
+                    print("❌ OurPlay 汉化包安装失败, 请查看上方日志")
+                    downloading = False
+                    return
             else:
                 src_lang = os.path.join(download_path, 'LimbusCompany_Data', 'Lang', get_translation_dir_name())
                 if os.path.exists(src_lang):
