@@ -150,6 +150,8 @@ def handle_base_info(name:str) -> str:
     for keyword, keywords in special_keywords.items():
         for k in keywords:
             name = name.replace(k, keyword.replace("$", k))
+            # 两次？
+            name = name.replace(k, keyword.replace("$", k))
     
     # 恢复被保护的 C# 占位符
     for i, ph in enumerate(placeholders):
