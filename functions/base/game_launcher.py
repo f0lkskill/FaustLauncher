@@ -262,11 +262,17 @@ class GameLauncher:
             apply_ego_style()
 
         if self._settings.get_setting('enable_skill_style'):
-            from functions.fancy.skill_info import handle_skill
-            handle_skill(lang_path + '/')
+            from functions.fancy.skill_info import total_handle
+            total_handle(lang_path + '/')
 
-        
-        print(self._settings.get_setting('enable_special_tip'))
+        if self._settings.get_setting('enable_ego_gift_style'):
+            from functions.fancy.skill_info import handle_EGOgift
+            handle_EGOgift(lang_path + '/')
+
+        if self._settings.get_setting('enable_buff_style'):
+            from functions.fancy.skill_info import handle_buff
+            handle_buff(lang_path + '/')
+
         if self._settings.get_setting('enable_special_tip'):
             from functions.fancy.hint_set import simple_replace
             simple_replace(os.path.join(lang_path, 'BattleHint.json'))

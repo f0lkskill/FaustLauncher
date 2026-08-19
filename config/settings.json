@@ -3,7 +3,7 @@
         "name": "游戏路径",
         "type": "string",
         "default": "",
-        "value": "",
+        "value": "d:/steam\\steamapps\\common\\Limbus Company\\",
         "description": "游戏安装路径, 请确保路径正确\n否则可能导致启动失败和其他错误问题",
         "page": "通用"
     },
@@ -73,8 +73,24 @@
         "description": "是否对技能描述应用颜色渐变和样式美化\n比如技能描述中的数字将有特殊样式\n大于小于改为＞,＜",
         "page": "美化"
     },
+    "enable_ego_gift_style": {
+        "name": "启用EGO饰品描述美化",
+        "type": "boolean",
+        "default": true,
+        "value": true,
+        "description": "是否对EGO饰品描述应用样式美化。",
+        "page": "美化"
+    },
+    "enable_buff_style": {
+        "name": "启用Buff描述美化",
+        "type": "boolean",
+        "default": true,
+        "value": true,
+        "description": "是否对Buff描述应用样式美化。",
+        "page": "美化"
+    },
     "enable_ego_style": {
-        "name": "启用EGO样式美化",
+        "name": "启用EGO名称样式美化",
         "type": "boolean",
         "default": true,
         "value": true,
@@ -202,7 +218,7 @@
         },
         "value": {
             "tray_hint": false,
-            "version_notify_flag": false
+            "version_notify_flag": true
         },
         "description": "程序运行时的缓存数据\n不建议修改"
     }
