@@ -25,6 +25,13 @@ DIR_NAME_BY_SOURCE = {
     SOURCE_OURPLAY_GOD: "OurPlayHanHua",
 }
 
+# 各平台写入 version.json 的 platform 标记 (用于区分普通/神人包, 防止 versionCode 撞号装错包)
+PLATFORM_TAG_BY_SOURCE = {
+    SOURCE_ZERO: "zeroasso",
+    SOURCE_OURPLAY: "ourplay_normal",
+    SOURCE_OURPLAY_GOD: "ourplay_god",
+}
+
 
 def get_translate_source() -> int:
     """当前汉化包平台方 (0 零协会 / 1 OurPlay 普通 / 2 OurPlay 神人)"""
@@ -74,6 +81,17 @@ def get_local_version() -> str:
         return ""
 
 
+def get_local_platform() -> str:
+    """读取本地 version.json 的 platform 标记 (无则返回空串)"""
+    version_path = os.path.join(get_translation_dir(), "info", "version.json")
+    try:
+        from json import load
+        with open(version_path, "r", encoding="utf-8") as f:
+            return str(load(f).get("platform", ""))
+    except Exception:
+        return ""
+
+
 def check_need_up_translate(version_info: str = "") -> bool:
     """当前平台的汉化包是否需要下载/更新
 
@@ -87,6 +105,13 @@ def check_need_up_translate(version_info: str = "") -> bool:
     if version_info == "":
         return False
     try:
+        local_platform = get_local_platform()
+        # 平台类型不匹配 (普通版切神人版等) 必须强制更新, 防止 versionCode 撞号装错包
+        if local_platform and local_platform != PLATFORM_TAG_BY_SOURCE[get_translate_source()]:
+            return True
+        # OurPlay 旧版安装的 version.json 无 platform 字段, 无法区分普通/神人, 强制更新一次补全
+        if not local_platform and is_ourplay_source():
+            return True
         return version_info.strip() != get_local_version().strip()
     except Exception:
         return True
