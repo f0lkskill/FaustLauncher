@@ -566,7 +566,7 @@ class TranslationEngine:
         os.makedirs(self.lang_dir, exist_ok=True)
         self._layers = None          # marker -> {relative: patch}
         self._layer_files = {}       # marker -> 文件绝对路径
-        self._state = {}             # marker -> {'visible': bool, 'color': str}
+        self._state = {}             # marker -> {'disabled': bool, 'color': str}
         self._active = ""            # 当前编辑目标层
         self.current_relative = None
         self.original_data = None
@@ -575,7 +575,8 @@ class TranslationEngine:
         self._flat_cache = None
         self._search_cache = None    # rel -> 原文小写全文 (值搜索用, 首次搜索时构建)
         self._filters = {"keyword": "", "only_modified": False,
-                         "show_hidden": False, "collapsed": []}
+                         "show_hidden": False, "hidden_layers": [],
+                         "collapsed": []}
         self._load_state()
         self._load_layers()
         self._ensure_layer_colors()
@@ -594,24 +595,25 @@ class TranslationEngine:
                     for m, v in data.items():
                         if isinstance(v, dict):
                             self._state[m] = {
-                                "visible": bool(v.get("visible", True)),
+                                "disabled": bool(v.get("disabled", False)),
                                 "color": v.get("color"),
                             }
                         elif isinstance(v, bool):
-                            self._state[m] = {"visible": v, "color": None}
+                            self._state[m] = {"disabled": v, "color": None}
                     self._active = data.get("active", "") if isinstance(data.get("active"), str) else ""
         except Exception as e:
-            print(f"[自定义汉化] 加载图层状态失败: {e}")
+            print(f"[自定义汉化] 加载修改记录状态失败: {e}")
 
     def _save_state(self):
         try:
-            data = {m: {"visible": bool(s.get("visible", True)),
+            # 只持久化颜色与禁用状态; 隐藏/显示属于纯前端编辑显示辅助, 不记录
+            data = {m: {"disabled": bool(s.get("disabled", False)),
                         "color": s.get("color")} for m, s in self._state.items()}
             data["active"] = self._active
             with open(os.path.join(self.lang_dir, LAYER_STATE_FILE), "w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False, indent=4)
         except Exception as e:
-            print(f"[自定义汉化] 保存图层状态失败: {e}")
+            print(f"[自定义汉化] 保存修改记录状态失败: {e}")
 
     def _layer_color(self, marker: str) -> str:
         return (self._state.get(marker) or {}).get("color") or _MAIN_LAYER_COLOR
@@ -691,8 +693,9 @@ class TranslationEngine:
                   sorted(m for m in self._layers if m != "")
         return markers
 
-    def is_visible(self, marker: str) -> bool:
-        return bool(self._state.get(marker, {}).get("visible", True))
+    def is_disabled(self, marker: str) -> bool:
+        """禁用 = 不参与合并视图 (持久化); 隐藏/显示只是前端编辑显示辅助, 与数据无关"""
+        return bool(self._state.get(marker, {}).get("disabled", False))
 
     def list_layers(self):
         result = []
@@ -703,7 +706,7 @@ class TranslationEngine:
                 if patch:
                     count += 1
             result.append({"marker": marker, "name": name,
-                           "visible": self.is_visible(marker),
+                           "disabled": self.is_disabled(marker),
                            "active": marker == self._active,
                            "count": count,
                            "color": self._layer_color(marker)})
@@ -732,7 +735,7 @@ class TranslationEngine:
         if err:
             return {"ok": False, "msg": err}
         if old_marker not in self._layers:
-            return {"ok": False, "msg": f"图层不存在: {old_marker}"}
+            return {"ok": False, "msg": f"修改记录文件不存在: {old_marker}"}
         if new_marker in self._layers:
             return {"ok": False, "msg": f"重名警告: changes_{new_marker}.json 已存在"}
         if os.path.exists(self._layer_path(new_marker)):
@@ -758,7 +761,7 @@ class TranslationEngine:
         if marker == "":
             return {"ok": False, "msg": "默认 changes.json 不允许删除"}
         if marker not in self._layers:
-            return {"ok": False, "msg": f"图层不存在: {marker}"}
+            return {"ok": False, "msg": f"修改记录文件不存在: {marker}"}
         try:
             path = self._layer_path(marker)
             if os.path.exists(path):
@@ -773,35 +776,36 @@ class TranslationEngine:
         except Exception as e:
             return {"ok": False, "msg": f"删除失败: {e}"}
 
-    def set_layer_visible(self, marker: str, visible: bool):
+    def set_layer_disabled(self, marker: str, disabled: bool):
+        """禁用/启用修改记录文件: 禁用后其修改不参与合并视图 (持久化)"""
         if marker not in self._layers:
-            return {"ok": False, "msg": f"图层不存在: {marker}"}
+            return {"ok": False, "msg": f"修改记录不存在: {marker}"}
         s = self._state.setdefault(marker, {})
-        s["visible"] = bool(visible)
+        s["disabled"] = bool(disabled)
         self._save_state()
         self._remerge_current()
-        # 可见性属于视图级操作: 重新对齐"已保存"基准, 避免误报未保存修改
+        # 视图级操作: 重新对齐"已保存"基准, 避免误报未保存修改
         if self.modified_data is not None:
             self.saved_view = _deep_copy(self.modified_data)
-        return {"ok": True}
+        return {"ok": True, "disabled": bool(disabled)}
 
     def set_active_layer(self, marker: str):
         if marker not in self._layers:
-            return {"ok": False, "msg": f"图层不存在: {marker}"}
+            return {"ok": False, "msg": f"修改记录文件不存在: {marker}"}
         self._active = marker
         self._save_state()
         return {"ok": True}
 
     # ── 文件/合并视图 ──────────────────────────────────────
 
-    def _merge_relative(self, relative: str, skip_layer: str = None, include_hidden: bool = False):
-        """把 (除 skip_layer 外的) 图层补丁依次应用到原始数据, 返回合并结果;
-        include_hidden=True 时包含隐藏图层 (用于保存基准, 保护隐藏层内容不被覆盖)"""
+    def _merge_relative(self, relative: str, skip_layer: str = None):
+        """把 (除 skip_layer 外的) 修改记录补丁依次应用到原始数据, 返回合并结果。
+        始终包含全部记录文件 (禁用状态除外); 隐藏/显示只是前端显示辅助, 不影响合并"""
         result = _deep_copy(self.original_data)
         for marker in self.layer_order():
             if marker == skip_layer:
                 continue
-            if not include_hidden and not self.is_visible(marker):
+            if self.is_disabled(marker):
                 continue
             patch = (self._layers.get(marker) or {}).get(relative)
             if patch:
@@ -809,18 +813,15 @@ class TranslationEngine:
         return result
 
     def _changes_colors_for_relative(self, relative: str):
-        """返回修改过该文件的图层颜色 (可见层与隐藏层分开, 均按应用顺序)"""
-        visible = []
-        hidden = []
+        """返回修改过该文件的记录文件颜色 (按应用顺序, 不含禁用记录)"""
+        colors = []
         for marker in self.layer_order():
+            if self.is_disabled(marker):
+                continue
             patches = (self._layers or {}).get(marker) or {}
             if patches.get(relative):
-                c = self._layer_color(marker)
-                if self.is_visible(marker):
-                    visible.append(c)
-                else:
-                    hidden.append(c)
-        return visible, hidden
+                colors.append(self._layer_color(marker))
+        return colors
 
     def _has_changes_for_relative(self, relative: str) -> bool:
         for marker, patches in (self._layers or {}).items():
@@ -845,12 +846,12 @@ class TranslationEngine:
         self.current_relative = relative
         self.modified_data = _deep_copy(loaded)
         for marker in self.layer_order():
-            if not self.is_visible(marker):
+            if self.is_disabled(marker):
                 continue
             patch = (self._layers.get(marker) or {}).get(relative)
             if patch:
                 _recursive_apply(self.modified_data, patch)
-        # 已保存视图 (所有可见层合并结果): 与当前视图的差异 = 未写入修改记录的临时修改
+        # 已保存视图 (全部记录文件合并结果): 与当前视图的差异 = 未写入修改记录的临时修改
         self.saved_view = _deep_copy(self.modified_data)
         self._invalidate_flat()
         return {"ok": True, "relative": relative}
@@ -873,7 +874,24 @@ class TranslationEngine:
         keyword = (self._filters.get("keyword") or "").strip().lower()
         only_modified = bool(self._filters.get("only_modified"))
         show_hidden = bool(self._filters.get("show_hidden"))
+        hidden_layers = set(self._filters.get("hidden_layers") or [])
         saved = self.saved_view
+
+        def hidden_only_source(path):
+            """该叶子路径的修改是否全部来自"前端隐藏"的记录文件"""
+            if not hidden_layers:
+                return False
+            nav = path[5:] if path.startswith("root/") else path
+            sources = []
+            for marker in self.layer_order():
+                if self.is_disabled(marker):
+                    continue
+                patch = (self._layers.get(marker) or {}).get(self.current_relative)
+                if patch and _diff_has_path(patch, nav):
+                    sources.append(marker)
+            if not sources:
+                return False
+            return all(m in hidden_layers for m in sources)
 
         def walk(current, original, saved_v, title, depth, path, dict_key=None,
                  list_index=None, id_value=None, is_root=False):
@@ -904,6 +922,8 @@ class TranslationEngine:
                 "u": 1 if (not is_container and saved_v != current) else 0,
                 "i": 1 if (dict_key == "id") else 0,
             }
+            if not is_container and entry["m"]:
+                entry["h"] = 1 if hidden_only_source(path) else 0
             if not is_container and (entry["m"] or entry["u"]):
                 entry["o"] = str(original)
             if is_container:
@@ -965,6 +985,7 @@ class TranslationEngine:
                 "keyword": (filters.get("keyword") or "").strip().lower(),
                 "only_modified": bool(filters.get("only_modified")),
                 "show_hidden": bool(filters.get("show_hidden")),
+                "hidden_layers": filters.get("hidden_layers") or [],
                 "collapsed": filters.get("collapsed") or [],
             }
             self._invalidate_flat()
@@ -1089,10 +1110,10 @@ class TranslationEngine:
         return {"ok": True, "msg": f"已撤销字段 '{path}' 的修改 ({', '.join(removed)})"}
 
     def _compute_and_save(self, relative: str, marker: str):
-        """把当前合并视图相对 (除 marker 外可见图层) 的净差异写入 marker 图层;
-        基准包含隐藏图层, 避免覆盖隐藏层的修改。
-        归一化: 本次保存涉及的字段路径从其他图层移除 (同字段只保留目标层)"""
-        base = self._merge_relative(relative, skip_layer=marker, include_hidden=True)
+        """把当前合并视图相对 (除 marker 外其他记录文件) 的净差异写入 marker 记录文件;
+        基准包含全部记录文件, 避免覆盖其他记录文件的修改。
+        归一化: 本次保存涉及的字段路径从其他记录文件移除 (同字段只保留目标文件)"""
+        base = self._merge_relative(relative, skip_layer=marker)
         count = [0]
         diff, _ = _compute_diff(base, self.modified_data, count)
         patches = self._layers.setdefault(marker, {})
@@ -1102,7 +1123,7 @@ class TranslationEngine:
             old = patches.get(relative)
             patches[relative] = _diff_union(old, diff) if old else diff
         self._persist_layer(marker)
-        # 归一化: 其他图层中同字段的旧记录移除, 避免来源标识显示多个图层
+        # 归一化: 其他记录文件中同字段的旧记录移除, 避免来源标识显示多个文件
         if diff is not None and self.original_data is not None:
             leaf_paths = _diff_leaf_paths(diff, self.original_data)
             for omarker in self.layer_order():
@@ -1200,17 +1221,17 @@ class TranslationEngine:
                 result.append({"name": d, "type": "dir", "path": rel_path, "children": children})
             for f in files:
                 relative = _normalize_path(os.path.relpath(os.path.join(rel_dir, f), self.lang_dir))
-                visible, hidden = self._changes_colors_for_relative(relative)
+                colors = self._changes_colors_for_relative(relative)
                 result.append({"name": f, "type": "file", "path": relative,
-                               "has_changes": len(visible) > 0 or len(hidden) > 0,
-                               "colors": visible})
+                               "has_changes": len(colors) > 0,
+                               "colors": colors})
             return result
 
         return {"root": "lang", "nodes": build(self.lang_dir)}
 
     def search_values(self, keyword: str):
         """全局搜索: 像文件内搜索那样逐文件处理 — 匹配每个 JSON 原文(键/id/值, 含未修改内容)
-        以及全部图层修改记录中的值, 返回匹配的文件路径列表 (包含匹配, 不区分大小写)"""
+        以及全部修改记录文件中的值, 返回匹配的文件路径列表 (包含匹配, 不区分大小写)"""
         kw = (keyword or "").strip().lower()
         if not kw:
             return {"ok": True, "paths": []}
@@ -1233,7 +1254,7 @@ class TranslationEngine:
         for rel, text in self._search_cache.items():
             if kw in text:
                 matches.add(rel)
-        # 2) 各图层修改记录中的值 (译文/新增内容可能不在原文中)
+        # 2) 各修改记录文件中的值 (译文/新增内容可能不在原文中)
         for patches in (self._layers or {}).values():
             for relative, patch in patches.items():
                 if relative not in matches and _patch_has_value(patch, kw):
@@ -1266,13 +1287,13 @@ class TranslationEngine:
             # 临时以该文件为当前文件, 复用图层合并/对齐逻辑
             self.original_data = original
             self.current_relative = relative
-            base = self._merge_relative(relative, skip_layer=None, include_hidden=True)
+            base = self._merge_relative(relative)
             new_data = _deep_copy(base)
             count = [0]
             _replace_in_data(new_data, kw, replacement, count)
             if count[0] == 0:
                 continue
-            diff_base = self._merge_relative(relative, skip_layer=self._active, include_hidden=True)
+            diff_base = self._merge_relative(relative, skip_layer=self._active)
             diff, _ = _compute_diff(diff_base, new_data, [0])
             if diff is not None:
                 marker = self._active
@@ -1399,9 +1420,9 @@ class CustomTranslationApi:
         except Exception as e:
             return {"ok": False, "msg": f"删除失败: {e}"}
 
-    def set_layer_visible(self, marker, visible):
+    def set_layer_disabled(self, marker, disabled):
         try:
-            return self.engine.set_layer_visible(marker or "", bool(visible))
+            return self.engine.set_layer_disabled(marker or "", bool(disabled))
         except Exception as e:
             return {"ok": False, "msg": str(e)}
 

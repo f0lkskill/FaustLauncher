@@ -87,7 +87,7 @@
     .tree-row .mark { color: #f59e0b; flex: none; }
     .tree-row .cdot { width: 7px; height: 7px; border-radius: 50%; flex: none; box-shadow: 0 0 4px rgba(0,0,0,0.5); }
 
-    /* 图层面板 */
+    /* 修改记录文件面板 */
     .layer-box { max-height: 220px; min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: 4px; }
     .layer-row {
         display: flex; align-items: center; gap: 6px;
@@ -313,7 +313,7 @@
 <img id="bgimg" alt="">
 <div class="wrap">
     <div class="main">
-        <!-- 左侧: 文件树 + 图层面板 -->
+        <!-- 左侧: 文件树 + 修改记录文件面板 -->
         <aside class="left">
             <div class="panel-title">
                 <span>📁 文件目录</span>
@@ -463,6 +463,7 @@ const state = {
     treeFilterMode: "name",  // "name" | "value"
     treeValuePaths: new Set(),
     treeCollapsed: null, // null=未初始化(首次加载默认全折叠); Set<目录path>
+    hiddenLayers: new Set(), // 前端编辑显示辅助: 隐藏的记录文件 (不持久化, 不影响数据合并)
     currentRelative: null,
     // 列表分页
     entries: null,       // 已加载条目稀疏数组
@@ -595,7 +596,7 @@ async function refreshTree(keepSelection) {
     }
 }
 
-/* ─────────── 图层面板 ─────────── */
+/* ─────────── 修改记录文件面板 ─────────── */
 let layers = [];
 async function refreshLayers() {
     try {
@@ -603,7 +604,7 @@ async function refreshLayers() {
         layers = r.layers || [];
         renderLayers();
     } catch (e) {
-        showToast("加载图层失败: " + errText(e), true);
+        showToast("加载修改记录失败: " + errText(e), true);
     }
 }
 function renderLayers() {
@@ -619,16 +620,32 @@ function renderLayers() {
     }
     for (const l of layers) {
         const color = l.color || "#f59e0b";
+        const hidden = state.hiddenLayers.has(l.marker);
         const row = document.createElement("div");
         row.className = "layer-row" + (l.active ? " active" : "");
-        if (!l.visible) row.style.opacity = "0.45";
+        if (hidden) row.style.opacity = "0.45";
+        if (l.disabled) row.style.textDecoration = "line-through";
+        // 隐藏/显示: 纯前端显示辅助, 该记录文件的修改标记在编辑列表中不再显示
         const eye = document.createElement("span");
-        eye.className = "eye" + (l.visible ? "" : " off");
-        eye.textContent = l.visible ? "👁" : "◌";
-        eye.title = l.visible ? "可见，点击隐藏" : "已隐藏，点击显示";
-        eye.addEventListener("click", async (e) => {
+        eye.className = "eye" + (hidden ? " off" : "");
+        eye.textContent = hidden ? "◌" : "👁";
+        eye.title = hidden ? "已隐藏 (仅隐藏该文件的修改标记显示)，点击显示" : "隐藏 (该文件的修改标记不再显示)";
+        eye.addEventListener("click", (e) => {
             e.stopPropagation();
-            await api.set_layer_visible(l.marker, !l.visible);
+            if (hidden) state.hiddenLayers.delete(l.marker);
+            else state.hiddenLayers.add(l.marker);
+            renderLayers();
+            if (state.currentRelative) applyFilters(true);
+        });
+        // 禁用/启用: 持久化, 禁用后其修改不参与合并视图
+        const dis = document.createElement("span");
+        dis.className = "eye" + (l.disabled ? " off" : "");
+        dis.textContent = l.disabled ? "⛔" : "🔓";
+        dis.title = l.disabled ? "已禁用 (修改不参与合并视图)，点击启用" : "禁用 (修改不参与合并视图)";
+        dis.addEventListener("click", async (e) => {
+            e.stopPropagation();
+            const r = await api.set_layer_disabled(l.marker, !l.disabled);
+            if (!r.ok) { showToast(r.msg, true); return; }
             await refreshLayers();
             await afterViewMergeChanged();
         });
@@ -637,7 +654,7 @@ function renderLayers() {
         swatch.style.background = color;
         const name = document.createElement("span");
         name.className = "lname";
-        name.style.color = l.visible ? color : "";
+        name.style.color = hidden ? "" : color;
         name.textContent = l.name;
         const cnt = document.createElement("span");
         cnt.className = "lcount";
@@ -653,6 +670,7 @@ function renderLayers() {
         del.className = "mini del";
         del.textContent = "删";
         row.appendChild(eye);
+        row.appendChild(dis);
         row.appendChild(swatch);
         row.appendChild(name);
         row.appendChild(cnt);
@@ -679,7 +697,7 @@ function renderLayers() {
         });
         del.addEventListener("click", async (e) => {
             e.stopPropagation();
-            const ok = await askConfirm("删除图层", `确定删除 ${l.name} 吗？此操作不可恢复！`);
+            const ok = await askConfirm("删除修改记录", `确定删除 ${l.name} 吗？此操作不可恢复！`);
             if (!ok) return;
             const r = await api.delete_layer(l.marker);
             if (r.ok) {
@@ -763,6 +781,7 @@ function currentFilters() {
         keyword: state.filters.keyword,
         only_modified: state.filters.only_modified,
         show_hidden: state.filters.show_hidden,
+        hidden_layers: Array.from(state.hiddenLayers),
         collapsed: Array.from(state.collapsed),
     };
 }
@@ -868,6 +887,8 @@ function makeRow(i, e) {
     row.dataset.idx = i;
     row.style.top = (i * ROW_H) + "px";
     row.style.height = ROW_H + "px";
+    // 修改全部来自"隐藏"的记录文件时: 显示辅助, 视为未修改
+    const m = e.m && !e.h;
     if (state.animOnce) {
         row.classList.add("anim-in");
         row.style.animationDelay = Math.min(Math.max(0, i - state.animBase) * 14, 240) + "ms";
@@ -897,11 +918,11 @@ function makeRow(i, e) {
         tw.className = "tw";
         row.appendChild(tw);
         const k = document.createElement("span");
-        k.className = "k" + (e.m ? " mod" : "") + (e.u ? " uns" : "");
+        k.className = "k" + (m ? " mod" : "") + (e.u ? " uns" : "");
         k.textContent = "🔑 " + e.t;
         row.appendChild(k);
         const v = document.createElement("span");
-        v.className = "v" + (e.m ? " mod" : "") + (e.u ? " uns" : "");
+        v.className = "v" + (m ? " mod" : "") + (e.u ? " uns" : "");
         v.textContent = e.v.length > 120 ? e.v.slice(0, 117) + "..." : e.v;
         v.title = e.v;
         row.appendChild(v);
@@ -910,7 +931,7 @@ function makeRow(i, e) {
             dot.className = "dot uns";
             dot.title = "未保存的修改 (尚未写入修改记录)";
             row.appendChild(dot);
-        } else if (e.m) {
+        } else if (m) {
             const dot = document.createElement("span");
             dot.className = "dot";
             dot.title = "已编辑";
@@ -923,9 +944,9 @@ function makeRow(i, e) {
             row.appendChild(ro);
         } else {
             const btn = document.createElement("button");
-            btn.className = "ebtn" + (e.m ? " mod" : "") + (e.u ? " uns" : "");
+            btn.className = "ebtn" + (m ? " mod" : "") + (e.u ? " uns" : "");
             btn.textContent = "🔧";
-            btn.title = e.u ? "未保存的修改，点击编辑" : (e.m ? "已修改，点击编辑" : "编辑");
+            btn.title = e.u ? "未保存的修改，点击编辑" : (m ? "已修改，点击编辑" : "编辑");
             btn.addEventListener("click", () => openEditDialog(i, e));
             row.appendChild(btn);
         }
@@ -1180,7 +1201,7 @@ async function loadRawJson() {
         hlLines = r.text.split("\n");
         syncJsonSize();
         renderJsonHl();
-        $("json-status").textContent = "合并视图 (原数据 + 可见修改记录)，编辑后点击 [应用并保存] 写入编辑目标";
+        $("json-status").textContent = "合并视图 (原数据 + 全部修改记录)，编辑后点击 [应用并保存] 写入编辑目标";
     } else {
         showToast(r.msg, true);
     }
@@ -1221,7 +1242,7 @@ async function saveCurrent() {
 }
 async function saveAll() {
     if (!state.currentRelative) { showToast("请先打开一个文件", true); return; }
-    const ok = await askConfirm("保存所有", "将当前文件的全部修改写入编辑目标图层（只写选中的图层文件）。确定？");
+    const ok = await askConfirm("保存所有", "将当前文件的全部修改写入编辑目标修改记录文件（只写选中的记录文件）。确定？");
     if (!ok) return;
     await saveCurrent();
 }
@@ -1327,7 +1348,7 @@ $("tree-search-mode").addEventListener("change", () => {
 
 $("layer-add").addEventListener("click", async () => {
     const marker = $("layer-new").value.trim();
-    if (!marker) { showToast("请输入图层标记", true); return; }
+    if (!marker) { showToast("请输入修改记录文件标记", true); return; }
     const r = await api.create_layer(marker);
     if (r.ok) {
         showToast(r.msg);
