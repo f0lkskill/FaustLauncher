@@ -990,6 +990,18 @@ def download_and_launch(obj=None, need_run_game=False):
                     except Exception as e:
                         print(f"复制汉化文件时出错: {e}")
                         traceback.print_exc()
+                    # 合并完成后强制写回最新版本号, 防止包内自带旧版 version.json 覆盖
+                    try:
+                        import json as _json
+                        from functions.web_update.translation_source import get_local_version as _glv
+                        vdir = os.path.join(lang_path, 'info')
+                        os.makedirs(vdir, exist_ok=True)
+                        with open(os.path.join(vdir, 'version.json'), 'w', encoding='utf-8') as f:
+                            _json.dump({"version": str(_glv()), "platform": "zeroasso"},
+                                       f, ensure_ascii=False, indent=2)
+                        print(f"[合并] 已写回本地版本信息: {_glv()}")
+                    except Exception as e:
+                        print(f"写回版本信息失败: {e}")
                 else:
                     print(f"错误: 未找到 lang 下的 {get_translation_dir_name()} 文件夹")
         else:
