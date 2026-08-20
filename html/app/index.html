@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FaustLauncher 浮士德启动器</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="bg-layer"></div>
+<div id="app">
+  <aside id="sidebar">
+    <div class="brand">
+      <img class="brand-icon" src="../../assets/images/icon/icon.png" alt="FaustLauncher" draggable="false">
+      <div class="brand-text">
+        <div class="brand-name">FaustLauncher</div>
+        <div class="brand-sub">浮士德启动器</div>
+      </div>
+    </div>
+    <nav id="nav">
+      <button class="nav-item active" data-page="home"><span class="nav-ico">🏘</span><span>主页</span></button>
+      <button class="nav-item" data-page="features"><span class="nav-ico">✈</span><span>快捷方式</span></button>
+      <button class="nav-item" data-page="tools"><span class="nav-ico">🔨</span><span>工具页</span></button>
+      <button class="nav-item" data-page="mod_addon"><span class="nav-ico">🧩</span><span>插件&Mod</span></button>
+      <button class="nav-item" data-page="download_center"><span class="nav-ico">📦</span><span>下载中心</span></button>
+      <button class="nav-item" data-page="settings"><span class="nav-ico">⚙️</span><span>设置</span></button>
+      <button class="nav-item" data-page="about"><span class="nav-ico">💻</span><span>关于</span></button>
+    </nav>
+  </aside>
+
+  <main id="main">
+    <!-- ==================== 主页 ==================== -->
+    <section class="page active" id="page-home">
+      <div class="hero card">
+        <div class="hero-bg" id="hero-bg"></div>
+        <div class="hero-content">
+          <h1>您好，但丁</h1>
+          <p class="hero-sub">让每一个但丁都解放双手，专心坐牢</p>
+          <div class="hero-actions">
+            <button class="btn btn-primary" id="btn-launch">
+              <span class="btn-ico">🚀</span> 启动游戏
+            </button>
+            <button class="btn btn-success" id="btn-translate">🎯 汉化更新</button>
+          </div>
+          <div class="status-chips">
+            <div class="chip chip-long" id="chip-gamepath"><span class="dot"></span><span>游戏路径: 未配置</span></div>
+            <div class="chip" id="chip-source"><span class="dot"></span><span>下载源: -</span></div>
+          </div>
+        </div>
+        <div class="hero-logo" aria-hidden="true">
+          <img src="../../assets/images/icon/icon.png" alt="FaustLauncher" draggable="false">
+        </div>
+      </div>
+
+      <div class="card" id="pipeline-card" hidden>
+        <div class="card-head">
+          <h3>启动流水线</h3>
+          <div class="pipe-status" id="pipe-status-text">等待中</div>
+        </div>
+        <div class="progress-track"><div class="progress-fill" id="pipe-progress"></div></div>
+        <div class="pipe-steps" id="pipe-steps"></div>
+      </div>
+
+      <div class="grid-2">
+        <div class="card stat-card stat-version-card">
+          <div class="stat-label">📌 当前版本</div>
+          <div class="stat-value" id="stat-version">-</div>
+          <div class="changelog-box" id="changelog-box">
+            <div class="changelog-head">🕐 更新内容</div>
+            <div class="changelog-body" id="changelog-body"><span class="changelog-empty">加载中...</span></div>
+          </div>
+        </div>
+        <div class="card stat-card rec-card">
+          <div class="stat-label">🎲 随机推荐</div>
+          <div class="rec-body" id="rec-body">
+            <span class="changelog-empty">加载中...</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== 快捷方式 ==================== -->
+    <section class="page" id="page-features">
+      <div class="page-head">
+        <h2>快捷方式</h2>
+        <p>常用入口，一键直达</p>
+      </div>
+      <div class="grid-3" id="features-grid"></div>
+    </section>
+
+    <!-- ==================== 工具 ==================== -->
+    <section class="page" id="page-tools">
+      <div class="page-head">
+        <h2>工具页</h2>
+        <p>常用工具集合</p>
+      </div>
+      <div class="grid-3" id="tools-grid"></div>
+    </section>
+
+    <!-- ==================== 插件&Mod ==================== -->
+    <section class="page" id="page-mod_addon">
+      <div class="page-head">
+        <h2>插件&Mod</h2>
+        <p>管理本地 Mod（mods/ 目录）与单文件 Mod（拖拽安装请用独立管理器）</p>
+      </div>
+      <div class="mod-actions">
+        <button class="btn btn-primary" id="btn-apply-mods">⚡ 立即应用 Mod</button>
+        <button class="btn btn-ghost" id="btn-open-mod-dir">📂 打开 Mod 目录</button>
+        <button class="btn btn-ghost" id="btn-open-single-dir">📂 打开单文件目录</button>
+        <button class="btn btn-ghost" id="btn-open-mod-window">🪟 独立管理器（拖拽安装）</button>
+      </div>
+      <div class="card">
+        <div class="card-head">
+          <h3>📦 目录 Mod (mods/)</h3>
+          <div class="pipe-status" id="dir-mods-count"></div>
+        </div>
+        <div id="dir-mods-list" class="mod-list"></div>
+      </div>
+      <div class="card">
+        <div class="card-head">
+          <h3>🎵 单文件 Mod (APPDATA/LimbusCompanyMods)</h3>
+          <div class="pipe-status" id="single-mods-count"></div>
+        </div>
+        <div id="single-mods-list" class="mod-list"></div>
+      </div>
+    </section>
+
+    <!-- ==================== 下载中心 ==================== -->
+    <section class="page" id="page-download_center">
+      <div class="page-head">
+        <h2>下载中心</h2>
+        <p>社区 Mod 与插件在线资源</p>
+      </div>
+      <div class="dc-tabs">
+        <button class="dc-tab active" data-dc-tab="addon">🔌 插件下载</button>
+        <button class="dc-tab" data-dc-tab="mod">🎮 Mod 下载</button>
+      </div>
+      <div class="dc-pagination" id="dc-pagination-top"></div>
+      <div id="dc-content" class="dc-content">
+        <div class="dc-loading">加载中...</div>
+      </div>
+      <div class="dc-pagination" id="dc-pagination-bottom"></div>
+    </section>
+
+    <!-- ==================== 设置 ==================== -->
+    <section class="page" id="page-settings">
+      <div class="page-head">
+        <h2>设置</h2>
+        <p>个性化你的启动器</p>
+      </div>
+      <div id="settings-groups"></div>
+      <div class="settings-actions">
+        <button class="btn btn-primary" id="btn-save-settings">💾 保存设置</button>
+        <button class="btn btn-ghost" id="btn-reset-settings">↺ 恢复默认</button>
+      </div>
+    </section>
+
+    <!-- ==================== 关于 ==================== -->
+    <section class="page" id="page-about">
+      <div class="card about-card">
+        <div class="about-icon">🦾</div>
+        <h1>FaustLauncher</h1>
+        <div class="about-sub">浮士德启动器 · 您人生中绝无仅有的完美启动器</div>
+        <div class="about-version" id="about-version">v-</div>
+        <p class="about-desc">
+          专为《边狱巴士 (Limbus Company)》玩家打造的全功能一体化启动器。<br>
+          汉化自动更新 · 界面美化 · Mod 加载 · 插件生态 · 一键启动
+        </p>
+        <div class="about-links">
+          <button class="btn btn-ghost" data-link="https://github.com/f0lkskill/FaustLauncher">📦 GitHub</button>
+          <button class="btn btn-ghost" data-link="https://limbuscompany.huijiwiki.com/wiki/%E9%A6%96%E9%A1%B5">📝 灰机 Wiki</button>
+          <button class="btn btn-ghost" data-link="https://space.bilibili.com/599331034">🎬 作者空间</button>
+        </div>
+        <div class="about-foot">MIT License · 2025-2026 FaustLauncher Contributors</div>
+      </div>
+    </section>
+  </main>
+
+  <!-- ==================== 终端抽屉 ==================== -->
+  <div id="terminal">
+    <div class="term-head">
+      <span>终端</span>
+      <div class="term-actions">
+        <button id="btn-copy-term">复制</button>
+        <button id="btn-clear-term">清空</button>
+      </div>
+    </div>
+    <div id="term-body"></div>
+  </div>
+
+<div id="toasts"></div>
+  </div>
+
+  <!-- ==================== 下载任务抽屉 ==================== -->
+  <button class="dl-fab" id="dl-fab" title="下载任务">
+    <span class="dl-fab-ico">📥</span>
+    <span class="dl-fab-badge" id="dl-fab-badge" hidden>0</span>
+  </button>
+  <div class="dl-overlay" id="dl-overlay"></div>
+  <aside class="dl-drawer" id="dl-drawer">
+    <div class="dl-head">
+      <span>📦 下载任务</span>
+      <button class="dl-close" id="dl-close" title="关闭">✕</button>
+    </div>
+    <div class="dl-list" id="dl-list">
+      <div class="dl-empty">暂无下载任务</div>
+    </div>
+  </aside>
+<script src="js/app.js"></script>
+</body>
+</html>

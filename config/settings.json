@@ -3,7 +3,7 @@
         "name": "游戏路径",
         "type": "string",
         "default": "",
-        "value": "",
+        "value": "d:/steam\\steamapps\\common\\Limbus Company\\",
         "description": "游戏安装路径, 请确保路径正确\n否则可能导致启动失败和其他错误问题",
         "page": "通用"
     },
@@ -215,11 +215,23 @@
         "description": "应用程序的主题颜色 (十六进制格式)\n重启后才能生效\n实验性功能, 可能会出现样式失效，颜色冲突。",
         "page": "其它"
     },
+    "ui_mode": {
+        "name": "界面模式",
+        "type": "combobox",
+        "options": [
+            "旧版界面 (经典)",
+            "新版 Web 界面 (实验)"
+        ],
+        "default": 0,
+        "value": 1,
+        "description": "选择启动器界面\n旧版界面: 经典 tkinter 界面\n新版 Web 界面: pywebview 现代化界面\n修改后重启启动器生效",
+        "page": "其它"
+    },
     "version_info": {
         "name": "版本信息",
         "type": "UNABLE_TO_EDIT",
-        "default": "V0.7.1-release",
-        "value": "V0.7.1-release",
+        "default": "V0.7.1-release.fix.1",
+        "value": "V0.7.1-release.fix.1",
         "description": "当前应用程序的版本信息"
     },
     "mems": {
@@ -231,7 +243,7 @@
         },
         "value": {
             "tray_hint": false,
-            "version_notify_flag": false
+            "version_notify_flag": true
         },
         "description": "程序运行时的缓存数据\n不建议修改"
     }
