@@ -733,3 +733,57 @@ def main_gui(parent, config_path: str = ""):
     gui = DownloadGUI(parent, config_path, download_func=download_and_extract_gui)
     
     return gui
+
+def download_and_extract_mod(gui, target_dir, download_files):
+    """简化的下载+解压函数 (供下载中心 Mod/插件使用)"""
+    import shutil
+    temp_dir = os.path.join(target_dir, '_temp_download')
+    os.makedirs(temp_dir, exist_ok=True)
+    try:
+        for file_info in download_files:
+            if not gui.is_downloading:
+                break
+            url = file_info.get('url', '')
+            name = file_info.get('name', 'unknown')
+            temp_filename = file_info.get('temp_filename', f"{name}.7z")
+            if not url:
+                continue
+            temp_file = os.path.join(temp_dir, temp_filename)
+            gui.current_file_var.set(f"正在下载 {name}...")
+            print(f"[下载中心] 开始下载: {url}")
+            ok = download_file_with_gui(url, temp_file, gui, name)
+            print(f"[下载中心] 下载结果: ok={ok}, exists={os.path.exists(temp_file)}")
+            if ok is False:
+                return False
+            gui.current_file_var.set(f"正在解压 {name}...")
+            if os.path.exists(temp_file):
+                ex = extract_7z_file(temp_file, target_dir)
+                print(f"[下载中心] 解压结果: {ex}")
+                try:
+                    entries = os.listdir(target_dir)
+                    files = [e for e in entries if os.path.isfile(os.path.join(target_dir, e))]
+                    dirs = [e for e in entries if os.path.isdir(os.path.join(target_dir, e))]
+                    if len(dirs) == 1 and len(files) == 0:
+                        sub = os.path.join(target_dir, dirs[0])
+                        for item in os.listdir(sub):
+                            src = os.path.join(sub, item)
+                            dst = os.path.join(target_dir, item)
+                            if not os.path.exists(dst):
+                                shutil.move(src, dst)
+                        shutil.rmtree(sub, ignore_errors=True)
+                        print(f"[下载中心] 提级: {dirs[0]} -> 根目录")
+                except Exception as e:
+                    print(f"[下载中心] 提级失败: {e}")
+            else:
+                return False
+        return True
+    except Exception as e:
+        print(f"[下载中心] 下载/解压失败: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+    finally:
+        try:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+        except Exception:
+            pass

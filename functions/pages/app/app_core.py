@@ -214,7 +214,7 @@ class FaustLauncherCore:
             from tkinter import messagebox
             messagebox.showerror("错误", f"打开mod管理器失败: {str(e)}")
             
-    def check_settings(self):
+    def check_settings(self, skip_auto_download=False, interactive=True):
         """检查设置"""
         if not self.settings_manager.get_setting("game_path"):
             print("错误: 未配置游戏路径")
@@ -222,30 +222,40 @@ class FaustLauncherCore:
             from functions.base.steam_locator import find_steam_game_path
             found = find_steam_game_path()
             if found:
-                from tkinter import messagebox
-                if messagebox.askyesno("检测到边狱巴士",
-                                       f"已通过 Steam 检测到边狱巴士安装路径:\n{found}\n\n这是你的游戏路径吗？",
-                                       parent=self.root):
+                if interactive:
+                    from tkinter import messagebox
+                    if messagebox.askyesno("检测到边狱巴士",
+                                           f"已通过 Steam 检测到边狱巴士安装路径:\n{found}\n\n这是你的游戏路径吗？",
+                                           parent=self.root):
+                        self.settings_manager.set_setting("game_path", found)
+                        self.settings_manager.save_settings()
+                        settings_page = self.page_loader.get_page('settings')  # type: ignore
+                        if settings_page:
+                            settings_page.refresh_all_displays()
+                        found = None
+                    else:
+                        print("用户未确认自动检测的路径, 回退到手动选择")
+                else:
+                    # Web 模式: 无交互, 自动采用 Steam 检测到的路径
                     self.settings_manager.set_setting("game_path", found)
                     self.settings_manager.save_settings()
-                    settings_page = self.page_loader.get_page('settings')  # type: ignore
-                    if settings_page:
-                        settings_page.refresh_all_displays()
+                    print(f"已自动设置游戏路径: {found}")
                     found = None
-                else:
-                    print("用户未确认自动检测的路径, 回退到手动选择")
             if found:
-                from tkinter.filedialog import askopenfilename
-                file_path = askopenfilename(title="选择边狱巴士主程序", filetypes=[("边狱巴士主程序", "LimbusCompany.exe")])
-                if file_path:
-                    self.settings_manager.set_setting("game_path", file_path.replace('LimbusCompany.exe', ''))
-                    self.settings_manager.save_settings()
-                    settings_page = self.page_loader.get_page('settings')  # type: ignore
-                    if settings_page:
-                        settings_page.refresh_all_displays()
+                if interactive:
+                    from tkinter.filedialog import askopenfilename
+                    file_path = askopenfilename(title="选择边狱巴士主程序", filetypes=[("边狱巴士主程序", "LimbusCompany.exe")])
+                    if file_path:
+                        self.settings_manager.set_setting("game_path", file_path.replace('LimbusCompany.exe', ''))
+                        self.settings_manager.save_settings()
+                        settings_page = self.page_loader.get_page('settings')  # type: ignore
+                        if settings_page:
+                            settings_page.refresh_all_displays()
+                    else:
+                        print("错误: 未选择游戏文件")
+                        os._exit(-1)
                 else:
-                    print("错误: 未选择游戏文件")
-                    os._exit(-1)
+                    print("未通过 Steam 检测到游戏路径, 请在设置页手动选择游戏目录")
                 
         mems: dict = self.settings_manager.get_setting('mems')  # type: ignore
         has_notify = mems.get('version_notify_flag')
@@ -264,7 +274,7 @@ class FaustLauncherCore:
             mems['version_notify_flag'] = True
             self.settings_manager.set_setting('mems', mems)
         
-        if len(sys.argv) > 1 or not os.path.exists(get_translation_dir()):
+        if not skip_auto_download and (len(sys.argv) > 1 or not os.path.exists(get_translation_dir())):
             from functions.pages.app.page_loader import download_and_launch
             Thread(target=download_and_launch).start()
         

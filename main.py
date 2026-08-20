@@ -71,6 +71,15 @@ def main():
         run_custom_translation_window(debug="--debug" in sys.argv)
         return
     
+    # Web 现代化 UI 模式: --web-ui 参数启动, 或在设置中选择"新版 Web 界面"后生效
+    from functions.base.settings_manager import get_settings_manager
+    if "--web-ui" in sys.argv or get_settings_manager().get_setting("ui_mode") == 1:
+        from functions.pages.app.app_web import run_web_ui, check_single_instance
+        if check_single_instance():
+            os._exit(0)
+        run_web_ui(debug="--debug" in sys.argv)
+        return
+    
     from functions.pages.app.app_core import FaustLauncherCore
     from functions.pages.app.app_ui import FaustLauncherUI, check_single_instance
     from functions.pages.notice.loading_info import create_simple_splash
