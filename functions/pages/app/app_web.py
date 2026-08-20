@@ -781,14 +781,14 @@ if %errorlevel% equ 0 (
             return False
 
     def download_addon(self, name, url):
-        """下载并安装插件 (后台线程)"""
+        """下载并安装插件 (后台线程, 对齐主分支: 解压识别后落入 addons/<name>/)"""
         def _run():
             try:
                 from functions.web_update.zeroasso_download import download_and_extract_mod
                 import shutil
-                target = os.path.join('addons', name)
+                target = 'addons'
                 try:
-                    shutil.rmtree(target, ignore_errors=True)
+                    shutil.rmtree(os.path.join(target, name), ignore_errors=True)
                 except Exception:
                     pass
                 download_files = [{'url': url, 'name': name, 'temp_filename': f"{name}.7z"}]
@@ -811,22 +811,25 @@ if %errorlevel% equ 0 (
         """下载并安装 Mod (后台线程)"""
         def _run():
             try:
-                from functions.web_update.zeroasso_download import download_and_extract_gui
+                from functions.web_update.zeroasso_download import download_and_extract_mod
                 from functions.extension.mod.mod_utils import ModManager
+                import shutil
+                target = 'mods'
                 download_files = [{'url': url, 'name': name, 'temp_filename': f"{name}.7z"}]
                 try:
                     ModManager().unload_mod(name)
                 except Exception:
                     pass
                 try:
-                    import shutil
                     shutil.rmtree(os.path.join('mods', name), ignore_errors=True)
                 except Exception:
                     pass
-                gui = HeadlessDownloadGUI('mods', auto_start=False,
-                                         download_func=download_and_extract_gui, task=name)
-                download_and_extract_gui(gui, 'mods', download_files)
-                print(f"Mod {name} 下载完成")
+                gui = HeadlessDownloadGUI(target, auto_start=False, task=name)
+                ok = download_and_extract_mod(gui, target, download_files)
+                if ok:
+                    print(f"Mod {name} 下载完成")
+                else:
+                    print(f"Mod {name} 下载失败")
             except Exception as e:
                 print(f"下载 Mod {name} 失败: {e}")
         threading.Thread(target=_run, daemon=True).start()
