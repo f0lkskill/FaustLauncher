@@ -83,6 +83,20 @@
     setTimeout(() => { el.classList.add('out'); setTimeout(() => el.remove(), 320); }, ms);
   }
 
+  function toastTop(msg, type = 'info', ms = 3200) {
+    let box = document.getElementById('toasts-top');
+    if (!box) {
+      box = document.createElement('div');
+      box.id = 'toasts-top';
+      document.body.appendChild(box);
+    }
+    const el = document.createElement('div');
+    el.className = 'toast ' + type;
+    el.innerHTML = esc(msg);
+    box.appendChild(el);
+    setTimeout(() => { el.classList.add('out'); setTimeout(() => el.remove(), 320); }, ms);
+  }
+
   function withTimeout(p, ms, fallback) {
     // 网络请求兜底超时: 防止云端慢/断网导致页面卡死
     return Promise.race([
@@ -117,8 +131,8 @@
     frame.appendChild(s);
   }
   function hideFrameLoading(frame) {
-    const s = frame && frame.querySelector('.frame-spinner');
-    if (s) s.remove();
+    if (!frame) return;
+    frame.querySelectorAll('.frame-spinner').forEach(s => s.remove());
   }
 
   // ---------------- ANSI 转 HTML ----------------
@@ -227,6 +241,22 @@
   };
 
   // ---------------- 流水线 ----------------
+  function flipGridBelow(applyLayoutChange) {
+    // FLIP: 流水线卡显隐引起的布局位移, 让下方 grid-2 平滑移动
+    const grid = document.querySelector('.grid-2');
+    if (!grid) return;
+    const before = grid.getBoundingClientRect().top;
+    applyLayoutChange();
+    const after = grid.getBoundingClientRect().top;
+    const dy = before - after;
+    if (!dy) return;
+    grid.style.transition = 'none';
+    grid.style.transform = 'translateY(' + dy + 'px)';
+    void grid.offsetWidth;
+    grid.style.transition = '';
+    grid.style.transform = '';
+  }
+
   function pipelineReset() {
     pipeline.running = true;
     pipeline.currentIdx = -1;
@@ -234,7 +264,7 @@
     $('#pipe-status-text').textContent = '初始化中...';
     $('#pipe-status-text').className = 'pipe-status running';
     const card = $('#pipeline-card');
-    card.hidden = false;
+    flipGridBelow(() => { card.hidden = false; });
     card.classList.remove('visible');
     void card.offsetWidth; // 强制 reflow, 保证过渡动画生效
     requestAnimationFrame(() => card.classList.add('visible'));
@@ -302,7 +332,9 @@
     $('#pipe-status-text').className = 'pipe-status';
     const wrap = $('#pipe-steps');
     if (wrap) wrap.innerHTML = '';
-    setTimeout(() => { card.hidden = true; }, 350);
+    setTimeout(() => {
+      flipGridBelow(() => { card.hidden = true; });
+    }, 350);
   }
 
   const KEYWORD_MAP = [
@@ -498,10 +530,26 @@
       const wasDone = t.status === 'done';
       t.status = t.percent >= 100 ? 'done' : 'downloading';
       if (t.status === 'done' && !wasDone) {
+        toastTop(name + ' 下载完成', 'success');
         setTimeout(() => removeDownloadTask(name, true), 300);
       }
     }
-    renderDownloadDrawer();
+    // 原位更新进度, 不重建 DOM (保证进度条过渡平滑)
+    const row = document.querySelector('.dl-task[data-name="' + CSS.escape(name) + '"]');
+    if (row && !row.classList.contains('leaving')) {
+      const pct = Math.round(t.percent || 0);
+      row.classList.remove('waiting', 'downloading', 'done', 'error');
+      row.classList.add(t.status);
+      row.querySelector('.dl-fill').style.width = pct + '%';
+      const meta = row.querySelector('.dl-meta');
+      meta.textContent = t.status === 'done' ? '✓ 已完成'
+        : t.status === 'error' ? '✗ ' + esc(t.error || '下载失败')
+        : t.status === 'waiting' ? '等待中…'
+        : fmtBytes(t.downloaded) + ' / ' + fmtBytes(t.total) +
+          (t.speed ? ' · ' + fmtSpeed(t.speed) : '');
+    } else {
+      renderDownloadDrawer();
+    }
     updateFabVisibility();
   }
 
@@ -574,8 +622,10 @@
         if (old == null) return;
         const dy = old - c.getBoundingClientRect().top;
         if (dy) {
-          c.style.transform = 'translateY(' + dy + 'px)';
-          requestAnimationFrame(() => { c.style.transform = ''; });
+          c.animate([
+            { transform: 'translateY(' + dy + 'px)' },
+            { transform: 'translateY(0)' },
+          ], { duration: 300, easing: 'ease' });
         }
       });
     });
@@ -932,8 +982,6 @@
     renderTools(b.tools);
     // 设置
     renderSettings(b.settings_schema);
-    // 主页: 更新内容 + 随机推荐
-    loadHomeExtras();
     // 欢迎音效提示
     if (IS_BROWSER) toast('浏览器预览模式, 部分功能不可用', 'warn', 4000);
   }
@@ -962,8 +1010,11 @@
   }
 
   async function loadHomeExtras() {
-    if (!api) return;
     const frame = $('#stat-version-card');
+    if (!api) {
+      hideFrameLoading(frame);
+      return;
+    }
     showFrameLoading(frame);
     try {
       const md = await withTimeout(api.get_changelog(), 5000, '');
@@ -990,6 +1041,7 @@
   async function loadRecommend() {
     const frame = $('#rec-card');
     if (!api) {
+      hideFrameLoading(frame);
       $('#rec-body').innerHTML = '<span class="changelog-empty">浏览器预览模式</span>';
       return;
     }
@@ -1401,20 +1453,48 @@
     window.addEventListener('resize', () => {});
   }
 
-  // ---------------- 3D 鼠标聚焦倾斜 ----------------
-  function applyTilt() {
-    const sel = '.card, .link-card, .dc-card';
-    let current = null;
-    document.addEventListener('mousemove', (e) => {
-      const el = e.target.closest(sel);
-      if (el && el !== current) { if (current) current.style.transform = ''; current = el; }
-      else if (!el && current) { current.style.transform = ''; current = null; }
-      if (el) {
-        const r = el.getBoundingClientRect();
-        const x = (e.clientX - r.left) / r.width - 0.5;
-        const y = (e.clientY - r.top) / r.height - 0.5;
-        el.style.transform = 'perspective(900px) rotateY(' + (x * 8).toFixed(2) + 'deg) rotateX(' + (-y * 8).toFixed(2) + 'deg) scale(1.02)';
+  // ---------------- 3D 鼠标聚焦倾斜 (主页全局跟随, 其他页面仅悬浮) ----------------
+  const TILT_SEL = '.card, .link-card, .dc-card, .hero, .chip, .dc-tab';
+  let tiltRAF = null;
+  let tiltMX = 0;
+  let tiltMY = 0;
+  function applyTiltBase() {
+    document.querySelectorAll(TILT_SEL).forEach(el => {
+      // 主页控件保留基准倾角; 其他页面控件还原无变形
+      el.style.transform = el.closest('#page-home')
+        ? 'perspective(900px) rotateX(2deg) rotateY(-1deg)'
+        : '';
+    });
+  }
+  function applyTiltFrame() {
+    tiltRAF = null;
+    const mx = tiltMX;
+    const my = tiltMY;
+    document.querySelectorAll(TILT_SEL).forEach(el => {
+      const r = el.getBoundingClientRect();
+      if (!r.width) return;
+      const inHome = !!el.closest('#page-home');
+      const hovered = el.matches(':hover');
+      if (!inHome && !hovered) {
+        if (el.style.transform) el.style.transform = '';
+        return;
       }
+      const x = Math.max(-1, Math.min(1, (mx - (r.left + r.width / 2)) / (r.width / 2)));
+      const y = Math.max(-1, Math.min(1, (my - (r.top + r.height / 2)) / (r.height / 2)));
+      const s = hovered ? ' scale(1.02)' : '';
+      el.style.transform = 'perspective(900px) rotateY(' + (x * 3.5).toFixed(2) + 'deg) rotateX(' +
+        (-y * 3.5 + (inHome ? 2 : 0)).toFixed(2) + 'deg)' + s;
+    });
+  }
+  function applyTilt() {
+    applyTiltBase();
+    document.addEventListener('mousemove', (e) => {
+      tiltMX = e.clientX;
+      tiltMY = e.clientY;
+      if (!tiltRAF) tiltRAF = requestAnimationFrame(applyTiltFrame);
+    });
+    document.addEventListener('mouseleave', () => {
+      applyTiltBase();
     });
   }
 
@@ -1460,11 +1540,20 @@
       console.error(e);
       BOOT = MOCK;
       toast('后端初始化失败: ' + String(e), 'error', 6000);
+      hideFrameLoading($('#stat-version-card'));
+      hideFrameLoading($('#rec-card'));
       $('#changelog-body').innerHTML = '<span class="changelog-empty">初始化失败: ' + esc(String(e)) + '</span>';
       $('#rec-body').innerHTML = '<span class="changelog-empty">初始化失败</span>';
     }
     render();
-    // 预加载下载中心数据并立即更新随机推荐
+    applyTiltBase();
+    // 锁定初始窗口内容宽度: 最大化/缩放窗口后控件保持初始大小并居中
+    const firstPage = document.querySelector('.page');
+    if (firstPage) {
+      document.documentElement.style.setProperty('--page-w', Math.floor(firstPage.getBoundingClientRect().width) + 'px');
+    }
+    // 主页: 更新内容 + 随机推荐 (独立于 render, 避免被前置错误中断)
+    loadHomeExtras();
     loadRecommend();
     switchPage('home');
   }
