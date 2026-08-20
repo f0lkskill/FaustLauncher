@@ -654,6 +654,7 @@ def download_and_extract_gui(gui:DownloadGUI, config_path: str = "", download_fi
                             time.sleep(1)
                         else:
                             print (f"获取到下载链接: {download_url}\n 零协汉化版本号: {name}")
+                            version = name
                             file_info['url'] = download_url
                             if not check_need_up_translate(name):
                                 print("当前已是最新汉化版本，无需更新。")
@@ -707,6 +708,19 @@ def download_and_extract_gui(gui:DownloadGUI, config_path: str = "", download_fi
                     continue
                 
                 success_count += 1
+
+                # 写入本地版本信息 (修复: 零协会分支缺失, 导致 check_need_up_translate 永远判定旧版)
+                try:
+                    import json as _json
+                    from functions.web_update.translation_source import get_translation_dir as _gtd
+                    _vdir = os.path.join(_gtd(), 'info')
+                    os.makedirs(_vdir, exist_ok=True)
+                    with open(os.path.join(_vdir, 'version.json'), 'w', encoding='utf-8') as f:
+                        _json.dump({"version": str(version), "platform": "zeroasso"},
+                                   f, ensure_ascii=False, indent=2)
+                    print(f"[零协会] 已写入本地版本信息: {version}")
+                except Exception as e:
+                    print(f"写入版本信息失败: {e}")
                 
                 
             except Exception as e:
