@@ -100,6 +100,27 @@
     return n + ' B';
   }
 
+  // 后端 speed 单位是 KB/s (非字节)
+  function fmtSpeed(kbps) {
+    kbps = Number(kbps) || 0;
+    if (kbps >= 1024) return (kbps / 1024).toFixed(2) + ' MB/s';
+    if (kbps >= 1) return kbps.toFixed(1) + ' KB/s';
+    return Math.round(kbps * 1024) + ' B/s';
+  }
+
+  // ---------------- Frame 加载转圈动画 ----------------
+  function showFrameLoading(frame) {
+    if (!frame || frame.querySelector('.frame-spinner')) return;
+    const s = document.createElement('div');
+    s.className = 'frame-spinner';
+    s.innerHTML = '<span></span>';
+    frame.appendChild(s);
+  }
+  function hideFrameLoading(frame) {
+    const s = frame && frame.querySelector('.frame-spinner');
+    if (s) s.remove();
+  }
+
   // ---------------- ANSI 转 HTML ----------------
   const ANSI_COLORS = {
     30: '#555a68', 31: '#ef4444', 32: '#10b981', 33: '#f59e0b',
@@ -167,7 +188,7 @@
         $('#pipe-status-text').textContent =
           (data.downloaded != null && data.total != null)
             ? fmtBytes(data.downloaded) + ' / ' + fmtBytes(data.total) +
-              (data.speed ? '  ·  ' + fmtBytes(data.speed) + '/s' : '')
+              (data.speed ? '  ·  ' + fmtSpeed(data.speed) : '')
             : pct.toFixed(0) + '%';
       }
       if (pct >= 100) setPipelineStepDone(pipeline.currentIdx, true);
@@ -197,7 +218,6 @@
     } else if (event === 'game_exited') {
       pipelineDone();
       $('#pipe-status-text').textContent = '游戏已退出';
-      setTimeout(() => { pipelineIdle(); }, 2500);
     } else if (event === 'game_timeout') {
       pipelineError();
       $('#pipe-status-text').textContent = '等待游戏启动超时, 请检查游戏是否正常安装';
@@ -213,7 +233,11 @@
     $('#pipe-progress').style.width = '0%';
     $('#pipe-status-text').textContent = '初始化中...';
     $('#pipe-status-text').className = 'pipe-status running';
-    $('#pipeline-card').hidden = false;
+    const card = $('#pipeline-card');
+    card.hidden = false;
+    card.classList.remove('visible');
+    void card.offsetWidth; // 强制 reflow, 保证过渡动画生效
+    requestAnimationFrame(() => card.classList.add('visible'));
     const wrap = $('#pipe-steps');
     wrap.innerHTML = '';
     pipeline.steps.forEach((s, i) => {
@@ -261,11 +285,16 @@
     $('#pipe-status-text').textContent = '流水线完成';
     $('#pipe-status-text').className = 'pipe-status done';
     $('#btn-launch').disabled = false;
+    $('#btn-translate').disabled = false;
+    clearTimeout(pipeline._hideTimer);
+    pipeline._hideTimer = setTimeout(() => pipelineIdle(), 1500);
   }
 
   function pipelineIdle() {
-    // 流程回归初始状态: 隐藏流水线卡, 复位进度
-    $('#pipeline-card').hidden = true;
+    // 流程回归初始状态: 流水线卡滑出消失, 复位进度
+    clearTimeout(pipeline._hideTimer);
+    const card = $('#pipeline-card');
+    card.classList.remove('visible');
     pipeline.running = false;
     pipeline.currentIdx = -1;
     $('#pipe-progress').style.width = '0%';
@@ -273,6 +302,7 @@
     $('#pipe-status-text').className = 'pipe-status';
     const wrap = $('#pipe-steps');
     if (wrap) wrap.innerHTML = '';
+    setTimeout(() => { card.hidden = true; }, 350);
   }
 
   const KEYWORD_MAP = [
@@ -454,7 +484,7 @@
       downloadTasks.push({ name: t.name, kind: t.kind, icon: t.icon || PROJECT_ICON, status: 'waiting', percent: 0, downloaded: 0, total: 0, speed: 0 });
     }
     renderDownloadDrawer();
-    updateFabBadge();
+    updateFabVisibility();
   }
 
   function updateDownloadTask(name, data) {
@@ -465,10 +495,14 @@
       if (data.downloaded !== undefined) t.downloaded = data.downloaded;
       if (data.total !== undefined) t.total = data.total;
       if (data.speed !== undefined) t.speed = data.speed;
+      const wasDone = t.status === 'done';
       t.status = t.percent >= 100 ? 'done' : 'downloading';
+      if (t.status === 'done' && !wasDone) {
+        setTimeout(() => removeDownloadTask(name, true), 300);
+      }
     }
     renderDownloadDrawer();
-    updateFabBadge();
+    updateFabVisibility();
   }
 
   function failDownloadTask(name, text) {
@@ -476,15 +510,27 @@
     if (!t) return;
     t.status = 'error';
     t.error = text;
+    setTimeout(() => removeDownloadTask(name, true), 8000);
     renderDownloadDrawer();
-    updateFabBadge();
+    updateFabVisibility();
   }
 
-  function updateFabBadge() {
-    const badge = $('#dl-fab-badge');
-    const active = downloadTasks.filter(t => t.status === 'downloading' || t.status === 'waiting').length;
-    if (active > 0) { badge.hidden = false; badge.textContent = active; }
-    else badge.hidden = true;
+  function removeDownloadTask(name, animate) {
+    const row = document.querySelector('.dl-task[data-name="' + CSS.escape(name) + '"]');
+    if (animate && row) {
+      row.classList.add('leaving');
+      setTimeout(() => removeDownloadTask(name, false), 300);
+      return;
+    }
+    const idx = downloadTasks.findIndex(x => x.name === name);
+    if (idx >= 0) downloadTasks.splice(idx, 1);
+    renderDownloadDrawer();
+    updateFabVisibility();
+  }
+
+  function updateFabVisibility() {
+    const active = downloadTasks.some(t => t.status === 'downloading' || t.status === 'waiting');
+    $('#dl-fab').classList.toggle('visible', active);
   }
 
   function toggleDrawer(open) {
@@ -494,17 +540,23 @@
 
   function renderDownloadDrawer() {
     const list = $('#dl-list');
-    if (!downloadTasks.length) { list.innerHTML = '<div class="dl-empty">暂无下载任务</div>'; return; }
+    const prevPos = new Map();
+    [...list.children].forEach(c => prevPos.set(c.dataset.name, c.getBoundingClientRect().top));
+    if (!downloadTasks.length) {
+      list.innerHTML = '<div class="dl-empty">暂无下载任务</div>';
+      return;
+    }
     list.innerHTML = '';
     downloadTasks.forEach(t => {
       const row = document.createElement('div');
       row.className = 'dl-task ' + t.status;
+      row.dataset.name = t.name;
       const pct = Math.round(t.percent || 0);
       const info = t.status === 'done' ? '✓ 已完成'
         : t.status === 'error' ? '✗ ' + esc(t.error || '下载失败')
         : t.status === 'waiting' ? '等待中…'
         : fmtBytes(t.downloaded) + ' / ' + fmtBytes(t.total) +
-          (t.speed ? ' · ' + fmtBytes(t.speed) + '/s' : '');
+          (t.speed ? ' · ' + fmtSpeed(t.speed) : '');
       row.innerHTML =
         '<img class="dl-icon" src="' + esc(t.icon || PROJECT_ICON) + '" onerror="this.src=\'' + PROJECT_ICON + '\'">' +
         '<div class="dl-info">' +
@@ -515,19 +567,47 @@
         '</div>';
       list.appendChild(row);
     });
+    // FLIP: 保留下来的任务从旧位置平滑滑上去
+    requestAnimationFrame(() => {
+      [...list.children].forEach(c => {
+        const old = prevPos.get(c.dataset.name);
+        if (old == null) return;
+        const dy = old - c.getBoundingClientRect().top;
+        if (dy) {
+          c.style.transform = 'translateY(' + dy + 'px)';
+          requestAnimationFrame(() => { c.style.transform = ''; });
+        }
+      });
+    });
   }
 
   function startDownloadItem(kind, item) {
-    const url = item.dowload_url || item.download_url;
+    const url = item.dowload_url || item.download_url || item.url;
     if (!url) { toast('下载链接无效', 'error'); return; }
     const name = item.name || 'unknown';
+    item.download_count = (Number(item.download_count) || 0) + 1;
+    updateDownloadCountDisplay(name, item.download_count);
     addDownloadTask({ name, kind, icon: item.icon_url || PROJECT_ICON });
     toggleDrawer(true);
-    if (kind === 'addon') {
+    if (api && kind === 'addon') {
+      api.increase_download_count(kind, name).catch(() => {});
       api.download_addon(name, url).catch(e => { toast('下载失败: ' + e, 'error'); failDownloadTask(name, String(e)); });
-    } else {
+    } else if (api) {
+      api.increase_download_count(kind, name).catch(() => {});
       api.download_mod(name, url).catch(e => { toast('下载失败: ' + e, 'error'); failDownloadTask(name, String(e)); });
+    } else {
+      toast('浏览器预览模式', 'warn');
     }
+  }
+
+  function updateDownloadCountDisplay(name, count) {
+    document.querySelectorAll('.dc-card').forEach(card => {
+      const title = card.querySelector('.dc-title');
+      if (title && title.textContent.replace(' (暂不可用)', '') === name) {
+        const el = card.querySelector('.dc-count');
+        if (el) el.textContent = '⬇ ' + count;
+      }
+    });
   }
 
   function initDownloadCenter() {
@@ -544,17 +624,20 @@
 
   function loadDCDisplay() {
     const content = $('#dc-content');
-    content.innerHTML = '<div class="dc-loading">加载中...</div>';
-    // 一次性拉取全部数据
+    const frame = $('#page-download_center');
+    content.innerHTML = '';
+    showFrameLoading(frame);
     Promise.all([
       api.get_addon_list().catch(d => ({ pages: [], error: String(d) })),
       api.get_mod_list().catch(d => ({ pages: [], error: String(d) })),
     ]).then(([addonRes, modRes]) => {
+      hideFrameLoading(frame);
       dcAddonPages = addonRes.pages || [];
       dcModPages = modRes.pages || [];
       if (dcCurrentTab === 'addon') displayAddonPage(1);
       else displayModPage(1);
     }).catch(e => {
+      hideFrameLoading(frame);
       content.innerHTML = '<div class="dc-empty dc-error">⚠ ' + esc(String(e)) + '</div>';
     });
   }
@@ -706,10 +789,12 @@
     $('#font-close').onclick = () => panel.remove();
     let currentFontTab = 'context';
     function refreshFontInfo() {
+      const card = panel.querySelector('.panel-card');
+      showFrameLoading(card);
       api.get_font_info().then(d => {
         const info = d[currentFontTab] || {};
         $('#font-info').innerHTML = info.exists ? '大小: ' + (info.size / 1024).toFixed(1) + ' KB' : '使用默认字体';
-      }).catch(() => {});
+      }).catch(() => {}).finally(() => hideFrameLoading(card));
     }
     $$('.font-tab').forEach(t => t.onclick = () => {
       $$('.font-tab').forEach(x => x.classList.remove('active'));
@@ -878,8 +963,14 @@
 
   async function loadHomeExtras() {
     if (!api) return;
-    const md = await withTimeout(api.get_changelog(), 5000, '');
-    $('#changelog-body').innerHTML = mdToHtml(md);
+    const frame = $('#stat-version-card');
+    showFrameLoading(frame);
+    try {
+      const md = await withTimeout(api.get_changelog(), 5000, '');
+      $('#changelog-body').innerHTML = mdToHtml(md);
+    } finally {
+      hideFrameLoading(frame);
+    }
   }
 
   function pickRecItem(x) {
@@ -894,12 +985,15 @@
     };
   }
 
+  let recPool = [];
+
   async function loadRecommend() {
+    const frame = $('#rec-card');
     if (!api) {
       $('#rec-body').innerHTML = '<span class="changelog-empty">浏览器预览模式</span>';
       return;
     }
-    let items = [];
+    showFrameLoading(frame);
     try {
       const [a, m] = await withTimeout(Promise.all([
         api.get_addon_list(), api.get_mod_list(),
@@ -908,15 +1002,25 @@
         .filter(x => x && !x.disabled).map(x => ({ item: pickRecItem(x), kind: 'addon' }));
       const mods = ((m && m.pages) || []).flat()
         .filter(x => x && !x.disabled).map(x => ({ item: pickRecItem(x), kind: 'mod' }));
-      items = addons.concat(mods);
+      recPool = addons.concat(mods);
     } catch (e) {
       console.error('推荐加载失败:', e);
     }
-    if (!items.length) {
+    if (!recPool.length) {
+      hideFrameLoading(frame);
       $('#rec-body').innerHTML = '<span class="changelog-empty">暂无推荐 (网络异常或加载超时)</span>';
       return;
     }
-    renderRecommend(items[Math.floor(Math.random() * items.length)]);
+    renderRecommend(recPool[Math.floor(Math.random() * recPool.length)]);
+    hideFrameLoading(frame);
+  }
+
+  function refreshRecommend() {
+    if (recPool.length) {
+      renderRecommend(recPool[Math.floor(Math.random() * recPool.length)]);
+    } else {
+      loadRecommend();
+    }
   }
 
   function renderRecommend(rec) {
@@ -941,12 +1045,12 @@
           '<div class="rec-count">⬇ ' + (it.download_count || 0) + ' 次下载</div>' +
         '</div>' +
       '</div>' +
-      '<div class="rec-desc">' + esc(it.desc || '暂无描述') + '</div>' +
-      (authorHtml ? '<div class="rec-authors">' + authorHtml + '</div>' : '') +
-      '<div class="rec-foot">' +
-        (it.url ? '<button class="btn btn-primary btn-mini" id="rec-dl">📥 下载</button>' : '') +
-        '<span class="rec-hint">点击卡片刷新推荐</span>' +
-      '</div>';
+      '<div class="rec-desc" title="' + esc(it.desc || '') + '">' + esc(it.desc || '暂无描述') + '</div>' +
+      (authorHtml ? '<div class="rec-authors">' + authorHtml + '</div>' : '');
+    const foot = $('#rec-foot');
+    foot.innerHTML = it.url
+      ? '<button class="btn btn-primary btn-mini" id="rec-dl">📥 下载</button>'
+      : '';
     const dl = $('#rec-dl');
     if (dl) {
       dl.onclick = (e) => {
@@ -957,7 +1061,7 @@
     }
     body.onclick = (e) => {
       if (e.target.closest('#rec-dl') || e.target.closest('a')) return;
-      loadRecommend();
+      refreshRecommend();
     };
   }
 
@@ -1309,7 +1413,7 @@
         const r = el.getBoundingClientRect();
         const x = (e.clientX - r.left) / r.width - 0.5;
         const y = (e.clientY - r.top) / r.height - 0.5;
-        el.style.transform = 'perspective(900px) rotateY(' + (x * 4).toFixed(2) + 'deg) rotateX(' + (-y * 4).toFixed(2) + 'deg)';
+        el.style.transform = 'perspective(900px) rotateY(' + (x * 8).toFixed(2) + 'deg) rotateX(' + (-y * 8).toFixed(2) + 'deg) scale(1.02)';
       }
     });
   }
