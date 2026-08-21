@@ -55,7 +55,7 @@ def _feature_image_uri(image_name):
         from PIL import Image
         from io import BytesIO as _Bio
         img = Image.open(p)
-        img.thumbnail((360, 360), Image.Resampling.LANCZOS)
+        img.thumbnail((720, 720), Image.Resampling.LANCZOS)
         if img.mode in ("RGBA", "LA", "P"):
             buf = _Bio()
             img.convert("RGBA").save(buf, "PNG")
@@ -418,10 +418,16 @@ class AppApi:
         }
 
     def get_backgrounds(self):
-        """返回背景图 data URI 列表 (限制数量并压缩, 避免 JSON 桥接传输过大卡死)"""
+        """返回背景图 data URI 列表, 应用 bg_gaussian_blur 模糊设置 (限制数量并压缩)"""
         uris = []
         try:
-            from PIL import Image
+            from PIL import Image, ImageFilter
+            from functions.base.settings_manager import get_settings_manager
+            blur = 0.0
+            try:
+                blur = float(get_settings_manager().get_setting("bg_gaussian_blur") or 0.0)
+            except Exception:
+                blur = 0.0
             bg_dir = os.path.join(_PROJECT_ROOT, "assets", "images", "background")
             if os.path.isdir(bg_dir):
                 for name in sorted(os.listdir(bg_dir)):
@@ -431,9 +437,11 @@ class AppApi:
                         continue
                     try:
                         img = Image.open(os.path.join(bg_dir, name)).convert("RGB")
-                        img.thumbnail((800, 800), Image.Resampling.LANCZOS)
+                        img.thumbnail((1600, 1600), Image.Resampling.LANCZOS)
+                        if blur > 0:
+                            img = img.filter(ImageFilter.GaussianBlur(radius=blur))
                         buf = BytesIO()
-                        img.save(buf, "JPEG", quality=55)
+                        img.save(buf, "JPEG", quality=78)
                         uris.append("data:image/jpeg;base64," + base64.b64encode(
                             buf.getvalue()).decode("ascii"))
                     except Exception:
@@ -441,6 +449,60 @@ class AppApi:
         except Exception:
             pass
         return uris
+
+    def get_characters(self):
+        """返回角色小人图列表 (含图片名, 供随机探头摇摆与问候语匹配)"""
+        items = []
+        try:
+            from PIL import Image
+            for root in (
+                os.path.join(_PROJECT_ROOT, "assets", "images", "character"),
+                os.path.join(_PROJECT_ROOT, "_internal", "assets", "images", "character"),
+            ):
+                if not os.path.isdir(root):
+                    continue
+                for name in sorted(os.listdir(root)):
+                    if not name.lower().endswith((".png", ".jpg", ".jpeg")):
+                        continue
+                    try:
+                        img = Image.open(os.path.join(root, name))
+                        img.thumbnail((800, 800), Image.Resampling.LANCZOS)
+                        img = img.convert("RGBA")
+                        # 透明裁切: 裁掉四周透明像素, 让 box 贴合实际内容 (角色/气泡定位更准)
+                        try:
+                            bbox = img.split()[3].getbbox()
+                            if bbox and bbox != (0, 0, img.width, img.height):
+                                img = img.crop(bbox)
+                        except Exception:
+                            pass
+                        buf = BytesIO()
+                        img.save(buf, "PNG")
+                        items.append({
+                            "name": name,
+                            "uri": "data:image/png;base64," + base64.b64encode(
+                                buf.getvalue()).decode("ascii"),
+                        })
+                    except Exception:
+                        continue
+                break
+        except Exception:
+            pass
+        return items
+
+    def get_character_greetings(self):
+        """返回角色问候语映射: 图片名 -> 问候语列表 (config/character_greetings.json)"""
+        try:
+            for root in (
+                os.path.join(_PROJECT_ROOT, "config"),
+                os.path.join(_PROJECT_ROOT, "_internal", "config"),
+            ):
+                p = os.path.join(root, "character_greetings.json")
+                if os.path.isfile(p):
+                    with open(p, "r", encoding="utf-8") as f:
+                        return json.load(f)
+        except Exception as e:
+            print(f"读取角色问候语失败: {e}")
+        return {}
 
     def get_terminal(self):
         with _log_lock:
@@ -1157,18 +1219,52 @@ def _start_tray(core, window):
     except Exception:
         ico = Image.new("RGBA", (64, 64), (99, 102, 241, 255))
 
-    def show_win(icon=None, item=None):
+    def _window_hwnd():
+        """获取主窗口句柄 (避免在托盘线程调用 pywebview window.show 死锁)"""
+        import ctypes
+        hwnd = 0
         try:
-            window.show()
-            window.restore()
+            g = getattr(window, "gui", None)
+            if g is not None:
+                hwnd = int(getattr(g, "Handle", 0) or 0)
         except Exception:
             pass
+        if not hwnd:
+            try:
+                hwnd = ctypes.windll.user32.FindWindowW(None, "Faust Launcher")
+            except Exception:
+                pass
+        return hwnd
+
+    def _show_window_via_win32(show=True):
+        """用 Win32 ShowWindow 直接显示/隐藏窗口 (线程安全, 不经过 pywebview 跨线程调用)"""
+        try:
+            import ctypes
+            hwnd = _window_hwnd()
+            if hwnd:
+                ctypes.windll.user32.ShowWindow(hwnd, 1 if show else 0)  # SW_SHOWNORMAL / SW_HIDE
+                if show:
+                    ctypes.windll.user32.SetForegroundWindow(hwnd)
+                return True
+        except Exception as e:
+            print(f"Win32 窗口操作失败: {e}")
+        return False
+
+    def _tray_window_op(show):
+        """在独立线程执行窗口显示/隐藏, 绝不阻塞 pystray 回调线程"""
+        def _do():
+            try:
+                if not _show_window_via_win32(show):
+                    print(f"托盘: 无法定位窗口句柄, 窗口未{'恢复' if show else '隐藏'}")
+            except Exception:
+                pass
+        threading.Thread(target=_do, daemon=True).start()
+
+    def show_win(icon=None, item=None):
+        _tray_window_op(True)
 
     def hide_win(icon=None, item=None):
-        try:
-            window.hide()
-        except Exception:
-            pass
+        _tray_window_op(False)
 
     def when_exit(icon=None, item=None):
         try:
@@ -1213,6 +1309,7 @@ def _start_tray(core, window):
         pystray.MenuItem("退出", when_exit),
     )
     tray = pystray.Icon("FaustLauncher", ico, "浮士德启动器", menu)
+    tray.on_activate = show_win   # 单击/双击托盘图标时显示窗口
     threading.Thread(target=tray.run, daemon=True).start()
     return tray
 
@@ -1319,28 +1416,40 @@ def run_web_ui(debug: bool = False):
     window_holder["win"] = window
 
     # 托盘
-    tray = _start_tray(core, window)
+    try:
+        tray = _start_tray(core, window)
+    except Exception as e:
+        print(f"托盘初始化失败: {e}")
+        tray = None
 
-    # 关闭行为: 按设置驻留托盘或退出
+    # 关闭行为: 按设置驻留托盘或退出 (读取设置失败时默认隐藏到托盘)
     def _on_closing():
         try:
-            if core.settings_manager.get_setting("after_gui_exit") == 0:
+            hide_to_tray = True
+            try:
+                hide_to_tray = int(core.settings_manager.get_setting("after_gui_exit") or 0) == 0
+            except Exception:
+                hide_to_tray = True
+            if hide_to_tray:
                 try:
-                    assert window is not None
-                    window.hide()
+                    if window is not None:
+                        window.hide()
+                except Exception as e:
+                    print(f"隐藏窗口失败: {e}")
+                try:
+                    _evaluate_js("window.__onLog('程序已最小化到系统托盘, 右键托盘图标可退出')")
                 except Exception:
                     pass
-                _evaluate_js("window.__onLog('程序已最小化到系统托盘, 右键托盘图标可退出')")
                 return False
         except Exception:
             pass
         return True
 
     try:
-        assert window is not None
-        window.events.closing += _on_closing
-    except Exception:
-        pass
+        if window is not None:
+            window.events.closing += _on_closing
+    except Exception as e:
+        print(f"注册关闭事件失败: {e}")
 
     # 启动后检查设置 (延迟到前端就绪; web 模式无交互, 不弹 Tk 对话框)
     def _delayed_check():

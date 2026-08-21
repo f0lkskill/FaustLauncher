@@ -200,7 +200,7 @@
         "name": "背景模糊",
         "type": "float",
         "default": 3.0,
-        "value": 3.0,
+        "value": 2.0,
         "description": "主界面背景模糊效果的强度\n越大的值意味着模糊越强",
         "min": 0.0,
         "max": 10.0,

@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>FaustLauncher 浮士德启动器</title>
-<link rel="stylesheet" href="css/style.css?v=4">
+<link rel="stylesheet" href="css/style.css?v=26">
 </head>
 <body>
 <div id="bg-layer"></div>
@@ -26,7 +26,6 @@
       <button class="nav-item" data-page="settings"><span class="nav-ico">⚙️</span><span>设置</span></button>
       <button class="nav-item" data-page="about"><span class="nav-ico">💻</span><span>关于</span></button>
     </nav>
-    <div class="build-tag" id="build-tag">前端 v6</div>
   </aside>
 
   <main id="main">
@@ -86,6 +85,7 @@
       <div class="carousel-3d" id="features-carousel">
         <div class="carousel-stage" id="features-stage"></div>
       </div>
+      <div class="carousel-dots" id="features-dots"></div>
     </section>
 
     <!-- ==================== 工具 ==================== -->
@@ -205,7 +205,7 @@
       <div class="dl-empty">暂无下载任务</div>
     </div>
   </aside>
-<script src="js/app.js?v=4"></script>
+<script src="js/app.js?v=26"></script>
 <script>
 /* 独立兜底: 完全不依赖 app.js。无论 app.js 是否崩溃, 只要内容加载完成或超时,
    就移除主页两张卡片的 loading 圆圈。 */
@@ -231,5 +231,12 @@
   setTimeout(function () { kill('stat-version-card'); kill('rec-card'); }, 30000);
 })();
 </script>
+
+<!-- 角色小人: 从右/下/上边缘随机探头摇摆, 全局显示 -->
+<div id="character" aria-hidden="true">
+  <img id="character-img" src="" alt="" draggable="false">
+</div>
+<!-- 角色问候语气泡: 弹入 -> 旋转坠落 -->
+<div id="char-bubble" aria-hidden="true"></div>
 </body>
 </html>
