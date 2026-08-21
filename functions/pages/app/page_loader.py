@@ -927,6 +927,16 @@ def download_and_launch(obj=None, need_run_game=False):
             get_translation_dir, get_translation_dir_name, is_ourplay_source,
             check_need_up_translate as need_up,
         )
+        def _push_step(step):
+            """推送流水线步骤事件 (web 模式经 _web_progress 钩子实时到前端)"""
+            try:
+                from functions.web_update import zeroasso_download as _zd
+                _push = getattr(_zd, '_web_progress', None)
+                if _push:
+                    _push('step', {'step': step})
+            except Exception:
+                pass
+
         lang_path = get_translation_dir()
         download_path = 'lang'
         is_ourplay = is_ourplay_source()
@@ -936,12 +946,14 @@ def download_and_launch(obj=None, need_run_game=False):
         
         main_root = obj.root if obj else None
         
+        _push_step('download')
         gui = download_translation(main_root, download_path)
 
         while gui.is_downloading:
             sleep(1)
         
         print("汉化包下载完成")
+        _push_step('resource')
 
         sleep(1.5)
 
@@ -952,11 +964,13 @@ def download_and_launch(obj=None, need_run_game=False):
             sleep(1)
             
         del dt
+        _push_step('bubble')
         gui_res.root.destroy()
         
         print("开始下载气泡文本...")
         download_bubble(download_path)
         print("气泡文本载入完成")
+        _push_step('install')
 
         need_update = need_up()
 
@@ -1002,6 +1016,7 @@ def download_and_launch(obj=None, need_run_game=False):
                         print(f"[合并] 已写回本地版本信息: {_glv()}")
                     except Exception as e:
                         print(f"写回版本信息失败: {e}")
+                    _push_step('mods')
                 else:
                     print(f"错误: 未找到 lang 下的 {get_translation_dir_name()} 文件夹")
         else:
@@ -1023,6 +1038,7 @@ def download_and_launch(obj=None, need_run_game=False):
                 print(f"警告: {download_path}/LimbusCompany_Data 清理不完整, 建议关闭游戏后手动删除")
 
         print("汉化下载及处理全部完成！")
+        _push_step('launch')
 
         if len(sys.argv) > 1 or need_run_game:
             pass

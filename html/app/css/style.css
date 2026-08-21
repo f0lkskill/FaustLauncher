@@ -67,6 +67,11 @@ body {
   padding: 18px 14px;
   z-index: 2;
 }
+.build-tag {
+  margin-top: auto; padding-top: 14px; font-size: 10px;
+  color: #4f78b5; text-align: center; letter-spacing: .2px;
+  border-top: 1px solid var(--border);
+}
 .brand { display: flex; align-items: center; gap: 12px; padding: 4px 8px 18px; }
 .brand-icon {
   width: 44px; height: 44px; object-fit: contain; flex-shrink: 0;
@@ -368,7 +373,8 @@ body {
 
 /* ---------- 主页: 随机推荐 ---------- */
 .rec-card { display: flex; flex-direction: column; min-width: 0; }
-.rec-body { margin-top: 12px; flex: 1; min-height: 0; overflow-y: auto; max-height: 300px; cursor: pointer; transition: transform .12s ease; }
+.rec-body { margin-top: 12px; flex: 1; min-height: 96px; overflow-y: auto; max-height: 300px; cursor: pointer; transition: transform .12s ease; }
+.rec-body:empty { min-height: 96px; }
 .rec-body:active { transform: scale(.985); }
 .rec-main { display: flex; gap: 14px; align-items: flex-start; }
 .rec-icon {
@@ -416,6 +422,78 @@ body {
 .link-card .lc-desc { font-size: 12px; color: var(--text-3); line-height: 1.5; }
 .link-card.disabled { opacity: .45; cursor: not-allowed; }
 .link-card.disabled:hover { transform: none; border-color: var(--border); box-shadow: none; }
+
+/* ---------- 快捷方式 3D 滚筒轮播 ---------- */
+.carousel-3d {
+  position: relative;
+  height: calc(100vh - 110px);
+  min-height: 480px;
+  display: flex; align-items: center; justify-content: center;
+  perspective: 2200px;
+}
+.carousel-stage {
+  position: relative;
+  width: 260px; height: 340px;
+  transform-style: preserve-3d;
+}
+.carousel-item {
+  position: absolute; inset: 0;
+  transform-style: preserve-3d;
+}
+.carousel-item-inner {
+  position: relative;
+  overflow: hidden;
+  width: 100%; height: 100%;
+  border-radius: 18px;
+  background: rgba(28, 28, 32, 0.55);
+  backdrop-filter: blur(16px) saturate(140%);
+  -webkit-backdrop-filter: blur(16px) saturate(140%);
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  box-shadow: 0 18px 45px rgba(0, 0, 0, 0.5);
+  cursor: pointer;
+  backface-visibility: hidden;
+  transition: border-color .25s ease, box-shadow .25s ease, transform .18s ease, background .25s ease;
+  user-select: none;
+}
+/* 卡片背景素材: 图片自身底部对齐横向居中, 顶部边缘起透明度递增渐隐融合 */
+.carousel-item-bg {
+  position: absolute;
+  left: 50%; bottom: 0;
+  transform: translateX(-50%);
+  max-width: 100%;
+  height: auto;
+  display: block;
+  opacity: .65;
+  -webkit-mask-image: linear-gradient(to top, rgba(0,0,0,1) 0%, rgba(0,0,0,.85) 62%, transparent 96%);
+  mask-image: linear-gradient(to top, rgba(0,0,0,1) 0%, rgba(0,0,0,.85) 62%, transparent 96%);
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+.carousel-item-content {
+  position: relative;
+  z-index: 1;
+  height: 100%;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 11px; padding: 22px 20px; text-align: center;
+}
+.carousel-item-inner:hover {
+  border-color: var(--accent);
+  box-shadow: 0 24px 60px rgba(99, 102, 241, 0.35);
+  transform: scale(1.05);
+  background: rgba(34, 34, 40, 0.68);
+}
+.carousel-item-inner:active {
+  transform: scale(0.95);
+  transition-duration: .08s;
+}
+.carousel-item .lc-ico { font-size: 44px; }
+.carousel-item .lc-name { font-size: 21px; font-weight: 700; }
+.carousel-item .lc-desc { font-size: 14.5px; color: rgba(255, 255, 255, 0.78); line-height: 1.5; }
+.carousel-hint {
+  text-align: center; margin-top: 6px;
+  font-size: 12px; color: var(--text-3); letter-spacing: .3px;
+}
 
 /* ---------- 占位 ---------- */
 .placeholder { text-align: center; padding: 60px 30px; }
@@ -564,14 +642,20 @@ body {
 /* ---------- Frame 加载转圈动画 ---------- */
 .frame-spinner {
   position: absolute; inset: 0; z-index: 9;
-  display: flex; align-items: center; justify-content: center;
+  display: none; align-items: center; justify-content: center;
   background: rgba(24, 24, 24, 0.55); border-radius: inherit;
   animation: fadeIn .15s ease;
+  opacity: 1;
+  transition: opacity .4s ease;
+}
+.card.loading .frame-spinner {
+  display: flex;
 }
 .frame-spinner span {
   width: 28px; height: 28px; border-radius: 50%;
   border: 3px solid rgba(55, 148, 255, .2); border-top-color: var(--accent);
   animation: spin .8s linear infinite;
+  transition: transform .4s ease, opacity .4s ease;
 }
 
 /* ---------- 启动流水线 出现/退出动画 ---------- */

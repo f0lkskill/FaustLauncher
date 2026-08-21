@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>FaustLauncher 浮士德启动器</title>
-<link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="css/style.css?v=4">
 </head>
 <body>
 <div id="bg-layer"></div>
@@ -26,6 +26,7 @@
       <button class="nav-item" data-page="settings"><span class="nav-ico">⚙️</span><span>设置</span></button>
       <button class="nav-item" data-page="about"><span class="nav-ico">💻</span><span>关于</span></button>
     </nav>
+    <div class="build-tag" id="build-tag">前端 v6</div>
   </aside>
 
   <main id="main">
@@ -62,7 +63,7 @@
       </div>
 
       <div class="grid-2">
-        <div class="card stat-card stat-version-card">
+        <div class="card stat-card stat-version-card loading" id="stat-version-card">
           <div class="stat-label">📌 当前版本</div>
           <div class="stat-value" id="stat-version">-</div>
           <div class="changelog-box" id="changelog-box">
@@ -71,11 +72,9 @@
           </div>
           <div class="frame-spinner"><span></span></div>
         </div>
-        <div class="card stat-card rec-card">
+        <div class="card stat-card rec-card loading" id="rec-card">
           <div class="stat-label">🎲 随机推荐</div>
-          <div class="rec-body" id="rec-body">
-            <span class="changelog-empty">加载中...</span>
-          </div>
+          <div class="rec-body" id="rec-body"></div>
           <div class="rec-foot" id="rec-foot"></div>
           <div class="frame-spinner"><span></span></div>
         </div>
@@ -84,11 +83,9 @@
 
     <!-- ==================== 快捷方式 ==================== -->
     <section class="page" id="page-features">
-      <div class="page-head">
-        <h2>快捷方式</h2>
-        <p>常用入口，一键直达</p>
+      <div class="carousel-3d" id="features-carousel">
+        <div class="carousel-stage" id="features-stage"></div>
       </div>
-      <div class="grid-3" id="features-grid"></div>
     </section>
 
     <!-- ==================== 工具 ==================== -->
@@ -208,6 +205,31 @@
       <div class="dl-empty">暂无下载任务</div>
     </div>
   </aside>
-<script src="js/app.js"></script>
+<script src="js/app.js?v=4"></script>
+<script>
+/* 独立兜底: 完全不依赖 app.js。无论 app.js 是否崩溃, 只要内容加载完成或超时,
+   就移除主页两张卡片的 loading 圆圈。 */
+(function () {
+  function kill(id) {
+    var f = document.getElementById(id);
+    if (!f) return;
+    f.classList.remove('loading');
+    var sp = f.querySelector('.frame-spinner');
+    if (!sp) return;
+    sp.style.opacity = '0';
+    setTimeout(function () { sp.style.display = 'none'; }, 420);
+  }
+  // 内容感知: 各自卡片的内容不再是 "加载中" 才移除该卡片的圆圈 (互不影响)
+  // 用 trim() 排除换行/空格等空白节点, 避免空卡片被误判为"已加载"
+  setInterval(function () {
+    var ch = document.getElementById('changelog-body');
+    if (ch && ch.textContent.trim() && ch.textContent.indexOf('加载中') === -1) kill('stat-version-card');
+    var rb = document.getElementById('rec-body');
+    if (rb && rb.textContent.trim() && rb.textContent.indexOf('加载中') === -1) kill('rec-card');
+  }, 500);
+  // 硬超时: 仅当极端卡死(30秒)才移除, 避免破坏慢速加载的圆圈
+  setTimeout(function () { kill('stat-version-card'); kill('rec-card'); }, 30000);
+})();
+</script>
 </body>
 </html>
