@@ -115,7 +115,7 @@ body {
 
 /* ---------- 主区域 ---------- */
 #main {
-  flex: 1; overflow-y: auto; padding: 28px 30px 40px;
+  flex: 1; overflow-y: auto; overflow-x: hidden; padding: 28px 30px 40px;
   scrollbar-width: thin;
 }
 #main::-webkit-scrollbar { width: 8px; }
@@ -424,30 +424,55 @@ body {
 .link-card.disabled:hover { transform: none; border-color: var(--border); box-shadow: none; }
 
 /* ---------- 快捷方式 3D 滚筒轮播 ---------- */
+/* 页面纵向两段: 轮播占满剩余 / 底部指示点; 横向溢出由 #main overflow-x:hidden 处理,
+   卡片在视口边缘自然裁切, 不在页面内部硬切 */
+#page-features.active {
+  display: flex; flex-direction: column;
+  height: calc(100vh - 68px);   /* #main padding 28+40 */
+  min-height: 520px;
+}
 .carousel-3d {
   position: relative;
-  height: calc(100vh - 110px);
-  min-height: 480px;
+  flex: 1;
+  min-height: 420px;
   display: flex; align-items: center; justify-content: center;
   perspective: 2200px;
 }
+.carousel-dots {
+  display: flex; justify-content: center; align-items: center;
+  gap: 8px;
+  padding: 6px 0 20px;
+}
+.carousel-dots .cdot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: rgba(255, 255, 255, 0.18);
+  border: none; padding: 0; cursor: pointer;
+  transition: all .25s ease;
+}
+.carousel-dots .cdot:hover { background: rgba(255, 255, 255, 0.4); }
+.carousel-dots .cdot.active {
+  width: 24px; border-radius: 999px;
+  background: var(--accent);
+}
 .carousel-stage {
   position: relative;
-  width: 260px; height: 340px;
+  width: 300px; height: 400px;
   transform-style: preserve-3d;
 }
 .carousel-item {
   position: absolute; inset: 0;
   transform-style: preserve-3d;
+  backface-visibility: hidden;   /* 背面翻转时不透出, 消除旋转时的黑框残影 */
 }
 .carousel-item-inner {
   position: relative;
   overflow: hidden;
   width: 100%; height: 100%;
   border-radius: 18px;
-  background: rgba(28, 28, 32, 0.55);
-  backdrop-filter: blur(16px) saturate(140%);
-  -webkit-backdrop-filter: blur(16px) saturate(140%);
+  /* 不透明背景完全遮挡背后卡片, 消除旋转时的黑框架残影。
+     不用 backdrop-filter: 3D transform + backdrop-filter 在 Chromium
+     存在渲染 bug, 会在卡片重叠处产生异常暗边。 */
+  background: rgba(26, 26, 31, 0.98);
   border: 1px solid rgba(255, 255, 255, 0.10);
   box-shadow: 0 18px 45px rgba(0, 0, 0, 0.5);
   cursor: pointer;
@@ -455,12 +480,12 @@ body {
   transition: border-color .25s ease, box-shadow .25s ease, transform .18s ease, background .25s ease;
   user-select: none;
 }
-/* 卡片背景素材: 图片自身底部对齐横向居中, 顶部边缘起透明度递增渐隐融合 */
+/* 卡片背景素材: 图片铺满卡片宽度, 底部对齐, 顶部边缘起透明度递增渐隐融合 */
 .carousel-item-bg {
   position: absolute;
   left: 50%; bottom: 0;
   transform: translateX(-50%);
-  max-width: 100%;
+  width: 100%;
   height: auto;
   display: block;
   opacity: .65;
@@ -475,24 +500,29 @@ body {
   z-index: 1;
   height: 100%;
   display: flex; flex-direction: column; align-items: center; justify-content: center;
-  gap: 11px; padding: 22px 20px; text-align: center;
+  gap: 0.3em; padding: 0.6em 0.55em; text-align: center;
 }
+/* 字号用 em, 随卡片尺寸 (stage font-size) 等比例缩放 */
+.carousel-item .lc-ico { font-size: 1.3em; line-height: 1; filter: drop-shadow(0 6px 16px rgba(0, 0, 0, 0.45)); }
+.carousel-item .lc-name { font-size: 0.6em; font-weight: 700; }
+.carousel-item .lc-desc { font-size: 0.375em; color: rgba(255, 255, 255, 0.78); line-height: 1.5; }
 .carousel-item-inner:hover {
   border-color: var(--accent);
-  box-shadow: 0 24px 60px rgba(99, 102, 241, 0.35);
-  transform: scale(1.05);
-  background: rgba(34, 34, 40, 0.68);
+  box-shadow: 0 26px 65px rgba(99, 102, 241, 0.35);
+  transform: scale(1.03);
+  background: rgba(34, 34, 40, 0.98);
 }
+/* 拖拽按住时不缩放卡片, 仅加强边框高亮 */
 .carousel-item-inner:active {
-  transform: scale(0.95);
-  transition-duration: .08s;
+  border-color: var(--accent);
+  box-shadow: 0 26px 65px rgba(99, 102, 241, 0.45);
 }
-.carousel-item .lc-ico { font-size: 44px; }
-.carousel-item .lc-name { font-size: 21px; font-weight: 700; }
-.carousel-item .lc-desc { font-size: 14.5px; color: rgba(255, 255, 255, 0.78); line-height: 1.5; }
-.carousel-hint {
-  text-align: center; margin-top: 6px;
-  font-size: 12px; color: var(--text-3); letter-spacing: .3px;
+/* 单击按下反馈: 卡片轻微缩小 + 高亮 (JS 控制, 拖拽开始时移除) */
+.carousel-item-inner.card-press {
+  transform: scale(0.97);
+  border-color: var(--accent);
+  box-shadow: 0 14px 40px rgba(99, 102, 241, 0.5);
+  background: rgba(34, 34, 40, 0.98);
 }
 
 /* ---------- 占位 ---------- */
@@ -754,3 +784,159 @@ body {
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border-2); border-radius: 4px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--accent); }
+
+/* ---------- 角色小人 (随机探头摇摆) ---------- */
+#character {
+  position: fixed;
+  z-index: 60;
+  pointer-events: auto;   /* 可点击: 点击立即缩回 */
+  will-change: transform;
+  cursor: pointer;
+}
+#character img {
+  width: 210px;
+  height: auto;
+  display: block;
+  filter: drop-shadow(0 10px 26px rgba(0, 0, 0, 0.5));
+}
+#character img.char-wiggle { animation: charWiggle 1.2s ease-in-out; }
+@keyframes charWiggle {
+  0%   { transform: rotate(0deg); }
+  15%  { transform: rotate(-7deg); }
+  35%  { transform: rotate(6deg); }
+  55%  { transform: rotate(-5deg); }
+  75%  { transform: rotate(4deg); }
+  100% { transform: rotate(0deg); }
+}
+/* 弹跳 */
+#character img.char-bounce { animation: charBounce 0.9s ease-in-out; }
+@keyframes charBounce {
+  0%   { transform: translateY(0); }
+  30%  { transform: translateY(-20px); }
+  50%  { transform: translateY(0); }
+  70%  { transform: translateY(-11px); }
+  85%  { transform: translateY(0); }
+  100% { transform: translateY(0); }
+}
+/* 震动 */
+#character img.char-shake { animation: charShake 0.55s linear; }
+@keyframes charShake {
+  0%, 100% { transform: translate(0, 0) rotate(0deg); }
+  20% { transform: translate(-8px, 2px) rotate(-4deg); }
+  40% { transform: translate(8px, -2px) rotate(4deg); }
+  60% { transform: translate(-6px, 1px) rotate(-3deg); }
+  80% { transform: translate(6px, -1px) rotate(3deg); }
+}
+/* 缩放弹入 */
+#character img.char-pop { animation: charPop 0.7s ease-out; }
+@keyframes charPop {
+  0%   { transform: scale(0.8); }
+  45%  { transform: scale(1.08); }
+  70%  { transform: scale(0.97); }
+  100% { transform: scale(1); }
+}
+/* 左右探头扭动 */
+#character img.char-nod { animation: charNod 0.8s ease-in-out; }
+@keyframes charNod {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-12px); }
+  50% { transform: translateX(0); }
+  75% { transform: translateX(-12px); }
+}
+
+/* ---------- 角色问候语气泡 ---------- */
+/* --bx 用于水平居中 (bottom/top 边缘时 JS 设为 -50%) */
+#char-bubble {
+  --bx: 0;
+  position: fixed;
+  z-index: 61;
+  max-width: 220px;
+  padding: 10px 14px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text);
+  background: rgba(30, 32, 38, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 12px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+  pointer-events: none;
+  transform-origin: center;
+  opacity: 0;
+  display: none;
+}
+/* 三角箭头: 纯 border 三角, 位置与朝向按边缘控制 */
+/* 气泡在角色上方: 尖朝下 */
+#char-bubble.b-bottom::before {
+  content: ''; position: absolute;
+  left: 50%; margin-left: -7px; bottom: -14px;
+  width: 0; height: 0;
+  border-left: 7px solid transparent;
+  border-right: 7px solid transparent;
+  border-top: 14px solid rgba(30, 32, 38, 0.95);
+}
+/* 气泡在角色下方: 尖朝上 */
+#char-bubble.b-top::before {
+  content: ''; position: absolute;
+  left: 50%; margin-left: -7px; top: -14px;
+  width: 0; height: 0;
+  border-left: 7px solid transparent;
+  border-right: 7px solid transparent;
+  border-bottom: 14px solid rgba(30, 32, 38, 0.95);
+}
+/* 气泡在角色左侧: 尖朝右 */
+#char-bubble.b-right::before {
+  content: ''; position: absolute;
+  right: -14px; top: 50%; margin-top: -7px;
+  width: 0; height: 0;
+  border-top: 7px solid transparent;
+  border-bottom: 7px solid transparent;
+  border-left: 14px solid rgba(30, 32, 38, 0.95);
+}
+/* 弹动出现 (带 --bx/--by 水平/垂直偏移; 用于 right 边缘) */
+#char-bubble.char-bubble-in {
+  display: block;
+  animation: charBubbleIn .5s cubic-bezier(.34, 1.56, .64, 1) forwards;
+}
+@keyframes charBubbleIn {
+  0%   { opacity: 0; transform: translate(var(--bx, 0), calc(var(--by, 0) + 14px)) scale(.3); }
+  60%  { opacity: 1; transform: translate(var(--bx, 0), calc(var(--by, 0) - 5px)) scale(1.1); }
+  100% { opacity: 1; transform: translate(var(--bx, 0), calc(var(--by, 0))) scale(1); }
+}
+/* 弹动出现 (固定水平居中 -50%; 用于 top/bottom 边缘) */
+#char-bubble.char-bubble-in-c {
+  display: block;
+  animation: charBubbleInC .5s cubic-bezier(.34, 1.56, .64, 1) forwards;
+}
+@keyframes charBubbleInC {
+  0%   { opacity: 0; transform: translate(-50%, 14px) scale(.3); }
+  60%  { opacity: 1; transform: translate(-50%, -5px) scale(1.1); }
+  100% { opacity: 1; transform: translate(-50%, 0) scale(1); }
+}
+/* 旋转坠落消失 (right 边缘) */
+#char-bubble.char-bubble-fall {
+  display: block;
+  animation: charBubbleFall .9s ease-in forwards;
+}
+@keyframes charBubbleFall {
+  0%   { opacity: 1; transform: translate(var(--bx, 0), calc(var(--by, 0))) rotate(0deg); }
+  30%  { opacity: 1; transform: translate(var(--bx, 0), calc(var(--by, 0) + 10px)) rotate(-9deg); }
+  100% { opacity: 0; transform: translate(var(--bx, 0), calc(var(--by, 0) + 110px)) rotate(22deg); }
+}
+/* 旋转坠落消失 (固定水平居中, top/bottom 边缘) */
+#char-bubble.char-bubble-fall-c {
+  display: block;
+  animation: charBubbleFallC .9s ease-in forwards;
+}
+@keyframes charBubbleFallC {
+  0%   { opacity: 1; transform: translate(-50%, 0) rotate(0deg); }
+  30%  { opacity: 1; transform: translate(-50%, 10px) rotate(-9deg); }
+  100% { opacity: 0; transform: translate(-50%, 110px) rotate(22deg); }
+}
+
+/* 关键交互元素提升层级, 确保位于角色小人之上可正常点击 */
+button, a, input, select, textarea,
+.btn, .nav-item, .link-card, .dc-card, .mod-card, .set-row,
+.cdot, .chip, .term-head, .term-toggle, .dl-fab {
+  position: relative;
+  z-index: 65;
+}

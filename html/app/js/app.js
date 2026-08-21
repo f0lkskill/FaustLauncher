@@ -3,15 +3,9 @@
    浏览器直接打开 index.html 时使用内置 Mock 数据预览。
    ============================================================ */
 (() => {
-  'use strict';
+'use strict';
 
-// 证明本 JS 已执行 (覆盖 HTML 静态 build-tag; 若侧边栏底部仍显示旧文字则说明 JS 是缓存旧版)
-  try {
-    var _tag = document.getElementById('build-tag');
-    if (_tag) _tag.textContent = 'JS 已执行 v6 · ' + new Date().getTime();
-  } catch (_) {}
-
-  // 全局 JS 错误浮层: 前端一旦报错, 在窗口底部显示, 便于排查 (无需开 DevTools)
+// 全局 JS 错误浮层: 前端一旦报错, 在窗口底部显示, 便于排查 (无需开 DevTools)
   (function _errOverlay() {
     function show(tag, msg) {
       try {
@@ -1313,6 +1307,32 @@ for (const m of KEYWORD_MAP) {
 
   // ---------------- 快捷方式 / 工具 ----------------
   let featTotal = 0, featAngle = 0;
+  let featStep = 340;   // 卡片间距, 随主区宽度自适应
+
+  // 计算卡片尺寸: 中间卡完整 + 两侧卡自然露出 (卡宽 ≈ 主区宽/2.2, 间距 = 卡宽, 不重叠),
+  // 受高度上限约束 (等比例拉伸)
+  function computeFeatSize() {
+    const main = document.getElementById('main');
+    const W = Math.max(320, (main ? main.clientWidth : 720) - 60);
+    const H = Math.max(360, window.innerHeight - 150);  // 留出 #main padding + 指示点
+    let c = W / 2.2;
+    const cMaxH = H * 3 / 4 * 0.92;                      // 高度约束: 卡高不超高
+    if (c > cMaxH) c = cMaxH;
+    c = Math.max(220, Math.min(c, 520));
+    // 间距比卡宽大 12%, 卡片之间留出空隙, 不贴太近
+    return { w: Math.round(c), h: Math.round(c * 4 / 3), step: Math.round(c * 1.12) };
+  }
+
+  function applyFeatSize() {
+    const stage = $('#features-stage');
+    if (!stage) return;
+    const s = computeFeatSize();
+    stage.style.width = s.w + 'px';
+    stage.style.height = s.h + 'px';
+    stage.style.fontSize = (s.w / 7.5).toFixed(1) + 'px';  // 内容字号随卡片等比例缩放
+    featStep = s.step;
+    layoutCarousel(false);
+  }
 
   function renderFeatures(features) {
     const stage = $('#features-stage');
@@ -1335,45 +1355,75 @@ for (const m of KEYWORD_MAP) {
           '<div class="lc-name">' + esc(f.name.split(' ').slice(1).join(' ') || f.name) + '</div>' +
           '<div class="lc-desc">' + esc(f.desc || '') + '</div>' +
         '</div>';
-      inner.ondblclick = () => { if (api) api.open_feature(f.name).catch(e => toast(e, 'error')); else toast('浏览器预览模式', 'warn'); };
+      inner.dataset.featureName = f.name;   // 单击打开 (在轮播拖拽判定中触发)
       wrap.appendChild(inner);
       stage.appendChild(wrap);
     });
-    layoutCarousel(false);
+    // 底部指示点: 点击跳转到对应卡片
+    const dotsWrap = document.getElementById('features-dots');
+    if (dotsWrap) {
+      dotsWrap.innerHTML = '';
+      list.forEach((_, i) => {
+        const dot = document.createElement('button');
+        dot.className = 'cdot';
+        dot.title = '跳到第 ' + (i + 1) + ' 个快捷方式';
+        dot.addEventListener('click', () => {
+          featAngle = i;
+          layoutCarousel(true);
+        });
+        dotsWrap.appendChild(dot);
+      });
+    }
+    applyFeatSize();
   }
 
-  // CoverFlow 式循环轮播: 卡片沿弧线排列, 中间最大最正, 两侧转向但内容可见, 无限循环
-  function layoutCarousel(smooth) {
+  // CoverFlow 式循环轮播: 卡片沿弧线排列, 中间正面最大, 两侧倾斜有立体感但保持 1:1 不缩小,
+  // 无限循环; 支持 float offset 实现丝滑拖拽 (不再 Math.round 跳变)
+function layoutCarousel(smooth) {
     const stage = $('#features-stage');
-    if (!stage) return;
+    if (!stage || !featTotal) return;
     const n = featTotal || 1;
-    const offset = Math.round(featAngle);
-    const X = [0, 270, 480];     // d=0,1,2 的横向位置 (最外侧向内收拢, 避免被窗口裁剪)
-    const S = [1, 0.87, 0.68];   // 对应缩放
-    const DEPTH = 170, ANGLE = 26;
+    // 用浮点 offset, 拖拽时连续变化不跳变
+    const offset = featAngle;
+    const X = [0, featStep, featStep * 2]; // d=0,1,2 横向位置 (间距 = 卡宽, 三卡无缝填满)
+    const S = [1, 1, 1];         // 缩放: 全部 1:1, 不缩小 (仅保留倾斜的立体感)
+    const DEPTH = 80, ANGLE = 16; // 深度/角度: 保留 CoverFlow 立体层次与倾斜
+    const OPACITY = [1, 0.9, 0.65]; // 远离中心的卡轻微渐隐, 层次过渡更柔和
     const cards = stage.querySelectorAll('.carousel-item');
+    if (!cards.length) return;
     cards.forEach((card, i) => {
-      let d = (((i - offset) % n) + n) % n;
+      let d = ((i - offset) % n + n) % n;
       if (d > n / 2) d = d - n;
       const prev = card._d;
       const jumped = prev !== undefined && Math.abs(d - prev) > n / 2;
       card._d = d;
       const ad = Math.abs(d);
-      const idx = Math.min(ad, 2);
-      const x = d < 0 ? -X[idx] : X[idx];
-      const scale = S[idx];
+      const idx = Math.min(Math.floor(ad), 2);   // 必须取整, 否则浮点索引取到 undefined
+      const frac = ad - idx;
+      const xBase = X[idx] ?? 0;
+      const xNext = (X[idx + 1] ?? (xBase + featStep));
+      const x = (d < 0 ? -1 : 1) * (xBase + (xNext - xBase) * frac);
+      const scale = S[idx] ?? 1;
       const z = -ad * DEPTH;
       const rot = d * ANGLE;
-      card.style.transition = (smooth && !jumped) ? 'transform .5s cubic-bezier(.22,.75,.28,1)' : 'none';
-      card.style.transform = 'translate3d(' + x + 'px, 0, ' + z + 'px) rotateY(' + rot + 'deg) scale(' + scale.toFixed(3) + ')';
+      const opacity = OPACITY[idx] ?? 0.65;
+      card.style.opacity = String(opacity);
+      card.style.transition = (smooth && !jumped)
+        ? 'transform .45s cubic-bezier(.22,.75,.28,1), opacity .45s ease'
+        : 'none';
+      card.style.transform = 'translate3d(' + (x || 0).toFixed(2) + 'px, 0, ' + (z || 0).toFixed(2) + 'px) rotateY(' + (rot || 0).toFixed(2) + 'deg) scale(' + scale.toFixed(4) + ')';
     });
+    // 同步底部指示点: 当前居中的卡高亮
+    const activeDot = ((Math.round(offset) % n) + n) % n;
+    const dots = document.querySelectorAll('#features-dots .cdot');
+    dots.forEach((d, i) => d.classList.toggle('active', i === activeDot));
   }
 
   function bindFeaturesCarousel() {
     const carousel = $('#features-carousel');
     if (!carousel) return;
     let lock = false;
-    // 滚轮: 每格切一张, 无限循环
+
     carousel.addEventListener('wheel', (e) => {
       e.preventDefault();
       if (lock) return;
@@ -1382,31 +1432,98 @@ for (const m of KEYWORD_MAP) {
       featAngle += (e.deltaY > 0 ? 1 : -1);
       layoutCarousel(true);
     }, { passive: false });
-    // 指针拖拽: 全程跟手 (window 级监听, 移出卡片区也不断), 松手吸附
+
+    // ---- 丝滑拖拽: rAF 渲染 + spring 弹性吸附 ----
     let dragging = false, startX = 0, dragBase = 0;
-    const onMove = (e) => {
-      if (!dragging) return;
-      const dx = e.clientX - startX;
-      featAngle = dragBase + dx / 200;
-      layoutCarousel(false);
+    let moved = false, pressEl = null, pressName = null;
+    let rafId = null, springId = null;
+
+    const stopAll = () => {
+      if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
+      if (springId) { cancelAnimationFrame(springId); springId = null; }
     };
-    const onUp = () => {
-      if (!dragging) return;
-      dragging = false;
-      window.removeEventListener('pointermove', onMove);
-      window.removeEventListener('pointerup', onUp);
-      featAngle = Math.round(featAngle);
-      layoutCarousel(true);
+
+    const clearPress = () => {
+      if (pressEl) { pressEl.classList.remove('card-press'); pressEl = null; }
+      pressName = null;
     };
+
+    // 跟手阶段: rAF 持续渲染, featAngle 浮点跟随
+    const startRenderLoop = () => {
+      stopAll();
+      const loop = () => {
+        layoutCarousel(false);
+        rafId = requestAnimationFrame(loop);
+      };
+      rafId = requestAnimationFrame(loop);
+    };
+
+    // 松手后: spring 弹性吸附到最近整数 (不抽动)
+    const springToNearest = () => {
+      stopAll();
+      const target = Math.round(featAngle);
+      const startVal = featAngle;
+      const t0 = performance.now();
+      const duration = 320; // ms
+      const step = (now) => {
+        const p = Math.min(1, (now - t0) / duration);
+        // ease-out cubic: 平滑减速
+        const ease = 1 - Math.pow(1 - p, 3);
+        featAngle = startVal + (target - startVal) * ease;
+        layoutCarousel(p < 0.98); // 接近结束时加回过渡
+        if (p < 1) { springId = requestAnimationFrame(step); }
+        else { featAngle = target; layoutCarousel(true); }
+      };
+      springId = requestAnimationFrame(step);
+    };
+
     carousel.addEventListener('pointerdown', (e) => {
       dragging = true;
+      moved = false;
       startX = e.clientX;
       dragBase = featAngle;
-      window.addEventListener('pointermove', onMove);
-      window.addEventListener('pointerup', onUp);
-      layoutCarousel(false);
+      stopAll();
+      startRenderLoop();
+      // 按下反馈: 卡片缩小 + 高亮
+      const hit = e.target.closest('.carousel-item-inner');
+      if (hit) {
+        pressEl = hit;
+        pressName = hit.dataset.featureName || null;
+        hit.classList.add('card-press');
+      }
     });
-    window.addEventListener('pointercancel', onUp);
+
+    window.addEventListener('pointermove', (e) => {
+      if (!dragging) return;
+      const dx = e.clientX - startX;
+      if (Math.abs(dx) > 6 && !moved) {
+        moved = true;
+        clearPress();   // 开始拖动, 取消按压缩放反馈
+      }
+      // 灵敏度: 拖 200px = 切 1 张; 方向取反 (向右拖 = 上一张, 向左拖 = 下一张)
+      featAngle = dragBase - dx / 220;
+    });
+    window.addEventListener('pointerup', () => {
+      if (!dragging) return;
+      dragging = false;
+      stopAll();
+      // 未发生拖拽位移 -> 判定为单击, 打开对应快捷方式
+      if (!moved && pressName) {
+        clearPress();
+        if (api) api.open_feature(pressName).catch(e => toast(String(e), 'error'));
+        else toast('浏览器预览模式', 'warn');
+      } else {
+        clearPress();
+      }
+      springToNearest();
+    });
+    window.addEventListener('pointercancel', () => {
+      if (!dragging) return;
+      dragging = false;
+      clearPress();
+      stopAll();
+      springToNearest();
+    });
   }
 
   const TOOL_PENDING = [];
@@ -1555,6 +1672,7 @@ for (const m of KEYWORD_MAP) {
         const v = type === 'integer' ? parseInt(range.value, 10) : parseFloat(range.value);
         markChanged(key, v);
         if (api) api.set_setting(key, v).catch(err => toast(String(err), 'error'));
+        if (key === 'bg_gaussian_blur') refreshBackgrounds();   // 模糊度立即生效
       };
       wrap.appendChild(rw);
       return wrap;
@@ -1653,7 +1771,11 @@ for (const m of KEYWORD_MAP) {
     });
     // 终端
     const term = $('#terminal');
-    $('.term-head').addEventListener('click', () => term.classList.toggle('open'));
+    $('.term-head').addEventListener('click', () => {
+      const wasOpen = term.classList.contains('open');
+      term.classList.toggle('open');
+      if (!wasOpen && term.classList.contains('open')) retractCharIfBottom();
+    });
     $('#btn-copy-term').addEventListener('click', e => {
       e.stopPropagation();
       const text = $$('.term-line', termBody).map(l => l.textContent).join('\n');
@@ -1743,25 +1865,242 @@ for (const m of KEYWORD_MAP) {
   }
 
   // ---------------- 背景 ----------------
+  let _bgInterval = null;
+
   function applyBackgrounds(uris) {
     if (!uris || !uris.length) return;
-    let idx = 0;
+    if (_bgInterval) { clearInterval(_bgInterval); _bgInterval = null; }
     const layer = $('#bg-layer');
-    const img = new Image();
-    img.onload = () => {
-      layer.style.backgroundImage = 'url(' + uris[idx] + ')';
-      layer.classList.add('show-img');
+    let idx = 0;
+    const show = (u) => {
+      const im = new Image();
+      im.onload = () => { layer.style.backgroundImage = 'url(' + u + ')'; layer.classList.add('show-img'); };
+      im.src = u;
     };
-    img.src = uris[0];
-    setInterval(() => {
-      if (!uris.length) return;
-      idx = (idx + 1) % uris.length;
-      const im2 = new Image();
-      im2.onload = () => {
-        layer.style.backgroundImage = 'url(' + uris[idx] + ')';
-      };
-      im2.src = uris[idx];
-    }, 25000);
+    show(uris[0]);
+    if (uris.length > 1) {
+      _bgInterval = setInterval(() => {
+        idx = (idx + 1) % uris.length;
+        show(uris[idx]);
+      }, 25000);
+    }
+  }
+
+  // 模糊度等背景相关设置变更后立即重新拉取背景
+  function refreshBackgrounds() {
+    if (api) withTimeout(api.get_backgrounds(), 6000, []).then(applyBackgrounds).catch(() => {});
+  }
+
+  // ---------------- 角色小人 (随机边缘探头摇摆) ----------------
+  let charImages = [];
+  let charGreetings = {};
+  let _charGreetingsReady = false;
+  let charEl = null, charImgEl = null;
+  const CHAR_EDGES = ['right', 'bottom', 'top'];
+
+  function initCharacter() {
+    charEl = document.getElementById('character');
+    if (!charEl) return;
+    charImgEl = document.getElementById('character-img');
+    charEl.addEventListener('click', onCharClick);
+    // 图片与问候语都就绪后立即显示一次 (不等冷却)
+    const tryStart = () => {
+      if (charImages.length && _charGreetingsReady) characterCycle();
+    };
+    if (api) {
+      withTimeout(api.get_characters(), 6000, []).then(list => {
+        charImages = (list && list.length) ? list : [charFallbackItem()];
+        tryStart();
+      }).catch(() => { charImages = [charFallbackItem()]; tryStart(); });
+      withTimeout(api.get_character_greetings(), 6000, {}).then(map => {
+        charGreetings = map || {};
+        _charGreetingsReady = true;
+        tryStart();
+      }).catch(() => { charGreetings = {}; _charGreetingsReady = true; tryStart(); });
+    } else {
+      charImages = [charFallbackItem()];
+      charGreetings = {};
+      _charGreetingsReady = true;
+      characterCycle();
+    }
+  }
+
+  function charFallbackItem() {
+    return { name: 'faust_1.png', uri: '../../assets/images/character/faust_1.png' };
+  }
+
+  function scheduleCharacter() {
+    setTimeout(characterCycle, 20000 + Math.random() * 40000);   // 缩回后 20s~60s 再次出现
+  }
+
+  // 在边缘上随机像素位置 (比率 15%~85%), 并据此计算初始倾斜角度
+  function randomCharPos(edge) {
+    const ratio = 15 + Math.random() * 70;           // 沿边缘的随机位置 (15%~85%)
+    const base = ((ratio - 50) / 50) * 10;           // 位置越偏边, 倾角越大 (±10°)
+    const jitter = Math.random() * 6 - 3;            // 额外 ±3° 抖动
+    const pos = { ratio: ratio.toFixed(1), angle: (base + jitter).toFixed(1) };
+    if (edge === 'right') {
+      // 角色为半身像 (无腿): 底部藏在屏幕下缘之外, 仅露出上半身
+      pos.bottom = '-' + (40 + Math.random() * 40).toFixed(0) + 'px';
+    }
+    return pos;
+  }
+
+  function applyCharPose(edge, pos, hidden, noAnim) {
+    const s = charEl.style;
+    s.transition = noAnim ? 'none' : 'transform .75s cubic-bezier(.2,.8,.3,1)';
+    s.left = 'auto'; s.right = 'auto'; s.top = 'auto'; s.bottom = 'auto';
+    if (edge === 'right') {
+      // 底部藏在屏幕外 (无腿), 仅水平镜像面向左, 探头露出约 75% 宽
+      s.bottom = pos.bottom || '-50px';
+      s.right = '0';
+      s.transform = 'translate(' + (hidden ? '110%' : '25%') + ', 0) scaleX(-1)';
+    } else if (edge === 'bottom') {
+      s.left = pos.ratio + '%'; s.bottom = '0';
+      s.transform = 'translate(-50%, ' + (hidden ? '110%' : '28%') + ') rotate(' + pos.angle + 'deg)';
+    } else { // top
+      // 顶部探头: 垂直翻转 (scaleY -1), 露出的是头部而非腿部
+      s.left = pos.ratio + '%'; s.top = '0';
+      s.transform = 'translate(-50%, ' + (hidden ? '-110%' : '-28%') + ') rotate(' + pos.angle + 'deg) scaleY(-1)';
+    }
+  }
+
+  // 角色问候语气泡: 弹入 -> 停留 -> 旋转坠落, 紧贴角色实际矩形, 箭头指向角色
+  function showCharBubble(edge, pos, text) {
+    const b = document.getElementById('char-bubble');
+    if (!b || !text) return;
+    hideCharBubble();
+    b.style.display = '';
+    b.style.setProperty('--bx', '0');
+    b.style.setProperty('--by', '0');
+    b.textContent = text;
+    b.style.left = 'auto'; b.style.right = 'auto'; b.style.top = 'auto'; b.style.bottom = 'auto';
+    const centered = (edge === 'bottom' || edge === 'top');   // 顶/底边缘气泡水平居中
+    b.classList.add(edge === 'right' ? 'b-right' : edge === 'bottom' ? 'b-bottom' : 'b-top');
+    // 用角色实际变换后的矩形定位, 保证气泡紧贴角色
+    const cr = charEl.getBoundingClientRect();
+    const vw = window.innerWidth, vh = window.innerHeight;
+    if (edge === 'right') {
+      // 角色在右下角: 气泡紧贴角色左侧, 垂直与角色中部对齐
+      b.style.right = (vw - cr.left + 14) + 'px';
+      b.style.top = (cr.top + cr.height / 2) + 'px';
+      b.style.setProperty('--by', '-50%');
+    } else if (edge === 'bottom') {
+      // 角色在底部: 气泡在角色正上方居中
+      b.style.left = (cr.left + cr.width / 2) + 'px';
+      b.style.bottom = (vh - cr.top + 14) + 'px';
+    } else { // top
+      // 角色在顶部: 气泡在角色正下方居中
+      b.style.left = (cr.left + cr.width / 2) + 'px';
+      b.style.top = (cr.bottom + 14) + 'px';
+    }
+    charEl._bubbleCentered = centered;
+    b.classList.add(centered ? 'char-bubble-in-c' : 'char-bubble-in');
+    charEl._bubbleFallTimer = setTimeout(() => {
+      b.classList.remove('char-bubble-in', 'char-bubble-in-c');
+      b.classList.add(centered ? 'char-bubble-fall-c' : 'char-bubble-fall');
+      charEl._bubbleGoneTimer = setTimeout(hideCharBubble, 950);
+    }, 3500);
+  }
+
+  function hideCharBubble() {
+    const b = document.getElementById('char-bubble');
+    if (!b) return;
+    if (charEl._bubbleFallTimer) { clearTimeout(charEl._bubbleFallTimer); charEl._bubbleFallTimer = null; }
+    if (charEl._bubbleGoneTimer) { clearTimeout(charEl._bubbleGoneTimer); charEl._bubbleGoneTimer = null; }
+    b.className = '';
+    b.style.display = 'none';
+  }
+
+  function clearCharTimers() {
+    if (charEl._wiggleTimer) { clearTimeout(charEl._wiggleTimer); charEl._wiggleTimer = null; }
+    if (charEl._stayTimer) { clearTimeout(charEl._stayTimer); charEl._stayTimer = null; }
+    hideCharBubble();
+  }
+
+  // 点击立即缩回, 再次出现间隔同 scheduleCharacter (40s~120s)
+  function onCharClick() {
+    if (!charEl || charEl._edge == null) return;
+    clearCharTimers();
+    applyCharPose(charEl._edge, charEl._pos, true);
+    setTimeout(scheduleCharacter, 800);   // 等收回动画完成
+  }
+
+  // 终端拉起时强制底部角色缩回 (底部会被终端遮挡)
+  function retractCharIfBottom() {
+    if (!charEl || charEl._edge !== 'bottom') return;
+    clearCharTimers();
+    const pos = charEl._pos;
+    applyCharPose('bottom', pos, true);
+    charEl._edge = null;
+    setTimeout(scheduleCharacter, 800);
+  }
+
+  // 角色需要避让的关键交互元素 (尽量覆盖全部可点击控件)
+  const CHAR_COLLIDE_SEL = 'button, a, input, select, textarea, [role="button"], .btn, .nav-item, .link-card, .dc-card, .mod-card, .set-row, .cdot, .chip, .term-head, .term-toggle, .dl-fab, .status-chips, .hero-actions, .dc-tab, .stat-label, .set-control';
+
+  // 探测: 该边缘+位置是否与关键交互元素重叠 (临时放到可见位测 rect, 带膨胀边距)
+  function posCollides(edge, pos) {
+    if (!charEl) return false;
+    applyCharPose(edge, pos, false, true);
+    const r = charEl.getBoundingClientRect();
+    const PAD = 8;   // 与关键元素保持间距, 视觉上不贴住
+    const rr = { left: r.left - PAD, right: r.right + PAD, top: r.top - PAD, bottom: r.bottom + PAD };
+    const els = document.querySelectorAll(CHAR_COLLIDE_SEL);
+    for (let i = 0; i < els.length; i++) {
+      const t = els[i];
+      if (!t || t === charEl || t.contains(charEl) || charEl.contains(t)) continue;
+      const tr = t.getBoundingClientRect();
+      if (tr.width === 0 || tr.height === 0) continue;
+      if (rr.right > tr.left && rr.left < tr.right && rr.bottom > tr.top && rr.top < tr.bottom) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function characterCycle() {
+    if (!charEl || !charImages.length) { scheduleCharacter(); return; }
+    // 终端展开时避开底部边缘 (底部被终端占用)
+    const termEl = document.getElementById('terminal');
+    const termOpen = termEl ? termEl.classList.contains('open') : false;
+    const availEdges = termOpen ? CHAR_EDGES.filter(e => e !== 'bottom') : CHAR_EDGES;
+    // 多次尝试找一个不遮挡关键交互元素的位置 (最多 12 次)
+    let edge, pos;
+    for (let attempt = 0; attempt < 12; attempt++) {
+      edge = availEdges[Math.floor(Math.random() * availEdges.length)];
+      pos = randomCharPos(edge);
+      if (!posCollides(edge, pos)) break;
+    }
+    charEl._edge = edge;
+    charEl._pos = pos;
+    // 随机选图片, 并按图片名从问候语表随机取一条 (只在出现时加载一次)
+    const item = charImages[Math.floor(Math.random() * charImages.length)];
+    charImgEl.src = item.uri;
+    const greetings = charGreetings[item.name];
+    const greeting = (greetings && greetings.length)
+      ? greetings[Math.floor(Math.random() * greetings.length)]
+      : '';
+    clearCharTimers();
+    charImgEl.classList.remove('char-wiggle', 'char-bounce', 'char-shake', 'char-pop', 'char-nod');
+    // 随机选一个动效: 摇摆 / 弹跳 / 震动 / 缩放弹入 / 左右探头
+    const CHAR_ANIMS = ['char-wiggle', 'char-bounce', 'char-shake', 'char-pop', 'char-nod'];
+    const animClass = CHAR_ANIMS[Math.floor(Math.random() * CHAR_ANIMS.length)];
+    // 先无动画重置到新边缘的隐藏位, 下一帧再探头滑入
+    applyCharPose(edge, pos, true, true);
+    requestAnimationFrame(() => requestAnimationFrame(() => applyCharPose(edge, pos, false)));
+    // 滑入完成后播放随机动效 + 弹出问候语气泡
+    charEl._wiggleTimer = setTimeout(() => {
+      void charImgEl.offsetWidth;
+      charImgEl.classList.add(animClass);
+      setTimeout(() => charImgEl.classList.remove(animClass), 1400);
+      showCharBubble(edge, pos, greeting);
+    }, 800);
+    // 停留较长时间 (20s~100s) 后收回, 然后进入下一轮
+    charEl._stayTimer = setTimeout(() => {
+      applyCharPose(edge, pos, true);
+      scheduleCharacter();
+    }, 20000 + Math.random() * 80000);
   }
 
   // ---------------- 初始化 ----------------
@@ -1779,6 +2118,11 @@ for (const m of KEYWORD_MAP) {
       bindEvents();
       applyTilt();
       bindFeaturesCarousel();
+      initCharacter();
+      // 窗口缩放时重新计算卡片尺寸, 保持三卡填满主区宽度
+      window.addEventListener('resize', () => {
+        if (currentPage === 'features') applyFeatSize();
+      });
     } catch (e) {
       console.error('UI 初始化出错:', e);
     }
