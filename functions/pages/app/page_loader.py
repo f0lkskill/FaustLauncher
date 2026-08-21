@@ -950,6 +950,7 @@ def download_and_launch(obj=None, need_run_game=False):
         def _sync_cloud_items():
             """启动流程: 对比云端插件/Mod 版本并自动更新 (进度经 _web_progress 推送到前端流水线)"""
             try:
+                from functions.web_update import zeroasso_download as zd
                 from functions.web_update.web_trigger import WebTrigger
                 from functions.extension.mod.mod_utils import ModManager
                 from functions.web_update.zeroasso_download import download_and_extract_mod
@@ -1023,8 +1024,10 @@ def download_and_launch(obj=None, need_run_game=False):
                     print(f"检测到 {label} {name} 有新版本, 正在更新...")
                     target = 'addons' if kind == 'addon' else 'mods'
                     download_files = [{'url': url, 'name': name, 'temp_filename': f"{name}.7z"}]
-                    gui = zd.DownloadGUI(None, target, False, download_func=download_and_extract_gui, task=name)
-                        if hasattr(zd, 'DownloadGUI') else None # type: ignore
+                    gui = None
+                    if hasattr(zd, 'DownloadGUI'):
+                        gui = zd.DownloadGUI(None, target, False,
+                                             download_func=download_and_extract_gui)
                     try:
                         ok = download_and_extract_mod(gui, target, download_files)
                         print(f"{label} {name} 更新完成" if ok else f"{label} {name} 更新失败")
