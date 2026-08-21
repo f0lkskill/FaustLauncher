@@ -455,8 +455,7 @@
       const icoEl = $('#pipe-detail-ico'), txtEl = $('#pipe-detail-text');
       if (icoEl) { icoEl.innerHTML = esc('🎮'); icoEl.dataset.task = ''; }
       if (txtEl) txtEl.textContent = '游戏已启动';
-      $('#btn-launch').disabled = false;
-      $('#btn-translate').disabled = false;
+      // 游戏运行中保持按钮互斥 (退出后由 pipelineDone 恢复)
     } else if (event === 'game_exited') {
       pipelineDone();
       const icoEl = $('#pipe-detail-ico'), txtEl = $('#pipe-detail-text');
@@ -542,8 +541,7 @@
     hidePipeDownloadProgress();
     const i = pipeline.currentIdx;
     if (i >= 0) setStep(i, 'active'); // 保留高亮
-    $('#btn-launch').disabled = false;
-    $('#btn-translate').disabled = false;
+    setPipelineButtonsDisabled(false);
   }
 
   function pipelineDone() {
@@ -555,8 +553,7 @@
     const isLaunchFlow = pipeline.steps.some(s => s.key === 'launch');
     if (txtEl) txtEl.textContent = isLaunchFlow ? '启动流程全部完成' : '汉化更新完成';
     hidePipeDownloadProgress();
-    $('#btn-launch').disabled = false;
-    $('#btn-translate').disabled = false;
+    setPipelineButtonsDisabled(false);
     clearTimeout(pipeline._hideTimer);
     pipeline._hideTimer = setTimeout(() => pipelineIdle(), 1500);
   }
@@ -1891,23 +1888,31 @@ function layoutCarousel(smooth) {
   }
 
   // ---------------- 启动 / 更新 ----------------
+  // 启动与汉化更新互斥: 任一流程进行中, 两个按钮都禁用, 直到流程结束才恢复
+  function setPipelineButtonsDisabled(disabled) {
+    $('#btn-launch').disabled = disabled;
+    $('#btn-translate').disabled = disabled;
+  }
+
   async function onLaunch() {
     if (!api) { toast('浏览器预览模式, 无法启动游戏', 'warn'); return; }
+    if (pipeline.running) return;   // 有流程正在进行, 不允许重复触发
     if (!$('#btn-launch').disabled) {
-      $('#btn-launch').disabled = true;
+      setPipelineButtonsDisabled(true);
       pipelineReset(true); // 启动游戏: 含"启动游戏"步骤
-      try { await api.launch_game(); } catch (e) { toast(String(e), 'error'); pipelineDone(); }
+      try { await api.launch_game(); } catch (e) { toast(String(e), 'error'); pipelineError(); }
     }
   }
 
   async function onTranslate() {
     if (!api) { toast('浏览器预览模式, 无法更新汉化', 'warn'); return; }
+    if (pipeline.running) return;   // 汉化更新时禁止启动游戏 (反之亦然)
     if (!$('#btn-translate').disabled) {
-      $('#btn-translate').disabled = true;
+      setPipelineButtonsDisabled(true);
       pipelineReset(false); // 汉化更新: 不含"启动游戏"步骤
       try { await api.update_translation(); }
       catch (e) { toast(String(e), 'error'); }
-      setTimeout(() => { $('#btn-translate').disabled = false; pipelineDone(); }, 800);
+      setTimeout(() => { setPipelineButtonsDisabled(false); pipelineDone(); }, 800);
     }
   }
 
