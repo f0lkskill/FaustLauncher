@@ -321,35 +321,68 @@ body {
 .pipe-step.active .st-ico { animation: spin 1.2s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
-/* ---------- 工具面板 ---------- */
+/* ---------- 工具面板 (模态窗口) ---------- */
 .panel-overlay {
-  position: fixed; inset: 0; z-index: 90;
-  background: rgba(0,0,0,.55); backdrop-filter: blur(4px);
+  position: fixed; inset: 0; z-index: 120;
+  background: rgba(0,0,0,.55); backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
   display: flex; align-items: center; justify-content: center;
-  animation: fadeIn .2s ease;
+  animation: fadeIn .22s ease;
 }
+.panel-overlay.closing { animation: fadeOut .18s ease forwards; }
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes fadeOut { from { opacity: 1; } to { opacity: 0; } }
 .panel-card {
   position: relative;
-  background: var(--card); border: 1px solid var(--border);
-  border-radius: 16px; width: 480px; max-width: 92vw; max-height: 82vh;
   display: flex; flex-direction: column;
-  box-shadow: 0 20px 60px rgba(0,0,0,.5);
+  width: 480px; max-width: 92vw; max-height: 82vh;
+  /* 半透明深色 + 大半径模糊 = 真正可见的毛玻璃效果
+     (此前 0.92 不透明度把 backdrop-filter 完全盖住了) */
+  background: rgba(24, 27, 34, 0.66);
+  backdrop-filter: blur(22px) saturate(160%);
+  -webkit-backdrop-filter: blur(22px) saturate(160%);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: var(--radius);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  animation: panelIn .34s cubic-bezier(.34, 1.4, .5, 1);
 }
-.panel-card-wide { width: 600px; }
-.panel-head { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; border-bottom: 1px solid var(--border); }
-.panel-head h3 { font-size: 16px; font-weight: 600; }
+.panel-overlay.closing .panel-card { animation: panelOut .18s ease forwards; }
+@keyframes panelIn {
+  from { opacity: 0; transform: translateY(24px) scale(.95); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes panelOut {
+  from { opacity: 1; transform: none; }
+  to   { opacity: 0; transform: translateY(14px) scale(.97); }
+}
+.panel-card-wide { width: 620px; }
+.panel-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 16px 20px; border-bottom: 1px solid var(--border);
+}
+.panel-head h3 { font-size: 15.5px; font-weight: 700; letter-spacing: .3px; }
+.panel-close {
+  width: 28px; height: 28px; border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  background: transparent; border: none; color: var(--text-3);
+  cursor: pointer; font-size: 13px; line-height: 1;
+  transition: all .18s ease;
+}
+.panel-close:hover { background: rgba(239, 68, 68, 0.15); color: var(--danger); }
 .panel-body { padding: 18px 20px; overflow-y: auto; flex: 1; }
-.panel-foot { display: flex; gap: 10px; padding: 14px 20px; border-top: 1px solid var(--border); }
-.at-row { margin-bottom: 12px; }
-.at-row label { display: block; font-size: 12.5px; color: var(--text-2); margin-bottom: 5px; }
+.panel-foot { display: flex; gap: 10px; justify-content: flex-end; padding: 14px 20px; border-top: 1px solid var(--border); }
+.at-row { margin-bottom: 14px; }
+.at-row label { display: block; font-size: 12.5px; color: var(--text-2); margin-bottom: 6px; }
 .at-row input[type=text], .at-row textarea {
   width: 100%; font-family: var(--font); font-size: 13px; color: var(--text);
   background: var(--bg-2); border: 1px solid var(--border-2);
-  border-radius: 8px; padding: 8px 10px; outline: none; resize: vertical;
-  box-sizing: border-box;
+  border-radius: 8px; padding: 9px 11px; outline: none; resize: vertical;
+  box-sizing: border-box; transition: border-color .18s ease, box-shadow .18s ease;
 }
-.at-row input:focus, .at-row textarea:focus { border-color: var(--accent); }
+.at-row input:focus, .at-row textarea:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(55, 148, 255, 0.15);
+}
 .at-log {
   background: var(--bg); border: 1px solid var(--border);
   border-radius: 8px; padding: 8px 10px; height: 120px; overflow-y: auto;
@@ -360,16 +393,88 @@ body {
   font-family: var(--font); font-size: 13px; cursor: pointer;
   border-radius: 8px; border: 1px solid var(--border-2);
   padding: 7px 14px; color: var(--text-2); background: var(--card-2);
+  transition: all .18s ease;
 }
-.font-tab.active { border-color: var(--accent); color: var(--text); font-weight: 600; }
-.font-info { font-size: 13px; color: var(--text-2); margin-bottom: 12px; }
-.gradient-colors { display: flex; gap: 16px; }
-.gradient-colors .at-row { flex: 1; }
-.gradient-colors input[type=color] { width: 100%; height: 36px; border-radius: 8px; border: 1px solid var(--border-2); background: var(--bg-2); cursor: pointer; }
+.font-tab:hover { color: var(--text); }
+.font-tab.active { border-color: var(--accent); color: var(--text); font-weight: 600; background: rgba(55,148,255,.10); }
+.font-info { font-size: 12.5px; color: var(--text-3); margin-bottom: 12px; }
+/* 字体预览区: 用示例文本直观展示当前字体效果 */
+.font-preview {
+  background: var(--bg); border: 1px solid var(--border);
+  border-radius: 10px; padding: 16px 18px;
+  display: flex; flex-direction: column; gap: 10px;
+}
+.font-preview .fp-title { font-size: 20px; font-weight: 700; }
+.font-preview .fp-text { font-size: 14px; line-height: 1.7; color: var(--text-2); }
+.font-preview .fp-num { font-size: 13px; color: var(--text-3); font-family: var(--mono); }
+/* 扩展工具居中布局 */
+.ext-center { display: flex; flex-direction: column; align-items: center; padding-top: 8px; }
+.ext-center .at-row { width: 100%; max-width: 320px; }
+.ext-center .btn { display: inline-flex; align-items: center; justify-content: center; }
+/* 渐变文本处理器: 颜色+滑块一行排布 (替代原先两个颜色各占一半的布局) */
+.grad-controls {
+  display: flex; align-items: center; gap: 12px; margin-bottom: 14px;
+}
+.grad-controls input[type=color] {
+  width: 46px; height: 36px; padding: 3px; flex-shrink: 0;
+  border-radius: 8px; border: 1px solid var(--border-2);
+  background: var(--bg-2); cursor: pointer;
+}
+.grad-controls input[type=color]:hover { border-color: var(--accent); }
+.grad-controls input[type=range] { flex: 1; accent-color: var(--accent); cursor: pointer; }
+/* 渐变文本处理器: 分区卡片式布局 (对齐旧 tkUI 结构) */
+.grad-section { margin-bottom: 16px; }
+.grad-title {
+  font-size: 12.5px; font-weight: 700; color: var(--text-2);
+  margin-bottom: 8px; padding-left: 9px;
+  border-left: 3px solid var(--accent);
+}
+.grad-color-row {
+  display: flex; align-items: center; gap: 10px;
+  background: var(--bg-2); border: 1px solid var(--border-2);
+  border-radius: 8px; padding: 10px 14px;
+}
+.gc-label { font-size: 13px; color: var(--text-2); }
+.grad-color-row input[type=color] {
+  width: 40px; height: 30px; padding: 2px;
+  border-radius: 6px; border: 1px solid var(--border-2);
+  background: var(--bg); cursor: pointer;
+}
+.grad-color-row input[type=color]:hover { border-color: var(--accent); }
+.gc-sep { flex: 0 0 24px; height: 1px; background: var(--border); }
+.grad-rate-row {
+  display: flex; align-items: center; gap: 12px;
+  background: var(--bg-2); border: 1px solid var(--border-2);
+  border-radius: 8px; padding: 10px 14px;
+}
+.grad-rate-row .gc-label i { opacity: .55; font-style: normal; font-size: 11.5px; }
+.grad-rate-row input[type=range] { flex: 1; accent-color: var(--accent); cursor: pointer; }
+.at-row-input {
+  width: 100%; font-family: var(--font); font-size: 13px; color: var(--text);
+  background: var(--bg-2); border: 1px solid var(--border-2);
+  border-radius: 8px; padding: 9px 11px; outline: none; resize: vertical;
+  box-sizing: border-box; transition: border-color .18s ease, box-shadow .18s ease;
+}
+.at-row-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(55, 148, 255, 0.15);
+}
+/* Unity 富文本输出框: 等宽代码风格 */
+.grad-output {
+  width: 100%; font-family: var(--mono); font-size: 11.5px; line-height: 1.6;
+  color: #9ecbff; background: var(--bg);
+  border: 1px solid var(--border); border-radius: 8px;
+  padding: 9px 11px; outline: none; resize: vertical;
+  box-sizing: border-box; word-break: break-all;
+}
 .gradient-preview {
   background: var(--bg); border: 1px solid var(--border);
-  border-radius: 8px; padding: 12px; min-height: 40px;
-  font-size: 16px; line-height: 1.5; word-break: break-all;
+  border-radius: 8px; padding: 14px 16px; min-height: 46px;
+  font-size: 17px; line-height: 1.6; word-break: break-all;
+}
+#page-tools .panel-overlay .at-row textarea,
+.panel-card .at-row textarea {
+  font-family: var(--font);
 }
 
 /* ---------- 网格 ---------- */
@@ -454,7 +559,8 @@ body {
 /* ---------- 快捷方式 3D 滚筒轮播 ---------- */
 /* 页面纵向两段: 轮播占满剩余 / 底部指示点; 横向溢出由 #main overflow-x:hidden 处理,
    卡片在视口边缘自然裁切, 不在页面内部硬切 */
-#page-features.active {
+#page-features.active,
+#page-tools.active {
   display: flex; flex-direction: column;
   height: calc(100vh - 68px);   /* #main padding 28+40 */
   min-height: 520px;
@@ -469,7 +575,17 @@ body {
 .carousel-dots {
   display: flex; justify-content: center; align-items: center;
   gap: 8px;
-  padding: 6px 0 20px;
+  /* 毛玻璃圆角底板: 与背景区分, 指示点更清晰 */
+  align-self: center;
+  margin: 0 auto 18px;
+  padding: 9px 18px;
+  background: rgba(20, 22, 28, 0.45);
+  backdrop-filter: blur(14px) saturate(140%);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  border-radius: 999px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.30);
+  width: fit-content;
 }
 .carousel-dots .cdot {
   width: 7px; height: 7px; border-radius: 50%;
@@ -776,10 +892,10 @@ body {
 .term-line.wait { color: var(--info); }
 
 /* ---------- Toast ---------- */
-#toasts { position: fixed; top: 16px; right: 16px; z-index: 99; display: flex; flex-direction: column; gap: 10px; }
+#toasts { position: fixed; top: 16px; right: 16px; z-index: 200; display: flex; flex-direction: column; gap: 10px; }
 #toasts-top {
   position: fixed; top: 18px; left: 50%; transform: translateX(-50%);
-  z-index: 99; display: flex; flex-direction: column; gap: 10px; align-items: center;
+  z-index: 200; display: flex; flex-direction: column; gap: 10px; align-items: center;
 }
 #toasts-top .toast { animation: toastTopIn .3s ease; }
 @keyframes toastTopIn { from { opacity: 0; transform: translateY(-14px); } to { opacity: 1; transform: none; } }

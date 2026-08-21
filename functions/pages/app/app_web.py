@@ -384,14 +384,12 @@ class AppApi:
         for f in features:
             f["image_uri"] = _feature_image_uri(f.get("image", ""))
         tools = [
-            {"id": "nyos", "name": "📖 今日指令", "desc": "获取食指的最新指令"},
-            {"id": "mod_manager", "name": "📦 Mod 管理器", "desc": "管理边狱巴士 Mod 文件", "page": "mod_addon"},
-            {"id": "custom_translation", "name": "🔧 自定义汉化", "desc": "可视化编辑 lang 下任意 JSON 文本"},
-            {"id": "folder_link", "name": "📂 文件夹超链接", "desc": "创建符号链接, 释放 C 盘"},
-            {"id": "extension_tools", "name": "🧩 扩展工具", "desc": "插件模板 / 打包发布 (需密钥)"},
+            { "id": 'custom_translation', "name": '🔧 自定义汉化', "desc": '可视化编辑 lang 下任意 JSON 文本\n一键编辑替换汉化文本\n自动记录差异性文本，汉化更新也不丢失修改内容！' },
             {"id": "font", "name": "📝 字体修改", "desc": "选择字体替换汉化包字体"},
-            {"id": "auto_translate", "name": "🤖 自动汉化", "desc": "思知 AI 批量剧情文本翻译"},
-            {"id": "gradient", "name": "💻 渐变文本处理器", "desc": "生成 Unity 富文本渐变色代码"},
+            { "id": 'gradient', "name": '💻 渐变文本处理器', "desc": '生成 Unity 富文本渐变色代码' },
+            { "id": 'folder_link', "name": '📂 文件夹超链接', "desc": '创建符号链接, 转移C盘资源文件' },
+            { "id": 'nyos', "name": '📖 今日指令', "desc": '获取食指的最新指令\n仅供娱乐，请勿上升到指令成瘾。' },
+            { "id": 'extension_tools', "name": '🧩 扩展工具', "desc": '插件模板 / 打包发布\n给开发者提供的工具\n需要输入开发者密钥。' },
         ]
         icon_uri = ""
         for cand in (
@@ -1119,6 +1117,23 @@ if %errorlevel% equ 0 (
             }
         return result
 
+    def get_font_data(self, kind):
+        """返回当前自定义字体的 data URI (供前端 FontFace 真实加载预览)"""
+        import os
+        try:
+            if kind not in ('context', 'title'):
+                return {'uri': ''}
+            path = os.path.join('assets', 'Font', kind, 'ChineseFont.ttf')
+            if not os.path.exists(path) or os.path.getsize(path) == 0:
+                return {'uri': ''}
+            if os.path.getsize(path) > 20 * 1024 * 1024:
+                return {'uri': '', 'error': '字体文件过大, 无法预览'}
+            with open(path, 'rb') as f:
+                b64 = base64.b64encode(f.read()).decode('ascii')
+            return {'uri': 'data:font/ttf;base64,' + b64}
+        except Exception as e:
+            return {'uri': '', 'error': str(e)}
+
     def upload_font(self, kind, file_data_b64):
         """上传并替换字体 (kind = 'context' 或 'title')"""
         import base64 as _b64
@@ -1288,7 +1303,7 @@ def _start_tray(core, window, win32_show):
         pystray.MenuItem("退出", when_exit),
     )
     tray = pystray.Icon("FaustLauncher", ico, "浮士德启动器", menu)
-    tray.on_activate = show_win   # 单击/双击托盘图标时显示窗口
+    tray.on_activate = show_win   # type: ignore # 单击/双击托盘图标时显示窗口
     threading.Thread(target=tray.run, daemon=True).start()
     return tray
 
@@ -1332,7 +1347,7 @@ def run_web_ui(debug: bool = False):
     zd.main_gui = lambda parent, config_path="": HeadlessDownloadGUI(
         config_path, download_func=zd.download_and_extract_gui)
     zd.DownloadGUI = lambda parent=None, config_path="", auto_start=True, download_func=None, task=None: HeadlessDownloadGUI(
-        config_path, auto_start=auto_start, download_func=download_func, task=task)
+        config_path, auto_start=auto_start, download_func=download_func, task=task) # type: ignore
 
     window_holder = {}
 
