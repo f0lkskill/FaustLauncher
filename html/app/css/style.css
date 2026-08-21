@@ -745,7 +745,8 @@ body {
   border-top: 1px solid var(--border);
   transform: translateY(calc(100% - 36px));
   transition: transform .28s cubic-bezier(.4,0,.2,1);
-  z-index: 5; display: flex; flex-direction: column;
+  /* 最顶层: 高于角色小人(60)/关键控件(65), 仅低于 toast(99), 展开时不被任何控件遮挡 */
+  z-index: 80; display: flex; flex-direction: column;
 }
 #terminal.open { transform: translateY(0); }
 .term-head {
