@@ -1508,9 +1508,10 @@ function layoutCarousel(smooth) {
       dragging = false;
       stopAll();
       // 未发生拖拽位移 -> 判定为单击, 打开对应快捷方式
-      if (!moved && pressName) {
+      const clickName = pressName;   // 先保存, clearPress 会清空它
+      if (!moved && clickName) {
         clearPress();
-        if (api) api.open_feature(pressName).catch(e => toast(String(e), 'error'));
+        if (api) api.open_feature(clickName).catch(e => toast(String(e), 'error'));
         else toast('浏览器预览模式', 'warn');
       } else {
         clearPress();
@@ -1930,7 +1931,7 @@ function layoutCarousel(smooth) {
   }
 
   function scheduleCharacter() {
-    setTimeout(characterCycle, 20000 + Math.random() * 40000);   // 缩回后 20s~60s 再次出现
+    setTimeout(characterCycle, 10000 + Math.random() * 20000);   // 缩回后 10s~30s 再次出现
   }
 
   // 在边缘上随机像素位置 (比率 15%~85%), 并据此计算初始倾斜角度
@@ -1963,6 +1964,33 @@ function layoutCarousel(smooth) {
       s.left = pos.ratio + '%'; s.top = '0';
       s.transform = 'translate(-50%, ' + (hidden ? '-110%' : '-28%') + ') rotate(' + pos.angle + 'deg) scaleY(-1)';
     }
+  }
+
+  // 随机播放一次角色动效 (摇摆/弹跳/震动/缩放弹入/左右探头)
+  function playCharAnim() {
+    const CHAR_ANIMS = ['char-wiggle', 'char-bounce', 'char-shake', 'char-pop', 'char-nod'];
+    const animClass = CHAR_ANIMS[Math.floor(Math.random() * CHAR_ANIMS.length)];
+    charImgEl.classList.remove('char-wiggle', 'char-bounce', 'char-shake', 'char-pop', 'char-nod');
+    void charImgEl.offsetWidth;
+    charImgEl.classList.add(animClass);
+    if (charEl._animTimer) { clearTimeout(charEl._animTimer); charEl._animTimer = null; }
+    charEl._animTimer = setTimeout(() => charImgEl.classList.remove(animClass), 1400);
+  }
+
+  // 探头期间循环展示问候语: 每隔几秒换一条新文本, 每次配合角色动效
+  function startCharSpeech(edge, pos, greetings) {
+    if (!greetings || !greetings.length) return;
+    let lastIdx = -1;
+    const next = () => {
+      let idx = Math.floor(Math.random() * greetings.length);
+      if (greetings.length > 1 && idx === lastIdx) idx = (idx + 1) % greetings.length;
+      lastIdx = idx;
+      playCharAnim();
+      showCharBubble(edge, pos, greetings[idx]);
+      if (charEl._speechTimer) { clearTimeout(charEl._speechTimer); charEl._speechTimer = null; }
+      charEl._speechTimer = setTimeout(next, 10000 + Math.random() * 5000);   // 10s~15s 换一条
+    };
+    next();
   }
 
   // 角色问候语气泡: 弹入 -> 停留 -> 旋转坠落, 紧贴角色实际矩形, 箭头指向角色
@@ -2015,6 +2043,9 @@ function layoutCarousel(smooth) {
   function clearCharTimers() {
     if (charEl._wiggleTimer) { clearTimeout(charEl._wiggleTimer); charEl._wiggleTimer = null; }
     if (charEl._stayTimer) { clearTimeout(charEl._stayTimer); charEl._stayTimer = null; }
+    if (charEl._speechTimer) { clearTimeout(charEl._speechTimer); charEl._speechTimer = null; }
+    if (charEl._animTimer) { clearTimeout(charEl._animTimer); charEl._animTimer = null; }
+    if (charImgEl) charImgEl.classList.remove('char-wiggle', 'char-bounce', 'char-shake', 'char-pop', 'char-nod');
     hideCharBubble();
   }
 
@@ -2074,33 +2105,24 @@ function layoutCarousel(smooth) {
     }
     charEl._edge = edge;
     charEl._pos = pos;
-    // 随机选图片, 并按图片名从问候语表随机取一条 (只在出现时加载一次)
+    // 随机选图片, 并按图片名取问候语表 (循环展示)
     const item = charImages[Math.floor(Math.random() * charImages.length)];
     charImgEl.src = item.uri;
-    const greetings = charGreetings[item.name];
-    const greeting = (greetings && greetings.length)
-      ? greetings[Math.floor(Math.random() * greetings.length)]
-      : '';
+    const greetings = charGreetings[item.name] || [];
     clearCharTimers();
-    charImgEl.classList.remove('char-wiggle', 'char-bounce', 'char-shake', 'char-pop', 'char-nod');
-    // 随机选一个动效: 摇摆 / 弹跳 / 震动 / 缩放弹入 / 左右探头
-    const CHAR_ANIMS = ['char-wiggle', 'char-bounce', 'char-shake', 'char-pop', 'char-nod'];
-    const animClass = CHAR_ANIMS[Math.floor(Math.random() * CHAR_ANIMS.length)];
     // 先无动画重置到新边缘的隐藏位, 下一帧再探头滑入
     applyCharPose(edge, pos, true, true);
     requestAnimationFrame(() => requestAnimationFrame(() => applyCharPose(edge, pos, false)));
-    // 滑入完成后播放随机动效 + 弹出问候语气泡
+    // 滑入完成后启动循环问候语 (每几秒换一条, 每次配合角色动效)
     charEl._wiggleTimer = setTimeout(() => {
-      void charImgEl.offsetWidth;
-      charImgEl.classList.add(animClass);
-      setTimeout(() => charImgEl.classList.remove(animClass), 1400);
-      showCharBubble(edge, pos, greeting);
+      startCharSpeech(edge, pos, greetings);
     }, 800);
-    // 停留较长时间 (20s~100s) 后收回, 然后进入下一轮
+    // 停留较长时间 (40s~60s) 后收回, 然后进入下一轮
     charEl._stayTimer = setTimeout(() => {
+      clearCharTimers();   // 停止文本循环与动效, 避免缩回后仍在展示
       applyCharPose(edge, pos, true);
       scheduleCharacter();
-    }, 20000 + Math.random() * 80000);
+    }, 40000 + Math.random() * 20000);
   }
 
   // ---------------- 初始化 ----------------

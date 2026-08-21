@@ -848,7 +848,6 @@ if %errorlevel% equ 0 (
             data = (wt.fetch_all_addon_info() if kind == 'addon'
                     else wt.fetch_all_mod_info())
             self._dc_cache[kind] = data if data else [] # type: ignore
-            print(f"[推荐缓存] {kind} 列表爬取完成: {len(self._dc_cache[kind])} 条") # type: ignore
         return self._dc_cache[kind]
 
     def get_addon_list(self):
@@ -1209,7 +1208,7 @@ def _monitor_game_process(window_ref):
 # 托盘
 # ============================================================
 
-def _start_tray(core, window):
+def _start_tray(core, window, win32_show):
     import pystray
     from PIL import Image
 
@@ -1219,43 +1218,11 @@ def _start_tray(core, window):
     except Exception:
         ico = Image.new("RGBA", (64, 64), (99, 102, 241, 255))
 
-    def _window_hwnd():
-        """获取主窗口句柄 (避免在托盘线程调用 pywebview window.show 死锁)"""
-        import ctypes
-        hwnd = 0
-        try:
-            g = getattr(window, "gui", None)
-            if g is not None:
-                hwnd = int(getattr(g, "Handle", 0) or 0)
-        except Exception:
-            pass
-        if not hwnd:
-            try:
-                hwnd = ctypes.windll.user32.FindWindowW(None, "Faust Launcher")
-            except Exception:
-                pass
-        return hwnd
-
-    def _show_window_via_win32(show=True):
-        """用 Win32 ShowWindow 直接显示/隐藏窗口 (线程安全, 不经过 pywebview 跨线程调用)"""
-        try:
-            import ctypes
-            hwnd = _window_hwnd()
-            if hwnd:
-                ctypes.windll.user32.ShowWindow(hwnd, 1 if show else 0)  # SW_SHOWNORMAL / SW_HIDE
-                if show:
-                    ctypes.windll.user32.SetForegroundWindow(hwnd)
-                return True
-        except Exception as e:
-            print(f"Win32 窗口操作失败: {e}")
-        return False
-
     def _tray_window_op(show):
         """在独立线程执行窗口显示/隐藏, 绝不阻塞 pystray 回调线程"""
         def _do():
             try:
-                if not _show_window_via_win32(show):
-                    print(f"托盘: 无法定位窗口句柄, 窗口未{'恢复' if show else '隐藏'}")
+                win32_show(show)
             except Exception:
                 pass
         threading.Thread(target=_do, daemon=True).start()
@@ -1415,14 +1382,46 @@ def run_web_ui(debug: bool = False):
     )
     window_holder["win"] = window
 
+    # 通用 Win32 显示/隐藏主窗口 (线程安全, 供托盘与关闭事件共用)
+    def _win32_show_window(show=True):
+        """用 Win32 ShowWindow 显示/隐藏主窗口 (不经 pywebview 跨线程调用)"""
+        import ctypes
+        hwnd = 0
+        try:
+            import webview.platforms.winforms as _wf
+            bv = _wf.BrowserView.instances.get(getattr(window, 'uid', ''))
+            if bv is not None:
+                try:
+                    hwnd = int(bv.Handle.ToInt64())
+                except Exception:
+                    try:
+                        hwnd = int(bv.Handle.ToInt32())
+                    except Exception:
+                        hwnd = int(bv.Handle)
+        except Exception:
+            pass
+        if not hwnd:
+            try:
+                hwnd = ctypes.windll.user32.FindWindowW(None, "Faust Launcher")
+            except Exception:
+                pass
+        if hwnd:
+            ctypes.windll.user32.ShowWindow(hwnd, 1 if show else 0)  # SW_SHOWNORMAL / SW_HIDE
+            if show:
+                ctypes.windll.user32.SetForegroundWindow(hwnd)
+            return True
+        return False
+
     # 托盘
     try:
-        tray = _start_tray(core, window)
+        tray = _start_tray(core, window, _win32_show_window)
     except Exception as e:
         print(f"托盘初始化失败: {e}")
         tray = None
 
     # 关闭行为: 按设置驻留托盘或退出 (读取设置失败时默认隐藏到托盘)
+    # 注意: closing 事件运行在 UI 线程 (FormClosing), 不能 print/调用 evaluate_js,
+    #       否则等待前端响应会死锁。窗口隐藏放后台线程执行。
     def _on_closing():
         try:
             hide_to_tray = True
@@ -1431,15 +1430,17 @@ def run_web_ui(debug: bool = False):
             except Exception:
                 hide_to_tray = True
             if hide_to_tray:
-                try:
-                    if window is not None:
-                        window.hide()
-                except Exception as e:
-                    print(f"隐藏窗口失败: {e}")
-                try:
-                    _evaluate_js("window.__onLog('程序已最小化到系统托盘, 右键托盘图标可退出')")
-                except Exception:
-                    pass
+                # 只阻止关闭; 隐藏放后台线程, 避免阻塞 UI 线程
+                def _do():
+                    try:
+                        _win32_show_window(False)
+                    except Exception:
+                        pass
+                    try:
+                        _evaluate_js("window.__onLog('程序已最小化到系统托盘, 右键托盘图标可退出')")
+                    except Exception:
+                        pass
+                threading.Thread(target=_do, daemon=True).start()
                 return False
         except Exception:
             pass
