@@ -850,6 +850,18 @@ if %errorlevel% equ 0 (
             self._dc_cache[kind] = data if data else [] # type: ignore
         return self._dc_cache[kind]
 
+    def check_item_downloaded(self, kind, name):
+        """检测插件/Mod 是否已下载安装 (每次刷新下载中心都会重新检测, 用户可能手动删除)"""
+        import os
+        try:
+            if kind == 'addon':
+                exists = os.path.isdir(os.path.join('addons', str(name)))
+            else:
+                exists = os.path.isdir(os.path.join('mods', str(name)))
+            return {'downloaded': bool(exists)}
+        except Exception as e:
+            return {'downloaded': False, 'error': str(e)}
+
     def get_addon_list(self):
         """获取插件列表 (内存缓存, 不再爬取)"""
         try:
@@ -1319,8 +1331,8 @@ def run_web_ui(debug: bool = False):
     import functions.web_update.zeroasso_download as zd
     zd.main_gui = lambda parent, config_path="": HeadlessDownloadGUI(
         config_path, download_func=zd.download_and_extract_gui)
-    zd.DownloadGUI = lambda parent, config_path="", auto_start=True, download_func=None: HeadlessDownloadGUI(
-        config_path, auto_start=auto_start, download_func=download_func)
+    zd.DownloadGUI = lambda parent=None, config_path="", auto_start=True, download_func=None, task=None: HeadlessDownloadGUI(
+        config_path, auto_start=auto_start, download_func=download_func, task=task)
 
     window_holder = {}
 
