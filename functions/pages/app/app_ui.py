@@ -248,10 +248,24 @@ class FaustLauncherUI:
     def init_tray(self):
         """初始化托盘程序"""
         ico = Image.open("assets/images/icon/icon.ico")
-        
+
+        # 托盘回调通过 root.after 回到 tkinter 主线程执行 (线程安全, 并兼容 pystray 传参)
+        def _show_win(icon=None, item=None):
+            try:
+                self.root.after(0, self.root.deiconify)
+                self.root.after(0, self.root.lift)
+            except Exception:
+                pass
+
+        def _hide_win(icon=None, item=None):
+            try:
+                self.root.after(0, self.root.withdraw)
+            except Exception:
+                pass
+
         menu_items = [
-            pystray.MenuItem('显示窗口', self.root.deiconify, default=True),
-            pystray.MenuItem('隐藏', self.root.withdraw),
+            pystray.MenuItem('显示窗口', _show_win, default=True),
+            pystray.MenuItem('隐藏', _hide_win),
         ]
         
         def build_addon_menu() -> pystray.Menu:

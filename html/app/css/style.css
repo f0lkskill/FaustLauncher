@@ -933,10 +933,13 @@ body {
   100% { opacity: 0; transform: translate(-50%, 110px) rotate(22deg); }
 }
 
-/* 关键交互元素提升层级, 确保位于角色小人之上可正常点击 */
+/* 关键交互元素提升层级, 确保位于角色小人之上可正常点击
+   (注意: 不能包含 .dl-fab 等 position:fixed 元素, 否则会破坏其定位) */
 button, a, input, select, textarea,
 .btn, .nav-item, .link-card, .dc-card, .mod-card, .set-row,
-.cdot, .chip, .term-head, .term-toggle, .dl-fab {
+.cdot, .chip, .term-head, .term-toggle {
   position: relative;
   z-index: 65;
 }
+/* 下载任务浮动按钮保持 fixed 定位, 仅提升层级 */
+.dl-fab { z-index: 65; }
