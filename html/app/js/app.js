@@ -5,7 +5,102 @@
 (() => {
   'use strict';
 
+// 证明本 JS 已执行 (覆盖 HTML 静态 build-tag; 若侧边栏底部仍显示旧文字则说明 JS 是缓存旧版)
+  try {
+    var _tag = document.getElementById('build-tag');
+    if (_tag) _tag.textContent = 'JS 已执行 v6 · ' + new Date().getTime();
+  } catch (_) {}
+
+  // 全局 JS 错误浮层: 前端一旦报错, 在窗口底部显示, 便于排查 (无需开 DevTools)
+  (function _errOverlay() {
+    function show(tag, msg) {
+      try {
+        let box = document.getElementById('js-err');
+        if (!box) {
+          box = document.createElement('div');
+          box.id = 'js-err';
+          box.style.cssText = 'position:fixed;bottom:6px;left:6px;right:6px;z-index:99999;' +
+            'background:rgba(140,20,20,.96);color:#ffd;font:12px/1.45 monospace;' +
+            'padding:6px 10px;border-radius:6px;white-space:pre-wrap;max-height:38vh;overflow:auto;';
+          document.body.appendChild(box);
+        }
+        box.textContent = (box.textContent ? box.textContent + '\n---\n' : '') +
+          '[' + tag + '] ' + msg;
+      } catch (_) {}
+    }
+    window.addEventListener('error', function (e) {
+      show('JS', (e.message || '') + (e.filename ? '\n@ ' + e.filename + ':' + (e.lineno || '') : ''));
+    });
+    window.addEventListener('unhandledrejection', function (e) {
+      const r = e && e.reason;
+      show('ASYNC', (r && r.message) || String(r));
+    });
+  })();
+
+  // 兜底: 仅当极端卡死时才强制结束主页 loading (30 秒), 避免破坏慢速加载的圆圈
+  setTimeout(function () {
+    ['stat-version-card', 'rec-card'].forEach(function (id) {
+      var f = document.getElementById(id);
+      if (f) f.classList.remove('loading');
+    });
+  }, 30000);
+
+  // 兜底: 按内容是否已渲染来决定是否结束 loading (移除圆圈)。
+  // 一旦 changelog-body / rec-body 不再是 "加载中" 占位文本, 即强制移除对应卡片的 loading 类。
+  // 用 trim() 排除换行/空格等空白节点, 避免空卡片被误判为"已加载"
+  setInterval(function () {
+    var ch = document.getElementById('changelog-body');
+    if (ch && ch.textContent.trim() && ch.textContent.indexOf('加载中') === -1) {
+      var f1 = document.getElementById('stat-version-card');
+      if (f1) f1.classList.remove('loading');
+    }
+    var rb = document.getElementById('rec-body');
+    if (rb && rb.textContent.trim() && rb.textContent.indexOf('加载中') === -1) {
+      var f2 = document.getElementById('rec-card');
+      if (f2) f2.classList.remove('loading');
+    }
+  }, 800);
+
   let api = (window.pywebview && window.pywebview.api) ? window.pywebview.api : null;
+
+  // 诊断: 在 DevTools Console 敲 window.__diag() 查看圆圈元素详情
+  window.__diag = function () {
+    var out = [];
+    ['stat-version-card', 'rec-card'].forEach(function (id) {
+      var f = document.getElementById(id);
+      if (!f) { out.push(id + ': 不存在'); return; }
+      var sp = f.querySelector('.frame-spinner');
+      var cs = sp ? getComputedStyle(sp) : null;
+      out.push(id + ': class=[' + f.className + ']' +
+        (sp ? (' spinner=[display:' + cs.display + ';position:' + cs.position + '] html=' + sp.outerHTML.slice(0, 60)) : ' spinner=无'));
+    });
+    var spins = document.querySelectorAll('.frame-spinner');
+    out.push('页面 .frame-spinner 总数=' + spins.length);
+    spins.forEach(function (s) {
+      var cs = getComputedStyle(s);
+      out.push('  el: display=' + cs.display + ' parent=' + (s.parentElement ? s.parentElement.id || s.parentElement.className : '?'));
+    });
+    var rot = document.querySelectorAll('.frame-spinner span, .pipe-step.active .st-ico, [class*=spin]');
+    out.push('旋转元素数=' + rot.length);
+    var cb = document.getElementById('changelog-body');
+    var rb = document.getElementById('rec-body');
+    out.push('changelog-body text=[' + (cb ? cb.textContent.trim().slice(0, 60) : '?') + ']');
+    out.push('rec-body text=[' + (rb ? rb.textContent.trim().slice(0, 60) : '?') + ']');
+    return out.join('\n');
+  };
+
+  // 诊断: 强制隐藏所有圆圈 (测试用)
+  window.__hideCircles = function () {
+    var n = 0;
+    document.querySelectorAll('.frame-spinner').forEach(function (s) {
+      s.style.display = 'none'; n++;
+    });
+    ['stat-version-card', 'rec-card'].forEach(function (id) {
+      var f = document.getElementById(id);
+      if (f) f.classList.remove('loading');
+    });
+    return '已隐藏 ' + n + ' 个圆圈';
+  };
   let IS_BROWSER = !api;
 
   const $ = (s, r) => (r || document).querySelector(s);
@@ -17,12 +112,12 @@
     game_path: '',
     bg_color: '#181818',
     features: [
-      { name: '📁 游戏目录', desc: '打开边狱巴士安装目录' },
-      { name: '🔄 零协会', desc: '前往零协会汉化组主页' },
-      { name: '📒 气泡文本', desc: '下载气泡 Mod 汉化版' },
-      { name: '📝 维基', desc: '边狱巴士灰机 Wiki' },
-      { name: '📖 N网', desc: '下载边狱巴士 Mod' },
-      { name: '📦 GitHub', desc: '查看本项目源码' },
+      { name: '📁 游戏目录', desc: '打开边狱巴士安装目录', image: 'game_directory.png' },
+      { name: '🔄 零协会', desc: '前往零协会汉化组主页', image: 'zeroasso.png' },
+      { name: '📒 气泡文本', desc: '下载气泡 Mod 汉化版', image: '' },
+      { name: '📝 维基', desc: '边狱巴士灰机 Wiki', image: 'wiki.png' },
+      { name: '📖 N网', desc: '下载边狱巴士 Mod', image: 'nexus.png' },
+      { name: '📦 GitHub', desc: '查看本项目源码', image: 'github.png' },
     ],
     tools: [
       { id: 'nyos', name: '📖 今日指令', desc: '获取食指的最新指令' },
@@ -56,16 +151,21 @@
   let pipeline = {
     running: false,
     currentIdx: -1,
-    steps: [
-      { key: 'prepare', label: '准备检查', icon: '🔍' },
-      { key: 'download', label: '下载汉化包', icon: '📥' },
-      { key: 'resource', label: '检查资源', icon: '🗂️' },
-      { key: 'bubble', label: '下载气泡', icon: '💬' },
-      { key: 'install', label: '安装汉化', icon: '📦' },
-      { key: 'mods', label: '加载插件/Mod', icon: '🧩' },
-      { key: 'launch', label: '启动游戏', icon: '🚀' },
-    ],
+    steps: [],
   };
+
+  // 完整流水线 (启动游戏) / 汉化更新流水线 (不含启动游戏)
+  const STEPS_FULL = [
+    { key: 'prepare', label: '准备检查', icon: '🔍' },
+    { key: 'download', label: '下载汉化包', icon: '📥' },
+    { key: 'resource', label: '检查资源', icon: '🗂️' },
+    { key: 'bubble', label: '下载气泡', icon: '💬' },
+    { key: 'install', label: '安装汉化', icon: '📦' },
+    { key: 'mods', label: '加载插件/Mod', icon: '🧩' },
+    { key: 'launch', label: '启动游戏', icon: '🚀' },
+  ];
+  // 汉化更新流水线: 不含"加载插件/Mod"和"启动游戏" (汉化更新不重载插件、不启动游戏)
+  const STEPS_TRANSLATE = STEPS_FULL.filter(s => s.key !== 'launch' && s.key !== 'mods');
 
   // ---------------- 工具函数 ----------------
   function esc(s) {
@@ -105,6 +205,23 @@
     ]);
   }
 
+  // 图标走后端 get_icon (带磁盘缓存), 避免每次渲染都重新下载远程图标
+  // 返回 Promise 数组, 便于调用方在图标全部加载完成后才结束 loading (圆圈)
+  function hydrateIcons(root) {
+    const promises = [];
+    if (!api) return promises;
+    const imgs = (root || document).querySelectorAll('img[data-icon-url]');
+    imgs.forEach(img => {
+      const url = img.getAttribute('data-icon-url');
+      const name = img.getAttribute('data-icon-name') || '';
+      if (!url) return;
+      promises.push(withTimeout(api.get_icon(url, name), 6000, '').then(uri => {
+        if (uri) img.src = uri;
+      }).catch(() => {}));
+    });
+    return promises;
+  }
+
   function fmtBytes(n) {
     if (n == null) return '-';
     n = Number(n);
@@ -123,17 +240,25 @@
   }
 
   // ---------------- Frame 加载转圈动画 ----------------
-  function showFrameLoading(frame) {
-    if (!frame || frame.querySelector('.frame-spinner')) return;
-    const s = document.createElement('div');
-    s.className = 'frame-spinner';
-    s.innerHTML = '<span></span>';
-    frame.appendChild(s);
-  }
-  function hideFrameLoading(frame) {
+  // 用内联样式直接控制 spinner 显示/隐藏, 不依赖 CSS 规则 (.card.loading .frame-spinner)
+  // 隐藏时先淡出 (opacity 过渡), 再 display:none, 让蒙版平滑消失
+  function setFrameLoading(frame, on) {
     if (!frame) return;
-    frame.querySelectorAll('.frame-spinner').forEach(s => s.remove());
+    frame.classList.toggle('loading', on);
+    const sp = frame.querySelector('.frame-spinner');
+    if (!sp) return;
+    if (sp._fadeTimer) { clearTimeout(sp._fadeTimer); sp._fadeTimer = null; }
+    if (on) {
+      sp.style.display = 'flex';
+      void sp.offsetWidth;   // 强制 reflow, 确保 opacity 过渡生效
+      sp.style.opacity = '1';
+    } else {
+      sp.style.opacity = '0';
+      sp._fadeTimer = setTimeout(() => { sp.style.display = 'none'; sp._fadeTimer = null; }, 420);
+    }
   }
+  function showFrameLoading(frame) { setFrameLoading(frame, true); }
+  function hideFrameLoading(frame) { setFrameLoading(frame, false); }
 
   // ---------------- ANSI 转 HTML ----------------
   const ANSI_COLORS = {
@@ -215,6 +340,15 @@
         return;
       }
       addLog('⟳ ' + String(data));
+    } else if (event === 'step') {
+      // 后端显式步骤推进 (与真实进度同步, 不再依赖日志关键词)
+      const s = data && data.step;
+      const idx = pipeline.steps.findIndex(x => x.key === s);
+      if (idx >= 0 && idx > pipeline.currentIdx) {
+        setPipelineStepDone(pipeline.currentIdx, true);
+        pipeline.currentIdx = idx;
+        setStep(idx, 'active');
+      }
     } else if (event === 'dialog') {
       const d = data || {};
       const kind = d.kind || 'showinfo';
@@ -257,9 +391,10 @@
     grid.style.transform = '';
   }
 
-  function pipelineReset() {
+  function pipelineReset(withLaunch) {
     pipeline.running = true;
     pipeline.currentIdx = -1;
+    pipeline.steps = withLaunch ? STEPS_FULL.slice() : STEPS_TRANSLATE.slice();
     $('#pipe-progress').style.width = '0%';
     $('#pipe-status-text').textContent = '初始化中...';
     $('#pipe-status-text').className = 'pipe-status running';
@@ -296,7 +431,6 @@
     if (idx >= pipeline.steps.length) return;
     pipeline.currentIdx = idx;
     setStep(idx, 'active');
-    $('#pipe-status-text').textContent = pipeline.steps[idx].label + '...';
   }
 
   function pipelineError() {
@@ -359,17 +493,13 @@
       pipelineAdvance();
       return;
     }
-    for (const m of KEYWORD_MAP) {
+for (const m of KEYWORD_MAP) {
       if (m.re.test(line)) {
         const idx = pipeline.steps.findIndex(s => s.key === m.k);
-        if (idx >= 0) {
-          if (idx > pipeline.currentIdx) {
-            setPipelineStepDone(pipeline.currentIdx, true);
-            pipeline.currentIdx = idx;
-            setStep(idx, 'active');
-            $('#pipe-status-text').textContent = pipeline.steps[idx].label + '...';
-          }
-          return;
+        if (idx >= 0 && idx > pipeline.currentIdx) {
+          setPipelineStepDone(pipeline.currentIdx, true);
+          pipeline.currentIdx = idx;
+          setStep(idx, 'active');
         }
       }
     }
@@ -378,6 +508,7 @@
   // ---------------- 页面导航 ----------------
   function switchPage(name) {
     currentPage = name;
+    addLog('[页面] 切换到 ' + name);
     $$('.page').forEach(p => p.classList.remove('active'));
     const target = document.getElementById('page-' + name);
     if (target) target.classList.add('active');
@@ -738,7 +869,9 @@
     ).join(' ');
     card.innerHTML =
       '<div class="dc-card-main">' +
-        '<img class="dc-icon" src="' + esc(item.icon_url || PROJECT_ICON) + '" alt="" onerror="this.src=\'' + PROJECT_ICON + '\'">' +
+        '<img class="dc-icon" src="' + PROJECT_ICON + '" alt="" ' +
+          'data-icon-url="' + esc(item.icon_url || '') + '" data-icon-name="' + esc(item.name || '') + '" ' +
+          'onerror="this.src=\'' + PROJECT_ICON + '\'">' +
         '<div class="dc-info">' +
           '<div class="dc-title-row">' +
             '<span class="dc-title">' + esc(item.name || '未知') + (disabled ? ' (暂不可用)' : '') + '</span>' +
@@ -756,6 +889,7 @@
       const btn = card.querySelector('.btn-download');
       btn.onclick = () => startDownloadItem(kind, item);
     }
+    hydrateIcons(card);
     return card;
   }
 
@@ -1017,8 +1151,16 @@
     }
     showFrameLoading(frame);
     try {
-      const md = await withTimeout(api.get_changelog(), 5000, '');
-      $('#changelog-body').innerHTML = mdToHtml(md);
+      const md = await withTimeout(api.get_changelog(), 6000, null);
+      // 无论超时/成功/出错, 都离开 "加载中" 占位, 保证内容感知兜底移除圆圈
+      const body = $('#changelog-body');
+      if (md == null) {
+        body.innerHTML = '<span class="changelog-empty">⚠ 更新内容加载超时</span>';
+      } else {
+        body.innerHTML = mdToHtml(md);
+      }
+    } catch (e) {
+      $('#changelog-body').innerHTML = '<span class="changelog-empty">⚠ 更新内容错误: ' + esc(String(e)) + '</span>';
     } finally {
       hideFrameLoading(frame);
     }
@@ -1040,31 +1182,42 @@
 
   async function loadRecommend() {
     const frame = $('#rec-card');
+    const setMsg = (t) => {
+      $('#rec-body').innerHTML = '<span class="changelog-empty">' + t + '</span>';
+      setFrameLoading($('#rec-card'), false);
+    };
     if (!api) {
       hideFrameLoading(frame);
-      $('#rec-body').innerHTML = '<span class="changelog-empty">浏览器预览模式</span>';
+      setMsg('浏览器预览模式');
       return;
     }
     showFrameLoading(frame);
+    let recErr = '';
     try {
       const [a, m] = await withTimeout(Promise.all([
         api.get_addon_list(), api.get_mod_list(),
-      ]), 8000, { pages: [], error: 'timeout' });
+      ]), 30000, { pages: [], error: 'timeout' });
+      if (a && a.error) recErr = '插件列表: ' + a.error + '；';
+      if (m && m.error) recErr += 'Mod列表: ' + m.error + '；';
       const addons = ((a && a.pages) || []).flat()
         .filter(x => x && !x.disabled).map(x => ({ item: pickRecItem(x), kind: 'addon' }));
       const mods = ((m && m.pages) || []).flat()
         .filter(x => x && !x.disabled).map(x => ({ item: pickRecItem(x), kind: 'mod' }));
       recPool = addons.concat(mods);
     } catch (e) {
-      console.error('推荐加载失败:', e);
+      recErr = String(e && e.message || e);
     }
-    if (!recPool.length) {
-      hideFrameLoading(frame);
-      $('#rec-body').innerHTML = '<span class="changelog-empty">暂无推荐 (网络异常或加载超时)</span>';
-      return;
+    // 先保证 rec-body 有内容 (成功渲染或明确错误), 圆圈由"内容感知轮询"在
+    // rec-body 有实际内容后自动移除 — 内容没出来, 圆圈就一直在, 绝不提前消失
+    if (recPool.length) {
+      try {
+        renderRecommend(recPool[Math.floor(Math.random() * recPool.length)]);
+      } catch (e) {
+        setMsg('⚠ 渲染失败: ' + esc(String(e && e.message || e)));
+      }
+    } else {
+      setMsg('⚠ ' + esc(recErr || '暂无推荐 (网络异常或加载超时)'));
     }
-    renderRecommend(recPool[Math.floor(Math.random() * recPool.length)]);
-    hideFrameLoading(frame);
   }
 
   function refreshRecommend() {
@@ -1082,14 +1235,17 @@
       return;
     }
     const it = rec.item;
-    const icon = it.icon_url || PROJECT_ICON;
-    const authors = it.authors || {};
+    const iconUrl = it.icon_url || '';
+    const rawAuthors = it.authors;
+    const authors = (rawAuthors && typeof rawAuthors === 'object' && !Array.isArray(rawAuthors)) ? rawAuthors : {};
     const authorHtml = Object.entries(authors).map(([n, u]) =>
       '<a class="dc-author" href="' + esc(u || '#') + '" target="_blank">' + esc(n) + '</a>'
     ).join(' ');
     body.innerHTML =
       '<div class="rec-main">' +
-        '<img class="rec-icon" src="' + esc(icon) + '" alt="" onerror="this.src=\'' + PROJECT_ICON + '\'">' +
+        '<img class="rec-icon" src="' + PROJECT_ICON + '" alt="" ' +
+          'data-icon-url="' + esc(iconUrl) + '" data-icon-name="' + esc(it.name) + '" ' +
+          'onerror="this.src=\'' + PROJECT_ICON + '\'">' +
         '<div class="rec-info">' +
           '<div class="rec-badge">' + (rec.kind === 'addon' ? '🔌 插件' : '🎮 Mod') + '</div>' +
           '<div class="rec-title">' + esc(it.name) +
@@ -1099,6 +1255,11 @@
       '</div>' +
       '<div class="rec-desc" title="' + esc(it.desc || '') + '">' + esc(it.desc || '暂无描述') + '</div>' +
       (authorHtml ? '<div class="rec-authors">' + authorHtml + '</div>' : '');
+    // 图标全部加载完成后才移除推荐卡圆圈 (推荐"完整"显示后才消失, 不提前)
+    const _recCard = $('#rec-card');
+    Promise.all(hydrateIcons(body)).finally(() => {
+      setFrameLoading(_recCard, false);
+    });
     const foot = $('#rec-foot');
     foot.innerHTML = it.url
       ? '<button class="btn btn-primary btn-mini" id="rec-dl">📥 下载</button>'
@@ -1151,18 +1312,101 @@
   }
 
   // ---------------- 快捷方式 / 工具 ----------------
+  let featTotal = 0, featAngle = 0;
+
   function renderFeatures(features) {
-    const grid = $('#features-grid');
-    grid.innerHTML = '';
-    (features || []).forEach(f => {
-      const card = document.createElement('div');
-      card.className = 'link-card';
-      card.innerHTML = '<div class="lc-ico">' + esc(f.name.split(' ')[0]) + '</div>' +
-        '<div class="lc-name">' + esc(f.name.split(' ').slice(1).join(' ') || f.name) + '</div>' +
-        '<div class="lc-desc">' + esc(f.desc || '') + '</div>';
-      card.onclick = () => { if (api) api.open_feature(f.name).catch(e => toast(e, 'error')); else toast('浏览器预览模式', 'warn'); };
-      grid.appendChild(card);
+    const stage = $('#features-stage');
+    if (!stage) return;
+    stage.innerHTML = '';
+    const list = (features || []).filter(Boolean);
+    featTotal = list.length;
+    featAngle = 0;
+    if (!featTotal) return;
+    list.forEach((f, i) => {
+      const wrap = document.createElement('div');
+      wrap.className = 'carousel-item';
+      const inner = document.createElement('div');
+      inner.className = 'carousel-item-inner';
+      const bg = f.image_uri || (f.image ? '../../assets/images/features/' + f.image : '');
+      const bgHtml = bg ? '<img class="carousel-item-bg" src="' + esc(bg) + '" alt="" draggable="false">' : '';
+      inner.innerHTML = bgHtml +
+        '<div class="carousel-item-content">' +
+          '<div class="lc-ico">' + esc(f.name.split(' ')[0]) + '</div>' +
+          '<div class="lc-name">' + esc(f.name.split(' ').slice(1).join(' ') || f.name) + '</div>' +
+          '<div class="lc-desc">' + esc(f.desc || '') + '</div>' +
+        '</div>';
+      inner.ondblclick = () => { if (api) api.open_feature(f.name).catch(e => toast(e, 'error')); else toast('浏览器预览模式', 'warn'); };
+      wrap.appendChild(inner);
+      stage.appendChild(wrap);
     });
+    layoutCarousel(false);
+  }
+
+  // CoverFlow 式循环轮播: 卡片沿弧线排列, 中间最大最正, 两侧转向但内容可见, 无限循环
+  function layoutCarousel(smooth) {
+    const stage = $('#features-stage');
+    if (!stage) return;
+    const n = featTotal || 1;
+    const offset = Math.round(featAngle);
+    const X = [0, 270, 480];     // d=0,1,2 的横向位置 (最外侧向内收拢, 避免被窗口裁剪)
+    const S = [1, 0.87, 0.68];   // 对应缩放
+    const DEPTH = 170, ANGLE = 26;
+    const cards = stage.querySelectorAll('.carousel-item');
+    cards.forEach((card, i) => {
+      let d = (((i - offset) % n) + n) % n;
+      if (d > n / 2) d = d - n;
+      const prev = card._d;
+      const jumped = prev !== undefined && Math.abs(d - prev) > n / 2;
+      card._d = d;
+      const ad = Math.abs(d);
+      const idx = Math.min(ad, 2);
+      const x = d < 0 ? -X[idx] : X[idx];
+      const scale = S[idx];
+      const z = -ad * DEPTH;
+      const rot = d * ANGLE;
+      card.style.transition = (smooth && !jumped) ? 'transform .5s cubic-bezier(.22,.75,.28,1)' : 'none';
+      card.style.transform = 'translate3d(' + x + 'px, 0, ' + z + 'px) rotateY(' + rot + 'deg) scale(' + scale.toFixed(3) + ')';
+    });
+  }
+
+  function bindFeaturesCarousel() {
+    const carousel = $('#features-carousel');
+    if (!carousel) return;
+    let lock = false;
+    // 滚轮: 每格切一张, 无限循环
+    carousel.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      if (lock) return;
+      lock = true;
+      setTimeout(() => { lock = false; }, 300);
+      featAngle += (e.deltaY > 0 ? 1 : -1);
+      layoutCarousel(true);
+    }, { passive: false });
+    // 指针拖拽: 全程跟手 (window 级监听, 移出卡片区也不断), 松手吸附
+    let dragging = false, startX = 0, dragBase = 0;
+    const onMove = (e) => {
+      if (!dragging) return;
+      const dx = e.clientX - startX;
+      featAngle = dragBase + dx / 200;
+      layoutCarousel(false);
+    };
+    const onUp = () => {
+      if (!dragging) return;
+      dragging = false;
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      featAngle = Math.round(featAngle);
+      layoutCarousel(true);
+    };
+    carousel.addEventListener('pointerdown', (e) => {
+      dragging = true;
+      startX = e.clientX;
+      dragBase = featAngle;
+      window.addEventListener('pointermove', onMove);
+      window.addEventListener('pointerup', onUp);
+      layoutCarousel(false);
+    });
+    window.addEventListener('pointercancel', onUp);
   }
 
   const TOOL_PENDING = [];
@@ -1350,7 +1594,7 @@
     if (!api) { toast('浏览器预览模式, 无法启动游戏', 'warn'); return; }
     if (!$('#btn-launch').disabled) {
       $('#btn-launch').disabled = true;
-      pipelineReset();
+      pipelineReset(true); // 启动游戏: 含"启动游戏"步骤
       try { await api.launch_game(); } catch (e) { toast(String(e), 'error'); pipelineDone(); }
     }
   }
@@ -1359,7 +1603,7 @@
     if (!api) { toast('浏览器预览模式, 无法更新汉化', 'warn'); return; }
     if (!$('#btn-translate').disabled) {
       $('#btn-translate').disabled = true;
-      pipelineReset();
+      pipelineReset(false); // 汉化更新: 不含"启动游戏"步骤
       try { await api.update_translation(); }
       catch (e) { toast(String(e), 'error'); }
       setTimeout(() => { $('#btn-translate').disabled = false; pipelineDone(); }, 800);
@@ -1412,7 +1656,7 @@
     $('.term-head').addEventListener('click', () => term.classList.toggle('open'));
     $('#btn-copy-term').addEventListener('click', e => {
       e.stopPropagation();
-      const text = $$('.term-line', termBody).map(l => l.textContent.replace(/^\[\d\d:\d\d:\d\d\]/, '')).join('\n');
+      const text = $$('.term-line', termBody).map(l => l.textContent).join('\n');
       if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(() => toast('已复制到剪贴板', 'success')).catch(() => toast('复制失败', 'error'));
       else toast('复制失败: 当前环境不支持剪贴板', 'error');
     });
@@ -1525,8 +1769,19 @@
     // pywebview 注入时机不定, 每次初始化都重新探测
     api = (window.pywebview && window.pywebview.api) ? window.pywebview.api : null;
     IS_BROWSER = !api;
-    bindEvents();
-    applyTilt();
+    // 立即显示主页, 让推荐卡/版本卡圆圈一开始就可见 (否则在 display:none 页面里转, 用户看不到)
+    switchPage('home');
+    // 主页加载最早触发, 独立于 bindEvents/applyTilt/BOOT/render,
+    // 任何后续步骤出错都不会阻断, 预置 spinner 必被 finally 移除
+    loadHomeExtras().catch(e => console.error('主页加载失败:', e));
+    loadRecommend().catch(e => console.error('推荐加载失败:', e));
+    try {
+      bindEvents();
+      applyTilt();
+      bindFeaturesCarousel();
+    } catch (e) {
+      console.error('UI 初始化出错:', e);
+    }
     try {
       if (api) {
         BOOT = await withTimeout(api.get_bootstrap(), 8000, null);
@@ -1545,17 +1800,17 @@
       $('#changelog-body').innerHTML = '<span class="changelog-empty">初始化失败: ' + esc(String(e)) + '</span>';
       $('#rec-body').innerHTML = '<span class="changelog-empty">初始化失败</span>';
     }
-    render();
+    try {
+      render();
+    } catch (e) {
+      console.error('render 出错:', e);
+    }
     applyTiltBase();
     // 锁定初始窗口内容宽度: 最大化/缩放窗口后控件保持初始大小并居中
     const firstPage = document.querySelector('.page');
     if (firstPage) {
       document.documentElement.style.setProperty('--page-w', Math.floor(firstPage.getBoundingClientRect().width) + 'px');
     }
-    // 主页: 更新内容 + 随机推荐 (独立于 render, 避免被前置错误中断)
-    loadHomeExtras();
-    loadRecommend();
-    switchPage('home');
   }
 
   // pywebview 注入 window.pywebview 存在时序竞态, 等待 pywebviewready

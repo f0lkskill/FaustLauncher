@@ -38,6 +38,35 @@ def _resolve_html_path():
     return os.path.join(_PROJECT_ROOT, "html", "app", "index.html")
 
 
+def _feature_image_uri(image_name):
+    """读取快捷方式卡片素材为压缩后的 data URI (pywebview http 服务器拒绝相对路径, 需内嵌)"""
+    if not image_name:
+        return ""
+    for root in (
+        os.path.join(_PROJECT_ROOT, "assets", "images", "features"),
+        os.path.join(_PROJECT_ROOT, "_internal", "assets", "images", "features"),
+    ):
+        p = os.path.join(root, image_name)
+        if os.path.isfile(p):
+            break
+    else:
+        return ""
+    try:
+        from PIL import Image
+        from io import BytesIO as _Bio
+        img = Image.open(p)
+        img.thumbnail((360, 360), Image.Resampling.LANCZOS)
+        if img.mode in ("RGBA", "LA", "P"):
+            buf = _Bio()
+            img.convert("RGBA").save(buf, "PNG")
+        else:
+            buf = _Bio()
+            img.convert("RGB").save(buf, "JPEG", quality=80)
+        return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode("ascii")
+    except Exception:
+        return ""
+
+
 HTML_PATH = _resolve_html_path()
 
 _log_lock = threading.Lock()
@@ -73,7 +102,13 @@ def check_single_instance():
 
 
 def _patch_network_timeouts():
-    """给所有 requests 请求补默认超时, 防止断网/网络缓慢时无限阻塞线程 (卡死)"""
+    """给所有 requests 请求补默认超时, 防止断网/网络缓慢时无限阻塞线程 (卡死);
+    同时禁用 InsecureRequestWarning (textdb 等源使用 verify=False 的合法请求)"""
+    try:
+        import urllib3
+        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+    except Exception:
+        pass
     try:
         import requests
         if getattr(requests, "_faust_web_patched", False):
@@ -91,7 +126,7 @@ def _patch_network_timeouts():
 
         requests.get = _get
         requests.post = _post
-        requests._faust_web_patched = True
+        requests._faust_web_patched = True # type: ignore
     except Exception:
         pass
 
@@ -261,7 +296,7 @@ class HeadlessDownloadGUI:
     """
 
     def __init__(self, config_path: str = "", auto_start: bool = True,
-                 download_func=None, task: str = None):
+                 download_func=None, task: str = None): # type: ignore
         self.config_path = config_path
         self.is_downloading = True
         self.task = task
@@ -340,13 +375,14 @@ class AppApi:
         from functions.base.settings_manager import get_settings_manager
         sm = get_settings_manager()
         features = [
-            {"name": "📁 游戏目录", "desc": "打开边狱巴士安装目录"},
-            {"name": "🔄 零协会", "desc": "前往零协会汉化组主页"},
-            {"name": "📒 气泡文本", "desc": "下载气泡 Mod 汉化版"},
-            {"name": "📝 维基", "desc": "边狱巴士灰机 Wiki"},
-            {"name": "📖 N网", "desc": "下载边狱巴士 Mod"},
-            {"name": "📦 GitHub", "desc": "查看本项目源码"},
+            {"name": "📁 游戏目录", "desc": "打开边狱巴士安装目录", "image": "game_directory.png"},
+            {"name": "🔄 零协会", "desc": "前往零协会汉化组主页", "image": "zeroasso.png"},
+            {"name": "📝 维基", "desc": "边狱巴士灰机 Wiki", "image": "wiki.png"},
+            {"name": "📖 N网", "desc": "下载边狱巴士 Mod", "image": "nexus.png"},
+            {"name": "📦 GitHub", "desc": "查看本项目源码", "image": "github.png"},
         ]
+        for f in features:
+            f["image_uri"] = _feature_image_uri(f.get("image", ""))
         tools = [
             {"id": "nyos", "name": "📖 今日指令", "desc": "获取食指的最新指令"},
             {"id": "mod_manager", "name": "📦 Mod 管理器", "desc": "管理边狱巴士 Mod 文件", "page": "mod_addon"},
@@ -466,13 +502,20 @@ class AppApi:
         return True
 
     def update_translation(self):
+        # 必须阻塞等待下载线程真正完成, 否则前端 await 立即返回,
+        # 800ms 后 pipelineDone 会在后端仍在下载时就显示"流水线完成"
+        from threading import Event as _Event
+        done = _Event()
         def _run():
             from functions.pages.app.page_loader import download_and_launch
             try:
                 download_and_launch(obj=None, need_run_game=False)
             except Exception as e:
                 print(f"更新汉化失败: {e}")
+            finally:
+                done.set()
         threading.Thread(target=_run, daemon=True).start()
+        done.wait()
         return True
 
     # ---- 入口 ----
@@ -651,14 +694,6 @@ class AppApi:
             print(f"打开独立 Mod 管理器失败: {e}")
             return False
 
-    # ---- 下载中心 (在线) ----
-    def _get_web_trigger(self):
-        """懒加载 WebTrigger"""
-        if not getattr(self, '_web_trigger', None):
-            from functions.web_update.web_trigger import WebTrigger
-            self._web_trigger = WebTrigger()
-        return self._web_trigger
-
     def _open_folder_link(self):
         """文件夹超链接: tkinter 对话框在 pywebview 主循环下可短暂独立运行"""
         import tkinter as tk
@@ -684,11 +719,11 @@ class AppApi:
     @staticmethod
     def _create_junction(source_path, target_path):
         import subprocess
-        from tkinter import messagebox
+        from tkinter import messagebox, Tk
         source_name = os.path.basename(source_path)
         link_path = os.path.join(target_path, source_name)
         if os.path.exists(link_path):
-            root = tk.Tk()
+            root = Tk()
             root.withdraw()
             overwrite = messagebox.askyesno(
                 "确认覆盖", f"目标位置已存在同名文件夹 '{source_name}', 是否覆盖？", parent=root)
@@ -750,7 +785,8 @@ if %errorlevel% equ 0 (
             wt = self._get_web_trigger()
             data = (wt.fetch_all_addon_info() if kind == 'addon'
                     else wt.fetch_all_mod_info())
-            self._dc_cache[kind] = data if data else []
+            self._dc_cache[kind] = data if data else [] # type: ignore
+            print(f"[推荐缓存] {kind} 列表爬取完成: {len(self._dc_cache[kind])} 条") # type: ignore
         return self._dc_cache[kind]
 
     def get_addon_list(self):
@@ -896,7 +932,7 @@ if %errorlevel% equ 0 (
                 entry = info.get('versions', {}).get(latest, {}) if latest else {}
                 desc = entry.get('description', '')
                 if desc:
-                    return f"## {latest}\n\n{desc}"
+                    return desc
         except Exception as e:
             print(f"云端更新内容获取失败, 使用本地 CHANGELOG: {e}")
         for candidate in (
@@ -916,11 +952,11 @@ if %errorlevel% equ 0 (
         import random
         items = []
         try:
-            for page in self._get_cached_list('addon'):
+            for page in self._get_cached_list('addon'): # type: ignore
                 for it in page:
                     if not it.get("disabled"):
                         items.append((it, "addon"))
-            for page in self._get_cached_list('mod'):
+            for page in self._get_cached_list('mod'): # type: ignore
                 for it in page:
                     if not it.get("disabled"):
                         items.append((it, "mod"))
@@ -1136,6 +1172,7 @@ def _start_tray(core, window):
 
     def when_exit(icon=None, item=None):
         try:
+            assert icon is not None
             icon.stop()
         except Exception:
             pass
@@ -1249,7 +1286,7 @@ def run_web_ui(debug: bool = False):
         except Exception:
             pass
 
-    zd._web_progress = _web_progress
+    zd._web_progress = _web_progress # type: ignore
 
     # 拦截旧代码的 Tk 模态对话框 (必须在任何业务代码使用 messagebox 之前)
     _patch_tk_dialogs(_web_progress)
@@ -1257,7 +1294,7 @@ def run_web_ui(debug: bool = False):
     # 版本更新流程的下载组件同样换成无头版
     try:
         import functions.update.version_utils as vu
-        vu.DownloadGUI = zd.DownloadGUI
+        vu.DownloadGUI = zd.DownloadGUI # type: ignore
     except Exception:
         pass
 
@@ -1289,6 +1326,7 @@ def run_web_ui(debug: bool = False):
         try:
             if core.settings_manager.get_setting("after_gui_exit") == 0:
                 try:
+                    assert window is not None
                     window.hide()
                 except Exception:
                     pass
@@ -1299,6 +1337,7 @@ def run_web_ui(debug: bool = False):
         return True
 
     try:
+        assert window is not None
         window.events.closing += _on_closing
     except Exception:
         pass

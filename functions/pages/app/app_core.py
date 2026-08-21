@@ -191,7 +191,7 @@ class FaustLauncherCore:
             webbrowser.open("https://limbuscompany.huijiwiki.com/wiki/%E9%A6%96%E9%A1%B5")
         elif feature['name'] == "📖 N网":
             webbrowser.open("https://www.nexusmods.com/limbuscompany/mods")
-        elif feature['name'] == "📦 Github":
+        elif feature['name'] == "📦 GitHub":
             webbrowser.open("https://github.com/f0lkskill/FaustLauncher")
             
     def open_website(self):

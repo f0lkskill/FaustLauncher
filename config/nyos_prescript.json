@@ -367,7 +367,14 @@
         "让&color&在&where&迟到&count&分钟，再出现",
         "在「&word&」和「&color&」之间走直线，一整天",
         "把右手&count&下，左手&count&下，保持&time&",
-        "让&creature&先睡着，你再&action&"
+        "让&creature&先睡着，你再&action&",
+        "&time&启动原神，等待它醒来",
+        "&time&启动原神，做完&count&个委托再关掉",
+        "&time&启动原神，然后去&where&签个到",
+        "今天启动一次原神，然后假装什么都没发生",
+        "&time&，启动原神，为&pepople&展示一次",
+        "启动原神，加载完成后&action&",
+        "&time&启动原神，把&object&留在加载界面旁"
     ],
     "where": [
         "火腿砰砰",

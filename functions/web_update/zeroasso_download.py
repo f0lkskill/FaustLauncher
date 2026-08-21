@@ -751,66 +751,44 @@ def main_gui(parent, config_path: str = ""):
 def download_and_extract_mod(gui, target_dir, download_files):
     """简化的下载+解压函数 (供下载中心 Mod/插件使用)
 
-    解压到临时目录后识别压缩包内的插件/Mod 目录,
-    移动到 target_dir/<下载名>/ 下 (对齐 scan_addons/scan_mods 的子目录约定)
+    下载后直接解压到 target_dir 根目录 (压缩包内自带插件/Mod 目录结构),
+    不额外包裹一层目录, 仅清理压缩包附带杂质。
     """
-    import shutil
     import traceback as _tb
-    temp_root = os.path.join(target_dir, '_temp_download')
-    os.makedirs(temp_root, exist_ok=True)
-    try:
-        for file_info in download_files:
-            if not gui.is_downloading:
-                break
-            url = file_info.get('url', '')
-            name = file_info.get('name', 'unknown')
-            temp_filename = file_info.get('temp_filename', f"{name}.7z")
-            if not url:
-                continue
-            temp_file = os.path.join(temp_root, temp_filename)
-            gui.current_file_var.set(f"正在下载 {name}...")
-            print(f"[下载中心] 开始下载: {url}")
-            ok = download_file_with_gui(url, temp_file, gui, name)
-            print(f"[下载中心] 下载结果: ok={ok}, exists={os.path.exists(temp_file)}")
-            if ok is False:
-                return False
-            gui.current_file_var.set(f"正在解压 {name}...")
-            if os.path.exists(temp_file):
-                extract_dir = os.path.join(temp_root, temp_filename + '_extract')
-                os.makedirs(extract_dir, exist_ok=True)
-                ex = extract_7z_file(temp_file, extract_dir)
-                print(f"[下载中心] 解压结果: {ex}")
-                if not os.path.isdir(extract_dir):
-                    return False
-                entries = [e for e in os.listdir(extract_dir)
-                           if e not in ('__MACOSX', '.DS_Store')]
-                junk = {'.gitkeep', 'readme.txt', 'README.md', '说明.txt', '下载说明.txt', '来源.txt'}
-                real = [e for e in entries if e not in junk]
-                dest_dir = os.path.join(target_dir, name)
-                if os.path.exists(dest_dir):
-                    shutil.rmtree(dest_dir, ignore_errors=True)
-                if len(real) == 1 and os.path.isdir(os.path.join(extract_dir, real[0])):
-                    # 压缩包根是一个目录: 视为插件/Mod 本体
-                    shutil.copytree(os.path.join(extract_dir, real[0]), dest_dir)
-                elif len(real) >= 1:
-                    # 散落文件: 建目标名目录放入
-                    os.makedirs(dest_dir, exist_ok=True)
-                    for e in real:
-                        src = os.path.join(extract_dir, e)
-                        dst = os.path.join(dest_dir, e)
-                        if os.path.isdir(src):
-                            shutil.copytree(src, dst)
-                        else:
-                            shutil.move(src, dst)
-                else:
-                    return False
-        return True
-    except Exception as e:
-        print(f"[下载中心] 下载/解压失败: {e}")
-        _tb.print_exc()
-        return False
-    finally:
+    import tempfile as _tf
+    with _tf.TemporaryDirectory() as temp_root:
         try:
-            shutil.rmtree(temp_root, ignore_errors=True)
-        except Exception:
-            pass
+            for file_info in download_files:
+                if not gui.is_downloading:
+                    break
+                url = file_info.get('url', '')
+                name = file_info.get('name', 'unknown')
+                temp_filename = file_info.get('temp_filename', f"{name}.7z")
+                if not url:
+                    continue
+                temp_file = os.path.join(temp_root, temp_filename)
+                gui.current_file_var.set(f"正在下载 {name}...")
+                print(f"[下载中心] 开始下载: {url}")
+                ok = download_file_with_gui(url, temp_file, gui, name)
+                print(f"[下载中心] 下载结果: ok={ok}, exists={os.path.exists(temp_file)}")
+                if ok is False:
+                    return False
+                gui.current_file_var.set(f"正在解压 {name}...")
+                if os.path.exists(temp_file):
+                    if not extract_7z_file(temp_file, target_dir):
+                        return False
+                    # 清理压缩包附带的杂质
+                    for junk in ('__MACOSX', '.DS_Store', '.gitkeep'):
+                        p = os.path.join(target_dir, junk)
+                        if os.path.isdir(p):
+                            shutil.rmtree(p, ignore_errors=True)
+                        elif os.path.exists(p):
+                            try:
+                                os.remove(p)
+                            except Exception:
+                                pass
+            return True
+        except Exception as e:
+            print(f"[下载中心] 下载/解压失败: {e}")
+            _tb.print_exc()
+            return False
