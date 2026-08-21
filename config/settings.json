@@ -16,7 +16,7 @@
             "OurPlay 神人版"
         ],
         "default": 0,
-        "value": 1,
+        "value": 0,
         "description": "选择下载的汉化包来源平台\n零协会: 零协会汉化, 目录名为 LLC_zh-CN\nOurPlay 普通版: OurPlay PC 端汉化, 目录名为 OurPlayHanHua\nOurPlay 神人版: OurPlay Android 端神人汉化, 目录名为 OurPlayHanHua\n切换平台后, 程序会按所选平台的汉化包结构处理文件。",
         "page": "通用"
     },
@@ -42,7 +42,7 @@
             "关闭程序"
         ],
         "default": 0,
-        "value": 0,
+        "value": 1,
         "description": "退出程序后, 程序将如何操作\n最小化到系统托盘: 程序将最小化到系统托盘, 并继续运行\n关闭程序: 程序将立即关闭",
         "page": "通用"
     },

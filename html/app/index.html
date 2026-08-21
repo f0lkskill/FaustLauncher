@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>FaustLauncher 浮士德启动器</title>
-<link rel="stylesheet" href="css/style.css?v=32">
+<link rel="stylesheet" href="css/style.css?v=37">
 </head>
 <body>
 <div id="bg-layer"></div>
@@ -97,11 +97,10 @@
 
     <!-- ==================== 工具 ==================== -->
     <section class="page" id="page-tools">
-      <div class="page-head">
-        <h2>工具页</h2>
-        <p>常用工具集合</p>
+      <div class="carousel-3d" id="tools-carousel">
+        <div class="carousel-stage" id="tools-stage"></div>
       </div>
-      <div class="grid-3" id="tools-grid"></div>
+      <div class="carousel-dots" id="tools-dots"></div>
     </section>
 
     <!-- ==================== 插件&Mod ==================== -->
@@ -212,7 +211,7 @@
       <div class="dl-empty">暂无下载任务</div>
     </div>
   </aside>
-<script src="js/app.js?v=39"></script>
+<script src="js/app.js?v=43"></script>
 <script>
 /* 独立兜底: 完全不依赖 app.js。无论 app.js 是否崩溃, 只要内容加载完成或超时,
    就移除主页两张卡片的 loading 圆圈。 */

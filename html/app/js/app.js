@@ -114,14 +114,13 @@
       { name: '📦 GitHub', desc: '查看本项目源码', image: 'github.png' },
     ],
     tools: [
-      { id: 'nyos', name: '📖 今日指令', desc: '获取食指的最新指令' },
-      { id: 'mod_manager', name: '📦 Mod 管理器', desc: '管理边狱巴士 Mod 文件', page: 'mod_addon' },
-      { id: 'custom_translation', name: '🔧 自定义汉化', desc: '可视化编辑 lang 下任意 JSON 文本' },
-      { id: 'folder_link', name: '📂 文件夹超链接', desc: '创建符号链接, 释放 C 盘' },
-      { id: 'extension_tools', name: '🧩 扩展工具', desc: '插件模板 / 打包发布' },
-      { id: 'font', name: '📝 字体修改', desc: '选择字体替换汉化包字体' },
-      { id: 'auto_translate', name: '🤖 自动汉化', desc: '思知 AI 批量剧情文本翻译' },
+      { id: 'custom_translation', name: '🔧 自定义汉化', desc: '可视化编辑 lang 下任意 JSON 文本\n一键编辑替换汉化文本\n自动记录差异性文本，汉化更新也不丢失修改内容！' },
       { id: 'gradient', name: '💻 渐变文本处理器', desc: '生成 Unity 富文本渐变色代码' },
+      { id: 'folder_link', name: '📂 文件夹超链接', desc: '创建符号链接, 转移C盘资源文件' },
+      { id: 'nyos', name: '📖 今日指令', desc: '获取食指的最新指令\n仅供娱乐，请勿上升到指令成瘾。' },
+      { id: 'extension_tools', name: '🧩 扩展工具', desc: '插件模板 / 打包发布\n给开发者提供的工具\n需要输入开发者密钥。' },
+      { id: 'font', name: '📝 字体修改', desc: '选择字体替换汉化包字体' },
+      // { id: 'auto_translate', name: '🤖 自动汉化', desc: '思知 AI 批量剧情文本翻译' },
     ],
     settings_schema: {
       game_path: { name: '游戏路径', type: 'string', default: '', value: '', description: '游戏安装路径', page: '通用' },
@@ -1077,16 +1076,24 @@
   }
 
   // ---------------- 工具面板 ----------------
+  // 统一的面板打开/关闭: 关闭时播放淡出动画后再移除 DOM; 点击遮罩空白处也可关闭
+  function closePanel(panel) {
+    if (!panel || panel._closing) return;
+    panel._closing = true;
+    panel.classList.add('closing');
+    setTimeout(() => panel.remove(), 190);
+  }
+
   function openAutoTranslate() {
     if (!api) { toast('浏览器预览模式', 'warn'); return; }
     const existing = document.getElementById('at-panel');
-    if (existing) { existing.remove(); return; }
+    if (existing) { closePanel(existing); return; }
     const panel = document.createElement('div');
     panel.id = 'at-panel';
     panel.className = 'panel-overlay';
     panel.innerHTML =
       '<div class="panel-card panel-card-wide">' +
-        '<div class="panel-head"><h3>🤖 自动汉化</h3><button class="btn btn-ghost" id="at-close">✕</button></div>' +
+        '<div class="panel-head"><h3>🤖 自动汉化</h3><button class="panel-close" id="at-close">✕</button></div>' +
         '<div class="panel-body">' +
           '<div class="at-row"><label>源文本目录</label><input type="text" id="at-source" placeholder="留空使用默认"></div>' +
           '<div class="at-row"><label>输出目录</label><input type="text" id="at-target" placeholder="留空使用默认"></div>' +
@@ -1094,10 +1101,11 @@
           '<div class="progress-track"><div class="progress-fill" id="at-progress"></div></div>' +
           '<div id="at-log" class="at-log"></div>' +
         '</div>' +
-        '<div class="panel-foot"><button class="btn btn-primary" id="at-start">🚀 开始</button><button class="btn btn-ghost" id="at-stop">⏹ 停止</button></div>' +
+        '<div class="panel-foot"><button class="btn btn-ghost" id="at-stop">⏹ 停止</button><button class="btn btn-primary" id="at-start">🚀 开始</button></div>' +
       '</div>';
     document.body.appendChild(panel);
-    $('#at-close').onclick = () => panel.remove();
+    panel.addEventListener('click', (e) => { if (e.target === panel) closePanel(panel); });
+    $('#at-close').onclick = () => closePanel(panel);
     $('#at-start').onclick = async () => {
       const source = $('#at-source').value.trim();
       const target = $('#at-target').value.trim();
@@ -1111,28 +1119,58 @@
   function openFontSelector() {
     if (!api) { toast('浏览器预览模式', 'warn'); return; }
     const existing = document.getElementById('font-panel');
-    if (existing) { existing.remove(); return; }
+    if (existing) { closePanel(existing); return; }
     const panel = document.createElement('div');
     panel.id = 'font-panel';
     panel.className = 'panel-overlay';
     panel.innerHTML =
       '<div class="panel-card panel-card-wide">' +
-        '<div class="panel-head"><h3>📝 字体修改</h3><button class="btn btn-ghost" id="font-close">✕</button></div>' +
+        '<div class="panel-head"><h3>📝 字体修改</h3><button class="panel-close" id="font-close">✕</button></div>' +
         '<div class="panel-body">' +
           '<div class="font-tabs"><button class="font-tab active" data-font="context">Context 字体</button><button class="font-tab" data-font="title">Title 字体</button></div>' +
           '<div id="font-info" class="font-info"></div>' +
+          '<div id="font-preview" class="font-preview">' +
+            '<div class="fp-title">边狱巴士 Limbus Company</div>' +
+            '<div class="fp-text">但丁，今天的任务也请多指教。All results are meaningless.</div>' +
+            '<div class="fp-num">0123456789 · HP 45 / SAN 25 · #01</div>' +
+          '</div>' +
         '</div>' +
-        '<div class="panel-foot"><input type="file" id="font-file" accept=".ttf,.otf" hidden><button class="btn btn-primary" id="font-select">选择字体文件</button><button class="btn btn-ghost" id="font-delete">删除自定义字体</button></div>' +
+        '<div class="panel-foot"><input type="file" id="font-file" accept=".ttf,.otf" hidden><button class="btn btn-ghost" id="font-delete">删除自定义字体</button><button class="btn btn-primary" id="font-select">选择字体文件</button></div>' +
       '</div>';
     document.body.appendChild(panel);
-    $('#font-close').onclick = () => panel.remove();
+    panel.addEventListener('click', (e) => { if (e.target === panel) closePanel(panel); });
+    $('#font-close').onclick = () => closePanel(panel);
     let currentFontTab = 'context';
+    // 真实加载自定义字体文件, 让预览文本用该字体渲染
+    async function loadFontPreview() {
+      const pv = $('#font-preview');
+      if (!pv) return;
+      try {
+        const r = await withTimeout(api.get_font_data(currentFontTab), 8000, { uri: '' });
+        const famName = 'FP_' + currentFontTab;
+        if (r && r.uri) {
+          const face = new FontFace(famName, 'url(' + r.uri + ')');
+          await face.load();
+          document.fonts.add(face);
+          pv.style.fontFamily = "'" + famName + "', var(--font)";
+        } else {
+          pv.style.fontFamily = 'var(--font)';   // 无自定义字体 → 默认
+        }
+      } catch (e) {
+        pv.style.fontFamily = 'var(--font)';
+      }
+    }
     function refreshFontInfo() {
       const card = panel.querySelector('.panel-card');
       showFrameLoading(card);
-      api.get_font_info().then(d => {
+      Promise.all([
+        api.get_font_info(),
+        loadFontPreview(),
+      ]).then(([d]) => {
         const info = d[currentFontTab] || {};
-        $('#font-info').innerHTML = info.exists ? '大小: ' + (info.size / 1024).toFixed(1) + ' KB' : '使用默认字体';
+        $('#font-info').innerHTML = info.exists
+          ? '✓ 已使用自定义字体 (' + (info.size / 1024).toFixed(1) + ' KB)'
+          : '使用默认字体';
       }).catch(() => {}).finally(() => hideFrameLoading(card));
     }
     $$('.font-tab').forEach(t => t.onclick = () => {
@@ -1172,67 +1210,115 @@
   function openGradientTool() {
     if (!api) { toast('浏览器预览模式', 'warn'); return; }
     const existing = document.getElementById('gradient-panel');
-    if (existing) { existing.remove(); return; }
+    if (existing) { closePanel(existing); return; }
     const panel = document.createElement('div');
     panel.id = 'gradient-panel';
     panel.className = 'panel-overlay';
     panel.innerHTML =
       '<div class="panel-card panel-card-wide">' +
-        '<div class="panel-head"><h3>💻 渐变文本处理器</h3><button class="btn btn-ghost" id="gradient-close">✕</button></div>' +
+        '<div class="panel-head"><h3>💻 渐变文本处理器</h3><button class="panel-close" id="gradient-close">✕</button></div>' +
         '<div class="panel-body">' +
-          '<div class="at-row"><label>输入文本</label><textarea id="gradient-input" rows="3" placeholder="输入要添加渐变的文本"></textarea></div>' +
-          '<div class="gradient-colors"><div class="at-row"><label>起始颜色</label><input type="color" id="gradient-start" value="#ff0000"></div><div class="at-row"><label>结束颜色</label><input type="color" id="gradient-end" value="#0000ff"></div></div>' +
-          '<div class="at-row"><label>渐变度 <span id="gradient-rate-val">2.0</span></label><input type="range" id="gradient-rate" min="0.5" max="5" step="0.1" value="2"></div>' +
-          '<div class="at-row"><label>预览</label><div id="gradient-preview" class="gradient-preview"></div></div>' +
-          '<div class="at-row"><label>输出 (Unity 富文本)</label><textarea id="gradient-output" rows="3" readonly placeholder="生成的代码会显示在这里"></textarea></div>' +
+          '<div class="grad-section">' +
+            '<div class="grad-title">🎨 颜色设置</div>' +
+            '<div class="grad-color-row">' +
+              '<span class="gc-label">起始颜色</span><input type="color" id="gradient-start" value="#00e5ff">' +
+              '<span class="gc-sep"></span>' +
+              '<span class="gc-label">结束颜色</span><input type="color" id="gradient-end" value="#ffffff">' +
+            '</div>' +
+          '</div>' +
+          '<div class="grad-section">' +
+            '<div class="grad-title">⚙️ 渐变设置</div>' +
+            '<div class="grad-rate-row">' +
+              '<span class="gc-label">渐变度 <i>(值越大渐变越快)</i></span>' +
+              '<input type="range" id="gradient-rate" min="0.1" max="5" step="0.1" value="2">' +
+              '<span class="range-val" id="gradient-rate-val">2.0</span>' +
+            '</div>' +
+          '</div>' +
+          '<div class="grad-section">' +
+            '<div class="grad-title">✏️ 输入文本</div>' +
+            '<textarea id="gradient-input" rows="2" class="at-row-input">你也将安息, 化作哀蝶消散吧...</textarea>' +
+          '</div>' +
+          '<div class="grad-section">' +
+            '<div class="grad-title">🎯 实时预览</div>' +
+            '<div id="gradient-preview" class="gradient-preview"><span style="opacity:.4">输入文本后实时预览</span></div>' +
+          '</div>' +
+          '<div class="grad-section">' +
+            '<div class="grad-title">📋 生成的 Unity 富文本</div>' +
+            '<textarea id="gradient-output" rows="3" readonly class="grad-output"></textarea>' +
+          '</div>' +
         '</div>' +
-        '<div class="panel-foot"><button class="btn btn-primary" id="gradient-generate">⚡ 生成</button><button class="btn btn-ghost" id="gradient-copy">📋 复制</button></div>' +
+        '<div class="panel-foot"><button class="btn btn-primary" id="gradient-copy">📋 复制 Unity 富文本</button></div>' +
       '</div>';
     document.body.appendChild(panel);
-    $('#gradient-close').onclick = () => panel.remove();
-    $('#gradient-rate').oninput = () => $('#gradient-rate-val').textContent = $('#gradient-rate').value;
-    $('#gradient-generate').onclick = async () => {
-      const text = $('#gradient-input').value;
-      if (!text.trim()) { toast('请输入文本', 'warn'); return; }
-      const r = await api.generate_gradient_text(text, $('#gradient-start').value, $('#gradient-end').value, parseFloat($('#gradient-rate').value));
-      if (r.error) { toast('生成失败: ' + r.error, 'error'); return; }
-      $('#gradient-output').value = r.result;
-      $('#gradient-preview').innerHTML = r.result
-        .replace(/<color=#([0-9a-fA-F]{3,6})>/g, '<span style="color:#$1">')
-        .replace(/<\/color>/g, '</span>');
-    };
+    panel.addEventListener('click', (e) => { if (e.target === panel) closePanel(panel); });
+    $('#gradient-close').onclick = () => closePanel(panel);
+
+    const out = $('#gradient-output'), prev = $('#gradient-preview');
+    const rateVal = $('#gradient-rate-val');
+    let gradTimer = null;
+    function regenGrad() {
+      rateVal.textContent = Number($('#gradient-rate').value).toFixed(1);
+      clearTimeout(gradTimer);
+      gradTimer = setTimeout(async () => {
+        const text = $('#gradient-input').value;
+        if (!text.trim()) {
+          out.value = '';
+          prev.innerHTML = '<span style="opacity:.4">输入文本后实时预览</span>';
+          return;
+        }
+        try {
+          const r = await api.generate_gradient_text(
+            text, $('#gradient-start').value, $('#gradient-end').value,
+            parseFloat($('#gradient-rate').value));
+          if (!r || r.error) return;
+          out.value = r.result;
+          prev.innerHTML = r.result
+            .replace(/<color=#([0-9a-fA-F]{3,6})>/g, '<span style="color:#$1">')
+            .replace(/<\/color>/g, '</span>');
+        } catch (e) { /* 实时生成失败静默, 下次输入会重试 */ }
+      }, 250);
+    }
+    ['#gradient-input', '#gradient-start', '#gradient-end'].forEach(sel => {
+      $(sel).addEventListener('input', regenGrad);
+    });
+    $('#gradient-rate').addEventListener('input', regenGrad);
+    regenGrad();
+
     $('#gradient-copy').onclick = () => {
-      const out = $('#gradient-output').value;
-      if (!out) { toast('请先生成', 'warn'); return; }
-      navigator.clipboard.writeText(out).then(() => toast('已复制', 'success')).catch(() => toast('复制失败', 'error'));
+      const v = out.value;
+      if (!v) { toast('还没有可复制的结果', 'warn'); return; }
+      navigator.clipboard.writeText(v).then(() => toast('已复制', 'success')).catch(() => toast('复制失败', 'error'));
     };
   }
 
   function openExtensionTools() {
     if (!api) { toast('浏览器预览模式', 'warn'); return; }
     const existing = document.getElementById('ext-panel');
-    if (existing) { existing.remove(); return; }
+    if (existing) { closePanel(existing); return; }
     const panel = document.createElement('div');
     panel.id = 'ext-panel';
     panel.className = 'panel-overlay';
     panel.innerHTML =
       '<div class="panel-card">' +
-        '<div class="panel-head"><h3>🧩 扩展工具</h3><button class="btn btn-ghost" id="ext-close">✕</button></div>' +
-        '<div class="panel-body">' +
-          '<div class="at-row"><label>开发者工具密钥</label><input type="password" id="ext-key" placeholder="请输入密钥" autofocus></div>' +
-          '<div class="dc-empty" style="padding:10px">插件模板 / 打包发布 / 发布 Mod (需密钥)</div>' +
+        '<div class="panel-head"><h3>🧩 扩展工具</h3><button class="panel-close" id="ext-close">✕</button></div>' +
+        '<div class="panel-body ext-center">' +
+          '<div class="at-row"><label style="text-align:center"></label>' +
+            '<input type="text" id="ext-key" placeholder="请输入密钥" autocomplete="off" spellcheck="false" style="text-align:center">' +
+          '</div>' +
+          '<button class="btn btn-primary" id="ext-verify" style="width:100%;justify-content:center;margin-top:6px">验证</button>' +
         '</div>' +
-        '<div class="panel-foot"><button class="btn btn-primary" id="ext-verify">验证</button></div>' +
       '</div>';
     document.body.appendChild(panel);
-    $('#ext-close').onclick = () => panel.remove();
+    panel.addEventListener('click', (e) => { if (e.target === panel) closePanel(panel); });
+    $('#ext-close').onclick = () => closePanel(panel);
     $('#ext-key').onkeydown = (e) => { if (e.key === 'Enter') $('#ext-verify').click(); };
+    setTimeout(() => $('#ext-key').focus(), 120);
     $('#ext-verify').onclick = async () => {
       const key = $('#ext-key').value.trim();
       if (!key) { toast('请输入密钥', 'warn'); return; }
       const r = await api.verify_extension_key(key);
       if (r.ok) {
-        panel.remove();
+        closePanel(panel);
         api.open_extension_tools_window().then(ok => {
           toast(ok ? '扩展工具已打开' : '打开失败', ok ? 'success' : 'error');
         });
@@ -1494,11 +1580,18 @@
     const stage = $('#features-stage');
     if (!stage) return;
     const s = computeFeatSize();
-    stage.style.width = s.w + 'px';
-    stage.style.height = s.h + 'px';
-    stage.style.fontSize = (s.w / 7.5).toFixed(1) + 'px';  // 内容字号随卡片等比例缩放
+    // 快捷方式与工具页共用同一卡片尺寸
+    ['#features-stage', '#tools-stage'].forEach(sel => {
+      const st = $(sel);
+      if (st) {
+        st.style.width = s.w + 'px';
+        st.style.height = s.h + 'px';
+        st.style.fontSize = (s.w / 7.5).toFixed(1) + 'px';  // 内容字号随卡片等比例缩放
+      }
+    });
     featStep = s.step;
     layoutCarousel(false);
+    layoutToolsCarousel(false);
   }
 
   function renderFeatures(features) {
@@ -1696,28 +1789,205 @@ function layoutCarousel(smooth) {
 
   const TOOL_PENDING = [];
 
+  // 工具点击分发 (供轮播单击判定调用)
+  function openToolAction(t) {
+    const pending = TOOL_PENDING.includes(t.id);
+    if (pending) { toast('该工具将在后续版本接入 Web UI', 'warn'); return; }
+    if (t.page) { switchPage(t.page); return; }
+    if (t.id === 'auto_translate') { openAutoTranslate(); return; }
+    if (t.id === 'font') { openFontSelector(); return; }
+    if (t.id === 'gradient') { openGradientTool(); return; }
+    if (t.id === 'extension_tools') { openExtensionTools(); return; }
+    if (api) api.open_tool(t.id).catch(e => toast(String(e), 'error'));
+    else toast('浏览器预览模式', 'warn');
+  }
+
+  // 工具页: 与快捷方式完全一致的 3D 轮播展示
+  let toolsTotal = 0, toolsAngle = 0;
+  let toolsData = [];
+
   function renderTools(tools) {
-    const grid = $('#tools-grid');
-    grid.innerHTML = '';
-    (tools || []).forEach(t => {
-      const pending = TOOL_PENDING.includes(t.id);
-      const card = document.createElement('div');
-      card.className = 'link-card' + (pending ? ' disabled' : '');
-      card.innerHTML = '<div class="lc-ico">' + esc(t.name.split(' ')[0]) + '</div>' +
-        '<div class="lc-name">' + esc(t.name.split(' ').slice(1).join(' ') || t.name) + '</div>' +
-        '<div class="lc-desc">' + esc(t.desc || '') + '</div>' +
-        (pending ? '<div class="lc-desc">🕐 将在后续版本接入 Web UI</div>' : '');
-      card.onclick = () => {
-        if (pending) { toast('该工具将在后续版本接入 Web UI', 'warn'); return; }
-        if (t.page) { switchPage(t.page); return; }
-        if (t.id === 'auto_translate') { openAutoTranslate(); return; }
-        if (t.id === 'font') { openFontSelector(); return; }
-        if (t.id === 'gradient') { openGradientTool(); return; }
-        if (t.id === 'extension_tools') { openExtensionTools(); return; }
-        if (api) api.open_tool(t.id).catch(e => toast(String(e), 'error'));
-        else toast('浏览器预览模式', 'warn');
+    const stage = $('#tools-stage');
+    if (!stage) return;
+    stage.innerHTML = '';
+    const list = (tools || []).filter(Boolean);
+    toolsTotal = list.length;
+    toolsAngle = 0;
+    toolsData = list;
+    if (!toolsTotal) return;
+    list.forEach((t, i) => {
+      const wrap = document.createElement('div');
+      wrap.className = 'carousel-item';
+      const inner = document.createElement('div');
+      inner.className = 'carousel-item-inner';
+      // 图片处理逻辑与快捷方式一致: 无图片则留空
+      const bg = t.image_uri || (t.image ? '../../assets/images/tools/' + t.image : '');
+      const bgHtml = bg ? '<img class="carousel-item-bg" src="' + esc(bg) + '" alt="" draggable="false">' : '';
+      inner.innerHTML = bgHtml +
+        '<div class="carousel-item-content">' +
+          '<div class="lc-ico">' + esc(t.name.split(' ')[0]) + '</div>' +
+          '<div class="lc-name">' + esc(t.name.split(' ').slice(1).join(' ') || t.name) + '</div>' +
+          '<div class="lc-desc">' + esc(t.desc || '') + '</div>' +
+        '</div>';
+      inner.dataset.toolId = t.id;   // 单击打开 (在轮播拖拽判定中触发)
+      wrap.appendChild(inner);
+      stage.appendChild(wrap);
+    });
+    // 底部指示点: 点击跳转到对应卡片
+    const dotsWrap = document.getElementById('tools-dots');
+    if (dotsWrap) {
+      dotsWrap.innerHTML = '';
+      list.forEach((_, i) => {
+        const dot = document.createElement('button');
+        dot.className = 'cdot';
+        dot.title = '跳到第 ' + (i + 1) + ' 个工具';
+        dot.addEventListener('click', () => {
+          toolsAngle = i;
+          layoutToolsCarousel(true);
+        });
+        dotsWrap.appendChild(dot);
+      });
+    }
+    applyFeatSize();
+  }
+
+// 工具轮播布局: 与快捷方式完全一致 (间距/倾斜/渐隐)
+function layoutToolsCarousel(smooth) {
+    const stage = $('#tools-stage');
+    if (!stage || !toolsTotal) return;
+    const n = toolsTotal || 1;
+    const offset = toolsAngle;
+    const X = [0, featStep, featStep * 2];
+    const S = [1, 1, 1];
+    const DEPTH = 80, ANGLE = 16;
+    const OPACITY = [1, 0.9, 0.65];
+    const cards = stage.querySelectorAll('.carousel-item');
+    if (!cards.length) return;
+    cards.forEach((card, i) => {
+      let d = ((i - offset) % n + n) % n;
+      if (d > n / 2) d = d - n;
+      const prev = card._d;
+      const jumped = prev !== undefined && Math.abs(d - prev) > n / 2;
+      card._d = d;
+      const ad = Math.abs(d);
+      const idx = Math.min(Math.floor(ad), 2);
+      const frac = ad - idx;
+      const xBase = X[idx] ?? 0;
+      const xNext = (X[idx + 1] ?? (xBase + featStep));
+      const x = (d < 0 ? -1 : 1) * (xBase + (xNext - xBase) * frac);
+      const scale = S[idx] ?? 1;
+      const z = -ad * DEPTH;
+      const rot = d * ANGLE;
+      const opacity = OPACITY[idx] ?? 0.65;
+      card.style.opacity = String(opacity);
+      card.style.transition = (smooth && !jumped)
+        ? 'transform .45s cubic-bezier(.22,.75,.28,1), opacity .45s ease'
+        : 'none';
+      card.style.transform = 'translate3d(' + (x || 0).toFixed(2) + 'px, 0, ' + (z || 0).toFixed(2) + 'px) rotateY(' + (rot || 0).toFixed(2) + 'deg) scale(' + scale.toFixed(4) + ')';
+    });
+    const activeDot = ((Math.round(offset) % n) + n) % n;
+    const dots = document.querySelectorAll('#tools-dots .cdot');
+    dots.forEach((d, i) => d.classList.toggle('active', i === activeDot));
+  }
+
+  function bindToolsCarousel() {
+    const carousel = $('#tools-carousel');
+    if (!carousel) return;
+    let lock = false;
+
+    carousel.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      if (lock) return;
+      lock = true;
+      setTimeout(() => { lock = false; }, 300);
+      toolsAngle += (e.deltaY > 0 ? 1 : -1);
+      layoutToolsCarousel(true);
+    }, { passive: false });
+
+    let dragging = false, startX = 0, dragBase = 0;
+    let moved = false, pressEl = null, pressId = null;
+    let rafId = null, springId = null;
+
+    const stopAll = () => {
+      if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
+      if (springId) { cancelAnimationFrame(springId); springId = null; }
+    };
+
+    const clearPress = () => {
+      if (pressEl) { pressEl.classList.remove('card-press'); pressEl = null; }
+      pressId = null;
+    };
+
+    const startRenderLoop = () => {
+      stopAll();
+      const loop = () => {
+        layoutToolsCarousel(false);
+        rafId = requestAnimationFrame(loop);
       };
-      grid.appendChild(card);
+      rafId = requestAnimationFrame(loop);
+    };
+
+    const springToNearest = () => {
+      stopAll();
+      const target = Math.round(toolsAngle);
+      const startVal = toolsAngle;
+      const t0 = performance.now();
+      const duration = 320;
+      const step = (now) => {
+        const p = Math.min(1, (now - t0) / duration);
+        const ease = 1 - Math.pow(1 - p, 3);
+        toolsAngle = startVal + (target - startVal) * ease;
+        layoutToolsCarousel(p < 0.98);
+        if (p < 1) { springId = requestAnimationFrame(step); }
+        else { toolsAngle = target; layoutToolsCarousel(true); }
+      };
+      springId = requestAnimationFrame(step);
+    };
+
+    carousel.addEventListener('pointerdown', (e) => {
+      dragging = true;
+      moved = false;
+      startX = e.clientX;
+      dragBase = toolsAngle;
+      stopAll();
+      startRenderLoop();
+      const hit = e.target.closest('.carousel-item-inner');
+      if (hit) {
+        pressEl = hit;
+        pressId = hit.dataset.toolId || null;
+        hit.classList.add('card-press');
+      }
+    });
+
+    window.addEventListener('pointermove', (e) => {
+      if (!dragging) return;
+      const dx = e.clientX - startX;
+      if (Math.abs(dx) > 6 && !moved) {
+        moved = true;
+        clearPress();
+      }
+      toolsAngle = dragBase - dx / 220;
+    });
+    window.addEventListener('pointerup', () => {
+      if (!dragging) return;
+      dragging = false;
+      stopAll();
+      const clickId = pressId;   // 先保存, clearPress 会清空它
+      if (!moved && clickId) {
+        clearPress();
+        const t = toolsData.find(x => x.id === clickId);
+        if (t) openToolAction(t);
+      } else {
+        clearPress();
+      }
+      springToNearest();
+    });
+    window.addEventListener('pointercancel', () => {
+      if (!dragging) return;
+      dragging = false;
+      clearPress();
+      stopAll();
+      springToNearest();
     });
   }
 
@@ -2329,10 +2599,11 @@ function layoutCarousel(smooth) {
       bindEvents();
       applyTilt();
       bindFeaturesCarousel();
+      bindToolsCarousel();
       initCharacter();
       // 窗口缩放时重新计算卡片尺寸, 保持三卡填满主区宽度
       window.addEventListener('resize', () => {
-        if (currentPage === 'features') applyFeatSize();
+        if (currentPage === 'features' || currentPage === 'tools') applyFeatSize();
       });
     } catch (e) {
       console.error('UI 初始化出错:', e);
