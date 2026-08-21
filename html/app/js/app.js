@@ -149,17 +149,97 @@
   };
 
   // 完整流水线 (启动游戏) / 汉化更新流水线 (不含启动游戏)
+  // 左侧列表保留各步骤专属图标; 右侧详情大图标统一为火箭
   const STEPS_FULL = [
     { key: 'prepare', label: '准备检查', icon: '🔍' },
     { key: 'download', label: '下载汉化包', icon: '📥' },
     { key: 'resource', label: '检查资源', icon: '🗂️' },
     { key: 'bubble', label: '下载气泡', icon: '💬' },
     { key: 'install', label: '安装汉化', icon: '📦' },
-    { key: 'mods', label: '加载插件/Mod', icon: '🧩' },
+    { key: 'mods', label: '更新插件/Mod', icon: '🧩' },
     { key: 'launch', label: '启动游戏', icon: '🚀' },
   ];
-  // 汉化更新流水线: 不含"加载插件/Mod"和"启动游戏" (汉化更新不重载插件、不启动游戏)
+  // 汉化更新流水线: 不含"更新插件/Mod"和"启动游戏" (汉化更新不重载插件、不启动游戏)
   const STEPS_TRANSLATE = STEPS_FULL.filter(s => s.key !== 'launch' && s.key !== 'mods');
+
+  // 流水线右侧详情文案 (fn 参数可拿当前汉化源, 区分 OurPlay / 零协会)
+  function isOurPlaySource() {
+    return Number(getSettingValue('translate_source') || 0) !== 0;
+  }
+  const STEP_DETAILS = {
+    prepare: () => '正在检查游戏路径与运行环境...',
+    download: () => isOurPlaySource()
+      ? '正在从 OurPlay 服务器下载最新汉化包...'
+      : '正在从零协会社区下载最新汉化包...',
+    resource: () => '正在检查云端资源更新 (字体/素材)...',
+    bubble: () => '正在下载战斗气泡汉化文本...',
+    install: () => isOurPlaySource()
+      ? '正在校验并转码 OurPlay 汉化包...'
+      : '正在解压并将汉化文件合并到游戏目录...',
+    mods: () => '正在对比云端版本, 更新已安装的插件与 Mod...',
+    launch: () => '正在启动边狱巴士...',
+  };
+
+  // 更新流水线右侧详情区 (图标 + 文本)
+  function updatePipeDetail(stepKey) {
+    const icoEl = $('#pipe-detail-ico');
+    const txtEl = $('#pipe-detail-text');
+    if (!icoEl || !txtEl) return;
+    const step = pipeline.steps.find(s => s.key === stepKey);
+    icoEl.innerHTML = step ? esc(step.icon) : '';
+    const fn = STEP_DETAILS[stepKey];
+    txtEl.textContent = fn ? fn() : (step ? step.label : '');
+  }
+
+  // 流水线下载进度 (汉化包/资源/气泡/插件Mod): 右侧详情下方进度条
+  function updatePipeDownloadProgress(data) {
+    const box = $('#pipe-detail-dl');
+    if (!box || !pipeline.running) return;
+    box.hidden = false;
+    const pct = Math.max(0, Math.min(100, Number(data.percent) || 0));
+    const fill = $('#pipe-dl-fill');
+    if (fill) fill.style.width = pct + '%';
+    const meta = $('#pipe-dl-meta');
+    if (meta) {
+      meta.textContent = (data.downloaded != null && data.total != null)
+        ? fmtBytes(data.downloaded) + ' / ' + fmtBytes(data.total) +
+          (data.speed ? ' · ' + fmtSpeed(data.speed) : '')
+        : pct.toFixed(0) + '%';
+    }
+  }
+
+  function hidePipeDownloadProgress() {
+    const box = $('#pipe-detail-dl');
+    if (box) box.hidden = true;
+    const fill = $('#pipe-dl-fill');
+    if (fill) fill.style.width = '0%';
+  }
+
+  // 流水线中按下载任务名, 把右侧大图标换成对应 Mod/插件的真实图标
+  function setPipeDetailIconByTask(taskName) {
+    const icoEl = $('#pipe-detail-ico');
+    if (!icoEl || !taskName) return;
+    // 已是该图标则跳过
+    if (icoEl.dataset.task === taskName) return;
+    let iconUrl = '';
+    for (const page of (dcAddonPages || [])) {
+      const hit = (page || []).find(it => it.name === taskName);
+      if (hit) { iconUrl = hit.icon_url || ''; break; }
+    }
+    if (!iconUrl) {
+      for (const page of (dcModPages || [])) {
+        const hit = (page || []).find(it => it.name === taskName);
+        if (hit) { iconUrl = hit.icon_url || ''; break; }
+      }
+    }
+    icoEl.dataset.task = taskName;
+    if (!iconUrl) return;   // 找不到云端图标则保留步骤默认图标
+    withTimeout(api.get_icon(iconUrl, taskName), 6000, '').then(uri => {
+      if (uri && icoEl.dataset.task === taskName) {
+        icoEl.innerHTML = '<img src="' + uri + '" alt="">';
+      }
+    }).catch(() => {});
+  }
 
   // ---------------- 工具函数 ----------------
   function esc(s) {
@@ -313,35 +393,52 @@
     if (event === 'progress') {
       if (data && data.task) {
         updateDownloadTask(data.task, data);
+        // 流水线 mods 阶段: 右侧详情逐个显示正在更新的 Mod/插件 (图标+进度+名称)
+        const cur = pipeline.steps[pipeline.currentIdx];
+        if (pipeline.running && cur && cur.key === 'mods') {
+          updatePipeDownloadProgress(data);
+          setPipeDetailIconByTask(data.task);
+          const txtEl = $('#pipe-detail-text');
+          if (txtEl) txtEl.textContent = '正在更新 ' + data.task + ' ...';
+        }
         return;
       }
-      const pct = Math.max(0, Math.min(100, Number(data.percent) || 0));
-      $('#pipe-progress').style.width = pct + '%';
-      if (pipeline.running) {
-        $('#pipe-status-text').textContent =
-          (data.downloaded != null && data.total != null)
-            ? fmtBytes(data.downloaded) + ' / ' + fmtBytes(data.total) +
-              (data.speed ? '  ·  ' + fmtSpeed(data.speed) : '')
-            : pct.toFixed(0) + '%';
-      }
-      if (pct >= 100) setPipelineStepDone(pipeline.currentIdx, true);
+      // 汉化包/资源/气泡等主流程下载: 仅更新右侧详情进度条
+      if (pipeline.running) updatePipeDownloadProgress(data);
     } else if (event === 'status') {
       if (data && typeof data === 'object' && data.task) {
         addLog('⟳ ' + String(data.text || ''));
+        // 流水线运行中: 带 task 的状态逐项更新详情 (图标按任务名匹配云端图标)
+        if (pipeline.running && data.text) {
+          const txtEl = $('#pipe-detail-text');
+          if (txtEl) txtEl.textContent = String(data.text);
+          setPipeDetailIconByTask(data.task);
+        }
         if (/(失败|错误|❌|出错)/.test(String(data.text || ''))) {
           failDownloadTask(data.task, String(data.text || '').slice(0, 80));
         }
         return;
       }
-      addLog('⟳ ' + String(data));
+      // 对象形式 {text, icon}: 启动子步骤进度 → 更新流水线详情 (图标+文本)
+      let text = data, icon = null;
+      if (data && typeof data === 'object') { text = data.text || ''; icon = data.icon || null; }
+      if (text) addLog('⟳ ' + String(text));
+      if (pipeline.running && text) {
+        const txtEl = $('#pipe-detail-text');
+        if (txtEl) txtEl.textContent = String(text);
+        const icoEl = $('#pipe-detail-ico');
+        if (icoEl && icon) { icoEl.innerHTML = esc(icon); icoEl.dataset.task = ''; }
+      }
     } else if (event === 'step') {
-      // 后端显式步骤推进 (与真实进度同步, 不再依赖日志关键词)
+      // 后端显式步骤推进 (与真实进度同步; 不再依赖日志关键词, 避免顺序错乱)
       const s = data && data.step;
       const idx = pipeline.steps.findIndex(x => x.key === s);
       if (idx >= 0 && idx > pipeline.currentIdx) {
         setPipelineStepDone(pipeline.currentIdx, true);
         pipeline.currentIdx = idx;
         setStep(idx, 'active');
+        updatePipeDetail(s);
+        hidePipeDownloadProgress();
       }
     } else if (event === 'dialog') {
       const d = data || {};
@@ -353,16 +450,23 @@
     } else if (event === 'game_started') {
       const li = pipeline.steps.findIndex(s => s.key === 'launch');
       setPipelineStepDone(li, true);
-      $('#pipe-status-text').textContent = '🎮 正在游戏中';
-      $('#pipe-status-text').className = 'pipe-status done';
+      // 状态统一由右侧详情面板显示
+      hidePipeDownloadProgress();
+      const icoEl = $('#pipe-detail-ico'), txtEl = $('#pipe-detail-text');
+      if (icoEl) { icoEl.innerHTML = esc('🎮'); icoEl.dataset.task = ''; }
+      if (txtEl) txtEl.textContent = '游戏已启动';
       $('#btn-launch').disabled = false;
       $('#btn-translate').disabled = false;
     } else if (event === 'game_exited') {
       pipelineDone();
-      $('#pipe-status-text').textContent = '游戏已退出';
+      const icoEl = $('#pipe-detail-ico'), txtEl = $('#pipe-detail-text');
+      if (icoEl) icoEl.innerHTML = esc('🎮');
+      if (txtEl) txtEl.textContent = '游戏已退出';
     } else if (event === 'game_timeout') {
       pipelineError();
-      $('#pipe-status-text').textContent = '等待游戏启动超时, 请检查游戏是否正常安装';
+      const icoEl = $('#pipe-detail-ico'), txtEl = $('#pipe-detail-text');
+      if (icoEl) icoEl.innerHTML = esc('❌');
+      if (txtEl) txtEl.textContent = '等待游戏启动超时, 请检查游戏是否正常安装';
       toast('等待游戏启动超时', 'error', 6000);
       setTimeout(() => { pipelineIdle(); }, 4000);
     }
@@ -389,9 +493,6 @@
     pipeline.running = true;
     pipeline.currentIdx = -1;
     pipeline.steps = withLaunch ? STEPS_FULL.slice() : STEPS_TRANSLATE.slice();
-    $('#pipe-progress').style.width = '0%';
-    $('#pipe-status-text').textContent = '初始化中...';
-    $('#pipe-status-text').className = 'pipe-status running';
     const card = $('#pipeline-card');
     flipGridBelow(() => { card.hidden = false; });
     card.classList.remove('visible');
@@ -406,6 +507,11 @@
       el.innerHTML = '<span class="st-ico">' + s.icon + '</span><span>' + esc(s.label) + '</span>';
       wrap.appendChild(el);
     });
+    // 第一步立即高亮 (修复: 此前 prepare 永远不会被点亮, 看起来第一/二步顺序反了)
+    pipeline.currentIdx = 0;
+    setStep(0, 'active');
+    updatePipeDetail(pipeline.steps[0].key);
+    hidePipeDownloadProgress();
   }
 
   function setStep(i, state) {
@@ -425,11 +531,15 @@
     if (idx >= pipeline.steps.length) return;
     pipeline.currentIdx = idx;
     setStep(idx, 'active');
+    updatePipeDetail(pipeline.steps[idx].key);
   }
 
   function pipelineError() {
-    $('#pipe-status-text').textContent = '启动过程中出现错误, 详见终端';
-    $('#pipe-status-text').className = 'pipe-status error';
+    // 状态统一由右侧详情面板显示
+    const icoEl = $('#pipe-detail-ico'), txtEl = $('#pipe-detail-text');
+    if (icoEl) { icoEl.innerHTML = esc('❌'); icoEl.dataset.task = ''; }
+    if (txtEl) txtEl.textContent = '启动过程中出现错误, 详见终端';
+    hidePipeDownloadProgress();
     const i = pipeline.currentIdx;
     if (i >= 0) setStep(i, 'active'); // 保留高亮
     $('#btn-launch').disabled = false;
@@ -439,9 +549,12 @@
   function pipelineDone() {
     pipeline.running = false;
     pipeline.steps.forEach((_, i) => setStep(i, 'done'));
-    $('#pipe-progress').style.width = '100%';
-    $('#pipe-status-text').textContent = '流水线完成';
-    $('#pipe-status-text').className = 'pipe-status done';
+    const icoEl = $('#pipe-detail-ico'), txtEl = $('#pipe-detail-text');
+    if (icoEl) { icoEl.innerHTML = esc('✅'); icoEl.dataset.task = ''; }
+    // 区分流程: 含"启动游戏"步骤的是完整启动流程, 否则是汉化更新流程
+    const isLaunchFlow = pipeline.steps.some(s => s.key === 'launch');
+    if (txtEl) txtEl.textContent = isLaunchFlow ? '启动流程全部完成' : '汉化更新完成';
+    hidePipeDownloadProgress();
     $('#btn-launch').disabled = false;
     $('#btn-translate').disabled = false;
     clearTimeout(pipeline._hideTimer);
@@ -455,11 +568,11 @@
     card.classList.remove('visible');
     pipeline.running = false;
     pipeline.currentIdx = -1;
-    $('#pipe-progress').style.width = '0%';
-    $('#pipe-status-text').textContent = '等待中';
-    $('#pipe-status-text').className = 'pipe-status';
     const wrap = $('#pipe-steps');
     if (wrap) wrap.innerHTML = '';
+    const icoEl = $('#pipe-detail-ico');
+    if (icoEl) icoEl.dataset.task = '';
+    hidePipeDownloadProgress();
     setTimeout(() => {
       flipGridBelow(() => { card.hidden = true; });
     }, 350);
@@ -474,6 +587,29 @@
     { k: 'launch', re: /启动游戏|正在启动|launch/ },
   ];
 
+  // 轻量细节提示: 匹配日志更新右侧文本, 但绝不推进步骤 (步骤完全由后端 _push_step 驱动)
+  const PIPE_TEXT_HINTS = [
+    { re: /转码/, text: 'OurPlay 汉化包转码中, 请稍候...' },
+    { re: /核对汉化版本/, text: '正在核对汉化版本...' },
+    { re: /检测到新的汉化版本/, text: '发现新版汉化, 正在应用更新...' },
+    { re: /已是最新版本，无需更新|已是最新版本, 无需更新/, text: '汉化已是最新, 正在校验文件...' },
+    { re: /解压/, text: '正在解压文件...' },
+    { re: /合并汉化文件|安装到|写入汉化文件|复制汉化文件/, text: '正在将汉化文件合并到游戏目录...' },
+    { re: /写回本地版本信息/, text: '正在登记汉化版本信息...' },
+    { re: /更新字体资源|ChineseFont/, text: '正在更新字体资源...' },
+    { re: /清理下载缓存|清理中间产物/, text: '正在清理下载缓存...' },
+    { re: /对比云端插件与 Mod 版本|均为最新版本/, text: '插件与 Mod 均为最新版本' },
+    { re: /重载插件/, text: '正在重载插件...' },
+  ];
+
+  function applyPipeTextHints(line) {
+    const txtEl = $('#pipe-detail-text');
+    if (!txtEl) return;
+    for (const h of PIPE_TEXT_HINTS) {
+      if (h.re.test(line)) { txtEl.textContent = h.text; return; }
+    }
+  }
+
   function handlePipelineLog(line) {
     if (!pipeline.running) return;
     if (/错误|失败|出错|❌/.test(line)) {
@@ -482,21 +618,8 @@
       }
       return;
     }
-    if (/汉化下载及处理全部完成/.test(line)) {
-      setPipelineStepDone(pipeline.steps.findIndex(s => s.key === 'install'), true);
-      pipelineAdvance();
-      return;
-    }
-for (const m of KEYWORD_MAP) {
-      if (m.re.test(line)) {
-        const idx = pipeline.steps.findIndex(s => s.key === m.k);
-        if (idx >= 0 && idx > pipeline.currentIdx) {
-          setPipelineStepDone(pipeline.currentIdx, true);
-          pipeline.currentIdx = idx;
-          setStep(idx, 'active');
-        }
-      }
-    }
+    // 步骤推进完全信任后端 _push_step; 日志仅用于细节文本提示
+    applyPipeTextHints(line);
   }
 
   // ---------------- 页面导航 ----------------
@@ -627,6 +750,33 @@ for (const m of KEYWORD_MAP) {
   let dcModPages = [];
   let dcAddonPage = 1;
   let dcModPage = 1;
+  // 本次会话内已确认下载完成的项 (kind:name), 下载完成即时生效; 刷新列表仍会以后端检测为准
+  const downloadedSeen = new Set();
+  let _currentRec = null;   // 当前渲染的随机推荐 {kind, item}
+
+  function applyDownloadedStyle(btn) {
+    btn.className = 'btn btn-downloaded';
+    btn.textContent = '✓ 已下载';
+    btn.disabled = true;
+    btn.onclick = null;
+  }
+
+  // 下载完成/检测到已安装时: 即时把对应按钮换成绿色"已下载"
+  function markItemDownloaded(kind, name) {
+    downloadedSeen.add(kind + ':' + name);
+    document.querySelectorAll('#dc-content .dc-card').forEach(card => {
+      const title = card.querySelector('.dc-title');
+      if (title && title.textContent.replace(' (暂不可用)', '') === name) {
+        const btn = card.querySelector('.btn-download');
+        if (btn && !btn.classList.contains('btn-downloaded')) applyDownloadedStyle(btn);
+      }
+    });
+    if (_currentRec && _currentRec.item && _currentRec.item.name === name &&
+        (!kind || _currentRec.kind === kind)) {
+      const dl = $('#rec-dl');
+      if (dl) applyDownloadedStyle(dl);
+    }
+  }
 
   // ---------------- 下载任务抽屉 ----------------
   let downloadTasks = [];
@@ -656,6 +806,8 @@ for (const m of KEYWORD_MAP) {
       t.status = t.percent >= 100 ? 'done' : 'downloading';
       if (t.status === 'done' && !wasDone) {
         toastTop(name + ' 下载完成', 'success');
+        // 即时更新下载中心/推荐卡的按钮为"已下载" (无需重启)
+        if (t.kind) markItemDownloaded(t.kind, name);
         setTimeout(() => removeDownloadTask(name, true), 300);
       }
     }
@@ -882,6 +1034,18 @@ for (const m of KEYWORD_MAP) {
     if (!disabled) {
       const btn = card.querySelector('.btn-download');
       btn.onclick = () => startDownloadItem(kind, item);
+      // 已下载检测: 每次刷新都重新执行 (用户可能手动删除插件/Mod)
+      if (api) {
+        const key = kind + ':' + item.name;
+        if (downloadedSeen.has(key)) {
+          applyDownloadedStyle(btn);
+        } else {
+          withTimeout(api.check_item_downloaded(kind, item.name), 5000, { downloaded: false })
+            .then(r => {
+              if (r && r.downloaded) applyDownloadedStyle(btn);
+            }).catch(() => {});
+        }
+      }
     }
     hydrateIcons(card);
     return card;
@@ -1099,13 +1263,8 @@ for (const m of KEYWORD_MAP) {
     const gp = $('#chip-gamepath');
     if (b.game_path) { gp.className = 'chip ok'; gp.innerHTML = '<span class="dot"></span><span>游戏路径: ' + esc(shortPath(b.game_path)) + '</span>'; }
     else { gp.className = 'chip warn'; gp.innerHTML = '<span class="dot"></span><span>游戏路径: 未配置</span>'; }
-    const sc = $('#chip-source');
-    const src = getSettingValue('translate_source');
-    if (typeof src === 'number') {
-      const opts = getSettingOptions('translate_source');
-      sc.innerHTML = '<span class="dot"></span><span>汉化源: ' + esc(opts[src] || '未知') + '</span>';
-    }
     // 快捷方式 & 工具
+    updateSourceChip();
     renderFeatures(b.features);
     renderTools(b.tools);
     // 设置
@@ -1258,6 +1417,7 @@ for (const m of KEYWORD_MAP) {
     foot.innerHTML = it.url
       ? '<button class="btn btn-primary btn-mini" id="rec-dl">📥 下载</button>'
       : '';
+    _currentRec = rec;
     const dl = $('#rec-dl');
     if (dl) {
       dl.onclick = (e) => {
@@ -1265,6 +1425,16 @@ for (const m of KEYWORD_MAP) {
         if (!api) { toast('浏览器预览模式', 'warn'); return; }
         startDownloadItem(rec.kind, it);
       };
+      // 已下载检测 (每次渲染都重新检测)
+      if (api) {
+        const key = rec.kind + ':' + it.name;
+        if (downloadedSeen.has(key)) {
+          applyDownloadedStyle(dl);
+        } else {
+          withTimeout(api.check_item_downloaded(rec.kind, it.name), 5000, { downloaded: false })
+            .then(r => { if (r && r.downloaded) applyDownloadedStyle(dl); }).catch(() => {});
+        }
+      }
     }
     body.onclick = (e) => {
       if (e.target.closest('#rec-dl') || e.target.closest('a')) return;
@@ -1567,6 +1737,17 @@ function layoutCarousel(smooth) {
     return (s && s.options) || [];
   }
 
+  // 主页汉化源芯片: 设置更改后立即调用同步
+  function updateSourceChip() {
+    const sc = $('#chip-source');
+    if (!sc) return;
+    const src = getSettingValue('translate_source');
+    if (typeof src === 'number') {
+      const opts = getSettingOptions('translate_source');
+      sc.innerHTML = '<span class="dot"></span><span>汉化源: ' + esc(opts[src] || '未知') + '</span>';
+    }
+  }
+
   function markChanged(key, value) {
     SETTING_CHANGES[key] = { value };
     const s = BOOT.settings_schema[key];
@@ -1639,6 +1820,7 @@ function layoutCarousel(smooth) {
       sel.selectedIndex = Math.min(cur, opts.length - 1);
       sel.onchange = () => {
         markChanged(key, Number(sel.value));
+        if (key === 'translate_source') updateSourceChip();   // 主页汉化源立即同步
         if (api) api.set_setting(key, Number(sel.value)).catch(err => toast(String(err), 'error'));
       };
       wrap.appendChild(sel);
@@ -1872,16 +2054,18 @@ function layoutCarousel(smooth) {
     if (!uris || !uris.length) return;
     if (_bgInterval) { clearInterval(_bgInterval); _bgInterval = null; }
     const layer = $('#bg-layer');
-    let idx = 0;
+    let idx = Math.floor(Math.random() * uris.length);
     const show = (u) => {
       const im = new Image();
       im.onload = () => { layer.style.backgroundImage = 'url(' + u + ')'; layer.classList.add('show-img'); };
       im.src = u;
     };
-    show(uris[0]);
+    show(uris[idx]);
     if (uris.length > 1) {
       _bgInterval = setInterval(() => {
-        idx = (idx + 1) % uris.length;
+        let n;
+        do { n = Math.floor(Math.random() * uris.length); } while (n === idx);
+        idx = n;
         show(uris[idx]);
       }, 25000);
     }

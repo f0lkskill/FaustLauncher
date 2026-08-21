@@ -279,6 +279,9 @@ class AddonManager:
             ADDON_ARG['AddonManager'] = self
             ADDON_ARG['AddonName'] = addon_name
 
+            # 记录本次载入新注册的启动回调归属 (供流水线显示"正在运行 xxx 插件启动注入函数")
+            _gs_before = len(self.gamestart_funcs)
+
             # 构造一个独立的命名空间，防止与全局变量冲突
             builtins_dict = vars(__builtins__) if isinstance(__builtins__, ModuleType) else dict(__builtins__)
             module_globals: Dict[str, Any] = {
@@ -298,6 +301,12 @@ class AddonManager:
             mod.__dict__.update({k: v for k, v in module_globals.items() if not k.startswith('__')})
             mod.__file__ = scr_path
             self.loaded_modules[addon_name] = mod
+
+            # 新注册的启动回调归属当前插件
+            if not hasattr(self, 'gamestart_owners'):
+                self.gamestart_owners = {}
+            for f in self.gamestart_funcs[_gs_before:]:
+                self.gamestart_owners[id(f)] = addon_name
 
             print(f"插件 {addon_name} 初始化完成!")
             return True

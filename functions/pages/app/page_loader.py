@@ -937,6 +937,108 @@ def download_and_launch(obj=None, need_run_game=False):
             except Exception:
                 pass
 
+        def _push_status(task, text):
+            """推送状态文本 (带 task, 前端流水线 mods 阶段逐项显示)"""
+            try:
+                from functions.web_update import zeroasso_download as _zd
+                _push = getattr(_zd, '_web_progress', None)
+                if _push:
+                    _push('status', {'task': task, 'text': text})
+            except Exception:
+                pass
+
+        def _sync_cloud_items():
+            """启动流程: 对比云端插件/Mod 版本并自动更新 (进度经 _web_progress 推送到前端流水线)"""
+            try:
+                from functions.web_update.web_trigger import WebTrigger
+                from functions.extension.mod.mod_utils import ModManager
+                from functions.web_update.zeroasso_download import download_and_extract_mod
+                import re as _re
+
+                wt = WebTrigger()
+                def _ver(v):
+                    try:
+                        return [int(x) for x in _re.findall(r'\d+', str(v) or '0')[:3]] or [0]
+                    except Exception:
+                        return [0]
+
+                # 云端列表
+                cloud_addons = []
+                cloud_mods = []
+                try:
+                    cloud_addons = wt.fetch_all_addon_info() or []
+                except Exception:
+                    pass
+                try:
+                    cloud_mods = wt.fetch_all_mod_info() or []
+                except Exception:
+                    pass
+
+                # 本地已安装
+                local_addons = {}
+                try:
+                    assert obj is not None
+                    for a in obj.core.addon_manager.get_all_addons():
+                        local_addons[str(a.get('name', ''))] = str(a.get('info', {}).get('version', ''))
+                except Exception:
+                    pass
+                local_mods = {}
+                try:
+                    for m in ModManager().get_all_mods():
+                        local_mods[str(m.get('name', ''))] = str(m.get('version', ''))
+                except Exception:
+                    pass
+
+                jobs = []   # (kind, name, url, icon)
+                for page in cloud_addons:
+                    for it in (page or []):
+                        name = str(it.get('name', ''))
+                        if not name or it.get('disabled'):
+                            continue
+                        url = it.get('dowload_url') or it.get('download_url', '')
+                        if not url or name not in local_addons:
+                            continue   # 只更新已安装的
+                        if _ver(it.get('version')) > _ver(local_addons[name]):
+                            jobs.append(('addon', name, url, it.get('icon_url', '')))
+                for page in cloud_mods:
+                    for it in (page or []):
+                        name = str(it.get('name', ''))
+                        if not name or it.get('disabled'):
+                            continue
+                        url = it.get('dowload_url') or it.get('download_url', '')
+                        if not url or name not in local_mods:
+                            continue
+                        if _ver(it.get('version')) > _ver(local_mods[name]):
+                            jobs.append(('mod', name, url, it.get('icon_url', '')))
+
+                if not jobs:
+                    print("插件与 Mod 均为最新版本")
+                    return
+
+                print(f"正在对比云端插件与 Mod 版本... 共 {len(jobs)} 项待更新")
+
+                for kind, name, url, _icon in jobs:
+                    label = '插件' if kind == 'addon' else 'Mod'
+                    _push_status(name, f'正在更新 {label} {name} ...')
+                    print(f"检测到 {label} {name} 有新版本, 正在更新...")
+                    target = 'addons' if kind == 'addon' else 'mods'
+                    download_files = [{'url': url, 'name': name, 'temp_filename': f"{name}.7z"}]
+                    gui = zd.DownloadGUI(None, target, False, download_func=download_and_extract_gui, task=name)
+                        if hasattr(zd, 'DownloadGUI') else None # type: ignore
+                    try:
+                        ok = download_and_extract_mod(gui, target, download_files)
+                        print(f"{label} {name} 更新完成" if ok else f"{label} {name} 更新失败")
+                    except Exception as e:
+                        print(f"更新 {label} {name} 失败: {e}")
+                # 更新后重载插件
+                try:
+                    if obj is not None and obj.core is not None:
+                        obj.core.addon_manager.reload_all_addons()
+                except Exception:
+                    pass
+            except Exception as e:
+                print(f"同步云端插件/Mod 失败: {e}")
+
         lang_path = get_translation_dir()
         download_path = 'lang'
         is_ourplay = is_ourplay_source()
@@ -972,6 +1074,7 @@ def download_and_launch(obj=None, need_run_game=False):
         print("气泡文本载入完成")
         _push_step('install')
 
+        print("开始核对汉化版本...")
         need_update = need_up()
 
         if need_update:
@@ -987,6 +1090,7 @@ def download_and_launch(obj=None, need_run_game=False):
             else:
                 src_lang = os.path.join(download_path, 'LimbusCompany_Data', 'Lang', get_translation_dir_name())
                 if os.path.exists(src_lang):
+                    print("正在合并汉化文件到游戏目录...")
                     if os.path.isdir(lang_path):
                         try:
                             shutil.rmtree(lang_path, ignore_errors=True)
@@ -1023,12 +1127,14 @@ def download_and_launch(obj=None, need_run_game=False):
             print("当前汉化已是最新版本，无需更新")
 
         if not is_ourplay and not os.path.exists('assets/Font/Context/ChineseFont.ttf'):
+            print("正在更新字体资源...")
             shutil.copytree('lang/Font', 'assets/Font', dirs_exist_ok=True)
             shutil.rmtree('lang/Font', ignore_errors=True)
 
         # 零协 7z 解压到 lang/ 时会产生中间产物 lang/LimbusCompany_Data,
         # 无论当前平台都必须清理 (平台切换后残留不会被旧逻辑清除)
         if os.path.exists(os.path.join(download_path, 'LimbusCompany_Data')):
+            print("正在清理下载缓存...")
             try:
                 shutil.rmtree(os.path.join(download_path, 'LimbusCompany_Data'), ignore_errors=True)
             except Exception as e:
@@ -1038,6 +1144,12 @@ def download_and_launch(obj=None, need_run_game=False):
                 print(f"警告: {download_path}/LimbusCompany_Data 清理不完整, 建议关闭游戏后手动删除")
 
         print("汉化下载及处理全部完成！")
+
+        # 启动流程: 同步云端插件/Mod 更新 (仅启动游戏时执行; 进度推送到流水线)
+        if need_run_game or obj is not None:
+            _push_step('mods')
+            _sync_cloud_items()
+
         _push_step('launch')
 
         if len(sys.argv) > 1 or need_run_game:
@@ -1046,10 +1158,23 @@ def download_and_launch(obj=None, need_run_game=False):
             downloading = False
             return
         
+        def _launch_progress(text, icon=None):
+            """启动子步骤进度: 推送到前端流水线详情 (图标+文本)"""
+            try:
+                from functions.web_update import zeroasso_download as _zd
+                _push = getattr(_zd, '_web_progress', None)
+                if _push:
+                    payload = {'text': text}
+                    if icon:
+                        payload['icon'] = icon
+                    _push('status', payload)
+            except Exception:
+                pass
+
         if obj is not None:
             print('正在进行启动游戏前进行重载插件事件中...')
             obj.core._on_reload_addons()
-            launcher = GameLauncher(obj.core.addon_manager)
+            launcher = GameLauncher(obj.core.addon_manager, progress=_launch_progress)
         else:
             launcher = GameLauncher()
         launcher.launch()

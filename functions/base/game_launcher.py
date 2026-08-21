@@ -100,9 +100,10 @@ class GameLauncher:
         launcher.launch()
     """
 
-    def __init__(self, addon_manager=None):
+    def __init__(self, addon_manager=None, progress=None):
         self._settings = get_settings_manager()
         self._addon_manager = addon_manager
+        self._progress = progress or (lambda text, icon=None: None)
         self._game_path: str = self._settings.get_setting('game_path') or ''
         from functions.web_update.translation_source import get_translation_dir
         self._lang_dir = get_translation_dir()
@@ -110,21 +111,22 @@ class GameLauncher:
     # ── 流水线入口 ──────────────────────────────────────────────
 
     def launch(self):
-        """按顺序执行启动流水线的所有步骤。"""
+        """按顺序执行启动流水线的所有步骤 (每步进度经 progress 回调推送到前端)。"""
         print("========== 开始启动游戏流水线 ==========")
 
         steps = [
-            ("复制汉化文件",      self._prepare_translation),
-            ("应用拓展汉化修改",     self._apply_changes),
-            ("应用美化功能",      self._apply_cosmetic_features),
-            ("复制字体文件",      self._copy_fonts),
-            ("创建零协会配置",     self._create_zeroasso_config),
-            ("设置用户名称",      self._set_user_name),
-            ("触发插件启动事件",   self._fire_addon_events),
-            ("启动游戏进程",      self._launch_game_process),
+            ("复制汉化文件",      "🚀", self._prepare_translation),
+            ("应用拓展汉化修改",   "🚀", self._apply_changes),
+            ("应用美化功能",      "🚀", self._apply_cosmetic_features),
+            ("复制字体文件",      "🚀", self._copy_fonts),
+            ("创建零协会配置",     "🚀", self._create_zeroasso_config),
+            ("设置用户名称",      "🚀", self._set_user_name),
+            ("触发插件启动事件",   "🚀", self._fire_addon_events),
+            ("启动游戏进程",      "🚀", self._launch_game_process),
         ]
 
-        for name, step in steps:
+        for name, icon, step in steps:
+            self._progress(f"正在{name}...", icon)
             print(f"[{name}] 开始...")
             try:
                 step()
@@ -217,6 +219,11 @@ class GameLauncher:
             if not changes_files:
                 continue
 
+            # 逐个来源显示: 正在应用 插件/Mod xxx 的文本补丁
+            src_label = '插件' if dir_path.startswith('addons') else ('Mod' if dir_path.startswith('mods') else '汉化')
+            src_name = os.path.basename(dir_path)
+            self._progress(f"正在应用 {src_label} {src_name} 的文本补丁...", "🚀")
+
             for changes_file in changes_files:
                 m = CHANGES_PATTERN.match(changes_file)
                 marker = m.group(1)[1:] if m and m.group(1) else ""
@@ -251,36 +258,43 @@ class GameLauncher:
                         print(f"  警告: 应用补丁 {relative_path} 失败: {e}")
 
     def _apply_cosmetic_features(self):
-        """应用气泡渐变、EGO 样式、技能描述、提示替换、技能渐变色。"""
+        """应用气泡渐变、EGO 样式、技能描述、提示替换、技能渐变色 (逐项推送进度)。"""
         from functions.web_update.translation_source import get_game_lang_dir
         lang_path = get_game_lang_dir(self._game_path)
         lang_root = os.path.join(self._game_path, 'LimbusCompany_Data', 'Lang')
 
         if self._settings.get_setting('enable_text_gradient'):
+            self._progress("正在应用对话文本渐变色...", "🚀")
             from functions.fancy.dialog_colorful import main as handle_colorful
             handle_colorful()
 
         if self._settings.get_setting('enable_ego_style'):
+            self._progress("正在应用 EGO 样式美化...", "🚀")
             from functions.fancy.EGO_colorful import main as apply_ego_style
             apply_ego_style()
 
         if self._settings.get_setting('enable_skill_style'):
+            self._progress("正在美化技能描述文本...", "🚀")
             from functions.fancy.skill_info import total_handle
             total_handle(lang_path + '/')
 
         if self._settings.get_setting('enable_ego_gift_style'):
+            self._progress("正在美化 EGO 饰品效果...", "🚀")
             from functions.fancy.skill_info import handle_EGOgift
             handle_EGOgift(lang_path + '/')
 
         if self._settings.get_setting('enable_buff_style'):
+            self._progress("正在美化 Buff 效果文本...", "🚀")
             from functions.fancy.skill_info import handle_buff
             handle_buff(lang_path + '/')
 
         if self._settings.get_setting('enable_special_tip'):
+            self._progress("正在替换战斗提示文本...", "🚀")
             from functions.fancy.hint_set import simple_replace
             simple_replace(os.path.join(lang_path, 'BattleHint.json'))
 
         if self._settings.get_setting('enable_skill_text_gradient'):
+            self._progress("正在应用技能文本渐变色...", "🚀")
             from functions.fancy.skill_colorful import skill_color_process
             skill_color_process(lang_root + '/')
 
@@ -311,9 +325,21 @@ class GameLauncher:
             json.dump(data, f, ensure_ascii=False, indent=4)
 
     def _fire_addon_events(self):
-        """在后台线程触发插件的游戏启动事件。"""
-        if self._addon_manager:
-            threading.Thread(target=self._addon_manager.run_game_start_event).start()
+        """逐个触发插件的游戏启动事件 (显示插件名与进度)。"""
+        if not self._addon_manager:
+            return
+        owners = getattr(self._addon_manager, 'gamestart_owners', {}) or {}
+        funcs = list(self._addon_manager.gamestart_funcs)
+        total = len(funcs)
+        if not total:
+            return
+        for i, f in enumerate(funcs):
+            owner = owners.get(id(f), '未知')
+            self._progress(f"正在运行 {owner} 插件启动注入函数 ({i + 1}/{total})...", "🚀")
+            try:
+                f()
+            except Exception as e:
+                print(f"执行游戏启动回调失败: {e}")
 
     def _launch_game_process(self):
         """调用 mod loader 启动游戏进程。"""

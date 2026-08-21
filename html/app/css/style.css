@@ -203,6 +203,12 @@ body {
 .btn-download { background: linear-gradient(135deg, var(--success), #059669); border: none; font-weight: 600; }
 .btn-download:hover { filter: brightness(1.1); }
 .btn-download:disabled { opacity: .45; cursor: not-allowed; }
+/* 已下载: 绿色标识, 禁止重复下载 */
+.btn-downloaded {
+  background: rgba(46, 160, 67, 0.16); color: var(--success);
+  border: 1px solid rgba(46, 160, 67, 0.45); font-weight: 600;
+  cursor: default; pointer-events: none;
+}
 .dc-pagination { display: flex; align-items: center; gap: 10px; justify-content: center; margin: 16px 0; }
 .dc-page-info { font-size: 12.5px; color: var(--text-3); }
 
@@ -280,6 +286,28 @@ body {
 .pipe-status.running { color: var(--info); }
 .pipe-status.done { color: var(--success); }
 .pipe-status.error { color: var(--danger); }
+/* 流水线主体: 左侧步骤列表 + 右侧大图标详情 */
+.pipe-body { display: flex; gap: 14px; align-items: stretch; }
+.pipe-left { flex: 2; min-width: 0; }
+.pipe-left .progress-track { margin-bottom: 12px; }
+.pipe-detail {
+  flex: 1; min-width: 170px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 10px; padding: 14px 16px;
+  border-left: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 10px;
+  text-align: center;
+}
+.pipe-detail-ico {
+  font-size: 46px; line-height: 1;
+  filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.45));
+}
+.pipe-detail-ico img { width: 52px; height: 52px; object-fit: contain; }
+.pipe-detail-text { font-size: 13px; color: var(--text-2); line-height: 1.55; }
+.pipe-detail-dl { width: 100%; }
+.pipe-dl-track { margin-bottom: 6px; }
+.pipe-dl-meta { font-size: 11px; color: var(--text-3); font-family: var(--mono); }
 .pipe-steps { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
 .pipe-step {
   display: flex; align-items: center; gap: 8px; font-size: 12.5px;
