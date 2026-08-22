@@ -446,6 +446,7 @@
   }
 
   window.__onLog = function (text) { addLog(text); };
+window.__onTrayHint = function (text) { toast(text, 'info', 5000); };
 
   window.__onEvent = function (event, data) {
     if (event === 'progress') {
@@ -680,7 +681,7 @@
   // ---------------- 页面导航 ----------------
   function switchPage(name) {
     currentPage = name;
-    addLog('[页面] 切换到 ' + name);
+    // addLog('[页面] 切换到 ' + name);
     $$('.page').forEach(p => p.classList.remove('active'));
     const target = document.getElementById('page-' + name);
     if (target) target.classList.add('active');
@@ -733,7 +734,7 @@
     if (!pageItems.length) {
       list.innerHTML = '<div class="res-empty">' + (resKind === 'addon' ? '暂无插件 (addons/ 目录)' : '暂无 Mod (mods/ 目录)') + '</div>';
     } else {
-      pageItems.forEach(item => { const c = buildResCard(item); if (c) list.appendChild(c); });
+      pageItems.forEach((item, i) => { const c = buildResCard(item); if (c) { c.style.animationDelay = (i * 0.05) + 's'; list.appendChild(c); } });
     }
     renderResPagination($('#res-pagination'), items.length, totalPages);
   }
@@ -853,6 +854,7 @@
   function openResModal(kind, item) {
     const existing = document.getElementById('res-modal');
     if (existing) { closePanel(existing); return; }
+    document.body.classList.add('modal-open');
     const isAddon = kind === 'addon';
     const dir = item.dir || item.name;   // 文件夹名 (后端操作用)
     const name = item.name || '';
@@ -1193,7 +1195,7 @@
     if (!pageItems.length) {
       list.innerHTML = '';
     } else {
-      pageItems.forEach(item => { const c = buildDCCard(item, dcKind); if (c) list.appendChild(c); });
+      pageItems.forEach((item, i) => { const c = buildDCCard(item, dcKind); if (c) { c.style.animationDelay = (i * 0.05) + 's'; list.appendChild(c); } });
       hydrateIcons(list);
     }
     renderDCPagination($('#dc-pagination'), items.length, totalPages);
@@ -1276,6 +1278,7 @@
   function openDcModal(kind, item) {
     const existing = document.getElementById('dc-modal');
     if (existing) { closePanel(existing); return; }
+    document.body.classList.add('modal-open');
     const disabled = item.disabled;
     const panel = document.createElement('div');
     panel.id = 'dc-modal';
@@ -1335,6 +1338,7 @@
   function closePanel(panel) {
     if (!panel || panel._closing) return;
     panel._closing = true;
+    document.body.classList.remove('modal-open');
     panel.classList.add('closing');
     setTimeout(() => panel.remove(), 190);
   }
@@ -1592,7 +1596,7 @@
     // 项目图标 (后端 data URI, 供下载中心/推荐卡图标回退)
     if (b.icon_uri) {
       PROJECT_ICON = b.icon_uri;
-      const heroImg = document.querySelector('.hero-logo img');
+      const heroImg = document.querySelector('.hero-aside .hero-bg-icon');
       if (heroImg) heroImg.src = b.icon_uri;
       const brandImg = document.querySelector('.brand-icon');
       if (brandImg) brandImg.src = b.icon_uri;

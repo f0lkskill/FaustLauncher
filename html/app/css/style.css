@@ -249,7 +249,15 @@ body {
   from { opacity: 0; transform: translateY(16px) scale(.97); }
   to { opacity: 1; transform: translateY(0) scale(1); }
 }
-.res-card, .dc-card { animation: cardPopIn .38s cubic-bezier(.22,.8,.36,1) both; }
+.res-card, .dc-card { animation: cardPopIn .38s cubic-bezier(.22,.8,.36,1) backwards; }
+
+/* 模态打开时禁用全局 tilt 与卡片 tilt (覆盖已触发的内联 transform, 避免打开瞬间聚焦旋转) */
+body.modal-open .card, body.modal-open .link-card, body.modal-open .dc-card,
+body.modal-open .hero, body.modal-open .chip, body.modal-open .dc-tab,
+body.modal-open .res-card {
+  transform: none !important;
+  transition: transform .22s ease;
+}
 
 .res-card {
   display: flex; align-items: center; justify-content: space-between; gap: 14px;
@@ -390,7 +398,7 @@ body {
 .dc-page-info { font-size: 12.5px; color: var(--text-3); }
 
 /* ---------- 主页 Hero ---------- */
-.hero { position: relative; overflow: hidden; padding: 0; min-height: 230px; display: flex; align-items: center; }
+.hero { position: relative; overflow: hidden; padding: 0; height: 230px; min-height: 0; display: flex; align-items: center; }
 .hero-bg {
   position: absolute; inset: 0;
   background:
@@ -398,34 +406,37 @@ body {
     linear-gradient(120deg, rgba(45,45,48,.95), rgba(30,30,30,.55) 50%, transparent 82%),
     radial-gradient(420px 260px at 92% 24%, rgba(79,193,255,.08), transparent 70%);
 }
-.hero-content { position: relative; padding: 34px 30px; }
+.hero-content { position: relative; padding: 30px 28px; flex: 1; min-width: 0; }
 .hero h1 { font-size: 30px; font-weight: 800; letter-spacing: .5px; }
 .hero-sub { color: var(--text-2); margin: 10px 0 22px; font-size: 14px; }
 .hero-actions { display: flex; gap: 12px; align-items: center; }
+.hero-mid { display: flex; align-items: center; justify-content: space-between; gap: 24px; flex-wrap: wrap; }
 
-.hero-logo {
-  position: absolute; right: -18px; bottom: -34px; width: 260px; height: 260px;
-  pointer-events: none; opacity: .16;
+.hero-aside {
+  position: relative; width: 250px; height: 100%; flex-shrink: 0;
 }
-.hero-logo img {
-  width: 118px; height: 118px; object-fit: contain;
-  filter: drop-shadow(0 8px 24px rgba(0,0,0,.5));
+.hero-aside .hero-bg-icon {
+  position: absolute; right: -80px; bottom: -80px; width: 300px; height: 300px;
+  object-fit: contain; opacity: .25;
+  filter: drop-shadow(0 8px 30px rgba(0,0,0,.45));
+  pointer-events: none;
 }
 .hero-clock {
-  position: absolute; right: 18px; bottom: 18px;
-  text-align: right; pointer-events: none;
+  position: absolute; bottom: 22px; right: 20px; left: auto; text-align: right;
+  pointer-events: none; z-index: 1;
   font-variant-numeric: tabular-nums;
-  text-shadow: 0 2px 10px rgba(0,0,0,.6);
+  text-shadow: 0 2px 12px rgba(0,0,0,.8);
 }
 .hero-clock .hc-date {
-  font-size: 13px; letter-spacing: 2px; opacity: .75; margin-bottom: 2px;
+  font-size: 16px; letter-spacing: 3px; opacity: .92; margin-bottom: 5px;
+  font-weight: 600;
 }
 .hero-clock .hc-time {
-  font-size: 44px; font-weight: 700; line-height: 1;
-  background: linear-gradient(135deg, #fff, rgba(255,255,255,.55));
-  -webkit-background-clip: text; background-clip: text;
-  -webkit-text-fill-color: transparent;
-  letter-spacing: 1px;
+  font-size: 62px; font-weight: 800; line-height: 1.1;
+  padding: 0 2px 4px;
+  color: #ffffff;
+  -webkit-text-fill-color: currentColor;
+  letter-spacing: 2px;
 }
 
 .btn {

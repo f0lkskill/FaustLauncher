@@ -1738,14 +1738,15 @@ def run_web_ui(debug: bool = False):
             except Exception:
                 hide_to_tray = True
             if hide_to_tray:
-                # 只阻止关闭; 隐藏放后台线程, 避免阻塞 UI 线程
+                # 只阻止关闭; 先显示"已在托盘"提示, 再延迟隐藏窗口, 保证提示可见
                 def _do():
                     try:
-                        _win32_show_window(False)
+                        _evaluate_js("window.__onTrayHint('程序已最小化到系统托盘, 右键托盘图标可退出')")
                     except Exception:
                         pass
+                    time.sleep(1.8)
                     try:
-                        _evaluate_js("window.__onLog('程序已最小化到系统托盘, 右键托盘图标可退出')")
+                        _win32_show_window(False)
                     except Exception:
                         pass
                 threading.Thread(target=_do, daemon=True).start()
