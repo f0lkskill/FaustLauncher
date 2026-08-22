@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>FaustLauncher 浮士德启动器</title>
-<link rel="stylesheet" href="css/style.css?v=39">
+<link rel="stylesheet" href="css/style.css?v=47">
 </head>
 <body>
 <div id="bg-layer"></div>
@@ -20,8 +20,8 @@
     <nav id="nav">
       <button class="nav-item active" data-page="home"><span class="nav-ico">🏘</span><span>主页</span></button>
       <button class="nav-item" data-page="features"><span class="nav-ico">✈</span><span>快捷方式</span></button>
-      <button class="nav-item" data-page="tools"><span class="nav-ico">🔨</span><span>工具页</span></button>
-      <button class="nav-item" data-page="mod_addon"><span class="nav-ico">🧩</span><span>插件&Mod</span></button>
+      <button class="nav-item" data-page="tools"><span class="nav-ico">🔨</span><span>实用工具</span></button>
+      <button class="nav-item" data-page="mod_addon"><span class="nav-ico">🧩</span><span>资源管理</span></button>
       <button class="nav-item" data-page="download_center"><span class="nav-ico">📦</span><span>下载中心</span></button>
       <button class="nav-item" data-page="settings"><span class="nav-ico">⚙️</span><span>设置</span></button>
       <button class="nav-item" data-page="about"><span class="nav-ico">💻</span><span>关于</span></button>
@@ -103,31 +103,27 @@
       <div class="carousel-dots" id="tools-dots"></div>
     </section>
 
-    <!-- ==================== 插件&Mod ==================== -->
+    <!-- ==================== 资源管理 ==================== -->
     <section class="page" id="page-mod_addon">
-      <div class="page-head">
-        <h2>插件&Mod</h2>
-        <p>管理本地 Mod（mods/ 目录）与单文件 Mod（拖拽安装请用独立管理器）</p>
-      </div>
-      <div class="mod-actions">
-        <button class="btn btn-primary" id="btn-apply-mods">⚡ 立即应用 Mod</button>
-        <button class="btn btn-ghost" id="btn-open-mod-dir">📂 打开 Mod 目录</button>
-        <button class="btn btn-ghost" id="btn-open-single-dir">📂 打开单文件目录</button>
-        <button class="btn btn-ghost" id="btn-open-mod-window">🪟 独立管理器（拖拽安装）</button>
-      </div>
       <div class="card">
-        <div class="card-head">
-          <h3>📦 目录 Mod (mods/)</h3>
-          <div class="pipe-status" id="dir-mods-count"></div>
+        <div class="res-toolbar">
+          <div class="res-tabs">
+            <button class="res-tab active" data-kind="addon">🔌 插件</button>
+            <button class="res-tab" data-kind="mod">🎮 Mod</button>
+          </div>
+          <div class="res-actions">
+            <div class="res-actions-group" id="res-actions-addon">
+              <button class="btn btn-ghost" id="btn-open-addon-dir">📂 打开插件目录</button>
+              <button class="btn btn-ghost" id="btn-install-addon">📦 选择插件安装</button>
+            </div>
+            <div class="res-actions-group" id="res-actions-mod" hidden>
+              <button class="btn btn-ghost" id="btn-open-mod-dir">📂 打开 Mod 目录</button>
+              <button class="btn btn-ghost" id="btn-open-mod-window">🪟 独立管理器（拖拽安装）</button>
+            </div>
+          </div>
         </div>
-        <div id="dir-mods-list" class="mod-list"></div>
-      </div>
-      <div class="card">
-        <div class="card-head">
-          <h3>🎵 单文件 Mod (APPDATA/LimbusCompanyMods)</h3>
-          <div class="pipe-status" id="single-mods-count"></div>
-        </div>
-        <div id="single-mods-list" class="mod-list"></div>
+        <div id="res-list" class="res-list"></div>
+        <div id="res-pagination" class="res-pagination"></div>
       </div>
     </section>
 
@@ -211,7 +207,7 @@
       <div class="dl-empty">暂无下载任务</div>
     </div>
   </aside>
-<script src="js/app.js?v=44"></script>
+<script src="js/app.js?v=51"></script>
 <script>
 /* 独立兜底: 完全不依赖 app.js。无论 app.js 是否崩溃, 只要内容加载完成或超时,
    就移除主页两张卡片的 loading 圆圈。 */

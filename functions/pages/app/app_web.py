@@ -392,6 +392,38 @@ class HeadlessDownloadGUI:
 # js_api 桥接
 # ============================================================
 
+def _res_icon_uri(base_dir, name):
+    """读取插件/Mod 目录下的 icon.png/jpg 转 data URI"""
+    try:
+        for fn in ('icon.png', 'icon.jpg', 'icon.jpeg'):
+            p = os.path.join(base_dir, name, fn)
+            if os.path.isfile(p):
+                with open(p, 'rb') as f:
+                    b64 = base64.b64encode(f.read()).decode('ascii')
+                return 'data:image/png;base64,' + b64
+    except Exception:
+        pass
+    return ''
+
+
+def _fmt_author_links(authors):
+    """作者字段转链接列表 [{name, url}] (dict: 名字->链接; 其它则无链接)"""
+    if isinstance(authors, dict):
+        return [{'name': str(k), 'url': str(v)} for k, v in authors.items()]
+    return []
+
+
+def _fmt_authors(authors):
+    """作者字段可能是 dict(名字->链接) / list / str, 统一转成显示名"""
+    if isinstance(authors, dict):
+        return ', '.join(str(k) for k in authors.keys())
+    if isinstance(authors, list):
+        return ', '.join(str(a) for a in authors)
+    if authors is None:
+        return ''
+    return str(authors)
+
+
 class AppApi:
     """供前端调用的 pywebview js_api"""
 
@@ -663,55 +695,152 @@ class AppApi:
         return True
 
     # ---- Mod 管理 (本地移植) ----
-    def get_mods_data(self):
-        """插件 (addons/) + 目录 Mod (mods/) + 单文件 Mod 完整数据"""
+    def get_sound(self, kind):
+        """返回音效 data URI (kind: welcome / click), 供前端浏览器内核播放"""
+        try:
+            if kind == 'welcome':
+                from functions.base.settings_manager import get_settings_manager
+                p = str(get_settings_manager().get_setting("welcome_sound") or '')
+            else:
+                p = 'assets/voices/click.wav'
+            if not p or not os.path.isfile(p):
+                return ''
+            with open(p, 'rb') as f:
+                b64 = base64.b64encode(f.read()).decode('ascii')
+            ext = os.path.splitext(p)[1].lower()
+            mime = 'audio/wav' if ext == '.wav' else ('audio/mpeg' if ext in ('.mp3',) else 'audio/ogg')
+            return 'data:' + mime + ';base64,' + b64
+        except Exception:
+            return ''
+
+    def open_mod_item_dir(self, kind, name):
+        """打开某个插件/Mod 的具体目录"""
         import os
-        from functions.extension.mod.mod_utils import ModManager
-        from functions.extension.addon.addon_utils import AddonManager
-        from functions.pages.tools.mod_manager_window import _scan_files, _get_mod_dir
-        # 插件
+        try:
+            base = 'addons' if kind == 'addon' else 'mods'
+            d = os.path.abspath(os.path.join(base, str(name)))
+            if not os.path.isdir(d):
+                return {'error': f'目录不存在: {d}'}
+            os.startfile(d)
+            return {'error': None}
+        except Exception as e:
+            return {'error': str(e)}
+
+    def get_mods_data(self):
+        """插件 (addons/) + 目录 Mod (mods/) 数据 (直接读 JSON 正确解析字段)"""
+        import os, json
+        # 插件: addons/<目录>/addon_info.json
         addons = []
         try:
-            am = AddonManager()
-            for a in am.get_all_addons():
-                info = a.get('info', {})
-                addons.append({
-                    'name': str(a.get('name', '')),
-                    'version': str(info.get('version', '')),
-                    'author': str(info.get('authors', '')),
-                    'description': str(info.get('description', '')),
-                    'enabled': bool(info.get('settings', {}).get('enable', True)),
-                })
+            base = os.path.abspath('addons')
+            if os.path.isdir(base):
+                for name in sorted(os.listdir(base)):
+                    info_path = os.path.join(base, name, 'addon_info.json')
+                    if not os.path.isfile(info_path):
+                        continue
+                    try:
+                        with open(info_path, 'r', encoding='utf-8') as f:
+                            info = json.load(f)
+                    except Exception:
+                        info = {}
+                    addons.append({
+                        'dir': name,   # 文件夹名 (供后端操作)
+                        'name': str(info.get('name') or name),
+                        'version': str(info.get('version', '')),
+                        'author': _fmt_authors(info.get('authors')),
+                        'author_links': _fmt_author_links(info.get('authors')),
+                        'description': str(info.get('desc') or info.get('description', '')),
+                        'enabled': bool(info.get('settings', {}).get('enable', True)),
+                        'icon': _res_icon_uri('addons', name),
+                        'settings': info.get('settings', {}),
+                    })
         except Exception as e:
             print(f"读取插件失败: {e}")
-        # 目录 Mod
+        # 目录 Mod: mods/<目录>/mod_info.json
         dir_mods = []
         try:
-            for info in ModManager().get_all_mods():
-                dir_mods.append({
-                    'name': str(info.get('name', '')),
-                    'version': str(info.get('version', '')),
-                    'author': str(info.get('author', '')),
-                    'description': str(info.get('description', '')),
-                    'files': list(info.get('file_names', [])),
-                    'has_installer': bool(os.path.exists(
-                        os.path.join('mods', str(info.get('name', '')), 'Installer.bat'))),
-                    'enabled': bool(info.get('settings', {}).get('enable', False)),
-                })
+            base = os.path.abspath('mods')
+            if os.path.isdir(base):
+                for name in sorted(os.listdir(base)):
+                    info_path = os.path.join(base, name, 'mod_info.json')
+                    if not os.path.isfile(info_path):
+                        continue
+                    try:
+                        with open(info_path, 'r', encoding='utf-8') as f:
+                            info = json.load(f)
+                    except Exception:
+                        info = {}
+                    dir_mods.append({
+                        'dir': name,
+                        'name': str(info.get('name') or name),
+                        'version': str(info.get('version', '')),
+                        'author': _fmt_authors(info.get('authors')),
+                        'author_links': _fmt_author_links(info.get('authors')),
+                        'description': str(info.get('desc') or info.get('description', '')),
+                        'files': list(info.get('file_names', [])),
+                        'has_installer': bool(os.path.exists(os.path.join(base, name, 'Installer.bat'))),
+                        'enabled': bool(info.get('settings', {}).get('enable', False)),
+                        'icon': _res_icon_uri('mods', name),
+                        'settings': info.get('settings', {}),
+                    })
         except Exception as e:
             print(f"读取目录 Mod 失败: {e}")
-        # 单文件 Mod
-        try:
-            single_files = _scan_files()
-        except Exception as e:
-            print(f"读取单文件 Mod 失败: {e}")
-            single_files = []
         return {
             'addons': addons,
             'dir_mods': dir_mods,
-            'single_files': single_files,
-            'single_dir': _get_mod_dir(),
+            'single_files': [],
+            'single_dir': '',
         }
+
+    def install_addon_dialog(self):
+        """选择本地插件目录安装到 addons/ (临时 Tk 文件夹选择)"""
+        try:
+            import tkinter as tk
+            from tkinter import filedialog
+            from functions.extension.addon.addon_utils import AddonManager
+            root = tk.Tk()
+            root.withdraw()
+            path = filedialog.askdirectory(title='选择插件目录 (包含 addon_info.json)')
+            root.destroy()
+            if not path:
+                return {'ok': False, 'error': None}
+            am = AddonManager()
+            ok = am.add_addon(path)
+            return {'ok': bool(ok), 'error': None}
+        except Exception as e:
+            return {'ok': False, 'error': str(e)}
+
+    def set_mod_settings(self, name, settings):
+        """更新 Mod 的 mod_info.json settings 字段 (含 enable)"""
+        import json, os
+        path = os.path.join('mods', str(name), 'mod_info.json')
+        if not os.path.exists(path):
+            return {'error': f"Mod 信息文件不存在: {path}"}
+        try:
+            with open(path, 'r', encoding='utf-8') as f:
+                info = json.load(f)
+            info['settings'] = dict(settings or {})
+            with open(path, 'w', encoding='utf-8') as f:
+                json.dump(info, f, ensure_ascii=False, indent=4)
+            return {'error': None}
+        except Exception as e:
+            return {'error': str(e)}
+
+    def set_addon_settings(self, name, settings):
+        """更新插件 addon_info.json 的 settings 字段 (含 enable 与各项自定义设置)"""
+        import json, os
+        path = os.path.join('addons', str(name), 'addon_info.json')
+        if not os.path.exists(path):
+            return {'error': f"插件信息文件不存在: {path}"}
+        try:
+            with open(path, 'r', encoding='utf-8') as f:
+                info = json.load(f)
+            info['settings'] = dict(settings or {})
+            with open(path, 'w', encoding='utf-8') as f:
+                json.dump(info, f, ensure_ascii=False, indent=4)
+            return {'error': None}
+        except Exception as e:
+            return {'error': str(e)}
 
     def set_mod_enabled(self, name, enabled):
         """启用/禁用目录 Mod (写入 mod_info.json 的 settings.enable)"""
@@ -725,6 +854,34 @@ class AppApi:
             info.setdefault('settings', {})['enable'] = bool(enabled)
             with open(path, 'w', encoding='utf-8') as f:
                 json.dump(info, f, ensure_ascii=False, indent=4)
+            return {'error': None}
+        except Exception as e:
+            return {'error': str(e)}
+
+    def set_addon_enabled(self, name, enabled):
+        """启用/禁用插件 (写入 addon_info.json 的 settings.enable)"""
+        import json, os
+        path = os.path.join('addons', str(name), 'addon_info.json')
+        if not os.path.exists(path):
+            return {'error': f"插件信息文件不存在: {path}"}
+        try:
+            with open(path, 'r', encoding='utf-8') as f:
+                info = json.load(f)
+            info.setdefault('settings', {})['enable'] = bool(enabled)
+            with open(path, 'w', encoding='utf-8') as f:
+                json.dump(info, f, ensure_ascii=False, indent=4)
+            return {'error': None}
+        except Exception as e:
+            return {'error': str(e)}
+
+    def delete_addon(self, name):
+        """删除插件 (整个目录)"""
+        import os, shutil
+        path = os.path.join('addons', str(name))
+        if not os.path.isdir(path):
+            return {'error': f"插件目录不存在: {path}"}
+        try:
+            shutil.rmtree(path, ignore_errors=False)
             return {'error': None}
         except Exception as e:
             return {'error': str(e)}
@@ -767,6 +924,8 @@ class AppApi:
             if which == "single":
                 from functions.pages.tools.mod_manager_window import _get_mod_dir
                 d = _get_mod_dir()
+            elif which == "addon":
+                d = os.path.abspath("addons")
             else:
                 d = os.path.abspath("mods")
             if os.path.exists(d):
@@ -1428,12 +1587,24 @@ def run_web_ui(debug: bool = False):
     core.mod_manager = ModManager()
 
     api = AppApi(core, window_holder)
+    # 窗口居中显示
+    _win_x = _win_y = None
+    try:
+        import ctypes
+        _sw = ctypes.windll.user32.GetSystemMetrics(0)
+        _sh = ctypes.windll.user32.GetSystemMetrics(1)
+        _win_x = max(0, (_sw - 1000) // 2)
+        _win_y = max(0, (_sh - 740) // 2)
+    except Exception:
+        pass
     window = webview.create_window(
         "Faust Launcher",
         HTML_PATH,
         js_api=api,
         width=1000,
         height=740,
+        x=_win_x,
+        y=_win_y,
         min_size=(860, 620),
         background_color="#0b0e14",
         frameless=False,

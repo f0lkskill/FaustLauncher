@@ -273,10 +273,17 @@
 
 
 
+
+
+
+
+
+
+
 <!-- genshin-addon-inject:start -->
 <script>
 (function(){
-    var PORT = 60178;
+    var PORT = 52656;
     function hook(){
         var api = window.pywebview && window.pywebview.api;
         if (!api || !api.generate || api.__genshinHooked) { setTimeout(hook, 200); return; }
