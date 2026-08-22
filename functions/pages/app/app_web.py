@@ -1168,18 +1168,15 @@ if %errorlevel% equ 0 (
         return None
 
     def _get_cached_list(self, kind):
-        """云端列表: 复用持久化缓存文件 (与启动同步共用一份, 只初始化加载一次云端, 不重复爬取)"""
+        """云端列表: 复用启动同步的内存缓存 (每次启动只获取一次, 下载中心与同步共享, 不重复爬取)"""
         from functions.pages.app import page_loader as _pl
-        cached = _pl._load_cloud_cache_file()
-        if cached is not None and cached.get(kind):
-            return cached[kind]
+        if _pl._cloud_sync_cache.get(kind):
+            return _pl._cloud_sync_cache[kind]
         wt = self._get_web_trigger()
         data = (wt.fetch_all_addon_info() if kind == 'addon'
                 else wt.fetch_all_mod_info())
         data = data if data else []
-        cur = _pl._load_cloud_cache_file() or {'addon': None, 'mod': None}
-        cur[kind] = data
-        _pl._save_cloud_cache_file(cur.get('addon'), cur.get('mod'))
+        _pl._cloud_sync_cache[kind] = data
         return data
 
     @staticmethod
