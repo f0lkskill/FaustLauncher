@@ -67,6 +67,35 @@ def _feature_image_uri(image_name):
         return ""
 
 
+def _tool_image_uri(image_name):
+    """读取工具卡片素材为压缩后的 data URI (从 assets/images/tools 读取)"""
+    if not image_name:
+        return ""
+    for root in (
+        os.path.join(_PROJECT_ROOT, "assets", "images", "tools"),
+        os.path.join(_PROJECT_ROOT, "_internal", "assets", "images", "tools"),
+    ):
+        p = os.path.join(root, image_name)
+        if os.path.isfile(p):
+            break
+    else:
+        return ""
+    try:
+        from PIL import Image
+        from io import BytesIO as _Bio
+        img = Image.open(p)
+        img.thumbnail((720, 720), Image.Resampling.LANCZOS)
+        if img.mode in ("RGBA", "LA", "P"):
+            buf = _Bio()
+            img.convert("RGBA").save(buf, "PNG")
+        else:
+            buf = _Bio()
+            img.convert("RGB").save(buf, "JPEG", quality=80)
+        return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode("ascii")
+    except Exception:
+        return ""
+
+
 HTML_PATH = _resolve_html_path()
 
 _log_lock = threading.Lock()
@@ -384,13 +413,15 @@ class AppApi:
         for f in features:
             f["image_uri"] = _feature_image_uri(f.get("image", ""))
         tools = [
-            { "id": 'custom_translation', "name": '🔧 自定义汉化', "desc": '可视化编辑 lang 下任意 JSON 文本\n一键编辑替换汉化文本\n自动记录差异性文本，汉化更新也不丢失修改内容！' },
-            {"id": "font", "name": "📝 字体修改", "desc": "选择字体替换汉化包字体"},
-            { "id": 'gradient', "name": '💻 渐变文本处理器', "desc": '生成 Unity 富文本渐变色代码' },
-            { "id": 'folder_link', "name": '📂 文件夹超链接', "desc": '创建符号链接, 转移C盘资源文件' },
-            { "id": 'nyos', "name": '📖 今日指令', "desc": '获取食指的最新指令\n仅供娱乐，请勿上升到指令成瘾。' },
-            { "id": 'extension_tools', "name": '🧩 扩展工具', "desc": '插件模板 / 打包发布\n给开发者提供的工具\n需要输入开发者密钥。' },
+            { "id": 'custom_translation', "name": '🔧 自定义汉化', "desc": '可视化编辑 lang 下任意 JSON 文本\n一键编辑替换汉化文本\n自动记录差异性文本，汉化更新也不丢失修改内容！', "image": "custom_translation.png" },
+            {"id": "font", "name": "📝 字体修改", "desc": "选择字体替换汉化包字体", "image": "font.png"},
+            { "id": 'gradient', "name": '💻 渐变文本处理器', "desc": '生成 Unity 富文本渐变色代码', "image": "gradient.png" },
+            { "id": 'folder_link', "name": '📂 文件夹超链接', "desc": '创建符号链接, 转移C盘资源文件', "image": "folder_link.png" },
+            { "id": 'nyos', "name": '📖 今日指令', "desc": '获取食指的最新指令\n仅供娱乐，请勿上升到指令成瘾。', "image": "nyos.png" },
+            { "id": 'extension_tools', "name": '🧩 扩展工具', "desc": '插件模板 / 打包发布\n给开发者提供的工具\n需要输入开发者密钥。', "image": "extension_tools.png" },
         ]
+        for t in tools:
+            t["image_uri"] = _tool_image_uri(t.get("image", ""))
         icon_uri = ""
         for cand in (
             os.path.join(_PROJECT_ROOT, "assets", "images", "icon", "icon.png"),
