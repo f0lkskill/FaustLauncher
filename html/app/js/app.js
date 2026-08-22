@@ -447,6 +447,20 @@
 
   window.__onLog = function (text) { addLog(text); };
 window.__onTrayHint = function (text) { toast(text, 'info', 5000); };
+// 卸载/安装插件/Mod 后由后端通知: 立即刷新已安装状态 (下载中心/主页每日推荐/资源管理)
+window.__onResChanged = function (kind) {
+  if (typeof downloadedSeen !== 'undefined') downloadedSeen.clear();
+  if (typeof refreshMods === 'function') refreshMods(true);
+  if (typeof renderDCList === 'function') {
+    const dcList = document.getElementById('dc-list');
+    if (dcList) renderDCList();
+  }
+  if (typeof _currentRec !== 'undefined' && _currentRec && typeof renderRecommend === 'function') {
+    renderRecommend(_currentRec);
+  }
+};
+// 卸载/删除失败 (如文件被占用) 时由后端通知
+window.__onResError = function (msg) { toast('⚠ ' + msg, 'error', 6000); };
 
   window.__onEvent = function (event, data) {
     if (event === 'progress') {
@@ -688,7 +702,15 @@ window.__onTrayHint = function (text) { toast(text, 'info', 5000); };
     $$('.nav-item').forEach(b => b.classList.toggle('active', b.dataset.page === name));
     $('#main').scrollTop = 0;
     if (name === 'mod_addon') refreshMods();
-    if (name === 'download_center') initDownloadCenter();
+    if (name === 'download_center') {
+      // 已有云端列表则只重刷本地已安装状态, 不重拉云端
+      if (dcAddonItems.length || dcModItems.length) {
+        downloadedSeen.clear();
+        renderDCList();
+      } else {
+        initDownloadCenter();
+      }
+    }
     if (name === 'about') {
       if (!aboutData) loadAbout();
       else setAboutIndex(aboutIdx);
@@ -897,14 +919,19 @@ window.__onTrayHint = function (text) { toast(text, 'info', 5000); };
     };
     $('#res-delete').onclick = async () => {
       try {
-        const r = isAddon
-          ? await api.delete_addon(dir)
-          : await api.delete_mod(dir);
-        if (r && r.error) { toast('删除失败: ' + r.error, 'error'); return; }
-        toast('已删除 ' + name, 'success');
-        closePanel(panel);
-        refreshMods(true);   // 保持当前页
-      } catch (err) { toast('删除失败: ' + err, 'error'); }
+        if (isAddon) {
+          const r = await api.delete_addon(dir);
+          if (r && r.error) { toast('删除失败: ' + r.error, 'error'); return; }
+          toast('已删除 ' + name, 'success');
+          closePanel(panel);
+          refreshMods(true);
+        } else {
+          // Mod 删除在后台线程执行 (可能清理游戏目录副本), 立即反馈, 结果由钩子通知
+          await api.delete_mod(dir).catch(() => {});
+          toast('正在卸载 ' + name + '...', 'info', 2500);
+          closePanel(panel);
+        }
+      } catch (err) { toast('卸载失败: ' + err, 'error'); }
     };
     // 自动保存: 任一设置变化 → 防抖写回, 并即时更新模态内状态标识
     let saveTimer = null;
@@ -991,6 +1018,7 @@ window.__onTrayHint = function (text) { toast(text, 'info', 5000); };
         toastTop(name + ' 下载完成', 'success');
         // 即时更新下载中心/推荐卡的按钮为"已下载" (无需重启)
         if (t.kind) markItemDownloaded(t.kind, name);
+        // 资源管理刷新由后端"解压完成"钩子 (__onResChanged) 触发, 保证落盘后再刷
         setTimeout(() => removeDownloadTask(name, true), 300);
       }
     }
@@ -1041,12 +1069,7 @@ window.__onTrayHint = function (text) { toast(text, 'info', 5000); };
     const fab = $('#dl-fab');
     const active = downloadTasks.filter(t => t.status === 'downloading' || t.status === 'waiting');
     if (active.length) {
-      const totalSpeed = downloadTasks.reduce((s, t) => s + (Number(t.speed) || 0), 0);
-      const speedTxt = totalSpeed > 0 ? fmtSpeed(totalSpeed) : '';
-      const label = speedTxt
-        ? (active.length > 1 ? active.length + ' 项 · ' + speedTxt : speedTxt)
-        : (active.length > 1 ? active.length + ' 项下载中' : '下载中');
-      fab.querySelector('.dl-fab-ico').textContent = label;
+      fab.querySelector('.dl-fab-ico').textContent = '📥';
       fab.classList.add('visible');
     } else {
       fab.querySelector('.dl-fab-ico').textContent = '';

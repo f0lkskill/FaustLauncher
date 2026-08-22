@@ -406,6 +406,38 @@ def _res_icon_uri(base_dir, name):
     return ''
 
 
+def _get_project_icon_uri():
+    """读取项目图标转 data URI (供 get_bootstrap 与 HTML 首载注入复用)"""
+    for cand in (
+        os.path.join(_PROJECT_ROOT, "assets", "images", "icon", "icon.png"),
+        os.path.join(_PROJECT_ROOT, "_internal", "assets", "images", "icon", "icon.png"),
+    ):
+        if os.path.isfile(cand):
+            try:
+                with open(cand, "rb") as f:
+                    return "data:image/png;base64," + base64.b64encode(f.read()).decode("ascii")
+            except Exception:
+                pass
+    return ""
+
+
+def _goodbye_to_console():
+    """退出时输出 GoodBye 美化艺术字。
+    直接写原始 stdout (控制台), 不经过前端重定向 —— closing 事件在 UI 线程,
+    走重定向 print 会等待前端响应而死锁; 无控制台时兜底普通 print。"""
+    try:
+        from functions.base.terminal_banner import get_banner_with_random_style
+        banner = get_banner_with_random_style('GoodBye')
+        out = sys.__stdout__
+        if out is not None:
+            out.write('\n\n' + banner + '\n')
+            out.flush()
+        else:
+            print('\n\n' + banner)
+    except Exception:
+        pass
+
+
 def _fmt_author_links(authors):
     """作者字段转链接列表 [{name, url}] (dict: 名字->链接; 其它则无链接)"""
     if isinstance(authors, dict):
@@ -454,18 +486,7 @@ class AppApi:
         ]
         for t in tools:
             t["image_uri"] = _tool_image_uri(t.get("image", ""))
-        icon_uri = ""
-        for cand in (
-            os.path.join(_PROJECT_ROOT, "assets", "images", "icon", "icon.png"),
-            os.path.join(_PROJECT_ROOT, "_internal", "assets", "images", "icon", "icon.png"),
-        ):
-            if os.path.isfile(cand):
-                try:
-                    with open(cand, "rb") as f:
-                        icon_uri = "data:image/png;base64," + base64.b64encode(f.read()).decode("ascii")
-                except Exception:
-                    pass
-                break
+        icon_uri = _get_project_icon_uri()
         return {
             "version": str(sm.get_setting("version_info")),
             "game_path": str(sm.get_setting("game_path") or ""),
@@ -918,29 +939,104 @@ class AppApi:
         except Exception as e:
             return {'error': str(e)}
 
-    def delete_addon(self, name):
-        """删除插件 (整个目录)"""
-        import os, shutil
-        path = os.path.join('addons', str(name))
-        if not os.path.isdir(path):
-            return {'error': f"插件目录不存在: {path}"}
+    def _rmtree_robust(self, path, max_tries=5, delay=1.5):
+        """删除目录, 被占用时自动重试; 仍失败则逐文件报告被占用的路径"""
+        import time, shutil
+        for attempt in range(max_tries):
+            try:
+                shutil.rmtree(path)
+                return None
+            except Exception as e:
+                print(f"删除 {path} 失败 (第{attempt+1}/{max_tries}次): {type(e).__name__}: {e}", flush=True)
+                time.sleep(delay)
+        errors = []
         try:
-            shutil.rmtree(path, ignore_errors=False)
+            shutil.rmtree(path, onerror=lambda fn, p, exc: errors.append((p, exc)))
+        except Exception:
+            pass
+        for p, exc in errors:
+            msg = str(exc[1]) if exc and len(exc) > 1 else str(exc)
+            print(f"  被占用无法删除: {p} ({msg})")
+        return errors
+
+    def _notify_res_changed(self, kind, error=None):
+        """卸载/安装后通知前端立即刷新已安装状态 (下载中心/每日推荐/资源管理)"""
+        try:
+            win = self.window_ref.get("win") if self.window_ref else None
+            if win is None:
+                return
+            if error:
+                import json as _json
+                win.evaluate_js("window.__onResError(" + _json.dumps(str(error), ensure_ascii=False) + ")")
+            else:
+                win.evaluate_js("window.__onResChanged('%s')" % kind)
+        except Exception:
+            pass
+
+    def delete_addon(self, name):
+        """删除插件: 走 AddonManager.remove_addon (执行插件注册的删除回调+重扫),
+        成功后重载插件 (含托盘菜单) 并通知前端立即刷新状态。"""
+        try:
+            am = getattr(self.core, 'addon_manager', None)
+            ok = False
+            if am is not None and hasattr(am, 'remove_addon'):
+                ok = bool(am.remove_addon(str(name)))
+            else:
+                import os, shutil
+                path = os.path.join('addons', str(name))
+                if os.path.isdir(path):
+                    shutil.rmtree(path, ignore_errors=False)
+                    ok = True
+            if not ok:
+                return {'error': f'插件 {name} 删除失败'}
+            # 卸载后重载插件 (含托盘菜单更新), 后台线程执行
+            def _reload():
+                try:
+                    self.core._on_reload_addons()
+                except Exception as e:
+                    print(f"卸载后重载插件失败: {e}")
+            threading.Thread(target=_reload, daemon=True).start()
+            self._notify_res_changed('addon')
             return {'error': None}
         except Exception as e:
             return {'error': str(e)}
 
     def delete_mod(self, name):
-        """删除目录 Mod (整个文件夹)"""
-        import os, shutil
-        path = os.path.join('mods', str(name))
-        if not os.path.isdir(path):
-            return {'error': f"Mod 目录不存在: {path}"}
-        try:
-            shutil.rmtree(path, ignore_errors=False)
-            return {'error': None}
-        except Exception as e:
-            return {'error': str(e)}
+        """删除目录 Mod: 后台线程先 unload_mod (执行卸载脚本/清理游戏目录副本/语言文件),
+        再删除 mods/<name> 目录, 完成后通知前端刷新状态。
+        后台线程避免 Uninstaller.bat 等阻塞 js_api 调用 (否则前端会无响应)。"""
+        def _run():
+            try:
+                from functions.extension.mod.mod_utils import ModManager
+                import os
+                mm = ModManager()
+                path = os.path.join('mods', str(name))
+                if not os.path.isdir(path):
+                    print(f"删除 Mod {name} 失败: 目录不存在 {path}", flush=True)
+                    return
+                print(f"开始删除 Mod: {name} (目录 {path})", flush=True)
+                # 串行执行 unload_mod: 先清理游戏目录副本 (MD5 校验),
+                # 跳过 Uninstaller.bat (其派生后台进程会占用 mods 目录导致删除失败);
+                # 必须等它结束释放文件句柄, 否则并发 rmtree 会撞上 WinError 32
+                try:
+                    mm.unload_mod(str(name), run_bat=False)
+                    print(f"Mod {name} 卸载缓存完成", flush=True)
+                except Exception as e:
+                    print(f"卸载 Mod {name} 缓存失败(继续删除): {e}", flush=True)
+                errs = self._rmtree_robust(path)
+                if errs:
+                    print(f"删除 Mod {name} 失败: 部分文件被占用无法删除", flush=True)
+                    self._notify_res_changed('mod', error=f"删除失败: 有文件被其他程序占用 (可能是游戏或资源管理器) \n{errs[0][0]}")
+                else:
+                    print(f"已删除 Mod 目录: {path}", flush=True)
+                    self._notify_res_changed('mod')
+            except Exception as e:
+                import traceback
+                print(f"删除 Mod {name} 失败: {e}", flush=True)
+                print(traceback.format_exc(), flush=True)
+                self._notify_res_changed('mod', error=f"删除失败: {e}")
+        threading.Thread(target=_run, daemon=True).start()
+        return {'error': None}
 
     def apply_mods(self):
         """立即应用 Mod (load_all_mods), 后台线程执行"""
@@ -1072,15 +1168,19 @@ if %errorlevel% equ 0 (
         return None
 
     def _get_cached_list(self, kind):
-        """初始化后只爬取一次数据库, 之后永久使用内存缓存 (不再访问网络)"""
-        if not getattr(self, '_dc_cache', None):
-            self._dc_cache = {'addon': None, 'mod': None}
-        if self._dc_cache.get(kind) is None:
-            wt = self._get_web_trigger()
-            data = (wt.fetch_all_addon_info() if kind == 'addon'
-                    else wt.fetch_all_mod_info())
-            self._dc_cache[kind] = data if data else [] # type: ignore
-        return self._dc_cache[kind]
+        """云端列表: 复用持久化缓存文件 (与启动同步共用一份, 只初始化加载一次云端, 不重复爬取)"""
+        from functions.pages.app import page_loader as _pl
+        cached = _pl._load_cloud_cache_file()
+        if cached is not None and cached.get(kind):
+            return cached[kind]
+        wt = self._get_web_trigger()
+        data = (wt.fetch_all_addon_info() if kind == 'addon'
+                else wt.fetch_all_mod_info())
+        data = data if data else []
+        cur = _pl._load_cloud_cache_file() or {'addon': None, 'mod': None}
+        cur[kind] = data
+        _pl._save_cloud_cache_file(cur.get('addon'), cur.get('mod'))
+        return data
 
     @staticmethod
     def _name_common_sub(s1, s2):
@@ -1171,11 +1271,13 @@ if %errorlevel% equ 0 (
                 gui = HeadlessDownloadGUI(target, auto_start=False, task=name)
                 ok = download_and_extract_mod(gui, target, download_files)
                 if ok:
-                    print(f"插件 {name} 下载完成")
+                    print(f"插件 {name} 下载并解压完成")
                     try:
                         self.core.addon_manager.reload_all_addons()
                     except Exception:
                         pass
+                    # 解压落盘完成后再通知前端刷新 (资源管理/下载中心/推荐)
+                    self._notify_res_changed('addon')
                 else:
                     print(f"插件 {name} 下载失败")
             except Exception as e:
@@ -1203,7 +1305,9 @@ if %errorlevel% equ 0 (
                 gui = HeadlessDownloadGUI(target, auto_start=False, task=name)
                 ok = download_and_extract_mod(gui, target, download_files)
                 if ok:
-                    print(f"Mod {name} 下载完成")
+                    print(f"Mod {name} 下载并解压完成")
+                    # 解压落盘完成后再通知前端刷新 (资源管理/下载中心/推荐)
+                    self._notify_res_changed('mod')
                 else:
                     print(f"Mod {name} 下载失败")
             except Exception as e:
@@ -1535,6 +1639,7 @@ def _start_tray(core, window, win32_show):
             icon.stop()
         except Exception:
             pass
+        _goodbye_to_console()
         import os
         os._exit(0)
 
@@ -1676,9 +1781,26 @@ def run_web_ui(debug: bool = False):
         _win_y = max(0, (_sh - 740) // 2)
     except Exception:
         pass
+    # 项目图标首载注入: 把 HTML 里的图标 src 替换为 data URI (避免 bootstrap 返回前图标加载延时)
+    _serve_html = HTML_PATH
+    try:
+        _icon_uri = _get_project_icon_uri()
+        if _icon_uri:
+            with open(HTML_PATH, 'r', encoding='utf-8') as _f:
+                _content = _f.read()
+            _marker = 'src="../../assets/images/icon/icon.png"'
+            if _marker in _content:
+                _content = _content.replace(_marker, 'src="' + _icon_uri + '"')
+                _tmp = os.path.join(os.path.dirname(HTML_PATH), 'index.injected.html')
+                with open(_tmp, 'w', encoding='utf-8') as _f:
+                    _f.write(_content)
+                _serve_html = _tmp
+    except Exception:
+        _serve_html = HTML_PATH
+
     window = webview.create_window(
         "Faust Launcher",
-        HTML_PATH,
+        _serve_html,
         js_api=api,
         width=1000,
         height=740,
@@ -1753,6 +1875,8 @@ def run_web_ui(debug: bool = False):
                 return False
         except Exception:
             pass
+        # 关闭程序退出: 输出 GoodBye 艺术字 (直接写控制台, 避免 UI 线程 print 死锁)
+        _goodbye_to_console()
         return True
 
     try:
