@@ -1131,68 +1131,68 @@
     
 	{	
       "id": "7SV-BV-022",
-      "desc": "############ 中指 幼兄 里卡多（深夜清扫） ############",
+      "desc": "############ 中指 幼兄 里卡多（深夜清扫） ############ [官]",
       "dlg": "<color=#a240bf>游戏到此为止。</color>"
 	},
 	{	
       "id": "7SV-BV-023-1",
-      "desc": "",
+      "desc": "리카르도 - 6스킬 사용 시(1타)",
       "dlg": "<color=#a240bf>试炼……</color>"
 	},
 	{	
       "id": "7SV-BV-023-2",
-      "desc": "",
-      "dlg": "<color=#a240bf>……结束了！</color>"
+      "desc": "리카르도 - 6스킬 사용 시(2타)",
+      "dlg": "<color=#a240bf>结束了！</color>"
 	},
 	{	
       "id": "7SV-BV-024-2",
-      "desc": "",
+      "desc": "리카르도 - 7스킬 사용 시(2타)",
       "dlg": "<color=#a240bf>将痛苦……</color>"
 	},
 	{	  
       "id": "7SV-BV-024-3",
-      "desc": "",
+      "desc": "리카르도 - 7스킬 사용 시(3타)",
       "dlg": "<color=#a240bf>……铭刻于你！</color>"
 	},
 	{	
       "id": "7SV-BV-025",
-      "desc": "",
-      "dlg": "<color=#a240bf>后面交给我。</color>"
+      "desc": "리카르도 - 베르너 사망(리타이어) 시",
+      "dlg": "<color=#a240bf>……之后就交给我吧。</color>"
 	},
 	{	
       "id": "7SV-BV-025-01",
       "desc": "",
-      "dlg": "<color=#a240bf>后面……交给我。</color>"
+      "dlg": "<color=#a240bf>……之后就交给我吧。</color>"
 	},
 	{	
       "id": "7SV-BV-026",
-      "desc": "############ 中指 幼弟 维尔纳 ############",
-      "dlg": "<color=#ab53c6>非常抱歉……大哥……！</color>"
+      "desc": "############ 中指 幼弟 维尔纳 ############ [官]",
+      "dlg": "<color=#ab53c6>抱歉……大哥……</color>"
 	},
 	{	
       "id": "7SV-BV-028_3",
-      "desc": "",
-      "dlg": "<color=#ab53c6>把你碾碎！</color>"
+      "desc": "베르너 - 3스킬",
+      "dlg": "<color=#ab53c6>化为齑粉吧！</color>"
 	},
 	{	
       "id": "7SV-BV-029_1",
-      "desc": "",
+      "desc": "베르너 - 4스킬(1타)",
       "dlg": "<color=#ab53c6>你们……</color>"
 	},
 	{	
       "id": "7SV-BV-029_2",
-      "desc": "",
-      "dlg": "<color=#ab53c6>……都是……</color>"
+      "desc": "베르너 - 4스킬(2타)",
+      "dlg": "<color=#ab53c6>都是……</color>"
 	},
 	{	
       "id": "7SV-BV-029_3",
-      "desc": "",
-      "dlg": "<color=#ab53c6>……复仇目标！</color>"
+      "desc": "베르너 - 4스킬(3타)",
+      "dlg": "<color=#ab53c6>复仇目标！</color>"
 	},
 	{	
       "id": "7SV-BV-030",
       "desc": "",
-      "dlg": "<color=#ab53c6>……复仇……</color>"
+      "dlg": "<color=#ab53c6>呼……复仇……</color>"
 	},
 	
 	{
@@ -3075,7 +3075,7 @@
     },
     {
       "id": "battle_select_10311_1",
-      "desc": "############ 东部5协会 堂吉诃德 ############",
+      "desc": "############ Cinq协会东部 堂吉诃德 ############",
       "dlg": "<color=#ffef23>要紧急委托吗？委托费用可会稍微贵一些哦！</color>"
     },
     {
@@ -5430,6 +5430,42 @@
       "dlg": "<color=#5bffde>被捕绳捆住吧！</color>"
     },
     {
+      "id": "battle_select_10616_1",
+      "desc": "############ Cinq协会东部3科 鸿璐 16 ############",
+      "dlg": "<color=#5bffde>我们禁止超额预定委托哦~</color>"
+    },
+    {
+      "id": "battle_endcommand_10616_1",
+      "desc": "",
+      "dlg": "<color=#5bffde>望您不吝赐教。</color>"
+    },
+    {
+      "id": "battle_enemy_break_10616_1",
+      "desc": "",
+      "dlg": "<color=#5bffde>还好吗？要不要投降……</color>"
+    },
+    {
+      "id": "battle_kill_10616_1",
+      "desc": "",
+      "dlg": "<color=#5bffde>啊……我可是警告过了。</color>"
+    },
+    {
+      "id": "battle_break_10616_1",
+      "desc": "",
+      "dlg": "<color=#5bffde>啊哈。</color>"
+    },
+    {
+      "id": "battle_dead_10616_1",
+      "desc": "",
+      "dlg": "<color=#5bffde>都说高手总在不经意间出现……果真，没错呢。</color>"
+    },
+    {
+      "id": "battle_s3_10616_1_1",
+      "desc": "3스킬 대사",
+      "dlg": "<color=#5bffde>请别躲开……！打错了位置的话你会死的哦？</color>"
+    },
+    
+    {
       "id": "battle_select_10701_1",
       "desc": "############ LCB罪人希斯克利夫 ############",
       "dlg": "<color=#6e44a6>怎么？什么事？</color>"
@@ -7740,7 +7776,7 @@
       "dlg": "<color=#8b9c15>就由我来剥下！</color>"
     },
     {
-      "id": "battle_s3_11005_1_2_Back",
+      "id": "battle_s3_11005_1_2-03",
       "desc": "",
       "dlg": "<color=#8b9c15>就由我来剥下。</color>"
     },

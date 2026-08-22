@@ -114,12 +114,12 @@
       { name: '📦 GitHub', desc: '查看本项目源码', image: 'github.png' },
     ],
     tools: [
-      { id: 'custom_translation', name: '🔧 自定义汉化', desc: '可视化编辑 lang 下任意 JSON 文本\n一键编辑替换汉化文本\n自动记录差异性文本，汉化更新也不丢失修改内容！' },
-      { id: 'gradient', name: '💻 渐变文本处理器', desc: '生成 Unity 富文本渐变色代码' },
-      { id: 'folder_link', name: '📂 文件夹超链接', desc: '创建符号链接, 转移C盘资源文件' },
-      { id: 'nyos', name: '📖 今日指令', desc: '获取食指的最新指令\n仅供娱乐，请勿上升到指令成瘾。' },
-      { id: 'extension_tools', name: '🧩 扩展工具', desc: '插件模板 / 打包发布\n给开发者提供的工具\n需要输入开发者密钥。' },
-      { id: 'font', name: '📝 字体修改', desc: '选择字体替换汉化包字体' },
+      { id: 'custom_translation', name: '🔧 自定义汉化', desc: '可视化编辑 lang 下任意 JSON 文本\n一键编辑替换汉化文本\n自动记录差异性文本，汉化更新也不丢失修改内容！', image: 'custom_translation.png' },
+      { id: 'gradient', name: '💻 渐变文本处理器', desc: '生成 Unity 富文本渐变色代码', image: 'gradient.png' },
+      { id: 'folder_link', name: '📂 文件夹超链接', desc: '创建符号链接, 转移C盘资源文件', image: 'folder_link.png' },
+      { id: 'nyos', name: '📖 今日指令', desc: '获取食指的最新指令\n仅供娱乐，请勿上升到指令成瘾。', image: 'nyos.png' },
+      { id: 'extension_tools', name: '🧩 扩展工具', desc: '插件模板 / 打包发布\n给开发者提供的工具\n需要输入开发者密钥。', image: 'extension_tools.png' },
+      { id: 'font', name: '📝 字体修改', desc: '选择字体替换汉化包字体', image: 'font.png' },
       // { id: 'auto_translate', name: '🤖 自动汉化', desc: '思知 AI 批量剧情文本翻译' },
     ],
     settings_schema: {

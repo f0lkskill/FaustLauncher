@@ -645,6 +645,11 @@ body {
   height: 100%;
   display: flex; flex-direction: column; align-items: center; justify-content: center;
   gap: 0.3em; padding: 0.6em 0.55em; text-align: center;
+  /* 轻微模糊层: 让文字与背景图分离, 更清晰可读 */
+  background: rgba(10, 12, 16, 0.30);
+  backdrop-filter: blur(1px);
+  -webkit-backdrop-filter: blur(1px);
+  border-radius: inherit;
 }
 /* 字号用 em, 随卡片尺寸 (stage font-size) 等比例缩放 */
 .carousel-item .lc-ico { font-size: 1.3em; line-height: 1; filter: drop-shadow(0 6px 16px rgba(0, 0, 0, 0.45)); }
