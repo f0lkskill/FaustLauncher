@@ -1078,9 +1078,12 @@ def download_and_launch(obj=None, need_run_game=False):
         _push_step('install')
 
         print("开始核对汉化版本...")
-        need_update = need_up()
 
-        if need_update:
+        # 汉化包已下载解压: 以解压产物 src_lang 是否存在判断是否需要安装,
+        # 不再依赖 need_up() (无参调用永远返回 False, 会导致合并被跳过, 完整汉化被清理)
+        src_lang = os.path.join(download_path, 'LimbusCompany_Data', 'Lang', get_translation_dir_name())
+
+        if os.path.exists(src_lang) or (is_ourplay and os.path.isdir(lang_path)):
             print("检测到新的汉化版本，准备更新汉化文件...")
             if is_ourplay:
                 # OurPlay 平台: 下载流程已直接安装到 lang/<平台目录名>, 无需再合并
@@ -1091,7 +1094,6 @@ def download_and_launch(obj=None, need_run_game=False):
                     downloading = False
                     return
             else:
-                src_lang = os.path.join(download_path, 'LimbusCompany_Data', 'Lang', get_translation_dir_name())
                 if os.path.exists(src_lang):
                     print("正在合并汉化文件到游戏目录...")
                     if os.path.isdir(lang_path):

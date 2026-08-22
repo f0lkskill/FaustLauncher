@@ -258,45 +258,66 @@ class GameLauncher:
                         print(f"  警告: 应用补丁 {relative_path} 失败: {e}")
 
     def _apply_cosmetic_features(self):
-        """应用气泡渐变、EGO 样式、技能描述、提示替换、技能渐变色 (逐项推送进度)。"""
+        """应用气泡渐变、EGO 样式、技能描述、提示替换、技能渐变色 (逐项推送进度, 单项失败不中断)"""
         from functions.web_update.translation_source import get_game_lang_dir
         lang_path = get_game_lang_dir(self._game_path)
         lang_root = os.path.join(self._game_path, 'LimbusCompany_Data', 'Lang')
 
         if self._settings.get_setting('enable_text_gradient'):
-            self._progress("正在应用对话文本渐变色...", "🚀")
-            from functions.fancy.dialog_colorful import main as handle_colorful
-            handle_colorful()
+            try:
+                self._progress("正在应用对话文本渐变色...", "🚀")
+                from functions.fancy.dialog_colorful import main as handle_colorful
+                handle_colorful()
+            except Exception as e:
+                print(f"[美化] 对话文本渐变色跳过: {e}")
 
         if self._settings.get_setting('enable_ego_style'):
-            self._progress("正在应用 EGO 样式美化...", "🚀")
-            from functions.fancy.EGO_colorful import main as apply_ego_style
-            apply_ego_style()
+            try:
+                self._progress("正在应用 EGO 样式美化...", "🚀")
+                from functions.fancy.EGO_colorful import main as apply_ego_style
+                apply_ego_style()
+            except Exception as e:
+                print(f"[美化] EGO 样式跳过: {e}")
 
         if self._settings.get_setting('enable_skill_style'):
-            self._progress("正在美化技能描述文本...", "🚀")
-            from functions.fancy.skill_info import total_handle
-            total_handle(lang_path + '/')
+            try:
+                self._progress("正在美化技能描述文本...", "🚀")
+                from functions.fancy.skill_info import total_handle
+                total_handle(lang_path + '/')
+            except Exception as e:
+                print(f"[美化] 技能描述美化跳过: {e}")
 
         if self._settings.get_setting('enable_ego_gift_style'):
-            self._progress("正在美化 EGO 饰品效果...", "🚀")
-            from functions.fancy.skill_info import handle_EGOgift
-            handle_EGOgift(lang_path + '/')
+            try:
+                self._progress("正在美化 EGO 饰品效果...", "🚀")
+                from functions.fancy.skill_info import handle_EGOgift
+                handle_EGOgift(lang_path + '/')
+            except Exception as e:
+                print(f"[美化] EGO 饰品跳过: {e}")
 
         if self._settings.get_setting('enable_buff_style'):
-            self._progress("正在美化 Buff 效果文本...", "🚀")
-            from functions.fancy.skill_info import handle_buff
-            handle_buff(lang_path + '/')
+            try:
+                self._progress("正在美化 Buff 效果文本...", "🚀")
+                from functions.fancy.skill_info import handle_buff
+                handle_buff(lang_path + '/')
+            except Exception as e:
+                print(f"[美化] Buff 美化跳过: {e}")
 
         if self._settings.get_setting('enable_special_tip'):
-            self._progress("正在替换战斗提示文本...", "🚀")
-            from functions.fancy.hint_set import simple_replace
-            simple_replace(os.path.join(lang_path, 'BattleHint.json'))
+            try:
+                self._progress("正在替换战斗提示文本...", "🚀")
+                from functions.fancy.hint_set import simple_replace
+                simple_replace(os.path.join(lang_path, 'BattleHint.json'))
+            except Exception as e:
+                print(f"[美化] 战斗提示替换跳过: {e}")
 
         if self._settings.get_setting('enable_skill_text_gradient'):
-            self._progress("正在应用技能文本渐变色...", "🚀")
-            from functions.fancy.skill_colorful import skill_color_process
-            skill_color_process(lang_root + '/')
+            try:
+                self._progress("正在应用技能文本渐变色...", "🚀")
+                from functions.fancy.skill_colorful import skill_color_process
+                skill_color_process(lang_root + '/')
+            except Exception as e:
+                print(f"[美化] 技能渐变色跳过: {e}")
 
     def _copy_fonts(self):
         """复制字体文件到游戏汉化目录。"""
@@ -311,10 +332,13 @@ class GameLauncher:
         create_config_file(self._game_path)
 
     def _set_user_name(self):
-        """将用户显示名称写入游戏的 UserInfo_Friends.json。"""
+        """将用户显示名称写入游戏的 UserInfo_Friends.json (文件不存在时跳过)。"""
         from functions.web_update.translation_source import get_game_lang_dir
         user_name = self._settings.get_setting('user_name')
         file_path = os.path.join(get_game_lang_dir(self._game_path), 'UserInfo_Friends.json')
+        if not os.path.exists(file_path):
+            print("未找到 UserInfo_Friends.json, 跳过用户名设置")
+            return
         with open(file_path, 'r', encoding='utf-8') as f:
             data = json.load(f)
         for item in data.get('dataList', []):
