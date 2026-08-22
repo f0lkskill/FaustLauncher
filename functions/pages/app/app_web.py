@@ -1609,6 +1609,13 @@ def _start_tray(core, window, win32_show):
     import pystray
     from PIL import Image
 
+    # 设置应用用户模型 ID: 否则 Windows 通知气泡标题会显示进程名 (python)
+    try:
+        import ctypes
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("FaustLauncher")
+    except Exception:
+        pass
+
     ico_path = os.path.join(_PROJECT_ROOT, "assets", "images", "icon", "icon.ico")
     try:
         ico = Image.open(ico_path)
@@ -1857,18 +1864,27 @@ def run_web_ui(debug: bool = False):
             except Exception:
                 hide_to_tray = True
             if hide_to_tray:
-                # 只阻止关闭; 先显示"已在托盘"提示, 再延迟隐藏窗口, 保证提示可见
-                def _do():
-                    try:
-                        _evaluate_js("window.__onTrayHint('程序已最小化到系统托盘, 右键托盘图标可退出')")
-                    except Exception:
-                        pass
-                    time.sleep(1.8)
+                # 只阻止关闭; 立刻隐藏窗口 (后台线程), 不依赖前端 toast
+                def _hide():
                     try:
                         _win32_show_window(False)
                     except Exception:
                         pass
-                threading.Thread(target=_do, daemon=True).start()
+                threading.Thread(target=_hide, daemon=True).start()
+                # 首次隐藏到托盘时弹系统托盘气泡提示 (mems.tray_hint 记录, 只提示一次)
+                try:
+                    _mems = core.settings_manager.get_setting("mems")
+                    if isinstance(_mems, dict) and not _mems.get("tray_hint"):
+                        _mems["tray_hint"] = True
+                        core.settings_manager.set_setting("mems", _mems)
+                        core.settings_manager.save_settings()
+                        if tray is not None:
+                            try:
+                                tray.notify("程序已最小化到系统托盘, 右键托盘图标可退出", "浮士德启动器")
+                            except Exception:
+                                pass
+                except Exception:
+                    pass
                 return False
         except Exception:
             pass
