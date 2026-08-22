@@ -404,7 +404,7 @@ def _ensure_refer_root(gui) -> str:
         download_way = settings_manager.get_setting('translate_download_way')
         try:
             if download_way == 2:
-                download_url, _name = get_github_release_url()
+                download_url, _name = get_github_release_url() # type: ignore
             elif download_way == 1:
                 result = get_download_path_ByGhProxy()
                 if result:
@@ -758,6 +758,7 @@ def download_and_extract_mod(gui, target_dir, download_files):
     """
     import traceback as _tb
     import tempfile as _tf
+    import shutil
     with _tf.TemporaryDirectory() as temp_root:
         try:
             for file_info in download_files:
