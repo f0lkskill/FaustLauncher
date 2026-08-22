@@ -80,6 +80,12 @@ def handle_base_info(name:str) -> str:
         if inside_tag:
             continue
 
+        # 检测数字是否位于 [...] 方括号内 (如 [UnlockBuffAlly_3], [Breath], [KarmaOfIndexAlly]):
+        # 方括号内是 buff 名字 ID, 数字是 ID 的一部分, 高亮会破坏 ID 导致游戏认不出来
+        last_bracket = before.rfind('[')
+        if last_bracket != -1 and before.find(']', last_bracket) == -1:
+            continue
+
         # 检查是否有百分号在后面
         if end_pos < len(name) and name[end_pos] == '%':
             # 如果有百分号，将其添加到数字后面
