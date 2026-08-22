@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>FaustLauncher 浮士德启动器</title>
-<link rel="stylesheet" href="css/style.css?v=54">
+<link rel="stylesheet" href="css/style.css?v=65">
 </head>
 <body>
 <div id="bg-layer"></div>
@@ -18,11 +18,11 @@
       </div>
     </div>
     <nav id="nav">
-      <button class="nav-item active" data-page="home"><span class="nav-ico">🏘</span><span>主页</span></button>
-      <button class="nav-item" data-page="features"><span class="nav-ico">✈</span><span>快捷方式</span></button>
-      <button class="nav-item" data-page="tools"><span class="nav-ico">🔨</span><span>实用工具</span></button>
+      <button class="nav-item active" data-page="home"><span class="nav-ico">🏠</span><span>主页</span></button>
       <button class="nav-item" data-page="mod_addon"><span class="nav-ico">🧩</span><span>资源管理</span></button>
       <button class="nav-item" data-page="download_center"><span class="nav-ico">📦</span><span>下载中心</span></button>
+      <button class="nav-item" data-page="tools"><span class="nav-ico">🔨</span><span>实用工具</span></button>
+      <button class="nav-item" data-page="features"><span class="nav-ico">📃</span><span>快捷方式</span></button>
       <button class="nav-item" data-page="settings"><span class="nav-ico">⚙️</span><span>设置</span></button>
       <button class="nav-item" data-page="about"><span class="nav-ico">💻</span><span>关于</span></button>
     </nav>
@@ -47,12 +47,12 @@
             <div class="chip" id="chip-source"><span class="dot"></span><span>下载源: -</span></div>
           </div>
         </div>
-        <div class="hero-logo" aria-hidden="true">
-          <img src="../../assets/images/icon/icon.png" alt="FaustLauncher" draggable="false">
-        </div>
-        <div class="hero-clock" aria-hidden="true">
-          <div class="hc-date" id="hc-date">----年--月--日</div>
-          <div class="hc-time" id="hc-time">--:--:--</div>
+        <div class="hero-aside" aria-hidden="true">
+          <img class="hero-bg-icon" src="../../assets/images/icon/icon.png" alt="">
+          <div class="hero-clock">
+            <div class="hc-date" id="hc-date">----年--月--日</div>
+            <div class="hc-time" id="hc-time">--:--:--</div>
+          </div>
         </div>
       </div>
 
@@ -195,7 +195,7 @@
       <div class="dl-empty">暂无下载任务</div>
     </div>
   </aside>
-<script src="js/app.js?v=58"></script>
+<script src="js/app.js?v=61"></script>
 <script>
 /* 独立兜底: 完全不依赖 app.js。无论 app.js 是否崩溃, 只要内容加载完成或超时,
    就移除主页两张卡片的 loading 圆圈。 */
