@@ -330,6 +330,11 @@ class BuildGUI:
                 pass
             if "'pystray'" not in _pyz_txt:
                 raise FileNotFoundError('PyInstaller 未收集 pystray (系统托盘不可用), 请用项目 venv 运行本构建工具')
+            # 7) webui: pywebview 及平台后端必须被收集 (默认新版 Web 界面启动)
+            if "'webview'" not in _pyz_txt:
+                raise FileNotFoundError('PyInstaller 未收集 webview (新版 Web 界面无法启动), 请用项目 venv 运行本构建工具')
+            if "'cffi'" not in _pyz_txt:
+                raise FileNotFoundError('PyInstaller 未收集 cffi (pywebview 依赖缺失), 请用项目 venv 运行本构建工具')
         except Exception as e:
             self._set_step(3, 'failed')
             self._set_status(f'复制运行环境失败: {e}', DANGER)

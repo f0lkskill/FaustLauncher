@@ -70,9 +70,12 @@ def main():
         run_custom_translation_window(debug="--debug" in sys.argv)
         return
     
-    # Web 现代化 UI 模式: --web-ui 参数启动, 或在设置中选择"新版 Web 界面"后生效
+    # Web 现代化 UI 模式: 默认启动方式 (新版 Web 界面)
+    # 可用 --tk-ui 参数或设置"界面模式=旧版界面 (0)"回到经典 TK 界面
     from functions.base.settings_manager import get_settings_manager
-    if "--web-ui" in sys.argv or get_settings_manager().get_setting("ui_mode") == 1:
+    if "--tk-ui" in sys.argv:
+        pass
+    elif "--web-ui" in sys.argv or get_settings_manager().get_setting("ui_mode") != 0:
         from functions.pages.app.app_web import run_web_ui, check_single_instance
         if check_single_instance():
             os._exit(0)

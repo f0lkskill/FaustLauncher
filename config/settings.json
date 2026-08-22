@@ -220,9 +220,9 @@
         "type": "combobox",
         "options": [
             "旧版界面 (经典)",
-            "新版 Web 界面 (实验)"
+            "新版 Web 界面"
         ],
-        "default": 0,
+        "default": 1,
         "value": 1,
         "description": "选择启动器界面\n旧版界面: 经典 tkinter 界面\n新版 Web 界面: pywebview 现代化界面\n修改后重启启动器生效",
         "page": "其它"
@@ -230,8 +230,8 @@
     "version_info": {
         "name": "版本信息",
         "type": "UNABLE_TO_EDIT",
-        "default": "V0.7.1-release.fix.1",
-        "value": "V0.7.1-release.fix.1",
+        "default": "V0.8.1-release",
+        "value": "V0.8.1-release",
         "description": "当前应用程序的版本信息"
     },
     "mems": {
@@ -242,8 +242,8 @@
             "version_notify_flag": false
         },
         "value": {
-            "tray_hint": true,
-            "version_notify_flag": true
+            "tray_hint": false,
+            "version_notify_flag": false
         },
         "description": "程序运行时的缓存数据\n不建议修改"
     }
