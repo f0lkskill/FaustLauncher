@@ -16,7 +16,10 @@ load_dotenv()
 
 from functions.webFunc import *
 
-ADDRESS = os.getenv('ADDRESS')
+# 笔记地址直接硬编码 (web_config.json 已 gitignore 不上传仓库, 不依赖该文件;
+# 环境变量 ADDRESS 可覆盖, 未设置时使用默认汉化源笔记地址)
+DEFAULT_NOTE_ADDRESS = "FaustLauncher"
+ADDRESS = (os.getenv('ADDRESS') or '').strip() or DEFAULT_NOTE_ADDRESS
 API_URL = "https://api.txttool.cn/netcut/note"
 
 
