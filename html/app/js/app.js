@@ -27,7 +27,9 @@
     });
     window.addEventListener('unhandledrejection', function (e) {
       const r = e && e.reason;
-      show('ASYNC', (r && r.message) || String(r));
+      const msg = (r && r.message) || String(r);
+      const st = (r && r.stack) ? '\n' + r.stack.split('\n').slice(0, 6).join('\n') : '';
+      show('ASYNC', msg + st);
     });
   })();
 
@@ -139,6 +141,8 @@
 
   // ---------------- 全局状态 ----------------
   let BOOT = null;
+  // 项目图标 (后端 bootstrap 就绪后替换为 data URI, 供下载中心/推荐卡/关于页图标回退)
+  let PROJECT_ICON = '../../assets/images/icon/icon.png';
   let SETTING_CHANGES = {};   // key -> {value, touched}
   let currentPage = 'home';
   let pipeline = {
@@ -221,16 +225,11 @@
     // 已是该图标则跳过
     if (icoEl.dataset.task === taskName) return;
     let iconUrl = '';
-    for (const page of (dcAddonPages || [])) {
-      const hit = (page || []).find(it => it.name === taskName);
-      if (hit) { iconUrl = hit.icon_url || ''; break; }
-    }
-    if (!iconUrl) {
-      for (const page of (dcModPages || [])) {
-        const hit = (page || []).find(it => it.name === taskName);
-        if (hit) { iconUrl = hit.icon_url || ''; break; }
-      }
-    }
+    const find = (arr) => {
+      const hit = (arr || []).find(it => it.name === taskName);
+      return hit ? hit.icon_url || '' : '';
+    };
+    iconUrl = find(dcAddonItems) || find(dcModItems);
     icoEl.dataset.task = taskName;
     if (!iconUrl) return;   // 找不到云端图标则保留步骤默认图标
     withTimeout(api.get_icon(iconUrl, taskName), 6000, '').then(uri => {
@@ -438,9 +437,11 @@
     const t = new Date();
     const ts = t.toTimeString().slice(0, 8);
     div.innerHTML = '<span class="t-time">[' + ts + ']</span>' + html;
-    termBody.appendChild(div);
-    while (termBody.children.length > 1500) termBody.firstChild.remove();
-    if (termAutoScroll) termBody.scrollTop = termBody.scrollHeight;
+    if (termBody) {
+      termBody.appendChild(div);
+      while (termBody.children.length > 1500) termBody.firstChild.remove();
+      if (termAutoScroll) termBody.scrollTop = termBody.scrollHeight;
+    }
     handlePipelineLog(line);
   }
 
@@ -687,6 +688,10 @@
     $('#main').scrollTop = 0;
     if (name === 'mod_addon') refreshMods();
     if (name === 'download_center') initDownloadCenter();
+    if (name === 'about') {
+      if (!aboutData) loadAbout();
+      else setAboutIndex(aboutIdx);
+    }
   }
 
   // ---------------- 资源管理 (插件/Mod) ----------------
@@ -695,6 +700,13 @@
   const RES_PAGE_SIZE = 5;        // 每页最多 5 个
   let resAddons = [];             // 插件列表
   let resMods = [];               // Mod 列表
+
+  // 按当前分区同步按钮组显示
+  function syncResActions() {
+    const a = $('#res-actions-addon'), m = $('#res-actions-mod');
+    if (a) a.hidden = resKind !== 'addon';
+    if (m) m.hidden = resKind !== 'mod';
+  }
 
   async function refreshMods(keepPage) {
     if (!api) { toast('浏览器预览模式', 'warn'); return; }
@@ -729,10 +741,6 @@
   function renderResPagination(pagination, totalItems, totalPages) {
     if (!pagination) return;
     pagination.innerHTML = '';
-    const info = document.createElement('span');
-    info.className = 'res-page-info';
-    info.textContent = '共 ' + totalItems + ' 个 · 第 ' + resPage + '/' + totalPages + ' 页';
-    pagination.appendChild(info);
     const prev = document.createElement('button');
     prev.textContent = '←';
     prev.disabled = resPage <= 1;
@@ -760,7 +768,23 @@
     ).join(' · ');
   }
 
-  // 资源卡片: 下载中心样式, 图标用目录下图片, 名字旁启用/禁用标识, 无 3D
+  // 卡片 3D 跟随鼠标: 容器级事件委托 (避免卡片边缘因 transform 导致的抽搐闪烁)
+  function addCardTilt(card) {
+    card.addEventListener('mousemove', (e) => {
+      const r = card.getBoundingClientRect();
+      const px = Math.max(-0.5, Math.min(0.5, (e.clientX - r.left) / r.width - 0.5));
+      const py = Math.max(-0.5, Math.min(0.5, (e.clientY - r.top) / r.height - 0.5));
+      // 角度减半 + 死区收缩, 边缘不会把指针"甩出"卡片造成闪烁
+      card.style.transform = 'perspective(600px) rotateY(' + (px * 7).toFixed(2) +
+        'deg) rotateX(' + (-py * 6).toFixed(2) + 'deg)';
+    });
+    card.addEventListener('mouseleave', () => {
+      card.style.transform = '';   // 瞬间复位, 避免平滑过渡造成"3d聚焦后恢复"的视觉
+    });
+    card.addEventListener('mouseenter', () => { card.style.transition = 'none'; });
+  }
+
+  // 资源卡片: 下载中心样式, 图标用目录下图片, 名字旁启用/禁用标识, hover 渐变描边 + 3D 跟随
   function buildResCard(item) {
     const name = item.name || '未知';
     const enabled = !!item.enabled;
@@ -784,6 +808,7 @@
       '</div>' +
       '<button class="res-menu-btn" title="更多操作">⋯</button>';
     card.querySelector('.res-menu-btn').onclick = () => openResModal(resKind, item);
+    addCardTilt(card);
     return card;
   }
 
@@ -906,11 +931,6 @@
   }
 
   // ---------------- 下载中心 ----------------
-  let dcCurrentTab = 'addon';
-  let dcAddonPages = [];
-  let dcModPages = [];
-  let dcAddonPage = 1;
-  let dcModPage = 1;
   // 本次会话内已确认下载完成的项 (kind:name), 下载完成即时生效; 刷新列表仍会以后端检测为准
   const downloadedSeen = new Set();
   let _currentRec = null;   // 当前渲染的随机推荐 {kind, item}
@@ -925,11 +945,11 @@
   // 下载完成/检测到已安装时: 即时把对应按钮换成绿色"已下载"
   function markItemDownloaded(kind, name) {
     downloadedSeen.add(kind + ':' + name);
-    document.querySelectorAll('#dc-content .dc-card').forEach(card => {
-      const title = card.querySelector('.dc-title');
-      if (title && title.textContent.replace(' (暂不可用)', '') === name) {
-        const btn = card.querySelector('.btn-download');
-        if (btn && !btn.classList.contains('btn-downloaded')) applyDownloadedStyle(btn);
+    // 更新下载中心卡片: 标题旁显示"已安装"
+    document.querySelectorAll('#dc-list .res-card').forEach(card => {
+      const title = card.querySelector('.res-title');
+      if (title && title.textContent.trim().indexOf(name) === 0) {
+        markCardInstalled(card);
       }
     });
     if (_currentRec && _currentRec.item && _currentRec.item.name === name &&
@@ -1012,11 +1032,32 @@
     if (idx >= 0) downloadTasks.splice(idx, 1);
     renderDownloadDrawer();
     updateFabVisibility();
+    maybeCloseDrawer();
   }
 
   function updateFabVisibility() {
+    const fab = $('#dl-fab');
+    const active = downloadTasks.filter(t => t.status === 'downloading' || t.status === 'waiting');
+    if (active.length) {
+      const totalSpeed = downloadTasks.reduce((s, t) => s + (Number(t.speed) || 0), 0);
+      const speedTxt = totalSpeed > 0 ? fmtSpeed(totalSpeed) : '';
+      const label = speedTxt
+        ? (active.length > 1 ? active.length + ' 项 · ' + speedTxt : speedTxt)
+        : (active.length > 1 ? active.length + ' 项下载中' : '下载中');
+      fab.querySelector('.dl-fab-ico').textContent = label;
+      fab.classList.add('visible');
+    } else {
+      fab.querySelector('.dl-fab-ico').textContent = '';
+      fab.classList.remove('visible');
+    }
+  }
+
+  // 所有下载任务结束后自动关闭抽屉
+  function maybeCloseDrawer() {
     const active = downloadTasks.some(t => t.status === 'downloading' || t.status === 'waiting');
-    $('#dl-fab').classList.toggle('visible', active);
+    if (!active && $('#dl-drawer').classList.contains('open')) {
+      setTimeout(() => toggleDrawer(false), 200);
+    }
   }
 
   function toggleDrawer(open) {
@@ -1026,6 +1067,7 @@
 
   function renderDownloadDrawer() {
     const list = $('#dl-list');
+    if (!list) return;
     const prevPos = new Map();
     [...list.children].forEach(c => prevPos.set(c.dataset.name, c.getBoundingClientRect().top));
     if (!downloadTasks.length) {
@@ -1073,6 +1115,10 @@
     const url = item.dowload_url || item.download_url || item.url;
     if (!url) { toast('下载链接无效', 'error'); return; }
     const name = item.name || 'unknown';
+    // 静默处理重复下载: 已有活跃的同名任务则忽略, 不重复添加 (避免进度条抽搐)
+    if (downloadTasks.some(t => t.name === name && (t.status === 'downloading' || t.status === 'waiting'))) {
+      return;
+    }
     item.download_count = (Number(item.download_count) || 0) + 1;
     updateDownloadCountDisplay(name, item.download_count);
     addDownloadTask({ name, kind, icon: item.icon_url || PROJECT_ICON });
@@ -1098,146 +1144,190 @@
     });
   }
 
+  // ---------------- 下载中心 (资源管理式) ----------------
+  let dcKind = 'addon';
+  let dcPage = 1;
+  let dcAddonItems = [];
+  let dcModItems = [];
+
   function initDownloadCenter() {
     if (!api) return;
-    $$('.dc-tab').forEach(t => t.addEventListener('click', () => {
-      $$('.dc-tab').forEach(x => x.classList.remove('active'));
+    $$('.res-tab[data-dc]').forEach(t => t.addEventListener('click', () => {
+      $$('.res-tab[data-dc]').forEach(x => x.classList.remove('active'));
       t.classList.add('active');
-      dcCurrentTab = t.dataset.dcTab;
-      if (dcCurrentTab === 'addon') displayAddonPage(1);
-      else displayModPage(1);
+      dcKind = t.dataset.dc;
+      dcPage = 1;
+      renderDCList();
     }));
     loadDCDisplay();
   }
 
   function loadDCDisplay() {
-    const content = $('#dc-content');
-    const frame = $('#page-download_center');
-    content.innerHTML = '';
-    showFrameLoading(frame);
+    const cardEl = $('#page-download_center .card');
+    const list = $('#dc-list');
+    if (list) list.innerHTML = '';
+    showFrameLoading(cardEl);   // 圆圈加载动画, 不显示文字
     Promise.all([
       api.get_addon_list().catch(d => ({ pages: [], error: String(d) })),
       api.get_mod_list().catch(d => ({ pages: [], error: String(d) })),
     ]).then(([addonRes, modRes]) => {
-      hideFrameLoading(frame);
-      dcAddonPages = addonRes.pages || [];
-      dcModPages = modRes.pages || [];
-      if (dcCurrentTab === 'addon') displayAddonPage(1);
-      else displayModPage(1);
+      hideFrameLoading(cardEl);
+      dcAddonItems = (addonRes.pages || []).flat().filter(Boolean);
+      dcModItems = (modRes.pages || []).flat().filter(Boolean);
+      dcPage = 1;
+      renderDCList();
     }).catch(e => {
-      hideFrameLoading(frame);
-      content.innerHTML = '<div class="dc-empty dc-error">⚠ ' + esc(String(e)) + '</div>';
+      hideFrameLoading(cardEl);
+      if (list) list.innerHTML = '<div class="res-empty">⚠ ' + esc(String(e)) + '</div>';
     });
   }
 
-  function displayAddonPage(page) {
-    const content = $('#dc-content');
-    if (!dcAddonPages.length || page < 1 || page > dcAddonPages.length) {
-      content.innerHTML = '<div class="dc-empty">未获取到插件数据</div>';
-      renderDCPagination('addon', 1, 1);
-      return;
+  function renderDCList() {
+    const list = $('#dc-list');
+    if (!list) return;
+    list.innerHTML = '';
+    const items = dcKind === 'addon' ? dcAddonItems : dcModItems;
+    const totalPages = Math.max(1, Math.ceil(items.length / RES_PAGE_SIZE));
+    if (dcPage > totalPages) dcPage = totalPages;
+    const pageItems = items.slice((dcPage - 1) * RES_PAGE_SIZE, dcPage * RES_PAGE_SIZE);
+    if (!pageItems.length) {
+      list.innerHTML = '';
+    } else {
+      pageItems.forEach(item => { const c = buildDCCard(item, dcKind); if (c) list.appendChild(c); });
+      hydrateIcons(list);
     }
-    dcAddonPage = page;
-    const items = dcAddonPages[page - 1];
-    renderDCPage('addon', items, page, dcAddonPages.length);
+    renderDCPagination($('#dc-pagination'), items.length, totalPages);
   }
 
-  function displayModPage(page) {
-    const content = $('#dc-content');
-    if (!dcModPages.length || page < 1 || page > dcModPages.length) {
-      content.innerHTML = '<div class="dc-empty">未获取到 Mod 数据</div>';
-      renderDCPagination('mod', 1, 1);
-      return;
+  function renderDCPagination(pagination, totalItems, totalPages) {
+    if (!pagination) return;
+    pagination.innerHTML = '';
+    const prev = document.createElement('button');
+    prev.textContent = '←';
+    prev.disabled = dcPage <= 1;
+    prev.onclick = () => { if (dcPage > 1) { dcPage--; renderDCList(); } };
+    pagination.appendChild(prev);
+    for (let i = 1; i <= totalPages; i++) {
+      const b = document.createElement('button');
+      b.textContent = i;
+      if (i === dcPage) b.classList.add('active');
+      b.onclick = () => { dcPage = i; renderDCList(); };
+      pagination.appendChild(b);
     }
-    dcModPage = page;
-    const items = dcModPages[page - 1];
-    renderDCPage('mod', items, page, dcModPages.length);
+    const next = document.createElement('button');
+    next.textContent = '→';
+    next.disabled = dcPage >= totalPages;
+    next.onclick = () => { if (dcPage < totalPages) { dcPage++; renderDCList(); } };
+    pagination.appendChild(next);
   }
 
-  function renderDCPage(kind, items, page, totalPage) {
-    const content = $('#dc-content');
-    content.innerHTML = '';
-    if (!items || !items.length) {
-      content.innerHTML = '<div class="dc-empty">暂无数据</div>';
-      renderDCPagination(kind, page, totalPage);
-      return;
+  // 卡片标记"已安装"
+  function markCardInstalled(card) {
+    const title = card.querySelector('.res-title');
+    if (title && !title.querySelector('.res-state-badge.installed')) {
+      title.insertAdjacentHTML('beforeend', '<span class="res-state-badge installed">已安装</span>');
     }
-    items.forEach(item => content.appendChild(buildDCCard(item, kind)));
-    renderDCPagination(kind, page, totalPage);
   }
 
+  // 下载中心卡片: 资源管理卡片样式, 省略号 → 模态 (下载按钮在模态内), 已安装检测
   function buildDCCard(item, kind) {
-    const card = document.createElement('div');
     const disabled = item.disabled;
-    card.className = 'dc-card' + (disabled ? ' disabled' : '');
-    const authors = item.authors || {};
-    const authorHtml = Object.entries(authors).map(([n, u]) =>
-      '<a class="dc-author" href="' + esc(u || '#') + '" target="_blank">' + esc(n) + '</a>'
-    ).join(' ');
+    const card = document.createElement('div');
+    card.className = 'res-card' + (disabled ? ' disabled' : '');
     card.innerHTML =
-      '<div class="dc-card-main">' +
-        '<img class="dc-icon" src="' + PROJECT_ICON + '" alt="" ' +
+      '<div class="res-card-main">' +
+        '<img class="res-icon" src="' + PROJECT_ICON + '" alt="" ' +
           'data-icon-url="' + esc(item.icon_url || '') + '" data-icon-name="' + esc(item.name || '') + '" ' +
           'onerror="this.src=\'' + PROJECT_ICON + '\'">' +
-        '<div class="dc-info">' +
-          '<div class="dc-title-row">' +
-            '<span class="dc-title">' + esc(item.name || '未知') + (disabled ? ' (暂不可用)' : '') + '</span>' +
-            '<span class="dc-version">v' + esc(item.version || '?') + '</span>' +
+        '<div class="res-info">' +
+          '<div class="res-title-row">' +
+            '<span class="res-title">' + esc(item.name || '未知') + (disabled ? ' (暂不可用)' : '') + '</span>' +
+            (item.version ? '<span class="res-ver-inline">v' + esc(item.version) + '</span>' : '') +
           '</div>' +
-          '<div class="dc-desc">' + esc(item.desc || '无描述') + '</div>' +
-          (authorHtml ? '<div class="dc-authors">' + authorHtml + '</div>' : '') +
-          '<div class="dc-count">⬇ ' + (item.download_count || 0) + '</div>' +
+          '<div class="res-desc">' + esc(item.desc || '无描述') + '</div>' +
+          '<div class="res-desc">⬇ ' + (item.download_count || 0) + (authorLinksHtml(dcAuthorLinks(item.authors)) ? ' · ' + authorLinksHtml(dcAuthorLinks(item.authors)) : '') + '</div>' +
         '</div>' +
       '</div>' +
-      '<div class="dc-actions">' +
-        '<button class="btn btn-primary btn-download" ' + (disabled ? 'disabled' : '') + '>📥 下载</button>' +
-      '</div>';
-    if (!disabled) {
-      const btn = card.querySelector('.btn-download');
-      btn.onclick = () => startDownloadItem(kind, item);
-      // 已下载检测: 每次刷新都重新执行 (用户可能手动删除插件/Mod)
-      if (api) {
-        const key = kind + ':' + item.name;
-        if (downloadedSeen.has(key)) {
-          applyDownloadedStyle(btn);
-        } else {
-          withTimeout(api.check_item_downloaded(kind, item.name), 5000, { downloaded: false })
-            .then(r => {
-              if (r && r.downloaded) applyDownloadedStyle(btn);
-            }).catch(() => {});
-        }
+      '<button class="res-menu-btn" title="更多操作">⋯</button>';
+    card.querySelector('.res-menu-btn').onclick = () => openDcModal(kind, item);
+    addCardTilt(card);
+    // 已安装检测: 实时钩子 (下载完成即时更新) + 每次渲染检测
+    if (api && !disabled) {
+      const key = kind + ':' + item.name;
+      if (downloadedSeen.has(key)) {
+        markCardInstalled(card);
+      } else {
+        withTimeout(api.check_item_downloaded(kind, item.name), 5000, { downloaded: false })
+          .then(r => { if (r && r.downloaded) { markCardInstalled(card); downloadedSeen.add(key); } })
+          .catch(() => {});
       }
     }
-    hydrateIcons(card);
     return card;
   }
 
-  function renderDCPagination(kind, page, totalPage) {
-    const displayPage = kind === 'addon' ? displayAddonPage : displayModPage;
-    const mk = (id) => {
-      const el = document.getElementById(id);
-      el.innerHTML = '';
-      const info = document.createElement('span');
-      info.className = 'dc-page-info';
-      info.textContent = '第 ' + page + ' 页，共 ' + totalPage + ' 页';
-      el.appendChild(info);
-      if (page > 1) {
-        const prev = document.createElement('button');
-        prev.className = 'btn btn-ghost btn-mini';
-        prev.textContent = '← 上一页';
-        prev.onclick = () => displayPage(page - 1);
-        el.appendChild(prev);
+  function dcAuthorLinks(authors) {
+    if (authors && typeof authors === 'object' && !Array.isArray(authors)) {
+      return Object.entries(authors).map(([n, u]) => ({ name: n, url: u }));
+    }
+    return [];
+  }
+
+  // 下载中心模态: 详情 + 下载按钮
+  function openDcModal(kind, item) {
+    const existing = document.getElementById('dc-modal');
+    if (existing) { closePanel(existing); return; }
+    const disabled = item.disabled;
+    const panel = document.createElement('div');
+    panel.id = 'dc-modal';
+    panel.className = 'panel-overlay';
+    panel.innerHTML =
+      '<div class="panel-card">' +
+        '<div class="res-detail-head">' +
+          '<img class="res-detail-icon" src="' + PROJECT_ICON + '" alt="" ' +
+            'data-icon-url="' + esc(item.icon_url || '') + '" data-icon-name="' + esc(item.name || '') + '" ' +
+            'onerror="this.src=\'' + PROJECT_ICON + '\'">' +
+          '<div class="res-detail-main">' +
+            '<div class="res-detail-title-row">' +
+              '<span class="res-detail-name">' + esc(item.name || '未知') + '</span>' +
+              '<button class="panel-close" id="dc-modal-close">✕</button>' +
+            '</div>' +
+            '<div class="res-detail-sub">' +
+              (item.version ? '<span class="res-ver-inline">v' + esc(item.version) + '</span>' : '') +
+              (authorLinksHtml(dcAuthorLinks(item.authors)) || '') +
+            '</div>' +
+            '<div class="res-detail-state off">⬇ ' + (item.download_count || 0) + ' 次下载</div>' +
+          '</div>' +
+        '</div>' +
+        '<div class="res-detail-desc">' + esc(item.desc || '无描述') + '</div>' +
+        '<div class="res-detail-ops">' +
+          '<button class="btn btn-primary" id="dc-modal-dl" ' + (disabled ? 'disabled' : '') + '>📥 下载</button>' +
+        '</div>' +
+      '</div>';
+    document.body.appendChild(panel);
+    hydrateIcons(panel);
+    panel.addEventListener('click', (e) => { if (e.target === panel) closePanel(panel); });
+    $('#dc-modal-close').onclick = () => closePanel(panel);
+    if (!disabled) {
+      const dlBtn = $('#dc-modal-dl');
+      dlBtn.onclick = () => {
+        startDownloadItem(kind, item);
+        closePanel(panel);
+      };
+      // 已安装检测: 已安装则禁止再次下载
+      const key = kind + ':' + item.name;
+      if (downloadedSeen.has(key)) {
+        dlBtn.disabled = true;
+        dlBtn.textContent = '✓ 已安装';
+      } else {
+        withTimeout(api.check_item_downloaded(kind, item.name), 5000, { downloaded: false })
+          .then(r => {
+            if (r && r.downloaded) {
+              dlBtn.disabled = true;
+              dlBtn.textContent = '✓ 已安装';
+            }
+          }).catch(() => {});
       }
-      if (page < totalPage) {
-        const next = document.createElement('button');
-        next.className = 'btn btn-ghost btn-mini';
-        next.textContent = '下一页 →';
-        next.onclick = () => displayPage(page + 1);
-        el.appendChild(next);
-      }
-    };
-    mk('dc-pagination-top');
-    mk('dc-pagination-bottom');
+    }
   }
 
   // ---------------- 工具面板 ----------------
@@ -1494,9 +1584,9 @@
   // ---------------- 渲染 ----------------
   function render() {
     const b = BOOT;
-    // 版本
-    $('#about-version').textContent = b.version;
-    $('#stat-version').textContent = b.version;
+    // 版本 (关于页版本号由 get_contributors 提供, 主页版本卡在这里更新)
+    const sv = $('#stat-version');
+    if (sv) sv.textContent = b.version;
     // 背景色
     applyTheme(b.bg_color);
     // 项目图标 (后端 data URI, 供下载中心/推荐卡图标回退)
@@ -1507,10 +1597,8 @@
       const brandImg = document.querySelector('.brand-icon');
       if (brandImg) brandImg.src = b.icon_uri;
     }
-    // 状态芯片
-    const gp = $('#chip-gamepath');
-    if (b.game_path) { gp.className = 'chip ok'; gp.innerHTML = '<span class="dot"></span><span>游戏路径: ' + esc(shortPath(b.game_path)) + '</span>'; }
-    else { gp.className = 'chip warn'; gp.innerHTML = '<span class="dot"></span><span>游戏路径: 未配置</span>'; }
+    // 状态芯片 (游戏路径实时从后端读取, 自动填充/设置修改都会同步)
+    updatePathChip();
     // 快捷方式 & 工具
     updateSourceChip();
     renderFeatures(b.features);
@@ -1522,7 +1610,6 @@
   }
 
   // ---------------- 主页: 更新内容 / 随机推荐 ----------------
-  let PROJECT_ICON = '../../assets/images/icon/icon.png';  // 后端 bootstrap 就绪后替换为 data URI
 
   function mdToHtml(md) {
     if (!md) return '<span class="changelog-empty">暂无更新内容</span>';
@@ -2180,6 +2267,26 @@ function layoutToolsCarousel(smooth) {
     }
   }
 
+  // 主页游戏路径芯片: 实时从后端读取 (首次自动填充/设置修改都会同步)
+  function updatePathChip() {
+    const gp = $('#chip-gamepath');
+    if (!gp) return;
+    const render = (p) => {
+      if (p) {
+        gp.className = 'chip ok';
+        gp.innerHTML = '<span class="dot"></span><span>游戏路径: ' + esc(shortPath(p)) + '</span>';
+      } else {
+        gp.className = 'chip warn';
+        gp.innerHTML = '<span class="dot"></span><span>游戏路径: 未配置</span>';
+      }
+    };
+    if (api) {
+      withTimeout(api.get_setting('game_path'), 4000, '').then(v => render(v)).catch(() => render(BOOT && BOOT.game_path));
+    } else {
+      render(BOOT && BOOT.game_path);
+    }
+  }
+
   function markChanged(key, value) {
     SETTING_CHANGES[key] = { value };
     const s = BOOT.settings_schema[key];
@@ -2188,14 +2295,17 @@ function layoutToolsCarousel(smooth) {
 
   function renderSettings(schema) {
     const container = $('#settings-groups');
+    if (!container) return;
     container.innerHTML = '';
     SETTING_CHANGES = {};
     const groups = {};
     Object.keys(schema).forEach(key => {
       const s = schema[key];
       const page = s.page || '系统';
-      if (!groups[page]) groups[page] = [];
-      groups[page].push({ key, s });
+      if (page != '系统'){
+        if (!groups[page]) groups[page] = [];
+        groups[page].push({ key, s });
+      }
     });
     const order = ['通用', '美化', 'Mod', '翻译', '其它', '系统'];
     const pages = Object.keys(groups).sort((a, b) => {
@@ -2207,15 +2317,17 @@ function layoutToolsCarousel(smooth) {
       g.className = 'settings-group';
       g.innerHTML = '<div class="sg-title">' + esc(page) + '</div>';
       groups[page].forEach(({ key, s }) => {
-        const row = document.createElement('div');
-        row.className = 'set-row';
-        s.key_el = row;
-        row.innerHTML = '<div class="set-info">' +
-          '<div class="set-name">' + esc(s.name || key) + '</div>' +
-          (s.description ? '<div class="set-desc">' + esc(s.description).replace(/\n/g, '<br>') + '</div>' : '') +
-          '</div>';
+        try {
+          const row = document.createElement('div');
+          row.className = 'set-row';
+          s.key_el = row;
+          row.innerHTML = '<div class="set-info">' +
+            '<div class="set-name">' + esc(s.name || key) + '</div>' +
+            (s.description ? '<div class="set-desc">' + esc(s.description).replace(/\n/g, '<br>') + '</div>' : '') +
+            '</div>';
         row.appendChild(buildControl(key, s));
         g.appendChild(row);
+        } catch (err) { /* 单个设置项渲染失败不阻断整体 */ }
       });
       container.appendChild(g);
     });
@@ -2311,18 +2423,143 @@ function layoutToolsCarousel(smooth) {
       rw.appendChild(inp); rw.appendChild(btn);
       wrap.appendChild(rw);
       inp.style.width = '200px';
-      inp.onchange = () => { markChanged(key, inp.value); if (api) api.set_setting(key, inp.value).catch(e => toast(String(e), 'error')); };
+      inp.onchange = () => { markChanged(key, inp.value); if (api) api.set_setting(key, inp.value).catch(e => toast(String(e), 'error')); updatePathChip(); };
       return wrap;
     }
     inp.onchange = () => {
       markChanged(key, inp.value);
       if (api) api.set_setting(key, inp.value).catch(err => toast(String(err), 'error'));
+      if (key === 'game_path') updatePathChip();   // 主页游戏路径实时同步
     };
     wrap.appendChild(inp);
     return wrap;
   }
 
-  // ---------------- 启动 / 更新 ----------------
+  // ---------------- 关于页 ----------------
+  let aboutData = null;      // 后端贡献者数据
+  let aboutIdx = 1;          // 当前板块: 0=程序介绍, 1=贡献者 (默认贡献者)
+
+  function loadAbout() {
+    if (!api) return;
+    withTimeout(api.get_contributors(), 8000, null).then(d => {
+      aboutData = d;
+      renderAbout();
+    }).catch(() => {});
+  }
+
+  function renderAbout() {
+    if (!aboutData) return;
+    // 程序介绍
+    const p = aboutData.program || {};
+    const prog = $('#about-panel-program');
+    if (prog) {
+      prog.innerHTML =
+        '<div class="about-program-card">' +
+          '<img class="about-program-icon" src="' + PROJECT_ICON + '" alt="">' +
+          '<h1>FaustLauncher</h1>' +
+          '<div class="ap-sub">浮士德启动器 · 您人生中绝无仅有的完美启动器</div>' +
+          (p.version ? '<div class="ap-ver">v' + esc(p.version) + '</div>' : '') +
+          '<div class="ap-desc">' + esc(p.description || '') + '</div>' +
+          '<div class="ap-links">' +
+            '<button class="btn btn-ghost" data-link="https://github.com/f0lkskill/FaustLauncher">📦 GitHub</button>' +
+            '<button class="btn btn-ghost" data-link="https://space.bilibili.com/599331034">🎬 反馈渠道</button>' +
+          '</div>' +
+        '</div>';
+      // 外链绑定
+      $$('[data-link]', prog).forEach(b => b.addEventListener('click', () => {
+        const u = b.dataset.link;
+        if (api) api.open_url(u).catch(() => {});
+        else window.open(u, '_blank');
+      }));
+    }
+    // 贡献者
+    const contributors = aboutData.contributors || [];
+    const card = $('#about-panel-contributors');
+    if (card) {
+      card.innerHTML =
+        '<div class="about-contrib-card">' +
+          '<div class="ac-list" id="ac-list"></div>' +
+          '<div class="ac-detail" id="ac-detail"></div>' +
+        '</div>';
+      const list = $('#ac-list');
+      contributors.forEach((c, i) => {
+        const item = document.createElement('div');
+        item.className = 'ac-item' + (i === 0 ? ' active' : '');
+        item.innerHTML = '<img src="' + (c.icon_uri || PROJECT_ICON) + '" alt="">' +
+          '<span>' + esc(c.name) + '</span>';
+        item.onclick = () => {
+          $$('.ac-item', list).forEach(x => x.classList.remove('active'));
+          item.classList.add('active');
+          renderContributorDetail(contributors[i]);
+        };
+        list.appendChild(item);
+      });
+      if (contributors.length) renderContributorDetail(contributors[0]);
+    }
+    buildAboutDots();
+    setAboutIndex(aboutIdx);
+  }
+
+  function renderContributorDetail(c) {
+    const d = $('#ac-detail');
+    if (!d) return;
+    const linkIcons = { github: '🐙 GitHub', blbl: '📺 B站', website: '🌐 网站', 官网: '🌐 官网' };
+    const linkHtml = Object.entries(c.links || {}).map(([k, u]) =>
+      '<button class="btn btn-ghost" style="font-size:12px;padding:6px 12px" onclick="window.__openUrl(\'' + esc(u) + '\')">' + (linkIcons[k] || '🔗 ' + k) + '</button>'
+    ).join('') || '';
+    d.innerHTML =
+      '<div class="ac-detail-head">' +
+        '<img class="ac-detail-avatar" src="' + (c.icon_uri || PROJECT_ICON) + '" alt="">' +
+        '<div>' +
+          '<div class="ac-detail-name">' + esc(c.name) + '</div>' +
+          '<span class="ac-detail-role">' + esc(c.role) + '</span>' +
+        '</div>' +
+      '</div>' +
+      '<div class="ac-detail-desc">' + esc(c.description || '') + '</div>' +
+      (linkHtml ? '<div class="ac-detail-links">' + linkHtml + '</div>' : '');
+  }
+
+  function buildAboutDots() {
+    const wrap = $('#about-dots');
+    if (!wrap) return;
+    wrap.innerHTML = '';
+    ['程序介绍', '贡献者'].forEach((label, i) => {
+      const dot = document.createElement('button');
+      dot.className = 'cdot' + (i === aboutIdx ? ' active' : '');
+      dot.title = label;
+      dot.onclick = () => setAboutIndex(i);
+      wrap.appendChild(dot);
+    });
+  }
+
+  function setAboutIndex(i) {
+    aboutIdx = i;
+    const panels = document.querySelectorAll('#about-stage .about-panel');
+    panels.forEach((p, idx) => p.classList.toggle('active', idx === i));
+    document.querySelectorAll('#about-dots .cdot').forEach((d, idx) => d.classList.toggle('active', idx === i));
+  }
+
+  // 关于页循环滚动切换板块 (0 程序介绍 ⇄ 1 贡献者, 无限循环)
+  function bindAboutScroll() {
+    const stage = $('#about-stage');
+    if (!stage) return;
+    let lock = false;
+    stage.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      if (lock) return;
+      lock = true;
+      setTimeout(() => { lock = false; }, 350);
+      const total = document.querySelectorAll('#about-stage .about-panel').length;
+      if (e.deltaY > 0) setAboutIndex((aboutIdx + 1) % total);
+      else setAboutIndex((aboutIdx - 1 + total) % total);
+    }, { passive: false });
+  }
+
+  // 关于页外链 (贡献者详情按钮)
+  window.__openUrl = function (u) {
+    if (api) api.open_url(u).catch(() => {});
+    else window.open(u, '_blank');
+  };
   // 启动与汉化更新互斥: 任一流程进行中, 两个按钮都禁用, 直到流程结束才恢复
   function setPipelineButtonsDisabled(disabled) {
     $('#btn-launch').disabled = disabled;
@@ -2364,17 +2601,7 @@ function layoutToolsCarousel(smooth) {
       if (api) api.open_url(url).catch(e => toast(String(e), 'error'));
       else window.open(url, '_blank');
     }));
-    // 设置
-    $('#btn-save-settings').addEventListener('click', async () => {
-      if (!api) { toast('浏览器预览模式', 'warn'); return; }
-      const changes = {};
-      Object.keys(SETTING_CHANGES).forEach(k => { changes[k] = SETTING_CHANGES[k].value; });
-      try {
-        await api.save_settings(changes);
-        SETTING_CHANGES = {};
-        toast('设置已保存', 'success');
-      } catch (e) { toast('保存失败: ' + e, 'error'); }
-    });
+    // 设置: 自动保存 (各控件修改即保存, 无保存按钮)
     $('#btn-reset-settings').addEventListener('click', async () => {
       if (!api) { toast('浏览器预览模式', 'warn'); return; }
       try {
@@ -2439,11 +2666,11 @@ function layoutToolsCarousel(smooth) {
       t.classList.add('active');
       resKind = t.dataset.kind;
       resPage = 1;
-      const a = $('#res-actions-addon'), m = $('#res-actions-mod');
-      if (a) a.hidden = resKind !== 'addon';
-      if (m) m.hidden = resKind !== 'mod';
+      syncResActions();
       renderResList();
     }));
+    // 初始化按钮组状态 (默认插件分区)
+    syncResActions();
     termBody.addEventListener('scroll', () => {
       termAutoScroll = (termBody.scrollTop + termBody.clientHeight >= termBody.scrollHeight - 4);
     });
@@ -2780,6 +3007,7 @@ function layoutToolsCarousel(smooth) {
       bindToolsCarousel();
       bindClickSound();
       initCharacter();
+      bindAboutScroll();
       // 窗口缩放时重新计算卡片尺寸, 保持三卡填满主区宽度
       window.addEventListener('resize', () => {
         if (currentPage === 'features' || currentPage === 'tools') applyFeatSize();
@@ -2791,6 +3019,20 @@ function layoutToolsCarousel(smooth) {
     if (api) {
       withTimeout(api.get_backgrounds(), 6000, []).then(applyBackgrounds).catch(() => {});
       preloadSounds();
+      // 定时同步主页路径芯片 (后端首次自动填充游戏路径后, 主页能及时更新)
+      setInterval(() => {
+        if (currentPage === 'home') updatePathChip();
+      }, 5000);
+      // 主页时钟 (年月日 + 秒级时间)
+      const WEEK_CN = ['日', '一', '二', '三', '四', '五', '六'];
+      const tickClock = () => {
+        const d = new Date();
+        const de = $('#hc-date'), te = $('#hc-time');
+        if (de) de.textContent = d.getFullYear() + '年' + (d.getMonth() + 1) + '月' + d.getDate() + '日 星期' + WEEK_CN[d.getDay()];
+        if (te) te.textContent = [d.getHours(), d.getMinutes(), d.getSeconds()].map(n => String(n).padStart(2, '0')).join(':');
+      };
+      tickClock();
+      setInterval(tickClock, 1000);
     }
     try {
       if (api) {

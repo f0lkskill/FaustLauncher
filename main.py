@@ -66,7 +66,6 @@ def main():
         return
 
     # 自定义汉化工具独立窗口模式: 与 --extension-tools-window 同一模式
-    if "--custom-translation-window" in sys.argv:
         from functions.pages.tools.custom_translation_window import run_custom_translation_window
         run_custom_translation_window(debug="--debug" in sys.argv)
         return
