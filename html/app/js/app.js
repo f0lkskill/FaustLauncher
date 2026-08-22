@@ -312,6 +312,64 @@
     return Math.round(kbps * 1024) + ' B/s';
   }
 
+  // ---------------- 音效 (浏览器内核播放) ----------------
+  const _soundUris = { welcome: '', click: '' };
+  let _welcomePending = false;
+
+  function preloadSounds() {
+    if (!api) return;
+    withTimeout(api.get_sound('welcome'), 6000, '').then(u => {
+      _soundUris.welcome = u;
+      if (u) { _welcomePending = true; tryWelcome(); }   // 预加载完成立即尝试播放
+    }).catch(() => {});
+    withTimeout(api.get_sound('click'), 6000, '').then(u => { _soundUris.click = u; }).catch(() => {});
+  }
+
+  function tryWelcome() {
+    if (!_soundUris.welcome || !_welcomePending) return;
+    try {
+      const a = new Audio(_soundUris.welcome);
+      a.volume = 0.8;
+      const p = a.play();
+      if (p && p.then) p.then(() => { _welcomePending = false; }).catch(() => {});
+      else _welcomePending = false;
+    } catch (e) {}
+  }
+
+  function playUISound(kind) {
+    const uri = _soundUris[kind];
+    if (!uri) return;
+    try {
+      const a = new Audio(uri);
+      a.volume = 0.8;
+      a.play().catch(() => {});
+    } catch (e) {}
+  }
+
+  function playWelcomeSound() {
+    if (!_soundUris.welcome) return;
+    _welcomePending = true;
+    tryWelcome();
+  }
+
+  // 全局点击音效 (覆盖几乎所有交互控件; 节流; 排除打字/滚动/气泡/通知/遮罩)
+  function bindClickSound() {
+    let last = 0;
+    document.addEventListener('click', (e) => {
+      const t = e.target;
+      if (!t || !t.closest) return;
+      if (t === document.body || t === document.documentElement) return;
+      // autoplay 被拒时: 用户首次交互后补播欢迎音效
+      if (_welcomePending) { _welcomePending = false; tryWelcome(); return; }
+      const now = Date.now();
+      if (now - last < 40) return;
+      if (t.classList && t.classList.contains('panel-overlay')) return;   // 遮罩本身
+      if (t.closest('#term-body, #char-bubble, .toast')) return;
+      last = now;
+      playUISound('click');
+    });
+  }
+
   // ---------------- Frame 加载转圈动画 ----------------
   // 用内联样式直接控制 spinner 显示/隐藏, 不依赖 CSS 规则 (.card.loading .frame-spinner)
   // 隐藏时先淡出 (opacity 过渡), 再 display:none, 让蒙版平滑消失
@@ -631,113 +689,220 @@
     if (name === 'download_center') initDownloadCenter();
   }
 
-  // ---------------- Mod 管理 ----------------
-  const MOD_ICONS = { '.bank': '🔊', '.carra2': '🖼️', '.rebank': '🧩' };
-  let modDeleteArm = null;   // 二次点击确认删除 {key, el}
+  // ---------------- 资源管理 (插件/Mod) ----------------
+  let resKind = 'addon';          // 当前预览: addon | mod
+  let resPage = 1;                // 当前页
+  const RES_PAGE_SIZE = 5;        // 每页最多 5 个
+  let resAddons = [];             // 插件列表
+  let resMods = [];               // Mod 列表
 
-  async function refreshMods() {
+  async function refreshMods(keepPage) {
     if (!api) { toast('浏览器预览模式', 'warn'); return; }
-    const wrapDir = $('#dir-mods-list');
-    const wrapSingle = $('#single-mods-list');
-    wrapDir.innerHTML = '<div class="mod-empty">加载中...</div>';
-    wrapSingle.innerHTML = '';
     try {
       const d = await api.get_mods_data();
-      const dirs = d.dir_mods || [];
-      const singles = d.single_files || [];
-      $('#dir-mods-count').textContent = dirs.length ? dirs.length + ' 个' : '空';
-      $('#single-mods-count').textContent = singles.length ? singles.length + ' 个' : '空';
-      wrapDir.innerHTML = '';
-      if (!dirs.length) wrapDir.innerHTML = '<div class="mod-empty">mods/ 目录下暂无 Mod（将包含 mod_info.json 的文件夹放入即可）</div>';
-      dirs.forEach(m => wrapDir.appendChild(buildDirModCard(m)));
-      wrapSingle.innerHTML = '';
-      if (!singles.length) wrapSingle.innerHTML = '<div class="mod-empty">暂无单文件 Mod（.bank / .carra2 / .rebank）</div>';
-      singles.forEach(f => wrapSingle.appendChild(buildSingleModCard(f)));
+      resAddons = d.addons || [];
+      resMods = d.dir_mods || [];
+      if (!keepPage) resPage = 1;
+      renderResList();
     } catch (e) {
-      wrapDir.innerHTML = '<div class="mod-empty">读取失败: ' + esc(String(e)) + '</div>';
+      const list = $('#res-list');
+      if (list) list.innerHTML = '<div class="res-empty">读取失败: ' + esc(String(e)) + '</div>';
     }
   }
 
-  function buildDirModCard(m) {
+  function renderResList() {
+    const list = $('#res-list');
+    if (!list) return;
+    list.innerHTML = '';
+    const items = resKind === 'addon' ? resAddons : resMods;
+    const totalPages = Math.max(1, Math.ceil(items.length / RES_PAGE_SIZE));
+    if (resPage > totalPages) resPage = totalPages;
+    const pageItems = items.slice((resPage - 1) * RES_PAGE_SIZE, resPage * RES_PAGE_SIZE);
+    if (!pageItems.length) {
+      list.innerHTML = '<div class="res-empty">' + (resKind === 'addon' ? '暂无插件 (addons/ 目录)' : '暂无 Mod (mods/ 目录)') + '</div>';
+    } else {
+      pageItems.forEach(item => { const c = buildResCard(item); if (c) list.appendChild(c); });
+    }
+    renderResPagination($('#res-pagination'), items.length, totalPages);
+  }
+
+  function renderResPagination(pagination, totalItems, totalPages) {
+    if (!pagination) return;
+    pagination.innerHTML = '';
+    const info = document.createElement('span');
+    info.className = 'res-page-info';
+    info.textContent = '共 ' + totalItems + ' 个 · 第 ' + resPage + '/' + totalPages + ' 页';
+    pagination.appendChild(info);
+    const prev = document.createElement('button');
+    prev.textContent = '←';
+    prev.disabled = resPage <= 1;
+    prev.onclick = () => { if (resPage > 1) { resPage--; renderResList(); } };
+    pagination.appendChild(prev);
+    for (let i = 1; i <= totalPages; i++) {
+      const b = document.createElement('button');
+      b.textContent = i;
+      if (i === resPage) b.classList.add('active');
+      b.onclick = () => { resPage = i; renderResList(); };
+      pagination.appendChild(b);
+    }
+    const next = document.createElement('button');
+    next.textContent = '→';
+    next.disabled = resPage >= totalPages;
+    next.onclick = () => { if (resPage < totalPages) { resPage++; renderResList(); } };
+    pagination.appendChild(next);
+  }
+
+  // 作者链接渲染 (可点击超链接)
+  function authorLinksHtml(links) {
+    if (!links || !links.length) return '';
+    return links.map(l =>
+      '<a class="res-author-link" href="' + esc(l.url || '#') + '" target="_blank" onclick="event.stopPropagation()">' + esc(l.name) + '</a>'
+    ).join(' · ');
+  }
+
+  // 资源卡片: 下载中心样式, 图标用目录下图片, 名字旁启用/禁用标识, 无 3D
+  function buildResCard(item) {
+    const name = item.name || '未知';
+    const enabled = !!item.enabled;
+    const desc = item.description || '（无描述）';
+    const ver = item.version || '';
     const card = document.createElement('div');
-    card.className = 'mod-card' + (m.enabled ? ' on' : '');
+    card.className = 'res-card';
     card.innerHTML =
-      '<div class="mod-main">' +
-        '<div class="mod-title">' + esc(m.name) +
-          (m.version ? ' <span class="mod-ver">v' + esc(m.version) + '</span>' : '') +
-          (m.author ? ' <span class="mod-author">by ' + esc(m.author) + '</span>' : '') +
+      '<div class="res-card-main">' +
+        '<img class="res-icon" src="' + (item.icon || PROJECT_ICON) + '" alt="" onerror="this.src=\'' + PROJECT_ICON + '\'">' +
+        '<div class="res-info">' +
+          '<div class="res-title-row">' +
+            '<span class="res-title">' + esc(name) +
+              '<span class="res-state-badge ' + (enabled ? 'on' : 'off') + '">' + (enabled ? '已启用' : '已禁用') + '</span>' +
+            '</span>' +
+            (ver ? '<span class="res-ver-inline">v' + esc(ver) + '</span>' : '') +
+          '</div>' +
+          '<div class="res-desc">' + esc(desc) + '</div>' +
+          (authorLinksHtml(item.author_links) ? '<div class="res-desc">' + authorLinksHtml(item.author_links) + '</div>' : '') +
         '</div>' +
-        '<div class="mod-desc">' + esc(m.description || '（无描述）') + '</div>' +
-        (m.files && m.files.length ? '<div class="mod-files">文件: ' + esc(m.files.join(', ')) + '</div>' : '') +
       '</div>' +
-      '<div class="mod-ops">' +
-        '<label class="switch" title="启用/禁用"><input type="checkbox" data-act="toggle"' + (m.enabled ? ' checked' : '') + '><span class="slider"></span></label>' +
-        '<button class="btn btn-ghost btn-mini" data-act="del">🗑</button>' +
-      '</div>';
-    card.querySelector('[data-act="toggle"]').onchange = async e => {
-      try {
-        const r = await api.set_mod_enabled(m.name, e.target.checked);
-        if (r && r.error) { toast('切换失败: ' + r.error, 'error'); refreshMods(); return; }
-        card.classList.toggle('on', e.target.checked);
-        toast((e.target.checked ? '已启用 ' : '已禁用 ') + m.name, 'success');
-      } catch (err) { toast('切换失败: ' + err, 'error'); refreshMods(); }
-    };
-    card.querySelector('[data-act="del"]').onclick = async () => {
-      if (modDeleteArm !== m.name) {
-        modDeleteArm = m.name;
-        toast('再次点击 🗑 确认删除 ' + m.name, 'warn', 2500);
-        setTimeout(() => { if (modDeleteArm === m.name) modDeleteArm = null; }, 3000);
-        return;
-      }
-      modDeleteArm = null;
-      try {
-        const r = await api.delete_mod(m.name);
-        if (r && r.error) { toast('删除失败: ' + r.error, 'error'); return; }
-        toast('已删除 ' + m.name, 'success');
-        refreshMods();
-      } catch (err) { toast('删除失败: ' + err, 'error'); }
-    };
+      '<button class="res-menu-btn" title="更多操作">⋯</button>';
+    card.querySelector('.res-menu-btn').onclick = () => openResModal(resKind, item);
     return card;
   }
 
-  function buildSingleModCard(f) {
-    const card = document.createElement('div');
-    card.className = 'mod-card' + (f.enabled ? ' on' : '');
-    card.innerHTML =
-      '<div class="mod-main">' +
-        '<div class="mod-title">' + (MOD_ICONS[f.ext] || '📄') + ' ' + esc(f.name) +
-          ' <span class="mod-ver">' + esc(f.type_label || f.ext) + ' · ' + esc(f.size) + '</span>' +
-        '</div>' +
-      '</div>' +
-      '<div class="mod-ops">' +
-        '<label class="switch" title="启用/禁用"><input type="checkbox" data-act="toggle"' + (f.enabled ? ' checked' : '') + '><span class="slider"></span></label>' +
-        '<button class="btn btn-ghost btn-mini" data-act="del">🗑</button>' +
-      '</div>';
-    card.querySelector('[data-act="toggle"]').onchange = async e => {
-      try {
-        const r = await api.toggle_single_file(f.raw_name);
-        if (r && r.error) { toast('切换失败: ' + r.error, 'error'); refreshMods(); return; }
-        card.classList.toggle('on', e.target.checked);
-        toast((e.target.checked ? '已启用 ' : '已禁用 ') + f.name, 'success');
-      } catch (err) { toast('切换失败: ' + err, 'error'); refreshMods(); }
-    };
-    card.querySelector('[data-act="del"]').onclick = async () => {
-      const key = 'single:' + f.raw_name;
-      if (modDeleteArm !== key) {
-        modDeleteArm = key;
-        toast('再次点击 🗑 确认删除 ' + f.name, 'warn', 2500);
-        setTimeout(() => { if (modDeleteArm === key) modDeleteArm = null; }, 3000);
-        return;
+  // 设置项名称翻译 (目前仅 enable)
+  const SETTING_LABELS = { enable: '启用' };
+
+  // 设置字段渲染 (bool→开关, number→数字框, 其余→文本框); enable 标签译为"启用"
+  function renderSettingsFields(settings) {
+    const keys = settings ? Object.keys(settings) : [];
+    if (!keys.length) return '<div class="res-empty">暂无配置项</div>';
+    let html = '<div class="res-settings">';
+    keys.forEach(k => {
+      const v = settings[k];
+      const label = SETTING_LABELS[k] || k;
+      if (typeof v === 'boolean') {
+        html += '<label class="res-set-row"><span class="res-set-name">' + esc(label) + '</span>' +
+          '<span class="switch"><input type="checkbox" data-set="' + esc(k) + '"' + (v ? ' checked' : '') + '><span class="slider"></span></span></label>';
+      } else if (typeof v === 'number') {
+        html += '<label class="res-set-row"><span class="res-set-name">' + esc(label) + '</span>' +
+          '<input type="number" step="any" data-set="' + esc(k) + '" value="' + esc(v) + '"></label>';
+      } else {
+        html += '<label class="res-set-row"><span class="res-set-name">' + esc(label) + '</span>' +
+          '<input type="text" data-set="' + esc(k) + '" value="' + esc(v) + '"></label>';
       }
-      modDeleteArm = null;
+    });
+    html += '</div>';
+    return html;
+  }
+
+  function collectSettingsFields(panel) {
+    const s = {};
+    panel.querySelectorAll('[data-set]').forEach(el => {
+      const k = el.dataset.set;
+      if (el.type === 'checkbox') s[k] = el.checked;
+      else if (el.type === 'number') s[k] = Number(el.value);
+      else s[k] = el.value;
+    });
+    return s;
+  }
+
+  // 模态窗口 (插件/Mod 统一): 无标题栏, X 与名字同排; 设置表单自动保存; 操作按钮
+  function openResModal(kind, item) {
+    const existing = document.getElementById('res-modal');
+    if (existing) { closePanel(existing); return; }
+    const isAddon = kind === 'addon';
+    const dir = item.dir || item.name;   // 文件夹名 (后端操作用)
+    const name = item.name || '';
+    const enabled = !!item.enabled;
+    const author = item.author || '';
+    const ver = item.version || '';
+    const panel = document.createElement('div');
+    panel.id = 'res-modal';
+    panel.className = 'panel-overlay';
+    panel.innerHTML =
+      '<div class="panel-card">' +
+        '<div class="res-detail-head">' +
+          '<img class="res-detail-icon" src="' + (item.icon || PROJECT_ICON) + '" onerror="this.src=\'' + PROJECT_ICON + '\'">' +
+          '<div class="res-detail-main">' +
+            '<div class="res-detail-title-row">' +
+              '<span class="res-detail-name">' + esc(name) + '</span>' +
+              '<button class="panel-close" id="res-modal-close">✕</button>' +
+            '</div>' +
+            '<div class="res-detail-sub">' +
+              (ver ? '<span class="res-ver-inline">v' + esc(ver) + '</span>' : '') +
+              (authorLinksHtml(item.author_links) || '') +
+            '</div>' +
+            '<div class="res-detail-state ' + (enabled ? 'on' : 'off') + '">' + (enabled ? '● 已启用' : '○ 已禁用') + '</div>' +
+          '</div>' +
+        '</div>' +
+        '<div class="res-detail-desc">' + esc(item.description || '（无描述）') + '</div>' +
+        renderSettingsFields(item.settings) +
+        '<div class="res-detail-ops">' +
+          '<button class="btn btn-ghost" id="res-open-dir">打开目录</button>' +
+          '<button class="btn btn-danger" id="res-delete">删除</button>' +
+        '</div>' +
+      '</div>';
+    document.body.appendChild(panel);
+    panel.addEventListener('click', (e) => { if (e.target === panel) closePanel(panel); });
+    $('#res-modal-close').onclick = () => closePanel(panel);
+
+    $('#res-open-dir').onclick = async () => {
+      const r = await api.open_mod_item_dir(kind, dir).catch(e => ({ error: String(e) }));
+      if (r && r.error) toast(r.error, 'error');
+    };
+    $('#res-delete').onclick = async () => {
       try {
-        const r = await api.delete_single_file(f.raw_name);
+        const r = isAddon
+          ? await api.delete_addon(dir)
+          : await api.delete_mod(dir);
         if (r && r.error) { toast('删除失败: ' + r.error, 'error'); return; }
-        toast('已删除 ' + f.name, 'success');
-        refreshMods();
+        toast('已删除 ' + name, 'success');
+        closePanel(panel);
+        refreshMods(true);   // 保持当前页
       } catch (err) { toast('删除失败: ' + err, 'error'); }
     };
-    return card;
+    // 自动保存: 任一设置变化 → 防抖写回, 并即时更新模态内状态标识
+    let saveTimer = null;
+    const saveNow = () => {
+      const settings = collectSettingsFields(panel);
+      const fn = isAddon ? api.set_addon_settings : api.set_mod_settings;
+      fn(dir, settings).then(r => {
+        if (r && r.error) { toast('保存失败: ' + r.error, 'error'); return; }
+        // 更新模态内启用/禁用状态
+        const st = panel.querySelector('.res-detail-state');
+        if (st) {
+          const en = settings.enable !== undefined ? !!settings.enable : enabled;
+          st.className = 'res-detail-state ' + (en ? 'on' : 'off');
+          st.textContent = en ? '● 已启用' : '○ 已禁用';
+        }
+        refreshMods(true);   // 保持当前页, 刷新列表状态标识
+      }).catch(err => { toast('保存失败: ' + err, 'error'); });
+    };
+    panel.querySelectorAll('[data-set]').forEach(el => {
+      const ev = el.type === 'text' || el.type === 'number' ? 'input' : 'change';
+      el.addEventListener(ev, () => {
+        clearTimeout(saveTimer);
+        saveTimer = setTimeout(saveNow, 500);
+      });
+    });
   }
 
   // ---------------- 下载中心 ----------------
@@ -2245,20 +2410,10 @@ function layoutToolsCarousel(smooth) {
       termBody.innerHTML = '';
       if (api) api.clear_terminal().catch(() => {});
     });
-    // Mod 管理页
-    $('#btn-apply-mods').addEventListener('click', async () => {
-      if (!api) { toast('浏览器预览模式', 'warn'); return; }
-      try { await api.apply_mods(); toast('正在应用 Mod, 详见终端日志', 'info'); }
-      catch (e) { toast('应用失败: ' + e, 'error'); }
-    });
+    // 资源管理页: Mod 分区按钮
     $('#btn-open-mod-dir').addEventListener('click', async () => {
       if (!api) { toast('浏览器预览模式', 'warn'); return; }
       const r = await api.open_mods_dir('dir').catch(e => ({ error: String(e) }));
-      if (r && r.error) toast(r.error, 'error');
-    });
-    $('#btn-open-single-dir').addEventListener('click', async () => {
-      if (!api) { toast('浏览器预览模式', 'warn'); return; }
-      const r = await api.open_mods_dir('single').catch(e => ({ error: String(e) }));
       if (r && r.error) toast(r.error, 'error');
     });
     $('#btn-open-mod-window').addEventListener('click', async () => {
@@ -2266,6 +2421,29 @@ function layoutToolsCarousel(smooth) {
       const ok = await api.open_mod_manager_window().catch(() => false);
       toast(ok ? '独立 Mod 管理器已打开' : '打开失败, 详见终端', ok ? 'success' : 'error');
     });
+    // 资源管理页: 插件分区按钮
+    $('#btn-open-addon-dir').addEventListener('click', async () => {
+      if (!api) { toast('浏览器预览模式', 'warn'); return; }
+      const r = await api.open_mods_dir('addon').catch(e => ({ error: String(e) }));
+      if (r && r.error) toast(r.error, 'error');
+    });
+    $('#btn-install-addon').addEventListener('click', async () => {
+      if (!api) { toast('浏览器预览模式', 'warn'); return; }
+      const r = await api.install_addon_dialog().catch(e => ({ error: String(e) }));
+      if (r && r.error) toast('安装失败: ' + r.error, 'error');
+      else if (r && r.ok) { toast('插件已安装', 'success'); refreshMods(); }
+    });
+    // 资源管理页: 插件/Mod 切换 (按钮组随之切换)
+    $$('.res-tab').forEach(t => t.addEventListener('click', () => {
+      $$('.res-tab').forEach(x => x.classList.remove('active'));
+      t.classList.add('active');
+      resKind = t.dataset.kind;
+      resPage = 1;
+      const a = $('#res-actions-addon'), m = $('#res-actions-mod');
+      if (a) a.hidden = resKind !== 'addon';
+      if (m) m.hidden = resKind !== 'mod';
+      renderResList();
+    }));
     termBody.addEventListener('scroll', () => {
       termAutoScroll = (termBody.scrollTop + termBody.clientHeight >= termBody.scrollHeight - 4);
     });
@@ -2600,6 +2778,7 @@ function layoutToolsCarousel(smooth) {
       applyTilt();
       bindFeaturesCarousel();
       bindToolsCarousel();
+      bindClickSound();
       initCharacter();
       // 窗口缩放时重新计算卡片尺寸, 保持三卡填满主区宽度
       window.addEventListener('resize', () => {
@@ -2608,12 +2787,16 @@ function layoutToolsCarousel(smooth) {
     } catch (e) {
       console.error('UI 初始化出错:', e);
     }
+    // 提前并行加载背景图与音效 (不依赖 bootstrap, 消除背景初始加载延迟)
+    if (api) {
+      withTimeout(api.get_backgrounds(), 6000, []).then(applyBackgrounds).catch(() => {});
+      preloadSounds();
+    }
     try {
       if (api) {
         BOOT = await withTimeout(api.get_bootstrap(), 8000, null);
         if (!BOOT) { BOOT = MOCK; toast('后端响应超时, 已进入预览模式', 'error', 5000); }
         withTimeout(api.get_terminal(), 5000, []).then(lines => (lines || []).forEach(l => addLog(l))).catch(() => {});
-        withTimeout(api.get_backgrounds(), 6000, []).then(applyBackgrounds).catch(() => {});
       } else {
         BOOT = MOCK;
       }
