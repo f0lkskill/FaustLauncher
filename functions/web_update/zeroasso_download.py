@@ -709,18 +709,20 @@ def download_and_extract_gui(gui:DownloadGUI, config_path: str = "", download_fi
                 
                 success_count += 1
 
-                # 写入本地版本信息 (修复: 零协会分支缺失, 导致 check_need_up_translate 永远判定旧版)
-                try:
-                    import json as _json
-                    from functions.web_update.translation_source import get_translation_dir as _gtd
-                    _vdir = os.path.join(_gtd(), 'info')
-                    os.makedirs(_vdir, exist_ok=True)
-                    with open(os.path.join(_vdir, 'version.json'), 'w', encoding='utf-8') as f:
-                        _json.dump({"version": str(version), "platform": "zeroasso"},
-                                   f, ensure_ascii=False, indent=2)
-                    print(f"[零协会] 已写入本地版本信息: {version}")
-                except Exception as e:
-                    print(f"写入版本信息失败: {e}")
+                # 写入本地版本信息 (仅零协会汉化包; 自定义资源/字体的版本由各自管理器单独管理,
+                # 否则 version 未定义会 UnboundLocalError)
+                if not is_custom and file_info['name'] == '零协会汉化包':
+                    try:
+                        import json as _json
+                        from functions.web_update.translation_source import get_translation_dir as _gtd
+                        _vdir = os.path.join(_gtd(), 'info')
+                        os.makedirs(_vdir, exist_ok=True)
+                        with open(os.path.join(_vdir, 'version.json'), 'w', encoding='utf-8') as f:
+                            _json.dump({"version": str(version), "platform": "zeroasso"},
+                                       f, ensure_ascii=False, indent=2)
+                        print(f"[零协会] 已写入本地版本信息: {version}")
+                    except Exception as e:
+                        print(f"写入版本信息失败: {e}")
                 
                 
             except Exception as e:
