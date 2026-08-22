@@ -87,7 +87,14 @@ def get_ourplay():
         if not str(response_data.get('code')) == '1':
             print("响应错误")
             return None, None
-        return response_data.get('data').get('versionCode'), response_data.get('data').get('url')
+        data = response_data.get('data') or {}
+        version_code = data.get('versionCode')
+        download_url = data.get('url')
+        # OurPlay 接口返回空版本 (versionCode=0 / 无下载链接) 视为"获取失败"
+        if not version_code or not download_url:
+            print("OurPlay 未返回有效汉化版本 (versionCode=0 或无下载链接), 视为获取失败")
+            return None, None
+        return version_code, download_url
     except Exception as e:
         print(f"获取 OurPlay 版本失败: {e}")
         return None, None
