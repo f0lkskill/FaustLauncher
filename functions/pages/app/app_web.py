@@ -695,6 +695,50 @@ class AppApi:
         return True
 
     # ---- Mod 管理 (本地移植) ----
+    def get_contributors(self):
+        """返回关于页数据: 程序介绍 + 贡献者列表 (图标转 data URI)"""
+        import os
+        data = {'program': {'title': '关于 Faust Launcher', 'version': '', 'description': ''}, 'contributors': []}
+        try:
+            for root in (
+                os.path.join(_PROJECT_ROOT, "config", "contributors.json"),
+                os.path.join(_PROJECT_ROOT, "_internal", "config", "contributors.json"),
+            ):
+                if os.path.isfile(root):
+                    with open(root, 'r', encoding='utf-8') as f:
+                        data = json.load(f)
+                    break
+        except Exception as e:
+            print(f"读取贡献者配置失败: {e}")
+        # 填充版本号
+        try:
+            from functions.base.settings_manager import get_settings_manager
+            data.setdefault('program', {})
+            data['program']['version'] = str(get_settings_manager().get_setting('version_info') or '')
+        except Exception:
+            pass
+        # 图标 data URI
+        for c in data.get('contributors', []):
+            icon = c.get('icon', '')
+            if icon:
+                for base in (
+                    os.path.join(_PROJECT_ROOT, "assets", "images", "contributor"),
+                    os.path.join(_PROJECT_ROOT, "_internal", "assets", "images", "contributor"),
+                ):
+                    p = os.path.join(base, icon)
+                    if os.path.isfile(p):
+                        try:
+                            with open(p, 'rb') as f:
+                                b64 = base64.b64encode(f.read()).decode('ascii')
+                            ext = os.path.splitext(p)[1].lower()
+                            mime = 'image/png' if ext == '.png' else 'image/jpeg'
+                            c['icon_uri'] = 'data:' + mime + ';base64,' + b64
+                        except Exception:
+                            pass
+                        break
+            c.pop('icon', None)
+        return data
+
     def get_sound(self, kind):
         """返回音效 data URI (kind: welcome / click), 供前端浏览器内核播放"""
         try:
@@ -1038,15 +1082,50 @@ if %errorlevel% equ 0 (
             self._dc_cache[kind] = data if data else [] # type: ignore
         return self._dc_cache[kind]
 
+    @staticmethod
+    def _name_common_sub(s1, s2):
+        """返回两字符串最长公共子串长度 (用于云端中文名与本地显示名微变匹配)"""
+        a, b = s1, s2
+        best = 0
+        for i in range(len(a)):
+            for j in range(len(b)):
+                k = 0
+                while i + k < len(a) and j + k < len(b) and a[i + k] == b[j + k]:
+                    k += 1
+                if k > best:
+                    best = k
+        return best
+
     def check_item_downloaded(self, kind, name):
-        """检测插件/Mod 是否已下载安装 (每次刷新下载中心都会重新检测, 用户可能手动删除)"""
+        """检测插件/Mod 是否已下载安装 (每次刷新下载中心都会重新检测, 用户可能手动删除)
+        本地目录名是英文, 云端 name 是中文显示名, 需按 addon_info.json/mod_info.json 的 name 匹配,
+        同时兼容目录名直查与公共子串微变匹配 (如 '原神启动!自动下载' vs '云原神-自动下载')。"""
         import os
         try:
-            if kind == 'addon':
-                exists = os.path.isdir(os.path.join('addons', str(name)))
-            else:
-                exists = os.path.isdir(os.path.join('mods', str(name)))
-            return {'downloaded': bool(exists)}
+            root = 'addons' if kind == 'addon' else 'mods'
+            if not os.path.isdir(root):
+                return {'downloaded': False}
+            name = str(name)
+            for folder in os.listdir(root):
+                path = os.path.join(root, folder)
+                if not os.path.isdir(path):
+                    continue
+                if folder == name:
+                    return {'downloaded': True}
+                info_file = os.path.join(path, 'addon_info.json' if kind == 'addon' else 'mod_info.json')
+                try:
+                    if os.path.isfile(info_file):
+                        import json as _json
+                        with open(info_file, 'r', encoding='utf-8') as f:
+                            info = _json.load(f)
+                        local_name = str(info.get('name', '')).strip()
+                        if local_name == name:
+                            return {'downloaded': True}
+                        if len(name) > 2 and len(local_name) > 2 and self._name_common_sub(name, local_name) >= 3:
+                            return {'downloaded': True}
+                except Exception:
+                    continue
+            return {'downloaded': False}
         except Exception as e:
             return {'downloaded': False, 'error': str(e)}
 

@@ -12,6 +12,9 @@ from functions.base.style_utils import RoundedFrame, RoundedButton
 
 downloading = False
 
+# 云端插件/Mod 列表缓存 (启动流程复用, 避免每次重复爬取数据库)
+_cloud_sync_cache = {'addon': None, 'mod': None, 'ts': 0}
+
 class PageLoader:
     """页面加载器 - 负责按需加载和初始化各个页面"""
     
@@ -948,32 +951,45 @@ def download_and_launch(obj=None, need_run_game=False):
                 pass
 
         def _sync_cloud_items():
-            """启动流程: 对比云端插件/Mod 版本并自动更新 (进度经 _web_progress 推送到前端流水线)"""
+            """启动流程: 对比云端插件/Mod 版本并自动更新 (使用缓存云端列表, 不重复爬取)"""
             try:
                 from functions.web_update import zeroasso_download as zd
                 from functions.web_update.web_trigger import WebTrigger
                 from functions.extension.mod.mod_utils import ModManager
                 from functions.web_update.zeroasso_download import download_and_extract_mod
                 import re as _re
+                import time as _time
 
-                wt = WebTrigger()
                 def _ver(v):
                     try:
                         return [int(x) for x in _re.findall(r'\d+', str(v) or '0')[:3]] or [0]
                     except Exception:
                         return [0]
 
-                # 云端列表
-                cloud_addons = []
-                cloud_mods = []
-                try:
-                    cloud_addons = wt.fetch_all_addon_info() or []
-                except Exception:
-                    pass
-                try:
-                    cloud_mods = wt.fetch_all_mod_info() or []
-                except Exception:
-                    pass
+                # 云端列表: 复用缓存 (10 分钟内不重复爬取数据库), 避免每次启动浪费时间
+                wt = WebTrigger()
+                cache_ok = (_time.time() - _cloud_sync_cache['ts']) < 600 and \
+                    _cloud_sync_cache['addon'] is not None and _cloud_sync_cache['mod'] is not None
+                if cache_ok:
+                    cloud_addons = _cloud_sync_cache['addon']
+                    cloud_mods = _cloud_sync_cache['mod']
+                    print("[插件/Mod 同步] 使用缓存云端列表, 跳过数据库爬取")
+                else:
+                    print("[插件/Mod 同步] 正在获取云端列表...")
+                    cloud_addons = []
+                    cloud_mods = []
+                    try:
+                        cloud_addons = wt.fetch_all_addon_info() or []
+                    except Exception as e:
+                        print(f"[插件/Mod 同步] 获取插件列表失败: {e}")
+                    try:
+                        cloud_mods = wt.fetch_all_mod_info() or []
+                    except Exception as e:
+                        print(f"[插件/Mod 同步] 获取 Mod 列表失败: {e}")
+                    _cloud_sync_cache['addon'] = cloud_addons
+                    _cloud_sync_cache['mod'] = cloud_mods
+                    _cloud_sync_cache['ts'] = _time.time()
+                    print(f"[插件/Mod 同步] 云端列表: {len(cloud_addons)} 插件 / {len(cloud_mods)} Mod")
 
                 # 本地已安装
                 local_addons = {}
@@ -990,27 +1006,31 @@ def download_and_launch(obj=None, need_run_game=False):
                 except Exception:
                     pass
 
-                jobs = []   # (kind, name, url, icon)
-                for page in cloud_addons:
-                    for it in (page or []):
-                        name = str(it.get('name', ''))
-                        if not name or it.get('disabled'):
-                            continue
-                        url = it.get('dowload_url') or it.get('download_url', '')
-                        if not url or name not in local_addons:
-                            continue   # 只更新已安装的
-                        if _ver(it.get('version')) > _ver(local_addons[name]):
-                            jobs.append(('addon', name, url, it.get('icon_url', '')))
-                for page in cloud_mods:
-                    for it in (page or []):
-                        name = str(it.get('name', ''))
-                        if not name or it.get('disabled'):
-                            continue
-                        url = it.get('dowload_url') or it.get('download_url', '')
-                        if not url or name not in local_mods:
-                            continue
-                        if _ver(it.get('version')) > _ver(local_mods[name]):
-                            jobs.append(('mod', name, url, it.get('icon_url', '')))
+                # 版本对比 (仅已安装项, 云端版本更高才更新)
+                jobs = []
+                try:
+                    for page in cloud_addons:
+                        for it in (page or []):
+                            name = str(it.get('name', ''))
+                            if not name or it.get('disabled'):
+                                continue
+                            url = it.get('dowload_url') or it.get('download_url', '')
+                            if not url or name not in local_addons:
+                                continue
+                            if _ver(it.get('version')) > _ver(local_addons[name]):
+                                jobs.append(('addon', name, url, it.get('icon_url', '')))
+                    for page in cloud_mods:
+                        for it in (page or []):
+                            name = str(it.get('name', ''))
+                            if not name or it.get('disabled'):
+                                continue
+                            url = it.get('dowload_url') or it.get('download_url', '')
+                            if not url or name not in local_mods:
+                                continue
+                            if _ver(it.get('version')) > _ver(local_mods[name]):
+                                jobs.append(('mod', name, url, it.get('icon_url', '')))
+                except Exception as e:
+                    print(f"[插件/Mod 同步] 版本对比失败: {e}")
 
                 if not jobs:
                     print("插件与 Mod 均为最新版本")

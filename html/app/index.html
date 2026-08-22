@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>FaustLauncher 浮士德启动器</title>
-<link rel="stylesheet" href="css/style.css?v=47">
+<link rel="stylesheet" href="css/style.css?v=54">
 </head>
 <body>
 <div id="bg-layer"></div>
@@ -49,6 +49,10 @@
         </div>
         <div class="hero-logo" aria-hidden="true">
           <img src="../../assets/images/icon/icon.png" alt="FaustLauncher" draggable="false">
+        </div>
+        <div class="hero-clock" aria-hidden="true">
+          <div class="hc-date" id="hc-date">----年--月--日</div>
+          <div class="hc-time" id="hc-time">--:--:--</div>
         </div>
       </div>
 
@@ -129,51 +133,35 @@
 
     <!-- ==================== 下载中心 ==================== -->
     <section class="page" id="page-download_center">
-      <div class="page-head">
-        <h2>下载中心</h2>
-        <p>社区 Mod 与插件在线资源</p>
+      <div class="card">
+        <div class="res-toolbar">
+          <div class="res-tabs">
+            <button class="res-tab active" data-dc="addon">🔌 插件</button>
+            <button class="res-tab" data-dc="mod">🎮 Mod</button>
+          </div>
+        </div>
+        <div id="dc-list" class="res-list"></div>
+        <div id="dc-pagination" class="res-pagination"></div>
+        <div class="frame-spinner"><span></span></div>
       </div>
-      <div class="dc-tabs">
-        <button class="dc-tab active" data-dc-tab="addon">🔌 插件下载</button>
-        <button class="dc-tab" data-dc-tab="mod">🎮 Mod 下载</button>
-      </div>
-      <div class="dc-pagination" id="dc-pagination-top"></div>
-      <div id="dc-content" class="dc-content">
-        <div class="dc-loading">加载中...</div>
-      </div>
-      <div class="dc-pagination" id="dc-pagination-bottom"></div>
     </section>
 
     <!-- ==================== 设置 ==================== -->
     <section class="page" id="page-settings">
-      <div class="page-head">
-        <h2>设置</h2>
-        <p>个性化你的启动器</p>
-      </div>
       <div id="settings-groups"></div>
       <div class="settings-actions">
-        <button class="btn btn-primary" id="btn-save-settings">💾 保存设置</button>
         <button class="btn btn-ghost" id="btn-reset-settings">↺ 恢复默认</button>
       </div>
     </section>
 
     <!-- ==================== 关于 ==================== -->
     <section class="page" id="page-about">
-      <div class="card about-card">
-        <div class="about-icon">🦾</div>
-        <h1>FaustLauncher</h1>
-        <div class="about-sub">浮士德启动器 · 您人生中绝无仅有的完美启动器</div>
-        <div class="about-version" id="about-version">v-</div>
-        <p class="about-desc">
-          专为《边狱巴士 (Limbus Company)》玩家打造的全功能一体化启动器。<br>
-          汉化自动更新 · 界面美化 · Mod 加载 · 插件生态 · 一键启动
-        </p>
-        <div class="about-links">
-          <button class="btn btn-ghost" data-link="https://github.com/f0lkskill/FaustLauncher">📦 GitHub</button>
-          <button class="btn btn-ghost" data-link="https://limbuscompany.huijiwiki.com/wiki/%E9%A6%96%E9%A1%B5">📝 灰机 Wiki</button>
-          <button class="btn btn-ghost" data-link="https://space.bilibili.com/599331034">🎬 作者空间</button>
+      <div class="about-wrap">
+        <div class="about-stage" id="about-stage">
+          <div class="about-panel" id="about-panel-program"></div>
+          <div class="about-panel" id="about-panel-contributors"></div>
         </div>
-        <div class="about-foot">MIT License · 2025-2026 FaustLauncher Contributors</div>
+        <div class="carousel-dots" id="about-dots"></div>
       </div>
     </section>
   </main>
@@ -207,7 +195,7 @@
       <div class="dl-empty">暂无下载任务</div>
     </div>
   </aside>
-<script src="js/app.js?v=51"></script>
+<script src="js/app.js?v=58"></script>
 <script>
 /* 独立兜底: 完全不依赖 app.js。无论 app.js 是否崩溃, 只要内容加载完成或超时,
    就移除主页两张卡片的 loading 圆圈。 */
