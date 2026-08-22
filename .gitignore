@@ -7,7 +7,9 @@ __pycache__/
 *.so
 
 settings.json.bak
-
+bubble_speech/
+siner_skill_info/
+resource_info.json
 # Distribution / packaging
 .Python
 vscode/
