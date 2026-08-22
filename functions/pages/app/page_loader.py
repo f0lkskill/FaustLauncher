@@ -5,8 +5,6 @@ from typing import Dict, Callable, Optional, Any
 import traceback
 from rich import print
 import os
-import json
-import time
 import webbrowser
 from functions.base.color_scheme import C, lighten_color
 from functions.base.style_utils import RoundedFrame, RoundedButton
@@ -14,37 +12,8 @@ from functions.base.style_utils import RoundedFrame, RoundedButton
 
 downloading = False
 
-# 云端插件/Mod 列表缓存 (启动流程复用, 避免每次重复爬取数据库)
+# 云端插件/Mod 列表缓存 (每次启动只获取一次, 同步/下载中心共用内存缓存)
 _cloud_sync_cache = {'addon': None, 'mod': None, 'ts': 0}
-
-# 持久化云端列表缓存: 启动器只初始化加载一次云端, 之后读取本地文件 (同步/下载中心共用一份)
-_CLOUD_CACHE_PATH = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
-    'config', 'cloud_cache.json')
-
-
-def _load_cloud_cache_file():
-    """读取持久化云端列表缓存, 无/损坏返回 None"""
-    try:
-        if os.path.isfile(_CLOUD_CACHE_PATH):
-            with open(_CLOUD_CACHE_PATH, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-            if isinstance(data, dict) and data.get('addon') is not None and data.get('mod') is not None:
-                return data
-    except Exception:
-        pass
-    return None
-
-
-def _save_cloud_cache_file(addon, mod):
-    """写入持久化云端列表缓存 (addon/mod 为列表)"""
-    try:
-        os.makedirs(os.path.dirname(_CLOUD_CACHE_PATH), exist_ok=True)
-        with open(_CLOUD_CACHE_PATH, 'w', encoding='utf-8') as f:
-            json.dump({'addon': addon or [], 'mod': mod or [], 'ts': time.time()},
-                      f, ensure_ascii=False)
-    except Exception:
-        pass
 
 class PageLoader:
     """页面加载器 - 负责按需加载和初始化各个页面"""
@@ -997,13 +966,12 @@ def download_and_launch(obj=None, need_run_game=False):
                     except Exception:
                         return [0]
 
-                # 云端列表: 优先使用持久化缓存文件 (启动器只初始化加载一次云端, 不再重复爬取)
+                # 云端列表: 每次启动只获取一次, 内存缓存复用 (同步/下载中心共享, 不重复爬取)
                 wt = WebTrigger()
-                cached = _load_cloud_cache_file()
-                if cached is not None:
-                    cloud_addons = cached.get('addon') or []
-                    cloud_mods = cached.get('mod') or []
-                    print(f"[插件/Mod 同步] 使用本地缓存云端列表 ({len(cloud_addons)} 插件 / {len(cloud_mods)} Mod), 跳过数据库爬取")
+                if _cloud_sync_cache['addon'] is not None and _cloud_sync_cache['mod'] is not None:
+                    cloud_addons = _cloud_sync_cache['addon']
+                    cloud_mods = _cloud_sync_cache['mod']
+                    print(f"[插件/Mod 同步] 使用内存缓存云端列表 ({len(cloud_addons)} 插件 / {len(cloud_mods)} Mod), 跳过数据库爬取")
                 else:
                     print("[插件/Mod 同步] 正在获取云端列表...")
                     cloud_addons = []
@@ -1019,7 +987,6 @@ def download_and_launch(obj=None, need_run_game=False):
                     _cloud_sync_cache['addon'] = cloud_addons
                     _cloud_sync_cache['mod'] = cloud_mods
                     _cloud_sync_cache['ts'] = _time.time()
-                    _save_cloud_cache_file(cloud_addons, cloud_mods)
                     print(f"[插件/Mod 同步] 云端列表: {len(cloud_addons)} 插件 / {len(cloud_mods)} Mod")
 
                 # 本地已安装
