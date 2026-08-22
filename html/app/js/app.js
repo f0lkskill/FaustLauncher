@@ -1,8 +1,8 @@
 /* ============================================================
    FaustLauncher Web UI — 前端逻辑
    浏览器直接打开 index.html 时使用内置 Mock 数据预览。
+   顶层函数/变量直接位于全局命名空间 (无闭包包裹), 便于插件扩展直接调用内部 API。
    ============================================================ */
-(() => {
 'use strict';
 
 // 全局 JS 错误浮层: 前端一旦报错, 在窗口底部显示, 便于排查 (无需开 DevTools)
@@ -3099,4 +3099,23 @@ function layoutToolsCarousel(smooth) {
     // 浏览器预览兜底: 无 pywebview 环境 3 秒后进入 Mock 模式
     setTimeout(() => { if (!BOOT) { init(); } }, 3000);
   }
-})();
+
+// 对外插件 API: 全局命名空间 (供插件/扩展脚本直接调用内部功能)
+window.Faust = {
+  esc,
+  toast,
+  toastTop,
+  addLog,
+  switchPage,
+  startDownloadItem,
+  refreshMods,
+  refreshRecommend,
+  markItemDownloaded,
+  fmtBytes,
+  fmtSpeed,
+  openResModal,
+  openDcModal,
+  get currentPage() { return currentPage; },
+  get BOOT() { return BOOT; },
+  get PROJECT_ICON() { return PROJECT_ICON; },
+};
