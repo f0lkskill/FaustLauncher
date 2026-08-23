@@ -130,6 +130,39 @@ def check_single_instance():
     return False
 
 
+def _win32_show_window_impl(window, show=True):
+    """用 Win32 ShowWindow 显示/隐藏主窗口 (线程安全, 供托盘/关闭/预加载显示共用)"""
+    try:
+        import ctypes
+        import webview.platforms.winforms as _wf
+        hwnd = 0
+        try:
+            bv = _wf.BrowserView.instances.get(getattr(window, 'uid', ''))
+            if bv is not None:
+                try:
+                    hwnd = int(bv.Handle.ToInt64())
+                except Exception:
+                    try:
+                        hwnd = int(bv.Handle.ToInt32())
+                    except Exception:
+                        hwnd = int(bv.Handle)
+        except Exception:
+            pass
+        if not hwnd:
+            try:
+                hwnd = ctypes.windll.user32.FindWindowW(None, "Faust Launcher")
+            except Exception:
+                pass
+        if hwnd:
+            ctypes.windll.user32.ShowWindow(hwnd, 1 if show else 0)  # SW_SHOWNORMAL / SW_HIDE
+            if show:
+                ctypes.windll.user32.SetForegroundWindow(hwnd)
+            return True
+    except Exception:
+        pass
+    return False
+
+
 def _patch_network_timeouts():
     """给所有 requests 请求补默认超时, 防止断网/网络缓慢时无限阻塞线程 (卡死);
     同时禁用 InsecureRequestWarning (textdb 等源使用 verify=False 的合法请求)"""
@@ -423,8 +456,8 @@ def _get_project_icon_uri():
 
 def _goodbye_to_console():
     """退出时输出 GoodBye 美化艺术字。
-    直接写原始 stdout (控制台), 不经过前端重定向 —— closing 事件在 UI 线程,
-    走重定向 print 会等待前端响应而死锁; 无控制台时兜底普通 print。"""
+    仅写原始 stdout (控制台)。绝不走 print —— 它会被重定向到前端 evaluate_js,
+    在 closing 事件 (UI 线程) 调用时会导致死锁卡死; 无控制台时静默跳过。"""
     try:
         from functions.base.terminal_banner import get_banner_with_random_style
         banner = get_banner_with_random_style('GoodBye')
@@ -432,10 +465,22 @@ def _goodbye_to_console():
         if out is not None:
             out.write('\n\n' + banner + '\n')
             out.flush()
-        else:
-            print('\n\n' + banner)
     except Exception:
         pass
+
+
+def _terminate_now():
+    """立即终止进程: TerminateProcess 跳过 DLL 卸载钩子。
+    os._exit 会触发 WebView2 的卸载钩子 (报 1411 错误) 且可能有 ~1s 延时;
+    TerminateProcess 直接终止, 无清理、无报错、无延时。"""
+    _goodbye_to_console()
+    try:
+        import ctypes
+        ctypes.windll.kernel32.TerminateProcess(
+            ctypes.windll.kernel32.GetCurrentProcess(), 0)
+    except Exception:
+        pass
+    os._exit(0)
 
 
 def _fmt_author_links(authors):
@@ -463,6 +508,16 @@ class AppApi:
         self.core = core
         self.window_ref = window_ref
 
+    def ui_ready(self):
+        """前端初始化完成(预加载)后显示主窗口"""
+        try:
+            win = self.window_ref.get("win") if self.window_ref else None
+            if win is not None:
+                _win32_show_window_impl(win, True)
+        except Exception:
+            pass
+        return True
+
     # ---- 基础信息 ----
     def get_bootstrap(self):
         from functions.base.settings_manager import get_settings_manager
@@ -483,6 +538,7 @@ class AppApi:
             { "id": 'folder_link', "name": '📂 文件夹超链接', "desc": '创建符号链接, 转移C盘资源文件', "image": "folder_link.png" },
             { "id": 'nyos', "name": '📖 今日指令', "desc": '获取食指的最新指令\n仅供娱乐，请勿上升到指令成瘾。', "image": "nyos.png" },
             { "id": 'extension_tools', "name": '🧩 扩展工具', "desc": '插件模板 / 打包发布\n给开发者提供的工具\n需要输入开发者密钥。', "image": "extension_tools.png" },
+            { "id": 'cdn', "name": '🚀 零协会CDN优选', "desc": '自动选择最优质的CDN\n优化游戏资源下载和服务器连接', "image": "cdn.png" },
         ]
         for t in tools:
             t["image_uri"] = _tool_image_uri(t.get("image", ""))
@@ -711,6 +767,9 @@ class AppApi:
             print("自动汉化工具将在后续版本接入 Web UI")
         elif tool_id == "gradient":
             print("渐变文本处理器将在后续版本接入 Web UI")
+        elif tool_id == "cdn":
+            from functions.web_tool.launch_babel import launch_babel
+            threading.Thread(target=launch_babel, daemon=True).start()
         else:
             print(f"未知工具: {tool_id}")
         return True
@@ -1015,11 +1074,10 @@ class AppApi:
                     print(f"删除 Mod {name} 失败: 目录不存在 {path}", flush=True)
                     return
                 print(f"开始删除 Mod: {name} (目录 {path})", flush=True)
-                # 串行执行 unload_mod: 先清理游戏目录副本 (MD5 校验),
-                # 跳过 Uninstaller.bat (其派生后台进程会占用 mods 目录导致删除失败);
-                # 必须等它结束释放文件句柄, 否则并发 rmtree 会撞上 WinError 32
+                # 串行执行 unload_mod: 先运行 Uninstaller.bat (含 echo 输出日志) +
+                # MD5 清理游戏目录副本 + 清理语言文件; 结束后释放文件句柄再删除 mods 目录
                 try:
-                    mm.unload_mod(str(name), run_bat=False)
+                    mm.unload_mod(str(name), run_bat=True)
                     print(f"Mod {name} 卸载缓存完成", flush=True)
                 except Exception as e:
                     print(f"卸载 Mod {name} 缓存失败(继续删除): {e}", flush=True)
@@ -1610,13 +1668,24 @@ def _start_tray(core, window, win32_show):
     from PIL import Image
 
     # 设置应用用户模型 ID: 否则 Windows 通知气泡标题会显示进程名 (python)
+    ico_path = os.path.join(_PROJECT_ROOT, "assets", "images", "icon", "icon.ico")
     try:
         import ctypes
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("FaustLauncher")
     except Exception:
         pass
+    # 注册 AUMID 图标/名称: 否则 Windows 通知中心 (toast) 找不到 AUMID 对应图标, 气泡提示无项目图标
+    try:
+        import winreg
+        _aumid_key = winreg.CreateKey(winreg.HKEY_CURRENT_USER,
+                                      r"Software\Classes\AppUserModelId\FaustLauncher")
+        _ico_abs = os.path.abspath(ico_path)
+        winreg.SetValueEx(_aumid_key, "DisplayIcon", 0, winreg.REG_SZ, _ico_abs)
+        winreg.SetValueEx(_aumid_key, "DisplayName", 0, winreg.REG_SZ, "FaustLauncher")
+        winreg.CloseKey(_aumid_key)
+    except Exception:
+        pass
 
-    ico_path = os.path.join(_PROJECT_ROOT, "assets", "images", "icon", "icon.ico")
     try:
         ico = Image.open(ico_path)
     except Exception:
@@ -1638,14 +1707,13 @@ def _start_tray(core, window, win32_show):
         _tray_window_op(False)
 
     def when_exit(icon=None, item=None):
+        # 立即隐藏窗口 (视觉上立刻消失), 再终止进程, 避免窗口随线程缓慢消失
         try:
-            assert icon is not None
-            icon.stop()
+            win32_show(False)
         except Exception:
             pass
-        _goodbye_to_console()
-        import os
-        os._exit(0)
+        # 不再 icon.stop() (回调线程内 stop 可能阻塞等待, 造成退出延时); 进程终止托盘自动消失
+        _terminate_now()
 
     def build_addon_menu():
         items = []
@@ -1785,26 +1853,9 @@ def run_web_ui(debug: bool = False):
         _win_y = max(0, (_sh - 740) // 2)
     except Exception:
         pass
-    # 项目图标首载注入: 把 HTML 里的图标 src 替换为 data URI (避免 bootstrap 返回前图标加载延时)
-    _serve_html = HTML_PATH
-    try:
-        _icon_uri = _get_project_icon_uri()
-        if _icon_uri:
-            with open(HTML_PATH, 'r', encoding='utf-8') as _f:
-                _content = _f.read()
-            _marker = 'src="../../assets/images/icon/icon.png"'
-            if _marker in _content:
-                _content = _content.replace(_marker, 'src="' + _icon_uri + '"')
-                _tmp = os.path.join(os.path.dirname(HTML_PATH), 'index.injected.html')
-                with open(_tmp, 'w', encoding='utf-8') as _f:
-                    _f.write(_content)
-                _serve_html = _tmp
-    except Exception:
-        _serve_html = HTML_PATH
-
     window = webview.create_window(
         "Faust Launcher",
-        _serve_html,
+        HTML_PATH,
         js_api=api,
         width=1000,
         height=740,
@@ -1816,35 +1867,18 @@ def run_web_ui(debug: bool = False):
     )
     window_holder["win"] = window
 
-    # 通用 Win32 显示/隐藏主窗口 (线程安全, 供托盘与关闭事件共用)
-    def _win32_show_window(show=True):
-        """用 Win32 ShowWindow 显示/隐藏主窗口 (不经 pywebview 跨线程调用)"""
-        import ctypes
-        hwnd = 0
+    # 保底: 若前端 ui_ready 未触发 (如 JS 异常导致 init 未完成), 12 秒后强制显示窗口, 避免窗口永远隐藏
+    def _force_show():
+        time.sleep(12)
         try:
-            import webview.platforms.winforms as _wf
-            bv = _wf.BrowserView.instances.get(getattr(window, 'uid', ''))
-            if bv is not None:
-                try:
-                    hwnd = int(bv.Handle.ToInt64())
-                except Exception:
-                    try:
-                        hwnd = int(bv.Handle.ToInt32())
-                    except Exception:
-                        hwnd = int(bv.Handle)
+            _win32_show_window(True)
         except Exception:
             pass
-        if not hwnd:
-            try:
-                hwnd = ctypes.windll.user32.FindWindowW(None, "Faust Launcher")
-            except Exception:
-                pass
-        if hwnd:
-            ctypes.windll.user32.ShowWindow(hwnd, 1 if show else 0)  # SW_SHOWNORMAL / SW_HIDE
-            if show:
-                ctypes.windll.user32.SetForegroundWindow(hwnd)
-            return True
-        return False
+    threading.Thread(target=_force_show, daemon=True).start()
+
+    # 通用 Win32 显示/隐藏主窗口 (线程安全, 供托盘/关闭/预加载显示共用)
+    def _win32_show_window(show=True):
+        return _win32_show_window_impl(window, show)
 
     # 托盘
     try:
@@ -1888,8 +1922,9 @@ def run_web_ui(debug: bool = False):
                 return False
         except Exception:
             pass
-        # 关闭程序退出: 输出 GoodBye 艺术字 (直接写控制台, 避免 UI 线程 print 死锁)
-        _goodbye_to_console()
+        # 关闭程序退出: 立即隐藏窗口 (视觉无延时), 允许 pywebview 正常关闭,
+        # 后台慢慢退出 (WebView2 销毁在后台进行), updater.vbs 已加 5s 延时等待旧进程退出
+        threading.Thread(target=lambda: _win32_show_window(False), daemon=True).start()
         return True
 
     try:
@@ -1903,6 +1938,8 @@ def run_web_ui(debug: bool = False):
         time.sleep(6)
         try:
             core.check_settings(skip_auto_download=True, interactive=False)
+            # 检查可能自动设置了 Steam 游戏路径, 通知前端同步设置页与首页路径显示
+            _evaluate_js("window.__onPathSynced()")
         except Exception as e:
             print(f"设置检查失败: {e}")
 
@@ -1919,3 +1956,7 @@ def run_web_ui(debug: bool = False):
             pass
         _msgbox("FaustLauncher", f"无法启动窗口:\n{type(e).__name__}: {e}")
         raise SystemExit(1)
+
+    # webview 主循环退出: 立即终止进程, 不等后台线程 (否则退出有 ~1s 延迟,
+    # 更新流程替换 exe 时会因文件占用而失败)
+    _terminate_now()

@@ -1,4 +1,12 @@
 import os
+import sys
+
+# 项目根目录 (字体包解压目标: 7z 内部结构为 assets/Font/..., 需解压到项目根使其落入 assets/Font)
+if getattr(sys, 'frozen', False):
+    # 打包后 __file__ 位于 _internal/, 项目根应为 exe 所在目录 (assets/ 在 exe 同目录)
+    _PROJECT_ROOT = os.path.dirname(os.path.abspath(sys.executable))
+else:
+    _PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
 import json
 import time
 import requests
@@ -138,7 +146,6 @@ def extract_with_zipfile_backup(archive_path, extract_path):
     except Exception as e:
         print(f"zipfile解压失败: {e}")
         return False
-
 def extract_7z_file(archive_path, extract_path):
     """解压7z文件（主函数）"""
     print(f"开始解压文件到: {extract_path}")
@@ -155,6 +162,44 @@ def extract_7z_file(archive_path, extract_path):
     # 如果7-Zip失败，尝试使用zipfile作为备用方案
     print("7-Zip解压失败，尝试使用zipfile备用方案...")
     return extract_with_zipfile_backup(archive_path, extract_path)
+
+
+def _install_fonts(archive_path):
+    """下载的字体包解压并安装到 assets/Font (兼容 7z 内部结构为 Font/ 或 assets/Font/)"""
+    import shutil
+    import tempfile
+    tmp = tempfile.mkdtemp(prefix='faust_font_')
+    try:
+        if not extract_7z_file(archive_path, tmp):
+            return False
+        font_src = None
+        for cand in (
+            os.path.join(tmp, 'Font'),
+            os.path.join(tmp, 'assets', 'Font'),
+        ):
+            if os.path.isdir(cand):
+                font_src = cand
+                break
+        if not font_src:
+            for root, dirs, _ in os.walk(tmp):
+                if os.path.basename(root).lower() == 'font':
+                    font_src = root
+                    break
+        if not font_src:
+            print("[字体] 字体包中未找到 Font 目录, 跳过", flush=True)
+            return False
+        dest = os.path.join(_PROJECT_ROOT, 'assets', 'Font')
+        os.makedirs(dest, exist_ok=True)
+        for root, dirs, files in os.walk(font_src):
+            rel = os.path.relpath(root, font_src)
+            target_dir = os.path.join(dest, rel) if rel != '.' else dest
+            os.makedirs(target_dir, exist_ok=True)
+            for f in files:
+                shutil.copy2(os.path.join(root, f), os.path.join(target_dir, f))
+        print(f"[字体] 已安装字体到 {dest}", flush=True)
+        return True
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
 
 def create_config_file(game_path):
     """创建配置文件"""
@@ -555,6 +600,12 @@ def download_and_extract_gui(gui:DownloadGUI, config_path: str = "", download_fi
                 'name': 'OurPlay 汉化包',
                 'url': '',  # URL将在后续代码中动态设置
                 'temp_filename': 'ourplay_translation.zip'
+            },
+            {
+                # OurPlay 汉化包本身不带字体 (转换时跳过 Font), 需同零协会一样单独下载字体
+                'name': 'TTF 字体文件',
+                'url': 'https://lz.qaiu.top/parser?url=https://folkskill.lanzoum.com/irAGt3iha71c&pwd=3z4n',
+                'temp_filename': 'LLCCN-Font.7z'
             }
         ]
     else:
@@ -582,8 +633,8 @@ def download_and_extract_gui(gui:DownloadGUI, config_path: str = "", download_fi
         if not gui.is_downloading:
             break
 
-        # 检查字体文件是否已存在 (OurPlay 包自带字体, 无需额外下载)
-        if not is_ourplay and os.path.exists("assets/Font/Context/ChineseFont.ttf") and \
+        # 检查字体文件是否已存在 (OurPlay 与零协会共用同一套中文字体, 已下载则跳过)
+        if os.path.exists("assets/Font/Context/ChineseFont.ttf") and \
            file_info['name'] == 'TTF 字体文件':
             print("字体文件已存在, 无需下载.")
             success_count += 1
@@ -625,6 +676,11 @@ def download_and_extract_gui(gui:DownloadGUI, config_path: str = "", download_fi
                 if file_info['name'] == 'OurPlay 汉化包':
                     if _install_ourplay(gui, temp_file, game_path, version, is_god):
                         success_count += 1
+                elif file_info['name'] == 'TTF 字体文件':
+                    # 字体包安装到 assets/Font (解压到临时目录后合并, 供启动时转移)
+                    if not _install_fonts(temp_file):
+                        continue
+                    success_count += 1
                 else:
                     # 自定义资源 (资源更新流 mod_loader/siner_skill_info 等), 直接解压
                     if not extract_7z_file(temp_file, game_path):
@@ -704,8 +760,13 @@ def download_and_extract_gui(gui:DownloadGUI, config_path: str = "", download_fi
                     continue
                 
                 # 解压文件
-                if not extract_7z_file(temp_file, game_path):
-                    continue
+                if file_info['name'] == 'TTF 字体文件':
+                    # 字体包安装到 assets/Font (解压到临时目录后合并, 供启动时转移)
+                    if not _install_fonts(temp_file):
+                        continue
+                else:
+                    if not extract_7z_file(temp_file, game_path):
+                        continue
                 
                 success_count += 1
                 

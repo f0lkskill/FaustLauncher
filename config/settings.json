@@ -215,6 +215,57 @@
         "description": "应用程序的主题颜色 (十六进制格式)\n重启后才能生效\n实验性功能, 可能会出现样式失效，颜色冲突。",
         "page": "其它"
     },
+    "char_appear_interval": {
+        "name": "小人出现间隔",
+        "type": "range2",
+        "default": [
+            10,
+            30
+        ],
+        "value": [
+            10,
+            30
+        ],
+        "description": "角色小人缩回后再次出现的间隔 (秒)\n在给定范围内随机取值",
+        "min": 2,
+        "max": 120,
+        "step": 1,
+        "page": "其它"
+    },
+    "char_speech_interval": {
+        "name": "小人说话间隔",
+        "type": "range2",
+        "default": [
+            10,
+            15
+        ],
+        "value": [
+            10,
+            15
+        ],
+        "description": "角色小人切换问候语的间隔 (秒)\n在给定范围内随机取值",
+        "min": 2,
+        "max": 60,
+        "step": 1,
+        "page": "其它"
+    },
+    "char_stay_interval": {
+        "name": "小人停留间隔",
+        "type": "range2",
+        "default": [
+            40,
+            60
+        ],
+        "value": [
+            40,
+            60
+        ],
+        "description": "角色小人出现后停留的时间 (秒)\n在给定范围内随机取值",
+        "min": 5,
+        "max": 300,
+        "step": 1,
+        "page": "其它"
+    },
     "ui_mode": {
         "name": "界面模式",
         "type": "combobox",

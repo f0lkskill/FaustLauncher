@@ -7,7 +7,7 @@ from typing import List, Dict, Any
 from functions.base.settings_manager import SettingsManager
 from functions.base.common.path_utils import get_mod_root_dir
 from functions.web_update.translation_source import get_translation_dir_name as _translation_dir_name
-from subprocess import call, CREATE_NO_WINDOW
+from subprocess import run, CREATE_NO_WINDOW
 
 
 def _strip_suffix_number(name: str) -> str:
@@ -20,6 +20,45 @@ def _suffix_number(name: str) -> int:
     """名字末尾的数字；没有数字的按 0"""
     m = re.match(r"^(.*?)(\d+)$", name)
     return int(m.group(2)) if m else 0
+
+
+def _decode_output(data):
+    """bat 输出解码: cmd 默认用系统 ANSI/OEM 编码 (中文系统 GBK), 先试 UTF-8, 失败回落 GBK"""
+    if not data:
+        return ''
+    for enc in ('utf-8', 'gbk'):
+        try:
+            return data.decode(enc)
+        except (UnicodeDecodeError, LookupError):
+            continue
+    return data.decode('utf-8', errors='replace')
+
+
+def _run_mod_bat(mod_path, bat_name, mod_name, timeout=None):
+    """运行 mod 的 bat 脚本 (cwd=mod 目录绝对路径), 捕获并打印其 echo 输出"""
+    try:
+        abs_path = os.path.abspath(mod_path)
+        bat_file = os.path.join(abs_path, bat_name)
+        if not os.path.isfile(bat_file):
+            print(f"[{mod_name}] 未找到 {bat_file}, 跳过", flush=True)
+            return
+        print(f"[{mod_name}] 运行 {bat_name} (cwd={abs_path})", flush=True)
+        result = run(
+            [bat_file],
+            shell=True, creationflags=CREATE_NO_WINDOW,
+            cwd=abs_path,
+            capture_output=True,
+            timeout=timeout,
+        )
+        for line in _decode_output(result.stdout).splitlines():
+            if line.strip():
+                print(f"[{mod_name} {bat_name}] {line}", flush=True)
+        for line in _decode_output(result.stderr).splitlines():
+            if line.strip():
+                print(f"[{mod_name} {bat_name} stderr] {line}", flush=True)
+    except Exception as e:
+        print(f"执行 {mod_name} {bat_name} 失败: {e}", flush=True)
+
 
 class ModManager:
     mod_dir = 'mods'
@@ -106,12 +145,12 @@ class ModManager:
                 mod_info = self.get_mod_info(mod_name)
                 if mod_info.get('settings', {}).get('enable', False) and has_installer:
                     # 启用mod，载入文件
-                    # 执行安装脚本
-                    call([os.path.join(mod_path, 'Installer.bat')], shell=True, creationflags=CREATE_NO_WINDOW)
+                    # 执行安装脚本 (cwd=mod_path: bat 内相对路径基于 mod 目录), 输出 echo 内容
+                    _run_mod_bat(mod_path, 'Installer.bat', mod_name)
                     # print(f"成功加载Mod贴图资源: {mod_name}")
                 elif mod_info.get('settings', {}).get('enable', False) and has_uninstaller:
                     # 禁用mod
-                    call([os.path.join(mod_path, 'Uninstaller.bat')], shell=True, creationflags=CREATE_NO_WINDOW)
+                    _run_mod_bat(mod_path, 'Uninstaller.bat', mod_name)
                     # print(f"成功卸载Mod贴图资源: {mod_name}")
             
                 # 获取mod信息
@@ -316,8 +355,8 @@ class ModManager:
         卸载指定mod
         Args:
             mod_name (str): mod名称
-            run_bat (bool): 是否执行 Uninstaller.bat (web 模式删除时建议跳过,
-                            因 bat 派生的后台进程会占用 mods 目录导致删除失败)
+            run_bat (bool): 是否执行 Uninstaller.bat (默认运行, 输出 echo 日志;
+                            若 bat 派生进程占用 mods 目录导致删除失败, 可设为 False 跳过)
         """
         mod_path = os.path.join(self.mod_dir, mod_name)
 
@@ -331,13 +370,11 @@ class ModManager:
                 # 获取目标目录
                 target_dir = self.get_mod_directory()
 
-                # 1) 先执行卸载脚本 (清理 Installer.bat 复制到游戏目录的缓存), 带超时防阻塞
+                # 1) 先执行卸载脚本 (清理 Installer.bat 复制到游戏目录的缓存), 带超时防阻塞, 输出 echo 内容
                 if run_bat and os.path.exists(
                     os.path.join(mod_path, 'Uninstaller.bat')):
                     try:
-                        call([os.path.join(mod_path, 'Uninstaller.bat')],
-                             shell=True, creationflags=CREATE_NO_WINDOW,
-                             timeout=30)
+                        _run_mod_bat(mod_path, 'Uninstaller.bat', mod_name, timeout=30)
                         print(f"{mod_name} Mod 资源缓存成功清理", flush=True)
                     except Exception as e:
                         print(f"执行 {mod_name} Uninstaller.bat 失败(超时或异常): {e}", flush=True)
