@@ -134,9 +134,12 @@ class GameLauncher:
             except Exception as e:
                 print(f"[{name}] 失败: {e}")
                 traceback.print_exc()
+                # 汉化/字体失败不阻断启动游戏 (如汉化包未下载), 仅提示后继续后续步骤
                 if name in ("复制汉化文件", "复制字体文件"):
-                    messagebox.showerror("错误", f"{name}时出错: {str(e)}")
-                    return
+                    try:
+                        messagebox.showerror("错误", f"{name}时出错: {str(e)}\n\n已跳过该步骤, 继续启动游戏")
+                    except Exception:
+                        pass
                 # 非关键步骤失败不阻断启动
 
         print("========== 启动流水线结束 ==========\n")
@@ -150,6 +153,10 @@ class GameLauncher:
         print(f"[调试] _prepare_translation: 游戏路径={self._game_path!r}")
         print(f"[调试] _prepare_translation: 源={os.path.abspath(self._lang_dir)!r} 存在={os.path.exists(self._lang_dir)} 是目录={os.path.isdir(self._lang_dir)}")
         print(f"[调试] _prepare_translation: 目标={target!r} 存在={os.path.exists(target)} 是目录={os.path.isdir(target)}")
+        if not os.path.isdir(self._lang_dir):
+            # 汉化包未下载 (如首次启动/刚切换平台): 跳过该步骤, 不阻断后续字体/启动
+            print(f"[汉化] 汉化包目录不存在: {self._lang_dir} (请先在下载中心下载当前平台汉化包), 跳过汉化文件复制")
+            return
         if os.path.exists(target):
             if os.path.isdir(target):
                 shutil.rmtree(target, ignore_errors=True)
@@ -322,9 +329,14 @@ class GameLauncher:
     def _copy_fonts(self):
         """复制字体文件到游戏汉化目录。"""
         from functions.web_update.translation_source import get_game_lang_dir
+        from functions.web_update.zeroasso_download import _PROJECT_ROOT as _font_root
+        src = os.path.join(_font_root, 'assets', 'Font')
+        if not os.path.isdir(src):
+            print(f"[字体] assets/Font 不存在 ({src}), 跳过字体转移")
+            return
         target = os.path.join(get_game_lang_dir(self._game_path), 'Font')
         os.makedirs(target, exist_ok=True)
-        shutil.copytree('assets/Font', target, dirs_exist_ok=True)
+        shutil.copytree(src, target, dirs_exist_ok=True)
 
     def _create_zeroasso_config(self):
         """创建零协会配置文件。"""

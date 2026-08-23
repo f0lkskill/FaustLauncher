@@ -459,6 +459,18 @@ window.__onResChanged = function (kind) {
     renderRecommend(_currentRec);
   }
 };
+// 后端自动设置游戏路径后同步前端 (设置页控件 + 首页路径 chip)
+window.__onPathSynced = function () {
+  if (typeof updatePathChip === 'function') updatePathChip();
+  if (api) {
+    api.get_setting('game_path').then(v => {
+      if (v !== undefined && v !== null) {
+        const inp = document.querySelector('[data-setting="game_path"] input');
+        if (inp && inp.value !== String(v)) inp.value = String(v);
+      }
+    }).catch(() => {});
+  }
+};
 // 卸载/删除失败 (如文件被占用) 时由后端通知
 window.__onResError = function (msg) { toast('⚠ ' + msg, 'error', 6000); };
 
@@ -1961,15 +1973,31 @@ function layoutCarousel(smooth) {
   function bindFeaturesCarousel() {
     const carousel = $('#features-carousel');
     if (!carousel) return;
-    let lock = false;
+    let featTarget = 0, animRAF = null;
+
+    // 平滑滚动: 每次滚轮设目标=当前对齐位±1, rAF 缓动接近 (无惯性飞远/无卡顿)
+    const animLoop = () => {
+      const diff = featTarget - featAngle;
+      featAngle += diff * 0.15;
+      layoutCarousel(false);
+      if (Math.abs(diff) < 0.01) {
+        featAngle = featTarget;
+        layoutCarousel(true);
+        animRAF = null;
+      } else {
+        animRAF = requestAnimationFrame(animLoop);
+      }
+    };
+    const stopWheelAnim = () => {
+      if (animRAF) { cancelAnimationFrame(animRAF); animRAF = null; }
+    };
 
     carousel.addEventListener('wheel', (e) => {
       e.preventDefault();
-      if (lock) return;
-      lock = true;
-      setTimeout(() => { lock = false; }, 300);
-      featAngle += (e.deltaY > 0 ? 1 : -1);
-      layoutCarousel(true);
+      if (dragging) return;
+      stopAll();
+      featTarget = Math.round(featAngle) + (e.deltaY < 0 ? 1 : -1);
+      if (!animRAF) animRAF = requestAnimationFrame(animLoop);
     }, { passive: false });
 
     // ---- 丝滑拖拽: rAF 渲染 + spring 弹性吸附 ----
@@ -2021,6 +2049,7 @@ function layoutCarousel(smooth) {
       moved = false;
       startX = e.clientX;
       dragBase = featAngle;
+      stopWheelAnim();
       stopAll();
       startRenderLoop();
       // 按下反馈: 卡片缩小 + 高亮
@@ -2172,15 +2201,31 @@ function layoutToolsCarousel(smooth) {
   function bindToolsCarousel() {
     const carousel = $('#tools-carousel');
     if (!carousel) return;
-    let lock = false;
+    let toolsTarget = 0, animRAF = null;
+
+    // 平滑滚动: 每次滚轮设目标=当前对齐位±1, rAF 缓动接近 (无惯性飞远/无卡顿)
+    const animLoop = () => {
+      const diff = toolsTarget - toolsAngle;
+      toolsAngle += diff * 0.15;
+      layoutToolsCarousel(false);
+      if (Math.abs(diff) < 0.01) {
+        toolsAngle = toolsTarget;
+        layoutToolsCarousel(true);
+        animRAF = null;
+      } else {
+        animRAF = requestAnimationFrame(animLoop);
+      }
+    };
+    const stopWheelAnim = () => {
+      if (animRAF) { cancelAnimationFrame(animRAF); animRAF = null; }
+    };
 
     carousel.addEventListener('wheel', (e) => {
       e.preventDefault();
-      if (lock) return;
-      lock = true;
-      setTimeout(() => { lock = false; }, 300);
-      toolsAngle += (e.deltaY > 0 ? 1 : -1);
-      layoutToolsCarousel(true);
+      if (dragging) return;
+      stopAll();
+      toolsTarget = Math.round(toolsAngle) + (e.deltaY < 0 ? 1 : -1);
+      if (!animRAF) animRAF = requestAnimationFrame(animLoop);
     }, { passive: false });
 
     let dragging = false, startX = 0, dragBase = 0;
@@ -2228,6 +2273,7 @@ function layoutToolsCarousel(smooth) {
       moved = false;
       startX = e.clientX;
       dragBase = toolsAngle;
+      stopWheelAnim();
       stopAll();
       startRenderLoop();
       const hit = e.target.closest('.carousel-item-inner');
@@ -2363,6 +2409,7 @@ function layoutToolsCarousel(smooth) {
   function buildControl(key, s) {
     const wrap = document.createElement('div');
     wrap.className = 'set-control';
+    wrap.dataset.setting = key;
     const type = s.type;
     if (type === 'UNABLE_TO_EDIT' || type === 'unable_to_edit') {
       const v = s.value !== undefined ? s.value : s.default;
@@ -2429,6 +2476,34 @@ function layoutToolsCarousel(smooth) {
         if (key === 'bg_gaussian_blur') refreshBackgrounds();   // 模糊度立即生效
       };
       wrap.appendChild(rw);
+      return wrap;
+    }
+    // range2: 范围值 [最小, 最大], 两个数值输入
+    if (type === 'range2') {
+      const min = Number(s.min) || 0, max = Number(s.max) || 60, step = Number(s.step) || 1;
+      const cur = getSettingValue(key);
+      const curA = Array.isArray(cur) ? cur : (Array.isArray(s.default) ? s.default : [min, max]);
+      const mk = (initVal) => {
+        const inp = document.createElement('input');
+        inp.type = 'number'; inp.min = min; inp.max = max; inp.step = step;
+        inp.value = Number(initVal);
+        inp.style.width = '86px'; inp.style.marginRight = '8px';
+        return inp;
+      };
+      const iMin = mk(curA[0]), iMax = mk(curA[1]);
+      const lblMin = document.createElement('span'); lblMin.className = 'range2-lbl'; lblMin.textContent = '最小';
+      const lblMax = document.createElement('span'); lblMax.className = 'range2-lbl'; lblMax.textContent = '最大';
+      const row = document.createElement('div');
+      row.style.display = 'flex'; row.style.alignItems = 'center'; row.style.gap = '6px';
+      row.appendChild(lblMin); row.appendChild(iMin); row.appendChild(lblMax); row.appendChild(iMax);
+      const save = () => {
+        const a = Number(iMin.value), b = Number(iMax.value);
+        const lo = Math.min(a, b), hi = Math.max(a, b);
+        markChanged(key, [lo, hi]);
+        if (api) api.set_setting(key, [lo, hi]).catch(err => toast(String(err), 'error'));
+      };
+      iMin.onchange = save; iMax.onchange = save;
+      wrap.appendChild(row);
       return wrap;
     }
     // string
@@ -2821,8 +2896,19 @@ function layoutToolsCarousel(smooth) {
     return { name: 'faust_1.png', uri: '../../assets/images/character/faust_1.png' };
   }
 
+  // 角色间隔范围设置 [min,max] (可在设置页调整)
+  function charRange(key, dmin, dmax) {
+    const s = BOOT && BOOT.settings_schema ? BOOT.settings_schema[key] : null;
+    let v = s ? s.value : null;
+    if (!Array.isArray(v) || v.length < 2) v = (s && Array.isArray(s.default)) ? s.default : [dmin, dmax];
+    const a = Number(v[0]) || dmin, b = Number(v[1]) || dmax;
+    return [Math.min(a, b), Math.max(a, b)];
+  }
+  function randInRange(r) { return (r[0] || 0) + Math.random() * ((r[1] || r[0] || 0) - (r[0] || 0)); }
+
   function scheduleCharacter() {
-    setTimeout(characterCycle, 10000 + Math.random() * 20000);   // 缩回后 10s~30s 再次出现
+    const r = charRange('char_appear_interval', 10, 30);
+    setTimeout(characterCycle, randInRange(r) * 1000);   // 缩回后在范围内随机再次出现
   }
 
   // 在边缘上随机像素位置 (比率 15%~85%), 并据此计算初始倾斜角度
@@ -2879,7 +2965,8 @@ function layoutToolsCarousel(smooth) {
       playCharAnim();
       showCharBubble(edge, pos, greetings[idx]);
       if (charEl._speechTimer) { clearTimeout(charEl._speechTimer); charEl._speechTimer = null; }
-      charEl._speechTimer = setTimeout(next, 10000 + Math.random() * 5000);   // 10s~15s 换一条
+      const sr = charRange('char_speech_interval', 10, 15);
+      charEl._speechTimer = setTimeout(next, randInRange(sr) * 1000);   // 范围内随机换一条
     };
     next();
   }
@@ -3008,12 +3095,12 @@ function layoutToolsCarousel(smooth) {
     charEl._wiggleTimer = setTimeout(() => {
       startCharSpeech(edge, pos, greetings);
     }, 800);
-    // 停留较长时间 (40s~60s) 后收回, 然后进入下一轮
+    // 停留设定时间 (范围内随机) 后收回, 然后进入下一轮
     charEl._stayTimer = setTimeout(() => {
       clearCharTimers();   // 停止文本循环与动效, 避免缩回后仍在展示
       applyCharPose(edge, pos, true);
       scheduleCharacter();
-    }, 40000 + Math.random() * 20000);
+    }, randInRange(charRange('char_stay_interval', 40, 60)) * 1000);
   }
 
   // ---------------- 初始化 ----------------
@@ -3089,6 +3176,16 @@ function layoutToolsCarousel(smooth) {
     if (firstPage) {
       document.documentElement.style.setProperty('--page-w', Math.floor(firstPage.getBoundingClientRect().width) + 'px');
     }
+    // 预加载完成: 淡出启动 Splash
+    const splash = document.getElementById('app-splash');
+    if (splash) {
+      splash.classList.add('hide');
+      setTimeout(() => { try { splash.remove(); } catch (e) {} }, 450);
+    }
+    // 通知后端窗口已就绪
+    if (api && typeof api.ui_ready === 'function') {
+      try { api.ui_ready().catch(() => {}); } catch (e) { /* 忽略 */ }
+    }
   }
 
   // pywebview 注入 window.pywebview 存在时序竞态, 等待 pywebviewready
@@ -3119,3 +3216,12 @@ window.Faust = {
   get BOOT() { return BOOT; },
   get PROJECT_ICON() { return PROJECT_ICON; },
 };
+
+// 保底: splash 最多显示 15 秒 (init 异常时自动淡出, 避免卡在预加载画面)
+setTimeout(() => {
+  const splash = document.getElementById('app-splash');
+  if (splash) {
+    splash.classList.add('hide');
+    setTimeout(() => { try { splash.remove(); } catch (e) {} }, 450);
+  }
+}, 15000);
