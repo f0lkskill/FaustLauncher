@@ -1919,8 +1919,8 @@ window.__onResError = function (msg) { toast('⚠ ' + msg, 'error', 6000); };
         dot.className = 'cdot';
         dot.title = '跳到第 ' + (i + 1) + ' 个快捷方式';
         dot.addEventListener('click', () => {
-          featAngle = i;
-          layoutCarousel(true);
+          if (typeof window.__featGoTo === 'function') window.__featGoTo(i);
+          else { featAngle = i; layoutCarousel(true); }
         });
         dotsWrap.appendChild(dot);
       });
@@ -1990,6 +1990,14 @@ function layoutCarousel(smooth) {
     };
     const stopWheelAnim = () => {
       if (animRAF) { cancelAnimationFrame(animRAF); animRAF = null; }
+    };
+
+    // 指示点跳转: 停止滚轮动画后再设角度, 避免 animLoop 覆盖造成卡位
+    window.__featGoTo = (i) => {
+      stopAll();
+      stopWheelAnim();
+      featAngle = i;
+      layoutCarousel(true);
     };
 
     carousel.addEventListener('wheel', (e) => {
@@ -2150,8 +2158,8 @@ function layoutCarousel(smooth) {
         dot.className = 'cdot';
         dot.title = '跳到第 ' + (i + 1) + ' 个工具';
         dot.addEventListener('click', () => {
-          toolsAngle = i;
-          layoutToolsCarousel(true);
+          if (typeof window.__toolsGoTo === 'function') window.__toolsGoTo(i);
+          else { toolsAngle = i; layoutToolsCarousel(true); }
         });
         dotsWrap.appendChild(dot);
       });
@@ -2218,6 +2226,14 @@ function layoutToolsCarousel(smooth) {
     };
     const stopWheelAnim = () => {
       if (animRAF) { cancelAnimationFrame(animRAF); animRAF = null; }
+    };
+
+    // 指示点跳转: 停止滚轮动画后再设角度, 避免 animLoop 覆盖造成卡位
+    window.__toolsGoTo = (i) => {
+      stopAll();
+      stopWheelAnim();
+      toolsAngle = i;
+      layoutToolsCarousel(true);
     };
 
     carousel.addEventListener('wheel', (e) => {
@@ -2322,6 +2338,13 @@ function layoutToolsCarousel(smooth) {
     if (!s) return null;
     if (SETTING_CHANGES[key]) return SETTING_CHANGES[key].value;
     return s.value !== undefined ? s.value : s.default;
+  }
+
+  // 设置写入后同步前端缓存, 保证 charRange 等实时读取新值 (即时生效)
+  function updateBootSetting(key, v) {
+    if (BOOT && BOOT.settings_schema && BOOT.settings_schema[key]) {
+      BOOT.settings_schema[key].value = v;
+    }
   }
 
   function getSettingOptions(key) {
@@ -2499,8 +2522,9 @@ function layoutToolsCarousel(smooth) {
       const save = () => {
         const a = Number(iMin.value), b = Number(iMax.value);
         const lo = Math.min(a, b), hi = Math.max(a, b);
+        iMin.value = lo; iMax.value = hi;   // 输入框同步, 避免显示 min>max
         markChanged(key, [lo, hi]);
-        if (api) api.set_setting(key, [lo, hi]).catch(err => toast(String(err), 'error'));
+        if (api) api.set_setting(key, [lo, hi]).then(() => updateBootSetting(key, [lo, hi])).catch(err => toast(String(err), 'error'));
       };
       iMin.onchange = save; iMax.onchange = save;
       wrap.appendChild(row);
