@@ -3,7 +3,7 @@
         "name": "游戏路径",
         "type": "string",
         "default": "",
-        "value": "d:/steam\\steamapps\\common\\Limbus Company\\",
+        "value": "",
         "description": "游戏安装路径, 请确保路径正确\n否则可能导致启动失败和其他错误问题",
         "page": "通用"
     },
@@ -223,8 +223,8 @@
             30
         ],
         "value": [
-            0,
-            1
+            10,
+            30
         ],
         "description": "角色小人缩回后再次出现的间隔 (秒)\n在给定范围内随机取值",
         "min": 2,
@@ -240,8 +240,8 @@
             15
         ],
         "value": [
-            0,
-            1
+            10,
+            15
         ],
         "description": "角色小人切换问候语的间隔 (秒)\n在给定范围内随机取值",
         "min": 2,
@@ -257,8 +257,8 @@
             60
         ],
         "value": [
-            0,
-            1
+            40,
+            60
         ],
         "description": "角色小人出现后停留的时间 (秒)\n在给定范围内随机取值",
         "min": 5,
@@ -294,7 +294,7 @@
         },
         "value": {
             "tray_hint": false,
-            "version_notify_flag": true
+            "version_notify_flag": false
         },
         "description": "程序运行时的缓存数据\n不建议修改"
     }
