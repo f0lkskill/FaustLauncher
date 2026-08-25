@@ -709,7 +709,8 @@ class AppApi:
         def _run():
             from functions.pages.app.page_loader import download_and_launch
             try:
-                download_and_launch(obj=None, need_run_game=False)
+                # manual=True: 手动更新不受 check_translate_update 禁用限制
+                download_and_launch(obj=None, need_run_game=False, manual=True)
             except Exception as e:
                 print(f"更新汉化失败: {e}")
             finally:
