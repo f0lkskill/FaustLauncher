@@ -40,7 +40,7 @@
         "default": true,
         "value": true,
         "description": "启动时检查汉化包版本并自动更新\n关闭后启动将跳过汉化更新检查",
-        "page": "翻译"
+        "page": "通用"
     },
     "after_gui_exit": {
         "name": "退出后操作",
