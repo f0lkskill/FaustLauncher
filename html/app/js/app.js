@@ -1675,6 +1675,7 @@ window.__onResError = function (msg) { toast('⚠ ' + msg, 'error', 6000); };
     if (sv) sv.textContent = b.version;
     // 背景色
     applyTheme(b.bg_color);
+    applyGlassFactor();
     // 项目图标 (后端 data URI, 供下载中心/推荐卡图标回退)
     if (b.icon_uri) {
       PROJECT_ICON = b.icon_uri;
@@ -1869,6 +1870,15 @@ window.__onResError = function (msg) { toast('⚠ ' + msg, 'error', 6000); };
     const parts = p.split(/[\\/]/);
     const head = parts.slice(0, 2).join('/');
     return head + '/…/' + parts.slice(-1)[0];
+  }
+
+  function applyGlassFactor() {
+    let v = 1;
+    try {
+      const s = BOOT && BOOT.settings_schema ? BOOT.settings_schema.glass_factor : null;
+      if (s) v = Number(s.value !== undefined ? s.value : s.default) || 1;
+    } catch (e) { v = 1; }
+    document.documentElement.style.setProperty('--glass-factor', String(v));
   }
 
   function applyTheme(color) {
@@ -2614,6 +2624,7 @@ function layoutToolsCarousel(smooth) {
         markChanged(key, v);
         if (api) api.set_setting(key, v).catch(err => toast(String(err), 'error'));
         if (key === 'bg_gaussian_blur') refreshBackgrounds();   // 模糊度立即生效
+        if (key === 'glass_factor') { if (BOOT && BOOT.settings_schema) BOOT.settings_schema[key].value = v; applyGlassFactor(); }  // 毛玻璃系数即时生效
       };
       wrap.appendChild(rw);
       return wrap;
