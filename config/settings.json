@@ -3,7 +3,7 @@
         "name": "游戏路径",
         "type": "string",
         "default": "",
-        "value": "d:/steam\\steamapps\\common\\Limbus Company\\",
+        "value": "",
         "description": "游戏安装路径, 请确保路径正确\n否则可能导致启动失败和其他错误问题",
         "page": "通用"
     },
@@ -38,7 +38,7 @@
         "name": "启动前检查汉化更新",
         "type": "boolean",
         "default": true,
-        "value": false,
+        "value": true,
         "description": "启动时检查汉化包版本并自动更新\n关闭后启动将跳过汉化更新检查",
         "page": "通用"
     },
@@ -293,7 +293,7 @@
             "箱式布局 (网格)"
         ],
         "default": 0,
-        "value": 1,
+        "value": 0,
         "description": "快捷方式与实用工具页面的展示方式\n滚轮切换: 3D 轮播卡片\n箱式布局: 网格平铺\n切换后需重启生效",
         "page": "其它"
     },
@@ -325,7 +325,7 @@
         },
         "value": {
             "tray_hint": false,
-            "version_notify_flag": true
+            "version_notify_flag": false
         },
         "description": "程序运行时的缓存数据\n不建议修改"
     }
