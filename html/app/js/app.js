@@ -2160,11 +2160,36 @@ function layoutCarousel(smooth) {
   function renderTools(tools) {
     const stage = $('#tools-stage');
     if (!stage) return;
-    stage.innerHTML = '';
+    const box = isBoxLayout();
+    const carouselEl = $('#tools-carousel');
+    const gridEl = $('#tools-grid');
+    const dotsEl = $('#tools-dots');
+    if (carouselEl) carouselEl.hidden = box;
+    if (dotsEl) dotsEl.hidden = box;
     const list = (tools || []).filter(Boolean);
     toolsTotal = list.length;
     toolsAngle = 0;
     toolsData = list;
+    if (box) {
+      // 箱式布局: 网格平铺, 点击打开工具
+      if (gridEl) {
+        gridEl.hidden = false;
+        gridEl.innerHTML = '';
+        list.forEach((t) => {
+          const card = document.createElement('button');
+          card.className = 'box-card';
+          const bg = t.image_uri || (t.image ? '../../assets/images/tools/' + t.image : '');
+          card.innerHTML =
+            '<div class="box-card-img">' + (bg ? '<img src="' + esc(bg) + '" alt="" draggable="false">' : '') + '</div>' +
+            '<div class="box-card-name">' + esc(t.name) + '</div>' +
+            '<div class="box-card-desc">' + esc(t.desc || '') + '</div>';
+          card.onclick = () => openToolAction(t);
+          gridEl.appendChild(card);
+        });
+      }
+      return;
+    }
+    stage.innerHTML = '';
     if (!toolsTotal) return;
     list.forEach((t, i) => {
       const wrap = document.createElement('div');
@@ -2497,6 +2522,12 @@ function layoutToolsCarousel(smooth) {
       sel.onchange = () => {
         markChanged(key, Number(sel.value));
         if (key === 'translate_source') updateSourceChip();   // 主页汉化源立即同步
+        if (key === 'page_layout') {
+          // 快捷方式/工具布局切换即时重渲染
+          if (BOOT && BOOT.settings_schema) BOOT.settings_schema[key].value = Number(sel.value);
+          if (currentPage === 'features' && BOOT && BOOT.features) renderFeatures(BOOT.features);
+          if (currentPage === 'tools' && BOOT && BOOT.tools) renderTools(BOOT.tools);
+        }
         if (api) api.set_setting(key, Number(sel.value)).catch(err => toast(String(err), 'error'));
       };
       wrap.appendChild(sel);
