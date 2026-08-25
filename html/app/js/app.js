@@ -705,6 +705,8 @@ window.__onResError = function (msg) { toast('⚠ ' + msg, 'error', 6000); };
   }
 
   // ---------------- 页面导航 ----------------
+  let resInited = false;   // 资源管理页首次进入标记 (默认插件模式)
+
   function switchPage(name) {
     currentPage = name;
     // addLog('[页面] 切换到 ' + name);
@@ -713,7 +715,16 @@ window.__onResError = function (msg) { toast('⚠ ' + msg, 'error', 6000); };
     if (target) target.classList.add('active');
     $$('.nav-item').forEach(b => b.classList.toggle('active', b.dataset.page === name));
     $('#main').scrollTop = 0;
-    if (name === 'mod_addon') refreshMods();
+    if (name === 'mod_addon') {
+      // 首次进入: 强制插件模式并加载对应按钮组 (之后保持用户选择)
+      if (!resInited) {
+        resInited = true;
+        resKind = 'addon';
+        $$('.res-tab').forEach(x => x.classList.toggle('active', x.dataset.kind === 'addon'));
+        syncResActions();
+      }
+      refreshMods();
+    }
     if (name === 'download_center') {
       // 无条件清空已安装缓存并重测本地 (资源中心删除插件/Mod 后进入立即同步)
       downloadedSeen.clear();
