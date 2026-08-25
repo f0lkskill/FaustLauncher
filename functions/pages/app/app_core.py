@@ -279,7 +279,7 @@ class FaustLauncherCore:
             Thread(target=download_and_launch).start()
         
         if not os.path.exists("assets/Font/Context/ChineseFont.ttf"):
-            print("错误: 未找到字体文件 Font/Context/ChineseFont.ttf\n请尝试手动添加或者使用汉化更新修复")
+            print("未找到字体文件 Font/Context/ChineseFont.ttf\n请尝试手动添加或者使用汉化更新修复")
 
     def folder_link(self):
         """创建文件夹超链接"""
