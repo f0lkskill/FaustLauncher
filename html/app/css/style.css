@@ -767,13 +767,7 @@ body.modal-open .res-card {
   mask-image: linear-gradient(to top, rgba(0,0,0,1) 0%, rgba(0,0,0,.85) 62%, transparent 96%);
   pointer-events: none; user-select: none; -webkit-user-drag: none;
 }
-.box-card-body {
-  position: relative; z-index: 1;
-  background: rgba(10, 12, 16, 0.32);
-  backdrop-filter: blur(calc(var(--glass-factor) * 8px));
-  -webkit-backdrop-filter: blur(calc(var(--glass-factor) * 8px));
-  border-radius: 10px; padding: 4px 6px;
-}
+.box-card-body { position: relative; z-index: 1; text-shadow: 0 2px 8px rgba(0, 0, 0, .7); }
 .box-card-name { font-size: 15px; font-weight: 600; margin-bottom: 6px; }
 .box-card-desc { font-size: 12px; color: var(--text-2); white-space: pre-line; }
 .stat-card { margin-bottom: 0; }
@@ -941,10 +935,8 @@ body.modal-open .res-card {
   height: 100%;
   display: flex; flex-direction: column; align-items: center; justify-content: center;
   gap: 0.3em; padding: 0.6em 0.55em; text-align: center;
-  /* 轻微模糊层: 让文字与背景图分离, 更清晰可读 (受毛玻璃系数控制) */
-  background: rgba(10, 12, 16, 0.32);
-  backdrop-filter: blur(calc(var(--glass-factor) * 10px));
-  -webkit-backdrop-filter: blur(calc(var(--glass-factor) * 10px));
+  text-shadow: 0 2px 10px rgba(0, 0, 0, .7);
+}
   border-radius: inherit;
 }
 /* 字号用 em, 随卡片尺寸 (stage font-size) 等比例缩放 */
