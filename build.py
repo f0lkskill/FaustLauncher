@@ -28,20 +28,22 @@ _BUILD_STEPS = [
     ('resources',  '复制资源文件'),
     ('docs',       '复制文档文件'),
     ('exe',        '复制可执行文件'),
-    ('upload_info', '上传版本信息'),
+    ('compress',   '压缩打包 zip'),
 ]
 
 
-def upload_version_info(address, version, log=None): # type: ignore
+def upload_version_info(address, version, download_url='', log=None): # type: ignore
     """上传版本信息到 webnote。
 
     规则:
     - 版本号已存在 → 跳过上传
-    - 只登记版本号与上传时间; 描述/下载链接预置空值键, 由开发者到服务器(textdb)上填写
+    - 只登记版本号与上传时间; 描述预置空值键, 由开发者到服务器(textdb)上填写
+    - download_url 传入时一并登记 (蓝奏云直链解析 URL)
     - 不切换 latest_release_version 标签 (缺失时预置空值键, 由服务器侧填写)
 
     address: webnote 笔记完整地址(如 FaustLauncher.version_info)
     version: 要登记的版本号(如 V0.6.0-pre.7.fix.2)
+    download_url: 下载直链 (可为空)
     log: 可选日志回调(text), 默认 print
     """
     if log is None:
@@ -70,7 +72,7 @@ def upload_version_info(address, version, log=None): # type: ignore
         new_versions = {version: {
             'data': datetime.now().strftime('%Y-%m-%d-%H:%M:%S'),
             'description': '',
-            'url': '',
+            'url': download_url or '',
         }}
         new_versions.update(versions)
         data['versions'] = new_versions
@@ -192,6 +194,12 @@ class BuildGUI:
 
         btn_frame = tk.Frame(self.root, bg=BG)
         btn_frame.pack(pady=(0, 12))
+        self._publish_btn = tk.Button(btn_frame, text='上传发布', state=tk.DISABLED,
+                                     bg=SUCCESS, fg='#04110b', relief='flat',
+                                     font=('Microsoft YaHei UI', 10),
+                                     padx=20, pady=6, cursor='hand2',
+                                     activebackground='#0d9668', activeforeground='#04110b')
+        self._publish_btn.pack(side=tk.LEFT, padx=(0, 8))
         self._close_btn = tk.Button(btn_frame, text='关闭', command=self.root.destroy,
                                    bg='#334155', fg=TEXT, relief='flat',
                                    font=('Microsoft YaHei UI', 10),
@@ -441,13 +449,82 @@ class BuildGUI:
         self._set_step(9, 'done')
         self._set_progress(92)
 
-        # ---- 上传版本信息 ----
+        # ---- 压缩打包 zip (顶层 FaustLauncher/) ----
         self._set_step(10, 'running')
-        self._set_status('上传版本信息...')
-        self._upload_version_info()
+        self._set_status('压缩打包 zip...')
+        try:
+            import zipfile
+            folder = f'build_{self.version_info}'
+            zip_path = f'{folder}.zip'
+            if os.path.exists(zip_path):
+                os.remove(zip_path)
+            files = []
+            for root, _dirs, fs in os.walk(folder):
+                for f in fs:
+                    files.append(os.path.join(root, f))
+            if not files:
+                raise FileNotFoundError(f'{folder} 为空, 无法打包')
+            with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
+                for i, full in enumerate(files):
+                    arc = os.path.join('FaustLauncher', os.path.relpath(full, folder)).replace('\\', '/')
+                    zf.write(full, arc)
+                    if (i + 1) % 200 == 0:
+                        self._set_progress(92 + int((i + 1) / len(files) * 8))
+            size_mb = os.path.getsize(zip_path) / 1024.0 / 1024.0
+            self._log(f'✔ 压缩完成: {zip_path} ({size_mb:.1f} MB)\n', SUCCESS)
+            self._zip_path = zip_path
+        except Exception as e:
+            self._set_step(10, 'failed')
+            self._set_status(f'压缩打包失败: {e}', DANGER)
+            self._on_done(False)
+            return
         self._set_step(10, 'done')
         self._set_progress(100)
         self._on_done(True)
+
+    def _open_build_dir(self):
+        """打开压缩为 zip 的原始目录, 供用户自行测试 (窗口与进程不退出)"""
+        try:
+            os.startfile(f'build_{self.version_info}')
+        except Exception as e:
+            self._log(f'打开目录失败: {e}\n', DANGER)
+
+    def _publish_release(self):
+        """蓝奏云上传 zip 到 FaustLauncher 文件夹 → 直链 → 上传版本信息(附下载链接)"""
+        def _run():
+            zip_path = getattr(self, '_zip_path', '') or f'build_{self.version_info}.zip'
+            if not os.path.isfile(zip_path):
+                self._log(f'✕ 未找到压缩包: {zip_path}\n', DANGER)
+                return
+            try:
+                from functions.tools.post_extension_tools import _lanzou_session, PARSER_BASE
+                from functions.web_update.lanzou_utils import GetOrCreateFolder, UploadFile
+                from functions.base.web_config import get_lanzou_config
+                self._log(f'开始发布 {self.version_info} ...\n')
+                session = _lanzou_session(self._log)
+                self._log('定位蓝奏云文件夹: FaustLauncher\n')
+                fid = GetOrCreateFolder(session, 'FaustLauncher')
+                if not fid:
+                    raise RuntimeError('无法创建/定位蓝奏云文件夹: FaustLauncher')
+                max_mb = int(get_lanzou_config().get('max_size_mb') or 66)
+                self._log('上传压缩包到蓝奏云...\n')
+                ret = UploadFile(session, zip_path, folder_id=fid, max_size_mb=max_mb,
+                                 progress_callback=lambda p: self._log(f'  上传 {p * 100:.0f}%\n'))
+                if ret.get('status') != 1:
+                    raise RuntimeError(f'上传失败: {ret.get("msg")}')
+                share = ret.get('share_url') or ''
+                url = PARSER_BASE + share
+                self._log(f'✔ 上传成功, 直链: {url}\n', SUCCESS)
+                # 上传版本信息 (附下载链接)
+                address = self._read_version_addr() or get_webnote('version_info')[0]
+                if not address:
+                    self._log('· 未填写版本信息地址, 跳过版本信息上传\n', MUTED)
+                else:
+                    upload_version_info(address, self.version_info, download_url=url, log=self._log)
+                self._log(f'\n✔ 发布完成! 下载链接: {url}\n', SUCCESS)
+            except Exception as e:
+                self._log(f'\n✕ 发布失败: {e}\n', DANGER)
+        threading.Thread(target=_run, daemon=True).start()
 
     def _read_version_addr(self):
         """从主线程安全读取版本信息地址输入框的值"""
@@ -478,10 +555,16 @@ class BuildGUI:
             self._set_status(f'构建完成! v{self.version_info}', SUCCESS)
             self._set_progress(100)
             self._log(f'\n✔ 构建完成: build_{self.version_info}\n', SUCCESS)
-            self._close_btn.configure(text='打开文件夹', state=tk.NORMAL,
-               command=lambda: [os.startfile(f'build_{self.version_info}'),
-                                self.root.destroy()],
-               bg=ACCENT, activebackground='#4f46e5')
+            self._log(f'已生成压缩包: {getattr(self, "_zip_path", "")}\n', SUCCESS)
+            # 窗口与进程不退出: 打开原始目录供用户自行测试, 并提供"上传发布"按钮
+            self._close_btn.configure(text='打开测试目录', state=tk.NORMAL,
+                                      command=self._open_build_dir,
+                                      bg=ACCENT, activebackground='#4f46e5')
+            self._publish_btn.configure(state=tk.NORMAL, command=self._publish_release)
+            try:
+                os.startfile(f'build_{self.version_info}')
+            except Exception:
+                pass
         else:
             self._log('\n✕ 构建失败\n', DANGER)
             self._close_btn.configure(text='关闭', state=tk.NORMAL,
