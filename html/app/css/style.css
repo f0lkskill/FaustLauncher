@@ -61,8 +61,8 @@ body {
   display: flex;
   flex-direction: column;
   background: rgba(13, 16, 24, 0.82);
-  backdrop-filter: blur(18px);
-  -webkit-backdrop-filter: blur(18px);
+  backdrop-filter: blur(26px);
+  -webkit-backdrop-filter: blur(26px);
   border-right: 1px solid var(--border);
   padding: 18px 14px;
   z-index: 2;
@@ -152,8 +152,8 @@ body {
   background: rgba(37, 37, 38, 0.72);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(22px);
+  -webkit-backdrop-filter: blur(22px);
   padding: 20px;
   margin-bottom: 18px;
 }
@@ -199,7 +199,7 @@ body {
   display: flex; align-items: center; justify-content: space-between; gap: 16px;
   background: rgba(37, 37, 38, 0.72); border: 1px solid var(--border);
   border-radius: 12px; padding: 16px 18px; transition: border-color .18s ease, background .18s ease;
-  backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(22px); -webkit-backdrop-filter: blur(22px);
 }
 .dc-card:hover { border-color: var(--accent); background: rgba(37, 37, 38, 0.85); }
 .dc-card.disabled { opacity: .5; }
@@ -217,8 +217,8 @@ body {
 .dc-progress {
   height: 4px; border-radius: 2px;
   background: rgba(10, 12, 18, .55);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
   border: 1px solid rgba(255, 255, 255, .06);
   margin-top: 8px; overflow: hidden; opacity: 0; transition: opacity .2s;
 }
@@ -304,8 +304,8 @@ body.modal-open .res-card {
     linear-gradient(rgba(24, 27, 34, 0.55), rgba(24, 27, 34, 0.55)) padding-box,
     linear-gradient(135deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0.04)) border-box;
   border-radius: 12px; padding: 10px 14px;
-  backdrop-filter: blur(18px) saturate(140%);
-  -webkit-backdrop-filter: blur(18px) saturate(140%);
+  backdrop-filter: blur(26px) saturate(140%);
+  -webkit-backdrop-filter: blur(26px) saturate(140%);
   transform-style: preserve-3d;
   transition: box-shadow .25s ease;
   will-change: transform;
@@ -535,8 +535,8 @@ body.modal-open .res-card {
 .progress-track {
   height: 6px; border-radius: 3px;
   background: rgba(10, 12, 18, .55);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
   border: 1px solid rgba(255, 255, 255, .06);
   overflow: hidden; margin-bottom: 16px;
 }
@@ -588,8 +588,8 @@ body.modal-open .res-card {
 /* ---------- 工具面板 (模态窗口) ---------- */
 .panel-overlay {
   position: fixed; inset: 0; z-index: 120;
-  background: rgba(0,0,0,.55); backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
+  background: rgba(0,0,0,.55); backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   display: flex; align-items: center; justify-content: center;
   animation: fadeIn .22s ease;
 }
@@ -602,8 +602,8 @@ body.modal-open .res-card {
   width: 480px; max-width: 92vw; max-height: 82vh;
   /* 全局模态: 深灰黑半透明 + 毛玻璃, 弱饱和去蓝 */
   background: rgba(20, 22, 28, 0.80);
-  backdrop-filter: blur(22px) saturate(90%);
-  -webkit-backdrop-filter: blur(22px) saturate(90%);
+  backdrop-filter: blur(30px) saturate(90%);
+  -webkit-backdrop-filter: blur(30px) saturate(90%);
   border: 1px solid rgba(255, 255, 255, 0.10);
   border-radius: var(--radius);
   box-shadow: 0 24px 70px rgba(0, 0, 0, 0.6);
@@ -867,8 +867,8 @@ body.modal-open .res-card {
   margin: 0 auto 18px;
   padding: 9px 18px;
   background: rgba(20, 22, 28, 0.45);
-  backdrop-filter: blur(14px) saturate(140%);
-  -webkit-backdrop-filter: blur(14px) saturate(140%);
+  backdrop-filter: blur(22px) saturate(140%);
+  -webkit-backdrop-filter: blur(22px) saturate(140%);
   border: 1px solid rgba(255, 255, 255, 0.10);
   border-radius: 999px;
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.30);
@@ -934,8 +934,8 @@ body.modal-open .res-card {
   gap: 0.3em; padding: 0.6em 0.55em; text-align: center;
   /* 轻微模糊层: 让文字与背景图分离, 更清晰可读 */
   background: rgba(10, 12, 16, 0.30);
-  backdrop-filter: blur(1px);
-  -webkit-backdrop-filter: blur(1px);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
   border-radius: inherit;
 }
 /* 字号用 em, 随卡片尺寸 (stage font-size) 等比例缩放 */
@@ -972,8 +972,8 @@ body.modal-open .res-card {
 /* 设置页整体套毛玻璃背景板, 防止字体与背景重叠看不清 */
 #settings-groups {
   background: rgba(26, 29, 36, 0.55);
-  backdrop-filter: blur(18px) saturate(140%);
-  -webkit-backdrop-filter: blur(18px) saturate(140%);
+  backdrop-filter: blur(26px) saturate(140%);
+  -webkit-backdrop-filter: blur(26px) saturate(140%);
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: var(--radius);
   padding: 18px 20px;
@@ -1053,16 +1053,16 @@ body.modal-open .res-card {
 .dl-fab-ico { font-size: 20px; line-height: 1; }
 .dl-overlay {
   position: fixed; inset: 0; z-index: 61; display: none;
-  background: rgba(0,0,0,.35); backdrop-filter: blur(3px);
-  -webkit-backdrop-filter: blur(3px);
+  background: rgba(0,0,0,.35); backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
 }
 .dl-overlay.show { display: block; }
 .dl-drawer {
   position: fixed; top: 0; right: 0; bottom: 0; z-index: 62;
   width: 340px; max-width: 86vw;
   background: rgba(24, 24, 26, 0.96);
-  backdrop-filter: blur(8px) saturate(120%);
-  -webkit-backdrop-filter: blur(8px) saturate(120%);
+  backdrop-filter: blur(14px) saturate(120%);
+  -webkit-backdrop-filter: blur(14px) saturate(120%);
   border-left: 1px solid var(--border);
   display: flex; flex-direction: column;
   transform: translateX(102%); transition: transform .28s cubic-bezier(.4,0,.2,1);
@@ -1103,8 +1103,8 @@ body.modal-open .res-card {
 .dl-track {
   height: 5px; border-radius: 3px;
   background: rgba(10, 12, 18, .55);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
   border: 1px solid rgba(255, 255, 255, .06);
   margin: 8px 0 5px; overflow: hidden;
 }
@@ -1165,8 +1165,8 @@ body.modal-open .res-card {
   position: fixed; left: var(--sidebar-w); right: 0; bottom: 0;
   height: var(--term-h);
   background: rgba(8, 10, 15, 0.55);
-  backdrop-filter: blur(18px) saturate(140%);
-  -webkit-backdrop-filter: blur(18px) saturate(140%);
+  backdrop-filter: blur(26px) saturate(140%);
+  -webkit-backdrop-filter: blur(26px) saturate(140%);
   border-top: 1px solid var(--border);
   transform: translateY(calc(100% - 36px));
   transition: transform .28s cubic-bezier(.4,0,.2,1);
@@ -1212,7 +1212,7 @@ body.modal-open .res-card {
   background: rgba(26, 46, 66, .92);
   border: 1px solid rgba(55, 148, 255, .5);
   box-shadow: 0 8px 30px rgba(0,0,0,.4);
-  animation: toastIn .25s ease; backdrop-filter: blur(10px);
+  animation: toastIn .25s ease; backdrop-filter: blur(16px);
   position: relative;
 }
 .toast::before {
@@ -1269,8 +1269,8 @@ body.modal-open .res-card {
   display: flex; flex-direction: column; align-items: center; justify-content: center;
   text-align: center; gap: 10px;
   background: rgba(26, 29, 36, 0.55);
-  backdrop-filter: blur(18px) saturate(140%);
-  -webkit-backdrop-filter: blur(18px) saturate(140%);
+  backdrop-filter: blur(26px) saturate(140%);
+  -webkit-backdrop-filter: blur(26px) saturate(140%);
   border: 1px solid rgba(255,255,255,.08);
   border-radius: var(--radius); padding: 40px;
   flex: 1;
@@ -1291,8 +1291,8 @@ body.modal-open .res-card {
 .about-program-card .ap-links { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; margin-top: 14px; }
 .about-program-card .ap-links .btn {
   background: rgba(255, 255, 255, 0.06);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
   border: 1px solid rgba(255, 255, 255, 0.10);
 }
 .about-program-card .ap-links .btn:hover { background: rgba(55, 148, 255, 0.18); border-color: var(--accent); }
@@ -1300,8 +1300,8 @@ body.modal-open .res-card {
 .about-contrib-card {
   display: flex; gap: 18px;
   background: rgba(26, 29, 36, 0.55);
-  backdrop-filter: blur(18px) saturate(140%);
-  -webkit-backdrop-filter: blur(18px) saturate(140%);
+  backdrop-filter: blur(26px) saturate(140%);
+  -webkit-backdrop-filter: blur(26px) saturate(140%);
   border: 1px solid rgba(255,255,255,.08);
   border-radius: var(--radius); padding: 20px;
   flex: 1; min-height: 0;
