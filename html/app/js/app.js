@@ -2701,7 +2701,7 @@ function layoutToolsCarousel(smooth) {
           '<img class="about-program-icon" src="' + PROJECT_ICON + '" alt="">' +
           '<h1>FaustLauncher</h1>' +
           '<div class="ap-sub">浮士德启动器 · 您人生中绝无仅有的完美启动器</div>' +
-          (p.version ? '<div class="ap-ver">v' + esc(p.version) + '</div>' : '') +
+          (p.version ? '<div class="ap-ver">' + esc(p.version) + '</div>' : '') +
           '<div class="ap-desc">' + esc(p.description || '') + '</div>' +
           '<div class="ap-links">' +
             '<button class="btn btn-ghost" data-link="https://github.com/f0lkskill/FaustLauncher">📦 GitHub</button>' +
