@@ -1060,108 +1060,118 @@ def download_and_launch(obj=None, need_run_game=False):
             except Exception as e:
                 print(f"同步云端插件/Mod 失败: {e}")
 
-        lang_path = get_translation_dir()
-        download_path = 'lang'
-        is_ourplay = is_ourplay_source()
+        # 汉化更新受 check_translate_update 设置控制; 显式版本检查避免无脑下载
+        from functions.base.settings_manager import get_settings_manager as _gsm
+        try:
+            _check_tu = bool(_gsm().get_setting("check_translate_update"))
+        except Exception:
+            _check_tu = True
+        _need_translate = _check_tu and need_up()
+        if not _need_translate:
+            print("已禁用启动前检查汉化更新" if not _check_tu else "当前汉化已是最新版本，无需更新")
+        if _need_translate:
+            lang_path = get_translation_dir()
+            download_path = 'lang'
+            is_ourplay = is_ourplay_source()
         
-        print(f"开始下载汉化包 (平台: {'OurPlay' if is_ourplay else '零协会'})...")
-        sys.path.append('functions')
+            print(f"开始下载汉化包 (平台: {'OurPlay' if is_ourplay else '零协会'})...")
+            sys.path.append('functions')
         
-        main_root = obj.root if obj else None
+            main_root = obj.root if obj else None
         
-        _push_step('download')
-        gui = download_translation(main_root, download_path)
+            _push_step('download')
+            gui = download_translation(main_root, download_path)
 
-        while gui.is_downloading:
-            sleep(1)
+            while gui.is_downloading:
+                sleep(1)
         
-        print("汉化包下载完成")
-        _push_step('resource')
+            print("汉化包下载完成")
+            _push_step('resource')
 
-        sleep(1.5)
+            sleep(1.5)
 
-        gui_res = DownloadGUI(main_root, 'resources/', False, download_func=download_and_extract_gui)
-        dt = Thread(target=check_resource_update, args=(gui_res,)).start()
+            gui_res = DownloadGUI(main_root, 'resources/', False, download_func=download_and_extract_gui)
+            dt = Thread(target=check_resource_update, args=(gui_res,)).start()
 
-        while gui_res.is_downloading:
-            sleep(1)
+            while gui_res.is_downloading:
+                sleep(1)
             
-        del dt
-        _push_step('bubble')
-        gui_res.root.destroy()
+            del dt
+            _push_step('bubble')
+            gui_res.root.destroy()
         
-        print("开始下载气泡文本...")
-        download_bubble(download_path)
-        print("气泡文本载入完成")
-        _push_step('install')
+            print("开始下载气泡文本...")
+            download_bubble(download_path)
+            print("气泡文本载入完成")
+            _push_step('install')
 
-        print("开始核对汉化版本...")
+            print("开始核对汉化版本...")
 
-        # 汉化包已下载解压: 以解压产物 src_lang 是否存在判断是否需要安装,
-        # 不再依赖 need_up() (无参调用永远返回 False, 会导致合并被跳过, 完整汉化被清理)
-        src_lang = os.path.join(download_path, 'LimbusCompany_Data', 'Lang', get_translation_dir_name())
+            # 汉化包已下载解压: 以解压产物 src_lang 是否存在判断是否需要安装,
+            # 不再依赖 need_up() (无参调用永远返回 False, 会导致合并被跳过, 完整汉化被清理)
+            src_lang = os.path.join(download_path, 'LimbusCompany_Data', 'Lang', get_translation_dir_name())
 
-        if os.path.exists(src_lang) or (is_ourplay and os.path.isdir(lang_path)):
-            print("检测到新的汉化版本，准备更新汉化文件...")
-            if is_ourplay:
-                # OurPlay 平台: 下载流程已直接安装到 lang/<平台目录名>, 无需再合并
-                if os.path.isdir(lang_path) and os.path.isfile(os.path.join(lang_path, 'info', 'version.json')):
-                    print(f"OurPlay 汉化包已安装到 {lang_path}")
+            if os.path.exists(src_lang) or (is_ourplay and os.path.isdir(lang_path)):
+                print("检测到新的汉化版本，准备更新汉化文件...")
+                if is_ourplay:
+                    # OurPlay 平台: 下载流程已直接安装到 lang/<平台目录名>, 无需再合并
+                    if os.path.isdir(lang_path) and os.path.isfile(os.path.join(lang_path, 'info', 'version.json')):
+                        print(f"OurPlay 汉化包已安装到 {lang_path}")
+                    else:
+                        print("❌ OurPlay 汉化包安装失败, 请查看上方日志")
+                        downloading = False
+                        return
                 else:
-                    print("❌ OurPlay 汉化包安装失败, 请查看上方日志")
-                    downloading = False
-                    return
-            else:
-                if os.path.exists(src_lang):
-                    print("正在合并汉化文件到游戏目录...")
-                    if os.path.isdir(lang_path):
+                    if os.path.exists(src_lang):
+                        print("正在合并汉化文件到游戏目录...")
+                        if os.path.isdir(lang_path):
+                            try:
+                                shutil.rmtree(lang_path, ignore_errors=True)
+                            except Exception as e:
+                                print(f"删除目录 {lang_path} 时出错: {e}")
+                                traceback.print_exc()
+                        elif os.path.exists(lang_path):
+                            os.remove(lang_path)
                         try:
-                            shutil.rmtree(lang_path, ignore_errors=True)
+                            from functions.base.game_launcher import safe_merge_dirs
+                            safe_merge_dirs(
+                                src_lang,
+                                lang_path
+                            )
                         except Exception as e:
-                            print(f"删除目录 {lang_path} 时出错: {e}")
+                            print(f"复制汉化文件时出错: {e}")
                             traceback.print_exc()
-                    elif os.path.exists(lang_path):
-                        os.remove(lang_path)
-                    try:
-                        from functions.base.game_launcher import safe_merge_dirs
-                        safe_merge_dirs(
-                            src_lang,
-                            lang_path
-                        )
-                    except Exception as e:
-                        print(f"复制汉化文件时出错: {e}")
-                        traceback.print_exc()
-                    # 汉化包自带 info/version.json (含正确版本号), 合并后自然保留, 不覆写
-                    # 合并 rmtree 会清掉之前复制的有色气泡, 这里重新覆盖回云端有色版
-                    try:
-                        from functions.fancy.bubble_transfer import download_bubble_files as _bubble_apply
-                        _bubble_apply('lang')
-                    except Exception as e:
-                        print(f"重新应用有色气泡失败: {e}")
-                    _push_step('mods')
-                else:
-                    print(f"错误: 未找到 lang 下的 {get_translation_dir_name()} 文件夹")
-        else:
-            print("当前汉化已是最新版本，无需更新")
+                        # 汉化包自带 info/version.json (含正确版本号), 合并后自然保留, 不覆写
+                        # 合并 rmtree 会清掉之前复制的有色气泡, 这里重新覆盖回云端有色版
+                        try:
+                            from functions.fancy.bubble_transfer import download_bubble_files as _bubble_apply
+                            _bubble_apply('lang')
+                        except Exception as e:
+                            print(f"重新应用有色气泡失败: {e}")
+                        _push_step('mods')
+                    else:
+                        print(f"错误: 未找到 lang 下的 {get_translation_dir_name()} 文件夹")
+            else:
+                print("当前汉化已是最新版本，无需更新")
 
-        if not is_ourplay and not os.path.exists('assets/Font/Context/ChineseFont.ttf'):
-            print("正在更新字体资源...")
-            shutil.copytree('lang/Font', 'assets/Font', dirs_exist_ok=True)
-            shutil.rmtree('lang/Font', ignore_errors=True)
+            if not is_ourplay and not os.path.exists('assets/Font/Context/ChineseFont.ttf'):
+                print("正在更新字体资源...")
+                shutil.copytree('lang/Font', 'assets/Font', dirs_exist_ok=True)
+                shutil.rmtree('lang/Font', ignore_errors=True)
 
-        # 零协 7z 解压到 lang/ 时会产生中间产物 lang/LimbusCompany_Data,
-        # 无论当前平台都必须清理 (平台切换后残留不会被旧逻辑清除)
-        if os.path.exists(os.path.join(download_path, 'LimbusCompany_Data')):
-            print("正在清理下载缓存...")
-            try:
-                shutil.rmtree(os.path.join(download_path, 'LimbusCompany_Data'), ignore_errors=True)
-            except Exception as e:
-                print(f"清理中间产物 {download_path}/LimbusCompany_Data 时出错: {e}")
-                traceback.print_exc()
+            # 零协 7z 解压到 lang/ 时会产生中间产物 lang/LimbusCompany_Data,
+            # 无论当前平台都必须清理 (平台切换后残留不会被旧逻辑清除)
             if os.path.exists(os.path.join(download_path, 'LimbusCompany_Data')):
-                print(f"警告: {download_path}/LimbusCompany_Data 清理不完整, 建议关闭游戏后手动删除")
+                print("正在清理下载缓存...")
+                try:
+                    shutil.rmtree(os.path.join(download_path, 'LimbusCompany_Data'), ignore_errors=True)
+                except Exception as e:
+                    print(f"清理中间产物 {download_path}/LimbusCompany_Data 时出错: {e}")
+                    traceback.print_exc()
+                if os.path.exists(os.path.join(download_path, 'LimbusCompany_Data')):
+                    print(f"警告: {download_path}/LimbusCompany_Data 清理不完整, 建议关闭游戏后手动删除")
 
-        print("汉化下载及处理全部完成！")
+            print("汉化下载及处理全部完成！")
 
         # 启动流程: 同步云端插件/Mod 更新 (仅启动游戏时执行; 进度推送到流水线)
         if need_run_game or obj is not None:
