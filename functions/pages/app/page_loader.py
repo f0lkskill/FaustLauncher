@@ -1141,9 +1141,12 @@ def download_and_launch(obj=None, need_run_game=False, manual=False):
                 print("当前汉化已是最新版本，无需更新")
 
             if not is_ourplay and not os.path.exists('assets/Font/Context/ChineseFont.ttf'):
-                print("正在更新字体资源...")
-                shutil.copytree('lang/Font', 'assets/Font', dirs_exist_ok=True)
-                shutil.rmtree('lang/Font', ignore_errors=True)
+                if os.path.isdir('lang/Font') and os.listdir('lang/Font'):
+                    print("正在更新字体资源...")
+                    shutil.copytree('lang/Font', 'assets/Font', dirs_exist_ok=True)
+                    shutil.rmtree('lang/Font', ignore_errors=True)
+                else:
+                    print("未找到字体资源 (lang/Font 或 assets/Font), 跳过字体更新")
 
             # 零协 7z 解压到 lang/ 时会产生中间产物 lang/LimbusCompany_Data,
             # 无论当前平台都必须清理 (平台切换后残留不会被旧逻辑清除)
