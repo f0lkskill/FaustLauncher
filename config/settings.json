@@ -266,6 +266,14 @@
         "step": 1,
         "page": "其它"
     },
+    "check_translate_update": {
+        "name": "启动前检查汉化更新",
+        "type": "boolean",
+        "default": true,
+        "value": true,
+        "description": "启动时检查汉化包版本并自动更新\n关闭后启动将跳过汉化更新检查",
+        "page": "翻译"
+    },
     "page_layout": {
         "name": "快捷方式/工具布局",
         "type": "combobox",
