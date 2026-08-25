@@ -266,6 +266,18 @@
         "step": 1,
         "page": "其它"
     },
+    "page_layout": {
+        "name": "快捷方式/工具布局",
+        "type": "combobox",
+        "options": [
+            "滚轮切换 (3D)",
+            "箱式布局 (网格)"
+        ],
+        "default": 0,
+        "value": 0,
+        "description": "快捷方式与实用工具页面的展示方式\n滚轮切换: 3D 轮播卡片\n箱式布局: 网格平铺\n切换后需重启生效",
+        "page": "其它"
+    },
     "ui_mode": {
         "name": "界面模式",
         "type": "combobox",

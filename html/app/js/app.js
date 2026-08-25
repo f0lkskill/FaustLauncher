@@ -1885,13 +1885,48 @@ window.__onResError = function (msg) { toast('⚠ ' + msg, 'error', 6000); };
     layoutToolsCarousel(false);
   }
 
+  function isBoxLayout() {
+    const s = BOOT && BOOT.settings_schema ? BOOT.settings_schema.page_layout : null;
+    if (!s) return false;
+    const v = s.value !== undefined ? s.value : s.default;
+    return Number(v) === 1;   // 1 = 箱式布局
+  }
+
   function renderFeatures(features) {
     const stage = $('#features-stage');
     if (!stage) return;
-    stage.innerHTML = '';
+    const box = isBoxLayout();
+    const carouselEl = $('#features-carousel');
+    const gridEl = $('#features-grid');
+    const dotsEl = $('#features-dots');
+    if (carouselEl) carouselEl.hidden = box;
+    if (dotsEl) dotsEl.hidden = box;
     const list = (features || []).filter(Boolean);
     featTotal = list.length;
     featAngle = 0;
+    if (box) {
+      // 箱式布局: 网格平铺, 点击打开
+      if (gridEl) {
+        gridEl.hidden = false;
+        gridEl.innerHTML = '';
+        list.forEach((f) => {
+          const card = document.createElement('button');
+          card.className = 'box-card';
+          const bg = f.image_uri || (f.image ? '../../assets/images/features/' + f.image : '');
+          card.innerHTML =
+            '<div class="box-card-img">' + (bg ? '<img src="' + esc(bg) + '" alt="" draggable="false">' : '') + '</div>' +
+            '<div class="box-card-name">' + esc(f.name) + '</div>' +
+            '<div class="box-card-desc">' + esc(f.desc || '') + '</div>';
+          card.onclick = () => {
+            if (api) api.open_feature(f.name).catch(e => toast(String(e), 'error'));
+            else toast('浏览器预览模式', 'warn');
+          };
+          gridEl.appendChild(card);
+        });
+      }
+      return;
+    }
+    stage.innerHTML = '';
     if (!featTotal) return;
     list.forEach((f, i) => {
       const wrap = document.createElement('div');
