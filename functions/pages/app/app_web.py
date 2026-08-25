@@ -1937,7 +1937,13 @@ def run_web_ui(debug: bool = False):
     def _delayed_check():
         time.sleep(6)
         try:
-            core.check_settings(skip_auto_download=True, interactive=False)
+            check_up = True
+            try:
+                check_up = bool(core.settings_manager.get_setting("check_translate_update"))
+            except Exception:
+                check_up = True
+            # 汉化更新检查由 check_translate_update 设置控制
+            core.check_settings(skip_auto_download=not check_up, interactive=False)
             # 检查可能自动设置了 Steam 游戏路径, 通知前端同步设置页与首页路径显示
             _evaluate_js("window.__onPathSynced()")
         except Exception as e:
