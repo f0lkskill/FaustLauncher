@@ -864,10 +864,10 @@ window.__onResError = function (msg) { toast('⚠ ' + msg, 'error', 6000); };
         '</div>' +
       '</div>' +
       '<div class="res-card-ops">' +
-        '<label class="res-switch" title="' + (enabled ? '点击禁用' : '点击启用') + '">' +
+        '<button class="res-menu-btn">⋯</button>' +
+        '<label class="res-switch">' +
           '<input type="checkbox" ' + (enabled ? 'checked' : '') + '><span class="slider"></span>' +
         '</label>' +
-        '<button class="res-menu-btn" title="更多操作">⋯</button>' +
       '</div>';
     card.querySelector('.res-switch input').onchange = async (e) => {
       e.stopPropagation();
@@ -877,6 +877,8 @@ window.__onResError = function (msg) { toast('⚠ ' + msg, 'error', 6000); };
         const r = await fn(item.dir || item.name, e.target.checked);
         if (r && r.error) { toast('操作失败: ' + r.error, 'error'); e.target.checked = !e.target.checked; return; }
         item.enabled = e.target.checked;
+        // 同步内存 settings.enable, 保证详细界面(设置开关)一致
+        if (item.settings) item.settings.enable = e.target.checked;
         renderResList();
       } catch (err) { toast('操作失败: ' + err, 'error'); e.target.checked = !e.target.checked; }
     };
@@ -1959,9 +1961,11 @@ window.__onResError = function (msg) { toast('⚠ ' + msg, 'error', 6000); };
           card.className = 'box-card';
           const bg = f.image_uri || (f.image ? '../../assets/images/features/' + f.image : '');
           card.innerHTML =
-            '<div class="box-card-img">' + (bg ? '<img src="' + esc(bg) + '" alt="" draggable="false">' : '') + '</div>' +
-            '<div class="box-card-name">' + esc(f.name) + '</div>' +
-            '<div class="box-card-desc">' + esc(f.desc || '') + '</div>';
+            '<div class="box-card-bg">' + (bg ? '<img src="' + esc(bg) + '" alt="" draggable="false">' : '') + '</div>' +
+            '<div class="box-card-body">' +
+              '<div class="box-card-name">' + esc(f.name) + '</div>' +
+              '<div class="box-card-desc">' + esc(f.desc || '') + '</div>' +
+            '</div>';
           card.onclick = () => {
             if (api) api.open_feature(f.name).catch(e => toast(String(e), 'error'));
             else toast('浏览器预览模式', 'warn');
@@ -2225,9 +2229,11 @@ function layoutCarousel(smooth) {
           card.className = 'box-card';
           const bg = t.image_uri || (t.image ? '../../assets/images/tools/' + t.image : '');
           card.innerHTML =
-            '<div class="box-card-img">' + (bg ? '<img src="' + esc(bg) + '" alt="" draggable="false">' : '') + '</div>' +
-            '<div class="box-card-name">' + esc(t.name) + '</div>' +
-            '<div class="box-card-desc">' + esc(t.desc || '') + '</div>';
+            '<div class="box-card-bg">' + (bg ? '<img src="' + esc(bg) + '" alt="" draggable="false">' : '') + '</div>' +
+            '<div class="box-card-body">' +
+              '<div class="box-card-name">' + esc(t.name) + '</div>' +
+              '<div class="box-card-desc">' + esc(t.desc || '') + '</div>' +
+            '</div>';
           card.onclick = () => openToolAction(t);
           gridEl.appendChild(card);
         });
