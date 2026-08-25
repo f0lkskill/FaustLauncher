@@ -1997,13 +1997,12 @@ def run_web_ui(debug: bool = False):
     def _delayed_check():
         time.sleep(6)
         try:
-            check_up = True
-            try:
-                check_up = bool(core.settings_manager.get_setting("check_translate_update"))
-            except Exception:
-                check_up = True
-            # 汉化更新检查由 check_translate_update 设置控制
-            core.check_settings(skip_auto_download=not check_up, interactive=False)
+            # 只做设置检查, 不触发 check_settings 内部的简单汉化下载 (汉化由 download_and_launch 内部控制)
+            core.check_settings(skip_auto_download=True, interactive=False)
+            # 启动更新流程: 资源更新/插件Mod同步始终执行; 汉化部分受 check_translate_update 设置控制
+            from functions.pages.app.page_loader import download_and_launch
+            _shim = type('WebShim', (), {'core': core, 'root': None})()
+            download_and_launch(obj=_shim, need_run_game=False, manual=False)
             # 检查可能自动设置了 Steam 游戏路径, 通知前端同步设置页与首页路径显示
             _evaluate_js("window.__onPathSynced()")
         except Exception as e:
