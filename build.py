@@ -449,13 +449,14 @@ class BuildGUI:
         self._set_step(9, 'done')
         self._set_progress(92)
 
-        # ---- 压缩打包 zip (顶层 FaustLauncher/) ----
+        # ---- 压缩打包 zip (顶层 FaustLauncher/, 文件名 FaustLauncher-<版本>.zip) ----
         self._set_step(10, 'running')
         self._set_status('压缩打包 zip...')
         try:
             import zipfile
             folder = f'build_{self.version_info}'
-            zip_path = f'{folder}.zip'
+            zip_name = 'FaustLauncher-' + str(self.version_info).lstrip('V')
+            zip_path = f'{zip_name}.zip'
             if os.path.exists(zip_path):
                 os.remove(zip_path)
             files = []
@@ -492,7 +493,7 @@ class BuildGUI:
     def _publish_release(self):
         """蓝奏云上传 zip 到 FaustLauncher 文件夹 → 直链 → 上传版本信息(附下载链接)"""
         def _run():
-            zip_path = getattr(self, '_zip_path', '') or f'build_{self.version_info}.zip'
+            zip_path = getattr(self, '_zip_path', '') or ('FaustLauncher-' + str(self.version_info).lstrip('V') + '.zip')
             if not os.path.isfile(zip_path):
                 self._log(f'✕ 未找到压缩包: {zip_path}\n', DANGER)
                 return
