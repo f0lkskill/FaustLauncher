@@ -844,7 +844,7 @@ window.__onResError = function (msg) { toast('⚠ ' + msg, 'error', 6000); };
     const desc = item.description || '（无描述）';
     const ver = item.version || '';
     const card = document.createElement('div');
-    card.className = 'res-card';
+    card.className = 'res-card' + (enabled ? '' : ' disabled');
     card.innerHTML =
       '<div class="res-card-main">' +
         '<img class="res-icon" src="' + (item.icon || PROJECT_ICON) + '" alt="" onerror="this.src=\'' + PROJECT_ICON + '\'">' +
@@ -859,7 +859,21 @@ window.__onResError = function (msg) { toast('⚠ ' + msg, 'error', 6000); };
           (authorLinksHtml(item.author_links) ? '<div class="res-desc">' + authorLinksHtml(item.author_links) + '</div>' : '') +
         '</div>' +
       '</div>' +
-      '<button class="res-menu-btn" title="更多操作">⋯</button>';
+      '<div class="res-card-ops">' +
+        '<button class="res-toggle-btn" title="' + (enabled ? '点击禁用' : '点击启用') + '">' + (enabled ? '🔵' : '⚪') + '</button>' +
+        '<button class="res-menu-btn" title="更多操作">⋯</button>' +
+      '</div>';
+    card.querySelector('.res-toggle-btn').onclick = async (e) => {
+      e.stopPropagation();
+      if (!api) { toast('浏览器预览模式', 'warn'); return; }
+      const fn = resKind === 'addon' ? api.set_addon_enabled : api.set_mod_enabled;
+      try {
+        const r = await fn(item.dir || item.name, !enabled);
+        if (r && r.error) { toast('操作失败: ' + r.error, 'error'); return; }
+        item.enabled = !enabled;
+        renderResList();
+      } catch (err) { toast('操作失败: ' + err, 'error'); }
+    };
     card.querySelector('.res-menu-btn').onclick = () => openResModal(resKind, item);
     addCardTilt(card);
     return card;
