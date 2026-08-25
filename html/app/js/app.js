@@ -741,9 +741,10 @@ window.__onResError = function (msg) { toast('⚠ ' + msg, 'error', 6000); };
   }
 
   // ---------------- 资源管理 (插件/Mod) ----------------
-  let resKind = 'addon';          // 当前预览: addon | mod
+  let resKind = 'addon';          // 当前分区: addon | mod
   let resPage = 1;                // 当前页
   const RES_PAGE_SIZE = 5;        // 每页最多 5 个
+  let resSearch = '';             // 资源管理搜索词
   let resAddons = [];             // 插件列表
   let resMods = [];               // Mod 列表
 
@@ -772,7 +773,13 @@ window.__onResError = function (msg) { toast('⚠ ' + msg, 'error', 6000); };
     const list = $('#res-list');
     if (!list) return;
     list.innerHTML = '';
-    const items = resKind === 'addon' ? resAddons : resMods;
+    let items = resKind === 'addon' ? resAddons : resMods;
+    if (resSearch) {
+      const kw = resSearch.toLowerCase();
+      items = items.filter(it =>
+        (it.name || '').toLowerCase().includes(kw) ||
+        (it.description || '').toLowerCase().includes(kw));
+    }
     const totalPages = Math.max(1, Math.ceil(items.length / RES_PAGE_SIZE));
     if (resPage > totalPages) resPage = totalPages;
     const pageItems = items.slice((resPage - 1) * RES_PAGE_SIZE, resPage * RES_PAGE_SIZE);
@@ -1195,6 +1202,7 @@ window.__onResError = function (msg) { toast('⚠ ' + msg, 'error', 6000); };
   // ---------------- 下载中心 (资源管理式) ----------------
   let dcKind = 'addon';
   let dcPage = 1;
+  let dcSearch = '';             // 下载中心搜索词
   let dcAddonItems = [];
   let dcModItems = [];
 
@@ -1234,7 +1242,13 @@ window.__onResError = function (msg) { toast('⚠ ' + msg, 'error', 6000); };
     const list = $('#dc-list');
     if (!list) return;
     list.innerHTML = '';
-    const items = dcKind === 'addon' ? dcAddonItems : dcModItems;
+    let items = dcKind === 'addon' ? dcAddonItems : dcModItems;
+    if (dcSearch) {
+      const kw = dcSearch.toLowerCase();
+      items = items.filter(it =>
+        (it.name || '').toLowerCase().includes(kw) ||
+        (it.desc || '').toLowerCase().includes(kw));
+    }
     const totalPages = Math.max(1, Math.ceil(items.length / RES_PAGE_SIZE));
     if (dcPage > totalPages) dcPage = totalPages;
     const pageItems = items.slice((dcPage - 1) * RES_PAGE_SIZE, dcPage * RES_PAGE_SIZE);
@@ -2863,6 +2877,17 @@ function layoutToolsCarousel(smooth) {
       if (r && r.error) toast('安装失败: ' + r.error, 'error');
       else if (r && r.ok) { toast('插件已安装', 'success'); refreshMods(); }
     });
+    $('#btn-install-mod').addEventListener('click', async () => {
+      if (!api) { toast('浏览器预览模式', 'warn'); return; }
+      const r = await api.install_mod_dialog().catch(e => ({ error: String(e) }));
+      if (r && r.error) toast('安装失败: ' + r.error, 'error');
+      else if (r && r.ok) { toast('Mod 已安装', 'success'); refreshMods(); }
+    });
+    // 资源管理/下载中心搜索框
+    const resSearchEl = $('#res-search');
+    if (resSearchEl) resSearchEl.addEventListener('input', () => { resSearch = resSearchEl.value.trim(); resPage = 1; renderResList(); });
+    const dcSearchEl = $('#dc-search');
+    if (dcSearchEl) dcSearchEl.addEventListener('input', () => { dcSearch = dcSearchEl.value.trim(); dcPage = 1; renderDCList(); });
     // 资源管理页: 插件/Mod 切换 (按钮组随之切换)
     $$('.res-tab').forEach(t => t.addEventListener('click', () => {
       $$('.res-tab').forEach(x => x.classList.remove('active'));

@@ -258,6 +258,19 @@ body {
 .res-actions-group { display: flex; gap: 8px; flex-wrap: wrap; }
 /* hidden 属性优先于 display:flex, 保证按钮组按分区正确切换 */
 .res-actions-group[hidden] { display: none !important; }
+/* 搜索框 */
+.res-search {
+  flex: 1; min-width: 160px; max-width: 260px;
+  background: rgba(10, 12, 18, .55);
+  border: 1px solid var(--border);
+  border-radius: 8px; padding: 7px 12px;
+  color: var(--text); font-family: var(--font); font-size: 13px;
+  transition: border-color .18s ease;
+}
+.res-search:focus { outline: none; border-color: var(--accent); }
+.res-search::placeholder { color: var(--text-3); }
+/* 图标按钮 */
+.btn-icon { padding: 7px 10px; font-size: 15px; line-height: 1; }
 /* 压缩外层卡片内边距, 减小分区按钮距顶部的巨大间距 */
 #page-mod_addon .card,
 #page-download_center .card { padding: 6px 8px 10px; }

@@ -916,21 +916,80 @@ class AppApi:
             'single_dir': '',
         }
 
+    def _install_from_archive(self, archive, kind):
+        """从 zip/7z 压缩包安装插件或 Mod (解压后识别 info 文件所在目录)"""
+        import tempfile, shutil
+        tmp = tempfile.mkdtemp(prefix='faust_inst_')
+        try:
+            if archive.lower().endswith('.zip'):
+                import zipfile
+                with zipfile.ZipFile(archive) as zf:
+                    zf.extractall(tmp)
+            elif archive.lower().endswith('.7z'):
+                from functions.web_update.zeroasso_download import extract_with_7zip
+                if not extract_with_7zip(archive, tmp):
+                    return {'ok': False, 'error': '7z 解压失败'}
+            else:
+                return {'ok': False, 'error': '仅支持 zip/7z 压缩包'}
+            info_name = 'addon_info.json' if kind == 'addon' else 'mod_info.json'
+            target = None
+            for root, dirs, files in os.walk(tmp):
+                if info_name in files:
+                    target = root
+                    break
+            if not target:
+                return {'ok': False, 'error': f'压缩包中未找到 {info_name}'}
+            if kind == 'addon':
+                from functions.extension.addon.addon_utils import AddonManager
+                ok = AddonManager().add_addon(target)
+            else:
+                import shutil as _sh
+                name = os.path.basename(target) or 'mod'
+                dest = os.path.join('mods', name)
+                if os.path.exists(dest):
+                    _sh.rmtree(dest, ignore_errors=True)
+                os.makedirs(os.path.dirname(dest), exist_ok=True)
+                _sh.copytree(target, dest)
+                ok = True
+            return {'ok': bool(ok), 'error': None}
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
     def install_addon_dialog(self):
-        """选择本地插件目录安装到 addons/ (临时 Tk 文件夹选择)"""
+        """选择本地插件压缩包 (zip/7z) 或目录安装到 addons/"""
         try:
             import tkinter as tk
             from tkinter import filedialog
-            from functions.extension.addon.addon_utils import AddonManager
             root = tk.Tk()
             root.withdraw()
-            path = filedialog.askdirectory(title='选择插件目录 (包含 addon_info.json)')
+            path = filedialog.askopenfilename(
+                title='选择插件压缩包 (zip/7z)',
+                filetypes=[('压缩包', '*.zip *.7z'), ('所有文件', '*.*')])
             root.destroy()
             if not path:
                 return {'ok': False, 'error': None}
-            am = AddonManager()
-            ok = am.add_addon(path)
+            if path.lower().endswith(('.zip', '.7z')):
+                return self._install_from_archive(path, 'addon')
+            from functions.extension.addon.addon_utils import AddonManager
+            ok = AddonManager().add_addon(path)
             return {'ok': bool(ok), 'error': None}
+        except Exception as e:
+            return {'ok': False, 'error': str(e)}
+
+    def install_mod_dialog(self):
+        """选择本地 Mod 压缩包 (zip/7z) 安装到 mods/"""
+        try:
+            import tkinter as tk
+            from tkinter import filedialog
+            root = tk.Tk()
+            root.withdraw()
+            path = filedialog.askopenfilename(
+                title='选择 Mod 压缩包 (zip/7z)',
+                filetypes=[('压缩包', '*.zip *.7z'), ('所有文件', '*.*')])
+            root.destroy()
+            if not path:
+                return {'ok': False, 'error': None}
+            return self._install_from_archive(path, 'mod')
         except Exception as e:
             return {'ok': False, 'error': str(e)}
 

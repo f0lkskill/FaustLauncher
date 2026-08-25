@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>FaustLauncher 浮士德启动器</title>
-<link rel="stylesheet" href="css/style.css?v=72">
+<link rel="stylesheet" href="css/style.css?v=73">
 </head>
 <body>
 <div id="app-splash">
@@ -122,14 +122,16 @@
             <button class="res-tab active" data-kind="addon">🔌 插件</button>
             <button class="res-tab" data-kind="mod">🎮 Mod</button>
           </div>
+          <input class="res-search" id="res-search" type="text" placeholder="🔍 搜索本地插件/Mod...">
           <div class="res-actions">
             <div class="res-actions-group" id="res-actions-addon">
-              <button class="btn btn-ghost" id="btn-open-addon-dir">📂 打开插件目录</button>
-              <button class="btn btn-ghost" id="btn-install-addon">📦 选择插件安装</button>
+              <button class="btn btn-ghost btn-icon" id="btn-open-addon-dir" title="打开插件目录">📂</button>
+              <button class="btn btn-ghost btn-icon" id="btn-install-addon" title="安装插件 (zip)">➕</button>
             </div>
             <div class="res-actions-group" id="res-actions-mod" hidden>
-              <button class="btn btn-ghost" id="btn-open-mod-dir">📂 打开 Mod 目录</button>
-              <button class="btn btn-ghost" id="btn-open-mod-window">🪟 独立管理器（拖拽安装）</button>
+              <button class="btn btn-ghost btn-icon" id="btn-open-mod-dir" title="打开 Mod 目录">📂</button>
+              <button class="btn btn-ghost btn-icon" id="btn-install-mod" title="安装 Mod (zip)">➕</button>
+              <button class="btn btn-ghost btn-icon" id="btn-open-mod-window" title="独立管理器">🪟</button>
             </div>
           </div>
         </div>
@@ -146,6 +148,7 @@
             <button class="res-tab active" data-dc="addon">🔌 插件</button>
             <button class="res-tab" data-dc="mod">🎮 Mod</button>
           </div>
+          <input class="res-search" id="dc-search" type="text" placeholder="🔍 搜索云端插件/Mod...">
         </div>
         <div id="dc-list" class="res-list"></div>
         <div id="dc-pagination" class="res-pagination"></div>
@@ -202,7 +205,7 @@
       <div class="dl-empty">暂无下载任务</div>
     </div>
   </aside>
-<script src="js/app.js?v=81"></script>
+<script src="js/app.js?v=82"></script>
 <script>
 /* 独立兜底: 完全不依赖 app.js。无论 app.js 是否崩溃, 只要内容加载完成或超时,
    就移除主页两张卡片的 loading 圆圈。 */
