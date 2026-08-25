@@ -450,7 +450,10 @@ window.__onTrayHint = function (text) { toast(text, 'info', 5000); };
 // 卸载/安装插件/Mod 后由后端通知: 立即刷新已安装状态 (下载中心/主页每日推荐/资源管理)
 window.__onResChanged = function (kind) {
   if (typeof downloadedSeen !== 'undefined') downloadedSeen.clear();
-  if (typeof refreshMods === 'function') refreshMods(true);
+  // 资源管理: 仅当前在资源管理页才重刷, 保持分区/按钮组/搜索状态 (不在页内不强制刷新)
+  if (currentPage === 'mod_addon' && typeof refreshMods === 'function') {
+    refreshMods(true).then(() => { if (typeof syncResActions === 'function') syncResActions(); });
+  }
   if (typeof renderDCList === 'function') {
     const dcList = document.getElementById('dc-list');
     if (dcList) renderDCList();
@@ -763,6 +766,7 @@ window.__onResError = function (msg) { toast('⚠ ' + msg, 'error', 6000); };
       resMods = d.dir_mods || [];
       if (!keepPage) resPage = 1;
       renderResList();
+      syncResActions();   // 保持按钮组与当前分区一致
     } catch (e) {
       const list = $('#res-list');
       if (list) list.innerHTML = '<div class="res-empty">读取失败: ' + esc(String(e)) + '</div>';
@@ -860,19 +864,21 @@ window.__onResError = function (msg) { toast('⚠ ' + msg, 'error', 6000); };
         '</div>' +
       '</div>' +
       '<div class="res-card-ops">' +
-        '<button class="res-toggle-btn" title="' + (enabled ? '点击禁用' : '点击启用') + '">' + (enabled ? '🔵' : '⚪') + '</button>' +
+        '<label class="res-switch" title="' + (enabled ? '点击禁用' : '点击启用') + '">' +
+          '<input type="checkbox" ' + (enabled ? 'checked' : '') + '><span class="slider"></span>' +
+        '</label>' +
         '<button class="res-menu-btn" title="更多操作">⋯</button>' +
       '</div>';
-    card.querySelector('.res-toggle-btn').onclick = async (e) => {
+    card.querySelector('.res-switch input').onchange = async (e) => {
       e.stopPropagation();
       if (!api) { toast('浏览器预览模式', 'warn'); return; }
       const fn = resKind === 'addon' ? api.set_addon_enabled : api.set_mod_enabled;
       try {
-        const r = await fn(item.dir || item.name, !enabled);
-        if (r && r.error) { toast('操作失败: ' + r.error, 'error'); return; }
-        item.enabled = !enabled;
+        const r = await fn(item.dir || item.name, e.target.checked);
+        if (r && r.error) { toast('操作失败: ' + r.error, 'error'); e.target.checked = !e.target.checked; return; }
+        item.enabled = e.target.checked;
         renderResList();
-      } catch (err) { toast('操作失败: ' + err, 'error'); }
+      } catch (err) { toast('操作失败: ' + err, 'error'); e.target.checked = !e.target.checked; }
     };
     card.querySelector('.res-menu-btn').onclick = () => openResModal(resKind, item);
     addCardTilt(card);
@@ -2890,12 +2896,6 @@ function layoutToolsCarousel(smooth) {
       const r = await api.install_addon_dialog().catch(e => ({ error: String(e) }));
       if (r && r.error) toast('安装失败: ' + r.error, 'error');
       else if (r && r.ok) { toast('插件已安装', 'success'); refreshMods(); }
-    });
-    $('#btn-install-mod').addEventListener('click', async () => {
-      if (!api) { toast('浏览器预览模式', 'warn'); return; }
-      const r = await api.install_mod_dialog().catch(e => ({ error: String(e) }));
-      if (r && r.error) toast('安装失败: ' + r.error, 'error');
-      else if (r && r.ok) { toast('Mod 已安装', 'success'); refreshMods(); }
     });
     // 资源管理/下载中心搜索框
     const resSearchEl = $('#res-search');

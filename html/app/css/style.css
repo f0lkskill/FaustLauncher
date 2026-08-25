@@ -352,16 +352,14 @@ body.modal-open .res-card {
   cursor: pointer; font-size: 16px; line-height: 1; transition: all .18s ease;
 }
 .res-menu-btn:hover { background: rgba(255, 255, 255, 0.08); color: var(--text); }
-/* 卡片右侧操作区 (启用/禁用 + 更多) */
-.res-card-ops { display: flex; flex-direction: column; gap: 6px; flex-shrink: 0; align-items: center; }
-.res-toggle-btn {
-  flex-shrink: 0; width: 30px; height: 30px; border-radius: 8px;
-  display: inline-flex; align-items: center; justify-content: center;
-  background: transparent; border: none; cursor: pointer;
-  font-size: 15px; line-height: 1; transition: all .18s ease;
-  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, .35));
-}
-.res-toggle-btn:hover { background: rgba(255, 255, 255, 0.08); transform: scale(1.1); }
+/* 卡片右侧操作区 (启用/禁用 switch + 更多) */
+.res-card-ops { display: flex; flex-direction: column; gap: 8px; flex-shrink: 0; align-items: center; }
+.res-switch { position: relative; width: 36px; height: 20px; display: inline-block; flex-shrink: 0; cursor: pointer; }
+.res-switch input { opacity: 0; width: 0; height: 0; }
+.res-switch .slider { background: var(--border-2); }
+.res-switch input:checked + .slider { background: var(--accent); }
+.res-switch .slider::before { width: 14px; height: 14px; left: 3px; top: 3px; }
+.res-switch input:checked + .slider::before { transform: translateX(16px); }
 /* 插件设置表单 */
 .res-settings { display: flex; flex-direction: column; gap: 8px; }
 .res-set-row {
@@ -444,6 +442,9 @@ body.modal-open .res-card {
 }
 .dc-pagination { display: flex; align-items: center; gap: 10px; justify-content: center; margin: 16px 0; }
 .dc-page-info { font-size: 12.5px; color: var(--text-3); }
+
+/* hidden 属性优先: 某些元素 class 设了 display:flex/grid 会覆盖 hidden 默认样式 */
+[hidden] { display: none !important; }
 
 /* ---------- 主页 Hero ---------- */
 .hero { position: relative; overflow: hidden; padding: 0; height: 230px; min-height: 0; display: flex; align-items: center; }
