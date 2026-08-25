@@ -223,6 +223,17 @@
         "description": "应用程序的主题颜色 (十六进制格式)\n重启后才能生效\n实验性功能, 可能会出现样式失效，颜色冲突。",
         "page": "其它"
     },
+    "glass_factor": {
+        "name": "毛玻璃系数",
+        "type": "float",
+        "default": 1.0,
+        "value": 1.0,
+        "description": "全局毛玻璃模糊强度倍率\n0.5 = 减弱, 1.0 = 默认, 2.0 = 增强\n快捷方式/实用工具卡片等均受此控制",
+        "min": 0.3,
+        "max": 3.0,
+        "step": 0.1,
+        "page": "其它"
+    },
     "char_appear_interval": {
         "name": "小人出现间隔",
         "type": "range2",
