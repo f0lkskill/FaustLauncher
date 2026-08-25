@@ -715,9 +715,9 @@ window.__onResError = function (msg) { toast('⚠ ' + msg, 'error', 6000); };
     $('#main').scrollTop = 0;
     if (name === 'mod_addon') refreshMods();
     if (name === 'download_center') {
-      // 已有云端列表则只重刷本地已安装状态, 不重拉云端
+      // 无条件清空已安装缓存并重测本地 (资源中心删除插件/Mod 后进入立即同步)
+      downloadedSeen.clear();
       if (dcAddonItems.length || dcModItems.length) {
-        downloadedSeen.clear();
         renderDCList();
       } else {
         initDownloadCenter();
