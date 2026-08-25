@@ -1068,17 +1068,20 @@ def download_and_launch(obj=None, need_run_game=False, manual=False):
         except Exception:
             _check_tu = True
         _need_translate = (_check_tu or manual) and need_up()
+        
         if not _need_translate:
             print("已禁用启动前检查汉化更新" if not _check_tu else "当前汉化已是最新版本，无需更新")
+
+        lang_path = get_translation_dir()
+        download_path = 'lang'
+        is_ourplay = is_ourplay_source()
+        main_root = obj.root if obj else None
+
         if _need_translate:
-            lang_path = get_translation_dir()
-            download_path = 'lang'
-            is_ourplay = is_ourplay_source()
         
             print(f"开始下载汉化包 (平台: {'OurPlay' if is_ourplay else '零协会'})...")
             sys.path.append('functions')
         
-            main_root = obj.root if obj else None
         
             _push_step('download')
             gui = download_translation(main_root, download_path)
@@ -1087,24 +1090,6 @@ def download_and_launch(obj=None, need_run_game=False, manual=False):
                 sleep(1)
         
             print("汉化包下载完成")
-            _push_step('resource')
-
-            sleep(1.5)
-
-            gui_res = DownloadGUI(main_root, 'resources/', False, download_func=download_and_extract_gui)
-            dt = Thread(target=check_resource_update, args=(gui_res,)).start()
-
-            while gui_res.is_downloading:
-                sleep(1)
-            
-            del dt
-            _push_step('bubble')
-            gui_res.root.destroy()
-        
-            print("开始下载气泡文本...")
-            download_bubble(download_path)
-            print("气泡文本载入完成")
-            _push_step('install')
 
             print("开始核对汉化版本...")
 
@@ -1175,6 +1160,25 @@ def download_and_launch(obj=None, need_run_game=False, manual=False):
             print("汉化下载及处理全部完成！")
 
         # 启动流程: 同步云端插件/Mod 更新 (仅启动游戏时执行; 进度推送到流水线)
+        _push_step('resource')
+
+        sleep(1.5)
+
+        gui_res = DownloadGUI(main_root, 'resources/', False, download_func=download_and_extract_gui)
+        dt = Thread(target=check_resource_update, args=(gui_res,)).start()
+
+        while gui_res.is_downloading:
+            sleep(1)
+        
+        del dt
+        _push_step('bubble')
+        gui_res.root.destroy()
+        
+        print("开始下载气泡文本...")
+        download_bubble(download_path)
+        print("气泡文本载入完成")
+        _push_step('install')
+
         if need_run_game or obj is not None:
             _push_step('mods')
             _sync_cloud_items()
