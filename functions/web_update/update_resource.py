@@ -26,22 +26,42 @@ if local_data_str.strip() == "":
 else:
     local_data:dict = loads(local_data_str)
 
+def _is_empty_dir(path):
+    """检测目录是否为空 (无任何文件/子目录)"""
+    import os
+    try:
+        return os.path.isdir(path) and not any(os.scandir(path))
+    except Exception:
+        return False
+
+
 def update_resource(dow_root:DownloadGUI, download_files:list, res:str, auto_close:bool = True):
     global download_gui
     
     import shutil,os
     from time import sleep
-    try:
-        shutil.rmtree(f"resources/{res}")
-    except:pass
     os.makedirs(f"resources/{res}", exist_ok=True)
-    download_gui = dow_root
-    download_thread = Thread(target=download_and_extract_gui, args=(download_gui,f"resources/{res}", download_files, False))
-    download_thread.start()
-    while download_thread.is_alive():
-        sleep(1)
-        # print(f"下载资源 {res} 正在进行中...")
-    local_data[res]['version_info'] = data[res]['version_info']
+    # 下载后核对: 若解压结果为空文件夹则视为缺失, 重新下载 (最多 3 次)
+    success = False
+    for attempt in range(1, 4):
+        try:
+            shutil.rmtree(f"resources/{res}")
+        except:pass
+        os.makedirs(f"resources/{res}", exist_ok=True)
+        download_gui = dow_root
+        download_thread = Thread(target=download_and_extract_gui, args=(download_gui,f"resources/{res}", download_files, False))
+        download_thread.start()
+        while download_thread.is_alive():
+            sleep(1)
+            # print(f"下载资源 {res} 正在进行中...")
+        if not _is_empty_dir(f"resources/{res}"):
+            success = True
+            break
+        print(f"云端资源 {res} 下载后为空文件夹 (第 {attempt} 次), 重新尝试...")
+    if success:
+        local_data[res]['version_info'] = data[res]['version_info']
+    else:
+        print(f"⚠ 云端资源 {res} 多次下载后仍为空文件夹, 保持旧版本, 下次启动将再次检查")
     if auto_close:
         download_gui.is_downloading = False
 
