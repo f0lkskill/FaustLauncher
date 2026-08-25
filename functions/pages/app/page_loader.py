@@ -907,8 +907,9 @@ class PageLoader:
         detail_label.pack()
 
 
-def download_and_launch(obj=None, need_run_game=False):
-    """下载翻译资源，然后可选地启动游戏"""
+def download_and_launch(obj=None, need_run_game=False, manual=False):
+    """下载翻译资源，然后可选地启动游戏。
+    manual=True 表示用户手动更新 (不受 check_translate_update 禁用限制)。"""
     from functions.base.game_launcher import GameLauncher
     from functions.web_update.zeroasso_download import main_gui as download_translation, check_need_up_translate, DownloadGUI, download_and_extract_gui
     from functions.web_update.update_resource import check_resource_update
@@ -1066,7 +1067,7 @@ def download_and_launch(obj=None, need_run_game=False):
             _check_tu = bool(_gsm().get_setting("check_translate_update"))
         except Exception:
             _check_tu = True
-        _need_translate = _check_tu and need_up()
+        _need_translate = (_check_tu or manual) and need_up()
         if not _need_translate:
             print("已禁用启动前检查汉化更新" if not _check_tu else "当前汉化已是最新版本，无需更新")
         if _need_translate:
