@@ -518,6 +518,8 @@ window.__onResError = function (msg) { toast('⚠ ' + msg, 'error', 6000); };
         if (icoEl && icon) { icoEl.innerHTML = esc(icon); icoEl.dataset.task = ''; }
       }
     } else if (event === 'step') {
+      // 若流水线未启动 (如启动时自动汉化更新), 自动显示并启动流水线
+      if (!pipeline.running) pipelineReset(false);
       // 后端显式步骤推进 (与真实进度同步; 不再依赖日志关键词, 避免顺序错乱)
       const s = data && data.step;
       const idx = pipeline.steps.findIndex(x => x.key === s);
@@ -528,6 +530,10 @@ window.__onResError = function (msg) { toast('⚠ ' + msg, 'error', 6000); };
         updatePipeDetail(s);
         hidePipeDownloadProgress();
       }
+    } else if (event === 'pipeline_done') {
+      // 自动流程 (启动时汉化更新) 完成后恢复按钮与流水线状态
+      try { setPipelineButtonsDisabled(false); } catch (e) {}
+      pipelineDone();
     } else if (event === 'dialog') {
       const d = data || {};
       const kind = d.kind || 'showinfo';
