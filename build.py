@@ -509,7 +509,7 @@ class BuildGUI:
                     raise RuntimeError('无法创建/定位蓝奏云文件夹: FaustLauncher')
                 max_mb = int(get_lanzou_config().get('max_size_mb') or 66)
                 self._log('上传压缩包到蓝奏云...\n')
-                ret = UploadFile(session, zip_path, folder_id=fid, max_size_mb=max_mb,
+                ret = UploadFile(session, zip_path, folder_id=fid, max_size_mb=max_mb, # type: ignore
                                  progress_callback=lambda p: self._log(f'  上传 {p * 100:.0f}%\n'))
                 if ret.get('status') != 1:
                     raise RuntimeError(f'上传失败: {ret.get("msg")}')
