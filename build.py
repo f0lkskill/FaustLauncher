@@ -343,6 +343,10 @@ class BuildGUI:
                 raise FileNotFoundError('PyInstaller 未收集 webview (新版 Web 界面无法启动), 请用项目 venv 运行本构建工具')
             if "'cffi'" not in _pyz_txt:
                 raise FileNotFoundError('PyInstaller 未收集 cffi (pywebview 依赖缺失), 请用项目 venv 运行本构建工具')
+            # 8) pythonnet runtime: Python.Runtime.dll 必须存在于 _internal, 否则 clr_loader 加载失败
+            _pr_dll = os.path.join('build', 'FaustLauncher', '_internal', 'pythonnet', 'runtime', 'Python.Runtime.dll')
+            if not os.path.isfile(_pr_dll):
+                raise FileNotFoundError('PyInstaller 未收集 pythonnet runtime (Python.Runtime.dll), Web 界面无法启动')
         except Exception as e:
             self._set_step(3, 'failed')
             self._set_status(f'复制运行环境失败: {e}', DANGER)
