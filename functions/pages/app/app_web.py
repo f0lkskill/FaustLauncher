@@ -2022,7 +2022,7 @@ def run_web_ui(debug: bool = False):
     threading.Thread(target=_delayed_check, daemon=True).start()
 
     try:
-        webview.start(debug=debug)
+        webview.start(debug=debug, gui='edgechromium')
     except BaseException as e:
         import traceback
         try:
