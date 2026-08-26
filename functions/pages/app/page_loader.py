@@ -1067,10 +1067,13 @@ def download_and_launch(obj=None, need_run_game=False, manual=False):
             _check_tu = bool(_gsm().get_setting("check_translate_update"))
         except Exception:
             _check_tu = True
-        _need_translate = (_check_tu or manual) and need_up()
-        
-        if not _need_translate:
-            print("已禁用启动前检查汉化更新" if not _check_tu else "当前汉化已是最新版本，无需更新")
+        if not _check_tu and not manual:
+            _need_translate = False
+            print("已禁用启动前检查汉化更新, 跳过汉化流程")
+        else:
+            # 设置允许(或手动)时进入下载流程, 由 download_and_extract_gui 内部与云端版本对比决定是否下载,
+            # 避免 need_up() 无参调用(汉化存在即返回 False)误判已是最新
+            _need_translate = True
 
         lang_path = get_translation_dir()
         download_path = 'lang'
