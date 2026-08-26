@@ -1347,8 +1347,11 @@ if %errorlevel% equ 0 (
                         local_name = str(info.get('name', '')).strip()
                         if local_name == name:
                             return {'downloaded': True}
-                        if len(name) > 3 and len(local_name) > 3 and self._name_common_sub(name, local_name) >= 4:
-                            return {'downloaded': True}
+                        if len(name) > 3 and len(local_name) > 3:
+                            common = self._name_common_sub(name, local_name)
+                            # 公共子串需占任一端名长至少 50%, 避免本地其他资源名与云端名个别字撞上误判已安装
+                            if common >= 4 and common >= max(len(name), len(local_name)) * 0.5:
+                                return {'downloaded': True}
                 except Exception:
                     continue
             return {'downloaded': False}

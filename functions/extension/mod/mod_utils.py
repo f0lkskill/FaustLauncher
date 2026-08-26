@@ -35,7 +35,8 @@ def _decode_output(data):
 
 
 def _run_mod_bat(mod_path, bat_name, mod_name, timeout=None):
-    """运行 mod 的 bat 脚本 (cwd=mod 目录绝对路径), 捕获并打印其 echo 输出"""
+    """运行 mod 的 bat 脚本 (cwd=mod 目录绝对路径), 捕获并打印其 echo 输出。
+    运行前移除 bat 内的 pause 命令 (pause 会阻塞等待按键导致超时)。"""
     try:
         abs_path = os.path.abspath(mod_path)
         bat_file = os.path.join(abs_path, bat_name)
@@ -43,13 +44,27 @@ def _run_mod_bat(mod_path, bat_name, mod_name, timeout=None):
             print(f"[{mod_name}] 未找到 {bat_file}, 跳过", flush=True)
             return
         print(f"[{mod_name}] 运行 {bat_name} (cwd={abs_path})", flush=True)
-        result = run(
-            [bat_file],
-            shell=True, creationflags=CREATE_NO_WINDOW,
-            cwd=abs_path,
-            capture_output=True,
-            timeout=timeout,
-        )
+        # 生成去掉 pause 的临时 bat (pause 阻塞等待按键, 无交互环境必超时)
+        tmp_bat = os.path.join(abs_path, '_no_pause_' + bat_name)
+        try:
+            with open(bat_file, 'r', encoding='utf-8', errors='replace') as f:
+                content = f.read()
+            import re as _re
+            content = _re.sub(r'\bpause\b[^\r\n]*', '', content, flags=_re.IGNORECASE)
+            with open(tmp_bat, 'w', encoding='utf-8', errors='replace') as f:
+                f.write(content)
+            result = run(
+                [tmp_bat],
+                shell=True, creationflags=CREATE_NO_WINDOW,
+                cwd=abs_path,
+                capture_output=True,
+                timeout=timeout,
+            )
+        finally:
+            try:
+                os.remove(tmp_bat)
+            except Exception:
+                pass
         for line in _decode_output(result.stdout).splitlines():
             if line.strip():
                 print(f"[{mod_name} {bat_name}] {line}", flush=True)
