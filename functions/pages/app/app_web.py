@@ -1010,6 +1010,15 @@ class AppApi:
         except Exception as e:
             return {'error': str(e)}
 
+    def _reload_addons_async(self):
+        """后台线程重载插件 (设置修改/启用禁用后调用)"""
+        def _run():
+            try:
+                self.core._on_reload_addons()
+            except Exception as e:
+                print(f"重载插件失败: {e}")
+        threading.Thread(target=_run, daemon=True).start()
+
     def set_addon_settings(self, name, settings):
         """更新插件 addon_info.json 的 settings 字段 (含 enable 与各项自定义设置)"""
         import json, os
@@ -1022,6 +1031,7 @@ class AppApi:
             info['settings'] = dict(settings or {})
             with open(path, 'w', encoding='utf-8') as f:
                 json.dump(info, f, ensure_ascii=False, indent=4)
+            self._reload_addons_async()   # 设置修改后自动重载插件
             return {'error': None}
         except Exception as e:
             return {'error': str(e)}
@@ -1054,6 +1064,7 @@ class AppApi:
             info.setdefault('settings', {})['enable'] = bool(enabled)
             with open(path, 'w', encoding='utf-8') as f:
                 json.dump(info, f, ensure_ascii=False, indent=4)
+            self._reload_addons_async()   # 启用/禁用后自动重载插件
             return {'error': None}
         except Exception as e:
             return {'error': str(e)}
