@@ -1195,6 +1195,14 @@ def download_and_launch(obj=None, need_run_game=False, manual=False):
             pass
         else:
             downloading = False
+            # 汉化更新/资源更新流程完成 (非启动游戏): 通知前端流水线恢复
+            try:
+                from functions.web_update import zeroasso_download as _zd
+                _push = getattr(_zd, '_web_progress', None)
+                if _push:
+                    _push('pipeline_done', {})
+            except Exception:
+                pass
             return
         
         def _launch_progress(text, icon=None):
