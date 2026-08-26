@@ -460,12 +460,19 @@ class BuildGUI:
             if os.path.exists(zip_path):
                 os.remove(zip_path)
             files = []
+            dirs = []
             for root, _dirs, fs in os.walk(folder):
                 for f in fs:
                     files.append(os.path.join(root, f))
-            if not files:
+                for d in _dirs:
+                    dirs.append(os.path.join(root, d))
+            if not files and not dirs:
                 raise FileNotFoundError(f'{folder} 为空, 无法打包')
             with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
+                # 先写目录条目 (含空目录 addons/mods/lang 等, 解压后结构完整)
+                for d in sorted(dirs):
+                    arc = os.path.join('FaustLauncher', os.path.relpath(d, folder)).replace('\\', '/') + '/'
+                    zf.writestr(arc, '')
                 for i, full in enumerate(files):
                     arc = os.path.join('FaustLauncher', os.path.relpath(full, folder)).replace('\\', '/')
                     zf.write(full, arc)
