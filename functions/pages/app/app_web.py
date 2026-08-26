@@ -1347,7 +1347,7 @@ if %errorlevel% equ 0 (
                         local_name = str(info.get('name', '')).strip()
                         if local_name == name:
                             return {'downloaded': True}
-                        if len(name) > 2 and len(local_name) > 2 and self._name_common_sub(name, local_name) >= 3:
+                        if len(name) > 3 and len(local_name) > 3 and self._name_common_sub(name, local_name) >= 4:
                             return {'downloaded': True}
                 except Exception:
                     continue
