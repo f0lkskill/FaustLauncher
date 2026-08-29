@@ -227,7 +227,7 @@
         "name": "启用毛玻璃",
         "type": "boolean",
         "default": true,
-        "value": true,
+        "value": false,
         "description": "是否启用毛玻璃效果 (卡片/面板半透明模糊)\n关闭后禁用 backdrop-filter, 减少 GPU 填充率开销",
         "page": "其它"
     },
