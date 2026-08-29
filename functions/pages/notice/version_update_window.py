@@ -407,6 +407,7 @@ def md_to_html(md_text):
                 elif u2:
                     items.append(f'<li>{_inline(u2.group(1))}</li>')
                 else:
+                    assert o2 is not None
                     items.append(f'<li>{_inline(o2.group(2))}</li>')
                 i += 1
             tag = 'ol' if ordered else 'ul'
@@ -551,7 +552,7 @@ def run_update_window(payload_b64=None, debug: bool = False):
         window_kwargs["y"] = y
 
     try:
-        webview.create_window(**window_kwargs)
+        webview.create_window(**window_kwargs) # type: ignore
         webview.start(debug=debug)
     except BaseException as e:
         import traceback
@@ -694,6 +695,7 @@ def show_version_update_window(current_version, latest_info, info='发现新版�
     Returns:
         True: 窗口成功拉起; None: 拉起失败; False: 询问模式但无下载链接
     """
+
     return open_version_update_window(current_version, latest_info, info, root,
                                       ask_update=ask_update, on_result=None, timeout=timeout)
 

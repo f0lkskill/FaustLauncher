@@ -91,14 +91,14 @@ def check_version_update(root):
     version_info = version_note.note_content
     if not version_info.strip():
         print("获取版本信息失败 (webnote 不可用或未配置)")
-        return need_update, {}, current_version
+        return need_update, {}, current_version, None
     version_info = loads(version_info) # type: ignore
 
     latest_release = (version_info.get('latest_release_version') or '').strip()
     if not latest_release:
         # 服务器侧尚未填写最新版本标记, 视为暂无更新
         print("云端版本信息未填写最新版本 (latest_release_version 为空), 跳过更新检查")
-        return need_update, {}, current_version
+        return need_update, {}, current_version, None
 
     if latest_release != current_version:
         print(f"检测到启动器新版本: {latest_release}，当前版本: {current_version}")
@@ -124,4 +124,4 @@ def check_version_update(root):
     else:
         print(f"当前启动器版本 {current_version} 已是最新版本，无需更新。")
     
-    return need_update, version_info['versions'][latest_release], latest_release
+    return need_update, version_info['versions'][latest_release], latest_release, current_version
