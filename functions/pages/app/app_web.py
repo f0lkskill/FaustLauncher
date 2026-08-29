@@ -151,6 +151,7 @@ def _win32_hwnd(window):
 _faust_wndproc = None   # 保持窗口过程引用, 防 GC
 _faust_enum_proc = None
 _faust_subclass_hwnds = set()
+_system_shutdown_requested = False
 
 
 def _disable_system_drag(window):
@@ -187,6 +188,8 @@ def _disable_system_drag(window):
         WM_NCLBUTTONDOWN = 0x00A1
         WM_NCLBUTTONDBLCLK = 0x00A3
         WM_SYSCOMMAND = 0x0112
+        WM_QUERYENDSESSION = 0x0011
+        WM_ENDSESSION = 0x0016
         SC_MOVE = 0xF010
         HTCLIENT = 1
         SUBCLASSID = 0xFA01
@@ -201,6 +204,15 @@ def _disable_system_drag(window):
         subclass_proc.restype = ctypes.c_ssize_t
 
         def _proc(hwnd, msg, wParam, lParam, uIdSubclass, dwRefData):
+            global _system_shutdown_requested
+            if msg == WM_QUERYENDSESSION:
+                # 系统重启/注销时允许会话结束，不能被托盘驻留策略拦截。
+                _system_shutdown_requested = True
+                return 1
+            if msg == WM_ENDSESSION and wParam:
+                _system_shutdown_requested = True
+                threading.Thread(target=_terminate_now, daemon=True).start()
+                return 0
             if msg == WM_NCHITTEST:
                 return HTCLIENT
             # 即使系统/窗口管理器绕过命中测试，也不允许启动系统移动。
@@ -2264,6 +2276,10 @@ def run_web_ui(debug: bool = False):
     #       否则等待前端响应会死锁。窗口隐藏放后台线程执行。
     def _on_closing():
         try:
+            if _system_shutdown_requested:
+                # 系统重启/注销时必须真正结束进程，不能按用户关闭处理成托盘驻留。
+                threading.Thread(target=_terminate_now, daemon=True).start()
+                return True
             hide_to_tray = True
             try:
                 hide_to_tray = int(core.settings_manager.get_setting("after_gui_exit") or 0) == 0
