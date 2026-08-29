@@ -9,10 +9,10 @@
   position: fixed; top: 0; left: 0; right: 0; z-index: 9998;
   height: 40px;
   display: flex; align-items: center; justify-content: space-between;
-  background: linear-gradient(180deg, rgba(38, 58, 99, .78), rgba(26, 40, 72, .55));
+  background: linear-gradient(180deg, rgba(38, 58, 99, .94), rgba(24, 38, 70, .88));
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
-  border-bottom: 1px solid rgba(55, 148, 255, .18);
+  border-bottom: 1px solid rgba(55, 148, 255, .2);
   -webkit-user-select: none; user-select: none;
 }
 .tb-drag { display: flex; align-items: center; gap: 8px; padding: 0 12px; height: 100%; flex: 1; cursor: default; }
@@ -123,7 +123,9 @@ body.no-hw .hero {
   background: linear-gradient(135deg, #0b0e14, #12161f);
   display: flex; align-items: center; justify-content: center;
   transition: opacity .4s ease;
+  animation: splashFadeIn .45s ease;
 }
+@keyframes splashFadeIn { from { opacity: 0; } to { opacity: 1; } }
 #app-splash.hide { opacity: 0; pointer-events: none; }
 .splash-box { text-align: center; }
 .splash-spinner {

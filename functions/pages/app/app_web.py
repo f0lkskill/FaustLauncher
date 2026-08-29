@@ -551,6 +551,7 @@ class AppApi:
         try:
             win = self.window_ref.get("win") if self.window_ref else None
             if win is not None:
+                _disable_system_drag(win)   # 禁整窗拖动, 只保留标题栏 JS 拖动
                 _win32_show_window_impl(win, True)
         except Exception:
             pass
