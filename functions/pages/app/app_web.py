@@ -150,13 +150,14 @@ def _win32_hwnd(window):
 
 _faust_wndproc = None   # 保持窗口过程引用, 防 GC
 _faust_enum_proc = None
+_faust_subclass_hwnds = set()
 
 
 def _disable_system_drag(window):
     """彻底禁止 frameless 窗口整窗系统拖动, 仅标题栏 JS 拖动有效.
     组合: 移除 WS_THICKFRAME + SetWindowPos(SWP_FRAMECHANGED) 强制 DWM 重算 +
     SetWindowSubclass 拦截 WM_NCHITTEST → HTCLIENT."""
-    global _faust_wndproc, _faust_enum_proc
+    global _faust_wndproc, _faust_enum_proc, _faust_subclass_hwnds
     try:
         import ctypes
         from ctypes import wintypes
@@ -180,7 +181,8 @@ def _disable_system_drag(window):
         ctypes.windll.user32.SetWindowPos(
             hwnd, None, 0, 0, 0, 0,
             SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER)
-        # 3) SetWindowSubclass 拦截 WM_NCHITTEST → HTCLIENT (阻止任何系统拖动)
+        # 3) SetWindowSubclass 拦截系统命中测试。整个窗口都返回 HTCLIENT；
+        # 标题栏移动只由前端 move_window 处理，不能让 DWM 再启动全局拖动。
         WM_NCHITTEST = 0x0084
         WM_NCLBUTTONDOWN = 0x00A1
         WM_NCLBUTTONDBLCLK = 0x00A3
@@ -214,8 +216,8 @@ def _disable_system_drag(window):
         set_subclass.argtypes = [wintypes.HWND, SUBCLASSPROC,
                                   ctypes.c_size_t, ctypes.c_size_t]
         set_subclass.restype = wintypes.BOOL
-        if not set_subclass(hwnd, _faust_wndproc, SUBCLASSID, 0):
-            return
+        set_subclass(hwnd, _faust_wndproc, SUBCLASSID, 0)
+        _faust_subclass_hwnds.add(hwnd)
         # WebView2 自己也是子窗口，顶层 Form 的命中测试不一定覆盖它。
         # 对所有现有子窗口安装同一个子类过程，保证客户区始终不可拖。
         enum_proc = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
@@ -223,6 +225,7 @@ def _disable_system_drag(window):
         def _enum_child(child_hwnd, _lparam):
             try:
                 set_subclass(child_hwnd, _faust_wndproc, SUBCLASSID, 0)
+                _faust_subclass_hwnds.add(child_hwnd)
             except Exception:
                 pass
             return True
@@ -2152,7 +2155,7 @@ def run_web_ui(debug: bool = False):
         _sw = ctypes.windll.user32.GetSystemMetrics(0)
         _sh = ctypes.windll.user32.GetSystemMetrics(1)
         _win_x = max(0, (_sw - 1000) // 2)
-        _win_y = max(0, (_sh - 740) // 2)
+        _win_y = max(0, (_sh - 860) // 2)
     except Exception:
         pass
     window = webview.create_window(
@@ -2160,12 +2163,13 @@ def run_web_ui(debug: bool = False):
         HTML_PATH,
         js_api=api,
         width=1000,
-        height=740,
+        height=860,
         x=_win_x,
         y=_win_y,
-        min_size=(860, 620),
+        min_size=(860, 740),
         background_color="#0b0e14",
         frameless=True,   # 去除原生标题栏, 使用自定义 HTML/CSS 标题栏
+        easy_drag=False,  # 禁用 pywebview 默认的整窗拖动, 仅保留自定义标题栏拖动
         shadow=False,     # 禁用 DWM 无边框玻璃扩展, 消除整窗可拖
         hidden=True,      # 启动默认隐藏, ui_ready 透明度渐变出现 (无纯色闪现)
     )
