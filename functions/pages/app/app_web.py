@@ -152,6 +152,39 @@ def _win32_hwnd(window):
         return 0
 
 
+_faust_wndproc = None   # 保持窗口过程引用, 防 GC
+
+
+def _disable_system_drag(window):
+    """WM_NCHITTEST 返回 HTCLIENT, 禁止 frameless 窗口整窗拖动 (仅标题栏 JS 拖动)"""
+    global _faust_wndproc
+    try:
+        import ctypes
+        from ctypes import wintypes
+        hwnd = _win32_hwnd(window)
+        if not hwnd:
+            return
+        GWLP_WNDPROC = -4
+        WM_NCHITTEST = 0x0084
+        HTCLIENT = 1
+        old_proc = ctypes.windll.user32.GetWindowLongPtrW(hwnd, GWLP_WNDPROC)
+        if not old_proc:
+            return
+        WNDPROC = ctypes.WINFUNCTYPE(ctypes.c_longlong, wintypes.HWND,
+                                     ctypes.c_uint, wintypes.WPARAM, wintypes.LPARAM)
+
+        def _proc(h, m, w, l):
+            if m == WM_NCHITTEST:
+                return HTCLIENT
+            return ctypes.windll.user32.CallWindowProcW(old_proc, h, m, w, l)
+
+        _faust_wndproc = WNDPROC(_proc)
+        ctypes.windll.user32.SetWindowLongPtrW(
+            hwnd, GWLP_WNDPROC, ctypes.cast(_faust_wndproc, ctypes.c_void_p).value)
+    except Exception:
+        pass
+
+
 def _win32_show_window_impl(window, show=True):
     """用 Win32 AnimateWindow 透明度渐显/渐隐主窗口 (线程安全, 供托盘/关闭/预加载显示共用)"""
     try:
@@ -522,6 +555,7 @@ class AppApi:
         try:
             win = self.window_ref.get("win") if self.window_ref else None
             if win is not None:
+                _disable_system_drag(win)   # 禁整窗拖动, 只保留标题栏 JS 拖动
                 _win32_show_window_impl(win, True)
         except Exception:
             pass
@@ -541,21 +575,17 @@ class AppApi:
         return True
 
     def move_window(self, dx, dy):
-        """按增量移动窗口 (拖动标题栏, 用 pywebview window.move 移动主窗口, 避免子控件偏移)"""
+        """按增量移动窗口 (基于 GetWindowRect 实际位置 + 增量, 避免累积漂移抖动)"""
         try:
             win = self.window_ref.get("win") if self.window_ref else None
             if win is not None:
-                if not hasattr(self, '_win_pos'):
-                    import ctypes.wintypes as _wt
-                    import ctypes
-                    hwnd = _win32_hwnd(win)
+                import ctypes
+                import ctypes.wintypes as _wt
+                hwnd = _win32_hwnd(win)
+                if hwnd:
                     r = _wt.RECT()
                     ctypes.windll.user32.GetWindowRect(hwnd, ctypes.byref(r))
-                    self._win_pos = (r.left, r.top)
-                x = self._win_pos[0] + int(dx)
-                y = self._win_pos[1] + int(dy)
-                self._win_pos = (x, y)
-                win.move(x, y)
+                    win.move(r.left + int(dx), r.top + int(dy))
         except Exception:
             pass
         return True
@@ -1993,6 +2023,7 @@ def run_web_ui(debug: bool = False):
         min_size=(860, 620),
         background_color="#0b0e14",
         frameless=True,   # 去除原生标题栏, 使用自定义 HTML/CSS 标题栏
+        hidden=True,      # 初始化默认隐藏, 前端 ui_ready 后 AnimateWindow 渐变出现
     )
     window_holder["win"] = window
 
