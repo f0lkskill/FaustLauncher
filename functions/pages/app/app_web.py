@@ -649,6 +649,8 @@ class AppApi:
         self.core = core
         self.window_ref = window_ref
         self.ready_callback = None
+        self._window_drag_lock = threading.Lock()
+        self._window_drag_origin = None
 
     def set_window_opacity(self, alpha):
         """设置窗口透明度 (0~255), 供前端/渐变控制"""
@@ -691,20 +693,14 @@ class AppApi:
                 import ctypes
                 hwnd = _win32_hwnd(win)
                 if hwnd:
-                    _ensure_layered(hwnd)
-                    _fade_window(hwnd, 255, 0)
+                    # 最小化直接交给系统处理，不播放透明度动画。
                     ctypes.windll.user32.ShowWindow(hwnd, 6)  # SW_MINIMIZE
-                    # 最小化后恢复不应保留 alpha=0, 否则从任务栏恢复会变成透明窗口。
-                    threading.Thread(
-                        target=lambda: (time.sleep(0.25), _set_window_alpha(hwnd, 255)),
-                        daemon=True,
-                    ).start()
         except Exception:
             pass
         return True
 
-    def move_window(self, dx, dy):
-        """按增量移动窗口 (基于 GetWindowRect 实际位置 + 增量, 避免累积漂移抖动)"""
+    def begin_move_window(self, mouse_x, mouse_y):
+        """记录拖动开始时的鼠标位置和窗口位置。"""
         try:
             win = self.window_ref.get("win") if self.window_ref else None
             if win is not None:
@@ -714,9 +710,38 @@ class AppApi:
                 if hwnd:
                     r = _wt.RECT()
                     ctypes.windll.user32.GetWindowRect(hwnd, ctypes.byref(r))
-                    win.move(r.left + int(dx), r.top + int(dy))
+                    with self._window_drag_lock:
+                        self._window_drag_origin = (
+                            float(mouse_x), float(mouse_y), r.left, r.top)
         except Exception:
             pass
+        return True
+
+    def move_window(self, mouse_x, mouse_y):
+        """根据鼠标绝对屏幕坐标移动窗口，避免异步增量请求产生竞态。"""
+        try:
+            win = self.window_ref.get("win") if self.window_ref else None
+            if win is not None:
+                import ctypes
+                from ctypes import wintypes
+                hwnd = _win32_hwnd(win)
+                with self._window_drag_lock:
+                    origin = self._window_drag_origin
+                if hwnd and origin is not None:
+                    start_x, start_y, window_x, window_y = origin
+                    x = window_x + round(float(mouse_x) - start_x)
+                    y = window_y + round(float(mouse_y) - start_y)
+                    ctypes.windll.user32.SetWindowPos(
+                        hwnd, None, x, y, 0, 0,
+                        0x0001 | 0x0004 | 0x0010)  # NOSIZE | NOZORDER | NOACTIVATE
+        except Exception:
+            pass
+        return True
+
+    def end_move_window(self):
+        """清除当前拖动状态。"""
+        with self._window_drag_lock:
+            self._window_drag_origin = None
         return True
 
     def close_window(self):
@@ -2155,7 +2180,7 @@ def run_web_ui(debug: bool = False):
         _sw = ctypes.windll.user32.GetSystemMetrics(0)
         _sh = ctypes.windll.user32.GetSystemMetrics(1)
         _win_x = max(0, (_sw - 1000) // 2)
-        _win_y = max(0, (_sh - 860) // 2)
+        _win_y = max(0, (_sh - 760) // 2)
     except Exception:
         pass
     window = webview.create_window(
@@ -2163,7 +2188,7 @@ def run_web_ui(debug: bool = False):
         HTML_PATH,
         js_api=api,
         width=1000,
-        height=860,
+        height=760,
         x=_win_x,
         y=_win_y,
         min_size=(860, 740),
@@ -2195,7 +2220,7 @@ def run_web_ui(debug: bool = False):
         threading.Thread(target=lambda: _fade_window(hwnd, 0, 255), daemon=True).start()
 
     try:
-        api.ready_callback = _show_after_load
+        api.ready_callback = _show_after_load # type: ignore
     except Exception:
         pass
 

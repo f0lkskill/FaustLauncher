@@ -62,6 +62,8 @@ class FaustLauncherCore:
 
     def _on_global_click(self, event):
         """全局点击事件处理：播放音效"""
+        if not self.settings_manager.get_setting("click_sound"):
+            return
         import time
         now_ms = int(time.time() * 1000)
         if now_ms - self._last_sound_ms < 30:

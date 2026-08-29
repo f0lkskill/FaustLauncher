@@ -336,6 +336,7 @@
   }
 
   function playUISound(kind) {
+    if (kind === 'click' && BOOT && BOOT.settings_schema && !getSettingValue('click_sound')) return;
     const uri = _soundUris[kind];
     if (!uri) return;
     try {
@@ -1923,6 +1924,9 @@ window.__onResError = function (msg) { toast('⚠ ' + msg, 'error', 6000); };
     return requestAnimationFrame(loop);
   }
 
+  // 轮播交互保持原生刷新频率，不受设置中的全局帧率上限影响。
+  const carouselRAF = (cb) => requestAnimationFrame(cb);
+
   function applyTheme(color) {
     if (!color) return;
     color = String(color);
@@ -2121,7 +2125,7 @@ function layoutCarousel(smooth) {
         layoutCarousel(true);
         animRAF = null;
       } else {
-        animRAF = rafThrottle(animLoop);
+        animRAF = carouselRAF(animLoop);
       }
     };
     const stopWheelAnim = () => {
@@ -2141,7 +2145,7 @@ function layoutCarousel(smooth) {
       if (dragging) return;
       stopAll();
       featTarget = Math.round(featAngle) + (e.deltaY < 0 ? 1 : -1);
-      if (!animRAF) animRAF = rafThrottle(animLoop);
+      if (!animRAF) animRAF = carouselRAF(animLoop);
     }, { passive: false });
 
     // ---- 丝滑拖拽: rAF 渲染 + spring 弹性吸附 ----
@@ -2164,9 +2168,9 @@ function layoutCarousel(smooth) {
       stopAll();
       const loop = () => {
         layoutCarousel(false);
-        rafId = rafThrottle(loop);
+        rafId = carouselRAF(loop);
       };
-      rafId = rafThrottle(loop);
+      rafId = carouselRAF(loop);
     };
 
     // 松手后: spring 弹性吸附到最近整数 (不抽动)
@@ -2182,10 +2186,10 @@ function layoutCarousel(smooth) {
         const ease = 1 - Math.pow(1 - p, 3);
         featAngle = startVal + (target - startVal) * ease;
         layoutCarousel(p < 0.98); // 接近结束时加回过渡
-        if (p < 1) { springId = rafThrottle(step); }
+        if (p < 1) { springId = carouselRAF(step); }
         else { featAngle = target; layoutCarousel(true); }
       };
-      springId = rafThrottle(step);
+      springId = carouselRAF(step);
     };
 
     carousel.addEventListener('pointerdown', (e) => {
@@ -2384,7 +2388,7 @@ function layoutToolsCarousel(smooth) {
         layoutToolsCarousel(true);
         animRAF = null;
       } else {
-        animRAF = rafThrottle(animLoop);
+        animRAF = carouselRAF(animLoop);
       }
     };
     const stopWheelAnim = () => {
@@ -2404,7 +2408,7 @@ function layoutToolsCarousel(smooth) {
       if (dragging) return;
       stopAll();
       toolsTarget = Math.round(toolsAngle) + (e.deltaY < 0 ? 1 : -1);
-      if (!animRAF) animRAF = rafThrottle(animLoop);
+      if (!animRAF) animRAF = carouselRAF(animLoop);
     }, { passive: false });
 
     let dragging = false, startX = 0, dragBase = 0;
@@ -2425,9 +2429,9 @@ function layoutToolsCarousel(smooth) {
       stopAll();
       const loop = () => {
         layoutToolsCarousel(false);
-        rafId = rafThrottle(loop);
+        rafId = carouselRAF(loop);
       };
-      rafId = rafThrottle(loop);
+      rafId = carouselRAF(loop);
     };
 
     const springToNearest = () => {
@@ -2441,10 +2445,10 @@ function layoutToolsCarousel(smooth) {
         const ease = 1 - Math.pow(1 - p, 3);
         toolsAngle = startVal + (target - startVal) * ease;
         layoutToolsCarousel(p < 0.98);
-        if (p < 1) { springId = rafThrottle(step); }
+        if (p < 1) { springId = carouselRAF(step); }
         else { toolsAngle = target; layoutToolsCarousel(true); }
       };
-      springId = rafThrottle(step);
+      springId = carouselRAF(step);
     };
 
     carousel.addEventListener('pointerdown', (e) => {
@@ -2895,33 +2899,32 @@ function layoutToolsCarousel(smooth) {
       const tbClose = document.getElementById('tb-close');
       if (tbMin) tbMin.addEventListener('click', () => { if (api) api.minimize_window().catch(() => {}); });
       if (tbClose) tbClose.addEventListener('click', () => { if (api) api.close_window().catch(() => {}); });
-      // 拖动: mousedown 记录, mousemove rAF 合并增量移动窗口 (防高频调用抖动)
+      // 拖动使用绝对屏幕坐标，后端根据拖动起点计算窗口位置，避免异步增量请求竞态
       tb.addEventListener('mousedown', (e) => {
         if (e.button !== 0 || e.target.closest('.tb-btn') || !e.target.closest('.tb-drag') || !api) return;
         e.preventDefault();
         e.stopPropagation();
-        let lastX = e.screenX, lastY = e.screenY;
-        let dragRAF = null, pendingDX = 0, pendingDY = 0;
+        let dragRAF = null, pendingX = e.screenX, pendingY = e.screenY;
+        let moveChain = api.begin_move_window(e.screenX, e.screenY).catch(() => {});
         const flush = () => {
           dragRAF = null;
-          if (pendingDX || pendingDY) {
-            api.move_window(pendingDX, pendingDY).catch(() => {});
-            pendingDX = 0; pendingDY = 0;
-          }
+          const x = pendingX, y = pendingY;
+          moveChain = moveChain.then(() => api.move_window(x, y)).catch(() => {});
         };
         const onMove = (ev) => {
-          const dx = ev.screenX - lastX, dy = ev.screenY - lastY;
-          lastX = ev.screenX; lastY = ev.screenY;
-          if (Math.abs(dx) < 1 && Math.abs(dy) < 1) return;   // 忽略像素级抖动
-          pendingDX += dx; pendingDY += dy;
+          pendingX = ev.screenX;
+          pendingY = ev.screenY;
           if (!dragRAF) dragRAF = requestAnimationFrame(flush);
         };
         const onUp = () => {
           window.removeEventListener('mousemove', onMove);
           window.removeEventListener('mouseup', onUp);
           if (dragRAF) { cancelAnimationFrame(dragRAF); dragRAF = null; }
-          if (pendingDX || pendingDY) api.move_window(pendingDX, pendingDY).catch(() => {});
-          pendingDX = 0; pendingDY = 0;
+          const x = pendingX, y = pendingY;
+          moveChain = moveChain
+            .then(() => api.move_window(x, y))
+            .then(() => api.end_move_window())
+            .catch(() => {});
         };
         window.addEventListener('mousemove', onMove);
         window.addEventListener('mouseup', onUp);

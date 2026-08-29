@@ -204,6 +204,14 @@
         "description": "启动器欢迎音效的文件路径\n可以替换为你喜欢的音效文件\n仅支持wav格式\n如果不想要欢迎音效, 可以将其设置为空字符串",
         "page": "其它"
     },
+    "click_sound": {
+        "name": "点击音效",
+        "type": "boolean",
+        "default": true,
+        "value": true,
+        "description": "是否播放界面控件的点击音效",
+        "page": "其它"
+    },
     "bg_gaussian_blur": {
         "name": "背景模糊",
         "type": "float",
