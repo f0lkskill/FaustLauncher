@@ -264,11 +264,21 @@ class FaustLauncherCore:
         from functions.update.version_utils import check_version_update
         from functions.web_update.sql_manager import notify_new_version
         
-        has_update, latest_info, name = check_version_update(self.root)
+        has_update, latest_info, name, current_version = check_version_update(self.root)
         if has_update:
             print(f"启动器的新版本已经发布: {name}")
         latest_info['version_name'] = name
+
         if not has_notify:
+            if current_version == "V0.8.4-LimbusCompany_Release":
+                from tkinter.messagebox import showinfo
+                from functions.base.sound_utils import play_sound
+                play_sound("assets/voices/welcome_1.wav")
+                showinfo("你知道吗？", "当前版本 V0.8.4 是一个特殊版本！\n前面忘了，后面忘了，总之\n0!!! 8!!! 4!!! 康破尼！！！")
+            else:
+                # print(f"当前版本 {latest_info['version_name']} 不是特殊版本")
+                pass
+
             print('发现新版本，创建版本详细介绍窗口。')
             # print(f'参数: {name}, {has_update}, {latest_info}')
             notify_new_version(name, root=self.root, has_new_version=has_update, 

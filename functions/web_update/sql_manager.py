@@ -955,6 +955,7 @@ def notify_new_version(current_version_name, info = '发现新版本', root = No
                 # 不显示alpha版本更新提示
                 if "release" not in version_info:
                     messagebox.showwarning("警告", f"当前版本: {version_info}\n最新正式版本: {latest_info['version_name']}\n\n您正在使用测试版本，意味着该版本可能不稳定或包含未完成的功能。\n如果你是参与内测的用户,请将你遇到的问题反馈给开发者。") # type: ignore
+            
             show_version_update_window(current_version_name, latest_info, info, root)
             return True
         else:

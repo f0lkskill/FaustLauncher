@@ -2246,6 +2246,7 @@ def run_web_ui(debug: bool = False):
     # loaded 事件独立于 JS API 调用队列。延迟一小段时间让 Splash 完成首帧
     # 绘制，再由原生侧显示窗口，避免 get_bootstrap 阻塞 ui_ready。
     try:
+        assert window is not None
         window.events.loaded += lambda: threading.Timer(
             0.15, _show_after_load).start()
     except Exception:
