@@ -1682,6 +1682,7 @@ window.__onResError = function (msg) { toast('⚠ ' + msg, 'error', 6000); };
     // 背景色
     applyTheme(b.bg_color);
     applyGlassFactor();
+    applyHwAccel();
     // 项目图标 (后端 data URI, 供下载中心/推荐卡图标回退)
     if (b.icon_uri) {
       PROJECT_ICON = b.icon_uri;
@@ -1885,6 +1886,16 @@ window.__onResError = function (msg) { toast('⚠ ' + msg, 'error', 6000); };
       if (s) v = Number(s.value !== undefined ? s.value : s.default) || 1;
     } catch (e) { v = 1; }
     document.documentElement.style.setProperty('--glass-factor', String(v));
+  }
+
+  // 硬件加速开关: 关闭时给 body 加 no-hw, 禁用毛玻璃/重阴影等 GPU 高消耗效果
+  function applyHwAccel() {
+    let v = true;
+    try {
+      const s = BOOT && BOOT.settings_schema ? BOOT.settings_schema.hw_accel : null;
+      if (s) v = Boolean(s.value !== undefined ? s.value : s.default);
+    } catch (e) { v = true; }
+    document.body.classList.toggle('no-hw', !v);
   }
 
   function applyTheme(color) {
@@ -2571,6 +2582,7 @@ function layoutToolsCarousel(smooth) {
       wrap.innerHTML = '<label class="switch"><input type="checkbox" ' + (getSettingValue(key) ? 'checked' : '') + '><span class="slider"></span></label>';
       wrap.firstChild.querySelector('input').onchange = e => {
         markChanged(key, e.target.checked);
+        if (key === 'hw_accel') { if (BOOT && BOOT.settings_schema) BOOT.settings_schema[key].value = e.target.checked; applyHwAccel(); }   // 硬件加速即时生效
         if (api) api.set_setting(key, e.target.checked).catch(err => toast(String(err), 'error'));
       };
       return wrap;

@@ -223,6 +223,14 @@
         "description": "应用程序的主题颜色 (十六进制格式)\n重启后才能生效\n实验性功能, 可能会出现样式失效，颜色冲突。",
         "page": "其它"
     },
+    "hw_accel": {
+        "name": "硬件加速",
+        "type": "boolean",
+        "default": true,
+        "value": true,
+        "description": "是否开启 GPU 硬件加速效果 (毛玻璃/阴影/动画分层)\n开启: 视觉效果更好, 但高负载场景可能吃 GPU\n关闭: 禁用毛玻璃与重阴影, 降低 GPU 占用, 适合低配机器",
+        "page": "其它"
+    },
     "glass_factor": {
         "name": "毛玻璃系数",
         "type": "float",
