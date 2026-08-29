@@ -44,13 +44,30 @@ body {
     radial-gradient(900px 700px at -10% 110%, rgba(30,128,240,.08), transparent 60%),
     radial-gradient(600px 500px at 50% 50%, rgba(79,193,255,.05), transparent 70%),
     var(--bg);
-  transition: background 1.2s ease;
+  /* 背景渐变不可平滑过渡, 移除 transition 避免切换时全屏连续重绘 */
   z-index: 0;
 }
 #bg-layer.show-img {
   background-size: cover;
   background-position: center;
   background-repeat: no-repeat;
+}
+
+/* 硬件加速关闭: 禁用毛玻璃/重阴影/常驻分层, 降低 GPU 填充率 */
+body.no-hw *,
+body.no-hw *::before,
+body.no-hw *::after {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+body.no-hw .carousel-item-inner,
+body.no-hw .box-card,
+body.no-hw .card,
+body.no-hw .link-card,
+body.no-hw .res-card,
+body.no-hw .dc-card,
+body.no-hw .hero {
+  box-shadow: none !important;
 }
 
 #app { position: relative; z-index: 1; display: flex; height: 100vh; }
@@ -108,7 +125,7 @@ body {
   background: transparent; color: var(--text-2);
   font-family: var(--font); font-size: 14px;
   border-radius: 10px; cursor: pointer;
-  transition: all .18s ease;
+  transition: transform .18s ease, border-color .18s ease, color .18s ease, background-color .18s ease, background .18s ease, box-shadow .18s ease, opacity .18s ease;
   text-align: left;
 }
 .nav-item:hover { background: rgba(255,255,255,.04); color: var(--text); }
@@ -130,7 +147,7 @@ body {
   font-family: var(--font); font-size: 12px;
   background: var(--card); color: var(--text-2);
   border: 1px solid var(--border); border-radius: 8px;
-  padding: 7px; cursor: pointer; transition: all .18s ease;
+  padding: 7px; cursor: pointer; transition: transform .18s ease, border-color .18s ease, color .18s ease, background-color .18s ease, background .18s ease, box-shadow .18s ease, opacity .18s ease;
 }
 .term-toggle:hover { color: var(--text); border-color: var(--border-2); }
 
@@ -186,7 +203,7 @@ body {
   font-family: var(--font); font-size: 14px; cursor: pointer;
   border-radius: 10px; border: 1px solid var(--border-2);
   padding: 9px 18px; color: var(--text-2); background: var(--card-2);
-  transition: all .18s ease;
+  transition: transform .18s ease, border-color .18s ease, color .18s ease, background-color .18s ease, background .18s ease, box-shadow .18s ease, opacity .18s ease;
 }
 .dc-tab:hover { color: var(--text); border-color: var(--accent); }
 .dc-tab.active {
@@ -251,7 +268,7 @@ body {
   font-family: var(--font); font-size: 13px; cursor: pointer;
   border-radius: 8px; border: 1px solid var(--border-2);
   padding: 7px 15px; color: var(--text-2); background: var(--card-2);
-  transition: all .18s ease;
+  transition: transform .18s ease, border-color .18s ease, color .18s ease, background-color .18s ease, background .18s ease, box-shadow .18s ease, opacity .18s ease;
 }
 .res-tab:hover { color: var(--text); }
 .res-tab.active { border-color: var(--accent); color: var(--text); font-weight: 600; background: rgba(55,148,255,.12); }
@@ -309,7 +326,6 @@ body.modal-open .res-card {
   -webkit-backdrop-filter: blur(calc(var(--glass-factor) * 26px)) saturate(140%);
   transform-style: preserve-3d;
   transition: box-shadow .25s ease;
-  will-change: transform;
 }
 .res-card:hover {
   background:
@@ -350,7 +366,7 @@ body.modal-open .res-card {
   flex-shrink: 0; width: 30px; height: 30px; border-radius: 8px;
   display: inline-flex; align-items: center; justify-content: center;
   background: transparent; border: none; color: var(--text-3);
-  cursor: pointer; font-size: 16px; line-height: 1; transition: all .18s ease;
+  cursor: pointer; font-size: 16px; line-height: 1; transition: transform .18s ease, border-color .18s ease, color .18s ease, background-color .18s ease, background .18s ease, box-shadow .18s ease, opacity .18s ease;
 }
 .res-menu-btn:hover { background: rgba(255, 255, 255, 0.08); color: var(--text); }
 /* 卡片右侧操作区 (启用/禁用 switch + 更多) */
@@ -380,7 +396,7 @@ body.modal-open .res-card {
 .res-pagination button {
   font-family: var(--font); font-size: 12.5px; cursor: pointer; color: var(--text-2);
   background: var(--card-2); border: 1px solid var(--border-2);
-  border-radius: 6px; padding: 6px 12px; transition: all .18s ease;
+  border-radius: 6px; padding: 6px 12px; transition: transform .18s ease, border-color .18s ease, color .18s ease, background-color .18s ease, background .18s ease, box-shadow .18s ease, opacity .18s ease;
 }
 .res-pagination button:hover { color: var(--text); border-color: var(--accent); }
 .res-pagination button.active { border-color: var(--accent); color: var(--text); font-weight: 600; background: rgba(55,148,255,.12); }
@@ -493,7 +509,7 @@ body.modal-open .res-card {
   font-family: var(--font); font-size: 14px; cursor: pointer;
   border-radius: 10px; border: 1px solid var(--border-2);
   padding: 10px 18px; color: var(--text); background: var(--card-2);
-  transition: all .18s ease; display: inline-flex; align-items: center; gap: 8px;
+  transition: transform .18s ease, border-color .18s ease, color .18s ease, background-color .18s ease, background .18s ease, box-shadow .18s ease, opacity .18s ease; display: inline-flex; align-items: center; gap: 8px;
 }
 .btn:hover { border-color: var(--accent); transform: translateY(-1px); }
 .btn:active { transform: translateY(0) scale(.98); }
@@ -578,7 +594,7 @@ body.modal-open .res-card {
   display: flex; align-items: center; gap: 8px; font-size: 12.5px;
   color: var(--text-3); padding: 8px 10px; border-radius: 8px;
   background: rgba(255,255,255,.02); border: 1px solid var(--border);
-  transition: all .2s ease;
+  transition: transform .2s ease, border-color .2s ease, color .2s ease, background-color .2s ease, background .2s ease, box-shadow .2s ease, opacity .2s ease;
 }
 .pipe-step .st-ico { width: 18px; text-align: center; }
 .pipe-step.done { color: var(--text-2); border-color: rgba(16,185,129,.3); background: rgba(16,185,129,.06); }
@@ -630,7 +646,7 @@ body.modal-open .res-card {
   display: flex; align-items: center; justify-content: center;
   background: transparent; border: none; color: var(--text-3);
   cursor: pointer; font-size: 13px; line-height: 1;
-  transition: all .18s ease;
+  transition: transform .18s ease, border-color .18s ease, color .18s ease, background-color .18s ease, background .18s ease, box-shadow .18s ease, opacity .18s ease;
 }
 .panel-close:hover { background: rgba(239, 68, 68, 0.15); color: var(--danger); }
 .panel-body { padding: 18px 20px; overflow-y: auto; flex: 1; }
@@ -657,7 +673,7 @@ body.modal-open .res-card {
   font-family: var(--font); font-size: 13px; cursor: pointer;
   border-radius: 8px; border: 1px solid var(--border-2);
   padding: 7px 14px; color: var(--text-2); background: var(--card-2);
-  transition: all .18s ease;
+  transition: transform .18s ease, border-color .18s ease, color .18s ease, background-color .18s ease, background .18s ease, box-shadow .18s ease, opacity .18s ease;
 }
 .font-tab:hover { color: var(--text); }
 .font-tab.active { border-color: var(--accent); color: var(--text); font-weight: 600; background: rgba(55,148,255,.10); }
@@ -756,7 +772,7 @@ body.modal-open .res-card {
   border-radius: 14px;
   padding: 16px; min-height: 130px; text-align: left; cursor: pointer;
   font-family: var(--font); color: var(--text);
-  transition: all .18s ease;
+  transition: transform .18s ease, border-color .18s ease, color .18s ease, background-color .18s ease, background .18s ease, box-shadow .18s ease, opacity .18s ease;
 }
 .box-card:hover { border-color: var(--accent); transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0, 0, 0, .35); }
 /* 背景素材: 图片铺满底部, 顶部渐变溶解融合 (同轮播卡片) */
@@ -833,7 +849,7 @@ body.modal-open .res-card {
   padding: 18px; cursor: pointer;
   background: rgba(37, 37, 38, 0.72);
   border: 1px solid var(--border); border-radius: var(--radius);
-  transition: all .2s ease;
+  transition: transform .2s ease, border-color .2s ease, color .2s ease, background-color .2s ease, background .2s ease, box-shadow .2s ease, opacity .2s ease;
 }
 .link-card:hover {
   transform: translateY(-3px);
@@ -881,7 +897,7 @@ body.modal-open .res-card {
   width: 7px; height: 7px; border-radius: 50%;
   background: rgba(255, 255, 255, 0.18);
   border: none; padding: 0; cursor: pointer;
-  transition: all .25s ease;
+  transition: transform .25s ease, border-color .25s ease, color .25s ease, background-color .25s ease, background .25s ease, box-shadow .25s ease, opacity .25s ease;
 }
 .carousel-dots .cdot:hover { background: rgba(255, 255, 255, 0.4); }
 .carousel-dots .cdot.active {
@@ -1315,7 +1331,7 @@ body.modal-open .res-card {
 .ac-item {
   display: flex; align-items: center; gap: 10px;
   padding: 8px 10px; border-radius: 8px; cursor: pointer;
-  border: 1px solid transparent; transition: all .18s ease;
+  border: 1px solid transparent; transition: transform .18s ease, border-color .18s ease, color .18s ease, background-color .18s ease, background .18s ease, box-shadow .18s ease, opacity .18s ease;
 }
 .ac-item:hover { background: rgba(255,255,255,.05); }
 .ac-item.active { background: rgba(55,148,255,.12); border-color: rgba(55,148,255,.35); }
@@ -1340,7 +1356,6 @@ body.modal-open .res-card {
   position: fixed;
   z-index: 60;
   pointer-events: auto;   /* 可点击: 点击立即缩回 */
-  will-change: transform;
   cursor: pointer;
 }
 #character img {
