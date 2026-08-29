@@ -2897,7 +2897,9 @@ function layoutToolsCarousel(smooth) {
       if (tbClose) tbClose.addEventListener('click', () => { if (api) api.close_window().catch(() => {}); });
       // 拖动: mousedown 记录, mousemove rAF 合并增量移动窗口 (防高频调用抖动)
       tb.addEventListener('mousedown', (e) => {
-        if (e.target.closest('.tb-btn') || !api) return;
+        if (e.button !== 0 || e.target.closest('.tb-btn') || !e.target.closest('.tb-drag') || !api) return;
+        e.preventDefault();
+        e.stopPropagation();
         let lastX = e.screenX, lastY = e.screenY;
         let dragRAF = null, pendingDX = 0, pendingDY = 0;
         const flush = () => {
@@ -3075,10 +3077,21 @@ function layoutToolsCarousel(smooth) {
     if (!uris || !uris.length) return;
     if (_bgInterval) { clearInterval(_bgInterval); _bgInterval = null; }
     const layer = $('#bg-layer');
+    if (!layer) return;
     let idx = Math.floor(Math.random() * uris.length);
+    let bgSlot = 'a';
     const show = (u) => {
       const im = new Image();
-      im.onload = () => { layer.style.backgroundImage = 'url(' + u + ')'; layer.classList.add('show-img'); };
+      im.onload = () => {
+        const nextSlot = bgSlot === 'a' ? 'b' : 'a';
+        layer.style.setProperty('--bg-image-' + nextSlot, 'url("' + u.replace(/"/g, '\\"') + '")');
+        layer.classList.add('show-img');
+        void layer.offsetWidth;
+        layer.classList.add('bg-' + nextSlot);
+        const oldSlot = bgSlot;
+        setTimeout(() => layer.classList.remove('bg-' + oldSlot), 1150);
+        bgSlot = nextSlot;
+      };
       im.src = u;
     };
     show(uris[idx]);
