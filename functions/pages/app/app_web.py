@@ -523,17 +523,6 @@ class AppApi:
             win = self.window_ref.get("win") if self.window_ref else None
             if win is not None:
                 _win32_show_window_impl(win, True)
-                # 禁用 DWM 无边框玻璃扩展: frameless 窗口会整窗可拖, 这里只保留标题栏 JS 拖动
-                try:
-                    import ctypes
-                    hwnd = _win32_hwnd(win)
-                    if hwnd:
-                        ctypes.windll.dwmapi.DwmSetWindowAttribute(
-                            ctypes.c_void_p(hwnd), 2, ctypes.byref(ctypes.c_int(2)), 4)  # NCRENDERING_POLICY=DWMNCRP_DISABLED
-                        m = (ctypes.c_long * 4)(0, 0, 0, 0)
-                        ctypes.windll.dwmapi.DwmExtendFrameIntoClientArea(ctypes.c_void_p(hwnd), ctypes.byref(m))
-                except Exception:
-                    pass
         except Exception:
             pass
         return True
