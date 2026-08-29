@@ -1683,6 +1683,7 @@ window.__onResError = function (msg) { toast('⚠ ' + msg, 'error', 6000); };
     applyTheme(b.bg_color);
     applyGlassFactor();
     applyHwAccel();
+    applyFrameLimit();
     // 项目图标 (后端 data URI, 供下载中心/推荐卡图标回退)
     if (b.icon_uri) {
       PROJECT_ICON = b.icon_uri;
@@ -1898,6 +1899,28 @@ window.__onResError = function (msg) { toast('⚠ ' + msg, 'error', 6000); };
     document.body.classList.toggle('no-hw', !v);
   }
 
+  // 帧渲染上限: 限制 JS 动画 rAF 帧率, 减少毛玻璃卡片等每帧重绘的 GPU 开销
+  let frameLimit = 60;
+  let __lastRafT = 0;
+  function applyFrameLimit() {
+    let idx = 2;
+    try {
+      const s = BOOT && BOOT.settings_schema ? BOOT.settings_schema.frame_limit : null;
+      if (s) idx = Number(s.value !== undefined ? s.value : s.default) || 2;
+    } catch (e) { idx = 2; }
+    const fpsList = [30, 45, 60, 90, 120];
+    frameLimit = fpsList[idx] || 60;
+  }
+  function rafThrottle(cb) {
+    if (frameLimit >= 120) return requestAnimationFrame(cb);
+    const interval = 1000 / frameLimit;
+    const loop = (t) => {
+      if (t - __lastRafT >= interval) { __lastRafT = t; cb(t); }
+      else requestAnimationFrame(loop);
+    };
+    return requestAnimationFrame(loop);
+  }
+
   function applyTheme(color) {
     if (!color) return;
     color = String(color);
@@ -2096,7 +2119,7 @@ function layoutCarousel(smooth) {
         layoutCarousel(true);
         animRAF = null;
       } else {
-        animRAF = requestAnimationFrame(animLoop);
+        animRAF = rafThrottle(animLoop);
       }
     };
     const stopWheelAnim = () => {
@@ -2116,7 +2139,7 @@ function layoutCarousel(smooth) {
       if (dragging) return;
       stopAll();
       featTarget = Math.round(featAngle) + (e.deltaY < 0 ? 1 : -1);
-      if (!animRAF) animRAF = requestAnimationFrame(animLoop);
+      if (!animRAF) animRAF = rafThrottle(animLoop);
     }, { passive: false });
 
     // ---- 丝滑拖拽: rAF 渲染 + spring 弹性吸附 ----
@@ -2139,9 +2162,9 @@ function layoutCarousel(smooth) {
       stopAll();
       const loop = () => {
         layoutCarousel(false);
-        rafId = requestAnimationFrame(loop);
+        rafId = rafThrottle(loop);
       };
-      rafId = requestAnimationFrame(loop);
+      rafId = rafThrottle(loop);
     };
 
     // 松手后: spring 弹性吸附到最近整数 (不抽动)
@@ -2157,10 +2180,10 @@ function layoutCarousel(smooth) {
         const ease = 1 - Math.pow(1 - p, 3);
         featAngle = startVal + (target - startVal) * ease;
         layoutCarousel(p < 0.98); // 接近结束时加回过渡
-        if (p < 1) { springId = requestAnimationFrame(step); }
+        if (p < 1) { springId = rafThrottle(step); }
         else { featAngle = target; layoutCarousel(true); }
       };
-      springId = requestAnimationFrame(step);
+      springId = rafThrottle(step);
     };
 
     carousel.addEventListener('pointerdown', (e) => {
@@ -2359,7 +2382,7 @@ function layoutToolsCarousel(smooth) {
         layoutToolsCarousel(true);
         animRAF = null;
       } else {
-        animRAF = requestAnimationFrame(animLoop);
+        animRAF = rafThrottle(animLoop);
       }
     };
     const stopWheelAnim = () => {
@@ -2379,7 +2402,7 @@ function layoutToolsCarousel(smooth) {
       if (dragging) return;
       stopAll();
       toolsTarget = Math.round(toolsAngle) + (e.deltaY < 0 ? 1 : -1);
-      if (!animRAF) animRAF = requestAnimationFrame(animLoop);
+      if (!animRAF) animRAF = rafThrottle(animLoop);
     }, { passive: false });
 
     let dragging = false, startX = 0, dragBase = 0;
@@ -2400,9 +2423,9 @@ function layoutToolsCarousel(smooth) {
       stopAll();
       const loop = () => {
         layoutToolsCarousel(false);
-        rafId = requestAnimationFrame(loop);
+        rafId = rafThrottle(loop);
       };
-      rafId = requestAnimationFrame(loop);
+      rafId = rafThrottle(loop);
     };
 
     const springToNearest = () => {
@@ -2416,10 +2439,10 @@ function layoutToolsCarousel(smooth) {
         const ease = 1 - Math.pow(1 - p, 3);
         toolsAngle = startVal + (target - startVal) * ease;
         layoutToolsCarousel(p < 0.98);
-        if (p < 1) { springId = requestAnimationFrame(step); }
+        if (p < 1) { springId = rafThrottle(step); }
         else { toolsAngle = target; layoutToolsCarousel(true); }
       };
-      springId = requestAnimationFrame(step);
+      springId = rafThrottle(step);
     };
 
     carousel.addEventListener('pointerdown', (e) => {
@@ -2607,6 +2630,7 @@ function layoutToolsCarousel(smooth) {
           if (currentPage === 'features' && BOOT && BOOT.features) renderFeatures(BOOT.features);
           if (currentPage === 'tools' && BOOT && BOOT.tools) renderTools(BOOT.tools);
         }
+        if (key === 'frame_limit') { if (BOOT && BOOT.settings_schema) BOOT.settings_schema[key].value = Number(sel.value); applyFrameLimit(); }   // 帧率上限即时生效
         if (api) api.set_setting(key, Number(sel.value)).catch(err => toast(String(err), 'error'));
       };
       wrap.appendChild(sel);
@@ -2997,7 +3021,7 @@ function layoutToolsCarousel(smooth) {
     document.addEventListener('mousemove', (e) => {
       tiltMX = e.clientX;
       tiltMY = e.clientY;
-      if (!tiltRAF) tiltRAF = requestAnimationFrame(applyTiltFrame);
+      if (!tiltRAF) tiltRAF = rafThrottle(applyTiltFrame);
     });
     document.addEventListener('mouseleave', () => {
       applyTiltBase();
