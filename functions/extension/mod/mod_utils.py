@@ -185,18 +185,16 @@ class ModManager:
                         if not os.path.isfile(source_file):
                             print(f"跳过缺失文件: {source_file}")
                             continue
+                        # 目标文件名加 mod 包名前缀 (mod名_文件名), 不同 mod 的同名文件互不冲突
+                        target_name = f"{mod_name}_{file_name}"
+                        target_file = os.path.join(target_dir, target_name)
 
                         if file_name.lower().endswith('.bank'):
-                            stem, ext = os.path.splitext(file_name)
-                            # 需求: mod 目录已有对应 rebank 差分则不处理
-                            if os.path.exists(os.path.join(target_dir, stem + '.rebank')):
-                                print(f"跳过 {file_name}: 已有对应 rebank 差分，无需复制")
+                            # rebank 差分检测: 加载器把 bank 转 rebank, 目标已有对应前缀 rebank 则跳过
+                            rebank_name = f"{mod_name}_{os.path.splitext(file_name)[0]}.rebank"
+                            if os.path.exists(os.path.join(target_dir, rebank_name)):
+                                print(f"跳过 {file_name}: 已有对应 rebank 差分, 无需复制")
                                 continue
-                            # 需求: 同名声音 mod 文件 → 名字末尾添加 1,2,3...
-                            target_file, file_name = self._unique_bank_name(
-                                target_dir, source_file, file_name, used)
-                        else:
-                            target_file = os.path.join(target_dir, file_name)
 
                         # 确保目标目录存在
                         os.makedirs(os.path.dirname(target_file), exist_ok=True)
@@ -395,20 +393,18 @@ class ModManager:
                         print(f"执行 {mod_name} Uninstaller.bat 失败(超时或异常): {e}", flush=True)
 
                 # 2) 删除复制到目标目录的文件:
-                #    加载器会把 .bank 转成 .rebank, 同名声音 mod 可能带 X1/X2 编号副本,
-                #    因此按"文件名(去后缀) stem 家族"匹配, 包含即可, 不校验后缀/md5,
-                #    删除目标目录下所有匹配文件 (含 .bank/.rebank/.dll 等)
+                #    转移文件名带 mod 包名前缀 (mod名_文件名), 加载器会把 .bank 转成 .rebank,
+                #    因此按"前缀 + stem"匹配, 删除该 mod 的所有目标文件 (含 .bank/.rebank/.dll 等)
                 for file_name in file_names:
                     stem, _ = os.path.splitext(file_name)
-                    base = _strip_suffix_number(stem)
+                    prefix = mod_name + '_' + stem
                     try:
                         targets = os.listdir(target_dir)
                     except OSError:
                         continue
                     for target_name in targets:
                         t_stem, _ = os.path.splitext(target_name)
-                        t_base = _strip_suffix_number(t_stem)
-                        if base not in t_base and t_base not in base:
+                        if not t_stem.startswith(prefix):
                             continue
                         chosen_file = os.path.join(target_dir, target_name)
                         try:
