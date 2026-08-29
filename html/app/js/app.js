@@ -1888,11 +1888,11 @@ window.__onResError = function (msg) { toast('⚠ ' + msg, 'error', 6000); };
     document.documentElement.style.setProperty('--glass-factor', String(v));
   }
 
-  // 硬件加速开关: 关闭时给 body 加 no-hw, 禁用毛玻璃/重阴影等 GPU 高消耗效果
+  // 启用毛玻璃开关: 关闭时给 body 加 no-hw, 禁用 backdrop-filter 等毛玻璃高消耗效果
   function applyHwAccel() {
     let v = true;
     try {
-      const s = BOOT && BOOT.settings_schema ? BOOT.settings_schema.hw_accel : null;
+      const s = BOOT && BOOT.settings_schema ? BOOT.settings_schema.glass_enabled : null;
       if (s) v = Boolean(s.value !== undefined ? s.value : s.default);
     } catch (e) { v = true; }
     document.body.classList.toggle('no-hw', !v);
@@ -2582,7 +2582,7 @@ function layoutToolsCarousel(smooth) {
       wrap.innerHTML = '<label class="switch"><input type="checkbox" ' + (getSettingValue(key) ? 'checked' : '') + '><span class="slider"></span></label>';
       wrap.firstChild.querySelector('input').onchange = e => {
         markChanged(key, e.target.checked);
-        if (key === 'hw_accel') { if (BOOT && BOOT.settings_schema) BOOT.settings_schema[key].value = e.target.checked; applyHwAccel(); }   // 硬件加速即时生效
+        if (key === 'glass_enabled') { if (BOOT && BOOT.settings_schema) BOOT.settings_schema[key].value = e.target.checked; applyHwAccel(); }   // 毛玻璃即时生效
         if (api) api.set_setting(key, e.target.checked).catch(err => toast(String(err), 'error'));
       };
       return wrap;
