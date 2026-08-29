@@ -518,11 +518,22 @@ class AppApi:
         self.window_ref = window_ref
 
     def ui_ready(self):
-        """前端初始化完成(预加载)后显示主窗口"""
+        """前端初始化完成(预加载)后显示主窗口 (AnimateWindow 透明度渐入)"""
         try:
             win = self.window_ref.get("win") if self.window_ref else None
             if win is not None:
                 _win32_show_window_impl(win, True)
+                # 禁用 DWM 无边框玻璃扩展: frameless 窗口会整窗可拖, 这里只保留标题栏 JS 拖动
+                try:
+                    import ctypes
+                    hwnd = _win32_hwnd(win)
+                    if hwnd:
+                        ctypes.windll.dwmapi.DwmSetWindowAttribute(
+                            ctypes.c_void_p(hwnd), 2, ctypes.byref(ctypes.c_int(2)), 4)  # NCRENDERING_POLICY=DWMNCRP_DISABLED
+                        m = (ctypes.c_long * 4)(0, 0, 0, 0)
+                        ctypes.windll.dwmapi.DwmExtendFrameIntoClientArea(ctypes.c_void_p(hwnd), ctypes.byref(m))
+                except Exception:
+                    pass
         except Exception:
             pass
         return True
@@ -1993,6 +2004,7 @@ def run_web_ui(debug: bool = False):
         min_size=(860, 620),
         background_color="#0b0e14",
         frameless=True,   # 去除原生标题栏, 使用自定义 HTML/CSS 标题栏
+        hidden=True,      # 初始隐藏, 前端 ui_ready 后 AnimateWindow 透明度渐入
     )
     window_holder["win"] = window
 
