@@ -38,6 +38,7 @@ MYDISK_URL = "https://pc.woozooo.com/mydisk.php"
 ACCOUNT_URL = "https://pc.woozooo.com/account.php"
 DO_LOAD_URL = "https://pc.woozooo.com/doupload.php"
 UPLOAD_URL = "https://pc.woozooo.com/html5up.php"
+UPLOAD_TIMEOUT_SECONDS = 600
 
 # 蓝奏云官方允许上传的文件格式
 ALLOW_UP_TYPES = [
@@ -524,24 +525,28 @@ def UploadFile(session, file_path, folder_id=-1, progress_callback=None, max_siz
         return ret
     try:
         files = {"upload_file": (filename, f, "application/octet-stream")}
-        # 读超时设为 None(不限制): 大文件在慢速上行时仍可能耗时很久,
-        # 过短的读超时会在"正在正常上传"时误报 timeout
+        # requests/urllib3 在发送请求体时可能沿用 connect timeout 作为 socket
+        # 写超时。30 秒对几十 MB 的慢速上行太短，会在进度 100% 附近误报
+        # "write operation timed out"。上传与服务端处理均允许最多 10 分钟。
         response = session.post(UPLOAD_URL, data=data, files=files,
-                                headers=upload_headers, timeout=(30, None))
+                                headers=upload_headers,
+                                timeout=(UPLOAD_TIMEOUT_SECONDS, UPLOAD_TIMEOUT_SECONDS))
     except requests.exceptions.ReadTimeout:
         ret["msg"] = "上传超时：长时间未收到服务器响应（网络过慢或文件过大，请重试；单文件上限 %d MB）" % max_size_mb
         return ret
     except requests.exceptions.ConnectionError as e:
-        # 实测: 蓝奏云会"静默拒收"超过账号上限的大文件(接收约 66MB 后停止读取),
-        # 客户端表现为 write/read 超时或连接中断, 上传进度却一直正常
         try:
             sent_mb = f.sent / 1024.0 / 1024.0
             total_mb = f.size / 1024.0 / 1024.0
             sent_hint = "已发送 %.1f/%.1f MB" % (sent_mb, total_mb)
         except Exception:
             sent_hint = "已发送部分数据"
-        ret["msg"] = "上传被中断（%s）：%s。蓝奏云会拒收超过账号上传上限的文件（该账号实测约 66MB），" \
-                     "可在 web_config.json 的 lanzou.max_size_mb 调整后重新发布" % (sent_hint, e)
+        if size >= limit * 0.9:
+            ret["msg"] = "上传被中断（%s）：%s。文件已接近账号上传上限 %d MB，蓝奏云可能拒收该文件" \
+                         % (sent_hint, e, max_size_mb)
+        else:
+            ret["msg"] = "上传连接中断（%s）：%s。文件大小未达到配置上限 %d MB，通常是上行网络或蓝奏云响应超时，请稍后重试" \
+                         % (sent_hint, e, max_size_mb)
         return ret
     except requests.RequestException as e:
         ret["msg"] = "UploadFile 请求失败：%s" % e
