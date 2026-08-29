@@ -21,7 +21,7 @@
 .tb-actions { display: flex; height: 100%; }
 .tb-btn {
   width: 46px; height: 100%; border: none; background: transparent;
-  color: var(--text-2); font-size: 14px; cursor: pointer;
+  color: var(--text-2); font-size: 14px; cursor: pointer; outline: none;
   display: inline-flex; align-items: center; justify-content: center;
   transition: background-color .15s ease, color .15s ease;
 }

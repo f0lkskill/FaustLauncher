@@ -156,8 +156,9 @@ _faust_wndproc = None   # 保持窗口过程引用, 防 GC
 
 
 def _disable_system_drag(window):
-    """WM_NCHITTEST 返回 HTCLIENT + 移除 WS_THICKFRAME, 禁止 frameless 窗口整窗拖动
-    (仅标题栏 JS 拖动)"""
+    """用 SetWindowSubclass (comctl32) 拦截 WM_NCHITTEST 返回 HTCLIENT,
+    禁止 frameless 窗口整窗系统拖动 (仅标题栏 JS 拖动有效).
+    SetWindowSubclass 比 SetWindowLongPtrW 更可靠, 兼容 WinForms/.NET 窗口过程."""
     global _faust_wndproc
     try:
         import ctypes
@@ -165,29 +166,38 @@ def _disable_system_drag(window):
         hwnd = _win32_hwnd(window)
         if not hwnd:
             return
-        # 移除可调大小边框 (WS_THICKFRAME), 避免客户区拖动/调整
+        # 移除可调大小边框 (WS_THICKFRAME)
         GWL_STYLE = -16
         WS_THICKFRAME = 0x00040000
         style = ctypes.windll.user32.GetWindowLongW(hwnd, GWL_STYLE)
         if style & WS_THICKFRAME:
             ctypes.windll.user32.SetWindowLongW(hwnd, GWL_STYLE, style & ~WS_THICKFRAME)
-        GWLP_WNDPROC = -4
+        # 用 SetWindowSubclass (comctl32) 子类化 — 兼容 WinForms 消息循环
         WM_NCHITTEST = 0x0084
         HTCLIENT = 1
-        old_proc = ctypes.windll.user32.GetWindowLongPtrW(hwnd, GWLP_WNDPROC)
-        if not old_proc:
-            return
-        WNDPROC = ctypes.WINFUNCTYPE(ctypes.c_longlong, wintypes.HWND,
-                                     ctypes.c_uint, wintypes.WPARAM, wintypes.LPARAM)
+        SUBCLASSID = 0xFA01  # 唯一标识
 
-        def _proc(h, m, w, l):
-            if m == WM_NCHITTEST:
+        SUBCLASSPROC = ctypes.WINFUNCTYPE(
+            ctypes.c_longlong, wintypes.HWND, ctypes.c_uint,
+            wintypes.WPARAM, wintypes.LPARAM,
+            wintypes.UINT, wintypes.WPARAM)
+
+        def _proc(hwnd, msg, wParam, lParam, uIdSubclass, dwRefData):
+            if msg == WM_NCHITTEST:
                 return HTCLIENT
-            return ctypes.windll.user32.CallWindowProcW(old_proc, h, m, w, l)
+            return ctypes.windll.defwindowprocW(hwnd, msg, wParam, lParam) # type: ignore
 
-        _faust_wndproc = WNDPROC(_proc)
-        ctypes.windll.user32.SetWindowLongPtrW(
-            hwnd, GWLP_WNDPROC, ctypes.cast(_faust_wndproc, ctypes.c_void_p).value)
+        _faust_wndproc = SUBCLASSPROC(_proc)
+        # RemoveWindowSubclass 先清理旧子类 (幂等)
+        try:
+            ctypes.windll.comctl32.RemoveWindowSubclass(hwnd, _faust_wndproc, SUBCLASSID)
+        except Exception:
+            pass
+        ctypes.windll.comctl32.SetWindowSubclass(
+            hwnd,
+            ctypes.cast(_faust_wndproc, ctypes.c_void_p).value,
+            SUBCLASSID,
+            0)
     except Exception:
         pass
 
@@ -581,31 +591,19 @@ class AppApi:
         return True
 
     def ui_ready(self):
-        """前端初始化完成(预加载)后显示主窗口 (透明度渐变出现)"""
+        """前端初始化完成(预加载)后显示主窗口 (splash 已提供视觉过渡, 无需窗口级渐变)"""
         try:
             win = self.window_ref.get("win") if self.window_ref else None
             if win is not None:
                 _win32_show_window_impl(win, True)
-                hwnd = _win32_hwnd(win)
-                # 延迟禁用整窗拖动 (窗口完全初始化后再子类, 更可靠)
+                # 延迟子类化禁用整窗拖动 (窗口完全初始化后更可靠)
                 def _later():
                     try:
-                        time.sleep(0.6)
+                        time.sleep(0.5)
                         _disable_system_drag(win)
                     except Exception:
                         pass
                 threading.Thread(target=_later, daemon=True).start()
-                # 透明度渐变出现 (0 -> 255)
-                if hwnd:
-                    def _fade():
-                        try:
-                            for a in range(0, 256, 16):
-                                _set_window_alpha(hwnd, a)
-                                time.sleep(0.012)
-                            _set_window_alpha(hwnd, 255)
-                        except Exception:
-                            pass
-                    threading.Thread(target=_fade, daemon=True).start()
         except Exception:
             pass
         return True
@@ -1900,23 +1898,10 @@ def _start_tray(core, window, win32_show):
         ico = Image.new("RGBA", (64, 64), (99, 102, 241, 255))
 
     def _tray_window_op(show):
-        """在独立线程执行窗口显示/隐藏 (带透明度渐变), 绝不阻塞 pystray 回调线程"""
+        """在独立线程执行窗口显示/隐藏, 绝不阻塞 pystray 回调线程"""
         def _do():
             try:
-                hwnd = _win32_hwnd(window)
-                if show:
-                    win32_show(True)
-                    if hwnd:
-                        for a in range(0, 256, 16):
-                            _set_window_alpha(hwnd, a)
-                            time.sleep(0.012)
-                        _set_window_alpha(hwnd, 255)
-                else:
-                    if hwnd:
-                        for a in range(255, -1, -16):
-                            _set_window_alpha(hwnd, a)
-                            time.sleep(0.012)
-                    win32_show(False)
+                win32_show(show)
             except Exception:
                 pass
         threading.Thread(target=_do, daemon=True).start()
@@ -2086,11 +2071,10 @@ def run_web_ui(debug: bool = False):
         background_color="#0b0e14",
         frameless=True,   # 去除原生标题栏, 使用自定义 HTML/CSS 标题栏
         shadow=False,     # 禁用 DWM 无边框玻璃扩展, 消除整窗可拖
-        hidden=True,      # 启动默认隐藏, 前端 ui_ready 后显示并透明度渐变出现 (动画可见)
     )
     window_holder["win"] = window
 
-    # 保底: 若前端 ui_ready 未触发 (如 JS 异常导致 init 未完成), 12 秒后强制显示窗口, 避免窗口永远隐藏
+    # 保底: 若前端 ui_ready 未触发 (如 JS 异常导致 init 未完成), 12 秒后强制显示窗口
     def _force_show():
         time.sleep(12)
         try:
@@ -2121,14 +2105,9 @@ def run_web_ui(debug: bool = False):
             except Exception:
                 hide_to_tray = True
             if hide_to_tray:
-                # 只阻止关闭; 后台线程透明度渐出后隐藏窗口, 不依赖前端 toast
+                # 只阻止关闭; 立刻隐藏窗口 (后台线程), 不依赖前端 toast
                 def _hide():
                     try:
-                        _hwnd = _win32_hwnd(window)
-                        if _hwnd:
-                            for _a in range(255, -1, -16):
-                                _set_window_alpha(_hwnd, _a)
-                                time.sleep(0.012)
                         _win32_show_window(False)
                     except Exception:
                         pass
