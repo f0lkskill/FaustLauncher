@@ -156,9 +156,9 @@ _faust_wndproc = None   # 保持窗口过程引用, 防 GC
 
 
 def _disable_system_drag(window):
-    """用 SetWindowSubclass (comctl32) 拦截 WM_NCHITTEST 返回 HTCLIENT,
-    禁止 frameless 窗口整窗系统拖动 (仅标题栏 JS 拖动有效).
-    SetWindowSubclass 比 SetWindowLongPtrW 更可靠, 兼容 WinForms/.NET 窗口过程."""
+    """彻底禁止 frameless 窗口整窗系统拖动, 仅标题栏 JS 拖动有效.
+    组合: 移除 WS_THICKFRAME + SetWindowPos(SWP_FRAMECHANGED) 强制 DWM 重算 +
+    SetWindowSubclass 拦截 WM_NCHITTEST → HTCLIENT."""
     global _faust_wndproc
     try:
         import ctypes
@@ -166,17 +166,24 @@ def _disable_system_drag(window):
         hwnd = _win32_hwnd(window)
         if not hwnd:
             return
-        # 移除可调大小边框 (WS_THICKFRAME)
+        # 1) 移除可调大小边框
         GWL_STYLE = -16
         WS_THICKFRAME = 0x00040000
         style = ctypes.windll.user32.GetWindowLongW(hwnd, GWL_STYLE)
         if style & WS_THICKFRAME:
             ctypes.windll.user32.SetWindowLongW(hwnd, GWL_STYLE, style & ~WS_THICKFRAME)
-        # 用 SetWindowSubclass (comctl32) 子类化 — 兼容 WinForms 消息循环
+        # 2) 强制 DWM 重算窗口帧 (不含 WS_THICKFRAME, 不再提供系统拖动/调整)
+        SWP_FRAMECHANGED = 0x0020
+        SWP_NOMOVE = 0x0002
+        SWP_NOSIZE = 0x0001
+        SWP_NOZORDER = 0x0004
+        ctypes.windll.user32.SetWindowPos(
+            hwnd, None, 0, 0, 0, 0,
+            SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER)
+        # 3) SetWindowSubclass 拦截 WM_NCHITTEST → HTCLIENT (阻止任何系统拖动)
         WM_NCHITTEST = 0x0084
         HTCLIENT = 1
-        SUBCLASSID = 0xFA01  # 唯一标识
-
+        SUBCLASSID = 0xFA01
         SUBCLASSPROC = ctypes.WINFUNCTYPE(
             ctypes.c_longlong, wintypes.HWND, ctypes.c_uint,
             wintypes.WPARAM, wintypes.LPARAM,
@@ -185,14 +192,9 @@ def _disable_system_drag(window):
         def _proc(hwnd, msg, wParam, lParam, uIdSubclass, dwRefData):
             if msg == WM_NCHITTEST:
                 return HTCLIENT
-            return ctypes.windll.defwindowprocW(hwnd, msg, wParam, lParam) # type: ignore
+            return ctypes.windll.defwindowprocW(hwnd, msg, wParam, lParam)  # type: ignore
 
         _faust_wndproc = SUBCLASSPROC(_proc)
-        # RemoveWindowSubclass 先清理旧子类 (幂等)
-        try:
-            ctypes.windll.comctl32.RemoveWindowSubclass(hwnd, _faust_wndproc, SUBCLASSID)
-        except Exception:
-            pass
         ctypes.windll.comctl32.SetWindowSubclass(
             hwnd,
             ctypes.cast(_faust_wndproc, ctypes.c_void_p).value,
@@ -202,19 +204,56 @@ def _disable_system_drag(window):
         pass
 
 
-def _set_window_alpha(hwnd, alpha):
-    """设置窗口透明度 (SetLayeredWindowAttributes LWA_ALPHA), 实现渐变显示/隐藏"""
+_layered_ready = set()   # 记录已添加 WS_EX_LAYERED 的 hwnd (幂等, 不重复添加)
+
+
+def _ensure_layered(hwnd):
+    """首次调用时为窗口添加 WS_EX_LAYERED 样式 (用于 SetLayeredWindowAttributes 渐变).
+    幂等: 同一 hwnd 只添加一次, 避免反复修改样式导致闪烁."""
+    if hwnd in _layered_ready:
+        return True
     try:
         import ctypes
         GWL_EXSTYLE = -20
         WS_EX_LAYERED = 0x80000
-        LWA_ALPHA = 0x2
         style = ctypes.windll.user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
         ctypes.windll.user32.SetWindowLongW(hwnd, GWL_EXSTYLE, style | WS_EX_LAYERED)
+        _layered_ready.add(hwnd)
+        return True
+    except Exception:
+        return False
+
+
+def _set_window_alpha(hwnd, alpha):
+    """设置窗口透明度 (0~255). 需先调用 _ensure_layered 添加 WS_EX_LAYERED."""
+    try:
+        import ctypes
+        LWA_ALPHA = 0x2
         ctypes.windll.user32.SetLayeredWindowAttributes(
             hwnd, 0, max(0, min(255, int(alpha))), LWA_ALPHA)
     except Exception:
         pass
+
+
+def _fade_window(hwnd, start, end, step=20, delay=0.01):
+    """同步阻塞式透明度渐变 (在后台线程调用)."""
+    import time
+    if start == end:
+        _set_window_alpha(hwnd, end)
+        return
+    a = start
+    while True:
+        _set_window_alpha(hwnd, a)
+        time.sleep(delay)
+        if start < end:
+            a = min(a + step, end)
+            if a >= end:
+                break
+        else:
+            a = max(a - step, end)
+            if a <= end:
+                break
+    _set_window_alpha(hwnd, end)
 
 
 def _win32_show_window_impl(window, show=True):
@@ -585,18 +624,28 @@ class AppApi:
             if win is not None:
                 hwnd = _win32_hwnd(win)
                 if hwnd:
+                    _ensure_layered(hwnd)
                     _set_window_alpha(hwnd, alpha)
         except Exception:
             pass
         return True
 
     def ui_ready(self):
-        """前端初始化完成(预加载)后显示主窗口 (splash 已提供视觉过渡, 无需窗口级渐变)"""
+        """前端初始化完成(splash就绪)后, 以透明度渐变显示主窗口"""
         try:
             win = self.window_ref.get("win") if self.window_ref else None
             if win is not None:
-                _win32_show_window_impl(win, True)
-                # 延迟子类化禁用整窗拖动 (窗口完全初始化后更可靠)
+                hwnd = _win32_hwnd(win)
+                if hwnd:
+                    # 先设 alpha=0 再 ShowWindow, 避免纯色闪现
+                    if _ensure_layered(hwnd):
+                        _set_window_alpha(hwnd, 0)
+                    _win32_show_window_impl(win, True)
+                    # 透明度渐变出现 (0 → 255)
+                    def _fade():
+                        _fade_window(hwnd, 0, 255)
+                    threading.Thread(target=_fade, daemon=True).start()
+                # 延迟禁用整窗拖动 (窗口完全初始化后更可靠)
                 def _later():
                     try:
                         time.sleep(0.5)
@@ -1898,10 +1947,22 @@ def _start_tray(core, window, win32_show):
         ico = Image.new("RGBA", (64, 64), (99, 102, 241, 255))
 
     def _tray_window_op(show):
-        """在独立线程执行窗口显示/隐藏, 绝不阻塞 pystray 回调线程"""
+        """在独立线程执行窗口显示/隐藏 (带透明度渐变), 绝不阻塞 pystray 回调线程"""
         def _do():
             try:
-                win32_show(show)
+                hwnd = _win32_hwnd(window)
+                if show:
+                    if hwnd:
+                        _ensure_layered(hwnd)
+                        _set_window_alpha(hwnd, 0)    # 先设透明再显示, 避免闪现
+                    win32_show(True)
+                    if hwnd:
+                        _fade_window(hwnd, 0, 255)    # 渐变出现
+                else:
+                    if hwnd:
+                        _ensure_layered(hwnd)
+                        _fade_window(hwnd, 255, 0)    # 渐变消失
+                    win32_show(False)
             except Exception:
                 pass
         threading.Thread(target=_do, daemon=True).start()
@@ -2071,6 +2132,7 @@ def run_web_ui(debug: bool = False):
         background_color="#0b0e14",
         frameless=True,   # 去除原生标题栏, 使用自定义 HTML/CSS 标题栏
         shadow=False,     # 禁用 DWM 无边框玻璃扩展, 消除整窗可拖
+        hidden=True,      # 启动默认隐藏, ui_ready 透明度渐变出现 (无纯色闪现)
     )
     window_holder["win"] = window
 
@@ -2105,9 +2167,13 @@ def run_web_ui(debug: bool = False):
             except Exception:
                 hide_to_tray = True
             if hide_to_tray:
-                # 只阻止关闭; 立刻隐藏窗口 (后台线程), 不依赖前端 toast
+                # 只阻止关闭; 后台线程透明度渐出后隐藏窗口, 不依赖前端 toast
                 def _hide():
                     try:
+                        _hwnd = _win32_hwnd(window)
+                        if _hwnd:
+                            _ensure_layered(_hwnd)
+                            _fade_window(_hwnd, 255, 0)
                         _win32_show_window(False)
                     except Exception:
                         pass
