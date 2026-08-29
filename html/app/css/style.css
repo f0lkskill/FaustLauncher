@@ -9,10 +9,10 @@
   position: fixed; top: 0; left: 0; right: 0; z-index: 9998;
   height: 40px;
   display: flex; align-items: center; justify-content: space-between;
-  background: linear-gradient(180deg, rgba(15, 18, 26, .85), rgba(15, 18, 26, .6));
+  background: linear-gradient(180deg, rgba(38, 58, 99, .78), rgba(26, 40, 72, .55));
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
-  border-bottom: 1px solid rgba(255, 255, 255, .06);
+  border-bottom: 1px solid rgba(55, 148, 255, .18);
   -webkit-user-select: none; user-select: none;
 }
 .tb-drag { display: flex; align-items: center; gap: 8px; padding: 0 12px; height: 100%; flex: 1; cursor: default; }
@@ -918,7 +918,7 @@ body.modal-open .res-card {
   gap: 8px;
   /* 毛玻璃圆角底板: 与背景区分, 指示点更清晰 */
   align-self: center;
-  margin: 0 auto 18px;
+  margin: 0 auto 36px;
   padding: 9px 18px;
   background: rgba(20, 22, 28, 0.45);
   backdrop-filter: blur(calc(var(--glass-factor) * 22px)) saturate(140%);
