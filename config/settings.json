@@ -355,7 +355,7 @@
             "version_notify_flag": false
         },
         "value": {
-            "tray_hint": false,
+            "tray_hint": true,
             "version_notify_flag": true
         },
         "description": "程序运行时的缓存数据\n不建议修改"

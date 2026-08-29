@@ -153,14 +153,19 @@ def _win32_hwnd(window):
 
 
 def _win32_show_window_impl(window, show=True):
-    """用 Win32 ShowWindow 显示/隐藏主窗口 (线程安全, 供托盘/关闭/预加载显示共用)"""
+    """用 Win32 AnimateWindow 透明度渐显/渐隐主窗口 (线程安全, 供托盘/关闭/预加载显示共用)"""
     try:
         import ctypes
         hwnd = _win32_hwnd(window)
         if hwnd:
-            ctypes.windll.user32.ShowWindow(hwnd, 1 if show else 0)  # SW_SHOWNORMAL / SW_HIDE
+            AW_BLEND = 0x00080000
+            AW_HIDE = 0x00010000
+            AW_ACTIVATE = 0x00020000
             if show:
+                ctypes.windll.user32.AnimateWindow(hwnd, 180, AW_BLEND | AW_ACTIVATE)
                 ctypes.windll.user32.SetForegroundWindow(hwnd)
+            else:
+                ctypes.windll.user32.AnimateWindow(hwnd, 180, AW_BLEND | AW_HIDE)
             return True
     except Exception:
         pass
@@ -536,18 +541,21 @@ class AppApi:
         return True
 
     def move_window(self, dx, dy):
-        """按增量移动窗口 (拖动标题栏)"""
+        """按增量移动窗口 (拖动标题栏, 用 pywebview window.move 移动主窗口, 避免子控件偏移)"""
         try:
             win = self.window_ref.get("win") if self.window_ref else None
             if win is not None:
-                import ctypes
-                hwnd = _win32_hwnd(win)
-                if hwnd:
+                if not hasattr(self, '_win_pos'):
                     import ctypes.wintypes as _wt
+                    import ctypes
+                    hwnd = _win32_hwnd(win)
                     r = _wt.RECT()
                     ctypes.windll.user32.GetWindowRect(hwnd, ctypes.byref(r))
-                    ctypes.windll.user32.SetWindowPos(hwnd, 0, r.left + int(dx), r.top + int(dy), 0, 0,
-                                                      0x0004 | 0x0008)  # SWP_NOSIZE | SWP_NOZORDER
+                    self._win_pos = (r.left, r.top)
+                x = self._win_pos[0] + int(dx)
+                y = self._win_pos[1] + int(dy)
+                self._win_pos = (x, y)
+                win.move(x, y)
         except Exception:
             pass
         return True

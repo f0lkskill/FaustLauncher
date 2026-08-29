@@ -256,10 +256,13 @@
     boxEl.addEventListener("click", fetchPrescript);
 </script>
 
+
+
+
 <!-- genshin-addon-inject:start -->
 <script>
 (function(){
-    var PORT = 55185;
+    var PORT = 55736;
     function hook(){
         var api = window.pywebview && window.pywebview.api;
         if (!api || !api.generate || api.__genshinHooked) { setTimeout(hook, 200); return; }
