@@ -2886,6 +2886,30 @@ function layoutToolsCarousel(smooth) {
 
   // ---------------- 事件绑定 ----------------
   function bindEvents() {
+    // 自定义标题栏: 拖动窗口 + 最小化/关闭
+    const tb = document.getElementById('titlebar');
+    if (tb) {
+      const tbMin = document.getElementById('tb-min');
+      const tbClose = document.getElementById('tb-close');
+      if (tbMin) tbMin.addEventListener('click', () => { if (api) api.minimize_window().catch(() => {}); });
+      if (tbClose) tbClose.addEventListener('click', () => { if (api) api.close_window().catch(() => {}); });
+      // 拖动: mousedown 记录, mousemove 增量移动窗口
+      tb.addEventListener('mousedown', (e) => {
+        if (e.target.closest('.tb-btn') || !api) return;
+        let lastX = e.screenX, lastY = e.screenY;
+        const onMove = (ev) => {
+          const dx = ev.screenX - lastX, dy = ev.screenY - lastY;
+          lastX = ev.screenX; lastY = ev.screenY;
+          api.move_window(dx, dy).catch(() => {});
+        };
+        const onUp = () => {
+          window.removeEventListener('mousemove', onMove);
+          window.removeEventListener('mouseup', onUp);
+        };
+        window.addEventListener('mousemove', onMove);
+        window.addEventListener('mouseup', onUp);
+      });
+    }
     // 导航
     $$('.nav-item').forEach(b => b.addEventListener('click', () => switchPage(b.dataset.page)));
     // 主页按钮

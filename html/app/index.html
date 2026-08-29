@@ -4,12 +4,23 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>FaustLauncher 浮士德启动器</title>
-<link rel="stylesheet" href="css/style.css?v=84">
+<link rel="stylesheet" href="css/style.css?v=85">
 </head>
 <body>
+<div id="titlebar">
+  <div class="tb-drag">
+    <img class="tb-icon" src="../../assets/images/icon/icon.png" alt="" draggable="false">
+    <span class="tb-title">FaustLauncher</span>
+  </div>
+  <div class="tb-actions">
+    <button class="tb-btn" id="tb-min" title="最小化">&#x2212;</button>
+    <button class="tb-btn tb-close" id="tb-close" title="关闭">&#x2715;</button>
+  </div>
+</div>
 <div id="app-splash">
   <div class="splash-box">
     <div class="splash-spinner"></div>
+    <div class="splash-text">FaustLauncher 预加载中...</div>
   </div>
 </div>
 <div id="bg-layer"></div>
@@ -204,7 +215,7 @@
       <div class="dl-empty">暂无下载任务</div>
     </div>
   </aside>
-<script src="js/app.js?v=89"></script>
+<script src="js/app.js?v=90"></script>
 <script>
 /* 独立兜底: 完全不依赖 app.js。无论 app.js 是否崩溃, 只要内容加载完成或超时,
    就移除主页两张卡片的 loading 圆圈。 */
