@@ -2024,6 +2024,17 @@ def run_web_ui(debug: bool = False):
 
     threading.Thread(target=_delayed_check, daemon=True).start()
 
+    # 硬件加速(GPU渲染)设置: 关闭时给 WebView2 传 --disable-gpu (需重启生效)
+    try:
+        if not bool(core.settings_manager.get_setting("hw_accel")):
+            import os as _os
+            _args = _os.environ.get("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", "")
+            if "--disable-gpu" not in _args:
+                _os.environ["WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS"] = (_args + " --disable-gpu").strip()
+            print("硬件加速已关闭 (WebView GPU 渲染禁用)")
+    except Exception:
+        pass
+
     try:
         webview.start(debug=debug, gui='edgechromium')
     except BaseException as e:
