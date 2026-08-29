@@ -220,7 +220,7 @@ body.no-hw .hero {
   backdrop-filter: blur(calc(var(--glass-factor) * 22px)); -webkit-backdrop-filter: blur(calc(var(--glass-factor) * 22px));
 }
 .dc-card:hover { border-color: var(--accent); background: rgba(37, 37, 38, 0.85); }
-.dc-card.disabled { opacity: .5; }
+.dc-card.disabled { opacity: .45; }
 .dc-card-main { display: flex; gap: 14px; align-items: center; flex: 1; min-width: 0; }
 .dc-icon { width: 56px; height: 56px; border-radius: 10px; object-fit: cover; flex-shrink: 0; filter: drop-shadow(0 4px 10px rgba(0,0,0,.5)); }
 .dc-info { min-width: 0; flex: 1; }
@@ -305,7 +305,13 @@ body.no-hw .hero {
   from { opacity: 0; transform: translateY(16px) scale(.97); }
   to { opacity: 1; transform: translateY(0) scale(1); }
 }
+/* 禁用卡片: 出现动画直接结束到禁用透明度, 避免动画后突兀跳变 */
+@keyframes cardPopInDim {
+  from { opacity: 0; transform: translateY(16px) scale(.97); }
+  to { opacity: .45; transform: translateY(0) scale(1); }
+}
 .res-card, .dc-card { animation: cardPopIn .38s cubic-bezier(.22,.8,.36,1) backwards; }
+.res-card.disabled, .dc-card.disabled { animation-name: cardPopInDim; }
 
 /* 模态打开时禁用全局 tilt 与卡片 tilt (覆盖已触发的内联 transform, 避免打开瞬间聚焦旋转) */
 body.modal-open .card, body.modal-open .link-card, body.modal-open .dc-card,
