@@ -314,24 +314,26 @@
   // ---------------- 音效 (浏览器内核播放) ----------------
   const _soundUris = { welcome: '', click: '' };
   let _welcomePending = false;
+  let _uiTransitionDone = false;
+  let _welcomePlayed = false;
 
   function preloadSounds() {
     if (!api) return;
     withTimeout(api.get_sound('welcome'), 6000, '').then(u => {
       _soundUris.welcome = u;
-      if (u) { _welcomePending = true; tryWelcome(); }   // 预加载完成立即尝试播放
+      if (u && _uiTransitionDone) playWelcomeSound();
     }).catch(() => {});
     withTimeout(api.get_sound('click'), 6000, '').then(u => { _soundUris.click = u; }).catch(() => {});
   }
 
   function tryWelcome() {
-    if (!_soundUris.welcome || !_welcomePending) return;
+    if (!_soundUris.welcome || !_welcomePending || _welcomePlayed) return;
     try {
       const a = new Audio(_soundUris.welcome);
       a.volume = 0.8;
       const p = a.play();
-      if (p && p.then) p.then(() => { _welcomePending = false; }).catch(() => {});
-      else _welcomePending = false;
+      if (p && p.then) p.then(() => { _welcomePending = false; _welcomePlayed = true; }).catch(() => {});
+      else { _welcomePending = false; _welcomePlayed = true; }
     } catch (e) {}
   }
 
@@ -347,8 +349,10 @@
   }
 
   function playWelcomeSound() {
-    if (!_soundUris.welcome) return;
+    if (_welcomePlayed) return;
+    _uiTransitionDone = true;
     _welcomePending = true;
+    if (!_soundUris.welcome) return;
     tryWelcome();
   }
 
@@ -360,7 +364,7 @@
       if (!t || !t.closest) return;
       if (t === document.body || t === document.documentElement) return;
       // autoplay 被拒时: 用户首次交互后补播欢迎音效
-      if (_welcomePending) { _welcomePending = false; tryWelcome(); return; }
+      if (_welcomePending) { tryWelcome(); return; }
       const now = Date.now();
       if (now - last < 40) return;
       if (t.classList && t.classList.contains('panel-overlay')) return;   // 遮罩本身
@@ -3363,6 +3367,10 @@ function layoutToolsCarousel(smooth) {
     // pywebview 注入时机不定, 每次初始化都重新探测
     api = (window.pywebview && window.pywebview.api) ? window.pywebview.api : null;
     IS_BROWSER = !api;
+    const appRoot = document.getElementById('app');
+    const titlebar = document.getElementById('titlebar');
+    const startupRoots = [appRoot, titlebar].filter(Boolean);
+    startupRoots.forEach(el => el.classList.add('startup-pending'));
     // 立即显示主页, 让推荐卡/版本卡圆圈一开始就可见 (否则在 display:none 页面里转, 用户看不到)
     switchPage('home');
     // 主页加载最早触发, 独立于 bindEvents/applyTilt/BOOT/render,
@@ -3440,11 +3448,22 @@ function layoutToolsCarousel(smooth) {
     }
     const splash = document.getElementById('app-splash');
     if (splash) {
-      // 原生窗口渐入完成后再淡出 Splash，让最终界面只切换一次。
-      setTimeout(() => {
+      // UI 已完成渲染：与 Splash 淡出同时显示，避免转场结束时集中切换造成卡顿。
+      requestAnimationFrame(() => {
+        startupRoots.forEach(el => {
+          el.classList.remove('startup-pending');
+          el.classList.add('startup-ready');
+        });
         splash.classList.add('hide');
-        setTimeout(() => { try { splash.remove(); } catch (e) {} }, 260);
-      }, 480);
+        playWelcomeSound();
+        setTimeout(() => { try { splash.remove(); } catch (e) {} }, 460);
+      });
+    } else {
+      startupRoots.forEach(el => {
+        el.classList.remove('startup-pending');
+        el.classList.add('startup-ready');
+      });
+      playWelcomeSound();
     }
   }
 
@@ -3482,6 +3501,11 @@ setTimeout(() => {
   const splash = document.getElementById('app-splash');
   if (splash) {
     splash.classList.add('hide');
-    setTimeout(() => { try { splash.remove(); } catch (e) {} }, 260);
+    setTimeout(() => { try { splash.remove(); } catch (e) {} }, 460);
+    [document.getElementById('app'), document.getElementById('titlebar')].filter(Boolean).forEach(el => {
+      el.classList.remove('startup-pending');
+      el.classList.add('startup-ready');
+    });
+    playWelcomeSound();
   }
 }, 15000);
