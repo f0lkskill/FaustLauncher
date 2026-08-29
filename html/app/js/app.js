@@ -3384,6 +3384,13 @@ function layoutToolsCarousel(smooth) {
     } catch (e) {
       console.error('UI 初始化出错:', e);
     }
+    // 基础 UI 已绑定后通知后端显示窗口，但 Splash 继续保留，直到下面的
+    // bootstrap 和 render 完成，避免先显示纯色/半成品界面后再突然替换。
+    if (api && typeof api.ui_ready === 'function') {
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        try { api.ui_ready().catch(() => {}); } catch (e) { /* 忽略 */ }
+      }));
+    }
     // 提前并行加载背景图与音效 (不依赖 bootstrap, 消除背景初始加载延迟)
     if (api) {
       withTimeout(api.get_backgrounds(), 6000, []).then(applyBackgrounds).catch(() => {});
@@ -3431,17 +3438,13 @@ function layoutToolsCarousel(smooth) {
     if (firstPage) {
       document.documentElement.style.setProperty('--page-w', Math.floor(firstPage.getBoundingClientRect().width) + 'px');
     }
-    // 先通知后端显示隐藏的窗口。窗口渐入完成后再淡出 splash，避免两个
-    // 遮罩同时动画造成“闪现后再次进入动画”的割裂感。
-    if (api && typeof api.ui_ready === 'function') {
-      try { api.ui_ready().catch(() => {}); } catch (e) { /* 忽略 */ }
-    }
     const splash = document.getElementById('app-splash');
     if (splash) {
+      // 原生窗口渐入完成后再淡出 Splash，让最终界面只切换一次。
       setTimeout(() => {
         splash.classList.add('hide');
-        setTimeout(() => { try { splash.remove(); } catch (e) {} }, 450);
-      }, 180);
+        setTimeout(() => { try { splash.remove(); } catch (e) {} }, 260);
+      }, 480);
     }
   }
 
@@ -3479,6 +3482,6 @@ setTimeout(() => {
   const splash = document.getElementById('app-splash');
   if (splash) {
     splash.classList.add('hide');
-    setTimeout(() => { try { splash.remove(); } catch (e) {} }, 450);
+    setTimeout(() => { try { splash.remove(); } catch (e) {} }, 260);
   }
 }, 15000);
