@@ -134,32 +134,29 @@ def _win32_hwnd(window):
     """获取主窗口原生句柄 (线程安全)"""
     try:
         import ctypes
-        import webview.platforms.winforms as _wf
-        try:
-            bv = _wf.BrowserView.instances.get(getattr(window, 'uid', ''))
-            if bv is not None:
-                try:
-                    return int(bv.Handle.ToInt64())
-                except Exception:
-                    try:
-                        return int(bv.Handle.ToInt32())
-                    except Exception:
-                        return int(bv.Handle)
-        except Exception:
-            pass
+        # 必须使用外层 BrowserForm 句柄。BrowserView 是 WebView2 子控件，
+        # 对它设置主窗口样式/拖动策略不会影响顶层窗口。
+        native = getattr(window, "native", None)
+        handle = getattr(native, "Handle", None)
+        if handle is not None:
+            try:
+                return int(handle.ToInt64())
+            except Exception:
+                return int(handle.ToInt32())
         return int(ctypes.windll.user32.FindWindowW(None, "Faust Launcher"))
     except Exception:
         return 0
 
 
 _faust_wndproc = None   # 保持窗口过程引用, 防 GC
+_faust_enum_proc = None
 
 
 def _disable_system_drag(window):
     """彻底禁止 frameless 窗口整窗系统拖动, 仅标题栏 JS 拖动有效.
     组合: 移除 WS_THICKFRAME + SetWindowPos(SWP_FRAMECHANGED) 强制 DWM 重算 +
     SetWindowSubclass 拦截 WM_NCHITTEST → HTCLIENT."""
-    global _faust_wndproc
+    global _faust_wndproc, _faust_enum_proc
     try:
         import ctypes
         from ctypes import wintypes
@@ -168,10 +165,13 @@ def _disable_system_drag(window):
             return
         # 1) 移除可调大小边框
         GWL_STYLE = -16
+        WS_CAPTION = 0x00C00000
         WS_THICKFRAME = 0x00040000
+        WS_MINIMIZEBOX = 0x00020000
+        WS_MAXIMIZEBOX = 0x00010000
         style = ctypes.windll.user32.GetWindowLongW(hwnd, GWL_STYLE)
-        if style & WS_THICKFRAME:
-            ctypes.windll.user32.SetWindowLongW(hwnd, GWL_STYLE, style & ~WS_THICKFRAME)
+        style &= ~(WS_CAPTION | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX)
+        ctypes.windll.user32.SetWindowLongW(hwnd, GWL_STYLE, style)
         # 2) 强制 DWM 重算窗口帧 (不含 WS_THICKFRAME, 不再提供系统拖动/调整)
         SWP_FRAMECHANGED = 0x0020
         SWP_NOMOVE = 0x0002
@@ -182,24 +182,53 @@ def _disable_system_drag(window):
             SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER)
         # 3) SetWindowSubclass 拦截 WM_NCHITTEST → HTCLIENT (阻止任何系统拖动)
         WM_NCHITTEST = 0x0084
+        WM_NCLBUTTONDOWN = 0x00A1
+        WM_NCLBUTTONDBLCLK = 0x00A3
+        WM_SYSCOMMAND = 0x0112
+        SC_MOVE = 0xF010
         HTCLIENT = 1
         SUBCLASSID = 0xFA01
         SUBCLASSPROC = ctypes.WINFUNCTYPE(
-            ctypes.c_longlong, wintypes.HWND, ctypes.c_uint,
+            ctypes.c_ssize_t, wintypes.HWND, ctypes.c_uint,
             wintypes.WPARAM, wintypes.LPARAM,
-            wintypes.UINT, wintypes.WPARAM)
+            ctypes.c_size_t, ctypes.c_size_t)
+
+        subclass_proc = ctypes.windll.comctl32.DefSubclassProc
+        subclass_proc.argtypes = [wintypes.HWND, ctypes.c_uint,
+                                   wintypes.WPARAM, wintypes.LPARAM]
+        subclass_proc.restype = ctypes.c_ssize_t
 
         def _proc(hwnd, msg, wParam, lParam, uIdSubclass, dwRefData):
             if msg == WM_NCHITTEST:
                 return HTCLIENT
-            return ctypes.windll.defwindowprocW(hwnd, msg, wParam, lParam)  # type: ignore
+            # 即使系统/窗口管理器绕过命中测试，也不允许启动系统移动。
+            # 标题栏移动完全由前端 move_window + SetWindowPos 实现，不受此拦截影响。
+            if msg in (WM_NCLBUTTONDOWN, WM_NCLBUTTONDBLCLK):
+                return 0
+            if msg == WM_SYSCOMMAND and (int(wParam) & 0xFFF0) == SC_MOVE:
+                return 0
+            return subclass_proc(hwnd, msg, wParam, lParam)
 
         _faust_wndproc = SUBCLASSPROC(_proc)
-        ctypes.windll.comctl32.SetWindowSubclass(
-            hwnd,
-            ctypes.cast(_faust_wndproc, ctypes.c_void_p).value,
-            SUBCLASSID,
-            0)
+        set_subclass = ctypes.windll.comctl32.SetWindowSubclass
+        set_subclass.argtypes = [wintypes.HWND, SUBCLASSPROC,
+                                  ctypes.c_size_t, ctypes.c_size_t]
+        set_subclass.restype = wintypes.BOOL
+        if not set_subclass(hwnd, _faust_wndproc, SUBCLASSID, 0):
+            return
+        # WebView2 自己也是子窗口，顶层 Form 的命中测试不一定覆盖它。
+        # 对所有现有子窗口安装同一个子类过程，保证客户区始终不可拖。
+        enum_proc = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+
+        def _enum_child(child_hwnd, _lparam):
+            try:
+                set_subclass(child_hwnd, _faust_wndproc, SUBCLASSID, 0)
+            except Exception:
+                pass
+            return True
+
+        _faust_enum_proc = enum_proc(_enum_child)
+        ctypes.windll.user32.EnumChildWindows(hwnd, _faust_enum_proc, 0)
     except Exception:
         pass
 
@@ -616,6 +645,7 @@ class AppApi:
     def __init__(self, core, window_ref):
         self.core = core
         self.window_ref = window_ref
+        self.ready_callback = None
 
     def set_window_opacity(self, alpha):
         """设置窗口透明度 (0~255), 供前端/渐变控制"""
@@ -635,16 +665,9 @@ class AppApi:
         try:
             win = self.window_ref.get("win") if self.window_ref else None
             if win is not None:
-                hwnd = _win32_hwnd(win)
-                if hwnd:
-                    # 先设 alpha=0 再 ShowWindow, 避免纯色闪现
-                    if _ensure_layered(hwnd):
-                        _set_window_alpha(hwnd, 0)
-                    _win32_show_window_impl(win, True)
-                    # 透明度渐变出现 (0 → 255)
-                    def _fade():
-                        _fade_window(hwnd, 0, 255)
-                    threading.Thread(target=_fade, daemon=True).start()
+                # 由 run_web_ui 注入唯一的显示回调, 避免跨作用域调用局部函数。
+                if self.ready_callback is not None:
+                    self.ready_callback()
                 # 延迟禁用整窗拖动 (窗口完全初始化后更可靠)
                 def _later():
                     try:
@@ -665,7 +688,14 @@ class AppApi:
                 import ctypes
                 hwnd = _win32_hwnd(win)
                 if hwnd:
+                    _ensure_layered(hwnd)
+                    _fade_window(hwnd, 255, 0)
                     ctypes.windll.user32.ShowWindow(hwnd, 6)  # SW_MINIMIZE
+                    # 最小化后恢复不应保留 alpha=0, 否则从任务栏恢复会变成透明窗口。
+                    threading.Thread(
+                        target=lambda: (time.sleep(0.25), _set_window_alpha(hwnd, 255)),
+                        daemon=True,
+                    ).start()
         except Exception:
             pass
         return True
@@ -1974,13 +2004,18 @@ def _start_tray(core, window, win32_show):
         _tray_window_op(False)
 
     def when_exit(icon=None, item=None):
-        # 立即隐藏窗口 (视觉上立刻消失), 再终止进程, 避免窗口随线程缓慢消失
-        try:
-            win32_show(False)
-        except Exception:
-            pass
-        # 不再 icon.stop() (回调线程内 stop 可能阻塞等待, 造成退出延时); 进程终止托盘自动消失
-        _terminate_now()
+        # 退出前先完成淡出, 否则立即 TerminateProcess 会截断所有视觉动画。
+        def _quit():
+            try:
+                hwnd = _win32_hwnd(window)
+                if hwnd:
+                    _ensure_layered(hwnd)
+                    _fade_window(hwnd, 255, 0)
+                win32_show(False)
+            finally:
+                # 不调用 icon.stop(), 避免托盘回调线程阻塞。
+                _terminate_now()
+        threading.Thread(target=_quit, daemon=True).start()
 
     def build_addon_menu():
         items = []
@@ -2135,12 +2170,37 @@ def run_web_ui(debug: bool = False):
         hidden=True,      # 启动默认隐藏, ui_ready 透明度渐变出现 (无纯色闪现)
     )
     window_holder["win"] = window
+    startup_state = {"shown": False}
+    startup_lock = threading.Lock()
 
-    # 保底: 若前端 ui_ready 未触发 (如 JS 异常导致 init 未完成), 12 秒后强制显示窗口
+    def _show_after_load():
+        """HTML 已载入后只执行一次原生渐入, 让 splash 先可见而不是显示纯色窗口."""
+        with startup_lock:
+            if startup_state["shown"]:
+                return
+            startup_state["shown"] = True
+        hwnd = _win32_hwnd(window)
+        if not hwnd:
+            _win32_show_window(True)
+            return
+        # 在第一次显示前完成命中测试拦截, 避免窗口显示后的早期鼠标事件走系统拖动。
+        _disable_system_drag(window)
+        _ensure_layered(hwnd)
+        _set_window_alpha(hwnd, 0)
+        _win32_show_window(True)
+        threading.Thread(target=lambda: _fade_window(hwnd, 0, 255), daemon=True).start()
+
+    try:
+        api.ready_callback = _show_after_load
+    except Exception:
+        pass
+
+    # 保底: 若前端 ui_ready 未触发, 12 秒后也按同一套渐入流程显示窗口。
+    # 不能直接 ShowWindow, 否则会把未渲染完成的纯色背景闪给用户。
     def _force_show():
         time.sleep(12)
         try:
-            _win32_show_window(True)
+            _show_after_load()
         except Exception:
             pass
     threading.Thread(target=_force_show, daemon=True).start()
@@ -2195,9 +2255,16 @@ def run_web_ui(debug: bool = False):
                 return False
         except Exception:
             pass
-        # 关闭程序退出: 立即隐藏窗口 (视觉无延时), 允许 pywebview 正常关闭,
-        # 后台慢慢退出 (WebView2 销毁在后台进行), updater.vbs 已加 5s 延时等待旧进程退出
-        threading.Thread(target=lambda: _win32_show_window(False), daemon=True).start()
+        # 关闭程序退出: 在 FormClosing 返回前完成淡出, 再允许 pywebview 关闭。
+        # 不能只放到后台线程, 否则进程会先结束而用户看不到动画。
+        try:
+            _hwnd = _win32_hwnd(window)
+            if _hwnd:
+                _ensure_layered(_hwnd)
+                _fade_window(_hwnd, 255, 0)
+            _win32_show_window(False)
+        except Exception:
+            pass
         return True
 
     try:

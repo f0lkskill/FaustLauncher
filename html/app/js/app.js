@@ -3415,15 +3415,17 @@ function layoutToolsCarousel(smooth) {
     if (firstPage) {
       document.documentElement.style.setProperty('--page-w', Math.floor(firstPage.getBoundingClientRect().width) + 'px');
     }
-    // 预加载完成: 淡出启动 Splash
-    const splash = document.getElementById('app-splash');
-    if (splash) {
-      splash.classList.add('hide');
-      setTimeout(() => { try { splash.remove(); } catch (e) {} }, 450);
-    }
-    // 通知后端窗口已就绪
+    // 先通知后端显示隐藏的窗口。窗口渐入完成后再淡出 splash，避免两个
+    // 遮罩同时动画造成“闪现后再次进入动画”的割裂感。
     if (api && typeof api.ui_ready === 'function') {
       try { api.ui_ready().catch(() => {}); } catch (e) { /* 忽略 */ }
+    }
+    const splash = document.getElementById('app-splash');
+    if (splash) {
+      setTimeout(() => {
+        splash.classList.add('hide');
+        setTimeout(() => { try { splash.remove(); } catch (e) {} }, 450);
+      }, 180);
     }
   }
 
