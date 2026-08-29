@@ -924,8 +924,11 @@ body.modal-open .res-card {
 #page-features.active,
 #page-tools.active {
   display: flex; flex-direction: column;
-  height: calc(100vh - 68px);   /* #main padding 28+40 */
-  min-height: 520px;
+  height: calc(100vh - 108px);  /* 窗口高度 - 标题栏 - #main 上下内边距 */
+  min-height: 0;
+  box-sizing: border-box;
+  padding-bottom: 28px;
+  overflow: hidden;
 }
 .carousel-3d {
   position: relative;
@@ -1313,16 +1316,24 @@ body.modal-open .res-card {
 ::-webkit-scrollbar-thumb:hover { background: rgba(122, 132, 152, .6); }
 
 /* ---------- 关于页 (滚动切换 + 贡献者) ---------- */
-#page-about.active { display: flex; align-items: center; justify-content: center; }
+#page-about.active {
+  display: flex; align-items: center; justify-content: center;
+  height: calc(100vh - 108px);  /* 窗口高度 - 标题栏 - #main 上下内边距 */
+  min-height: 0;
+  box-sizing: border-box;
+  overflow: hidden;
+}
 .about-wrap {
   width: 100%; max-width: 820px;
   display: flex; flex-direction: column; align-items: center;
   justify-content: center;
   margin: 0 auto;
+  height: 100%;
+  min-height: 0;
 }
 .about-stage {
   position: relative; width: 100%; overflow: hidden;
-  height: 560px;
+  flex: 1; height: auto; min-height: 0;
   border-radius: var(--radius);
 }
 .about-panel {
