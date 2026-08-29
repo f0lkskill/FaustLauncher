@@ -186,19 +186,15 @@ def _disable_system_drag(window):
 
 
 def _win32_show_window_impl(window, show=True):
-    """用 Win32 AnimateWindow 透明度渐显/渐隐主窗口 (线程安全, 供托盘/关闭/预加载显示共用)"""
+    """用 Win32 ShowWindow 显示/隐藏主窗口 (线程安全, 供托盘/关闭/预加载显示共用;
+    不用 AnimateWindow: 其对 WebView2 内容渲染有干扰, 会显示纯色)"""
     try:
         import ctypes
         hwnd = _win32_hwnd(window)
         if hwnd:
-            AW_BLEND = 0x00080000
-            AW_HIDE = 0x00010000
-            AW_ACTIVATE = 0x00020000
+            ctypes.windll.user32.ShowWindow(hwnd, 1 if show else 0)  # SW_SHOWNORMAL / SW_HIDE
             if show:
-                ctypes.windll.user32.AnimateWindow(hwnd, 180, AW_BLEND | AW_ACTIVATE)
                 ctypes.windll.user32.SetForegroundWindow(hwnd)
-            else:
-                ctypes.windll.user32.AnimateWindow(hwnd, 180, AW_BLEND | AW_HIDE)
             return True
     except Exception:
         pass
@@ -551,11 +547,10 @@ class AppApi:
         self.window_ref = window_ref
 
     def ui_ready(self):
-        """前端初始化完成(预加载)后显示主窗口 (AnimateWindow 透明度渐入)"""
+        """前端初始化完成(预加载)后显示主窗口"""
         try:
             win = self.window_ref.get("win") if self.window_ref else None
             if win is not None:
-                _disable_system_drag(win)   # 禁整窗拖动, 只保留标题栏 JS 拖动
                 _win32_show_window_impl(win, True)
         except Exception:
             pass
@@ -2023,7 +2018,6 @@ def run_web_ui(debug: bool = False):
         min_size=(860, 620),
         background_color="#0b0e14",
         frameless=True,   # 去除原生标题栏, 使用自定义 HTML/CSS 标题栏
-        hidden=True,      # 初始化默认隐藏, 前端 ui_ready 后 AnimateWindow 渐变出现
     )
     window_holder["win"] = window
 
