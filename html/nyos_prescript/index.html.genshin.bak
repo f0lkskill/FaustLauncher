@@ -255,28 +255,5 @@
     tryInitApi();
     boxEl.addEventListener("click", fetchPrescript);
 </script>
-
-<!-- genshin-addon-inject:start -->
-<script>
-(function(){
-    var PORT = 55185;
-    function hook(){
-        var api = window.pywebview && window.pywebview.api;
-        if (!api || !api.generate || api.__genshinHooked) { setTimeout(hook, 200); return; }
-        var _g = api.generate.bind(api);
-        api.generate = function(){
-            return _g().then(function(d){
-                if (d && d.final && d.final.indexOf('原神') >= 0) {
-                    try { fetch('http://127.0.0.1:' + PORT + '/genshin/launch'); } catch(e) {}
-                }
-                return d;
-            });
-        };
-        api.__genshinHooked = true;
-    }
-    hook();
-})();
-</script>
-<!-- genshin-addon-inject:end -->
 </body>
 </html>

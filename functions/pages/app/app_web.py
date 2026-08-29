@@ -130,29 +130,33 @@ def check_single_instance():
     return False
 
 
-def _win32_show_window_impl(window, show=True):
-    """用 Win32 ShowWindow 显示/隐藏主窗口 (线程安全, 供托盘/关闭/预加载显示共用)"""
+def _win32_hwnd(window):
+    """获取主窗口原生句柄 (线程安全)"""
     try:
         import ctypes
         import webview.platforms.winforms as _wf
-        hwnd = 0
         try:
             bv = _wf.BrowserView.instances.get(getattr(window, 'uid', ''))
             if bv is not None:
                 try:
-                    hwnd = int(bv.Handle.ToInt64())
+                    return int(bv.Handle.ToInt64())
                 except Exception:
                     try:
-                        hwnd = int(bv.Handle.ToInt32())
+                        return int(bv.Handle.ToInt32())
                     except Exception:
-                        hwnd = int(bv.Handle)
+                        return int(bv.Handle)
         except Exception:
             pass
-        if not hwnd:
-            try:
-                hwnd = ctypes.windll.user32.FindWindowW(None, "Faust Launcher")
-            except Exception:
-                pass
+        return int(ctypes.windll.user32.FindWindowW(None, "Faust Launcher"))
+    except Exception:
+        return 0
+
+
+def _win32_show_window_impl(window, show=True):
+    """用 Win32 ShowWindow 显示/隐藏主窗口 (线程安全, 供托盘/关闭/预加载显示共用)"""
+    try:
+        import ctypes
+        hwnd = _win32_hwnd(window)
         if hwnd:
             ctypes.windll.user32.ShowWindow(hwnd, 1 if show else 0)  # SW_SHOWNORMAL / SW_HIDE
             if show:
@@ -514,6 +518,49 @@ class AppApi:
             win = self.window_ref.get("win") if self.window_ref else None
             if win is not None:
                 _win32_show_window_impl(win, True)
+        except Exception:
+            pass
+        return True
+
+    def minimize_window(self):
+        """最小化窗口"""
+        try:
+            win = self.window_ref.get("win") if self.window_ref else None
+            if win is not None:
+                import ctypes
+                hwnd = _win32_hwnd(win)
+                if hwnd:
+                    ctypes.windll.user32.ShowWindow(hwnd, 6)  # SW_MINIMIZE
+        except Exception:
+            pass
+        return True
+
+    def move_window(self, dx, dy):
+        """按增量移动窗口 (拖动标题栏)"""
+        try:
+            win = self.window_ref.get("win") if self.window_ref else None
+            if win is not None:
+                import ctypes
+                hwnd = _win32_hwnd(win)
+                if hwnd:
+                    import ctypes.wintypes as _wt
+                    r = _wt.RECT()
+                    ctypes.windll.user32.GetWindowRect(hwnd, ctypes.byref(r))
+                    ctypes.windll.user32.SetWindowPos(hwnd, 0, r.left + int(dx), r.top + int(dy), 0, 0,
+                                                      0x0004 | 0x0008)  # SWP_NOSIZE | SWP_NOZORDER
+        except Exception:
+            pass
+        return True
+
+    def close_window(self):
+        """触发窗口关闭 (走关闭事件: 托盘/退出)"""
+        try:
+            win = self.window_ref.get("win") if self.window_ref else None
+            if win is not None:
+                import ctypes
+                hwnd = _win32_hwnd(win)
+                if hwnd:
+                    ctypes.windll.user32.PostMessageW(hwnd, 0x0010, 0, 0)  # WM_CLOSE
         except Exception:
             pass
         return True
@@ -1937,7 +1984,7 @@ def run_web_ui(debug: bool = False):
         y=_win_y,
         min_size=(860, 620),
         background_color="#0b0e14",
-        frameless=False,
+        frameless=True,   # 去除原生标题栏, 使用自定义 HTML/CSS 标题栏
     )
     window_holder["win"] = window
 
