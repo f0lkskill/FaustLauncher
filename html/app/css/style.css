@@ -22,8 +22,12 @@
 .tb-btn {
   width: 46px; height: 100%; border: none; background: transparent;
   color: var(--text-2); font-size: 14px; cursor: pointer; outline: none;
+  appearance: none; -webkit-appearance: none; box-shadow: none;
   display: inline-flex; align-items: center; justify-content: center;
   transition: background-color .15s ease, color .15s ease;
+}
+.tb-btn:focus, .tb-btn:focus-visible, .tb-btn:active {
+  outline: none; border: none; box-shadow: none;
 }
 .tb-btn:hover { background: rgba(255, 255, 255, .08); color: var(--text); }
 .tb-close:hover { background: #e81123; color: #fff; }
@@ -123,9 +127,7 @@ body.no-hw .hero {
   background: linear-gradient(135deg, #0b0e14, #12161f);
   display: flex; align-items: center; justify-content: center;
   transition: opacity .4s ease;
-  animation: splashFadeIn .45s ease;
 }
-@keyframes splashFadeIn { from { opacity: 0; } to { opacity: 1; } }
 #app-splash.hide { opacity: 0; pointer-events: none; }
 .splash-box { text-align: center; }
 .splash-spinner {
