@@ -250,7 +250,7 @@
             "120 FPS"
         ],
         "default": 3,
-        "value": 3,
+        "value": 4,
         "description": "界面动画的最大帧率上限\n降低帧率可减少毛玻璃卡片等每帧重绘的 GPU 开销\n默认 60 FPS",
         "page": "其它"
     },

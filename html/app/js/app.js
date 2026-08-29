@@ -2895,18 +2895,31 @@ function layoutToolsCarousel(smooth) {
       const tbClose = document.getElementById('tb-close');
       if (tbMin) tbMin.addEventListener('click', () => { if (api) api.minimize_window().catch(() => {}); });
       if (tbClose) tbClose.addEventListener('click', () => { if (api) api.close_window().catch(() => {}); });
-      // 拖动: mousedown 记录, mousemove 增量移动窗口
+      // 拖动: mousedown 记录, mousemove rAF 合并增量移动窗口 (防高频调用抖动)
       tb.addEventListener('mousedown', (e) => {
         if (e.target.closest('.tb-btn') || !api) return;
         let lastX = e.screenX, lastY = e.screenY;
+        let dragRAF = null, pendingDX = 0, pendingDY = 0;
+        const flush = () => {
+          dragRAF = null;
+          if (pendingDX || pendingDY) {
+            api.move_window(pendingDX, pendingDY).catch(() => {});
+            pendingDX = 0; pendingDY = 0;
+          }
+        };
         const onMove = (ev) => {
           const dx = ev.screenX - lastX, dy = ev.screenY - lastY;
           lastX = ev.screenX; lastY = ev.screenY;
-          api.move_window(dx, dy).catch(() => {});
+          if (Math.abs(dx) < 1 && Math.abs(dy) < 1) return;   // 忽略像素级抖动
+          pendingDX += dx; pendingDY += dy;
+          if (!dragRAF) dragRAF = requestAnimationFrame(flush);
         };
         const onUp = () => {
           window.removeEventListener('mousemove', onMove);
           window.removeEventListener('mouseup', onUp);
+          if (dragRAF) { cancelAnimationFrame(dragRAF); dragRAF = null; }
+          if (pendingDX || pendingDY) api.move_window(pendingDX, pendingDY).catch(() => {});
+          pendingDX = 0; pendingDY = 0;
         };
         window.addEventListener('mousemove', onMove);
         window.addEventListener('mouseup', onUp);
