@@ -3021,7 +3021,8 @@ function layoutToolsCarousel(smooth) {
     document.addEventListener('mousemove', (e) => {
       tiltMX = e.clientX;
       tiltMY = e.clientY;
-      if (!tiltRAF) tiltRAF = rafThrottle(applyTiltFrame);
+      // tilt 是轻量 transform (卡片无 blur), 保持满帧跟随
+      if (!tiltRAF) tiltRAF = requestAnimationFrame(applyTiltFrame);
     });
     document.addEventListener('mouseleave', () => {
       applyTiltBase();
