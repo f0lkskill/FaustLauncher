@@ -185,6 +185,21 @@ def _disable_system_drag(window):
         pass
 
 
+def _set_window_alpha(hwnd, alpha):
+    """设置窗口透明度 (SetLayeredWindowAttributes LWA_ALPHA), 实现渐变显示/隐藏"""
+    try:
+        import ctypes
+        GWL_EXSTYLE = -20
+        WS_EX_LAYERED = 0x80000
+        LWA_ALPHA = 0x2
+        style = ctypes.windll.user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
+        ctypes.windll.user32.SetWindowLongW(hwnd, GWL_EXSTYLE, style | WS_EX_LAYERED)
+        ctypes.windll.user32.SetLayeredWindowAttributes(
+            hwnd, 0, max(0, min(255, int(alpha))), LWA_ALPHA)
+    except Exception:
+        pass
+
+
 def _win32_show_window_impl(window, show=True):
     """用 Win32 ShowWindow 显示/隐藏主窗口 (线程安全, 供托盘/关闭/预加载显示共用;
     不用 AnimateWindow: 其对 WebView2 内容渲染有干扰, 会显示纯色)"""
@@ -546,13 +561,37 @@ class AppApi:
         self.core = core
         self.window_ref = window_ref
 
+    def set_window_opacity(self, alpha):
+        """设置窗口透明度 (0~255), 供前端/渐变控制"""
+        try:
+            win = self.window_ref.get("win") if self.window_ref else None
+            if win is not None:
+                hwnd = _win32_hwnd(win)
+                if hwnd:
+                    _set_window_alpha(hwnd, alpha)
+        except Exception:
+            pass
+        return True
+
     def ui_ready(self):
-        """前端初始化完成(预加载)后显示主窗口"""
+        """前端初始化完成(预加载)后显示主窗口 (透明度渐变出现)"""
         try:
             win = self.window_ref.get("win") if self.window_ref else None
             if win is not None:
                 _disable_system_drag(win)   # 禁整窗拖动, 只保留标题栏 JS 拖动
                 _win32_show_window_impl(win, True)
+                # 透明度渐变出现 (0 -> 255)
+                hwnd = _win32_hwnd(win)
+                if hwnd:
+                    def _fade():
+                        try:
+                            for a in range(0, 256, 16):
+                                _set_window_alpha(hwnd, a)
+                                time.sleep(0.012)
+                            _set_window_alpha(hwnd, 255)
+                        except Exception:
+                            pass
+                    threading.Thread(target=_fade, daemon=True).start()
         except Exception:
             pass
         return True
@@ -1847,10 +1886,23 @@ def _start_tray(core, window, win32_show):
         ico = Image.new("RGBA", (64, 64), (99, 102, 241, 255))
 
     def _tray_window_op(show):
-        """在独立线程执行窗口显示/隐藏, 绝不阻塞 pystray 回调线程"""
+        """在独立线程执行窗口显示/隐藏 (带透明度渐变), 绝不阻塞 pystray 回调线程"""
         def _do():
             try:
-                win32_show(show)
+                hwnd = _win32_hwnd(window)
+                if show:
+                    win32_show(True)
+                    if hwnd:
+                        for a in range(0, 256, 16):
+                            _set_window_alpha(hwnd, a)
+                            time.sleep(0.012)
+                        _set_window_alpha(hwnd, 255)
+                else:
+                    if hwnd:
+                        for a in range(255, -1, -16):
+                            _set_window_alpha(hwnd, a)
+                            time.sleep(0.012)
+                    win32_show(False)
             except Exception:
                 pass
         threading.Thread(target=_do, daemon=True).start()
@@ -2019,6 +2071,7 @@ def run_web_ui(debug: bool = False):
         min_size=(860, 620),
         background_color="#0b0e14",
         frameless=True,   # 去除原生标题栏, 使用自定义 HTML/CSS 标题栏
+        shadow=False,     # 禁用 DWM 无边框玻璃扩展, 消除整窗可拖 (AnimateWindow 已回退, 不影响渲染)
     )
     window_holder["win"] = window
 
