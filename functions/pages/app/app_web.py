@@ -156,7 +156,8 @@ _faust_wndproc = None   # 保持窗口过程引用, 防 GC
 
 
 def _disable_system_drag(window):
-    """WM_NCHITTEST 返回 HTCLIENT, 禁止 frameless 窗口整窗拖动 (仅标题栏 JS 拖动)"""
+    """WM_NCHITTEST 返回 HTCLIENT + 移除 WS_THICKFRAME, 禁止 frameless 窗口整窗拖动
+    (仅标题栏 JS 拖动)"""
     global _faust_wndproc
     try:
         import ctypes
@@ -164,6 +165,12 @@ def _disable_system_drag(window):
         hwnd = _win32_hwnd(window)
         if not hwnd:
             return
+        # 移除可调大小边框 (WS_THICKFRAME), 避免客户区拖动/调整
+        GWL_STYLE = -16
+        WS_THICKFRAME = 0x00040000
+        style = ctypes.windll.user32.GetWindowLongW(hwnd, GWL_STYLE)
+        if style & WS_THICKFRAME:
+            ctypes.windll.user32.SetWindowLongW(hwnd, GWL_STYLE, style & ~WS_THICKFRAME)
         GWLP_WNDPROC = -4
         WM_NCHITTEST = 0x0084
         HTCLIENT = 1
@@ -578,10 +585,17 @@ class AppApi:
         try:
             win = self.window_ref.get("win") if self.window_ref else None
             if win is not None:
-                _disable_system_drag(win)   # 禁整窗拖动, 只保留标题栏 JS 拖动
                 _win32_show_window_impl(win, True)
-                # 透明度渐变出现 (0 -> 255)
                 hwnd = _win32_hwnd(win)
+                # 延迟禁用整窗拖动 (窗口完全初始化后再子类, 更可靠)
+                def _later():
+                    try:
+                        time.sleep(0.6)
+                        _disable_system_drag(win)
+                    except Exception:
+                        pass
+                threading.Thread(target=_later, daemon=True).start()
+                # 透明度渐变出现 (0 -> 255)
                 if hwnd:
                     def _fade():
                         try:
@@ -2071,7 +2085,8 @@ def run_web_ui(debug: bool = False):
         min_size=(860, 620),
         background_color="#0b0e14",
         frameless=True,   # 去除原生标题栏, 使用自定义 HTML/CSS 标题栏
-        shadow=False,     # 禁用 DWM 无边框玻璃扩展, 消除整窗可拖 (AnimateWindow 已回退, 不影响渲染)
+        shadow=False,     # 禁用 DWM 无边框玻璃扩展, 消除整窗可拖
+        hidden=True,      # 启动默认隐藏, 前端 ui_ready 后显示并透明度渐变出现 (动画可见)
     )
     window_holder["win"] = window
 
@@ -2106,9 +2121,14 @@ def run_web_ui(debug: bool = False):
             except Exception:
                 hide_to_tray = True
             if hide_to_tray:
-                # 只阻止关闭; 立刻隐藏窗口 (后台线程), 不依赖前端 toast
+                # 只阻止关闭; 后台线程透明度渐出后隐藏窗口, 不依赖前端 toast
                 def _hide():
                     try:
+                        _hwnd = _win32_hwnd(window)
+                        if _hwnd:
+                            for _a in range(255, -1, -16):
+                                _set_window_alpha(_hwnd, _a)
+                                time.sleep(0.012)
                         _win32_show_window(False)
                     except Exception:
                         pass
