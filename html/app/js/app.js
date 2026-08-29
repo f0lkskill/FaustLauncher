@@ -1691,6 +1691,8 @@ window.__onResError = function (msg) { toast('⚠ ' + msg, 'error', 6000); };
       if (heroImg) heroImg.src = b.icon_uri;
       const brandImg = document.querySelector('.brand-icon');
       if (brandImg) brandImg.src = b.icon_uri;
+      const tbIcon = document.querySelector('#titlebar .tb-icon');
+      if (tbIcon) tbIcon.src = b.icon_uri;
     }
     // 状态芯片 (游戏路径实时从后端读取, 自动填充/设置修改都会同步)
     updatePathChip();
