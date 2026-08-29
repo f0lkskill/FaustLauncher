@@ -666,7 +666,7 @@ class AppApi:
         return True
 
     def ui_ready(self):
-        """前端初始化完成(splash就绪)后, 以透明度渐变显示主窗口"""
+        """前端 Splash 首帧就绪后显示主窗口，不等待业务数据初始化"""
         try:
             win = self.window_ref.get("win") if self.window_ref else None
             if win is not None:
@@ -2203,7 +2203,7 @@ def run_web_ui(debug: bool = False):
     startup_lock = threading.Lock()
 
     def _show_after_load():
-        """HTML 已载入后只执行一次原生渐入, 让 splash 先可见而不是显示纯色窗口."""
+        """先以透明度显示已加载的 Splash，再渐入窗口，避免纯色窗口闪现。"""
         with startup_lock:
             if startup_state["shown"]:
                 return
@@ -2217,15 +2217,29 @@ def run_web_ui(debug: bool = False):
         _ensure_layered(hwnd)
         _set_window_alpha(hwnd, 0)
         _win32_show_window(True)
-        threading.Thread(target=lambda: _fade_window(hwnd, 0, 255), daemon=True).start()
+
+        # 窗口从隐藏变为可见后，先给 WebView 一次提交 Splash 首帧的机会；
+        # 立即开始渐入会在低性能机器上先露出未绘制完成的纯色底。
+        time.sleep(0.05)
+        threading.Thread(
+            target=lambda: _fade_window(hwnd, 0, 255, step=15, delay=0.01),
+            daemon=True,
+        ).start()
 
     try:
         api.ready_callback = _show_after_load # type: ignore
     except Exception:
         pass
 
-    # 保底: 若前端 ui_ready 未触发, 12 秒后也按同一套渐入流程显示窗口。
-    # 不能直接 ShowWindow, 否则会把未渲染完成的纯色背景闪给用户。
+    # loaded 事件独立于 JS API 调用队列。延迟一小段时间让 Splash 完成首帧
+    # 绘制，再由原生侧显示窗口，避免 get_bootstrap 阻塞 ui_ready。
+    try:
+        window.events.loaded += lambda: threading.Timer(
+            0.15, _show_after_load).start()
+    except Exception:
+        pass
+
+    # 保底: 若页面加载事件异常, 12 秒后也按同一套渐入流程显示窗口。
     def _force_show():
         time.sleep(12)
         try:

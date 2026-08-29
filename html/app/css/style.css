@@ -141,9 +141,9 @@ body.no-hw .hero {
 /* ---------- 启动预加载 Splash (覆盖窗口显示瞬间, 避免白边/闪烁) ---------- */
 #app-splash {
   position: fixed; inset: 0; z-index: 9999;
-  background: linear-gradient(135deg, #0b0e14, #12161f);
+  background: #0b0e14;
   display: flex; align-items: center; justify-content: center;
-  transition: opacity .4s ease;
+  transition: opacity .22s ease;
 }
 #app-splash.hide { opacity: 0; pointer-events: none; }
 .splash-box { text-align: center; }
@@ -924,6 +924,10 @@ body.modal-open .res-card {
 #page-features.active,
 #page-tools.active {
   display: flex; flex-direction: column;
+  width: calc(100% + 60px);
+  max-width: none;
+  margin-left: -30px;
+  margin-right: -30px;
   height: calc(100vh - 108px);  /* 窗口高度 - 标题栏 - #main 上下内边距 */
   min-height: 0;
   box-sizing: border-box;

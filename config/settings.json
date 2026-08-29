@@ -208,7 +208,7 @@
         "name": "点击音效",
         "type": "boolean",
         "default": true,
-        "value": true,
+        "value": false,
         "description": "是否播放界面控件的点击音效",
         "page": "其它"
     },
@@ -258,7 +258,7 @@
             "120 FPS"
         ],
         "default": 3,
-        "value": 4,
+        "value": 3,
         "description": "界面动画的最大帧率上限\n降低帧率可减少毛玻璃卡片等每帧重绘的 GPU 开销\n默认 60 FPS",
         "page": "其它"
     },
