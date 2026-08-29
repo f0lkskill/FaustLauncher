@@ -1993,6 +1993,7 @@ def run_web_ui(debug: bool = False):
         min_size=(860, 620),
         background_color="#0b0e14",
         frameless=True,   # 去除原生标题栏, 使用自定义 HTML/CSS 标题栏
+        shadow=False,     # 禁用 DWM 无边框玻璃扩展, 避免整窗可拖 (仅标题栏 JS 拖动)
         hidden=True,      # 初始隐藏, 前端 ui_ready 后 AnimateWindow 透明度渐入
     )
     window_holder["win"] = window
