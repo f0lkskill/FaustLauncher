@@ -17,7 +17,7 @@ def find_py_files(directory):
         dirs[:] = [d for d in dirs if d not in ['_internal', '__pycache__', '.git', 'build', 'dist', 'temp','venv']]
         
         for file in files:
-            if file.endswith('.py'):
+            if file.endswith('.py') or file.endswith('.js') or file.endswith('.html'):
                 py_files.append(os.path.join(root, file))
     return py_files
 
