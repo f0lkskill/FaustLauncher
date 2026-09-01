@@ -35,6 +35,7 @@
 .tb-close:hover { background: #e81123; color: #fff; }
 
 :root {
+  --titlebar-h: 40px;
   --glass-factor: 1;   /* 毛玻璃系数, 由设置 glass_factor 全局控制 */
   --bg: #181818;
   --bg-2: #1e1e1e;
@@ -120,7 +121,7 @@ body.no-hw .hero {
 
 #app {
   position: relative; z-index: 1; display: flex;
-  height: calc(100vh - 40px); margin-top: 40px;
+  height: calc(100vh - var(--titlebar-h)); margin-top: var(--titlebar-h);
 }
 #app.startup-pending,
 #titlebar.startup-pending {
@@ -1145,13 +1146,13 @@ body.modal-open .res-card {
 .dl-fab:hover { transform: translateY(-2px) scale(1.04); filter: brightness(1.1); }
 .dl-fab-ico { font-size: 20px; line-height: 1; }
 .dl-overlay {
-  position: fixed; inset: 0; z-index: 61; display: none;
+  position: fixed; top: var(--titlebar-h); left: 0; right: 0; bottom: 0; z-index: 61; display: none;
   background: rgba(0,0,0,.35); backdrop-filter: blur(calc(var(--glass-factor) * 8px));
   -webkit-backdrop-filter: blur(calc(var(--glass-factor) * 8px));
 }
 .dl-overlay.show { display: block; }
 .dl-drawer {
-  position: fixed; top: 0; right: 0; bottom: 0; z-index: 62;
+  position: fixed; top: var(--titlebar-h); right: 0; bottom: 0; z-index: 62;
   width: 340px; max-width: 86vw;
   background: rgba(24, 24, 26, 0.96);
   backdrop-filter: blur(calc(var(--glass-factor) * 14px)) saturate(120%);
@@ -1292,9 +1293,9 @@ body.modal-open .res-card {
 .term-line.wait { color: var(--info); }
 
 /* ---------- Toast ---------- */
-#toasts { position: fixed; top: 16px; right: 16px; z-index: 200; display: flex; flex-direction: column; gap: 10px; }
+#toasts { position: fixed; top: calc(var(--titlebar-h) + 16px); right: 16px; z-index: 200; display: flex; flex-direction: column; gap: 10px; }
 #toasts-top {
-  position: fixed; top: 18px; left: 50%; transform: translateX(-50%);
+  position: fixed; top: calc(var(--titlebar-h) + 18px); left: 50%; transform: translateX(-50%);
   z-index: 200; display: flex; flex-direction: column; gap: 10px; align-items: center;
 }
 #toasts-top .toast { animation: toastTopIn .3s ease; }
@@ -1442,6 +1443,7 @@ body.modal-open .res-card {
   pointer-events: auto;   /* 可点击: 点击立即缩回 */
   cursor: pointer;
 }
+#character.char-top-edge { top: var(--titlebar-h) !important; }
 #character img {
   width: 210px;
   height: auto;

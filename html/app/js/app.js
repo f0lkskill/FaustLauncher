@@ -3242,7 +3242,7 @@ function layoutToolsCarousel(smooth) {
       s.transform = 'translate(-50%, ' + (hidden ? '110%' : '28%') + ') rotate(' + pos.angle + 'deg)';
     } else { // top
       // 顶部探头: 垂直翻转 (scaleY -1), 露出的是头部而非腿部
-      s.left = pos.ratio + '%'; s.top = '0';
+      s.left = pos.ratio + '%'; s.top = 'var(--titlebar-h)';
       s.transform = 'translate(-50%, ' + (hidden ? '-110%' : '-28%') + ') rotate(' + pos.angle + 'deg) scaleY(-1)';
     }
   }
@@ -3302,7 +3302,7 @@ function layoutToolsCarousel(smooth) {
     } else { // top
       // 角色在顶部: 气泡在角色正下方居中
       b.style.left = (cr.left + cr.width / 2) + 'px';
-      b.style.top = (cr.bottom + 14) + 'px';
+      b.style.top = Math.max(40, cr.bottom + 14) + 'px';
     }
     charEl._bubbleCentered = centered;
     b.classList.add(centered ? 'char-bubble-in-c' : 'char-bubble-in');
