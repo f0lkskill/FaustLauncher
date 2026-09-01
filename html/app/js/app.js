@@ -769,6 +769,21 @@ window.__onResError = function (msg) { toast('⚠ ' + msg, 'error', 6000); };
     if (m) m.hidden = resKind !== 'mod';
   }
 
+  function bindResReinstallButtons() {
+    const addonBtn = $('#btn-reinstall-addon');
+    const modBtn = $('#btn-reinstall-mod');
+    if (addonBtn) addonBtn.onclick = () => {
+      const dirs = resAddons.filter(x => x.reinstall_available).map(x => x.dir || x.name);
+      if (dirs.length) confirmReinstall('addon', dirs, '插件');
+      else toast('缓存中没有可精确匹配的插件', 'warn');
+    };
+    if (modBtn) modBtn.onclick = () => {
+      const dirs = resMods.filter(x => x.reinstall_available).map(x => x.dir || x.name);
+      if (dirs.length) confirmReinstall('mod', dirs, 'Mod');
+      else toast('缓存中没有可精确匹配的 Mod', 'warn');
+    };
+  }
+
   async function refreshMods(keepPage) {
     if (!api) { toast('浏览器预览模式', 'warn'); return; }
     try {
@@ -778,10 +793,31 @@ window.__onResError = function (msg) { toast('⚠ ' + msg, 'error', 6000); };
       if (!keepPage) resPage = 1;
       renderResList();
       syncResActions();   // 保持按钮组与当前分区一致
+      bindResReinstallButtons();
     } catch (e) {
       const list = $('#res-list');
       if (list) list.innerHTML = '<div class="res-empty">读取失败: ' + esc(String(e)) + '</div>';
     }
+  }
+
+  function confirmReinstall(kind, dirs, label) {
+    const panel = document.createElement('div');
+    panel.className = 'panel-overlay';
+    panel.innerHTML = '<div class="panel-card"><div class="panel-head"><h3>确认重装' + label + '</h3><button class="panel-close">✕</button></div>' +
+      '<div class="panel-body"><p>将删除本地资源，并使用启动时缓存的云端信息重新安装。是否继续？</p></div>' +
+      '<div class="panel-foot"><button class="btn btn-ghost" data-no>取消</button><button class="btn btn-primary" data-yes>确认重装</button></div></div>';
+    document.body.appendChild(panel);
+    const close = () => closePanel(panel);
+    panel.querySelector('.panel-close').onclick = close;
+    panel.querySelector('[data-no]').onclick = close;
+    panel.querySelector('[data-yes]').onclick = async () => {
+      const btn = panel.querySelector('[data-yes]');
+      btn.disabled = true;
+      const r = await api.reinstall_resources(kind, dirs).catch(e => ({ error: String(e) }));
+      if (r && r.error) toast('重装失败: ' + r.error, 'error');
+      else toast('已开始重装' + label, 'info', 3000);
+      close();
+    };
   }
 
   function renderResList() {
@@ -968,8 +1004,9 @@ window.__onResError = function (msg) { toast('⚠ ' + msg, 'error', 6000); };
         '<div class="res-detail-desc">' + esc(item.description || '（无描述）') + '</div>' +
         renderSettingsFields(item.settings) +
         '<div class="res-detail-ops">' +
-          '<button class="btn btn-ghost" id="res-open-dir">打开目录</button>' +
-          '<button class="btn btn-danger" id="res-delete">删除</button>' +
+           '<button class="btn btn-ghost" id="res-open-dir">打开目录</button>' +
+           (item.reinstall_available ? '<button class="btn btn-primary" id="res-reinstall">↻ 重装</button>' : '') +
+           '<button class="btn btn-danger" id="res-delete">删除</button>' +
         '</div>' +
       '</div>';
     document.body.appendChild(panel);
@@ -980,6 +1017,9 @@ window.__onResError = function (msg) { toast('⚠ ' + msg, 'error', 6000); };
       const r = await api.open_mod_item_dir(kind, dir).catch(e => ({ error: String(e) }));
       if (r && r.error) toast(r.error, 'error');
     };
+    if (item.reinstall_available) {
+      $('#res-reinstall').onclick = () => confirmReinstall(kind, [dir], isAddon ? '插件' : 'Mod');
+    }
     $('#res-delete').onclick = async () => {
       try {
         if (isAddon) {
