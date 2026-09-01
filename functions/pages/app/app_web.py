@@ -1119,6 +1119,7 @@ class AppApi:
                             info = json.load(f)
                     except Exception:
                         info = {}
+                    local_name = str(info.get('name') or name)
                     addons.append({
                         'dir': name,   # 文件夹名 (供后端操作)
                         'name': str(info.get('name') or name),
@@ -1129,6 +1130,7 @@ class AppApi:
                         'enabled': bool(info.get('settings', {}).get('enable', True)),
                         'icon': _res_icon_uri('addons', name),
                         'settings': info.get('settings', {}),
+                        'reinstall_available': self._cached_resource(kind='addon', name=local_name) is not None,
                     })
         except Exception as e:
             print(f"读取插件失败: {e}")
@@ -1146,6 +1148,7 @@ class AppApi:
                             info = json.load(f)
                     except Exception:
                         info = {}
+                    local_name = str(info.get('name') or name)
                     dir_mods.append({
                         'dir': name,
                         'name': str(info.get('name') or name),
@@ -1158,6 +1161,7 @@ class AppApi:
                         'enabled': bool(info.get('settings', {}).get('enable', False)),
                         'icon': _res_icon_uri('mods', name),
                         'settings': info.get('settings', {}),
+                        'reinstall_available': self._cached_resource(kind='mod', name=local_name) is not None,
                     })
         except Exception as e:
             print(f"读取目录 Mod 失败: {e}")
@@ -1167,6 +1171,84 @@ class AppApi:
             'single_files': [],
             'single_dir': '',
         }
+
+    def _cached_resource(self, kind, name):
+        """只从启动时已有的云端缓存读取资源，禁止这里触发网络查询。"""
+        try:
+            from functions.pages.app import page_loader as _pl
+            wanted = str(name).strip()
+            items = _pl._cloud_sync_cache.get(kind) or []
+            pending = list(items) if isinstance(items, list) else [items]
+            while pending:
+                item = pending.pop(0)
+                if isinstance(item, list):
+                    pending.extend(item)
+                    continue
+                if isinstance(item, dict) and str(item.get('name') or '').strip() == wanted:
+                    url = item.get('dowload_url') or item.get('download_url') or item.get('url')
+                    if url:
+                        return item
+        except Exception:
+            pass
+        return None
+
+    def _reinstall_local(self, kind, local_dir):
+        """从缓存精确匹配本地资源后重新下载；local_dir 是实际目录名。"""
+        import json, shutil
+        root = 'addons' if kind == 'addon' else 'mods'
+        info_name = 'addon_info.json' if kind == 'addon' else 'mod_info.json'
+        local_dir = str(local_dir)
+        local_path = os.path.join(root, local_dir)
+        info_path = os.path.join(local_path, info_name)
+        if not os.path.isfile(info_path):
+            return {'ok': False, 'error': f'资源信息不存在: {local_dir}'}
+        try:
+            with open(info_path, 'r', encoding='utf-8') as f:
+                info = json.load(f)
+            cloud = self._cached_resource(kind, str(info.get('name') or local_dir))
+            if cloud is None:
+                return {'ok': False, 'error': f'缓存中没有与 {info.get("name") or local_dir} 完全匹配的云端资源'}
+            cloud_name = str(cloud.get('name'))
+            url = cloud.get('dowload_url') or cloud.get('download_url') or cloud.get('url')
+
+            if kind == 'mod':
+                try:
+                    from functions.extension.mod.mod_utils import ModManager
+                    ModManager().unload_mod(local_dir)
+                except Exception:
+                    pass
+            shutil.rmtree(local_path, ignore_errors=True)
+            from functions.web_update.zeroasso_download import download_and_extract_mod
+            gui = HeadlessDownloadGUI(root, auto_start=False, task=cloud_name)
+            ok = download_and_extract_mod(gui, root, [{
+                'url': url, 'name': cloud_name, 'temp_filename': f'{cloud_name}.7z'
+            }])
+            if not ok:
+                return {'ok': False, 'error': f'下载失败: {cloud_name}'}
+            self._notify_res_changed(kind)
+            return {'ok': True, 'error': None}
+        except Exception as e:
+            return {'ok': False, 'error': str(e)}
+
+    def reinstall_resource(self, kind, local_dir):
+        """后台重装单个资源；云端数据只取启动缓存。"""
+        def _run():
+            result = self._reinstall_local(kind, local_dir)
+            if not result.get('ok'):
+                self._notify_res_changed(kind, error=result.get('error'))
+        threading.Thread(target=_run, daemon=True).start()
+        return {'ok': True, 'error': None}
+
+    def reinstall_resources(self, kind, local_dirs):
+        """后台按顺序重装多个资源；每项均要求缓存中的精确名称匹配。"""
+        dirs = [str(x) for x in (local_dirs or [])]
+        def _run():
+            for local_dir in dirs:
+                result = self._reinstall_local(kind, local_dir)
+                if not result.get('ok'):
+                    print(f'重装 {kind} {local_dir} 失败: {result.get("error")}')
+        threading.Thread(target=_run, daemon=True).start()
+        return {'ok': True, 'error': None}
 
     def _install_from_archive(self, archive, kind):
         """从 zip/7z 压缩包安装插件或 Mod (解压后识别 info 文件所在目录)"""
@@ -1559,24 +1641,10 @@ if %errorlevel% equ 0 (
         _pl._cloud_sync_cache[kind] = data
         return data
 
-    @staticmethod
-    def _name_common_sub(s1, s2):
-        """返回两字符串最长公共子串长度 (用于云端中文名与本地显示名微变匹配)"""
-        a, b = s1, s2
-        best = 0
-        for i in range(len(a)):
-            for j in range(len(b)):
-                k = 0
-                while i + k < len(a) and j + k < len(b) and a[i + k] == b[j + k]:
-                    k += 1
-                if k > best:
-                    best = k
-        return best
-
     def check_item_downloaded(self, kind, name):
         """检测插件/Mod 是否已下载安装 (每次刷新下载中心都会重新检测, 用户可能手动删除)
         本地目录名是英文, 云端 name 是中文显示名, 需按 addon_info.json/mod_info.json 的 name 匹配,
-        同时兼容目录名直查与公共子串微变匹配 (如 '原神启动!自动下载' vs '云原神-自动下载')。"""
+        仅接受目录名或 info 文件 name 与云端 name 的完全匹配。"""
         import os
         try:
             root = 'addons' if kind == 'addon' else 'mods'
@@ -1598,11 +1666,6 @@ if %errorlevel% equ 0 (
                         local_name = str(info.get('name', '')).strip()
                         if local_name == name:
                             return {'downloaded': True}
-                        if len(name) > 3 and len(local_name) > 3:
-                            common = self._name_common_sub(name, local_name)
-                            # 公共子串需占任一端名长至少 50%, 避免本地其他资源名与云端名个别字撞上误判已安装
-                            if common >= 4 and common >= max(len(name), len(local_name)) * 0.5:
-                                return {'downloaded': True}
                 except Exception:
                     continue
             return {'downloaded': False}
