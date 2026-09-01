@@ -351,8 +351,8 @@
     "version_info": {
         "name": "版本信息",
         "type": "UNABLE_TO_EDIT",
-        "default": "V0.8.4-LimbusCompany_Release",
-        "value": "V0.8.4-LimbusCompany_Release",
+        "default": "V0.8.5-release",
+        "value": "V0.8.5-release",
         "description": "当前应用程序的版本信息"
     },
     "mems": {
