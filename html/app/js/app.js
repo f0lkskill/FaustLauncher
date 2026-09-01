@@ -803,7 +803,7 @@ window.__onResError = function (msg) { toast('⚠ ' + msg, 'error', 6000); };
   function confirmReinstall(kind, dirs, label) {
     const panel = document.createElement('div');
     panel.className = 'panel-overlay';
-    panel.innerHTML = '<div class="panel-card"><div class="panel-head"><h3>确认重装' + label + '</h3><button class="panel-close">✕</button></div>' +
+    panel.innerHTML = '<div class="panel-card"><div class="panel-head"><h3>重装所有' + label + '</h3><button class="panel-close">✕</button></div>' +
       '<div class="panel-body"><p>将删除本地资源，并使用启动时缓存的云端信息重新安装。是否继续？</p></div>' +
       '<div class="panel-foot"><button class="btn btn-ghost" data-no>取消</button><button class="btn btn-primary" data-yes>确认重装</button></div></div>';
     document.body.appendChild(panel);
@@ -813,10 +813,15 @@ window.__onResError = function (msg) { toast('⚠ ' + msg, 'error', 6000); };
     panel.querySelector('[data-yes]').onclick = async () => {
       const btn = panel.querySelector('[data-yes]');
       btn.disabled = true;
-      const r = await api.reinstall_resources(kind, dirs).catch(e => ({ error: String(e) }));
-      if (r && r.error) toast('重装失败: ' + r.error, 'error');
-      else toast('已开始重装' + label, 'info', 3000);
       close();
+      const prepared = [];
+      for (const dir of dirs) {
+        const r = await api.prepare_reinstall(kind, dir).catch(e => ({ error: String(e) }));
+        if (r && r.ok && r.item) prepared.push(r.item);
+        else if (r && r.error) toast('准备重装失败: ' + r.error, 'error');
+      }
+      prepared.forEach(item => startDownloadItem(kind, item));
+      if (prepared.length) toast('已开始重装' + label, 'info', 3000);
     };
   }
 
@@ -1005,7 +1010,7 @@ window.__onResError = function (msg) { toast('⚠ ' + msg, 'error', 6000); };
         renderSettingsFields(item.settings) +
         '<div class="res-detail-ops">' +
            '<button class="btn btn-ghost" id="res-open-dir">打开目录</button>' +
-           (item.reinstall_available ? '<button class="btn btn-primary" id="res-reinstall">↻ 重装</button>' : '') +
+           (item.reinstall_available ? '<button class="btn btn-primary" id="res-reinstall">重装</button>' : '') +
            '<button class="btn btn-danger" id="res-delete">删除</button>' +
         '</div>' +
       '</div>';

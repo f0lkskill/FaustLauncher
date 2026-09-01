@@ -1239,6 +1239,37 @@ class AppApi:
         threading.Thread(target=_run, daemon=True).start()
         return {'ok': True, 'error': None}
 
+    def prepare_reinstall(self, kind, local_dir):
+        """为标准下载流程准备重装：校验启动缓存并删除旧资源。
+
+        本方法不下载、不解压；前端拿到返回的云端条目后必须调用
+        startDownloadItem，从而沿用下载抽屉和统一进度事件。
+        """
+        import json, shutil
+        root = 'addons' if kind == 'addon' else 'mods'
+        info_name = 'addon_info.json' if kind == 'addon' else 'mod_info.json'
+        local_dir = str(local_dir)
+        local_path = os.path.join(root, local_dir)
+        info_path = os.path.join(local_path, info_name)
+        if not os.path.isfile(info_path):
+            return {'ok': False, 'error': f'资源信息不存在: {local_dir}'}
+        try:
+            with open(info_path, 'r', encoding='utf-8') as f:
+                info = json.load(f)
+            cloud = self._cached_resource(kind, str(info.get('name') or local_dir))
+            if cloud is None:
+                return {'ok': False, 'error': '缓存中没有完全匹配的云端资源'}
+            if kind == 'mod':
+                try:
+                    from functions.extension.mod.mod_utils import ModManager
+                    ModManager().unload_mod(local_dir)
+                except Exception as e:
+                    return {'ok': False, 'error': f'卸载旧 Mod 失败: {e}'}
+            shutil.rmtree(local_path, ignore_errors=False)
+            return {'ok': True, 'error': None, 'item': cloud}
+        except Exception as e:
+            return {'ok': False, 'error': str(e)}
+
     def reinstall_resources(self, kind, local_dirs):
         """后台按顺序重装多个资源；每项均要求缓存中的精确名称匹配。"""
         dirs = [str(x) for x in (local_dirs or [])]
