@@ -801,6 +801,20 @@ window.__onResError = function (msg) { toast('⚠ ' + msg, 'error', 6000); };
   }
 
   function confirmReinstall(kind, dirs, label) {
+    // 详情窗口只传入一个资源，不需要重复弹确认层；仍走同一套
+    // prepare_reinstall -> startDownloadItem 流程，确保下载抽屉和进度一致。
+    if (dirs.length === 1) {
+      (async () => {
+        const r = await api.prepare_reinstall(kind, dirs[0]).catch(e => ({ error: String(e) }));
+        if (r && r.ok && r.item) {
+          startDownloadItem(kind, r.item);
+          toast('已开始重装' + label, 'info', 3000);
+        } else if (r && r.error) {
+          toast('准备重装失败: ' + r.error, 'error');
+        }
+      })();
+      return;
+    }
     const panel = document.createElement('div');
     panel.className = 'panel-overlay';
     panel.innerHTML = '<div class="panel-card"><div class="panel-head"><h3>重装所有' + label + '</h3><button class="panel-close">✕</button></div>' +
@@ -1023,7 +1037,10 @@ window.__onResError = function (msg) { toast('⚠ ' + msg, 'error', 6000); };
       if (r && r.error) toast(r.error, 'error');
     };
     if (item.reinstall_available) {
-      $('#res-reinstall').onclick = () => confirmReinstall(kind, [dir], isAddon ? '插件' : 'Mod');
+      $('#res-reinstall').onclick = () => {
+        closePanel(panel);
+        confirmReinstall(kind, [dir], isAddon ? '插件' : 'Mod');
+      };
     }
     $('#res-delete').onclick = async () => {
       try {
