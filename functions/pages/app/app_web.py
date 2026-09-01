@@ -1627,6 +1627,7 @@ if %errorlevel% equ 0 (
         """下载计数 +1 并上传到云端 (静默失败, 不影响下载)"""
         try:
             wt = self._get_web_trigger()
+
             if kind == 'addon':
                 wt.add_download_number_addon(name)
             else:

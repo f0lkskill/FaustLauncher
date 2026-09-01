@@ -1,6 +1,6 @@
 from functions.webFunc import Note
 from functions.base.web_config import get_webnote
-from threading import Thread
+import re
 from json import loads, dumps
 
 class WebTrigger:
@@ -55,13 +55,18 @@ class WebTrigger:
         """获取所有mod信息"""
         return self._fetch_all(self.get_mod_info)
     
-    def _add_download_number(self, note, name: str):
+    def _add_download_number(self, note: Note, name: str):
         """增加指定插件或mod的下载次数"""
+        
         if not name:
             return
 
-        note.fetch_note_info()
-        pages = loads(note.note_content)
+        # note.fetch_note_info()
+        # 处理确认合法的JSON字符串
+        note_content = note.note_content
+        note_content = re.sub(r'^[\s\ufeff]+|[\s\ufeff]+$', '', note_content)
+
+        pages = loads(note_content)
         for page in pages[1:]:  # 跳过第一页的总页数信息
             for item in page:
                 if item['name'] == name:
