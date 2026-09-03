@@ -61,7 +61,7 @@ class WebTrigger:
         if not name:
             return
 
-        # note.fetch_note_info()
+        # 确认笔记内容不为空
         # 处理确认合法的JSON字符串
         note_content = note.note_content
         note_content = re.sub(r'^[\s\ufeff]+|[\s\ufeff]+$', '', note_content)
