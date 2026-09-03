@@ -1803,7 +1803,7 @@ window.__onResError = function (msg) { toast('⚠ ' + msg, 'error', 6000); };
     }
     showFrameLoading(frame);
     try {
-      const md = await withTimeout(api.get_changelog(), 6000, null);
+      const md = await withTimeout(api.get_changelog(), 100000, null);
       // 无论超时/成功/出错, 都离开 "加载中" 占位, 保证内容感知兜底移除圆圈
       const body = $('#changelog-body');
       if (md == null) {

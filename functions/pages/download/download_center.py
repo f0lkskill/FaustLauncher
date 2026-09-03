@@ -442,7 +442,7 @@ class DownloadCenterPage:
             self._bind_mousewheel_recursive(self.mod_scrollable_frame,
                                             self._mod_wheel_handler)
 
-    def create_addon_card(self, addon:dict, gen: int = None):
+    def create_addon_card(self, addon:dict, gen: int = None): # type: ignore
         gen_key = ('addon', gen if gen is not None else self._addon_page_gen)
         unable_download = addon.get('disabled', False)
         card_bg = self._card_bg if not unable_download else darken_color(self._card_bg, 0.5)
@@ -571,7 +571,7 @@ class DownloadCenterPage:
                                  state='disabled' if is_disabled else 'normal')
         download_button.pack(side=tk.RIGHT, padx=5)
 
-    def create_mod_card(self, mod:dict, gen: int = None):
+    def create_mod_card(self, mod:dict, gen: int = None): # type: ignore
         gen_key = ('mod', gen if gen is not None else self._mod_page_gen)
         unable_download = mod.get('disabled', False)
         card_bg = self._card_bg if not unable_download else darken_color(self._card_bg, 0.5)
