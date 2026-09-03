@@ -15,7 +15,7 @@ class Note:
         """读取笔记内容"""
         try:
             if not self.has_get or self.note_content == "":
-                if self.note_content == "":
+                if self.has_get and self.note_content == "":
                     print(f"尝试重新获取云端 {self.note_name} 内容。")
                 else:
                     print(f"正在获取云端 {self.note_name} 内容。")
