@@ -91,7 +91,7 @@ class WebTrigger:
             pages = self.get_note_info_addon()
             for page in pages[1:]:  # 跳过第一页的总页数信息
                 addons: list[dict] = page
-                # 按下载次数降序排序，被禁用插件默认排序在最后
+                # 按下载次数降序排序，被禁用插件默认排序在最后 
                 for addon in addons:
                     # 排序key的顺序
                     sorted(addon.keys(),reverse=True)
