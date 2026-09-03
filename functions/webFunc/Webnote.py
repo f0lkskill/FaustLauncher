@@ -14,7 +14,11 @@ class Note:
     def fetch_note_info(self):
         """读取笔记内容"""
         try:
-            if not self.has_get:
+            if not self.has_get or self.note_content == "":
+                if self.note_content == "":
+                    print(f"尝试重新获取云端 {self.note_name} 内容。")
+                else:
+                    print(f"正在获取云端 {self.note_name} 内容。")
                 r = requests.get(self.note_url, verify=False)
                 self.note_content = r.text
                 self.has_get = True
