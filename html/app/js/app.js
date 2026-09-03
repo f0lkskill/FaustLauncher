@@ -1776,7 +1776,7 @@ window.__onResError = function (msg) { toast('⚠ ' + msg, 'error', 6000); };
   // ---------------- 主页: 更新内容 / 随机推荐 ----------------
 
   function mdToHtml(md) {
-    if (!md) return '<span class="changelog-empty">暂无更新内容</span>';
+    if (!md) return '<span class="changelog-empty">啊呀，看起来这里什么都没有呢...</span>';
     const lines = String(md).replace(/\r/g, '').split('\n');
     let html = '';
     let inList = false;
