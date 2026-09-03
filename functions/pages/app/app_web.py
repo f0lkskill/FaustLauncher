@@ -2210,6 +2210,7 @@ def run_web_ui(debug: bool = False):
     from functions.base.log_manager import init_logger
     init_logger()
 
+    # 清理旧的更新脚本
     if os.path.exists(os.path.join(_PROJECT_ROOT, "updater.vbs")):
         try:
             os.remove(os.path.join(_PROJECT_ROOT, "updater.vbs"))
@@ -2239,9 +2240,10 @@ def run_web_ui(debug: bool = False):
         if win is None:
             return
         try:
+            # 执行JS代码
             win.evaluate_js(code)
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"执行JS代码失败: {e}")
 
     def _push_log(text):
         try:
@@ -2435,9 +2437,9 @@ def run_web_ui(debug: bool = False):
             # 只做设置检查, 不触发 check_settings 内部的简单汉化下载 (汉化由 download_and_launch 内部控制)
             core.check_settings(skip_auto_download=True, interactive=False)
             # 启动更新流程: 资源更新/插件Mod同步始终执行; 汉化部分受 check_translate_update 设置控制
-            from functions.pages.app.page_loader import download_and_launch
-            _shim = type('WebShim', (), {'core': core, 'root': None})()
-            download_and_launch(obj=_shim, need_run_game=False, manual=False)
+            # from functions.pages.app.page_loader import download_and_launch
+            # _shim = type('WebShim', (), {'core': core, 'root': None})()
+            # download_and_launch(obj=_shim, need_run_game=False, manual=False)
             # 检查可能自动设置了 Steam 游戏路径, 通知前端同步设置页与首页路径显示
             _evaluate_js("window.__onPathSynced()")
         except Exception as e:

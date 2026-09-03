@@ -3,7 +3,6 @@
 import os
 import json
 import shutil
-import threading
 import traceback
 import tkinter.messagebox as messagebox
 
