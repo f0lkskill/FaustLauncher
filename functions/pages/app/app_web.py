@@ -1646,6 +1646,7 @@ if %errorlevel% equ 0 (
         if not getattr(self, '_web_trigger', None):
             from functions.web_update.web_trigger import WebTrigger
             self._web_trigger = WebTrigger()
+            print("WebTrigger 初始化完成")
         return self._web_trigger
 
     def _check_dc_config(self):
@@ -1664,12 +1665,15 @@ if %errorlevel% equ 0 (
         """云端列表: 复用启动同步的内存缓存 (每次启动只获取一次, 下载中心与同步共享, 不重复爬取)"""
         from functions.pages.app import page_loader as _pl
         if _pl._cloud_sync_cache.get(kind):
+            print(f"获取到 {kind} 云端资源缓存。")
             return _pl._cloud_sync_cache[kind]
         wt = self._get_web_trigger()
+        print(f"初始化云端 {kind} 资源...")
         data = (wt.fetch_all_addon_info() if kind == 'addon'
                 else wt.fetch_all_mod_info())
         data = data if data else []
         _pl._cloud_sync_cache[kind] = data
+        print(f'初始化云端 {kind} 资源完成。')
         return data
 
     def check_item_downloaded(self, kind, name):
