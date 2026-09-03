@@ -12,7 +12,7 @@ certifi==2025.11.12
 cffi==2.0.0
 charset-normalizer==3.4.4
 colorama==0.4.6
-cryptography==50.0.0
+cryptography==46.0.3
 distro==1.9.0
 EasyProcess==1.1
 elevate==0.1.3
@@ -31,7 +31,7 @@ lz4==4.4.5
 packaging==25.0
 patool==4.0.2
 pefile==2023.2.7
-pillow==12.3.0
+pillow==12.0.0
 pycparser==2.23
 pydantic==2.12.5
 pydantic_core==2.41.5
@@ -45,13 +45,13 @@ pywin32-ctypes==0.2.3
 requests==2.32.5
 setuptools==80.9.0
 sniffio==1.3.1
-soupsieve==2.8.4
+soupsieve==2.8.1
 tabulate==0.9.0
 texture2ddecoder==1.0.6
 tqdm==4.67.1
 typing-inspection==0.4.2
 typing_extensions==4.15.0
 UnityPy==1.24.2
-urllib3==2.6.3
+urllib3==2.5.0
 xxhash==3.6.0
 pyfiglet==1.0.4
