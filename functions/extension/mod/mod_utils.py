@@ -162,11 +162,11 @@ class ModManager:
                     # 启用mod，载入文件
                     # 执行安装脚本 (cwd=mod_path: bat 内相对路径基于 mod 目录), 输出 echo 内容
                     _run_mod_bat(mod_path, 'Installer.bat', mod_name)
-                    # print(f"成功加载Mod贴图资源: {mod_name}")
+                    print(f"成功加载Mod贴图资源: {mod_name}")
                 elif mod_info.get('settings', {}).get('enable', False) and has_uninstaller:
                     # 禁用mod
                     _run_mod_bat(mod_path, 'Uninstaller.bat', mod_name)
-                    # print(f"成功卸载Mod贴图资源: {mod_name}")
+                    print(f"成功卸载Mod贴图资源: {mod_name}")
             
                 # 获取mod信息
                 mod_info = self.get_mod_info(mod_name)
@@ -379,39 +379,45 @@ class ModManager:
                 # 获取mod信息
                 mod_info = self.get_mod_info(mod_name)
                 file_names = mod_info.get('file_names', [])
+                do_flag = False
                 
                 # 获取目标目录
                 target_dir = self.get_mod_directory()
 
-                # 1) 先执行卸载脚本 (清理 Installer.bat 复制到游戏目录的缓存), 带超时防阻塞, 输出 echo 内容
-                if run_bat and os.path.exists(
-                    os.path.join(mod_path, 'Uninstaller.bat')):
-                    try:
-                        _run_mod_bat(mod_path, 'Uninstaller.bat', mod_name, timeout=30)
-                        print(f"{mod_name} Mod 资源缓存成功清理", flush=True)
-                    except Exception as e:
-                        print(f"执行 {mod_name} Uninstaller.bat 失败(超时或异常): {e}", flush=True)
+                # # 1) 先执行卸载脚本 (清理 Installer.bat 复制到游戏目录的缓存), 带超时防阻塞, 输出 echo 内容
+                # if run_bat and os.path.exists(
+                #     os.path.join(mod_path, 'Uninstaller.bat')):
+                #     try:
+                #         _run_mod_bat(mod_path, 'Uninstaller.bat', mod_name, timeout=30)
+                #         print(f"{mod_name} Mod 资源缓存成功清理", flush=True)
+                #     except Exception as e:
+                #         print(f"执行 {mod_name} Uninstaller.bat 失败(超时或异常): {e}", flush=True)
 
                 # 2) 删除复制到目标目录的文件:
                 #    转移文件名带 mod 包名前缀 (mod名_文件名), 加载器会把 .bank 转成 .rebank,
                 #    因此按"前缀 + stem"匹配, 删除该 mod 的所有目标文件 (含 .bank/.rebank/.dll 等)
+
                 for file_name in file_names:
                     stem, _ = os.path.splitext(file_name)
                     prefix = mod_name + '_' + stem
+                    # print(prefix)
                     try:
                         targets = os.listdir(target_dir)
                     except OSError:
+                        print(f"无法读取目标目录: {target_dir}")
                         continue
                     for target_name in targets:
                         t_stem, _ = os.path.splitext(target_name)
-                        if not t_stem.startswith(prefix):
+                        if not t_stem == prefix:
+                            # print(f"跳过删除非目标文件: {target_name}")
                             continue
                         chosen_file = os.path.join(target_dir, target_name)
                         try:
                             os.remove(chosen_file)
-                            print(f"删除文件: {chosen_file}", flush=True)
+                            print(f"删除附属文件: {chosen_file}", flush=True)
+                            do_flag = True
                         except OSError as e:
-                            print(f"删除文件 {chosen_file} 失败: {e}", flush=True)
+                            print(f"删除附属文件 {chosen_file} 失败: {e}", flush=True)
                         # bank 转换遗留的差分缓存一并清理 (转换命名 = bank 同名)
                         if os.path.splitext(target_name)[1].lower() == ".bank":
                             cache = os.path.join(target_dir, t_stem + ".rebank")
@@ -437,12 +443,14 @@ class ModManager:
                                     if os.path.isfile(dst) and self._file_md5(dst) == self._file_md5(src):
                                         os.remove(dst)
                                         print(f"删除语言文件: {dst}")
+                                        do_flag = True
+
                                 except OSError:
                                     pass
                     except Exception as e:
                         print(f"清理语言文件失败: {e}")
-
-                print(f"成功卸载Mod: {mod_name}")
+                if do_flag:
+                    print(f"成功卸载Mod: {mod_name}")
                 return mod_name
             except Exception as e:
                 print(f"卸载Mod {mod_name} 失败: {e}")
