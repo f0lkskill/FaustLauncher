@@ -110,19 +110,28 @@ class WebTrigger:
             # 按下载次数降序排序，被禁用mod默认排序在最后
             mods.sort(key=lambda x: (x.get('disabled', False), -x.get('download_count', 0)))
 
+            # print('lists base:\n',dumps(mods, indent=4, ensure_ascii=False))
+
             new_pages = []
+            page_count = 0
             # 五个五个分页，每五个放在一个list中
             total_page = len(mods) // 5 + (1 if len(mods) % 5 != 0 else 0)
             for i in range(total_page):
+                page_count += 1
                 new_pages.append(mods[i * 5:(i + 1) * 5])
 
-            # 用 enumerate 安全地按索引分配内容，避免 index() 查找导致的错误
-            for idx, page in enumerate(pages[1:], start=0):
-                if idx < len(new_pages):
-                    page = dumps(new_pages[idx], indent=4, ensure_ascii=False)
+            # 插入总页数和总mod数
+            new_pages.insert(0, {'total_page': page_count, 'total_mods': len(mods)})
+
+            # # 用 enumerate 安全地按索引分配内容，避免 index() 查找导致的错误
+            # for idx, page in enumerate(pages[1:], start=0):
+            #     if idx < len(new_pages):
+            #         page = dumps(new_pages[idx], indent=4, ensure_ascii=False)
+
 
             # 更新排序后的mod信息
-            self.mod_info.update_note_content(dumps(pages, indent=4, ensure_ascii=False))
+            # print('lists updated:\n',dumps(new_pages, indent=4, ensure_ascii=False))
+            self.mod_info.update_note_content(dumps(new_pages, indent=4, ensure_ascii=False))
             print("Mod信息按下载次数排序完成")
         except Exception as e:
             print(f"排序Mod信息时出错: {e}")

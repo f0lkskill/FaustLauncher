@@ -2070,8 +2070,8 @@ def _monitor_game_process(window_ref):
                     return
             elif not running and not started:
                 waited += 2
-                if waited > 120:
-                    print("等待游戏启动超时 (2 分钟)")
+                if waited > 480:
+                    print("等待游戏启动超时 (8 分钟)")
                     _push("game_timeout")
                     return
             time.sleep(2)
@@ -2438,9 +2438,6 @@ def run_web_ui(debug: bool = False):
             core.check_settings(skip_auto_download=True, interactive=False)
             # 启动更新流程: 资源更新/插件Mod同步始终执行; 汉化部分受 check_translate_update 设置控制
 
-            # from functions.pages.app.page_loader import download_and_launch
-            # _shim = type('WebShim', (), {'core': core, 'root': None})()
-            # download_and_launch(obj=_shim, need_run_game=False, manual=False)
             # 检查可能自动设置了 Steam 游戏路径, 通知前端同步设置页与首页路径显示
             
             _evaluate_js("window.__onPathSynced()")

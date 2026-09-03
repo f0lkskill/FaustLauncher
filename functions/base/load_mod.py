@@ -65,17 +65,20 @@ def _start_with_mod_loader():
     """
     game_exe = os.path.join(_game_path, GAME_EXE)
 
+    # 读取线程数配置，默认 5
+    thread_count = _settings.get_setting('mod_loader_threads')
+
     if os.path.exists(_extra_mod_loader):
-        print(f"使用外部 mod loader 启动: {_extra_mod_loader}")
+        print(f"使用外部 mod loader 启动: {_extra_mod_loader}, 线程数: {thread_count}")
         flags = subprocess.CREATE_NO_WINDOW if _settings.get_setting("hide_mod_load") else 0
-        subprocess.Popen([_extra_mod_loader, game_exe], creationflags=flags)
+        subprocess.Popen([_extra_mod_loader, game_exe, f"--threads={thread_count}"], creationflags=flags)
         return
 
     builtin_exe = os.path.join("resources", "mod_loader", "yisangModLoader.exe")
     if os.path.exists(builtin_exe):
         print(f"使用内置 mod loader 启动: {builtin_exe}")
         flags = subprocess.CREATE_NO_WINDOW if _settings.get_setting("hide_mod_load") else 0
-        proc = subprocess.Popen([builtin_exe, game_exe], creationflags=flags)
+        proc = subprocess.Popen([builtin_exe, game_exe, f"--threads={thread_count}"], creationflags=flags)
         from functions.pages.tools.mod_loader_progress import open_mod_loader_progress
         open_mod_loader_progress(proc.pid)
         return
@@ -83,7 +86,7 @@ def _start_with_mod_loader():
     print("使用内置 mod loader (venv 直跑) 启动...")
     loader_py = "resources/mod_loader/_internal/venv/Bins/python.exe"
     loader_script = "resources/mod_loader/_internal/main.py"
-    proc = subprocess.Popen([loader_py, loader_script, game_exe],
+    proc = subprocess.Popen([loader_py, loader_script, game_exe, f"--threads={thread_count}"],
                             creationflags=subprocess.CREATE_NO_WINDOW)
     from functions.pages.tools.mod_loader_progress import open_mod_loader_progress
     open_mod_loader_progress(proc.pid)
