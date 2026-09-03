@@ -1,5 +1,4 @@
 import tkinter as tk
-from tkinter import messagebox
 from tkinter import ttk
 from typing import Dict, Callable, Optional, Any
 import traceback

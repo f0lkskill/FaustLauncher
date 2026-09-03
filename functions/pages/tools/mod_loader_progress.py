@@ -236,8 +236,6 @@ class LoaderProgressWindow:
         pid_alive = _pid_alive(self.pid)
 
         # 游戏启动 -> 窗口隐藏, 常驻等待恢复阶段
-        # 注意: 无论当前处于什么状态都要隐藏 (启动期 RESTORE 残留标记曾导致
-        # state 卡在 restoring, LAUNCH 永不隐藏窗口)
         if content == "LAUNCH":
             if not self._closing and self.state != "launched":
                 self.state = "launched"
@@ -251,8 +249,6 @@ class LoaderProgressWindow:
             return
 
         # 游戏退出、恢复原版文件 -> 重新弹出提示
-        # 加载阶段 (loading) 的 RESTORE 标记 (如启动期遗留清理) 直接忽略,
-        # 避免加载期间就弹出恢复提示 + 进度条来回动
         if content.startswith("RESTORE"):
             if self.state != "loading" and self.state != "restoring" and not self._closing:
                 self.state = "restoring"
@@ -278,13 +274,30 @@ class LoaderProgressWindow:
             return
 
         if "|" in content and self.state == "loading":
-            n, text = content.split("|", 1)
+            parts = content.split("|")
             try:
-                stage_no = max(1, min(int(n), TOTAL_STAGES))
+                stage_no = max(1, min(int(parts[0]), TOTAL_STAGES))
             except ValueError:
                 stage_no = 1
-            self.stage_lbl.config(text=text or "加载中…", fg=STAGE_FG)
-            self._draw_bar(stage_no / TOTAL_STAGES, FILL)
+
+            # 带子进度格式: n|P|percent|text
+            if len(parts) >= 4 and parts[1] == "P":
+                try:
+                    sub_pct = max(0, min(100, int(parts[2])))
+                    text = parts[3]
+                except ValueError:
+                    sub_pct = 0
+                    text = "|".join(parts[1:])
+                # 阶段进度 = (stage_no-1)/TOTAL + stage_no 的子进度
+                stage_frac = (stage_no - 1) / TOTAL_STAGES
+                sub_frac = sub_pct / 100 / TOTAL_STAGES
+                self.stage_lbl.config(text=text, fg=STAGE_FG)
+                self._draw_bar(stage_frac + sub_frac, FILL)
+            else:
+                # 普通格式: n|text
+                text = "|".join(parts[1:])
+                self.stage_lbl.config(text=text or "加载中…", fg=STAGE_FG)
+                self._draw_bar(stage_no / TOTAL_STAGES, FILL)
             self._update_log()
             return
 
