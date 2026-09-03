@@ -92,6 +92,9 @@ class WebTrigger:
             for page in pages[1:]:  # 跳过第一页的总页数信息
                 addons: list[dict] = page
                 # 按下载次数降序排序，被禁用插件默认排序在最后
+                for addon in addons:
+                    # 排序key的顺序
+                    sorted(addon.keys())
                 addons.sort(key=lambda x: (x.get('disabled', False), -x.get('download_count', 0)))
             # 更新排序后的插件信息
             self.addon_info.update_note_content(dumps(pages, indent=4, ensure_ascii=False))
