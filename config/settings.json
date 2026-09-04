@@ -3,7 +3,7 @@
         "name": "游戏路径",
         "type": "string",
         "default": "",
-        "value": "d:/steam\\steamapps\\common\\Limbus Company\\",
+        "value": "",
         "description": "游戏安装路径, 请确保路径正确\n否则可能导致启动失败和其他错误问题",
         "page": "通用"
     },
@@ -67,7 +67,7 @@
         "type": "string",
         "default": "Player",
         "value": "Player",
-        "description": "你的用户名，将显示在边狱巴士的个人车票上",
+        "description": "你的用户名，将显示在边狱巴士的个人车票上。",
         "page": "美化"
     },
     "enable_show_user_name": {
@@ -75,7 +75,7 @@
         "type": "boolean",
         "default": true,
         "value": true,
-        "description": "是否显示用户名在边狱巴士的个人车票上",
+        "description": "是否显示用户名在边狱巴士的个人车票上，替换了原版的复制按钮的文字显示。",
         "page": "美化"
     },
     "enable_special_tip": {
@@ -115,7 +115,7 @@
         "type": "boolean",
         "default": true,
         "value": true,
-        "description": "是否对EGO名称应用颜色渐变和样式美化\n若启用, 除了正常EGO名称美化\n以及侵蚀的EGO名称将有特殊样式",
+        "description": "是否对EGO名称应用颜色渐变和样式美化\n若启用, 除了正常EGO名称美化\n以及侵蚀的EGO名称将有特殊样式。",
         "page": "美化"
     },
     "enable_text_gradient": {
@@ -123,7 +123,7 @@
         "type": "boolean",
         "default": true,
         "value": true,
-        "description": "是否对气泡文本应用颜色渐变",
+        "description": "是否对气泡文本应用颜色渐变。",
         "page": "美化"
     },
     "bubble_text_gradient_rate": {
@@ -131,7 +131,7 @@
         "type": "float",
         "default": 0.4,
         "value": 0.4,
-        "description": "气泡文本渐变系数\n越大的值意味着颜色渐变越快",
+        "description": "气泡文本渐变系数\n越大的值意味着颜色渐变越快。",
         "min": 0.1,
         "max": 1.0,
         "step": 0.1,
@@ -150,7 +150,7 @@
         "type": "float",
         "default": 0.4,
         "value": 0.4,
-        "description": "技能名称渐变系数\n越大的值意味着颜色渐变越快",
+        "description": "技能名称渐变系数\n越大的值意味着颜色渐变越快。",
         "min": 0.1,
         "max": 1.0,
         "step": 0.1,
@@ -172,14 +172,14 @@
         "min": 1,
         "max": 10,
         "step": 1,
-        "description": "carra2 解压和 rebank 处理使用的最大线程数",
+        "description": "carra2 解压和 rebank 处理使用的最大线程数。",
         "page": "Mod"
     },
     "hide_mod_load": {
         "name": "隐藏Mod加载窗口",
         "type": "boolean",
         "default": true,
-        "value": false,
+        "value": true,
         "description": "启动游戏时是否隐藏 Mod 加载窗口",
         "page": "Mod"
     },
@@ -247,7 +247,7 @@
         "type": "boolean",
         "default": true,
         "value": true,
-        "description": "是否启用毛玻璃效果 (卡片/面板半透明模糊)\n关闭后禁用 backdrop-filter, 减少 GPU 填充率开销",
+        "description": "是否启用毛玻璃效果 (卡片/面板半透明模糊)\n关闭后禁用 backdrop-filter, 减少 GPU 填充率开销。",
         "page": "其它"
     },
     "hw_accel": {
@@ -255,7 +255,7 @@
         "type": "boolean",
         "default": true,
         "value": true,
-        "description": "是否使用 GPU 渲染界面\n关闭后禁用 WebView GPU 加速 (--disable-gpu), 适合显卡驱动异常/黑屏场景\n修改后需重启生效",
+        "description": "是否为启动器界面使用 GPU 渲染界面\n关闭后禁用 WebView GPU 加速 (--disable-gpu), 适合显卡驱动异常/黑屏场景\n修改后需重启生效",
         "page": "其它"
     },
     "frame_limit": {
@@ -270,7 +270,7 @@
         ],
         "default": 3,
         "value": 3,
-        "description": "界面动画的最大帧率上限\n降低帧率可减少毛玻璃卡片等每帧重绘的 GPU 开销\n默认 60 FPS",
+        "description": "启动器界面动画的最大帧率上限\n降低帧率可减少毛玻璃卡片等每帧重绘的 GPU 开销\n默认 60 FPS",
         "page": "其它"
     },
     "glass_factor": {
@@ -362,8 +362,8 @@
     "version_info": {
         "name": "版本信息",
         "type": "UNABLE_TO_EDIT",
-        "default": "V0.8.5-release",
-        "value": "V0.8.5-release",
+        "default": "V0.8.6-release",
+        "value": "V0.8.6-release",
         "description": "当前应用程序的版本信息"
     },
     "mems": {
@@ -375,7 +375,7 @@
         },
         "value": {
             "tray_hint": false,
-            "version_notify_flag": true
+            "version_notify_flag": false
         },
         "description": "程序运行时的缓存数据\n不建议修改"
     }
