@@ -8,7 +8,7 @@ import requests
 from functions.web_update.web_trigger import WebTrigger
 from functions.extension.mod.mod_utils import ModManager
 from functions.extension.addon.addon_utils import AddonManager
-from functions.base.color_scheme import C, ThemeColors, darken_color, lighten_color, border_color
+from functions.base.color_scheme import C, darken_color, lighten_color, border_color
 from functions.base.custom_notebook import CustomNotebook
 from functions.base.style_utils import apply_scrollbar_style, RoundedFrame, RoundedButton
 
@@ -797,7 +797,7 @@ class DownloadCenterPage:
         self.load_data()  # 重新加载数据
         self.root.core.refresh_all_tabs()  # 刷新列表
 
-    def download_addon(self, addon):
+    def download_addon(self, addon, allow_update=True):
         # 准备下载信息
         import time
         
@@ -842,10 +842,11 @@ class DownloadCenterPage:
             # 恢复状态栏
             pass
         
-        threading.Thread(target=self.web_trigger.add_download_number_addon, args=(addon.get('name', None),)).start()  # 增加下载次数
-        threading.Thread(target=self.refresh_center).start()  # 刷新界面显示最新下载次数
+        if allow_update:
+            threading.Thread(target=self.web_trigger.add_download_number_addon, args=(addon.get('name', None),)).start()  # 增加下载次数
+            threading.Thread(target=self.refresh_center).start()  # 刷新界面显示最新下载次数
 
-    def download_mod(self, mod):
+    def download_mod(self, mod, allow_update=True):
         # 准备下载信息
         download_url = mod.get('dowload_url')
         if not download_url:
@@ -887,8 +888,9 @@ class DownloadCenterPage:
             # 恢复状态栏
             pass
 
-        threading.Thread(target=self.web_trigger.add_download_number_mod, args=(mod.get('name', None),)).start()  # 增加下载次数
-        threading.Thread(target=self.refresh_center).start()  # 刷新界面显示最新下载次数
+        if allow_update:
+            threading.Thread(target=self.web_trigger.add_download_number_mod, args=(mod.get('name', None),)).start()  # 增加下载次数
+            threading.Thread(target=self.refresh_center).start()  # 刷新界面显示最新下载次数
 
     def detect_mod_update(self):
         mod_paths = ModManager.get_mod_path()

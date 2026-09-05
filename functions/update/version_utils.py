@@ -86,7 +86,7 @@ def check_version_update(root):
     current_version: str = settings_manager.get_setting("version_info") # type: ignore
 
     need_update = False
-    version_note = Note(get_webnote('version_info')[0])
+    version_note = Note("version_info", get_webnote('version_info')[0])
     version_note.fetch_note_info()
     version_info = version_note.note_content
     if not version_info.strip():

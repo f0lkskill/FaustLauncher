@@ -4,7 +4,7 @@ from functions.web_update.zeroasso_download import download_and_extract_gui, Dow
 from json import loads,dumps
 from threading import Thread
 
-note = Note(get_webnote('res_info')[0])
+note = Note("res_info", get_webnote('res_info')[0])
 note.fetch_note_info()
 
 note_content = note.note_content

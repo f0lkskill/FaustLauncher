@@ -1,24 +1,28 @@
 import requests
 
 class Note:
-    def __init__(self, address, pwd="", read_only=False):
+    def __init__(self, id_name, address, pwd="", read_only=False):
+        self.note_id = id_name
         self.note_name = address
         self.pwd = pwd
         self.note_url = f"https://textdb.online/{address}"
         self.read_only = read_only
         self.note_content = ""
-        self.note_id = address
         self.req_id = None
         self.has_get = False
+        # print(f"初始化笔记 {self.note_id}。")
     
-    def fetch_note_info(self):
+    def fetch_note_info(self, allow_refresh=False):
         """读取笔记内容"""
         try:
-            if not self.has_get or self.note_content == "":
+            if (not self.has_get or self.note_content == "") or allow_refresh:
                 if self.has_get and self.note_content == "":
-                    print(f"尝试重新获取云端 {self.note_name} 内容。")
+                    print(f"尝试重新获取云端 {self.note_id} 内容。")
                 else:
-                    print(f"正在获取云端 {self.note_name} 内容。")
+                    if allow_refresh:
+                        print(f"正在刷新云端 {self.note_id} 内容。")
+                    else:print(f"正在获取云端 {self.note_id} 内容。")
+
                 r = requests.get(self.note_url, verify=False)
                 self.note_content = r.text
                 self.has_get = True
@@ -74,9 +78,9 @@ class Note:
                 self.note_url = result['data']['url']
                 self.req_id = result['req_id']
                 self.note_content = new_content
-                print(f"笔记更新成功！URL: {self.note_url}")
+                print(f" {self.note_id} 云端更新成功！")
             else:
-                print(f"API 返回失败: {result}")
+                print(f" {self.note_id} 云端更新失败: {result}")
                 # 即使失败，也更新内存
                 self.note_content = new_content
 
