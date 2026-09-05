@@ -1841,7 +1841,7 @@ if %errorlevel% equ 0 (
 
     # ---- 主页: 更新内容 / 随机推荐 ----
     def get_changelog(self):
-        """更新内容: 优先云端 version_info 最新版本说明, 失败回退本地 CHANGELOG.md"""
+        """更新内容: 优先云端 version_info 全部历史版本说明, 失败回退本地 CHANGELOG.md"""
         try:
             from functions.base.web_config import get_webnote
             from functions.webFunc.Webnote import Note
@@ -1850,11 +1850,32 @@ if %errorlevel% equ 0 (
             note.fetch_note_info()
             if note.note_content.strip():
                 info = loads(note.note_content)
-                latest = (info.get('latest_release_version') or '').strip()
-                entry = info.get('versions', {}).get(latest, {}) if latest else {}
-                desc = entry.get('description', '')
-                if desc:
-                    return desc
+                versions = info.get('versions', {})
+                if versions:
+                    # 版本号排序键: 取每段开头的数字 (兼容 v1.2.3 / 1.2.3-beta 等)
+                    def _ver_key(v):
+                        nums = []
+                        for seg in str(v).lstrip('vV').split('.'):
+                            n = ''
+                            for ch in seg:
+                                if ch.isdigit():
+                                    n += ch
+                                else:
+                                    break
+                            nums.append(int(n) if n else 0)
+                        return tuple(nums)
+                    ordered = sorted(versions.keys(), key=_ver_key, reverse=True)
+                    blocks = []
+                    for ver in ordered:
+                        entry = versions.get(ver, {}) or {}
+                        desc = (entry.get('description') or '').strip()
+                        if not desc:
+                            continue
+                        date = entry.get('date') or entry.get('data') or ''
+                        head = '# v' + str(ver) + ((' (' + str(date) + ')') if date else '')
+                        blocks.append(head + '\n' + desc)
+                    if blocks:
+                        return '\n\n'.join(blocks)
         except Exception as e:
             print(f"云端更新内容获取失败, 使用本地 CHANGELOG: {e}")
         for candidate in (
