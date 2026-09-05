@@ -1646,7 +1646,6 @@ if %errorlevel% equ 0 (
         if not getattr(self, '_web_trigger', None):
             from functions.web_update.web_trigger import WebTrigger
             self._web_trigger = WebTrigger()
-            print("WebTrigger 初始化完成")
         return self._web_trigger
 
     def _check_dc_config(self):
@@ -1847,7 +1846,7 @@ if %errorlevel% equ 0 (
             from functions.base.web_config import get_webnote
             from functions.webFunc.Webnote import Note
             from json import loads
-            note = Note(get_webnote('version_info')[0])
+            note = Note("version_info", get_webnote('version_info')[0])
             note.fetch_note_info()
             if note.note_content.strip():
                 info = loads(note.note_content)
@@ -1912,7 +1911,7 @@ if %errorlevel% equ 0 (
             from functions.base.settings_manager import get_settings_manager
             sm = get_settings_manager()
             current = str(sm.get_setting('version_info') or '')
-            note = Note(get_webnote('version_info')[0])
+            note = Note("version_info", get_webnote('version_info')[0])
             note.fetch_note_info()
             if not note.note_content.strip():
                 return {'current': current, 'has_update': False, 'error': '未配置版本信息'}

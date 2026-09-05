@@ -374,7 +374,7 @@ def _fetch_download_path(note_name: str, pwd: str, get_path) -> tuple[str, str] 
     """从云端笔记获取汉化包下载地址"""
     from webFunc import Note
     from json import loads
-    note = Note(note_name, pwd)
+    note = Note("translation", note_name, pwd)
     note.fetch_note_info()
 
     # print("获取到笔记内容:", note.note_content)
