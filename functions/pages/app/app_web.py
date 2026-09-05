@@ -1102,6 +1102,7 @@ class AppApi:
         except Exception as e:
             return {'error': str(e)}
 
+    
     def get_mods_data(self):
         """插件 (addons/) + 目录 Mod (mods/) 数据 (直接读 JSON 正确解析字段)"""
         import os, json
@@ -1872,10 +1873,12 @@ if %errorlevel% equ 0 (
                         if not desc:
                             continue
                         date = entry.get('date') or entry.get('data') or ''
-                        head = '# v' + str(ver) + ((' (' + str(date) + ')') if date else '')
-                        blocks.append(head + '\n' + desc)
+                        time = ((' (' + str(date) + ')') if date else '')
+                        lines = desc.split('\n')
+                        lines[0] = lines[0] + ' ' + time # type: ignore
+                        blocks.append('\n'.join(lines))
                     if blocks:
-                        return '\n\n'.join(blocks)
+                        return ('\n'+60*'-'+'\n').join(blocks)
         except Exception as e:
             print(f"云端更新内容获取失败, 使用本地 CHANGELOG: {e}")
         for candidate in (
