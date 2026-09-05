@@ -1386,6 +1386,13 @@ window.__onResError = function (msg) { toast('⚠ ' + msg, 'error', 6000); };
     }
   }
 
+  function markCardIsNew(card) {
+    const title = card.querySelector('.res-title');
+    if (title && !title.querySelector('.res-state-badge.is-new')) {
+      title.insertAdjacentHTML('beforeend', '<span class="res-state-badge is-new">新发布</span>');
+    }
+  }
+
   // 下载中心卡片: 资源管理卡片样式, 省略号 → 模态 (下载按钮在模态内), 已安装检测
   function buildDCCard(item, kind) {
     const disabled = item.disabled;
@@ -1418,6 +1425,9 @@ window.__onResError = function (msg) { toast('⚠ ' + msg, 'error', 6000); };
           .then(r => { if (r && r.downloaded) { markCardInstalled(card); downloadedSeen.add(key); } })
           .catch(() => {});
       }
+    }
+    if (item.is_new) {
+      markCardIsNew(card);
     }
     return card;
   }

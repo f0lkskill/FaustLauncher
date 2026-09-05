@@ -458,7 +458,7 @@ def upload_mod_info(mod_folder, address=None, log=None, urls=None, keep_old_urls
     info, err = load_mod_info(mod_folder)
     if err:
         return False, err
-    name = info['name']
+    name = info['name'] # type: ignore
     if not address:
         address, _pwd = get_webnote('mod_info')
     if not address:
@@ -504,6 +504,7 @@ def upload_mod_info(mod_folder, address=None, log=None, urls=None, keep_old_urls
             'icon_url': icon_url,
             'download_count': old_count,
             'disabled': False,
+            'is_new': True
         }
 
         # 新 Mod 置顶, 重新按每页 5 个分页 (同名旧条目被替换)

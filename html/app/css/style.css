@@ -425,6 +425,7 @@ body.modal-open .res-card {
 .res-state-badge.on { color: var(--success); background: rgba(46, 160, 67, 0.15); border: 1px solid rgba(46, 160, 67, 0.35); }
 .res-state-badge.off { color: var(--text-3); background: rgba(255, 255, 255, 0.05); border: 1px solid var(--border); }
 .res-state-badge.installed { color: var(--info); background: rgba(79, 193, 255, 0.13); border: 1px solid rgba(79, 193, 255, 0.35); }
+.res-state-badge.is-new { color: rgba(17, 255, 0, 0.696); background: rgba(29, 221, 0, 0.13); border: 1px solid rgba(30, 255, 0, 0.35); }
 .res-desc {
   font-size: 12.5px; color: var(--text-2); margin-top: 4px; line-height: 1.5;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;
