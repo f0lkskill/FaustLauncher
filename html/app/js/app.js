@@ -1952,11 +1952,20 @@ window.__onResError = function (msg) { toast('⚠ ' + msg, 'error', 6000); };
   }
 
   function shortPath(p) {
-    p = String(p || '');
-    if (p.length <= 28) return p;
-    const parts = p.split(/[\\/]/);
-    const head = parts.slice(0, 2).join('/');
-    return head + '/…/' + parts.slice(-1)[0];
+      p = String(p || '');
+      const parts = p.split(/[\\/]/);
+      const fileName = parts.slice(-1)[0]; // 获取最后一级
+      
+      // 如果整个路径长度小于等于10，直接返回
+      if (p.length <= 10) return p;
+      
+      // 获取路径部分（不含文件名）
+      const pathPart = parts.slice(0, -1).join('/');
+      // 路径部分取前10个字符，加上文件名
+      if (pathPart.length > 10) {
+          return pathPart.substring(0, 10) + '.../' + fileName;
+      }
+      return p;
   }
 
   function applyGlassFactor() {
