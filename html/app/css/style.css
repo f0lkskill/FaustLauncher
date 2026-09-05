@@ -426,6 +426,50 @@ body.modal-open .res-card {
 .res-state-badge.off { color: var(--text-3); background: rgba(255, 255, 255, 0.05); border: 1px solid var(--border); }
 .res-state-badge.installed { color: var(--info); background: rgba(79, 193, 255, 0.13); border: 1px solid rgba(79, 193, 255, 0.35); }
 .res-state-badge.is-new { color: rgba(17, 255, 0, 0.696); background: rgba(29, 221, 0, 0.13); border: 1px solid rgba(30, 255, 0, 0.35); }
+/* NEW 标识: 周期性 摇摆+放大+表面泛光 (每 3s 播放一次, 播放约 1.2s) */
+@keyframes res-new-pop {
+  0%, 100% {
+    transform: rotate(0deg) scale(1);
+    background-color: rgba(29, 221, 0, 0.13);
+    color: rgba(17, 255, 0, 0.696);
+    border-color: rgba(30, 255, 0, 0.35);
+  }
+  8% {
+    transform: rotate(-8deg) scale(1.1);
+    background-color: rgba(29, 221, 0, 0.38);
+    color: #c8ffc0;
+    border-color: rgba(80, 255, 50, 0.85);
+  }
+  16% {
+    transform: rotate(8deg) scale(1.18);
+    background-color: rgba(29, 221, 0, 0.62);
+    color: #ffffff;
+    border-color: rgba(110, 255, 80, 1);
+  }
+  24% {
+    transform: rotate(-5deg) scale(1.12);
+    background-color: rgba(29, 221, 0, 0.35);
+    color: #c0ffb8;
+    border-color: rgba(70, 255, 40, 0.7);
+  }
+  32% {
+    transform: rotate(3deg) scale(1.04);
+    background-color: rgba(29, 221, 0, 0.2);
+    color: rgba(40, 255, 20, 0.85);
+    border-color: rgba(45, 255, 15, 0.5);
+  }
+  40% {
+    transform: rotate(0deg) scale(1);
+    background-color: rgba(29, 221, 0, 0.13);
+    color: rgba(17, 255, 0, 0.696);
+    border-color: rgba(30, 255, 0, 0.35);
+  }
+}
+.res-state-badge.is-new {
+  display: inline-block;          /* 关键: inline 元素 transform 无效, 必须转 inline-block */
+  transform-origin: 50% 80%;
+  animation: res-new-pop 3s ease-in-out infinite;
+}
 .res-desc {
   font-size: 12.5px; color: var(--text-2); margin-top: 4px; line-height: 1.5;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;
@@ -1064,6 +1108,7 @@ body.modal-open .res-card {
 
 /* ---------- 设置 ---------- */
 .settings-group { margin-bottom: 22px; }
+.settings-group[hidden] { display: none; }
 /* 设置页整体套毛玻璃背景板, 防止字体与背景重叠看不清 */
 #settings-groups {
   background: rgba(26, 29, 36, 0.55);
@@ -1072,6 +1117,23 @@ body.modal-open .res-card {
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: var(--radius);
   padding: 18px 20px;
+}
+/* 设置分区顶部分页 */
+.settings-tabs {
+  display: flex; gap: 8px; flex-wrap: wrap;
+  margin-bottom: 16px; padding-bottom: 14px;
+  border-bottom: 1px solid var(--border);
+}
+.set-tab {
+  font-family: var(--font); font-size: 13px; cursor: pointer;
+  border-radius: 8px; border: 1px solid var(--border-2);
+  padding: 7px 16px; color: var(--text-2); background: var(--card-2);
+  transition: transform .18s ease, border-color .18s ease, color .18s ease, background-color .18s ease, box-shadow .18s ease, opacity .18s ease;
+}
+.set-tab:hover { color: var(--text); border-color: var(--border); }
+.set-tab.active {
+  border-color: var(--accent); color: var(--text); font-weight: 600;
+  background: rgba(55,148,255,.12); box-shadow: 0 0 12px rgba(55,148,255,.18);
 }
 .settings-group > .sg-title {
   font-size: 13px; font-weight: 700; color: var(--text-2);
@@ -1082,7 +1144,22 @@ body.modal-open .res-card {
   padding: 12px 14px; border-radius: 10px;
   background: rgba(37,37,38,.6); border: 1px solid var(--border);
   margin-bottom: 8px;
+  transition: border-color .18s ease, background-color .18s ease, transform .18s ease;
 }
+.set-row:hover { border-color: var(--border-2); background: rgba(45,45,48,.72); }
+/* 每项独立重置按钮 */
+.set-reset {
+  flex-shrink: 0; width: 30px; height: 30px; border-radius: 8px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: transparent; border: none; color: var(--text-3);
+  cursor: pointer; font-size: 15px; line-height: 1;
+  transition: transform .18s ease, border-color .18s ease, color .18s ease, background-color .18s ease, box-shadow .18s ease, opacity .18s ease;
+}
+.set-reset:hover {
+  background: rgba(255, 255, 255, 0.08); color: var(--text);
+  transform: rotate(-30deg);
+}
+.set-reset:active { transform: rotate(-30deg) scale(.92); }
 .set-info { flex: 1; min-width: 0; }
 .set-name { font-size: 14px; font-weight: 600; }
 .set-desc { font-size: 11.5px; color: var(--text-3); margin-top: 3px; line-height: 1.5; }

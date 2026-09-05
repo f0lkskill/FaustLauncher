@@ -2632,6 +2632,50 @@ function layoutToolsCarousel(smooth) {
     if (s && s.key_el) s.key_el.dataset.changed = '1';
   }
 
+  let settingsActiveTab = null;   // 当前激活的设置分区 tab (重渲染后保留)
+
+  // 设置项即时生效副作用 (重置单项后手动触发, 与 buildControl 中保持一致)
+  function applySettingSideEffect(key, v) {
+    if (!BOOT || !BOOT.settings_schema) return;
+    const s = BOOT.settings_schema[key];
+    if (key === 'glass_enabled') { BOOT.settings_schema[key].value = v; applyHwAccel(); }
+    else if (key === 'translate_source') updateSourceChip();
+    else if (key === 'page_layout') {
+      BOOT.settings_schema[key].value = v;
+      if (currentPage === 'features' && BOOT.features) renderFeatures(BOOT.features);
+      if (currentPage === 'tools' && BOOT.tools) renderTools(BOOT.tools);
+    }
+    else if (key === 'frame_limit') { BOOT.settings_schema[key].value = v; applyFrameLimit(); }
+    else if (key === 'bg_gaussian_blur') refreshBackgrounds();
+    else if (key === 'glass_factor') { BOOT.settings_schema[key].value = v; applyGlassFactor(); }
+    else if (key === 'game_path') updatePathChip();
+    else if (s && s.type === 'color') applyTheme(v);
+  }
+
+  // 切换设置分区 tab
+  function switchSettingsTab(page) {
+    settingsActiveTab = page;
+    $$('#settings-groups .set-tab').forEach(t => t.classList.toggle('active', t.dataset.page === page));
+    $$('#settings-groups .settings-group').forEach(g => { g.hidden = g.dataset.page !== page; });
+  }
+
+  // 重置单个设置项为默认值
+  async function resetOneSetting(key) {
+    if (!api) { toast('浏览器预览模式', 'warn'); return; }
+    const s = BOOT.settings_schema[key];
+    if (!s) return;
+    if (s.type === 'UNABLE_TO_EDIT' || s.type === 'unable_to_edit') return;
+    if (s.default === undefined) { toast('该设置项没有默认值', 'warn'); return; }
+    try {
+      await api.set_setting(key, s.default);
+      delete SETTING_CHANGES[key];
+      if (BOOT.settings_schema) BOOT.settings_schema[key].value = s.default;
+      applySettingSideEffect(key, s.default);
+      renderSettings(BOOT.settings_schema);
+      toast('已重置: ' + (s.name || key), 'success');
+    } catch (e) { toast('重置失败: ' + e, 'error'); }
+  }
+
   function renderSettings(schema) {
     const container = $('#settings-groups');
     if (!container) return;
@@ -2651,10 +2695,26 @@ function layoutToolsCarousel(smooth) {
       const ia = order.indexOf(a), ib = order.indexOf(b);
       return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
     });
+    if (!pages.includes(settingsActiveTab)) settingsActiveTab = pages[0] || null;
+    // 顶部分页 tab
+    const tabsBox = document.createElement('div');
+    tabsBox.className = 'settings-tabs';
+    pages.forEach(page => {
+      const t = document.createElement('button');
+      t.className = 'set-tab' + (page === settingsActiveTab ? ' active' : '');
+      t.type = 'button';
+      t.dataset.page = page;
+      t.textContent = page;
+      t.onclick = () => switchSettingsTab(page);
+      tabsBox.appendChild(t);
+    });
+    container.appendChild(tabsBox);
+    // 分区内容 (仅显示当前 tab)
     pages.forEach(page => {
       const g = document.createElement('div');
       g.className = 'settings-group';
-      g.innerHTML = '<div class="sg-title">' + esc(page) + '</div>';
+      g.dataset.page = page;
+      if (page !== settingsActiveTab) g.hidden = true;
       groups[page].forEach(({ key, s }) => {
         try {
           const row = document.createElement('div');
@@ -2664,8 +2724,18 @@ function layoutToolsCarousel(smooth) {
             '<div class="set-name">' + esc(s.name || key) + '</div>' +
             (s.description ? '<div class="set-desc">' + esc(s.description).replace(/\n/g, '<br>') + '</div>' : '') +
             '</div>';
-        row.appendChild(buildControl(key, s));
-        g.appendChild(row);
+          row.appendChild(buildControl(key, s));
+          // 每项独立重置按钮 (不可编辑项除外)
+          if (s.type !== 'UNABLE_TO_EDIT' && s.type !== 'unable_to_edit' && s.default !== undefined) {
+            const rb = document.createElement('button');
+            rb.className = 'set-reset';
+            rb.type = 'button';
+            rb.title = '重置该设置为默认值';
+            rb.innerHTML = '↺';
+            rb.onclick = () => resetOneSetting(key);
+            row.appendChild(rb);
+          }
+          g.appendChild(row);
         } catch (err) { /* 单个设置项渲染失败不阻断整体 */ }
       });
       container.appendChild(g);
