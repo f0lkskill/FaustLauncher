@@ -6,15 +6,22 @@ from json import loads, dumps
 class WebTrigger:
     """Web触发器，负责获取来自Web的插件和mod信息"""
     
-    def __init__(self, ):
+    def __init__(self):
+        """初始化 WebTrigger 实例"""
         self.addon_info = Note("addon_info", get_webnote('addon_info')[0])
         self.mod_info = Note("mod_info", get_webnote('mod_info')[0])
 
-        # 取消初始化排序
-        # sort_thread = Thread(target=self.sort_info_by_download_number)
-        # sort_thread.start()
-
     def _get_note_info(self, note:Note, allow_refresh=False):
+        """获取指定笔记的分页信息
+
+        Args:
+            note (Note): 笔记实例
+        Args:
+            allow_refresh (bool, optional): 是否允许刷新，默认值为 False
+
+        Returns:
+            _type_: _description_
+        """
         note.fetch_note_info(allow_refresh)
         if not note.note_content.strip():
             return {}
@@ -35,7 +42,19 @@ class WebTrigger:
         return self._get_note_info(self.mod_info, allow_refresh)[page]
     
     def _fetch_all(self, get_page, allow_refresh=False) -> list[dict]:
-        """获取所有分页信息"""
+        """获取所有分页信息
+
+        Args:
+            get_page (_type_): 获取指定分页信息的函数
+        Args:
+            allow_refresh (bool, optional): 是否允许刷新，默认值为 False
+
+        Returns:
+            list[dict]: 所有分页信息的列表
+        Args:
+            allow_refresh (bool, optional): 是否允许刷新，默认值为 False
+        """
+
         total_page = get_page(0, allow_refresh=allow_refresh)['total_page']
         info_list = []
         for page in range(1, total_page + 1):
@@ -51,7 +70,15 @@ class WebTrigger:
         return self._fetch_all(self.get_mod_info, allow_refresh)
     
     def _add_download_number(self, note: Note, name: str):
-        """增加指定插件或mod的下载次数"""
+        """增加指定插件或mod的下载次数
+
+        Args:
+            note (Note): 笔记实例
+            name (str): 插件或mod的名称
+        
+        Returns:
+            无名称的时候返回 None
+        """
         
         if not name:
             return
@@ -139,14 +166,7 @@ class WebTrigger:
             # 插入总页数和总mod数
             new_pages.insert(0, {'total_page': page_count, 'total_mods': len(mods)})
 
-            # # 用 enumerate 安全地按索引分配内容，避免 index() 查找导致的错误
-            # for idx, page in enumerate(pages[1:], start=0):
-            #     if idx < len(new_pages):
-            #         page = dumps(new_pages[idx], indent=4, ensure_ascii=False)
-
-
             # 更新排序后的mod信息
-            # print('lists updated:\n',dumps(new_pages, indent=4, ensure_ascii=False))
             self.mod_info.update_note_content(dumps(new_pages, indent=4, ensure_ascii=False))
             print("Mod信息按下载次数排序完成")
         except Exception as e:
