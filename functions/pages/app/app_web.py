@@ -658,6 +658,12 @@ class AppApi:
     """供前端调用的 pywebview js_api"""
 
     def __init__(self, core, window_ref):
+        """初始化 AppApi 实例
+
+        Args:
+            core (_type_): 核心后端实例
+            window_ref (_type_): 窗口引用字典, 包含 win 键
+        """
         self.core = core
         self.window_ref = window_ref
         self.ready_callback = None
@@ -2223,7 +2229,18 @@ def _start_tray(core, window, win32_show):
 # ============================================================
 
 def run_web_ui(debug: bool = False):
-    """主入口: 启动 pywebview 主窗口 (必须运行在主线程)"""
+    """主入口: 启动 pywebview 主窗口 (必须运行在主线程)
+
+    Args:
+        debug (bool, optional): 是否开启调试模式. 
+
+    Raises:
+        SystemExit: 未安装 pywebview 依赖
+        SystemExit: 页面文件不存在
+
+    Returns:
+        _type_: _description_
+    """
     try:
         import webview
     except BaseException as e:

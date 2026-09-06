@@ -100,6 +100,7 @@ class BuildGUI:
         Args:
             version_info (str): 目标版本号(如 V0.6.0-pre.7.fix.2)
         """
+        
         self.version_info = version_info
         self.root = tk.Tk()
         self.root.title(f'FaustLauncher 构建工具 — v{version_info}')
@@ -110,7 +111,7 @@ class BuildGUI:
             self.root.iconbitmap('assets/images/icon/icon.ico')
         except Exception:
             pass
-        
+
         self._log_queue = queue.Queue()
         self._pyi_ok = False
         self._setup_ui()
