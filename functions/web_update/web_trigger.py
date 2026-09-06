@@ -69,6 +69,13 @@ class WebTrigger:
                     # note.update_note_content(dumps(pages, indent=4, ensure_ascii=False))
                     break
 
+        # 实现更新下载次数
+        if note.note_id == "addon_info":
+            note.note_content = dumps(pages, indent=4, ensure_ascii=False)
+        elif note.note_id == "mod_info":
+            note.note_content = dumps(pages, indent=4, ensure_ascii=False)
+
+        # 进行统一排序
         self.sort_info_by_download_number()
 
     def add_download_number_addon(self, addon_name: str):
@@ -80,9 +87,9 @@ class WebTrigger:
         """增加指定mod的下载次数"""
         self.fetch_all_mod_info(True)
         self._add_download_number(self.mod_info, mod_name)
-    
-    def sort_info_by_download_number(self):
-        """按下载次数排序插件和mod信息"""
+
+    def sort_addon_info_by_download_number(self):
+        """按插件下载次数排序"""
         # 排序插件信息
         try:
             pages = self.get_note_info_addon()
@@ -102,6 +109,9 @@ class WebTrigger:
             print("插件信息按下载次数排序完成")
         except Exception as e:
             print(f"排序插件信息时出错: {e}")
+    
+    def sort_info_by_download_number(self, kind: str = "all"):
+        """按下载次数排序插件和mod信息"""
 
         # 排序mod信息
         try:
