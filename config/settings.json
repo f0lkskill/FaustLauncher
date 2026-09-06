@@ -3,7 +3,7 @@
         "name": "游戏路径",
         "type": "string",
         "default": "",
-        "value": "d:/steam\\steamapps\\common\\Limbus Company\\",
+        "value": "",
         "description": "游戏安装路径, 请确保路径正确\n否则可能导致启动失败和其他错误问题",
         "page": "通用"
     },
