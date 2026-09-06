@@ -93,9 +93,13 @@ def upload_version_info(address, version, download_url='', log=None): # type: ig
     except Exception as e:
         log(f'⚠ 上传版本信息失败(不影响构建结果): {e}\n')
 
-
 class BuildGUI:
     def __init__(self, version_info):
+        """构建 FaustLauncher 可视化构建工具 GUI
+
+        Args:
+            version_info (str): 目标版本号(如 V0.6.0-pre.7.fix.2)
+        """
         self.version_info = version_info
         self.root = tk.Tk()
         self.root.title(f'FaustLauncher 构建工具 — v{version_info}')
@@ -106,6 +110,7 @@ class BuildGUI:
             self.root.iconbitmap('assets/images/icon/icon.ico')
         except Exception:
             pass
+        
         self._log_queue = queue.Queue()
         self._pyi_ok = False
         self._setup_ui()
@@ -179,7 +184,7 @@ class BuildGUI:
         log_header.pack(fill=tk.X)
         tk.Label(log_header, text='构建日志', bg=LOG_BG, fg=MUTED,
                 font=('Microsoft YaHei UI', 8)).pack(anchor='w', padx=8, pady=2)
-
+        
         text_frame = tk.Frame(log_frame, bg=LOG_BG)
         text_frame.pack(fill=tk.BOTH, expand=True)
 
@@ -264,7 +269,7 @@ class BuildGUI:
 
     def _run_all_steps(self):
         vi = self.version_info
-
+        
         self._set_step(0, 'running')
         self._set_status('正在运行 PyInstaller...')
         self._set_progress(3)
@@ -276,6 +281,7 @@ class BuildGUI:
             self._set_status(f'PyInstaller 异常: {e}', DANGER)
             self._on_done(False)
             return
+        
         if rc != 0:
             self._set_step(0, 'failed')
             self._set_status(f'PyInstaller 失败 (code {rc})', DANGER)
@@ -406,7 +412,6 @@ class BuildGUI:
             self._log('⚠ 未发现 config/web_config.json, 云端功能将静默降级\n', DANGER)
         self._set_step(6, 'done')
         self._set_progress(62)
-
         # ---- 复制资源 (仅 7-zip; mod_loader/bubble_speech/llc_babel 等由云端按需下载) ----
         self._set_step(7, 'running')
         self._set_status('复制资源文件...')
