@@ -1,6 +1,5 @@
 import requests
 import os
-import time
 import json
 import base64
 from datetime import datetime, timedelta
@@ -185,7 +184,7 @@ def main():
     
     print(f"开始检查，ADDRESS: {ADDRESS}")
     
-    note_ = Note(address=ADDRESS, pwd="AutoTranslate")
+    note_ = Note(id_name="FaustLauncher", address=ADDRESS, pwd="AutoTranslate")
     note_.fetch_note_info()
     try:
         current_data = json.loads(note_.note_content)
