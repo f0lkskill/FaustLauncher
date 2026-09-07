@@ -1,6 +1,7 @@
 """游戏启动流水线 — 将启动前的准备工作拆分为清晰的步骤。"""
 
 import os
+import sys
 import json
 import shutil
 import traceback
@@ -377,6 +378,51 @@ class GameLauncher:
                 print(f"执行游戏启动回调失败: {e}")
 
     def _launch_game_process(self):
-        """调用 mod loader 启动游戏进程。"""
+        """调用 mod loader 启动游戏进程，并在独立进程中启动成就监测 Hook。"""
         from functions.base.load_mod import launch_game_process
+        # 先启动游戏进程
         launch_game_process()
+        # 启动成就监测 Hook (独立子进程, 避免主进程结束时被 kill)
+        self._start_achievement_hook()
+
+    def _start_achievement_hook(self):
+        """启动成就监测 Hook（独立子进程），日志写入 logs/achievement_hook.log。"""
+        try:
+            import subprocess
+
+            log_dir = r"C:\Users\folkskill\AppData\LocalLow\ProjectMoon\LimbusCompany"
+            game_log_path = os.path.join(log_dir, "Player.log")
+
+            project_root = os.path.dirname(os.path.dirname(os.path.dirname(
+                os.path.abspath(__file__)
+            )))
+            main_script = os.path.join(project_root, "main.py")
+            logs_dir = os.path.join(project_root, "logs")
+            hook_log_path = os.path.join(logs_dir, "achievement_hook.log")
+
+            # 确保 logs 目录存在
+            os.makedirs(logs_dir, exist_ok=True)
+            # 每次启动前清空上次的日志
+            with open(hook_log_path, 'w', encoding='utf-8') as f:
+                f.write("")
+
+            self._progress("启动成就监测...", "🏆")
+
+            cmd = [
+                sys.executable,
+                main_script,
+                "--achievement-hook",
+                "--log", game_log_path,
+                "--output", hook_log_path,
+            ]
+            subprocess.Popen(
+                cmd,
+                cwd=project_root,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                stdin=subprocess.DEVNULL,
+                creationflags=0x08000000,  # CREATE_NO_WINDOW
+            )
+        except Exception as e:
+            print(f"[成就] 启动成就监测失败 (不影响游戏启动): {e}")
+            traceback.print_exc()

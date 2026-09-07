@@ -160,7 +160,7 @@
         "name": "启用Mod功能",
         "type": "boolean",
         "default": true,
-        "value": true,
+        "value": false,
         "description": "是否加载 Mod\n注意: 由于游戏切换了新的引擎，导致大部分mod已经完全失效，不建议您启用 Mod 加载。\n我们将会在接下来的版本进行修复。",
         "page": "Mod"
     },
@@ -375,7 +375,7 @@
         },
         "value": {
             "tray_hint": false,
-            "version_notify_flag": false
+            "version_notify_flag": true
         },
         "description": "程序运行时的缓存数据\n不建议修改"
     }
