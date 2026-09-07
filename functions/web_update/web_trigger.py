@@ -54,7 +54,7 @@ class WebTrigger:
         Args:
             allow_refresh (bool, optional): 是否允许刷新，默认值为 False
         """
-
+        
         total_page = get_page(0, allow_refresh=allow_refresh)['total_page']
         info_list = []
         for page in range(1, total_page + 1):
@@ -93,7 +93,6 @@ class WebTrigger:
             for item in page:
                 if item['name'] == name:
                     item['download_count'] += 1
-                    # note.update_note_content(dumps(pages, indent=4, ensure_ascii=False))
                     break
 
         # 实现更新下载次数
