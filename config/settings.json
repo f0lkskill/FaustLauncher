@@ -126,6 +126,14 @@
         "description": "是否对气泡文本应用颜色渐变。",
         "page": "美化"
     },
+    "enable_bubble_color": {
+        "name": "启用气泡文本颜色",
+        "type": "boolean",
+        "default": true,
+        "value": true,
+        "description": "是否启用气泡文本的 <color> 颜色标签\n开启 (默认): 气泡文本正常显示汉化颜色并按设置应用渐变色美化 (原版功能), 启动流程中不对气泡文件做额外处理\n关闭: 对所有转移后的气泡文件去除 <color=#xxxxxx> 颜色标签, 气泡文本以默认颜色显示",
+        "page": "美化"
+    },
     "bubble_text_gradient_rate": {
         "name": "气泡文本渐变系数",
         "type": "float",

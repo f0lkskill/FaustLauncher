@@ -281,14 +281,24 @@ class GameLauncher:
         lang_path = translation_source_lib.get_game_lang_dir(self._game_path)
         lang_root = os.path.join(self._game_path, 'LimbusCompany_Data', 'Lang')
 
-        if self._settings.get_setting('enable_text_gradient'):
+        # 气泡文本颜色开关 (enable_bubble_color, 默认开启):
+        #   开启 -> 原版功能: 启动流程不对气泡文件做额外处理, 正常应用气泡文本渐变色;
+        #   关闭 -> 对所有转移后 (游戏目录) 的气泡文件去除 <color=#xxxxxx> 颜色标签, 气泡文本恢复默认颜色
+        _bubble_color = self._settings.get_setting('enable_bubble_color')
+        if _bubble_color is False:
+            try:
+                self._progress("正在去除气泡文本颜色标签...", "🚀")
+                from functions.fancy.dialog_colorful import main_remove_color as remove_bubble_color
+                remove_bubble_color()
+            except Exception as e:
+                print(f"[美化] 去除气泡文本颜色跳过: {e}")
+        elif self._settings.get_setting('enable_text_gradient'):
             try:
                 self._progress("正在应用对话文本渐变色...", "🚀")
                 from functions.fancy.dialog_colorful import main as handle_colorful
                 handle_colorful()
             except Exception as e:
                 print(f"[美化] 对话文本渐变色跳过: {e}")
-
         if self._settings.get_setting('enable_ego_style'):
             try:
                 self._progress("正在应用 EGO 样式美化...", "🚀")
