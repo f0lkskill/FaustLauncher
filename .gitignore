@@ -5,7 +5,7 @@ __pycache__/
 
 # C extensions
 *.so
-
+test/
 settings.json.bak
 bubble_speech/
 siner_skill_info/

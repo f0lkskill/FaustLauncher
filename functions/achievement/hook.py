@@ -23,8 +23,8 @@ from functions.achievement.achievements import (
     RARE_ITEM_IDS, TEN_PULL_IDS,
     CHARACTER_ID_MAP,
     get_state, check_achievements,
-    record_zero_item, poll_inventory_window,
-    achievements,
+    record_zero_item, poll_inventory_window, detect_owned_items,
+    register_inventory_open, achievements,
 )
 
 
@@ -267,20 +267,43 @@ class AchievementHook:
 
                 # 浏览归并: 0 记录簇空闲 → 记一次背包/兑换页浏览并查成就
                 if self.running:
-                    if poll_inventory_window() is not None:
-                        self._settle_inventory_browse()
+                    zero_ids = poll_inventory_window()
+                    if zero_ids is not None:
+                        self._settle_inventory_browse(zero_ids)
+                    # 内存成就按轮询周期检查；读取失败时 MemoryAchievement 保持未解锁。
+                    self._check_memory_achievements()
 
                 time.sleep(CHECK_INTERVAL)
             except Exception as e:
                 self.log_callback(f"[AchievementHook] 监控错误: {e}")
                 time.sleep(1)
 
-    def _settle_inventory_browse(self):
-        """一轮背包/兑换页浏览结束: 计数并触发成就检查。"""
+    def _check_memory_achievements(self):
+        """检查基于进程内存的成就。"""
+        unlocked = []
+        for ach in achievements:
+            if ach.unlocked or not hasattr(ach, "check"):
+                continue
+            # 只处理 MemoryAchievement，避免重复触发普通 check_func。
+            if ach.__class__.__name__ == "FullEnkephalinAchievement":
+                try:
+                    if ach.check(): # type: ignore
+                        unlocked.append(ach)
+                except Exception:
+                    pass
+        if unlocked:
+            for ach in unlocked:
+                self.log_callback(f"  [成就] 解锁: {ach.name}")
+            _notify_toast(unlocked)
+
+    def _settle_inventory_browse(self, zero_ids: set[int]):
+        """一轮背包/兑换页浏览结束: 反向检测物品并触发成就检查。"""
         try:
-            from functions.achievement.achievements import register_inventory_open
+            newly = detect_owned_items(zero_ids)
             register_inventory_open()
-            s = get_state()
+            if newly:
+                for item_id, item_name in newly:
+                    self.log_callback(f"  [物品] {item_name} (ID:{item_id})")
             unlocked = check_achievements(self.log_callback)
             if unlocked:
                 self.log_callback("")

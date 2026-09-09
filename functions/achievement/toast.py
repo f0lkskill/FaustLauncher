@@ -18,9 +18,9 @@ from PIL import Image, ImageDraw, ImageTk
 # ============ 常量 ============
 CARD_W = 356
 CARD_H = 94
-RADIUS = 7                 # 圆角
+RADIUS = 10                 # 圆角
 PAD_RIGHT = 18
-PAD_BOTTOM = 60            # 避开任务栏
+PAD_BOTTOM = 10            # 避开任务栏
 MAX_SHOW = 4
 GAP = 8
 HOLD_FRAMES = 190          # ~3.1s @60fps
@@ -114,8 +114,8 @@ def render_toast_bg(rarity: str = "common") -> Image.Image:
     # 图标 (圆角, 无边框)
     icon_path = _resolve_icon_path()
     if icon_path:
-        icon = _rounded_icon(icon_path, size=60, radius=10)
-        ic_x, ic_y = 12, (CARD_H - 60) // 2
+        icon = _rounded_icon(icon_path, size=70, radius=10)
+        ic_x, ic_y = 12, (CARD_H - 70) // 2
         im.paste(icon, (ic_x, ic_y), icon)
 
     # key 色抠圆角外
@@ -175,23 +175,23 @@ class _ToastWindow:
         text_x = 84
         text_w = CARD_W - text_x - 14
 
-        tk.Label(self.win, text="解锁成就",
-                 font=(FONT_FAMILY, 11, "bold"),
-                 fg=_hex(title_col), bg=mid_col, bd=0, anchor="w").place(
-            x=text_x, y=12, width=text_w, height=16)
+        # tk.Label(self.win, text="解锁成就",
+        #          font=(FONT_FAMILY, 8, "bold"),
+        #          fg="#ffffff", bg=mid_col, bd=0, anchor="w").place(
+        #     x=text_x, y=12, width=text_w, height=16)
 
         tk.Label(self.win, text=name,
                  font=(FONT_FAMILY, 15, "bold"),
-                 fg="#ffffff", bg=mid_col, bd=0, anchor="w").place(
-            x=text_x, y=31, width=text_w, height=24)
+                 fg=_hex(title_col), bg=mid_col, bd=0, anchor="w").place(
+            x=text_x, y=18, width=text_w, height=24)
 
         if desc:
             if len(desc) > 24:
                 desc = desc[:23] + "…"
             tk.Label(self.win, text=desc,
-                     font=(FONT_FAMILY, 10, "normal"),
+                     font=(FONT_FAMILY, 11, "normal"),
                      fg="#969ca6", bg=mid_col, bd=0, anchor="w").place(
-                x=text_x, y=58, width=text_w, height=18)
+                x=text_x, y=46, width=text_w, height=18)
 
         sw = self.win.winfo_screenwidth()
         sh = self.win.winfo_screenheight()
