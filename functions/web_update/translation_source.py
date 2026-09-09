@@ -32,12 +32,28 @@ PLATFORM_TAG_BY_SOURCE = {
     SOURCE_OURPLAY_GOD: "ourplay_god",
 }
 
+extend_translate_source:list[CustomTranslateSource] = []
+
+class CustomTranslateSource:
+    """自定义汉化包平台方, 供插件扩展"""
+    def __init__(self, source: str, name: str):
+        """初始化自定义汉化包平台方
+
+        Args:
+            source (str): 汉化路径
+            name (str): 平台名称
+        """
+        self.source = source
+        self.name = name
+
+    def __str__(self):
+        return self.name, self.source
 
 def get_translate_source() -> int:
     """当前汉化包平台方 (0 零协会 / 1 OurPlay 普通 / 2 OurPlay 神人)"""
     try:
         value = get_settings_manager().get_setting("translate_source")
-        value = int(value)
+        value = int(value) # type: ignore
         if value not in DIR_NAME_BY_SOURCE:
             return SOURCE_ZERO
         return value
@@ -51,14 +67,21 @@ def get_translation_dir_name() -> str:
 
 
 def get_translation_dir() -> str:
-    """启动器本地 lang/ 下的汉化目录 (如 lang/LLC_zh-CN)"""
-    return os.path.join("lang", get_translation_dir_name())
+    """
+    启动器本地 lang/ 下的汉化目录 (如 lang/LLC_zh-CN)
 
+    Returns:
+        str: 汉化目录路径 (如 lang/LLC_zh-CN), 若有插件自定义汉化包平台方则返回最后一个自定义路径。
+    """
+    if len(extend_translate_source) == 0:
+        dir_source = os.path.join("lang", get_translation_dir_name())
+    else:
+        dir_source = extend_translate_source[-1].source
+    return dir_source
 
 def get_game_lang_dir(game_path: str) -> str:
     """游戏目录中的汉化目录 (LimbusCompany_Data/Lang/<目录名>)"""
     return os.path.join(game_path, "LimbusCompany_Data", "Lang", get_translation_dir_name())
-
 
 def is_ourplay_source() -> bool:
     """当前平台是否为 OurPlay (普通/神人)"""

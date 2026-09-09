@@ -8,6 +8,8 @@ import traceback
 import tkinter.messagebox as messagebox
 
 from functions.base.settings_manager import get_settings_manager
+import functions.web_update.translation_source as translation_source_lib
+from functions.extension.addon.addon_utils import AddonManager
 
 
 def safe_merge_dirs(src, dst, overwrite=True):
@@ -100,13 +102,22 @@ class GameLauncher:
         launcher.launch()
     """
 
-    def __init__(self, addon_manager=None, progress=None):
+    def __init__(self, addon_manager:AddonManager=None, progress=None): # type: ignore
+        """初始化游戏启动流水线。
+
+        Args:
+            addon_manager (AddonManager, optional): 插件管理器，默认是 None。
+            progress (_type_, optional): 进度回调函数, 用于推送启动进度到前端。 默认是 None.
+        """
         self._settings = get_settings_manager()
         self._addon_manager = addon_manager
         self._progress = progress or (lambda text, icon=None: None)
         self._game_path: str = self._settings.get_setting('game_path') or ''
-        from functions.web_update.translation_source import get_translation_dir
-        self._lang_dir = get_translation_dir()
+        self._lang_dir = translation_source_lib.get_translation_dir()
+
+        # 同步插件自定义汉化包平台方
+        if self._addon_manager:
+            translation_source_lib.extend_translate_source = self._addon_manager.extend_translate_source
 
     # ── 流水线入口 ──────────────────────────────────────────────
 
@@ -148,8 +159,7 @@ class GameLauncher:
 
     def _prepare_translation(self):
         """复制当前平台的汉化目录到游戏目录。"""
-        from functions.web_update.translation_source import get_game_lang_dir
-        target = get_game_lang_dir(self._game_path)
+        target = translation_source_lib.get_game_lang_dir(self._game_path)
         print(f"[调试] _prepare_translation: 游戏路径={self._game_path!r}")
         print(f"[调试] _prepare_translation: 源={os.path.abspath(self._lang_dir)!r} 存在={os.path.exists(self._lang_dir)} 是目录={os.path.isdir(self._lang_dir)}")
         print(f"[调试] _prepare_translation: 目标={target!r} 存在={os.path.exists(target)} 是目录={os.path.isdir(target)}")
@@ -183,7 +193,6 @@ class GameLauncher:
         changes_layers.json 中 visible=false 的图层跳过 (编辑器里的 PS 式图层可见性)。"""
         from functions.extension.mod.mod_utils import ModManager
         from functions.pages.tools.custom_translation_window import CHANGES_PATTERN
-        import re
 
         # 收集所有需要处理的目录
         dirs = []
@@ -266,8 +275,7 @@ class GameLauncher:
 
     def _apply_cosmetic_features(self):
         """应用气泡渐变、EGO 样式、技能描述、提示替换、技能渐变色 (逐项推送进度, 单项失败不中断)"""
-        from functions.web_update.translation_source import get_game_lang_dir
-        lang_path = get_game_lang_dir(self._game_path)
+        lang_path = translation_source_lib.get_game_lang_dir(self._game_path)
         lang_root = os.path.join(self._game_path, 'LimbusCompany_Data', 'Lang')
 
         if self._settings.get_setting('enable_text_gradient'):
