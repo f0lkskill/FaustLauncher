@@ -493,6 +493,104 @@ def process_all_json_files(game_path: str, gradient_rate: float = 2.0) -> bool:
     print(f"渐变度设置: {gradient_rate}")
     return success_count > 0
 
+
+# ============================================================
+# 去除气泡颜色标签 (气泡颜色开关关闭时使用)
+# 说明: 结构处理参考上方 process_json_file / process_all_json_files 的气泡文件遍历方式
+# ============================================================
+
+_COLOR_TAG_PATTERN = re.compile(r'<color=#([0-9a-fA-F]{3,8})>(.*?)</color>', re.DOTALL)
+
+def remove_dlg_color_tags(dlg_text: str) -> str:
+    """去除 dlg 文本中的所有 <color=#xxxxxx>...</color> 颜色标签
+    仅移除颜色标签本身, 保留其中的文本与其它富文本标签 (如 <b> <i> 等)。
+    采用逐轮替换以兼容嵌套颜色标签 (先剥最内层)。
+    """
+    if not dlg_text:
+        return dlg_text
+    result = dlg_text
+    while True:
+        stripped = _COLOR_TAG_PATTERN.sub(r'\2', result)
+        if stripped == result:
+            break
+        result = stripped
+    return result
+
+def process_json_file_remove_color(file_path: str) -> bool:
+    """处理单个气泡JSON文件: 去除所有 dlg 文本中的颜色标签 (结构处理与 process_json_file 一致)"""
+    try:
+        data = read_json(file_path)
+
+        # 检查数据结构
+        if 'dataList' not in data or not isinstance(data['dataList'], list):
+            print(f"文件 {file_path} 格式不正确")
+            return False
+
+        changed_count = 0
+
+        # 处理每个条目
+        for item in data['dataList']:
+            if 'dlg' in item and item['dlg']:
+                original_dlg = item['dlg']
+                cleaned_dlg = remove_dlg_color_tags(original_dlg)
+
+                if cleaned_dlg != original_dlg:
+                    item['dlg'] = cleaned_dlg
+                    changed_count += 1
+
+        # 仅在有变化时回写, 避免无谓的整文件重写
+        if changed_count > 0:
+            write_json(file_path, data, indent=2)
+
+        print(f"文件 {os.path.basename(file_path)} 去除颜色完成, 共 {changed_count} 个条目")
+        return True
+
+    except Exception as e:
+        print(f"处理文件 {file_path} 时出错: {e}")
+        return False
+
+def process_all_json_files_remove_color(game_path: str) -> bool:
+    """处理游戏目录下所有气泡文件 (BattleSpeechBubbleDlg*.json), 去除其中的颜色标签"""
+    # 目标目录
+    from functions.web_update.translation_source import get_game_lang_dir
+    target_dir = get_game_lang_dir(game_path)
+
+    if not os.path.exists(target_dir):
+        print(f"目标目录不存在: {target_dir}")
+        return False
+
+    # 搜索所有前缀带有 'BattleSpeechBubbleDlg' 的文件
+    json_files = [f for f in os.listdir(target_dir) if f.startswith('BattleSpeechBubbleDlg')]
+
+    success_count = 0
+
+    for json_file in json_files:
+        file_path = os.path.join(target_dir, json_file)
+
+        if os.path.exists(file_path):
+            if process_json_file_remove_color(file_path):
+                success_count += 1
+        else:
+            print(f"文件不存在: {file_path}")
+
+    print(f"去除颜色处理完成: {success_count}/{len(json_files)} 个文件成功处理")
+    return success_count > 0
+
+def main_remove_color() -> bool:
+    """入口函数: 气泡颜色关闭时, 去除游戏目录中转移后的气泡文件里的 <color=#xxxxxx> 颜色标签"""
+    try:
+        game_path = get_settings_manager().get_setting('game_path')
+
+        if not game_path:
+            print("去除气泡颜色: 未配置游戏路径")
+            return False
+
+        return process_all_json_files_remove_color(game_path)
+
+    except Exception as e:
+        print(f"去除气泡颜色失败: {e}")
+        return False
+
 def process_temp_json_files(gradient_rate: float = 2.0) -> bool:
     """处理temp目录下的JSON文件（用于测试）
     Args:
