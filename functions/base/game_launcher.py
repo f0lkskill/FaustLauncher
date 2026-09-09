@@ -109,15 +109,18 @@ class GameLauncher:
             addon_manager (AddonManager, optional): 插件管理器，默认是 None。
             progress (_type_, optional): 进度回调函数, 用于推送启动进度到前端。 默认是 None.
         """
+
         self._settings = get_settings_manager()
         self._addon_manager = addon_manager
         self._progress = progress or (lambda text, icon=None: None)
         self._game_path: str = self._settings.get_setting('game_path') or ''
-        self._lang_dir = translation_source_lib.get_translation_dir()
 
         # 同步插件自定义汉化包平台方
         if self._addon_manager:
             translation_source_lib.extend_translate_source = self._addon_manager.extend_translate_source
+            print(f"已同步插件自定义汉化: {[x.name for x in translation_source_lib.extend_translate_source]}")
+        # 获取语言目录
+        self._lang_dir = translation_source_lib.get_translation_dir()
 
     # ── 流水线入口 ──────────────────────────────────────────────
 

@@ -3,7 +3,7 @@ import json
 import sys
 from types import ModuleType
 from typing import Dict, List, Optional, Any
-from web_update.translation_source import CustomTranslateSource
+from functions.web_update.translation_source import CustomTranslateSource
 
 class AddonManager:
     """
@@ -379,6 +379,9 @@ class AddonManager:
         """
         print("🔄 开始重载插件...")
         try:
+            # 清空插件自定义汉化包源
+            self.extend_translate_source.clear()
+
             self.unload_all_addons()
             self.scan_addons()
             self.run_all_addon(ADDON_ARG)
