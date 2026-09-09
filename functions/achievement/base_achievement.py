@@ -2,6 +2,7 @@
 
 from abc import ABC, abstractmethod
 from datetime import datetime
+from typing import Callable
 
 
 class BaseAchievement(ABC):
@@ -13,8 +14,10 @@ class BaseAchievement(ABC):
 
     def __init__(self, ach_id: str, name: str, description: str):
         self.ach_id = ach_id
+        self.id = ach_id  # 与函数式 Achievement 使用相同的标识字段
         self.name = name
         self.description = description
+        self.rarity = "common"
         self.unlocked = False
         self.unlock_time: datetime | None = None
         self.progress = 0
@@ -50,6 +53,48 @@ class BaseAchievement(ABC):
             return f"✅ {self.name}"
         else:
             return f"⬜ {self.name}"
+
+
+class MemoryAchievement(BaseAchievement):
+    """基于游戏进程内存状态的成就。"""
+
+    def __init__(
+        self,
+        ach_id: str,
+        name: str,
+        description: str,
+        reader_factory: Callable[[], object],
+        predicate: Callable[[int], bool],
+    ):
+        super().__init__(ach_id, name, description)
+        self._reader_factory = reader_factory
+        self._predicate = predicate
+        self._reader = None
+        self.current_value: int | None = None
+
+    def check(self) -> bool:
+        """读取内存并检查条件。读取失败时保持未解锁。"""
+        if self.unlocked:
+            return True
+        try:
+            if self._reader is None:
+                self._reader = self._reader_factory()
+            value = self._reader.read_enkephalin()
+            self.current_value = value
+            if value is not None and self._predicate(value):
+                self.mark_unlocked()
+        except Exception:
+            self.current_value = None
+        return self.unlocked
+
+    def detach(self) -> None:
+        """释放进程句柄。"""
+        if self._reader is not None:
+            try:
+                self._reader.detach()
+            except Exception:
+                pass
+            self._reader = None
 
 
 class ItemAchievement(BaseAchievement):

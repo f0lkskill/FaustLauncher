@@ -19,7 +19,11 @@ CHECK_INTERVAL = 0.3
 RETRY_COUNT = 3
 
 # ============ 物品映射 ============
-RARE_ITEM_IDS = {
+# Items.json 是名称来源；这些 ID 是日志中需要反向检测的目标物品。
+# 只纳入 Items.json 中实际存在、且原成就追踪的物品。
+# 107-110 不存在于当前语言包，不能参与任何拥有判定。
+_ITEM_IDS = (101, 102, 103, 104, 105, 106, 501, 502, 601, 751)
+_FALLBACK_ITEM_NAMES = {
     101: "提取券",
     102: "十连提取券",
     103: "3★人格必得十连提取券",
@@ -36,8 +40,30 @@ RARE_ITEM_IDS = {
     751: "播报员自选券",
 }
 
-TEN_PULL_IDS = [102, 103, 104, 105, 106, 107, 108, 109, 110]
-GUARANTEED_IDS = [103, 104, 105, 106, 107, 108, 109, 110]
+
+def _load_item_names() -> dict[int, str]:
+    """从项目语言包加载物品名称，缺失时使用内置名称。"""
+    names = dict(_FALLBACK_ITEM_NAMES)
+    path = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+        "lang", "LLC_zh-CN", "Items.json",
+    )
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            for item in json.load(f).get("dataList", []):
+                item_id = int(item.get("id", -1))
+                if item_id in _ITEM_IDS and item.get("name"):
+                    names[item_id] = str(item["name"])
+    except (OSError, ValueError, TypeError):
+        pass
+    return names
+
+
+RARE_ITEM_IDS = _load_item_names()
+ITEM_IDS = tuple(_ITEM_IDS)
+
+TEN_PULL_IDS = [102, 103, 104, 105, 106]
+GUARANTEED_IDS = [103, 104, 105, 106]
 SELF_SELECT_IDS = [501, 502, 601, 751]
 
 # ============ 成就稀有度 ============
@@ -208,11 +234,10 @@ def _define_achievements():
     - 背包/兑换页浏览 (InventoryUIPopup:SetItemPool)
     - P 键 / 鼠标点击 (Windows 输入钩子)
 
-    已删除:
-    - 所有"拥有 X 券"类: 日志只打印"数量=0"的物品, 从未打印过的物品
-      无法区分"拥有"与"未浏览到该分类页", 反推必然误判
-    - 无伤通关: 日志中不存在任何角色死亡痕迹 (全量搜索 0 命中),
-      死亡检测无依据
+    说明:
+    - 物品拥有成就使用当前背包检查批次的反向检测，不读取跨会话缓存。
+    - 脑啡肽成就使用进程内存读取器，不读取跨会话缓存。
+    - 无伤通关已移除，因为 Player.log 没有可靠的角色死亡信号。
     """
     s = get_state
 
@@ -238,6 +263,60 @@ def _define_achievements():
     achievements.append(Achievement(
         "ach_steam", "Steam玩家", "通过Steam登录游戏",
         lambda: s().steam_logged
+    ))
+
+    # === 物品反向检测成就 ===
+    # 物品状态来自当前背包检查批次，不使用跨会话缓存。
+    achievements.append(Achievement(
+        "ach_item_101", "提取券持有者", f"拥有1张{RARE_ITEM_IDS[101]}",
+        lambda: 101 in s().owned_items,
+    ))
+    achievements.append(Achievement(
+        "ach_item_102", "十连券持有者", f"拥有1张{RARE_ITEM_IDS[102]}",
+        lambda: 102 in s().owned_items,
+    ))
+    achievements.append(Achievement(
+        "ach_guaranteed_general", "必得券持有者", f"拥有1张{RARE_ITEM_IDS[103]}",
+        lambda: 103 in s().owned_items,
+    ))
+    for season, item_id in ((1, 104), (2, 105), (3, 106)):
+        achievements.append(Achievement(
+            f"ach_season_{season}_guaranteed",
+            f"第{season}赛季必得券持有者",
+            f"拥有1张{RARE_ITEM_IDS[item_id]}",
+            lambda i=item_id: i in s().owned_items,
+        ))
+    achievements.append(Achievement(
+        "ach_ten_pull_1", "十连券收集者 I", "拥有1种以上的十连券",
+        lambda: any(i in s().owned_items for i in TEN_PULL_IDS),
+    ))
+    achievements.append(Achievement(
+        "ach_ten_pull_3", "十连券收集者 II", "拥有3种以上的十连券",
+        lambda: sum(i in s().owned_items for i in TEN_PULL_IDS) >= 3,
+    ))
+    achievements.append(Achievement(
+        "ach_ten_pull_5", "十连券大师", "拥有5种以上的十连券",
+        lambda: sum(i in s().owned_items for i in TEN_PULL_IDS) >= 5,
+    ))
+    achievements.append(Achievement(
+        "ach_guaranteed_2", "必得券收集者", "拥有2种以上的必得券",
+        lambda: sum(i in s().owned_items for i in GUARANTEED_IDS) >= 2,
+    ))
+    achievements.append(Achievement(
+        "ach_guaranteed_4", "必得券大师", "拥有4种以上的必得券",
+        lambda: sum(i in s().owned_items for i in GUARANTEED_IDS) >= 4,
+    ))
+    achievements.append(Achievement(
+        "ach_self_select", "自选券收藏家", "拥有1张赛季人格自选券",
+        lambda: any(i in s().owned_items for i in SELF_SELECT_IDS),
+    ))
+    achievements.append(Achievement(
+        "ach_total_5", "物品收集者", "拥有5种不同的稀有物品",
+        lambda: len(s().owned_items) >= 5,
+    ))
+    achievements.append(Achievement(
+        "ach_total_10", "物品收藏家", "拥有10种不同的稀有物品",
+        lambda: len(s().owned_items) >= 10,
     ))
 
     # === 背包/兑换页浏览系列 ===
@@ -287,6 +366,11 @@ def _define_achievements():
             hidden=False,
         ).with_rarity(RARITY_ORDER[idx]))
 
+    # === 内存成就 ===
+    # 该成就自身维护内存读取器，不使用成就状态缓存。
+    from functions.achievement.data.ach_enkephalin_100 import FullEnkephalinAchievement
+    achievements.append(FullEnkephalinAchievement())
+
 
 _define_achievements()
 
@@ -325,10 +409,16 @@ def check_achievements(log_callback) -> list[Achievement]:
     for ach in achievements:
         if not ach.unlocked:
             try:
-                if ach.check_func():
-                    ach.unlocked = True
-                    ach.unlock_time = datetime.now()
-                    ach.progress = ach.max_progress
+                # 函数式 Achievement 使用 check_func；类式成就自行实现 check。
+                if hasattr(ach, "check_func"):
+                    matched = ach.check_func()
+                    if matched:
+                        ach.unlocked = True
+                        ach.unlock_time = datetime.now()
+                        ach.progress = ach.max_progress
+                else:
+                    matched = ach.check()
+                if matched:
                     unlocked.append(ach)
             except Exception:
                 pass
@@ -347,6 +437,26 @@ def record_zero_item(item_id: int):
         s.round_active = True
     s.zero_item_ids.add(item_id)
     s.last_zero_time = now
+
+
+def detect_owned_items(zero_ids: set[int]) -> list[tuple[int, str]]:
+    """根据当前一次背包检查批次反向推断拥有的目标物品。
+
+    日志只记录数量为 0 的物品。批次中出现 0 的 ID 明确视为未拥有，
+    其余目标 ID 视为拥有。该函数只接收当前批次，不读取任何缓存。
+    """
+    s = get_state()
+    zero_ids = set(zero_ids)
+    new_owned = []
+    for item_id in ITEM_IDS:
+        if item_id in zero_ids:
+            s.owned_items.discard(item_id)
+            continue
+        if item_id not in s.owned_items:
+            s.owned_items.add(item_id)
+            new_owned.append((item_id, RARE_ITEM_IDS[item_id]))
+    s.running_owned_ids = set(s.owned_items)
+    return new_owned
 
 
 def register_inventory_open() -> bool:
@@ -377,10 +487,11 @@ def poll_inventory_window(now=None):
     if now - s.last_zero_time < 0.7:
         return None
 
-    # 一簇结束: 归并为一次浏览
+    # 一簇结束: 固化本批次 0 集合，交给 hook 做反向检测
     s.round_active = False
+    collected = set(s.zero_item_ids)
     s.zero_item_ids.clear()
-    return True
+    return collected
 
 
 def reset_achievements():
