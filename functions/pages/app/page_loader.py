@@ -910,7 +910,7 @@ def download_and_launch(obj=None, need_run_game=False, manual=False):
     """下载翻译资源，然后可选地启动游戏。
     manual=True 表示用户手动更新 (不受 check_translate_update 禁用限制)。"""
     from functions.base.game_launcher import GameLauncher
-    from functions.web_update.zeroasso_download import main_gui as download_translation, check_need_up_translate, DownloadGUI, download_and_extract_gui
+    from functions.web_update.zeroasso_download import main_gui as download_translation, DownloadGUI, download_and_extract_gui
     from functions.web_update.update_resource import check_resource_update
     from functions.fancy.bubble_transfer import main as download_bubble
     import os
@@ -927,8 +927,7 @@ def download_and_launch(obj=None, need_run_game=False, manual=False):
     
     try:
         from functions.web_update.translation_source import (
-            get_translation_dir, get_translation_dir_name, is_ourplay_source,
-            check_need_up_translate as need_up,
+            get_translation_dir, get_translation_dir_name, is_ourplay_source
         )
         def _push_step(step):
             """推送流水线步骤事件 (web 模式经 _web_progress 钩子实时到前端)"""

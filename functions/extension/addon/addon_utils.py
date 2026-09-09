@@ -3,6 +3,7 @@ import json
 import sys
 from types import ModuleType
 from typing import Dict, List, Optional, Any
+from web_update.translation_source import CustomTranslateSource
 
 class AddonManager:
     """
@@ -29,6 +30,7 @@ class AddonManager:
         self.loaded_modules: Dict[str, ModuleType] = {}  # 已加载的插件模块引用
         self.custom_tray_items: List[Any] = []  # 插件主动注册的自定义托盘菜单项
         self.addons_dir = 'addons'
+        self.extend_translate_source:list[CustomTranslateSource] = [] # 插件主动注册的自定义汉化包平台方
         self.scan_addons()
 
     def register_tray_item(self, item) -> None:
@@ -278,6 +280,7 @@ class AddonManager:
         try:
             ADDON_ARG['AddonManager'] = self
             ADDON_ARG['AddonName'] = addon_name
+            ADDON_ARG['ExtendTranslateSource'] = self.extend_translate_source
 
             # 记录本次载入新注册的启动回调归属 (供流水线显示"正在运行 xxx 插件启动注入函数")
             _gs_before = len(self.gamestart_funcs)
