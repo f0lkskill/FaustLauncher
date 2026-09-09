@@ -383,7 +383,8 @@ class GameLauncher:
         # 先启动游戏进程
         launch_game_process()
         # 启动成就监测 Hook (独立子进程, 避免主进程结束时被 kill)
-        self._start_achievement_hook()
+        # TODO 完善成就系统功能
+        # self._start_achievement_hook()
 
     def _start_achievement_hook(self):
         """启动成就监测 Hook（独立子进程），日志写入 logs/achievement_hook.log。"""
