@@ -112,7 +112,7 @@ def get_llc():
 
     except Exception as e:
         print(f"获取 LLC 版本失败: {e}")
-        return None
+        return None, None
 
 def get_current_week_boundary():
     """
@@ -186,36 +186,43 @@ def main():
     
     note_ = Note(id_name="FaustLauncher", address=ADDRESS, pwd="AutoTranslate")
     note_.fetch_note_info()
-    try:
-        current_data = json.loads(note_.note_content)
-        current_ourplay_version = current_data['ourplay_version']
-        current_llc_version = current_data['llc_version']
-        
-        # 解析上次更新时间
+
+    # 云端笔记读取失败 (网络异常/响应为空) 时直接跳过:
+    # 若当成"首次运行"继续, 会把全部版本状态重置, 导致每轮都误判"有新版本"并重复上传
+    if not getattr(note_, "has_get", False):
+        print("云端笔记获取失败，跳过本次检查 (避免误判为首次运行而重复上传)")
+        return
+
+    raw_content = (note_.note_content or "").strip()
+    if raw_content:
         try:
-            ourplay_last_update = datetime.fromisoformat(current_data.get('ourplay_last_update_time', '1970-01-01T00:00:00'))
-        except (ValueError, TypeError):
-            ourplay_last_update = datetime.fromisoformat('1970-01-01T00:00:00')
-            
-        try:
-            llc_last_update = datetime.fromisoformat(current_data.get('llc_last_update_time', '1970-01-01T00:00:00'))
-        except (ValueError, TypeError):
-            llc_last_update = datetime.fromisoformat('1970-01-01T00:00:00')
-            
-        try:
-            llc_mirror_update = datetime.fromisoformat(current_data.get('llc_mirror_update_time', '1970-01-01T00:00:00'))
-        except (ValueError, TypeError):
-            llc_mirror_update = datetime.fromisoformat('1970-01-01T00:00:00')
-            
-    except (json.JSONDecodeError, KeyError, TypeError):
-        # 首次运行，初始化数据
-        print("首次运行，初始化数据")
-        current_ourplay_version = None
-        current_llc_version = None
-        ourplay_last_update = datetime.fromisoformat('1970-01-01T00:00:00')
-        llc_last_update = datetime.fromisoformat('1970-01-01T00:00:00')
-        llc_mirror_update = datetime.fromisoformat('1970-01-01T00:00:00')
+            current_data = json.loads(raw_content)
+            if not isinstance(current_data, dict):
+                raise ValueError("笔记内容不是 JSON 对象")
+        except (json.JSONDecodeError, ValueError) as e:
+            print(f"笔记内容无法解析为 JSON ({e})，按首次运行初始化")
+            current_data = {}
+    else:
+        print("笔记内容为空，按首次运行初始化")
         current_data = {}
+
+    # 逐字段安全读取 (缺失单个键不能触发"首次运行"重置):
+    # 例如 OurPlay 接口长期不可用会导致笔记里始终没有 ourplay_version 键,
+    # 旧写法 current_data['ourplay_version'] 会抛 KeyError 被当成首次运行,
+    # 从而把已知的 LLC 版本一并清空, 造成每轮都重复下载/上传/更新笔记。
+    current_ourplay_version = current_data.get('ourplay_version')
+    current_llc_version = current_data.get('llc_version')
+
+    def _parse_time(key):
+        """安全解析笔记中的时间戳, 缺失或非法时回退到 1970 (视为从未更新)"""
+        try:
+            return datetime.fromisoformat(current_data.get(key) or '1970-01-01T00:00:00')
+        except (ValueError, TypeError):
+            return datetime.fromisoformat('1970-01-01T00:00:00')
+
+    ourplay_last_update = _parse_time('ourplay_last_update_time')
+    llc_last_update = _parse_time('llc_last_update_time')
+    llc_mirror_update = _parse_time('llc_mirror_update_time')
     
     # 判断是否需要检查OurPlay
     should_check_ourplay_flag = should_check_ourplay(ourplay_last_update)
@@ -231,6 +238,7 @@ def main():
     # 获取最新版本
     new_ourplay_version = None
     new_llc_version = None
+    last_ver = None
     
     if should_check_ourplay_flag:
         print("检查OurPlay更新...")
@@ -265,6 +273,10 @@ def main():
         return
     
     if need_update_llc or should_check_llc_mirror_flag:
+        # 需要 LLC 更新或刷新镜像时, 必须先拿到 release 资源列表; 获取失败则跳过 (避免 None 崩溃)
+        if last_ver is None:
+            print("LLC release 信息获取失败，跳过 LLC/镜像更新")
+            return
         if need_update_llc:print(f"LLC版本更新: {current_llc_version} -> {new_llc_version}")
 
         seven_zip_asset = last_ver.get_assets_by_extension(".7z")[0] # type: ignore
