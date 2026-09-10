@@ -384,14 +384,14 @@ class ModManager:
                 # 获取目标目录
                 target_dir = self.get_mod_directory()
 
-                # # 1) 先执行卸载脚本 (清理 Installer.bat 复制到游戏目录的缓存), 带超时防阻塞, 输出 echo 内容
-                # if run_bat and os.path.exists(
-                #     os.path.join(mod_path, 'Uninstaller.bat')):
-                #     try:
-                #         _run_mod_bat(mod_path, 'Uninstaller.bat', mod_name, timeout=30)
-                #         print(f"{mod_name} Mod 资源缓存成功清理", flush=True)
-                #     except Exception as e:
-                #         print(f"执行 {mod_name} Uninstaller.bat 失败(超时或异常): {e}", flush=True)
+                # 1) 先执行卸载脚本 (清理 Installer.bat 复制到游戏目录的缓存), 带超时防阻塞, 输出 echo 内容
+                if run_bat and os.path.exists(
+                    os.path.join(mod_path, 'Uninstaller.bat')):
+                    try:
+                        _run_mod_bat(mod_path, 'Uninstaller.bat', mod_name, timeout=30)
+                        print(f"{mod_name} Mod 资源缓存成功清理", flush=True)
+                    except Exception as e:
+                        print(f"执行 {mod_name} Uninstaller.bat 失败(超时或异常): {e}", flush=True)
 
                 # 2) 删除复制到目标目录的文件:
                 #    转移文件名带 mod 包名前缀 (mod名_文件名), 加载器会把 .bank 转成 .rebank,
