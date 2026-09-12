@@ -1,6 +1,7 @@
 import os
 import json
 import hashlib
+import datetime
 import re
 import shutil
 from typing import List, Dict, Any
@@ -32,6 +33,93 @@ def _decode_output(data):
         except (UnicodeDecodeError, LookupError):
             continue
     return data.decode('utf-8', errors='replace')
+
+
+MANIFEST_NAME = "launcher_manifest.json"   # 与 mod 加载器 (sound.py) 约定一致的清单文件
+ORPHAN_DIR_NAME = "_orphan"                # 已删除 mod 的残留附属文件移到这个子目录 (可拖回)
+STAMP_SUFFIX = ".src"                      # <目标rebank>.src 记录源 bank 的 md5
+
+
+def _manifest_path(mod_root: str) -> str:
+    return os.path.join(mod_root, MANIFEST_NAME)
+
+
+def _read_manifest(mod_root: str) -> Dict[str, Any]:
+    """读取 mod 清单 {package: [...], manual: [...]}; 不存在/损坏时返回空 dict"""
+    try:
+        with open(_manifest_path(mod_root), "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def _write_manifest(mod_root: str, data: Dict[str, Any]) -> None:
+    """原子写清单 (先写 .tmp 再替换), 避免加载器读到半个文件"""
+    try:
+        payload = dict(data)
+        payload["version"] = 1
+        payload["written"] = datetime.datetime.now().isoformat(timespec="seconds")
+        tmp = _manifest_path(mod_root) + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False, indent=2)
+        os.replace(tmp, _manifest_path(mod_root))
+    except OSError as e:
+        print(f"写入 mod 清单失败: {e}", flush=True)
+
+
+def _read_stamp(path: str) -> str:
+    """读取 bank 版本标记 (源 bank 的 md5); 没有返回空串"""
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return f.read().strip()
+    except OSError:
+        return ""
+
+
+def _write_stamp(path: str, digest: str) -> None:
+    try:
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(digest)
+    except OSError as e:
+        print(f"写入版本标记失败 {path}: {e}", flush=True)
+
+
+def _remove_quietly(path: str, label: str = "文件") -> None:
+    """删除文件 (不存在就忽略), 用于清理旧差分/版本标记"""
+    try:
+        if os.path.isfile(path):
+            os.remove(path)
+            print(f"删除{label}: {path}", flush=True)
+    except OSError as e:
+        print(f"删除{label} {path} 失败: {e}", flush=True)
+
+
+def _move_orphans(target_dir: str, stale_names: List[str]) -> None:
+    """把"上一轮清单登记过、这一轮不再管理"的附属文件移到 _orphan/ (不删除, 可拖回)
+
+    只动清单里登记过的名字; Mod管理器手工放入的文件、加载器备份 (*.orig)、
+    日志和清单本身都不动。
+    """
+    moved = []
+    orphan_dir = None
+    for name in stale_names:
+        path = os.path.join(target_dir, name)
+        if not os.path.isfile(path):
+            continue
+        if name.lower().endswith((".orig", ".disabled")) or name in (MANIFEST_NAME, "log.txt"):
+            continue
+        if orphan_dir is None:
+            orphan_dir = os.path.join(target_dir, ORPHAN_DIR_NAME)
+            os.makedirs(orphan_dir, exist_ok=True)
+        try:
+            shutil.move(path, os.path.join(orphan_dir, name))
+            moved.append(name)
+        except OSError as e:
+            print(f"移动残留文件 {name} 失败: {e}", flush=True)
+    if moved:
+        print(f"已把 {len(moved)} 个不再使用的附属文件移到 {ORPHAN_DIR_NAME}\\ "
+              f"(需要可拖回上一级): {', '.join(moved)}", flush=True)
 
 
 def _run_mod_bat(mod_path, bat_name, mod_name, timeout=None):
@@ -124,6 +212,12 @@ class ModManager:
         loaded_mods = []
         used = {}  # 本次装载已占用的目标文件名 -> 源文件 md5 (同名 .bank 编号用)
 
+        # mod 清单: 记录本次装载管理的附属文件, 供加载器决定同名音频的应用优先级,
+        # 也用于把"已删除 mod 留下的残留附属文件"移走 (否则会一直覆盖新加的 mod)
+        manifest_root = self.get_mod_directory()
+        old_manifest = _read_manifest(manifest_root)
+        new_pkg_names: List[str] = []
+
         # 遍历所有mod目录
         for mod_path in self.get_mod_path():
             
@@ -188,13 +282,30 @@ class ModManager:
                         # 目标文件名加 mod 包名前缀 (mod名_文件名), 不同 mod 的同名文件互不冲突
                         target_name = f"{mod_name}_{file_name}"
                         target_file = os.path.join(target_dir, target_name)
+                        new_pkg_names.append(target_name)
 
                         if file_name.lower().endswith('.bank'):
-                            # rebank 差分检测: 加载器把 bank 转 rebank, 目标已有对应前缀 rebank 则跳过
-                            rebank_name = f"{mod_name}_{os.path.splitext(file_name)[0]}.rebank"
-                            if os.path.exists(os.path.join(target_dir, rebank_name)):
-                                print(f"跳过 {file_name}: 已有对应 rebank 差分, 无需复制")
+                            # 加载器会把 bank 转成 rebank: 用源 bank 的 md5 作为版本标记,
+                            # 只有源 bank 变了才重新复制/转换。旧版只判断"差分是否存在",
+                            # 于是 mod 更新后加载器会一直复用旧差分 (新版本永远不生效)。
+                            stem = os.path.splitext(file_name)[0]
+                            rebank_name = f"{mod_name}_{stem}.rebank"
+                            rebank_path = os.path.join(target_dir, rebank_name)
+                            stamp_path = rebank_path + STAMP_SUFFIX
+                            new_pkg_names.append(rebank_name)
+                            new_pkg_names.append(rebank_name + STAMP_SUFFIX)
+                            src_md5 = self._file_md5(source_file)
+                            if _read_stamp(stamp_path) == src_md5:
+                                print(f"跳过 {file_name}: 差分已是最新 (源 bank 未变化)")
                                 continue
+                            if os.path.isfile(rebank_path):
+                                print(f"检测到 mod 更新: {file_name} 已变化, 重新生成差分")
+                                _remove_quietly(rebank_path, "旧差分")
+                            os.makedirs(os.path.dirname(target_file), exist_ok=True)
+                            shutil.copy2(source_file, target_file)
+                            _write_stamp(stamp_path, src_md5)
+                            print(f"复制 Mod 文件: {source_file} -> {target_file}")
+                            continue
 
                         # 确保目标目录存在
                         os.makedirs(os.path.dirname(target_file), exist_ok=True)
@@ -216,6 +327,17 @@ class ModManager:
             except Exception as e:
                 print(f"处理Mod {mod_name} 失败: {e}")
         
+        # 清理: 上一轮清单登记过、这一轮不再管理的附属文件 -> 移到 _orphan/
+        try:
+            target_root = self.get_mod_directory()
+            stale = [n for n in (old_manifest.get("package") or []) if n not in set(new_pkg_names)]
+            if stale:
+                _move_orphans(target_root, stale)
+            _write_manifest(target_root, {"package": new_pkg_names,
+                                          "manual": old_manifest.get("manual") or []})
+        except Exception as e:
+            print(f"同步 mod 清单失败: {e}", flush=True)
+
         return loaded_mods
         
     @staticmethod
@@ -418,7 +540,7 @@ class ModManager:
                             do_flag = True
                         except OSError as e:
                             print(f"删除附属文件 {chosen_file} 失败: {e}", flush=True)
-                        # bank 转换遗留的差分缓存一并清理 (转换命名 = bank 同名)
+                        # bank 转换遗留的差分缓存 + 版本标记一并清理 (转换命名 = bank 同名)
                         if os.path.splitext(target_name)[1].lower() == ".bank":
                             cache = os.path.join(target_dir, t_stem + ".rebank")
                             if os.path.isfile(cache):
@@ -427,6 +549,7 @@ class ModManager:
                                     print(f"删除缓存: {cache}", flush=True)
                                 except OSError as e:
                                     print(f"删除缓存 {cache} 失败: {e}", flush=True)
+                            _remove_quietly(cache + STAMP_SUFFIX, "版本标记")
 
                 # 3) 清理 extra_files 合并进游戏汉化目录的语言文件 (内容一致才删)
                 lang_dir = os.path.join(mod_path, 'extra_files')

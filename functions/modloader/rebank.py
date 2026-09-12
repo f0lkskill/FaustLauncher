@@ -9,8 +9,9 @@ rebank — Fmod 模组差分打包与修补工具
 compare : 对比两个 bank，生成 .rebank 差分包
     原版 bank + 模组版 bank 拆包对比 → 找出模组改动过的 wav → 打包成 .rebank
     （zip 内含 rebank.json 配置 + 改动的 wav，不处理"删除"，只记 修改/新增）
-    判定规则：按时长三位小数比较。模组整体重编码会让所有文件字节/采样率
-    都变（纯误判），但真实改动的文件时长大都会变——没有作者精确到 1ms。
+    判定规则：先比时长（秒，3 位小数）；时长相同则解码两段 PCM 算相对差值
+    rms(a-b)/max(rms)，超过阈值(0.20)即视为改动。模组整体重编码只会带来 ≈0.05 的差异
+    （不会误判），而"换了音频但长度恰好一样"会有 ≈0.9 的差异（旧版只比时长会漏判）。
 
 patch   : 应用 .rebank 模组到目标 bank
     前 N 个 .rebank + 最后 1 个目标 bank
@@ -38,6 +39,16 @@ import fmodbank
 
 CONFIG_NAME = "rebank.json"          # 包内配置文件，识别名字/版本等，patch 解压时跳过
 WAV_EXT = ".wav"
+RULE_VERSION = "duration+pcm"        # 差异判定规则版本；旧版(只比时长)生成的差分没这个字段
+
+# ---- 音频差异判定参数 -------------------------------------------------------
+DURATION_TOLERANCE = 0.001      # 秒; 时长差超过它就认为音频被改过
+CONTENT_TOLERANCE = 0.20        # 相对差值 RMS 阈值; 同一音频重编码 ≈ 0.05, 换了内容 ≈ 0.9
+
+try:
+    import audioop              # 标准库; Python 3.13 起已移除, 缺失时退回"只比时长"
+except ImportError:             # pragma: no cover
+    audioop = None              # type: ignore
 
 
 # ---------------------------------------------------------------------------
@@ -160,32 +171,157 @@ def collect_wavs(wav_dir):
     return out
 
 
-def files_differ(a, b):
-    """判断两个 wav 是否"真不同"：按时长三位小数比较。
+def files_differ(a, b, reason_out=None):
+    """判断两个 wav 是否"真不同"。
 
-    模组重编码会把整个 bank 的采样率/字节都改掉，字节对比全是误判。
-    真实修改的文件时长大都会变化；没动的文件即使被重编码，时长也保持不变
-    （没有模组作者会精确到 1ms 以下去微调时长）。
-    返回 True 表示时长不同（视为被修改）。
+    模组重编码会把整个 bank 的采样率/字节都改掉，字节直接对比全是误判，
+    所以按时长 + 解码后 PCM 的相对差值判定：
+      1) 时长（秒，3 位小数）不同 → 被修改
+      2) 时长相同 → 解码两段 PCM，算 rms(a-b)/max(rms)：超过阈值 → 被修改
+         实测：同一段音频整体重编码 ≈ 0.05；换了音频但长度恰好一样 ≈ 0.9
+         （旧版只比时长会漏掉这种"等长替换"，例如 BGM、剪辑对齐过的语音）
+      3) 采样率/声道/位深不一致时先规整到同一格式再比；规整不了则保守视为相同
+
+    reason_out: 可选 list，判定原因会追加进去
+                ("duration"/"content"/"unreadable"/"uncomparable"/None)
+    返回 True 表示被修改。
     """
-    da = wav_duration_file(a)
-    db = wav_duration_file(b)
-    if da is None or db is None:
-        return True  # 无法解析的按修改处理，避免漏掉
-    return da != db
+    def _mark(reason):
+        if reason_out is not None:
+            reason_out.append(reason)
+        return reason in ("duration", "content", "unreadable")
+
+    na = _wav_pcm(a)
+    nb = _wav_pcm(b)
+    if na is None or nb is None:
+        return _mark("unreadable")        # 无法解析的按修改处理，避免漏掉
+    pa, ra, ca, ba = na
+    pb, rb, cb, bb = nb
+    da = wav_duration(len(pa), ra, ca, ba)
+    db = wav_duration(len(pb), rb, cb, bb)
+    if abs(da - db) > DURATION_TOLERANCE:
+        return _mark("duration")
+    if audioop is None:
+        return _mark(None)                # 环境缺 audioop → 退回旧的"时长相同即相同"
+    if (ra, ca, ba) != (rb, cb, bb):
+        common = _to_common_pcm(pa, ra, ca, ba, pb, rb, cb, bb)
+        if common is None:
+            return _mark("uncomparable")
+        pa, pb = common
+    ratio = _relative_diff(pa, pb)
+    if ratio is None:
+        return _mark("uncomparable")
+    if ratio > CONTENT_TOLERANCE:
+        return _mark("content")
+    return _mark(None)
+
+
+_REASON_TEXT = {
+    "duration": "时长不同",
+    "content": "波形差异大",
+    "unreadable": "无法解析",
+    "uncomparable": "格式无法比对",
+}
+
+
+def _reason_suffix(reason):
+    return " (%s)" % _REASON_TEXT[reason] if reason in _REASON_TEXT else ""
+
+
+def _wav_pcm_layout(data):
+    """按 chunk 走一遍 wav，返回 (data_start, data_len, sample_rate, channels, bits) 或 None。"""
+    if len(data) < 12 or data[0:4] != b"RIFF" or data[8:12] != b"WAVE":
+        return None
+    pos = 12
+    rate = ch = bits = None
+    while pos + 8 <= len(data):
+        cid = data[pos:pos + 4]
+        size = struct.unpack_from("<I", data, pos + 4)[0]
+        pos += 8
+        if cid == b"fmt ":
+            fmt = data[pos:pos + min(size, 40)]
+            if len(fmt) >= 16:
+                ch = struct.unpack_from("<H", fmt, 2)[0]
+                rate = struct.unpack_from("<I", fmt, 4)[0]
+                bits = struct.unpack_from("<H", fmt, 14)[0]
+        elif cid == b"data":
+            return pos, max(0, min(size, len(data) - pos)), rate, ch, bits
+        pos += size + (size & 1)
+    return None
+
+
+def _wav_pcm(path):
+    """读取 wav，返回 (pcm_bytes, sample_rate, channels, bits)；无法解析返回 None。"""
+    try:
+        with open(path, "rb") as fh:
+            data = fh.read()
+    except OSError:
+        return None
+    layout = _wav_pcm_layout(data)
+    if layout is None:
+        return None
+    start, dlen, rate, ch, bits = layout
+    if not rate or not ch or not bits:
+        return None
+    return data[start:start + dlen], rate, ch, bits
+
+
+def _to_common_pcm(pa, ra, ca, ba, pb, rb, cb, bb):
+    """把两段 PCM 规整成相同的 位深/声道/采样率（16bit 起），返回 (pa, pb) 或 None。
+
+    模组作者整体换采样率/声道重编码时走这里；格式本来就一致时不会调用。
+    """
+    if audioop is None:
+        return None
+    try:
+        if ba in (8, 24, 32):
+            pa, ba = audioop.lin2lin(pa, ba // 8, 2), 16
+        if bb in (8, 24, 32):
+            pb, bb = audioop.lin2lin(pb, bb // 8, 2), 16
+        if ba != 16 or bb != 16:
+            return None
+        if ca == 2 and cb == 1:
+            pa, ca = audioop.tomono(pa, 2, 0.5, 0.5), 1
+        elif ca == 1 and cb == 2:
+            pb, cb = audioop.tomono(pb, 2, 0.5, 0.5), 1
+        if ca != cb:
+            return None
+        if ra != rb:
+            pa, _ = audioop.ratecv(pa, 2, ca, ra, rb, None)
+    except Exception:
+        return None
+    return pa, pb
+
+
+def _relative_diff(pa, pb):
+    """相对差值 RMS: rms(a-b) / max(rms(a), rms(b))；两段都是 16bit 同格式。
+
+    实测：同一段音频整体重编码 ≈ 0.0x；完全无关的音频 ≈ 0.9~1.0，区分度很大。
+    """
+    n = min(len(pa), len(pb))
+    n -= n % 2
+    if n < 2:
+        return None
+    pa, pb = pa[:n], pb[:n]
+    # audioop.sub 在部分 Python 构建里缺失, 用 mul(-1) + add 等价实现
+    try:
+        neg = audioop.mul(pb, 2, -1.0)
+        diff = audioop.add(pa, neg, 2)
+    except Exception:
+        return None
+    ref = max(audioop.rms(pa, 2), audioop.rms(pb, 2))
+    if ref == 0:
+        return 0.0                      # 两段都是静音 → 视为相同
+    return float(audioop.rms(diff, 2)) / ref
 
 
 def wav_duration_file(path):
     """读取 wav 文件，返回时长（秒，保留 3 位小数）；无法解析返回 None。"""
-    try:
-        with open(path, "rb") as fh:
-            info = fh.read()
-    except OSError:
+    pcm = _wav_pcm(path)
+    if pcm is None:
         return None
-    mi = read_wav_info(info)
-    if mi is None:
-        return None
-    return round(wav_duration(*mi), 3)
+    data, rate, ch, bits = pcm
+    return round(wav_duration(len(data), rate, ch, bits), 3)
 
 
 # ---------------------------------------------------------------------------
@@ -274,9 +410,18 @@ def cmd_compare(args, dlls, log):
 
         A = collect_wavs(a_wav)
         B = collect_wavs(b_wav)
-        modified = [k for k in B if k in A and files_differ(A[k], B[k])]
+
+        modified = []
+        reasons = {}
+        for key in B:
+            if key not in A:
+                continue
+            why = []
+            if files_differ(A[key], B[key], why):
+                modified.append(key)
+                reasons[key] = why[-1] if why else None
         added = [k for k in B if k not in A]
-        log.step("3/4 对比完成: 修改=%d 新增=%d（删除忽略，按时长三位小数判定）"
+        log.step("3/4 对比完成: 修改=%d 新增=%d（时长 + 波形包络判定，删除忽略）"
                  % (len(modified), len(added)))
 
         if not modified and not added:
@@ -284,9 +429,14 @@ def cmd_compare(args, dlls, log):
             return
 
         for idx, name in modified:
-            log.log("  [修改] fsb[%d] %s" % (idx, name))
+            log.log("  [修改] fsb[%d] %s%s" % (idx, name, _reason_suffix(reasons.get((idx, name)))))
         for idx, name in added:
             log.log("  [新增] fsb[%d] %s" % (idx, name))
+
+        if added and len(added) * 2 > len(B):
+            log.warn("模组 bank 有 %d/%d 个音频在原版 bank(%s) 里不存在：可能模组用的不是这个 bank，"
+                     "装到游戏里也会因“新增不受支持”而失败。" % (len(added), len(B), a_base))
+        modified_keys = set(modified)
 
         # 暂存要打包的 wav（取模组版的）
         stage = os.path.join(work, "stage")
@@ -304,11 +454,12 @@ def cmd_compare(args, dlls, log):
             "author": args.author or "",
             "description": args.desc or "",
             "base_bank": a_base,
+            "rule": RULE_VERSION,
             "created": datetime.datetime.now().isoformat(timespec="seconds"),
             "count": len(modified) + len(added),
             "files": [
                 {"index": i, "name": n,
-                 "status": "modified" if (i, n) in modified else "added"}
+                 "status": "modified" if (i, n) in modified_keys else "added"}
                 for (i, n) in modified + added
             ],
         }
@@ -363,6 +514,7 @@ def cmd_patch(args, dlls, log):
         T = collect_wavs(wav_dir)
 
         replaced = skipped_new = skipped_bad = 0
+        skipped_new_names = []
         log.step("2/4 应用模组 ...")
         for m in mods:
             mname = os.path.basename(m)
@@ -384,6 +536,8 @@ def cmd_patch(args, dlls, log):
                     key = (idx, fname)
                     if key not in T:
                         skipped_new += 1
+                        if len(skipped_new_names) < 8:
+                            skipped_new_names.append("%s/%s" % (idx, fname))
                         log.warn("[%s] %s 目标 bank 没有此文件，跳过（新增不受支持）" % (mname, rel))
                         continue
                     mod_data = z.read(zi)
@@ -400,7 +554,7 @@ def cmd_patch(args, dlls, log):
         log.step("替换完成: 替换=%d 新增跳过=%d 无效跳过=%d"
                  % (replaced, skipped_new, skipped_bad))
         if replaced == 0:
-            raise RuntimeError("没有成功替换任何文件，取消重打包。")
+            raise RuntimeError(_diagnose_no_replacement(mods, target, len(T), skipped_new_names))
 
         log.step("3/4 重打包 bank（固定 vorbis / q%d / %d 线程）..." % (args.quality, args.threads))
         options = {
@@ -419,6 +573,40 @@ def cmd_patch(args, dlls, log):
     finally:
         clean_work_dir(work)
         log.log("已清理临时缓存目录: %s" % work)
+
+
+# ---------------------------------------------------------------------------
+# patch：失败诊断
+# ---------------------------------------------------------------------------
+def _rebank_base_bank(mod_path):
+    """读 .rebank 包里声明的 base_bank（没有则返回空串）"""
+    try:
+        with zipfile.ZipFile(mod_path) as z:
+            if CONFIG_NAME not in z.namelist():
+                return ""
+            cfg = json.loads(z.read(CONFIG_NAME).decode("utf-8-sig"))
+            return str(cfg.get("base_bank") or "")
+    except (OSError, ValueError, zipfile.BadZipFile):
+        return ""
+
+
+def _diagnose_no_replacement(mods, target, target_wav_count, skipped_new_names):
+    """一个文件都没替换成功时，给出可操作的诊断信息。"""
+    declared = []
+    for m in mods:
+        base = _rebank_base_bank(m)
+        declared.append("%s -> %s" % (os.path.basename(m), base or "(未声明)"))
+    lines = [
+        "没有成功替换任何文件，取消重打包。",
+        "  目标 bank      : %s（可替换音频 %d 个）" % (os.path.basename(target), target_wav_count),
+        "  差分声明原版 bank: %s" % "; ".join(declared),
+        "  原因: 目标 bank 里找不到差分中的音频（新增文件不支持，只能替换同名文件）",
+        "  可能: 1) 差分不是针对这个 bank 生成的（模组贴的是另一个 bank）",
+        "        2) 同名原版 bank 选错（如 Voice_XXX.assets.bank 与 Voice_XXX.bank）",
+    ]
+    if skipped_new_names:
+        lines.append("  跳过示例      : %s" % ", ".join(skipped_new_names))
+    return "\n".join(lines)
 
 
 # ---------------------------------------------------------------------------

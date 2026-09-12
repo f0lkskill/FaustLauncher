@@ -29,6 +29,8 @@ HTML_PATH = os.path.join(_PROJECT_ROOT, "html", "mod_manager", "index.html")
 
 ALLOWED_EXTENSIONS = {'.bank', '.carra2', '.rebank'}
 DISABLED_SUFFIX = '.disabled'
+# 与启动器 / mod 加载器约定一致的清单: manual 段 = Mod管理器手工管理的文件
+MANIFEST_NAME = 'launcher_manifest.json'
 EXT_INFO = {
     '.bank': {'icon': '🔊', 'type_label': '🎵 音效文件'},
     '.carra2': {'icon': '🖼️', 'type_label': '🖼️ 贴图文件'},
@@ -43,6 +45,40 @@ EXT_INFO = {
 def _get_mod_dir():
     """Mod 单文件存放目录 (APPDATA/LimbusCompanyMods)"""
     return get_mod_root_dir()
+
+
+def _sync_manifest(add=(), remove=()):
+    """把手工管理的文件同步进 launcher_manifest.json 的 manual 段
+
+    加载器据此把"用户主动放进来/启用的单文件 mod"和启动器管理的 mod 同等对待，
+    同名音频优先于未登记的残留文件生效。写入失败不影响主流程。
+    """
+    try:
+        mod_dir = _get_mod_dir()
+        path = os.path.join(mod_dir, MANIFEST_NAME)
+        data = {}
+        if os.path.isfile(path):
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    data = json.load(f) or {}
+            except (OSError, ValueError):
+                data = {}
+        names = [str(n) for n in (data.get("manual") or [])]
+        for name in add:
+            if name not in names:
+                names.append(name)
+        for name in remove:
+            if name in names:
+                names.remove(name)
+        data["manual"] = names
+        data.setdefault("package", [])
+        data["version"] = 1
+        tmp = path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        os.replace(tmp, path)
+    except OSError as e:
+        print(f"[Mod管理器] 同步 mod 清单失败: {e}")
 
 
 def _split_disabled(filename):
@@ -116,6 +152,9 @@ def _add_files(paths):
     for p in paths:
         ok, name, msg = _copy_into_mod_dir(p)
         results.append({'ok': ok, 'name': name, 'msg': msg})
+    added = [r['name'] for r in results if r['ok']]
+    if added:
+        _sync_manifest(add=added)
     return results
 
 
@@ -135,16 +174,30 @@ def _toggle_file(raw_name):
 
 
 def _delete_file(raw_name):
-    """删除文件"""
+    """删除文件 (bank 连带清掉转换产生的差分与版本标记)"""
     mod_dir = _get_mod_dir()
     path = os.path.join(mod_dir, raw_name)
     if not os.path.exists(path):
         return {'error': f"文件不存在: {raw_name}"}
     try:
         os.remove(path)
-        return {'error': None}
     except Exception as e:
         return {'error': f"删除失败: {e}"}
+    original, _ = _split_disabled(raw_name)
+    removed = [original]
+    ext = os.path.splitext(original)[1].lower()
+    if ext in ('.bank', '.rebank'):
+        stem = os.path.splitext(original)[0]
+        for extra in (stem + '.rebank', stem + '.rebank.src'):
+            extra_path = os.path.join(mod_dir, extra)
+            try:
+                if os.path.isfile(extra_path):
+                    os.remove(extra_path)
+                    removed.append(extra)
+            except OSError:
+                pass
+    _sync_manifest(remove=removed)
+    return {'error': None}
 
 
 def _rebank_info(raw_name):
