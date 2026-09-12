@@ -1963,7 +1963,7 @@ window.__onResError = function (msg) { toast('⚠ ' + msg, 'error', 6000); };
       const pathPart = parts.slice(0, -1).join('/');
       // 路径部分取前10个字符，加上文件名
       if (pathPart.length > 10) {
-          return pathPart.substring(0, 10) + '.../' + fileName;
+          return pathPart.substring(0, 10) + '.../' + fileName.substring(0, 5);
       }
       return p;
   }
