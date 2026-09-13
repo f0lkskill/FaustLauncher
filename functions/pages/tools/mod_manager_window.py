@@ -205,7 +205,7 @@ def _rebank_info(raw_name):
     path = os.path.join(_get_mod_dir(), raw_name)
     if not os.path.exists(path):
         return {'error': f"文件不存在: {raw_name}"}
-    script = os.path.join(_PROJECT_ROOT, "functions", "modloader", "rebank.py")
+    script = os.path.join(_PROJECT_ROOT, "resources", "mod_loader", "_internal", "rebank.py")
     py = os.path.join(_PROJECT_ROOT, "resources", "mod_loader", "_internal",
                       "venv", "Bins", "python.exe")
     if not os.path.exists(script):
