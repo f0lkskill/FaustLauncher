@@ -5,7 +5,7 @@
 ### *您人生中绝无仅有的完美启动器 —— 让每一个但丁都解放双手，专心坐牢*
 
 
-<br>
+<br> 
 
 [![版本](https://img.shields.io/badge/V0.8.9-release-blue?style=for-the-badge&logo=git)](https://github.com/f0lkskill/FaustLauncher/releases)
 [![许可证](https://img.shields.io/badge/许可证-MIT-green?style=for-the-badge&logo=opensourceinitiative)](LICENSE)
