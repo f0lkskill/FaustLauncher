@@ -48,7 +48,7 @@ DEFAULT_BASES = (
 # 默认写回地址 (与读取源分开配置; value 走表单体, 不用 GET 避免 414)
 DEFAULT_UPDATE_URL = "https://folkskill.pythonanywhere.com/update/"
 
-CONNECT_TIMEOUT = 5        # 建连超时 (秒)
+CONNECT_TIMEOUT = 15        # 建连超时 (秒)
 READ_TIMEOUT = 15          # 读取超时 (秒)
 BUDGET_NO_CACHE = 45       # 无本地缓存时的总尝试预算 (秒)
 BUDGET_WITH_CACHE = 14     # 有本地缓存时快速失败, 尽早回退到缓存 (秒)
@@ -156,6 +156,43 @@ def _fmt_age(seconds):
     return f"{seconds / 86400:.1f} 天"
 
 
+# ---- 笔记名自动纠正 (残旧配置里写的是旧笔记名时, 自动改用有效名并记住) ----
+_KEYMAP = None
+
+
+def _keymap_path():
+    return os.path.join(CACHE_DIR, "_keymap.json")
+
+
+def _load_keymap() -> dict:
+    global _KEYMAP
+    if _KEYMAP is None:
+        try:
+            with open(_keymap_path(), "r", encoding="utf-8") as f:
+                data = json.load(f)
+            _KEYMAP = data if isinstance(data, dict) else {}
+        except Exception:
+            _KEYMAP = {}
+    return _KEYMAP
+
+
+def _remember_key(requested, effective):
+    """记住 配置名 → 有效名 的映射, 下次启动直接命中有效名"""
+    requested, effective = str(requested or ""), str(effective or "")
+    if not requested or not effective or requested == effective:
+        return
+    m = _load_keymap()
+    if m.get(requested) == effective:
+        return
+    m[requested] = effective
+    try:
+        os.makedirs(CACHE_DIR, exist_ok=True)
+        with open(_keymap_path(), "w", encoding="utf-8") as f:
+            json.dump(m, f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
+
+
 # ============================================================
 # 网络请求 (IPv4 优先 + 超时 + 多源)
 # ============================================================
@@ -235,83 +272,104 @@ def _fetch_by_ip(url, host, ips, timeout):
     return None
 
 
-def _fetch_text(key, verbose=True):
-    """多源获取笔记文本 (超时/IPv4 优先/预算控制)。
+def _fetch_note(keys, verbose=True):
+    """按候选笔记名依次尝试获取 (超时/IPv4 优先/DoH/预算控制)。
 
-    每个源最多两次: 第 1 次强制 IPv4, 连接类错误时第 2 次放开 IPv6 再试。
+    每个候选名最多两次: 第 1 次强制 IPv4, 连接类错误时第 2 次放开 IPv6。
+    返回 200 但内容为空 (说明该笔记名不存在) 时会自动换下一个候选名。
 
     Returns:
-        (text, source_url, error)
+        (text, source_url, used_key, error)
     """
+    if isinstance(keys, str):
+        keys = [keys]
     bases = get_note_bases()
-    cached_text, _age = cache_read(key)
+    cached_text = ""
+    for k in keys:
+        c, _age = cache_read(k)
+        if c:
+            cached_text = c
+            break
     deadline = time.time() + (BUDGET_WITH_CACHE if cached_text else BUDGET_NO_CACHE)
     # 有本地缓存时不值得等太久: 尽早失败并回退缓存 (南方线路卡顿时体验更好)
     conn_to = 3 if cached_text else CONNECT_TIMEOUT
     last_err = ""
 
-    for template in bases:
-        url = _build_url(template, key)
-        host = ""
-        try:
-            from urllib.parse import urlsplit
-            host = urlsplit(url).hostname or ""
-        except Exception:
+    for key in keys:
+        http_level_fail = False       # 该笔记名是否属于"不存在/为空"而不是线路问题
+        for template in bases:
+            url = _build_url(template, key)
             host = ""
-        for attempt in (1, 2):
-            remain = deadline - time.time()
-            if remain <= 1:
-                last_err = last_err or "总尝试时间超预算"
-                break
-            use_ipv4 = (attempt == 1)
-            t0 = time.time()
             try:
-                with (_prefer_ipv4() if use_ipv4 else nullcontext()):
-                    r = requests.get(
-                        url, headers=_HEADERS, verify=False,
-                        timeout=(min(conn_to, remain), min(READ_TIMEOUT, remain)),
-                    )
-                cost = time.time() - t0
-                text = r.text or ""
-                if r.status_code != 200:
-                    raise RuntimeError(f"HTTP {r.status_code}")
-                if not text.strip():
-                    raise RuntimeError("HTTP 200 但内容为空 (笔记名是否正确/是否已迁移?)")
-                if verbose:
-                    print(f"[云端] {key} 获取成功: {url} ({len(text)} 字节, {cost:.2f}s)")
-                cache_write(key, text)
-                return text, url, ""
-            except Exception as e:
-                cost = time.time() - t0
-                reason = f"{type(e).__name__}: {str(e)[:140]}"
-                last_err = f"{url} → {reason}"
-                if verbose:
-                    print(f"[云端] {key} 第 {attempt} 次失败"
-                          f"{' (IPv4)' if use_ipv4 else ' (IPv6 放开)'}: {url} → {reason} ({cost:.2f}s)")
-                if attempt == 1 and _is_conn_error(e):
-                    continue          # 换协议栈再试一次
-                break                 # HTTP 层错误或第 2 次失败: 换下一个源
-
-        # 兜底: 系统 DNS 被污染 / 连接被卡 → 用 DoH 解析后按原域名直连 IP
-        remain = deadline - time.time()
-        if host and remain > 3:
-            ips = resolve_via_doh(host)
-            if ips:
-                if verbose:
-                    print(f"[云端] {key} 常规线路失败, 改用 DoH 解析直连: {host} -> {', '.join(ips[:3])}")
+                from urllib.parse import urlsplit
+                host = urlsplit(url).hostname or ""
+            except Exception:
+                host = ""
+            for attempt in (1, 2):
+                remain = deadline - time.time()
+                if remain <= 1:
+                    last_err = last_err or "总尝试时间超预算"
+                    break
+                use_ipv4 = (attempt == 1)
                 t0 = time.time()
-                text = _fetch_by_ip(url, host, ips,
-                                    (min(conn_to, remain), min(READ_TIMEOUT, remain)))
-                if text:
+                try:
+                    with (_prefer_ipv4() if use_ipv4 else nullcontext()):
+                        r = requests.get(
+                            url, headers=_HEADERS, verify=False,
+                            timeout=(min(conn_to, remain), min(READ_TIMEOUT, remain)),
+                        )
+                    cost = time.time() - t0
+                    text = r.text or ""
+                    if r.status_code != 200:
+                        raise RuntimeError(f"HTTP {r.status_code}")
+                    if not text.strip():
+                        raise RuntimeError("HTTP 200 但内容为空 (笔记名是否正确/是否已迁移?)")
                     if verbose:
-                        print(f"[云端] {key} DoH 直连获取成功: {url} ({len(text)} 字节, "
-                              f"{time.time() - t0:.2f}s)")
+                        print(f"[云端] {key} 获取成功: {url} ({len(text)} 字节, {cost:.2f}s)")
                     cache_write(key, text)
-                    return text, url, ""
-                last_err = f"{url} → DoH 直连仍失败"
+                    return text, url, key, ""
+                except Exception as e:
+                    cost = time.time() - t0
+                    reason = f"{type(e).__name__}: {str(e)[:140]}"
+                    last_err = f"[{key}] {url} → {reason}"
+                    # HTTP 层/内容为空属于"笔记名问题", 与线路无关, 不值得再跑 DoH
+                    if isinstance(e, RuntimeError):
+                        http_level_fail = True
+                    if verbose:
+                        print(f"[云端] {key} 第 {attempt} 次失败"
+                              f"{' (IPv4)' if use_ipv4 else ' (IPv6 放开)'}: "
+                              f"{url} → {reason} ({cost:.2f}s)")
+                    if attempt == 1 and _is_conn_error(e):
+                        continue          # 换协议栈再试一次
+                    break                 # HTTP 层错误或第 2 次失败: 换下一个源
 
-    _last_error[key] = last_err or "未知错误"
-    return "", "", last_err or "未知错误"
+            # 兜底: 系统 DNS 被污染 / 连接被卡 → 用 DoH 解析后按原域名直连 IP
+            remain = deadline - time.time()
+            if host and remain > 3 and not http_level_fail:
+                ips = resolve_via_doh(host)
+                if ips:
+                    if verbose:
+                        print(f"[云端] {key} 常规线路失败, 改用 DoH 解析直连: "
+                              f"{host} -> {', '.join(ips[:3])}")
+                    t0 = time.time()
+                    text = _fetch_by_ip(url, host, ips,
+                                        (min(conn_to, remain), min(READ_TIMEOUT, remain)))
+                    if text:
+                        if verbose:
+                            print(f"[云端] {key} DoH 直连获取成功: {url} ({len(text)} 字节, "
+                                  f"{time.time() - t0:.2f}s)")
+                        cache_write(key, text)
+                        return text, url, key, ""
+                    last_err = f"[{key}] {url} → DoH 直连仍失败"
+
+    _last_error[keys[0]] = last_err or "未知错误"
+    return "", "", "", last_err or "未知错误"
+
+
+def _fetch_text(key, verbose=True):
+    """单笔记名获取 (兼容旧调用, 供 diag/测试使用)"""
+    text, url, _used, err = _fetch_note([key] if isinstance(key, str) else key, verbose)
+    return text, url, err
 
 
 # ============================================================
@@ -410,16 +468,53 @@ class Note:
 
     def __init__(self, id_name=None, address="", pwd="", read_only=False):
         self.note_id = id_name if id_name else address
-        self.note_name = address
+        self._requested = str(address or "")     # 配置里写的笔记名 (可能已过期)
+        self.note_name = self._requested          # 实际使用的笔记名 (成功后会被自动纠正)
         self.pwd = pwd
-        self.note_url = _build_url(get_note_bases()[0], address) if address else ""
+        self.note_url = _build_url(get_note_bases()[0], self.note_name) if self.note_name else ""
         self.read_only = read_only
         self.note_content = ""
         self.req_id = None
         self.has_get = False
 
+    def _candidate_keys(self):
+        """候选笔记名 (按优先级):
+
+        1. 上次成功过的有效名 (磁盘记忆, 避免每次都为旧配置白跑一趟)
+        2. 当前配置里的名字
+        3. 构建时内嵌配置里的同名笔记 (纠正 exe 目录里残留的旧配置)
+        4. .v2 后缀增删变体 (历史迁移差异)
+        """
+        keys = []
+
+        def add(k):
+            k = str(k or "").strip()
+            if k and k not in keys:
+                keys.append(k)
+
+        add(_load_keymap().get(self._requested, ""))
+        add(self._requested)
+        try:
+            from functions.base.web_config import get_embedded_webnote_address
+            add(get_embedded_webnote_address(self.note_id))
+        except Exception:
+            pass
+        for k in list(keys):
+            add(k[:-3] if k.endswith(".v2") else k + ".v2")
+        return keys or [self._requested]
+
+    def _use_key(self, key):
+        """记下实际生效的笔记名 (后续读写都用它) """
+        key = str(key or "").strip()
+        if not key:
+            return
+        if key != self._requested:
+            print(f"[云端] {self.note_id} 已改用有效笔记名: {key} (配置里是 {self._requested})")
+            _remember_key(self._requested, key)
+        self.note_name = key
+
     def fetch_note_info(self, allow_refresh=False):
-        """读取笔记内容 (多源 + 超时 + 本地缓存兜底)
+        """读取笔记内容 (多源 + 超时 + 笔记名自动纠正 + 本地缓存兜底)
 
         Returns:
             dict: {'note_content': str, 'note_id': str}
@@ -427,32 +522,48 @@ class Note:
         if not allow_refresh and self.has_get and self.note_content:
             return {"note_content": self.note_content, "note_id": self.note_name}
 
+        keys = self._candidate_keys()
+
+        # 缓存新鲜期内直接命中 (不发网络请求)
+        if not allow_refresh:
+            best = None
+            for k in keys:
+                cached, age = cache_read(k)
+                if cached and age is not None and age < CACHE_TTL:
+                    if best is None or age < best[2]:
+                        best = (cached, k, age)
+            if best:
+                self._use_key(best[1])
+                self.note_content = best[0]
+                self.has_get = True
+                return {"note_content": self.note_content, "note_id": self.note_name}
+
         if self.has_get and not self.note_content:
             print(f"[云端] 尝试重新获取 {self.note_id} 内容…")
 
-        cached, age = cache_read(self.note_name)
-        # 缓存新鲜期内直接命中, 不发网络请求 (省启动时间, 也降低云端压力)
-        if cached and age is not None and age < CACHE_TTL and not allow_refresh:
-            self.note_content = cached
-            self.has_get = True
-            return {"note_content": self.note_content, "note_id": self.note_name}
-
-        text, source, err = _fetch_text(self.note_name)
+        text, source, used, err = _fetch_note(keys)
         if text:
+            self._use_key(used)
             self.note_content = text
             self.note_url = source
             self.has_get = True
             return {"note_content": self.note_content, "note_id": self.note_name}
 
-        # 全部源失败: 回退本地缓存 (可能过期, 但保证启动器可用)
-        if cached:
+        # 全部候选名 + 全部源都失败: 回退本地缓存 (取最新的一份)
+        best = None
+        for k in keys:
+            cached, age = cache_read(k)
+            if cached and (best is None or (age is not None and age < best[2])):
+                best = (cached, k, age if age is not None else 1e18)
+        if best:
+            self._use_key(best[1])
             print(f"[云端] {self.note_id} 云端获取失败, 使用本地缓存 "
-                  f"({_fmt_age(age)}前, 可能过期) | 原因: {err}")
-            self.note_content = cached
+                  f"({_fmt_age(best[2])}前, 可能过期) | 原因: {err}")
+            self.note_content = best[0]
             self.has_get = True
             return {"note_content": self.note_content, "note_id": self.note_name}
 
-        print(f"[云端] {self.note_id} 获取失败, 无可用缓存 | 原因: {err}")
+        print(f"[云端] {self.note_id} 获取失败, 无可用缓存 | 尝试过: {', '.join(keys)} | 原因: {err}")
         self.note_content = ""
         return {"note_content": "", "note_id": self.note_name}
 

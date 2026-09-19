@@ -110,11 +110,13 @@ def main():
     head("云端笔记 (webnote) 访问自检")
 
     from functions.webFunc.Webnote import (get_note_bases, get_update_url, resolve_via_doh,
-                                           cache_read, _fmt_age)
-    from functions.base.web_config import get_webnote
+                                           cache_read, _fmt_age, Note)
+    from functions.base.web_config import get_webnote, get_config_source
 
     key = get_webnote("mod_info")[0] or "FaustLauncher.mod.info.v2"
-    print(f"待测笔记: {key}\n")
+    print(f"配置来源: {get_config_source()}")
+    print(f"待测笔记: {key}")
+    print(f"候选笔记名 (会自动逐个尝试): {Note('mod_info', key)._candidate_keys()}\n")
 
     bases = get_note_bases()
     print("配置的笔记源:")
