@@ -5,7 +5,7 @@
 ### *您人生中绝无仅有的完美启动器 —— 让每一个但丁都解放双手，专心坐牢*
 
 
-<br>
+<br> 
 
 [![版本](https://img.shields.io/badge/V0.8.9-release-blue?style=for-the-badge&logo=git)](https://github.com/f0lkskill/FaustLauncher/releases)
 [![许可证](https://img.shields.io/badge/许可证-MIT-green?style=for-the-badge&logo=opensourceinitiative)](LICENSE)
@@ -140,6 +140,7 @@
 
 - 可视化修改游戏内任意文本，自动生成并保存为 `lang/changes.json`
 - 补丁天然跨设备可移植，可随 Mod / 插件打包分发
+- 路径首段（如 `LLC_zh-CN/Announcer.json` 中的 `LLC_zh-CN`）仅作**汉化文件夹占位符**：应用时默认作用到游戏 `Lang` 下的**全部文件夹**（零协会 / OurPlay / 插件自定义汉化都能生效），不再被写死的目录名限制
 - **与美化渐变功能互不冲突**
 
 ### 🤖 AI 自动翻译
