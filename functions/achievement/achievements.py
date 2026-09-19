@@ -44,9 +44,15 @@ _FALLBACK_ITEM_NAMES = {
 def _load_item_names() -> dict[int, str]:
     """从项目语言包加载物品名称，缺失时使用内置名称。"""
     names = dict(_FALLBACK_ITEM_NAMES)
+    # 汉化目录名跟随当前平台 (零协会 LLC_zh-CN / OurPlay OurPlayHanHua / 插件自定义)
+    try:
+        from functions.web_update.translation_source import get_translation_dir_name
+        lang_name = get_translation_dir_name()
+    except Exception:
+        lang_name = "LLC_zh-CN"
     path = os.path.join(
         os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-        "lang", "LLC_zh-CN", "Items.json",
+        "lang", lang_name, "Items.json",
     )
     try:
         with open(path, "r", encoding="utf-8") as f:
