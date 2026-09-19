@@ -1932,6 +1932,29 @@ if %errorlevel% equ 0 (
         }
 
     # ---- 版本更新 ----
+    def refresh_cloud_list(self, kind='both'):
+        """从云端强制重新获取插件/Mod 列表 (忽略本次启动的内存缓存, 供下载中心"刷新"按钮用)"""
+        try:
+            from functions.pages.app import page_loader as _pl
+            from functions.webFunc.Webnote import memo_clear
+            kinds = ['addon', 'mod'] if kind in ('both', None, '') else [str(kind)]
+            for k in kinds:
+                _pl._cloud_sync_cache[k] = None
+            memo_clear()                      # 清掉进程内记忆, 强制重新请求云端
+            wt = self._get_web_trigger()
+            counts = {}
+            for k in kinds:
+                data = (wt.fetch_all_addon_info(allow_refresh=True) if k == 'addon'
+                        else wt.fetch_all_mod_info(allow_refresh=True))
+                data = data or []
+                _pl._cloud_sync_cache[k] = data
+                counts[k] = sum(len(p) for p in data)
+            print(f"[下载中心] 已从云端刷新: {counts}")
+            return {'ok': True, 'counts': counts, 'error': None}
+        except Exception as e:
+            print(f"[下载中心] 云端刷新失败: {e}")
+            return {'ok': False, 'counts': {}, 'error': str(e)}
+
     def check_update(self):
         """检查版本更新, 返回最新版本信息"""
         try:
@@ -1942,7 +1965,8 @@ if %errorlevel% equ 0 (
             sm = get_settings_manager()
             current = str(sm.get_setting('version_info') or '')
             note = Note("version_info", get_webnote('version_info')[0])
-            note.fetch_note_info()
+            # 手动检查更新: 强制联网取最新 (不走本次启动的已获取内容)
+            note.fetch_note_info(allow_refresh=True)
             if not note.note_content.strip():
                 return {'current': current, 'has_update': False, 'error': '未配置版本信息'}
             info = loads(note.note_content)
@@ -2008,7 +2032,7 @@ if %errorlevel% equ 0 (
             url = str(payload.get('url') or '')
             version = str(payload.get('latest') or '')
             if not url:
-                info = collect_version_info()
+                info = collect_version_info(allow_refresh=True)
                 entry = info.get('entry') or {}
                 url = str(entry.get('url') or entry.get('bilibili_url') or '')
                 version = str(info.get('latest') or version)

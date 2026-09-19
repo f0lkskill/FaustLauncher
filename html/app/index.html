@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>FaustLauncher 浮士德启动器</title>
-<link rel="stylesheet" href="css/style.css?v=97">
+<link rel="stylesheet" href="css/style.css?v=98">
 </head>
 <body>
 <div id="titlebar">
@@ -160,6 +160,7 @@
             <button class="res-tab" data-dc="mod">🎮 Mod</button>
           </div>
           <input class="res-search" id="dc-search" type="text" placeholder="🔍 搜索云端插件/Mod...">
+          <button class="btn btn-ghost" id="dc-refresh" title="忽略本次启动的缓存, 重新从云端获取列表">⟳ 刷新</button>
         </div>
         <div id="dc-list" class="res-list"></div>
         <div id="dc-pagination" class="res-pagination"></div>
@@ -216,7 +217,7 @@
       <div class="dl-empty">暂无下载任务</div>
     </div>
   </aside>
-<script src="js/app.js?v=97"></script>
+<script src="js/app.js?v=98"></script>
 <script>
 /* 独立兜底: 完全不依赖 app.js。无论 app.js 是否崩溃, 只要内容加载完成或超时,
    就移除主页两张卡片的 loading 圆圈。 */

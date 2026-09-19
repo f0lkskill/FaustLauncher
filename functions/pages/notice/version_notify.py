@@ -61,7 +61,7 @@ def _render_markdown_html(description):
         return "<p>" + _html.escape(text) + "</p>"
 
 
-def collect_version_info():
+def collect_version_info(allow_refresh=False):
     """从云端 webnote 读取版本信息。
 
     Returns:
@@ -82,7 +82,8 @@ def collect_version_info():
         from json import loads
 
         note = Note("version_info", get_webnote("version_info")[0])
-        note.fetch_note_info()
+        # 手动“检查更新 / 打开版本窗口”时强制联网取最新
+        note.fetch_note_info(allow_refresh=bool(allow_refresh))
         if not note.note_content.strip():
             result["error"] = "未配置版本信息 (云端不可用)"
             return result
@@ -331,8 +332,8 @@ def _download_and_install(version_name, url, push):
 
 # 供 js_api 层使用的便捷构建 (手动打开版本窗口时调用)
 def manual_payload():
-    """手动打开版本模态窗口 (无强制下载) 所需的数据"""
-    info = collect_version_info()
+    """手动打开版本窗口时的数据 (强制联网取最新, 避免看到本次启动的旧内容)"""
+    info = collect_version_info(allow_refresh=True)
     entry = dict(info.get("entry") or {})
     entry["version_name"] = info.get("latest") or ""
     title = "发现新版本" if info.get("has_update") else "已是最新版本"
