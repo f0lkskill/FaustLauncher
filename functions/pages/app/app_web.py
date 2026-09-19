@@ -1960,6 +1960,72 @@ if %errorlevel% equ 0 (
         except Exception as e:
             return {'error': str(e)}
 
+    # ---- 版本更新 (应用内二级模态窗口) ----
+    def _push_event(self, event, data=None):
+        """向前端推送事件 (window.__onEvent), 失败返回 False"""
+        try:
+            win = self.window_ref.get("win") if self.window_ref else None
+            if win is None:
+                return False
+            payload = json.dumps(data if data is not None else {}, ensure_ascii=False)
+            win.evaluate_js("window.__onEvent(%s, %s)" % (json.dumps(str(event)), payload))
+            return True
+        except Exception as e:
+            print(f"[推送事件] {event} 失败: {e}")
+            return False
+
+    def push_version_modal(self, payload):
+        """version_notify 注册的推送函数: 前端弹出应用内版本更新模态窗口"""
+        try:
+            win = self.window_ref.get("win") if self.window_ref else None
+            if win is None:
+                return False
+            self._version_payload = dict(payload or {})
+            win.evaluate_js("window.__onVersionModal(%s)" % json.dumps(payload, ensure_ascii=False))
+            return True
+        except Exception as e:
+            print(f"[版本更新] 推送应用内模态窗口失败: {e}")
+            return False
+
+    def get_version_modal(self):
+        """读取云端版本信息, 返回版本模态窗口数据 (手动打开, 不强制下载)"""
+        try:
+            from functions.pages.notice.version_notify import manual_payload
+            payload = manual_payload()
+            self._version_payload = dict(payload)
+            return payload
+        except Exception as e:
+            print(f"[版本更新] 读取版本信息失败: {e}")
+            return {'error': str(e), 'has_update': False, 'can_update': False, 'forced': False}
+
+    def start_version_update(self):
+        """开始下载并安装新版本 (后台线程, 进度经 __onEvent('version_update') 推送)"""
+        try:
+            from functions.pages.notice.version_notify import (
+                collect_version_info, start_version_download,
+            )
+            payload = getattr(self, '_version_payload', None) or {}
+            url = str(payload.get('url') or '')
+            version = str(payload.get('latest') or '')
+            if not url:
+                info = collect_version_info()
+                entry = info.get('entry') or {}
+                url = str(entry.get('url') or entry.get('bilibili_url') or '')
+                version = str(info.get('latest') or version)
+            if not url:
+                return {'ok': False, 'error': '未获取到新版本下载地址, 请稍后重试'}
+
+            def _push(data):
+                self._push_event('version_update', data)
+
+            ok = start_version_download(version, url, _push)
+            if not ok:
+                return {'ok': False, 'error': '更新包正在下载中, 请稍候'}
+            return {'ok': True, 'error': None}
+        except Exception as e:
+            print(f"[版本更新] 启动下载失败: {e}")
+            return {'ok': False, 'error': str(e)}
+
     # ---- 汉化状态 ----
     def get_translation_status(self):
         """检查汉化文件状态"""
@@ -1972,7 +2038,9 @@ if %errorlevel% equ 0 (
             pass
         if not game_path or not os.path.isdir(game_path):
             return {'status': 'no_game', 'label': '游戏未配置'}
-        lang_dir = os.path.join(game_path, 'LimbusCompany_Data', 'lang', 'LLC_zh-CN')
+        from functions.web_update.translation_source import get_translation_dir_name
+        # 汉化目录名跟随当前平台 (零协会 LLC_zh-CN / OurPlay OurPlayHanHua / 插件自定义), 不再写死
+        lang_dir = os.path.join(game_path, 'LimbusCompany_Data', 'lang', get_translation_dir_name())
         if not os.path.isdir(lang_dir):
             return {'status': 'not_installed', 'label': '未安装'}
         try:
@@ -2326,6 +2394,12 @@ def run_web_ui(debug: bool = False):
     core.mod_manager = ModManager()
 
     api = AppApi(core, window_holder)
+    # 版本更新: Web 界面下走应用内二级模态窗口 (注册前端推送函数)
+    try:
+        from functions.pages.notice.version_notify import register_web_pusher
+        register_web_pusher(api.push_version_modal)
+    except Exception as e:
+        print(f"[版本更新] 注册应用内模态窗口失败: {e}")
     # 窗口居中显示
     _win_x = _win_y = None
     try:
