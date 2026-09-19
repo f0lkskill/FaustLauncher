@@ -7,7 +7,7 @@
 
 <br> 
 
-[![版本](https://img.shields.io/badge/版本-V0.8.9-release.fix.3-blue?style=for-the-badge&logo=git)](https://github.com/f0lkskill/FaustLauncher/releases)
+[![版本](https://img.shields.io/badge/版本-V0.8.9-release.fix.4-blue?style=for-the-badge&logo=git)](https://github.com/f0lkskill/FaustLauncher/releases)
 [![许可证](https://img.shields.io/badge/许可证-MIT-green?style=for-the-badge&logo=opensourceinitiative)](LICENSE)
 [![状态](https://img.shields.io/badge/状态-开发中-orange?style=for-the-badge&logo=githubactions)](https://github.com/f0lkskill/FaustLauncher)
 [![平台](https://img.shields.io/badge/平台-Windows%2010%20%2F%2011-lightgrey?style=for-the-badge&logo=windows)](https://github.com/f0lkskill/FaustLauncher)
@@ -65,7 +65,7 @@
 
 | 项目 | 信息 | 项目 | 信息 |
 |:---|:---|:---|:---|
-| 🏷️ 当前版本 | `V0.8.9-release.fix.3` | 🛠️ 开发状态 | 开发中... |
+| 🏷️ 当前版本 | `V0.8.9-release.fix.4` | 🛠️ 开发状态 | 开发中... |
 | 📅 最后更新 | 2026-09-19 | 🎯 目标平台 | Windows 10 / 11 |
 | 🛠️ 技术栈 | Python · Tkinter · Pywebview | 📜 开源协议 | MIT |
 | 💬 反馈 | [Issues](https://github.com/f0lkskill/FaustLauncher/issues) | 💭 交流 | [Discussions](https://github.com/f0lkskill/FaustLauncher/discussions) |
@@ -206,6 +206,14 @@
 同一份笔记 JSON 放多处即可，启动器会按顺序自动回退。
 
 排障工具：`python webnote_diag.py` 会逐项打印 DNS（系统 vs DoH）、TCP / TLS / HTTP 耗时与结果、本地缓存状态。
+
+**缓存策略（重要）**：
+
+- 每次启动都会重新联网获取，**不会拿上次的旧内容**（发布新版本 / 新 Mod 后重启即可看到）；
+- 同一次启动内的重复请求会合并（进程内记忆 30 秒），不重复打云端；
+- `cache/webnote/` 只在**网络失败时兜底**（离线时仍能启动，内容可能过期，日志会明确提示）；
+- 手动刷新一定联网：主页「检查更新」、版本窗口、下载中心的 **⟳ 刷新** 按钮都会忽略本次启动已获取的内容；
+- 想彻底清掉本地兜底：删除 `cache/webnote/` 目录即可（下次成功联网时自动重建）。
 日志里 `[云端]` 行也能直接定位层级：`ConnectTimeout/ReadTimeout` 是线路问题，
 `SSLError/ConnectionReset` 是中间设备干扰，`HTTP 200 但内容为空` 是笔记名/迁移问题，
 `HTTP 403/502` 多为云端配额或服务异常。

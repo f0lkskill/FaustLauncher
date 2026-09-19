@@ -370,8 +370,8 @@
     "version_info": {
         "name": "版本信息",
         "type": "UNABLE_TO_EDIT",
-        "default": "V0.8.9-release.fix.3",
-        "value": "V0.8.9-release.fix.3",
+        "default": "V0.8.9-release.fix.4",
+        "value": "V0.8.9-release.fix.4",
         "description": "当前应用程序的版本信息"
     },
     "mems": {
