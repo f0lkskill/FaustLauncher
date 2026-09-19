@@ -52,7 +52,11 @@ CONNECT_TIMEOUT = 15        # 建连超时 (秒)
 READ_TIMEOUT = 15          # 读取超时 (秒)
 BUDGET_NO_CACHE = 45       # 无本地缓存时的总尝试预算 (秒)
 BUDGET_WITH_CACHE = 14     # 有本地缓存时快速失败, 尽早回退到缓存 (秒)
-CACHE_TTL = 300            # 缓存新鲜期 (秒): 期内直接命中, 不发网络请求
+# 新鲜度策略 (重要):
+#   磁盘缓存 (cache/webnote) 仅作为"网络失败时的兜底", 不做跨重启快速命中 ——
+#   否则发布新版本/新 Mod 后重启启动器仍会看到旧内容 (曾经就是这样把更新吞掉的)。
+#   同一次启动内的重复请求由进程内记忆合并, 重启即失效; 手动刷新会强制联网。
+MEMO_TTL = 30              # 进程内记忆时长 (秒), 0 = 关闭
 
 # 备用 DNS (DoH): 系统 DNS 被污染 / 解析失败时用, 解析到 IP 后按原域名 SNI 直连
 DOH_ENDPOINTS = (
@@ -154,6 +158,31 @@ def _fmt_age(seconds):
     if seconds < 86400:
         return f"{seconds / 3600:.1f} 小时"
     return f"{seconds / 86400:.1f} 天"
+
+
+# ---- 进程内记忆: 同一次启动里同一条笔记只请求一次 (重启即失效) ----
+_MEMO = {}       # key -> (text, ts)
+
+
+def memo_get(keys, ttl):
+    """命中进程内记忆时返回 (text, used_key, age), 否则 None"""
+    if ttl <= 0:
+        return None
+    now = time.time()
+    for k in keys:
+        item = _MEMO.get(k)
+        if item and now - item[1] < ttl:
+            return item[0], k, now - item[1]
+    return None
+
+
+def memo_put(key, text):
+    if key:
+        _MEMO[key] = (text, time.time())
+
+
+def memo_clear():
+    _MEMO.clear()
 
 
 # ---- 笔记名自动纠正 (残旧配置里写的是旧笔记名时, 自动改用有效名并记住) ----
@@ -524,18 +553,16 @@ class Note:
 
         keys = self._candidate_keys()
 
-        # 缓存新鲜期内直接命中 (不发网络请求)
+        # 同一次启动内复用 (进程内记忆): 重启一定重新请求, 不会看到过期内容
         if not allow_refresh:
-            best = None
-            for k in keys:
-                cached, age = cache_read(k)
-                if cached and age is not None and age < CACHE_TTL:
-                    if best is None or age < best[2]:
-                        best = (cached, k, age)
-            if best:
-                self._use_key(best[1])
-                self.note_content = best[0]
+            hit = memo_get(keys, MEMO_TTL)
+            if hit:
+                text, used, age = hit
+                self._use_key(used)
+                self.note_content = text
                 self.has_get = True
+                if age >= 2:
+                    print(f"[云端] {self.note_id} 命中本次启动已有的内容 ({age:.0f}s 前, 不重复请求)")
                 return {"note_content": self.note_content, "note_id": self.note_name}
 
         if self.has_get and not self.note_content:
@@ -547,9 +574,10 @@ class Note:
             self.note_content = text
             self.note_url = source
             self.has_get = True
+            memo_put(used, text)
             return {"note_content": self.note_content, "note_id": self.note_name}
 
-        # 全部候选名 + 全部源都失败: 回退本地缓存 (取最新的一份)
+        # 全部候选名 + 全部源都失败: 回退本地缓存 (取最新的一份; 磁盘缓存只在这里发挥作用)
         best = None
         for k in keys:
             cached, age = cache_read(k)
@@ -561,6 +589,7 @@ class Note:
                   f"({_fmt_age(best[2])}前, 可能过期) | 原因: {err}")
             self.note_content = best[0]
             self.has_get = True
+            memo_put(best[1], best[0])      # 避免同一次启动里反复等待超时
             return {"note_content": self.note_content, "note_id": self.note_name}
 
         print(f"[云端] {self.note_id} 获取失败, 无可用缓存 | 尝试过: {', '.join(keys)} | 原因: {err}")
@@ -571,6 +600,7 @@ class Note:
         """写回笔记内容 (下载计数 / 排序上传), 走独立的写回地址 (/update/, POST)"""
         result = write_note(self.note_name, new_content)
         self.note_content = new_content      # 内存保持最新, 后续排序/计数继续基于它
+        memo_put(self.note_name, new_content)   # 同步进程内记忆, 避免后续读取又拿到旧内容
         if result.get("status") == 1:
             self.req_id = result.get("req_id")
             cache_write(self.note_name, new_content)
@@ -583,4 +613,5 @@ class Note:
         result = write_note(self.note_name, "")
         if result.get("status") == 1:
             cache_write(self.note_name, "")
+        memo_clear()
         return result

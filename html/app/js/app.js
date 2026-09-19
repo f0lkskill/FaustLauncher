@@ -3178,6 +3178,30 @@ function layoutToolsCarousel(smooth) {
     if (resSearchEl) resSearchEl.addEventListener('input', () => { resSearch = resSearchEl.value.trim(); resPage = 1; renderResList(); });
     const dcSearchEl = $('#dc-search');
     if (dcSearchEl) dcSearchEl.addEventListener('input', () => { dcSearch = dcSearchEl.value.trim(); dcPage = 1; renderDCList(); });
+    // 手动刷新云端列表: 忽略本次启动的已获取内容, 强制重新从云端拉取
+    const dcRefreshEl = $('#dc-refresh');
+    if (dcRefreshEl) dcRefreshEl.addEventListener('click', async () => {
+      if (!api) { toast('浏览器预览模式', 'warn'); return; }
+      if (dcRefreshEl.disabled) return;
+      const oldText = dcRefreshEl.textContent;
+      dcRefreshEl.disabled = true;
+      dcRefreshEl.textContent = '⟳ 刷新中…';
+      try {
+        const r = await api.refresh_cloud_list('both');
+        if (r && r.error) {
+          toast('云端刷新失败: ' + r.error, 'error');
+        } else {
+          const c = (r && r.counts) || {};
+          toast('已从云端刷新: ' + (c.addon || 0) + ' 插件 / ' + (c.mod || 0) + ' Mod', 'success');
+        }
+        loadDCDisplay();
+      } catch (e) {
+        toast('云端刷新失败: ' + e, 'error');
+      } finally {
+        dcRefreshEl.disabled = false;
+        dcRefreshEl.textContent = oldText;
+      }
+    });
     // 资源管理页: 插件/Mod 切换 (按钮组随之切换)
     $$('.res-tab').forEach(t => t.addEventListener('click', () => {
       $$('.res-tab').forEach(x => x.classList.remove('active'));
