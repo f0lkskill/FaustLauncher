@@ -63,7 +63,10 @@ def get_translate_source() -> int:
 
 def get_translation_dir_name() -> str:
     """当前汉化包平台对应的翻译目录名 (如 LLC_zh-CN / OurPlayHanHua)"""
-    return DIR_NAME_BY_SOURCE[get_translate_source()]
+    if len(extend_translate_source) == 0:
+        return DIR_NAME_BY_SOURCE[get_translate_source()]
+    else:
+        return extend_translate_source[-1].source.split("/")[-1]
 
 
 def get_translation_dir() -> str:
@@ -81,7 +84,10 @@ def get_translation_dir() -> str:
 
 def get_game_lang_dir(game_path: str) -> str:
     """游戏目录中的汉化目录 (LimbusCompany_Data/Lang/<目录名>)"""
-    return os.path.join(game_path, "LimbusCompany_Data", "Lang", get_translation_dir_name())
+    if len(extend_translate_source) == 0:
+        return os.path.join(game_path, "LimbusCompany_Data", "Lang", get_translation_dir_name())
+    else:
+        return os.path.join(game_path, "LimbusCompany_Data", "Lang", extend_translate_source[-1].source.split("/")[-1])
 
 def is_ourplay_source() -> bool:
     """当前平台是否为 OurPlay (普通/神人)"""
