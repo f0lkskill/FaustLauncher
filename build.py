@@ -54,7 +54,7 @@ def upload_version_info(address, version, download_url='', log=None): # type: ig
                 print(msg.encode(sys.stdout.encoding or 'utf-8', 'replace')
                           .decode(sys.stdout.encoding or 'utf-8'), end='')
     try:
-        note_url = f'https://textdb.online/{address}'
+        note_url = f'https://folkskill.pythonanywhere.com/note/{address}'
         print(f'获取云端版本信息: {note_url}')
         r = requests.get(note_url, verify=False, timeout=20)
         r.raise_for_status()

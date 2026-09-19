@@ -3547,73 +3547,108 @@ function layoutToolsCarousel(smooth) {
   }
 
   // ---------------- 版本更新模态窗口 (应用内二级模态) ----------------
-  // 检测到新版本: 立即弹出本窗口并强制下载更新 (无关闭按钮, 点击遮罩/Esc 均无效),
-  //               内容与旧版独立窗口一致 (Markdown 已由后端渲染), 但样式完全跟随 App。
-  // 已是最新版本: 同样弹出本窗口展示版本信息, 右上角提供关闭按钮 (✕)。
+  // 检测到新版本: 立即弹出并强制下载更新 (无关闭按钮, 点击遮罩/Esc 均无效);
+  // 已是最新版本: 同样展示版本信息, 右上角提供关闭按钮 (✕)。
+  // 视觉: 品牌图标 + 版本跨度 (等宽数字) + 细分隔线 + 无边框文档区, 样式完全跟随 App。
   let verModalEl = null;        // 当前模态 DOM
   let verForced = false;        // 强制更新模式 (窗口不可取消)
   let verDownloading = false;   // 更新包下载中
 
   function closeVersionModal() {
-    if (!verModalEl) return;
-    if (verForced) return;      // 强制更新: 窗口不允许关闭
+    if (!verModalEl || verForced) return;   // 强制更新: 窗口不允许关闭
     const el = verModalEl;
     verModalEl = null;
     closePanel(el);
   }
 
-  function verSetStatus(text) {
-    const el = document.getElementById('ver-sub');
-    if (el) el.textContent = text || '';
+  // 版本跨度: 旧 → 新 (等宽数字, 信息本身就是设计)
+  function verVersionLine(d) {
+    if (d.has_update && d.current && d.latest) {
+      return '<span class="ver-from">' + esc(d.current) + '</span>' +
+             '<span class="ver-to">' + esc(d.latest) + '</span>';
+    }
+    return '<span class="ver-to">' + esc(d.latest || d.current || '未知版本') + '</span>';
   }
 
-  function verShowDownload(show) {
-    const dl = document.getElementById('ver-dl');
-    if (dl) dl.hidden = !show;
+  // 链接只展示域名, 完整地址放 title
+  function verLinkHost(url) {
+    try { return new URL(url).host || String(url); } catch (e) { return String(url || ''); }
+  }
+
+  // 底部操作区: 强制更新不提供任何"取消"入口, 仅在失败时给"重新下载"
+  function verRenderFoot(opts) {
+    opts = opts || {};
+    const foot = document.getElementById('ver-foot');
+    if (!foot) return;
+    let html = '';
+    if (opts.retry) html = '<button class="btn btn-primary" id="ver-retry">重新下载</button>';
+    else if (opts.actions) {
+      html = '<button class="btn btn-ghost" id="ver-later">稍后</button>' +
+             '<button class="btn btn-primary" id="ver-now">立即下载更新</button>';
+    }
+    foot.innerHTML = html;
+    foot.hidden = !html;
+    const retry = document.getElementById('ver-retry');
+    if (retry) retry.onclick = () => startVersionDownload();
+    const later = document.getElementById('ver-later');
+    if (later) later.onclick = closeVersionModal;
+    const now = document.getElementById('ver-now');
+    if (now) now.onclick = () => startVersionDownload();
+  }
+
+  function verProgressShow(show) {
+    const el = document.getElementById('ver-progress');
+    if (!el) return;
+    if (!show) { el.hidden = true; return; }
+    if (!el.hidden) return;          // 已显示: 不重复触导入场动画
+    el.hidden = false;
+    el.classList.remove('ver-in');
+    void el.offsetWidth;             // 强制重排, 让入场动画可重复触发
+    el.classList.add('ver-in');
+  }
+
+  function verSetLabel(text, state) {
+    const el = document.getElementById('ver-progress-label');
+    if (!el) return;
+    el.textContent = text || '';
+    el.className = 'ver-progress-label' + (state ? ' ' + state : '');
   }
 
   function verSetProgress(d) {
-    const dl = document.getElementById('ver-dl');
-    if (!dl || dl.hidden) return;
+    d = d || {};
     const pct = Math.max(0, Math.min(100, Number(d.percent) || 0));
-    const fill = document.getElementById('ver-dl-fill');
+    const fill = document.getElementById('ver-fill');
     if (fill) fill.style.width = pct.toFixed(1) + '%';
-    const pctEl = document.getElementById('ver-dl-pct');
+    const pctEl = document.getElementById('ver-pct');
     if (pctEl) pctEl.textContent = pct.toFixed(1) + '%';
-    const meta = document.getElementById('ver-dl-meta');
+    const meta = document.getElementById('ver-meta');
     if (meta) {
-      meta.textContent = fmtBytes(d.downloaded || 0) + ' / ' + fmtBytes(d.total || 0) +
-        (d.speed ? ' · ' + fmtSpeed(d.speed) : '');
+      const total = Number(d.total) || 0;
+      meta.textContent = total > 0
+        ? fmtBytes(d.downloaded || 0) + ' / ' + fmtBytes(total) +
+          (d.speed ? '   ·   ' + fmtSpeed(d.speed) : '')
+        : '';
     }
   }
 
   function verSetError(text) {
     verDownloading = false;
-    verSetStatus(text || '更新失败, 请重试');
-    const dl = document.getElementById('ver-dl');
-    if (dl) dl.classList.add('error');
-    let btn = document.getElementById('ver-retry');
-    if (!btn) {
-      const foot = document.getElementById('ver-foot');
-      if (foot) {
-        btn = document.createElement('button');
-        btn.className = 'btn btn-primary';
-        btn.id = 'ver-retry';
-        btn.textContent = '🔁 重试下载';
-        foot.appendChild(btn);
-      }
-    }
-    if (btn) btn.onclick = () => startVersionDownload();
+    verProgressShow(true);
+    const wrap = document.getElementById('ver-progress');
+    if (wrap) wrap.classList.add('error');
+    verSetLabel(text || '更新失败, 请重试', 'error');
+    verRenderFoot({ retry: true });
   }
 
   function startVersionDownload() {
     if (!api || !verModalEl || verDownloading) return;
     verDownloading = true;
-    const retry = document.getElementById('ver-retry');
-    if (retry) retry.remove();
-    const dl = document.getElementById('ver-dl');
-    if (dl) { dl.hidden = false; dl.classList.remove('error'); }
-    verSetStatus('正在准备下载更新包…');
+    const wrap = document.getElementById('ver-progress');
+    if (wrap) wrap.classList.remove('error');
+    verProgressShow(true);
+    verSetProgress({ percent: 0 });
+    verSetLabel('正在获取更新包…');
+    verRenderFoot({});
     api.start_version_update().then(r => {
       if (r && r.error) verSetError(r.error);
     }).catch(e => verSetError(String(e)));
@@ -3625,11 +3660,12 @@ function layoutToolsCarousel(smooth) {
     d = d || {};
     const stage = d.stage || 'progress';
     if (stage === 'error') { verSetError(d.text); return; }
-    verShowDownload(true);
-    if (d.text) verSetStatus(d.text);
-    if (stage === 'progress') {
-      verSetProgress(d);
-    } else if (stage === 'ready') {
+    verProgressShow(true);
+    const wrap = document.getElementById('ver-progress');
+    if (wrap) wrap.classList.remove('error');
+    if (d.text) verSetLabel(d.text, stage === 'ready' ? 'ok' : '');
+    if (stage === 'progress') verSetProgress(d);
+    else if (stage === 'ready') {
       verDownloading = false;
       verSetProgress({ percent: 100, downloaded: d.downloaded, total: d.total, speed: 0 });
       toastTop('更新包已就绪, 正在重启并安装新版本…', 'success', 6000);
@@ -3654,58 +3690,46 @@ function layoutToolsCarousel(smooth) {
     panel.className = 'ver-overlay' + (forced ? ' forced' : '');
     panel.innerHTML =
       '<div class="ver-card">' +
-        '<div class="ver-head">' +
-          '<span class="ver-ico">🚀</span>' +
-          '<div class="ver-head-text">' +
-            '<div class="ver-title">' + esc(d.title || (forced ? '发现新版本' : '版本信息')) + '</div>' +
-            '<div class="ver-sub" id="ver-sub">' +
-              esc(forced ? '检测到新版本, 正在自动下载更新…' : (d.has_update ? '可更新到最新版本' : '')) +
-            '</div>' +
+        (forced ? '<span class="ver-accent" aria-hidden="true"></span>' : '') +
+        '<header class="ver-head">' +
+          '<img class="ver-mark" src="' + PROJECT_ICON + '" alt="" draggable="false">' +
+          '<div class="ver-head-main">' +
+            '<div class="ver-eyebrow">' + esc(d.title || (d.has_update ? '发现新版本' : '已是最新版本')) + '</div>' +
+            '<div class="ver-vers">' + verVersionLine(d) + '</div>' +
           '</div>' +
-          (forced ? '' : '<button class="panel-close" id="ver-close" title="关闭">✕</button>') +
-        '</div>' +
-        '<div class="ver-chips">' +
-          '<span class="chip">当前版本: ' + esc(d.current || '未知') + '</span>' +
-          (d.latest
-            ? '<span class="chip' + (d.has_update ? ' ok' : '') + '">' +
-                (d.has_update ? '最新版本: ' : '云端版本: ') + esc(d.latest) + '</span>'
+          (forced ? '' : '<button class="ver-x" id="ver-close" title="关闭" aria-label="关闭">✕</button>') +
+        '</header>' +
+        '<div class="ver-rule"></div>' +
+        '<div class="ver-submeta">' +
+          '<span class="ver-submeta-title">更新说明</span>' +
+          (d.date ? '<span class="ver-submeta-date">' + esc(d.date) + '</span>' : '') +
+          (d.url
+            ? '<a class="ver-submeta-link" href="' + esc(d.url) + '" target="_blank" rel="noreferrer" title="' +
+              esc(d.url) + '">' + esc(verLinkHost(d.url)) + ' ↗</a>'
             : '') +
         '</div>' +
-        ((d.date || d.url)
-          ? '<div class="ver-meta">' +
-              (d.date ? '<span>🕐 ' + esc(d.date) + '</span>' : '') +
-              (d.url ? '<a href="' + esc(d.url) + '" target="_blank">🔗 ' + esc(d.url) + '</a>' : '') +
-            '</div>'
-          : '') +
-        '<div class="ver-body markdown-body" id="ver-body">' + (d.html || '<p>暂无更新说明</p>') + '</div>' +
-        '<div class="ver-dl" id="ver-dl" hidden>' +
-          '<div class="ver-dl-head"><span id="ver-dl-label">下载进度</span><span id="ver-dl-pct">0.0%</span></div>' +
-          '<div class="progress-track ver-dl-track"><div class="progress-fill" id="ver-dl-fill"></div></div>' +
-          '<div class="ver-dl-meta" id="ver-dl-meta">- / -</div>' +
+        '<div class="ver-doc"><div class="ver-doc-inner">' +
+          (d.html || '<p class="ver-empty">这次更新没有留下说明。</p>') +
+        '</div></div>' +
+        '<div class="ver-progress" id="ver-progress" hidden>' +
+          '<div class="ver-progress-head">' +
+            '<span class="ver-progress-label" id="ver-progress-label">准备下载更新包</span>' +
+            '<span class="ver-progress-pct" id="ver-pct">0.0%</span>' +
+          '</div>' +
+          '<div class="ver-bar"><span class="ver-bar-fill" id="ver-fill"></span></div>' +
+          '<div class="ver-progress-meta" id="ver-meta"></div>' +
         '</div>' +
-        '<div class="ver-foot" id="ver-foot">' +
-          (forced
-            ? '<span class="ver-tip">🔒 该更新为强制更新, 窗口不可关闭</span>'
-            : ((d.has_update && d.can_update)
-                ? '<button class="btn btn-ghost" id="ver-later">稍后再说</button>' +
-                  '<button class="btn btn-primary" id="ver-now">⬇ 立即下载更新</button>'
-                : '<button class="btn btn-primary" id="ver-ok">确定</button>')) +
-        '</div>' +
+        '<footer class="ver-foot" id="ver-foot" hidden></footer>' +
       '</div>';
     document.body.appendChild(panel);
     verModalEl = panel;
 
     if (!forced) {
-      const closeBtn = $('#ver-close', panel);
+      const closeBtn = document.getElementById('ver-close');
       if (closeBtn) closeBtn.onclick = closeVersionModal;
-      // 非强制模式: 点击遮罩 / Esc / 确定 均可关闭
+      // 信息模式: 点击遮罩 / Esc / 按钮均可关闭
       panel.addEventListener('click', (e) => { if (e.target === panel) closeVersionModal(); });
-      const okBtn = $('#ver-ok', panel);
-      if (okBtn) okBtn.onclick = closeVersionModal;
-      const laterBtn = $('#ver-later', panel);
-      if (laterBtn) laterBtn.onclick = closeVersionModal;
-      const nowBtn = $('#ver-now', panel);
-      if (nowBtn) nowBtn.onclick = () => startVersionDownload();
+      if (d.has_update && d.can_update) verRenderFoot({ actions: true });
     }
     // 强制更新: 打开后立即自动开始下载 (用户可同时阅读更新内容)
     if (d.auto_start) {

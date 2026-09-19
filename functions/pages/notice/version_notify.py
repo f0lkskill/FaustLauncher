@@ -9,6 +9,7 @@
 
 import json
 import os
+import re
 import sys
 import time
 from threading import Lock, Thread
@@ -99,7 +100,11 @@ def collect_version_info():
 def _fmt_date(value):
     if hasattr(value, "strftime"):
         return value.strftime("%Y-%m-%d %H:%M:%S")
-    return str(value or "")
+    text = str(value or "").strip()
+    # 云端日期常见写法 2026-09-11-00:01:53, 统一为 2026-09-11 00:01:53
+    if re.match(r"^\d{4}-\d{2}-\d{2}-\d{2}:\d{2}", text):
+        text = text[:10] + " " + text[11:]
+    return text
 
 
 def build_payload(current_version, latest_info, info="发现新版本",
@@ -270,7 +275,7 @@ def _download_and_install(version_name, url, push):
     push({"stage": "status", "text": f"正在下载 {version_name} 安装包…"})
 
     gui = _ProgressGui(push)
-    ok = download_file_with_gui(url, temp_file, gui, f"FaustLauncher {version_name}")
+    ok = download_file_with_gui(url, temp_file, gui, "正在下载更新包…")
     if ok is False or not os.path.exists(temp_file):
         push({"stage": "error", "text": "更新包下载失败, 请检查网络后重试"})
         return
