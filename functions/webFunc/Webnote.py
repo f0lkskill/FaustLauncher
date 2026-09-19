@@ -1,99 +1,475 @@
+"""云端笔记 (Webnote) 读写
+
+**读与写是两条独立链路**:
+
+- 读取: `config/web_config.json → webnote_bases` (模板列表, 含 `{key}`), 即 `/note/<key>`
+- 写回: `config/web_config.json → webnote_update_url`, 即 `/update/` (下载计数/排序上传)
+  写回固定用 **POST** (`key` 在 query, `value` 在表单体): 实测 `/update/` 用 GET 时 value 进 URL,
+  真实笔记(20KB+) 会被 openresty **414 Request-URI Too Large** 拒绝, GET 仅作小内容兜底。
+
+读取侧针对国内复杂线路做了加固。此前"南方部分用户云端数据全部获取失败"的典型原因:
+单域名 + 无超时 + 不区分错误类型, 跨境线路一抖动 / DNS 被污染 / IPv6 半通 就整段失败,
+而浏览器自带 DoH、Happy Eyeballs(IPv6 自动回落) 等机制, 所以看起来"浏览器正常"。
+
+加固点:
+  1. 多源兜底: webnote_bases 模板列表依次尝试
+  2. 超时 + 重试: 不再出现无超时的长时间挂死 (连接类错误会换协议栈/退避重试)
+  3. IPv4 优先: Python 不会像浏览器那样自动回落 IPv4, 线路 IPv6 半通时会直接失败
+  4. DoH 兜底: 常规线路失败时用 223.5.5.5 / doh.pub 解析, 再按原域名 SNI 直连 IP (绕过 DNS 污染)
+  5. 本地缓存兜底: 全部源失败时用 cache/webnote/<key>.txt, 启动器仍可用 (可能过期)
+  6. 明确日志: 打印每个源的 URL/状态/耗时/异常, 失败不再被静默吞掉
+"""
+
+import json
+import os
+import re
+import socket
+import sys
+import time
+from contextlib import contextmanager, nullcontext
+
 import requests
 
+# ============================================================
+# 路径 / 常量
+# ============================================================
+if getattr(sys, "frozen", False):
+    _PROJECT_ROOT = os.path.dirname(os.path.abspath(sys.executable))
+else:
+    _PROJECT_ROOT = os.path.abspath(
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
+
+CACHE_DIR = os.path.join(_PROJECT_ROOT, "cache", "webnote")
+
+# 默认笔记读取源 (config/web_config.json 的 webnote_bases 可覆盖, 支持 {key} 占位符)
+DEFAULT_BASES = (
+    "https://folkskill.pythonanywhere.com/note/{key}",
+)
+# 默认写回地址 (与读取源分开配置; value 走表单体, 不用 GET 避免 414)
+DEFAULT_UPDATE_URL = "https://folkskill.pythonanywhere.com/update/"
+
+CONNECT_TIMEOUT = 5        # 建连超时 (秒)
+READ_TIMEOUT = 15          # 读取超时 (秒)
+BUDGET_NO_CACHE = 45       # 无本地缓存时的总尝试预算 (秒)
+BUDGET_WITH_CACHE = 14     # 有本地缓存时快速失败, 尽早回退到缓存 (秒)
+CACHE_TTL = 300            # 缓存新鲜期 (秒): 期内直接命中, 不发网络请求
+
+# 备用 DNS (DoH): 系统 DNS 被污染 / 解析失败时用, 解析到 IP 后按原域名 SNI 直连
+DOH_ENDPOINTS = (
+    "https://223.5.5.5/resolve",       # 阿里公共 DNS (国内可达)
+    "https://doh.pub/dns-query",       # 腾讯 DNSPod
+)
+DOH_TIMEOUT = (3, 6)
+
+_HEADERS = {
+    "User-Agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                   "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"),
+    "Accept": "*/*",
+    "Accept-Language": "zh-CN,zh;q=0.9",
+    "Cache-Control": "no-cache",
+}
+
+_orig_getaddrinfo = socket.getaddrinfo
+_last_error = {}           # note_key -> 最近一次失败原因 (诊断用)
+
+
+# ============================================================
+# 配置
+# ============================================================
+def get_note_bases():
+    """读取笔记源模板列表 (config/web_config.json → webnote_bases)"""
+    bases = []
+    try:
+        from functions.base.web_config import get_web_config
+        raw = (get_web_config() or {}).get("webnote_bases")
+        if isinstance(raw, str):
+            raw = [raw]
+        if isinstance(raw, (list, tuple)):
+            bases = [str(x).strip() for x in raw if str(x).strip()]
+    except Exception:
+        bases = []
+    return bases or list(DEFAULT_BASES)
+
+
+def get_update_url():
+    """读取写回地址 (config/web_config.json → webnote_update_url)
+
+    读取 (/note/) 与写回 (/update/) 是两套独立配置, 互不影响。
+    """
+    try:
+        from functions.base.web_config import get_web_config
+        url = (get_web_config() or {}).get("webnote_update_url")
+        if isinstance(url, str) and url.strip():
+            return url.strip()
+    except Exception:
+        pass
+    return DEFAULT_UPDATE_URL
+
+
+def _build_url(template, key):
+    """模板 → 完整地址: 支持 {key} 占位符, 否则按 base/key 拼接"""
+    t = str(template).strip()
+    if "{key}" in t:
+        return t.replace("{key}", str(key))
+    return t.rstrip("/") + "/" + str(key)
+
+
+# ============================================================
+# 本地缓存 (断网/线路故障时兜底, 保证启动器仍可用)
+# ============================================================
+def _cache_path(key):
+    safe = re.sub(r"[^0-9A-Za-z._\-]", "_", str(key))[:80] or "note"
+    return os.path.join(CACHE_DIR, safe + ".txt")
+
+
+def cache_read(key):
+    """返回 (内容, 缓存时长秒); 无缓存返回 ('', None)"""
+    path = _cache_path(key)
+    try:
+        if not os.path.isfile(path):
+            return "", None
+        with open(path, "r", encoding="utf-8") as f:
+            text = f.read()
+        return text, max(0.0, time.time() - os.path.getmtime(path))
+    except Exception:
+        return "", None
+
+
+def cache_write(key, text):
+    try:
+        os.makedirs(CACHE_DIR, exist_ok=True)
+        with open(_cache_path(key), "w", encoding="utf-8") as f:
+            f.write(text or "")
+    except Exception:
+        pass
+
+
+def _fmt_age(seconds):
+    if seconds is None:
+        return "未知时间"
+    if seconds < 60:
+        return f"{int(seconds)} 秒"
+    if seconds < 3600:
+        return f"{seconds / 60:.0f} 分钟"
+    if seconds < 86400:
+        return f"{seconds / 3600:.1f} 小时"
+    return f"{seconds / 86400:.1f} 天"
+
+
+# ============================================================
+# 网络请求 (IPv4 优先 + 超时 + 多源)
+# ============================================================
+@contextmanager
+def _prefer_ipv4():
+    """临时让 DNS 只返回 IPv4 地址 (浏览器有 Happy Eyeballs 自动回落, Python 没有)"""
+    def _ipv4_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
+        return _orig_getaddrinfo(host, port, socket.AF_INET, type, proto, flags)
+
+    socket.getaddrinfo = _ipv4_getaddrinfo
+    try:
+        yield
+    finally:
+        socket.getaddrinfo = _orig_getaddrinfo
+
+
+def _is_conn_error(exc):
+    """是否为连接/超时/握手类错误 (这类错误换协议栈(IPv6)重试才有意义)"""
+    text = f"{type(exc).__name__}: {exc}".lower()
+    keys = ("timeout", "timed out", "connection", "ssl", "eof", "reset", "refused",
+            "unreachable", "getaddrinfo", "socket", "proxy", "handshake", "aborted")
+    return any(k in text for k in keys)
+
+
+_DOH_HEADERS = dict(_HEADERS, Accept="application/dns-json")
+
+
+def resolve_via_doh(host):
+    """通过 DoH 解析 A 记录; 失败返回 [] (用于绕过系统 DNS 污染/解析失败)"""
+    for endpoint in DOH_ENDPOINTS:
+        try:
+            r = requests.get(endpoint, params={"name": host, "type": "A"},
+                             headers=_DOH_HEADERS, verify=False, timeout=DOH_TIMEOUT)
+            data = r.json()
+            ips = []
+            for ans in (data.get("Answer") or []):
+                ip = str(ans.get("data", "")).strip()
+                if re.match(r"^\d{1,3}(\.\d{1,3}){3}$", ip):
+                    ips.append(ip)
+            if ips:
+                return ips
+        except Exception:
+            continue
+    return []
+
+
+def _fetch_by_ip(url, host, ips, timeout):
+    """按指定 IP 连接, 但 TLS SNI / Host 仍用原域名 (绕过 DNS 污染, 不破 SNI 路由)"""
+    try:
+        import ssl
+        import urllib3
+        from urllib.parse import urlsplit
+    except Exception:
+        return None
+    u = urlsplit(url)
+    path = u.path + (("?" + u.query) if u.query else "")
+    port = u.port or 443
+    for ip in ips:
+        pool = None
+        try:
+            pool = urllib3.HTTPSConnectionPool(
+                ip, port=port, server_hostname=host, cert_reqs=ssl.CERT_NONE,
+                timeout=urllib3.Timeout(connect=timeout[0], read=timeout[1]), retries=False)
+            resp = pool.urlopen("GET", path, headers=dict(_HEADERS, **{"Host": host}),
+                                preload_content=True, redirect=False)
+            text = resp.data.decode("utf-8", "replace")
+            if 200 <= int(resp.status) < 300 and text.strip():
+                return text
+        except Exception:
+            continue
+        finally:
+            if pool is not None:
+                try:
+                    pool.close()
+                except Exception:
+                    pass
+    return None
+
+
+def _fetch_text(key, verbose=True):
+    """多源获取笔记文本 (超时/IPv4 优先/预算控制)。
+
+    每个源最多两次: 第 1 次强制 IPv4, 连接类错误时第 2 次放开 IPv6 再试。
+
+    Returns:
+        (text, source_url, error)
+    """
+    bases = get_note_bases()
+    cached_text, _age = cache_read(key)
+    deadline = time.time() + (BUDGET_WITH_CACHE if cached_text else BUDGET_NO_CACHE)
+    # 有本地缓存时不值得等太久: 尽早失败并回退缓存 (南方线路卡顿时体验更好)
+    conn_to = 3 if cached_text else CONNECT_TIMEOUT
+    last_err = ""
+
+    for template in bases:
+        url = _build_url(template, key)
+        host = ""
+        try:
+            from urllib.parse import urlsplit
+            host = urlsplit(url).hostname or ""
+        except Exception:
+            host = ""
+        for attempt in (1, 2):
+            remain = deadline - time.time()
+            if remain <= 1:
+                last_err = last_err or "总尝试时间超预算"
+                break
+            use_ipv4 = (attempt == 1)
+            t0 = time.time()
+            try:
+                with (_prefer_ipv4() if use_ipv4 else nullcontext()):
+                    r = requests.get(
+                        url, headers=_HEADERS, verify=False,
+                        timeout=(min(conn_to, remain), min(READ_TIMEOUT, remain)),
+                    )
+                cost = time.time() - t0
+                text = r.text or ""
+                if r.status_code != 200:
+                    raise RuntimeError(f"HTTP {r.status_code}")
+                if not text.strip():
+                    raise RuntimeError("HTTP 200 但内容为空 (笔记名是否正确/是否已迁移?)")
+                if verbose:
+                    print(f"[云端] {key} 获取成功: {url} ({len(text)} 字节, {cost:.2f}s)")
+                cache_write(key, text)
+                return text, url, ""
+            except Exception as e:
+                cost = time.time() - t0
+                reason = f"{type(e).__name__}: {str(e)[:140]}"
+                last_err = f"{url} → {reason}"
+                if verbose:
+                    print(f"[云端] {key} 第 {attempt} 次失败"
+                          f"{' (IPv4)' if use_ipv4 else ' (IPv6 放开)'}: {url} → {reason} ({cost:.2f}s)")
+                if attempt == 1 and _is_conn_error(e):
+                    continue          # 换协议栈再试一次
+                break                 # HTTP 层错误或第 2 次失败: 换下一个源
+
+        # 兜底: 系统 DNS 被污染 / 连接被卡 → 用 DoH 解析后按原域名直连 IP
+        remain = deadline - time.time()
+        if host and remain > 3:
+            ips = resolve_via_doh(host)
+            if ips:
+                if verbose:
+                    print(f"[云端] {key} 常规线路失败, 改用 DoH 解析直连: {host} -> {', '.join(ips[:3])}")
+                t0 = time.time()
+                text = _fetch_by_ip(url, host, ips,
+                                    (min(conn_to, remain), min(READ_TIMEOUT, remain)))
+                if text:
+                    if verbose:
+                        print(f"[云端] {key} DoH 直连获取成功: {url} ({len(text)} 字节, "
+                              f"{time.time() - t0:.2f}s)")
+                    cache_write(key, text)
+                    return text, url, ""
+                last_err = f"{url} → DoH 直连仍失败"
+
+    _last_error[key] = last_err or "未知错误"
+    return "", "", last_err or "未知错误"
+
+
+# ============================================================
+# 写回 (与读取完全分开的一条链路)
+# ============================================================
+def parse_write_response(r):
+    """解析 /update/ 响应, 返回 (是否成功, 信息字典)
+
+    约定成功响应: {"status": 1, ...}; 失败可能是 HTML 错误页(如 414/502)或空响应。
+    """
+    text = (r.text or "").strip()
+    if not text:
+        return False, {"error": f"HTTP {r.status_code} 空响应"}
+    if text.startswith("<"):
+        m = re.search(r"<title>(.*?)</title>", text, re.S | re.I)
+        title = (m.group(1).strip() if m else "")
+        if re.match(r"^\d{3}\b", title):        # 如 414 Request-URI Too Large
+            return False, {"error": title}
+        return False, {"error": f"HTTP {r.status_code} {title or 'HTML 错误页'}"}
+    try:
+        data = json.loads(text)
+    except Exception:
+        if r.status_code == 200:
+            return True, {"status": 1, "raw": text[:200]}
+        return False, {"error": f"HTTP {r.status_code} 非 JSON 响应: {text[:120]}"}
+    if isinstance(data, dict) and data.get("status") == 1:
+        return True, data
+    return False, {"error": f"服务端返回失败: {str(data)[:160]}"}
+
+
+def write_note(key, value, update_url=None):
+    """写回笔记内容 (key 不变, value 覆盖)。
+
+    - 优先 **POST** (`key` 在 query, `value` 在 form body): 不受 URL 长度限制
+    - 内容很小时再补一个 GET 兜底 (老接口习惯写法)
+    - 连接类错误退避重试一次 (跨境线路瞬时 RST 很常见)
+
+    Returns:
+        dict: {'status': 1/0, 'error': str|None, 'method': str, 'req_id': str|None}
+    """
+    url = update_url or get_update_url()
+    key = str(key or "")
+    value = "" if value is None else str(value)
+    if not key:
+        return {"status": 0, "error": "笔记名为空", "method": "", "req_id": None}
+
+    methods = ["POST"]
+    if len(value) <= 4000:          # 大内容用 GET 会被 414, 只有小内容才兜底
+        methods.append("GET")
+
+    last_err = ""
+    for method in methods:
+        for attempt in (1, 2):
+            t0 = time.time()
+            try:
+                if method == "POST":
+                    r = requests.post(url, params={"key": key}, data={"value": value},
+                                      headers=_HEADERS, verify=False,
+                                      timeout=(CONNECT_TIMEOUT, 60))
+                else:
+                    r = requests.get(url, params={"key": key, "value": value},
+                                     headers=_HEADERS, verify=False,
+                                     timeout=(CONNECT_TIMEOUT, 60))
+                ok, info = parse_write_response(r)
+                cost = time.time() - t0
+                if ok:
+                    print(f"[云端] {key} 写回成功 ({method}, {len(value)} 字节, {cost:.2f}s)")
+                    return {"status": 1, "error": None, "method": method,
+                            "req_id": info.get("req_id") if isinstance(info, dict) else None}
+                last_err = str(info.get("error"))
+                print(f"[云端] {key} 写回失败 ({method}): {last_err} ({cost:.2f}s)")
+                break               # HTTP 层错误: 换个方法, 不重试
+            except Exception as e:
+                cost = time.time() - t0
+                last_err = f"{type(e).__name__}: {str(e)[:140]}"
+                print(f"[云端] {key} 写回第 {attempt} 次失败 ({method}): {last_err} ({cost:.2f}s)")
+                if attempt == 1 and _is_conn_error(e):
+                    time.sleep(0.4)
+                    continue
+                break
+    return {"status": 0, "error": last_err or "未知错误", "method": "", "req_id": None}
+
+
+# ============================================================
+# Note: 对外接口 (保持与旧实现兼容)
+# ============================================================
 class Note:
-    def __init__(self, id_name, address, pwd="", read_only=False):
-        self.note_id = id_name
+    """云端笔记
+
+    Args:
+        id_name: 笔记标识 (如 'addon_info'), 缺省时用 address
+        address: 云端笔记地址/键名 (如 'FaustLauncher.mod.info.v2')
+        pwd: 密码 (保留字段)
+        read_only: 只读标记 (保留字段)
+    """
+
+    def __init__(self, id_name=None, address="", pwd="", read_only=False):
+        self.note_id = id_name if id_name else address
         self.note_name = address
         self.pwd = pwd
-        self.note_url = f"https://folkskill.pythonanywhere.com/note/{address}"
+        self.note_url = _build_url(get_note_bases()[0], address) if address else ""
         self.read_only = read_only
         self.note_content = ""
         self.req_id = None
         self.has_get = False
-        # print(f"初始化笔记 {self.note_id}。")
-    
+
     def fetch_note_info(self, allow_refresh=False):
-        """读取笔记内容"""
-        try:
-            if (not self.has_get or self.note_content == "") or allow_refresh:
-                if self.has_get and self.note_content == "":
-                    print(f"尝试重新获取云端 {self.note_id} 内容。")
-                else:
-                    if allow_refresh:
-                        print(f"正在刷新云端 {self.note_id} 内容。")
-                    else:print(f"正在获取云端 {self.note_id} 内容。")
+        """读取笔记内容 (多源 + 超时 + 本地缓存兜底)
 
-                r = requests.get(self.note_url, verify=False)
-                self.note_content = r.text
-                self.has_get = True
-                return {'note_content': self.note_content, 'note_id': self.note_name}
-            else:
-                return {'note_content': self.note_content, 'note_id': self.note_name}
-        except:
-            self.note_content = ""
-            return {'note_content': "", 'note_id': self.note_name}
-    
+        Returns:
+            dict: {'note_content': str, 'note_id': str}
+        """
+        if not allow_refresh and self.has_get and self.note_content:
+            return {"note_content": self.note_content, "note_id": self.note_name}
+
+        if self.has_get and not self.note_content:
+            print(f"[云端] 尝试重新获取 {self.note_id} 内容…")
+
+        cached, age = cache_read(self.note_name)
+        # 缓存新鲜期内直接命中, 不发网络请求 (省启动时间, 也降低云端压力)
+        if cached and age is not None and age < CACHE_TTL and not allow_refresh:
+            self.note_content = cached
+            self.has_get = True
+            return {"note_content": self.note_content, "note_id": self.note_name}
+
+        text, source, err = _fetch_text(self.note_name)
+        if text:
+            self.note_content = text
+            self.note_url = source
+            self.has_get = True
+            return {"note_content": self.note_content, "note_id": self.note_name}
+
+        # 全部源失败: 回退本地缓存 (可能过期, 但保证启动器可用)
+        if cached:
+            print(f"[云端] {self.note_id} 云端获取失败, 使用本地缓存 "
+                  f"({_fmt_age(age)}前, 可能过期) | 原因: {err}")
+            self.note_content = cached
+            self.has_get = True
+            return {"note_content": self.note_content, "note_id": self.note_name}
+
+        print(f"[云端] {self.note_id} 获取失败, 无可用缓存 | 原因: {err}")
+        self.note_content = ""
+        return {"note_content": "", "note_id": self.note_name}
+
     def update_note_content(self, new_content):
-        """更新笔记内容"""
-        # 1. 准备参数
-        params = {'key': self.note_name}  # key 放在 URL 参数中
-        data = {'value': new_content}      # value 放在请求体中
+        """写回笔记内容 (下载计数 / 排序上传), 走独立的写回地址 (/update/, POST)"""
+        result = write_note(self.note_name, new_content)
+        self.note_content = new_content      # 内存保持最新, 后续排序/计数继续基于它
+        if result.get("status") == 1:
+            self.req_id = result.get("req_id")
+            cache_write(self.note_name, new_content)
+        else:
+            print(f"[云端] {self.note_id} 写回未成功 (仅本地生效): {result.get('error')}")
+        return result
 
-        try:
-            # ✅ 核心修复：使用 POST 方法，将 value 放在 data 参数中
-            r = requests.post(
-                "https://textdb.online/update/",
-                params=params,      # key 放在 URL 参数中
-                data=data,          # value 放在请求体 (application/x-www-form-urlencoded)
-                verify=False,
-                timeout=30
-            )
-            
-            # print(f"状态码: {r.status_code}")
-            # 调试时打印响应内容前200字符
-            # print(f"响应内容: {r.text[:200]}") 
-
-            # 2. 检查响应状态
-            r.raise_for_status()  # 如果不是 2xx，会抛出异常
-            
-            # 3. 检查响应内容是否为空
-            if not r.text or not r.text.strip():
-                print("API 返回空内容")
-                # 但数据已经更新到内存
-                self.note_content = new_content
-                return {'status': 0, 'error': 'Empty response'}
-
-            # 4. 尝试解析 JSON 响应
-            try:
-                result = r.json()
-            except ValueError as e:
-                print(f"JSON 解析失败: {e}")
-                print(f"原始响应: {r.text[:500]}")
-                # 虽然 API 调用失败，但为了程序继续运行，更新内存
-                self.note_content = new_content
-                return {'status': 0, 'error': 'Invalid JSON'}
-
-            # 5. 处理成功响应
-            if result.get('status') == 1:
-                self.note_url = result['data']['url']
-                self.req_id = result['req_id']
-                self.note_content = new_content
-                print(f" {self.note_id} 云端更新成功！")
-            else:
-                print(f" {self.note_id} 云端更新失败: {result}")
-                # 即使失败，也更新内存
-                self.note_content = new_content
-
-            return result
-
-        except requests.exceptions.RequestException as e:
-            print(f"网络请求失败: {e}")
-            # 发生网络错误时，降级处理：只更新内存
-            self.note_content = new_content
-            return {'status': 0, 'error': str(e)}
-    
     def delete_note(self):
-        """删除笔记"""
-        params = {'key': self.note_name, 'value': ''}
-        r = requests.get("https://textdb.online/update/", params=params, verify=False)
-        return r.json()
+        """清空笔记 (写回空内容)"""
+        result = write_note(self.note_name, "")
+        if result.get("status") == 1:
+            cache_write(self.note_name, "")
+        return result
