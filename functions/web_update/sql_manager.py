@@ -950,6 +950,15 @@ def notify_new_version(current_version_name, info = '发现新版本', root = No
             if ask_window_just_opened():
                 print("版本更新询问窗口已弹出, 跳过重复的详情窗口")
                 return True
+            # Web 界面: 走应用内二级模态窗口 (样式与 App 一致, 支持强制更新/进度)
+            try:
+                from functions.pages.notice.version_notify import notify_version
+                if notify_version(current_version_name, latest_info, info,
+                                  has_new_version=has_new_version,
+                                  forced=has_new_version, root=root):
+                    return True
+            except Exception as _e:
+                print(f"[版本更新] 应用内模态窗口推送失败: {_e}")
             # 显示消息框
             if not must_show and ("release" not in latest_info['version_name'] or "release" not in version_info): # type: ignore
                 # 不显示alpha版本更新提示

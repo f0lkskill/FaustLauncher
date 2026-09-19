@@ -269,6 +269,8 @@ class FaustLauncherCore:
             print(f"启动器的新版本已经发布: {name}")
         latest_info['version_name'] = name
 
+        # 首次启动: 弹出一次版本信息窗口 (右上角带关闭按钮)
+        # 有更新时 check_version_update 会弹出强制更新窗口 (每次启动都弹, 见 version_utils)
         if not has_notify:
             if current_version == "V0.8.4-LimbusCompany_Release":
                 from tkinter.messagebox import showinfo

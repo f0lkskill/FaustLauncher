@@ -101,16 +101,23 @@ def check_version_update(root):
         return need_update, {}, current_version, None
 
     if latest_release != current_version:
-        print(f"检测到启动器新版本: {latest_release}，当前版本: {current_version}")
+        print(f"[版本更新] 检测到启动器新版本: {latest_release}，当前版本: {current_version}")
         latest_entry = version_info['versions'][latest_release]
-        # 正式版/测试版统一询问用户, 不再自动更新
+        latest_info = {'version_name': latest_release,
+                       'description': latest_entry.get('description', ''),
+                       'date': latest_entry.get('data') or latest_entry.get('date'),
+                       'bilibili_url': latest_entry.get('url', '')}
+        # Web 界面: 走应用内二级模态窗口, 强制下载更新 (窗口不可取消, 带进度/速度)
+        from functions.pages.notice.version_notify import notify_version
+        if notify_version(current_version, latest_info, info='发现新版本',
+                          has_new_version=True, forced=True, root=root):
+            return (need_update, version_info['versions'][latest_release],
+                    latest_release, current_version)
+        # 旧版 TK 界面: 正式版/测试版统一询问用户, 不再自动更新
         from functions.pages.notice.version_update_window import open_version_update_window
         ok = open_version_update_window(
             current_version,
-            {'version_name': latest_release,
-             'description': latest_entry.get('description', ''),
-             'date': latest_entry.get('data') or latest_entry.get('date'),
-             'bilibili_url': latest_entry.get('url', '')},
+            latest_info,
             info='版本更新', ask_update=True,
             on_result=lambda action: _on_update_choice(
                 root, latest_entry, latest_release, action))
