@@ -457,7 +457,9 @@ class ModManager:
                 # print(f"{name} 没有额外的语言文件, 跳过复制语言文件。")
                 return
             
-            target_lang_dir = os.path.join(game_path, 'LimbusCompany_Data', 'lang', 'LLC_zh-CN')
+            # 汉化目录名跟随当前平台 (零协会 LLC_zh-CN / OurPlay OurPlayHanHua / 插件自定义), 不再写死
+            target_lang_dir = os.path.join(game_path, 'LimbusCompany_Data', 'lang',
+                                           _translation_dir_name())
             
             # 创建目标目录（如果不存在）
             os.makedirs(target_lang_dir, exist_ok=True)
