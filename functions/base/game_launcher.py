@@ -190,6 +190,60 @@ class GameLauncher:
         files.sort(key=lambda f: (0, f) if f.lower() == "changes.json" else (1, f.lower()))
         return files
 
+    @staticmethod
+    def _lang_folder_candidates(lang_root, preferred=None):
+        """游戏 Lang 目录下所有语言文件夹 (当前平台目录优先)。
+
+        插件/Mod 的 changes.json 路径首段写死的是某个汉化文件夹名 (如 LLC_zh-CN),
+        但不同汉化平台 (零协会 LLC_zh-CN / OurPlay OurPlayHanHua / 插件自定义汉化)
+        目录名不同, 写死会直接导致补丁找不到文件而失效; 这里把所有存在的文件夹都作为
+        候选, 让补丁默认应用到全部文件夹。
+        """
+        try:
+            dirs = [d for d in os.listdir(lang_root)
+                    if os.path.isdir(os.path.join(lang_root, d))]
+        except Exception:
+            dirs = []
+        ordered = []
+        try:
+            current = translation_source_lib.get_translation_dir_name()
+        except Exception:
+            current = ""
+        for name in (preferred, current):
+            if name and name in dirs and name not in ordered:
+                ordered.append(name)
+        ordered.extend(sorted(d for d in dirs if d not in ordered))
+        return ordered
+
+    def _resolve_change_targets(self, lang_root, relative_path):
+        """把 changes.json 中的相对路径解析为游戏 Lang 下真实存在的文件列表。
+
+        - 带文件夹前缀 (如 "LLC_zh-CN/Announcer.json"): 首段视为"汉化文件夹"占位符,
+          默认应用到 Lang 下所有含该文件的文件夹 (全文件夹, 不再限定 LLC_zh-CN);
+        - 不带文件夹前缀 (如 "Announcer.json"): 仍按 Lang 根目录解析 (向后兼容)。
+        """
+        rel = str(relative_path or "").replace("\\", "/").strip("/")
+        parts = [p for p in rel.split("/") if p]
+        if not parts:
+            return []
+        raw = os.path.join(lang_root, *parts)
+        if len(parts) == 1:
+            return [raw] if os.path.isfile(raw) else []
+        rest = parts[1:]
+        targets = []
+        seen = set()
+        for folder in self._lang_folder_candidates(lang_root, preferred=parts[0]):
+            target = os.path.join(lang_root, folder, *rest)
+            key = os.path.normcase(os.path.abspath(target))
+            if key in seen:
+                continue
+            seen.add(key)
+            if os.path.isfile(target):
+                targets.append(target)
+        if not targets and os.path.isfile(raw):
+            targets.append(raw)
+        return targets
+
     def _apply_changes(self):
         """应用所有启用 mod 和 插件 的 changes*.json 补丁到游戏语言文件。
         支持多个修改记录图层: changes.json + changes_标记.json (按名称排序, 后应用者覆盖);
@@ -263,18 +317,22 @@ class GameLauncher:
                     print(f"  警告: {file_path} 顶层必须是 {{\"相对路径\": 修改内容}} 对象, 实际是 {type(changes_data).__name__}, 已跳过")
                     continue
                 for relative_path, file_changes in changes_data.items():
-                    try:
-                        game_file = os.path.join(lang_data_dir, relative_path)
-                        if not os.path.exists(game_file):
-                            print(f"  警告: 游戏目录中未找到 {relative_path}")
-                            continue
-                        with open(game_file, 'r', encoding='utf-8') as f:
-                            original = json.load(f)
-                        modified = apply_changes_to_data(original, file_changes)
-                        with open(game_file, 'w', encoding='utf-8') as f:
-                            json.dump(modified, f, ensure_ascii=False, indent=4)
-                    except Exception as e:
-                        print(f"  警告: 应用补丁 {relative_path} 失败: {e}")
+                    # 首段文件夹名视为占位符: 默认应用到 Lang 下所有文件夹 (不再限定 LLC_zh-CN)
+                    targets = self._resolve_change_targets(lang_data_dir, relative_path)
+                    if not targets:
+                        print(f"  警告: 游戏目录中未找到 {relative_path} (已尝试 Lang 下全部文件夹)")
+                        continue
+                    if len(targets) > 1:
+                        print(f"  应用补丁 {relative_path} -> {len(targets)} 个文件夹")
+                    for game_file in targets:
+                        try:
+                            with open(game_file, 'r', encoding='utf-8') as f:
+                                original = json.load(f)
+                            modified = apply_changes_to_data(original, file_changes)
+                            with open(game_file, 'w', encoding='utf-8') as f:
+                                json.dump(modified, f, ensure_ascii=False, indent=4)
+                        except Exception as e:
+                            print(f"  警告: 应用补丁 {game_file} 失败: {e}")
 
     def _apply_cosmetic_features(self):
         """应用气泡渐变、EGO 样式、技能描述、提示替换、技能渐变色 (逐项推送进度, 单项失败不中断)"""
