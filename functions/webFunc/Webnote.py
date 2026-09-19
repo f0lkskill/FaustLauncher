@@ -5,7 +5,7 @@ class Note:
         self.note_id = id_name
         self.note_name = address
         self.pwd = pwd
-        self.note_url = f"https://textdb.online/{address}"
+        self.note_url = f"https://folkskill.pythonanywhere.com/note/{address}"
         self.read_only = read_only
         self.note_content = ""
         self.req_id = None
