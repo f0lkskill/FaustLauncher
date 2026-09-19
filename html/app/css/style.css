@@ -1671,110 +1671,211 @@ button, a, input, select, textarea,
 .dl-fab { z-index: 65; }
 
 /* ---------- 版本更新模态窗口 (应用内二级模态) ---------- */
-/* 检测到新版本: 强制更新 (无关闭按钮, 遮罩/Esc 均无效, 自动开始下载)
-   已是最新版本: 同样展示版本信息, 右上角提供关闭按钮 */
+/* 强制更新: 无关闭按钮, 遮罩/Esc 均无效, 打开后自动开始下载
+   普通展示: 右上角 ✕ 关闭
+   视觉: 品牌图标 + 版本跨度(等宽数字) + 细分隔线 + 无边框文档区, 完全跟随 App 主题 */
 .ver-overlay {
   position: fixed; inset: 0; z-index: 400;
   display: flex; align-items: center; justify-content: center;
   padding: 26px;
-  background: rgba(6, 8, 12, 0.66);
+  background: rgba(6, 8, 12, .68);
   backdrop-filter: blur(calc(var(--glass-factor) * 14px)) saturate(85%);
   -webkit-backdrop-filter: blur(calc(var(--glass-factor) * 14px)) saturate(85%);
-  animation: fadeIn .22s ease;
+  animation: verOverlayIn .28s ease-out;
 }
-.ver-overlay.closing { animation: fadeOut .18s ease forwards; }
+.ver-overlay.closing { animation: verFadeOut .2s ease forwards; }
+
 .ver-card {
   position: relative; overflow: hidden;
   display: flex; flex-direction: column;
-  width: 640px; max-width: 94vw; max-height: 84vh;
-  background: rgba(20, 22, 28, 0.86);
-  backdrop-filter: blur(calc(var(--glass-factor) * 30px)) saturate(95%);
-  -webkit-backdrop-filter: blur(calc(var(--glass-factor) * 30px)) saturate(95%);
-  border: 1px solid rgba(255, 255, 255, 0.10);
-  border-radius: var(--radius);
-  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.66);
-  animation: panelIn .34s cubic-bezier(.34, 1.4, .5, 1);
+  width: 620px; max-width: 94vw; max-height: 86vh;
+  background: linear-gradient(180deg, rgba(30, 33, 40, .94) 0%, rgba(16, 18, 23, .96) 100%);
+  backdrop-filter: blur(calc(var(--glass-factor) * 34px)) saturate(115%);
+  -webkit-backdrop-filter: blur(calc(var(--glass-factor) * 34px)) saturate(115%);
+  border: 1px solid rgba(255, 255, 255, .085);
+  border-radius: 18px;
+  box-shadow: 0 32px 90px rgba(0, 0, 0, .68), inset 0 1px 0 rgba(255, 255, 255, .045);
+  animation: verCardIn .44s cubic-bezier(.22, .9, .24, 1);
 }
-.ver-overlay.closing .ver-card { animation: panelOut .18s ease forwards; }
-/* 强制更新: 顶部光带提示"必须完成更新" */
-.ver-overlay.forced .ver-card::before {
-  content: ''; position: absolute; left: 0; right: 0; top: 0; height: 3px; z-index: 1;
-  background: linear-gradient(90deg, var(--accent), var(--info), var(--success));
-  box-shadow: 0 0 18px var(--accent-glow);
+.ver-overlay.closing .ver-card { animation: verCardOut .2s ease forwards; }
+/* ── 出现过渡: 卡片上浮 + 轻微缩放 + 去模糊 (层次感来自模糊收敛), 内部各行错峰入场 ── */
+@keyframes verCardIn {
+  0%   { opacity: 0; transform: translateY(26px) scale(.968); filter: blur(9px); }
+  60%  { opacity: 1; }
+  100% { opacity: 1; transform: none; filter: none; }
 }
-.ver-head { display: flex; align-items: center; gap: 12px; padding: 16px 20px 10px; }
-.ver-ico { font-size: 24px; line-height: 1; filter: drop-shadow(0 0 10px var(--accent-glow)); }
-.ver-head-text { flex: 1; min-width: 0; }
-.ver-title { font-size: 17px; font-weight: 700; letter-spacing: .4px; }
-.ver-sub { font-size: 12.5px; color: var(--info); margin-top: 4px; min-height: 18px; line-height: 1.45; }
-.ver-chips { display: flex; flex-wrap: wrap; gap: 10px; padding: 2px 20px 0; }
-.ver-chips .chip.ok { color: var(--success); border-color: rgba(46, 160, 67, .45); background: rgba(46, 160, 67, .10); }
-.ver-meta { display: flex; flex-wrap: wrap; gap: 16px; padding: 10px 20px 0; font-size: 12px; color: var(--text-3); }
-.ver-meta a {
-  color: var(--accent); text-decoration: none;
-  max-width: 380px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+@keyframes verCardOut {
+  from { opacity: 1; transform: none; filter: none; }
+  to   { opacity: 0; transform: translateY(10px) scale(.986); filter: blur(5px); }
 }
-.ver-meta a:hover { text-decoration: underline; }
-/* 更新说明正文 (内容与独立窗口一致, 配色改为 App 主题) */
-.ver-body {
-  flex: 1; overflow-y: auto; margin: 12px 20px 0; padding: 14px 16px;
-  background: rgba(10, 12, 18, .45);
-  border: 1px solid var(--border); border-radius: 10px;
-  user-select: text; font-size: 13px; line-height: 1.72; color: var(--text-2);
-  word-break: break-word;
+@keyframes verOverlayIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes verFadeOut { from { opacity: 1; } to { opacity: 0; } }
+.ver-card > * { animation: verRowIn .46s cubic-bezier(.22, .9, .24, 1) both; }
+.ver-head { animation-delay: .05s; }
+.ver-rule { animation-delay: .1s; }
+.ver-submeta { animation-delay: .13s; }
+.ver-doc { animation-delay: .16s; }
+.ver-progress, .ver-foot { animation-delay: .2s; }
+@keyframes verRowIn { from { opacity: 0; transform: translateY(9px); } to { opacity: 1; transform: none; } }
+/* 强制更新的顶部强调线: 由中间向左展开 */
+.ver-accent { transform-origin: center; animation: verAccentIn .5s ease-out .12s both; }
+@keyframes verAccentIn { from { opacity: 0; transform: scaleX(0); } to { opacity: .8; transform: scaleX(1); } }
+/* 下载进度区稍后出现时同样带入场过渡 */
+.ver-progress.ver-in { animation: verRowIn .34s cubic-bezier(.22, .9, .24, 1) both; }
+/* 关闭毛玻璃(no-hw)时不做模糊, 只保留位移/淡入 */
+body.no-hw .ver-card { animation: verCardInLite .38s cubic-bezier(.22, .9, .24, 1); }
+@keyframes verCardInLite {
+  from { opacity: 0; transform: translateY(20px) scale(.978); }
+  to   { opacity: 1; transform: none; }
 }
-.ver-body::-webkit-scrollbar { width: 8px; }
-.ver-body::-webkit-scrollbar-thumb { background: rgba(148, 163, 184, .25); border-radius: 4px; }
-.ver-body::-webkit-scrollbar-track { background: transparent; }
-.ver-body h1, .ver-body h2, .ver-body h3 { color: var(--text); font-weight: 700; }
-.ver-body h1 { font-size: 17px; margin: 14px 0 8px; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
-.ver-body h1:first-child, .ver-body h2:first-child, .ver-body h3:first-child, .ver-body p:first-child { margin-top: 0; }
-.ver-body h2 { font-size: 15px; margin: 12px 0 6px; }
-.ver-body h3 { font-size: 13.5px; margin: 10px 0 5px; }
-.ver-body p { margin: 7px 0; }
-.ver-body ul, .ver-body ol { margin: 7px 0; padding-left: 22px; }
-.ver-body li { margin: 3px 0; }
-.ver-body li.task { list-style: none; margin-left: -18px; }
-.ver-body li.task input { margin-right: 7px; accent-color: var(--success); vertical-align: middle; }
-.ver-body a { color: var(--accent); text-decoration: none; }
-.ver-body a:hover { text-decoration: underline; }
-.ver-body code {
+/* 系统"减少动态效果": 只留极短淡入 */
+@media (prefers-reduced-motion: reduce) {
+  .ver-overlay, .ver-card, .ver-card > *, .ver-progress.ver-in, .ver-accent {
+    animation-duration: .01ms !important;
+  }
+}
+/* 强制更新: 顶部一线强调 (替代大块彩色横幅) */
+.ver-accent {
+  position: absolute; top: 0; left: 0; right: 0; height: 1px; z-index: 2;
+  background: linear-gradient(90deg, transparent, var(--accent) 24%, var(--info) 76%, transparent);
+  opacity: .8;
+}
+
+/* ── 头部: 图标 + 状态眉标 + 版本跨度 ── */
+.ver-head { display: flex; align-items: flex-start; gap: 14px; padding: 24px 26px 18px; }
+.ver-mark {
+  width: 36px; height: 36px; flex-shrink: 0; border-radius: 10px; object-fit: contain;
+  background: rgba(255, 255, 255, .04);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, .06), 0 6px 18px rgba(0, 0, 0, .45);
+}
+.ver-head-main { flex: 1; min-width: 0; padding-top: 1px; }
+.ver-eyebrow {
+  font-size: 11.5px; font-weight: 600; letter-spacing: .06em;
+  color: var(--text-3); text-transform: uppercase;
+}
+.ver-vers {
+  display: flex; align-items: baseline; flex-wrap: wrap; gap: 10px;
+  margin-top: 8px;
+  font-family: var(--mono); font-variant-numeric: tabular-nums; letter-spacing: -.2px;
+}
+.ver-from { font-size: 15px; color: var(--text-3); }
+.ver-from::after { content: '→'; margin-left: 10px; opacity: .7; }
+.ver-to {
+  font-size: 19px; font-weight: 700; color: #f2f7ff;
+  text-shadow: 0 0 18px rgba(55, 148, 255, .34);
+}
+.ver-x {
+  flex-shrink: 0; width: 30px; height: 30px; margin-left: auto;
+  display: flex; align-items: center; justify-content: center;
+  background: transparent; border: none; border-radius: 9px; cursor: pointer;
+  color: var(--text-3); font-size: 12px; line-height: 1;
+  transition: background .18s ease, color .18s ease;
+}
+.ver-x:hover { background: rgba(255, 255, 255, .07); color: var(--text); }
+
+/* ── 细分隔线 + 说明标题栏 ── */
+.ver-rule { height: 1px; background: rgba(255, 255, 255, .07); }
+.ver-submeta {
+  display: flex; align-items: center; gap: 14px;
+  padding: 13px 26px 12px;
+  font-size: 12px; color: var(--text-3);
+}
+.ver-submeta-title { font-weight: 600; letter-spacing: .5px; color: var(--text-2); }
+.ver-submeta-date { font-variant-numeric: tabular-nums; }
+.ver-submeta-link {
+  margin-left: auto; color: var(--accent); text-decoration: none;
+  max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ver-submeta-link:hover { text-decoration: underline; }
+
+/* ── 更新说明正文: 无边框文档区, 底部渐隐提示可滚动 ── */
+.ver-doc {
+  flex: 1; min-height: 88px; overflow-y: auto;
+  -webkit-mask-image: linear-gradient(180deg, #000 calc(100% - 22px), transparent);
+  mask-image: linear-gradient(180deg, #000 calc(100% - 22px), transparent);
+}
+.ver-doc::-webkit-scrollbar { width: 8px; }
+.ver-doc::-webkit-scrollbar-thumb { background: rgba(148, 163, 184, .22); border-radius: 4px; }
+.ver-doc::-webkit-scrollbar-track { background: transparent; }
+.ver-doc-inner {
+  padding: 2px 26px 26px;
+  font-size: 13.5px; line-height: 1.8; color: var(--text-2);
+  word-break: break-word; user-select: text;
+}
+.ver-doc-inner > *:first-child { margin-top: 0; }
+.ver-doc-inner h1, .ver-doc-inner h2, .ver-doc-inner h3 { color: var(--text); font-weight: 700; }
+.ver-doc-inner h1 { font-size: 15px; margin: 0 0 10px; }
+.ver-doc-inner h2 { font-size: 13.5px; margin: 18px 0 8px; }
+.ver-doc-inner h3 { font-size: 13px; margin: 15px 0 6px; color: var(--text-2); }
+.ver-doc-inner p { margin: 9px 0; }
+.ver-doc-inner ul, .ver-doc-inner ol { margin: 9px 0; padding-left: 20px; }
+.ver-doc-inner li { margin: 5px 0; }
+.ver-doc-inner li::marker { color: var(--text-3); }
+.ver-doc-inner li.task { list-style: none; margin-left: -18px; }
+.ver-doc-inner li.task input { margin-right: 7px; accent-color: var(--success); vertical-align: middle; }
+.ver-doc-inner strong { color: var(--text); font-weight: 700; }
+.ver-doc-inner a { color: var(--accent); text-decoration: none; border-bottom: 1px solid rgba(55, 148, 255, .3); }
+.ver-doc-inner a:hover { border-bottom-color: var(--accent); }
+.ver-doc-inner code {
   font-family: var(--mono); font-size: 12px;
-  background: rgba(55, 148, 255, .10); color: #7cc4ff;
+  background: rgba(255, 255, 255, .06); color: #8fc9ff;
   padding: 1px 5px; border-radius: 4px;
 }
-.ver-body pre {
-  margin: 9px 0; padding: 10px 12px; overflow-x: auto;
-  background: rgba(0, 0, 0, .45); border: 1px solid var(--border); border-radius: 8px;
+.ver-doc-inner pre {
+  margin: 10px 0; padding: 11px 13px; overflow-x: auto;
+  background: rgba(0, 0, 0, .4); border: 1px solid rgba(255, 255, 255, .06); border-radius: 10px;
 }
-.ver-body pre code { background: none; color: var(--text); padding: 0; }
-.ver-body blockquote {
-  margin: 9px 0; padding: 7px 12px;
-  border-left: 3px solid var(--accent); background: rgba(55, 148, 255, .08);
-  color: var(--text-2); border-radius: 0 8px 8px 0;
+.ver-doc-inner pre code { background: none; color: var(--text-2); padding: 0; }
+.ver-doc-inner blockquote {
+  margin: 10px 0; padding: 2px 0 2px 14px;
+  border-left: 2px solid rgba(55, 148, 255, .55); color: var(--text-3);
 }
-.ver-body blockquote p { margin: 0; }
-.ver-body table { margin: 9px 0; border-collapse: collapse; font-size: 12.5px; }
-.ver-body th, .ver-body td { border: 1px solid var(--border); padding: 5px 10px; }
-.ver-body th { background: rgba(255, 255, 255, .04); color: var(--text); }
-.ver-body hr { border: none; border-top: 1px solid var(--border); margin: 12px 0; }
-.ver-body del { color: var(--text-3); }
-/* 下载进度区 (进度条 / 速度 / 已下载字节) */
-.ver-dl {
-  margin: 12px 20px 0; padding: 12px 14px;
-  background: rgba(10, 12, 18, .5);
-  border: 1px solid var(--border); border-radius: 10px;
+.ver-doc-inner blockquote p { margin: 4px 0; }
+.ver-doc-inner table { margin: 10px 0; border-collapse: collapse; font-size: 12.5px; }
+.ver-doc-inner th, .ver-doc-inner td { border: 1px solid rgba(255, 255, 255, .08); padding: 6px 11px; text-align: left; }
+.ver-doc-inner th { background: rgba(255, 255, 255, .03); color: var(--text); font-weight: 600; }
+.ver-doc-inner hr { border: none; border-top: 1px solid rgba(255, 255, 255, .07); margin: 16px 0; }
+.ver-doc-inner del { color: var(--text-3); }
+.ver-empty { color: var(--text-3); }
+
+/* ── 下载进度 ── */
+.ver-progress { padding: 16px 26px 18px; border-top: 1px solid rgba(255, 255, 255, .07); }
+.ver-progress-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.ver-progress-label {
+  font-size: 12.5px; color: var(--text-2);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.ver-dl.error { border-color: rgba(239, 68, 68, .5); }
-.ver-dl-head {
-  display: flex; align-items: center; justify-content: space-between;
-  font-size: 12.5px; color: var(--text-2); margin-bottom: 9px;
+.ver-progress-label.ok { color: var(--success); }
+.ver-progress-label.error { color: #ff8a8a; }
+.ver-progress-pct {
+  flex-shrink: 0; font-family: var(--mono); font-size: 13px;
+  font-variant-numeric: tabular-nums; color: var(--info);
 }
-.ver-dl-head span:last-child { font-family: var(--mono); color: var(--info); }
-.ver-dl-track { margin-bottom: 7px; }
-.ver-dl.error .progress-fill { background: var(--danger); box-shadow: none; }
-.ver-dl-meta { font-size: 11.5px; color: var(--text-3); font-family: var(--mono); }
-.ver-foot { display: flex; align-items: center; justify-content: flex-end; gap: 10px; padding: 14px 20px; }
-.ver-foot .ver-tip { font-size: 12px; color: var(--text-3); margin-right: auto; }
+.ver-bar {
+  height: 4px; margin: 11px 0 8px;
+  border-radius: 999px; background: rgba(255, 255, 255, .07); overflow: hidden;
+}
+.ver-bar-fill {
+  display: block; height: 100%; width: 0; border-radius: 999px;
+  background: linear-gradient(90deg, var(--accent), var(--info));
+  box-shadow: 0 0 10px var(--accent-glow);
+  transition: width .35s ease;
+}
+.ver-progress.error .ver-bar-fill { background: var(--danger); box-shadow: none; }
+.ver-progress.error .ver-progress-pct { color: var(--danger); }
+.ver-progress-meta {
+  min-height: 15px; font-family: var(--mono); font-size: 11.5px;
+  color: var(--text-3); font-variant-numeric: tabular-nums;
+}
+
+/* ── 操作区 (进度区可见时不再重复画分隔线) ── */
+.ver-foot {
+  display: flex; align-items: center; justify-content: flex-end; gap: 10px;
+  padding: 14px 26px 18px; border-top: 1px solid rgba(255, 255, 255, .07);
+}
+.ver-progress:not([hidden]) + .ver-foot { border-top: none; padding-top: 2px; }
+.ver-foot .btn { padding: 9px 20px; font-size: 13.5px; border-radius: 10px; }
+.ver-x:focus-visible, .ver-foot .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
 /* 主页版本卡可点击查看版本信息 */
 #stat-version-card.clickable { cursor: pointer; }
