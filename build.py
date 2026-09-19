@@ -82,7 +82,7 @@ def upload_version_info(address, version, download_url='', log=None): # type: ig
         new_content = json.dumps(data, ensure_ascii=False, indent=4)
 
         print(f'上传版本信息: {version}')
-        ur = requests.post(f'https://textdb.online/update/?key={address}',
+        ur = requests.post(f'https://folkskill.pythonanywhere.com/update/?key={address}',
                            data={'value': new_content},
                            verify=False, timeout=30)
         result = ur.json()
