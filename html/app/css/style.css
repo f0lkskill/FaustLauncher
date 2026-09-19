@@ -1669,3 +1669,112 @@ button, a, input, select, textarea,
 }
 /* 下载任务浮动按钮保持 fixed 定位, 仅提升层级 */
 .dl-fab { z-index: 65; }
+
+/* ---------- 版本更新模态窗口 (应用内二级模态) ---------- */
+/* 检测到新版本: 强制更新 (无关闭按钮, 遮罩/Esc 均无效, 自动开始下载)
+   已是最新版本: 同样展示版本信息, 右上角提供关闭按钮 */
+.ver-overlay {
+  position: fixed; inset: 0; z-index: 400;
+  display: flex; align-items: center; justify-content: center;
+  padding: 26px;
+  background: rgba(6, 8, 12, 0.66);
+  backdrop-filter: blur(calc(var(--glass-factor) * 14px)) saturate(85%);
+  -webkit-backdrop-filter: blur(calc(var(--glass-factor) * 14px)) saturate(85%);
+  animation: fadeIn .22s ease;
+}
+.ver-overlay.closing { animation: fadeOut .18s ease forwards; }
+.ver-card {
+  position: relative; overflow: hidden;
+  display: flex; flex-direction: column;
+  width: 640px; max-width: 94vw; max-height: 84vh;
+  background: rgba(20, 22, 28, 0.86);
+  backdrop-filter: blur(calc(var(--glass-factor) * 30px)) saturate(95%);
+  -webkit-backdrop-filter: blur(calc(var(--glass-factor) * 30px)) saturate(95%);
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  border-radius: var(--radius);
+  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.66);
+  animation: panelIn .34s cubic-bezier(.34, 1.4, .5, 1);
+}
+.ver-overlay.closing .ver-card { animation: panelOut .18s ease forwards; }
+/* 强制更新: 顶部光带提示"必须完成更新" */
+.ver-overlay.forced .ver-card::before {
+  content: ''; position: absolute; left: 0; right: 0; top: 0; height: 3px; z-index: 1;
+  background: linear-gradient(90deg, var(--accent), var(--info), var(--success));
+  box-shadow: 0 0 18px var(--accent-glow);
+}
+.ver-head { display: flex; align-items: center; gap: 12px; padding: 16px 20px 10px; }
+.ver-ico { font-size: 24px; line-height: 1; filter: drop-shadow(0 0 10px var(--accent-glow)); }
+.ver-head-text { flex: 1; min-width: 0; }
+.ver-title { font-size: 17px; font-weight: 700; letter-spacing: .4px; }
+.ver-sub { font-size: 12.5px; color: var(--info); margin-top: 4px; min-height: 18px; line-height: 1.45; }
+.ver-chips { display: flex; flex-wrap: wrap; gap: 10px; padding: 2px 20px 0; }
+.ver-chips .chip.ok { color: var(--success); border-color: rgba(46, 160, 67, .45); background: rgba(46, 160, 67, .10); }
+.ver-meta { display: flex; flex-wrap: wrap; gap: 16px; padding: 10px 20px 0; font-size: 12px; color: var(--text-3); }
+.ver-meta a {
+  color: var(--accent); text-decoration: none;
+  max-width: 380px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ver-meta a:hover { text-decoration: underline; }
+/* 更新说明正文 (内容与独立窗口一致, 配色改为 App 主题) */
+.ver-body {
+  flex: 1; overflow-y: auto; margin: 12px 20px 0; padding: 14px 16px;
+  background: rgba(10, 12, 18, .45);
+  border: 1px solid var(--border); border-radius: 10px;
+  user-select: text; font-size: 13px; line-height: 1.72; color: var(--text-2);
+  word-break: break-word;
+}
+.ver-body::-webkit-scrollbar { width: 8px; }
+.ver-body::-webkit-scrollbar-thumb { background: rgba(148, 163, 184, .25); border-radius: 4px; }
+.ver-body::-webkit-scrollbar-track { background: transparent; }
+.ver-body h1, .ver-body h2, .ver-body h3 { color: var(--text); font-weight: 700; }
+.ver-body h1 { font-size: 17px; margin: 14px 0 8px; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
+.ver-body h1:first-child, .ver-body h2:first-child, .ver-body h3:first-child, .ver-body p:first-child { margin-top: 0; }
+.ver-body h2 { font-size: 15px; margin: 12px 0 6px; }
+.ver-body h3 { font-size: 13.5px; margin: 10px 0 5px; }
+.ver-body p { margin: 7px 0; }
+.ver-body ul, .ver-body ol { margin: 7px 0; padding-left: 22px; }
+.ver-body li { margin: 3px 0; }
+.ver-body li.task { list-style: none; margin-left: -18px; }
+.ver-body li.task input { margin-right: 7px; accent-color: var(--success); vertical-align: middle; }
+.ver-body a { color: var(--accent); text-decoration: none; }
+.ver-body a:hover { text-decoration: underline; }
+.ver-body code {
+  font-family: var(--mono); font-size: 12px;
+  background: rgba(55, 148, 255, .10); color: #7cc4ff;
+  padding: 1px 5px; border-radius: 4px;
+}
+.ver-body pre {
+  margin: 9px 0; padding: 10px 12px; overflow-x: auto;
+  background: rgba(0, 0, 0, .45); border: 1px solid var(--border); border-radius: 8px;
+}
+.ver-body pre code { background: none; color: var(--text); padding: 0; }
+.ver-body blockquote {
+  margin: 9px 0; padding: 7px 12px;
+  border-left: 3px solid var(--accent); background: rgba(55, 148, 255, .08);
+  color: var(--text-2); border-radius: 0 8px 8px 0;
+}
+.ver-body blockquote p { margin: 0; }
+.ver-body table { margin: 9px 0; border-collapse: collapse; font-size: 12.5px; }
+.ver-body th, .ver-body td { border: 1px solid var(--border); padding: 5px 10px; }
+.ver-body th { background: rgba(255, 255, 255, .04); color: var(--text); }
+.ver-body hr { border: none; border-top: 1px solid var(--border); margin: 12px 0; }
+.ver-body del { color: var(--text-3); }
+/* 下载进度区 (进度条 / 速度 / 已下载字节) */
+.ver-dl {
+  margin: 12px 20px 0; padding: 12px 14px;
+  background: rgba(10, 12, 18, .5);
+  border: 1px solid var(--border); border-radius: 10px;
+}
+.ver-dl.error { border-color: rgba(239, 68, 68, .5); }
+.ver-dl-head {
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: 12.5px; color: var(--text-2); margin-bottom: 9px;
+}
+.ver-dl-head span:last-child { font-family: var(--mono); color: var(--info); }
+.ver-dl-track { margin-bottom: 7px; }
+.ver-dl.error .progress-fill { background: var(--danger); box-shadow: none; }
+.ver-dl-meta { font-size: 11.5px; color: var(--text-3); font-family: var(--mono); }
+.ver-foot { display: flex; align-items: center; justify-content: flex-end; gap: 10px; padding: 14px 20px; }
+.ver-foot .ver-tip { font-size: 12px; color: var(--text-3); margin-right: auto; }
+/* 主页版本卡可点击查看版本信息 */
+#stat-version-card.clickable { cursor: pointer; }
