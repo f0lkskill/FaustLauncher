@@ -16,7 +16,7 @@
             "OurPlay 神人版"
         ],
         "default": 0,
-        "value": 2,
+        "value": 0,
         "description": "选择下载的汉化包来源平台\n零协会: 零协会汉化, 目录名为 LLC_zh-CN\nOurPlay 普通版: OurPlay PC 端汉化, 目录名为 OurPlayHanHua\nOurPlay 神人版: OurPlay Android 端神人汉化, 目录名为 OurPlayHanHua\n切换平台后, 程序会按所选平台的汉化包结构处理文件。",
         "page": "通用"
     },
@@ -168,7 +168,7 @@
         "name": "启用Mod功能",
         "type": "boolean",
         "default": true,
-        "value": true,
+        "value": false,
         "description": "是否加载 Mod\n注意: 由于游戏切换了新的引擎，导致大部分mod已经完全失效，不建议您启用 Mod 加载。\n我们将会在接下来的版本进行修复。",
         "page": "Mod"
     },
@@ -370,8 +370,8 @@
     "version_info": {
         "name": "版本信息",
         "type": "UNABLE_TO_EDIT",
-        "default": "V0.8.9-release",
-        "value": "V0.8.9-release",
+        "default": "V0.8.9-release.fix.1",
+        "value": "V0.8.9-release.fix.1",
         "description": "当前应用程序的版本信息"
     },
     "mems": {
@@ -382,7 +382,7 @@
             "version_notify_flag": false
         },
         "value": {
-            "tray_hint": false,
+            "tray_hint": true,
             "version_notify_flag": true
         },
         "description": "程序运行时的缓存数据\n不建议修改"
