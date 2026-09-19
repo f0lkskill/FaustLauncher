@@ -7,7 +7,7 @@
 
 <br> 
 
-[![版本](https://img.shields.io/badge/V0.8.9-release.fix.1-blue?style=for-the-badge&logo=git)](https://github.com/f0lkskill/FaustLauncher/releases)
+[![版本](https://img.shields.io/badge/V0.8.9-release.fix.2-blue?style=for-the-badge&logo=git)](https://github.com/f0lkskill/FaustLauncher/releases)
 [![许可证](https://img.shields.io/badge/许可证-MIT-green?style=for-the-badge&logo=opensourceinitiative)](LICENSE)
 [![状态](https://img.shields.io/badge/状态-开发中-orange?style=for-the-badge&logo=githubactions)](https://github.com/f0lkskill/FaustLauncher)
 [![平台](https://img.shields.io/badge/平台-Windows%2010%20%2F%2011-lightgrey?style=for-the-badge&logo=windows)](https://github.com/f0lkskill/FaustLauncher)
@@ -65,8 +65,8 @@
 
 | 项目 | 信息 | 项目 | 信息 |
 |:---|:---|:---|:---|
-| 🏷️ 当前版本 | `V0.8.9-release.fix.1` | 🛠️ 开发状态 | 开发中... |
-| 📅 最后更新 | 2026-09-10 | 🎯 目标平台 | Windows 10 / 11 |
+| 🏷️ 当前版本 | `V0.8.9-release.fix.2` | 🛠️ 开发状态 | 开发中... |
+| 📅 最后更新 | 2026-09-19 | 🎯 目标平台 | Windows 10 / 11 |
 | 🛠️ 技术栈 | Python · Tkinter · Pywebview | 📜 开源协议 | MIT |
 | 💬 反馈 | [Issues](https://github.com/f0lkskill/FaustLauncher/issues) | 💭 交流 | [Discussions](https://github.com/f0lkskill/FaustLauncher/discussions) |
 ---
@@ -165,6 +165,50 @@
 
 - 在线浏览并下载 **Mod / 插件**（按下载次数排序）
 - 自动缓存图标，展示完整在线资源列表
+
+### ☁️ 云端数据（webnote）与网络排障
+
+启动器的在线资源列表、更新说明、汉化版本号等来自云端笔记。**读取与写回是两条独立链路**：
+
+| 配置项 | 默认值 | 用途 |
+|:---|:---|:---|
+| `webnote_bases` | `https://folkskill.pythonanywhere.com/note/{key}` | **读取**源模板列表（`{key}` 占位符），按顺序尝试、自动回退 |
+| `webnote_update_url` | `https://folkskill.pythonanywhere.com/update/` | **写回**地址（下载计数 / 排序上传） |
+
+> 写回固定用 **POST**（`key` 在 query、`value` 在表单体）。`/update/` 用 GET 时 `value` 会进 URL，
+> 20KB+ 的真实笔记会被 openresty 以 **414 Request-URI Too Large** 拒绝，因此代码里 GET 只用于极小内容兜底。
+
+#### 国内线路加固（为什么以前"南方用户全挂、浏览器却正常"）
+
+浏览器自带 DoH、Happy Eyeballs（IPv6 自动回落）和 QUIC，而 Python 的 `requests` 一样都没有；
+再加上旧实现是「单域名 + 无超时 + 异常被吞掉」，线路一抖就整段失败且不留原因。现在读取链路上有：
+
+1. **多源兜底**：`webnote_bases` 依次尝试
+2. **超时 + 重试**：连接类错误换协议栈/退避重试，不会再无超时挂死
+3. **IPv4 优先**：首次强制 `AF_INET`，避开线路 IPv6 半通
+4. **DoH 兜底**：常规线路失败时用 `223.5.5.5` / `doh.pub` 解析，再按原域名 SNI 直连 IP（绕过 DNS 污染）
+5. **本地缓存兜底**：全部失败时使用 `cache/webnote/<key>.txt`，启动器仍可用（可能过期）
+6. **明确日志**：每次尝试都打印 `[云端] ...` 到「终端」面板与 `logs/`，失败不再静默
+
+#### 仍有个别用户失败怎么办
+
+优先加**第二个镜像源**（不需要自有域名，`webnote_bases` 直接追加即可）：
+
+```json
+"webnote_bases": [
+  "https://folkskill.pythonanywhere.com/note/{key}",
+  "https://gitee.com/<用户名>/<仓库>/raw/main/notes/{key}.json",
+  "https://<bucket>.cos.ap-shanghai.myqcloud.com/notes/{key}.json",
+  "https://cdn.jsdelivr.net/gh/<用户名>/<仓库>@main/notes/{key}.json"
+]
+```
+
+同一份笔记 JSON 放多处即可，启动器会按顺序自动回退。
+
+排障工具：`python webnote_diag.py` 会逐项打印 DNS（系统 vs DoH）、TCP / TLS / HTTP 耗时与结果、本地缓存状态。
+日志里 `[云端]` 行也能直接定位层级：`ConnectTimeout/ReadTimeout` 是线路问题，
+`SSLError/ConnectionReset` 是中间设备干扰，`HTTP 200 但内容为空` 是笔记名/迁移问题，
+`HTTP 403/502` 多为云端配额或服务异常。
 
 ### ⚙️ 设置中心
 
