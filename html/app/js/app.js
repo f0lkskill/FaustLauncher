@@ -567,6 +567,9 @@ window.__onResError = function (msg) { toast('⚠ ' + msg, 'error', 6000); };
       if (txtEl) txtEl.textContent = '等待游戏启动超时, 请检查游戏是否正常安装';
       toast('等待游戏启动超时', 'error', 6000);
       setTimeout(() => { pipelineIdle(); }, 4000);
+    } else if (event === 'version_update') {
+      // 应用内版本更新模态窗口: 下载进度/状态 (status/progress/ready/error)
+      updateVersionModalProgress(data);
     }
   };
 
@@ -784,20 +787,35 @@ window.__onResError = function (msg) { toast('⚠ ' + msg, 'error', 6000); };
     };
   }
 
+  // 刷新去重: 同一次操作 (如删除插件) 会同时触发前端直接刷新与后端 __onResChanged 钩子,
+  // 两次都真正执行时列表会连续渲染两次 (看起来"重复刷新了两遍")。
+  // 这里: 进行中的刷新直接复用同一 Promise; 刚刷完的重复请求直接忽略, 保证只刷一次。
+  let resRefreshing = null;
+  let resRefreshedAt = 0;
+  const RES_REFRESH_GAP = 400;   // ms, 同一次操作的重复刷新合并窗口
+
   async function refreshMods(keepPage) {
     if (!api) { toast('浏览器预览模式', 'warn'); return; }
-    try {
-      const d = await api.get_mods_data();
-      resAddons = d.addons || [];
-      resMods = d.dir_mods || [];
-      if (!keepPage) resPage = 1;
-      renderResList();
-      syncResActions();   // 保持按钮组与当前分区一致
-      bindResReinstallButtons();
-    } catch (e) {
-      const list = $('#res-list');
-      if (list) list.innerHTML = '<div class="res-empty">读取失败: ' + esc(String(e)) + '</div>';
-    }
+    if (resRefreshing) return resRefreshing;                     // 刷新中: 复用同一次请求
+    if (Date.now() - resRefreshedAt < RES_REFRESH_GAP) return Promise.resolve();   // 刚刷完: 忽略重复请求
+    resRefreshing = (async () => {
+      try {
+        const d = await api.get_mods_data();
+        resAddons = d.addons || [];
+        resMods = d.dir_mods || [];
+        if (!keepPage) resPage = 1;
+        renderResList();
+        syncResActions();   // 保持按钮组与当前分区一致
+        bindResReinstallButtons();
+      } catch (e) {
+        const list = $('#res-list');
+        if (list) list.innerHTML = '<div class="res-empty">读取失败: ' + esc(String(e)) + '</div>';
+      } finally {
+        resRefreshedAt = Date.now();
+        resRefreshing = null;
+      }
+    })();
+    return resRefreshing;
   }
 
   function confirmReinstall(kind, dirs, label) {
@@ -3178,6 +3196,21 @@ function layoutToolsCarousel(smooth) {
     $('#dl-fab').addEventListener('click', () => toggleDrawer(!$('#dl-drawer').classList.contains('open')));
     $('#dl-close').addEventListener('click', () => toggleDrawer(false));
     $('#dl-overlay').addEventListener('click', () => toggleDrawer(false));
+    // 主页版本卡: 点击查看版本信息 (有更新时可从这里手动下载)
+    const verCard = $('#stat-version-card');
+    if (verCard) {
+      verCard.classList.add('clickable');
+      verCard.addEventListener('click', async () => {
+        if (!api) { toast('浏览器预览模式', 'warn'); return; }
+        try {
+          const d = await api.get_version_modal();
+          if (d && d.error) { toast('读取版本信息失败: ' + d.error, 'error'); return; }
+          openVersionModal(d);
+        } catch (e) {
+          toast('读取版本信息失败: ' + e, 'error');
+        }
+      });
+    }
     // 背景点击预览用
     window.addEventListener('resize', () => {});
   }
@@ -3513,6 +3546,181 @@ function layoutToolsCarousel(smooth) {
     }, randInRange(charRange('char_stay_interval', 40, 60)) * 1000);
   }
 
+  // ---------------- 版本更新模态窗口 (应用内二级模态) ----------------
+  // 检测到新版本: 立即弹出本窗口并强制下载更新 (无关闭按钮, 点击遮罩/Esc 均无效),
+  //               内容与旧版独立窗口一致 (Markdown 已由后端渲染), 但样式完全跟随 App。
+  // 已是最新版本: 同样弹出本窗口展示版本信息, 右上角提供关闭按钮 (✕)。
+  let verModalEl = null;        // 当前模态 DOM
+  let verForced = false;        // 强制更新模式 (窗口不可取消)
+  let verDownloading = false;   // 更新包下载中
+
+  function closeVersionModal() {
+    if (!verModalEl) return;
+    if (verForced) return;      // 强制更新: 窗口不允许关闭
+    const el = verModalEl;
+    verModalEl = null;
+    closePanel(el);
+  }
+
+  function verSetStatus(text) {
+    const el = document.getElementById('ver-sub');
+    if (el) el.textContent = text || '';
+  }
+
+  function verShowDownload(show) {
+    const dl = document.getElementById('ver-dl');
+    if (dl) dl.hidden = !show;
+  }
+
+  function verSetProgress(d) {
+    const dl = document.getElementById('ver-dl');
+    if (!dl || dl.hidden) return;
+    const pct = Math.max(0, Math.min(100, Number(d.percent) || 0));
+    const fill = document.getElementById('ver-dl-fill');
+    if (fill) fill.style.width = pct.toFixed(1) + '%';
+    const pctEl = document.getElementById('ver-dl-pct');
+    if (pctEl) pctEl.textContent = pct.toFixed(1) + '%';
+    const meta = document.getElementById('ver-dl-meta');
+    if (meta) {
+      meta.textContent = fmtBytes(d.downloaded || 0) + ' / ' + fmtBytes(d.total || 0) +
+        (d.speed ? ' · ' + fmtSpeed(d.speed) : '');
+    }
+  }
+
+  function verSetError(text) {
+    verDownloading = false;
+    verSetStatus(text || '更新失败, 请重试');
+    const dl = document.getElementById('ver-dl');
+    if (dl) dl.classList.add('error');
+    let btn = document.getElementById('ver-retry');
+    if (!btn) {
+      const foot = document.getElementById('ver-foot');
+      if (foot) {
+        btn = document.createElement('button');
+        btn.className = 'btn btn-primary';
+        btn.id = 'ver-retry';
+        btn.textContent = '🔁 重试下载';
+        foot.appendChild(btn);
+      }
+    }
+    if (btn) btn.onclick = () => startVersionDownload();
+  }
+
+  function startVersionDownload() {
+    if (!api || !verModalEl || verDownloading) return;
+    verDownloading = true;
+    const retry = document.getElementById('ver-retry');
+    if (retry) retry.remove();
+    const dl = document.getElementById('ver-dl');
+    if (dl) { dl.hidden = false; dl.classList.remove('error'); }
+    verSetStatus('正在准备下载更新包…');
+    api.start_version_update().then(r => {
+      if (r && r.error) verSetError(r.error);
+    }).catch(e => verSetError(String(e)));
+  }
+
+  // 后端推送下载进度 (__onEvent('version_update'))
+  function updateVersionModalProgress(d) {
+    if (!verModalEl) return;
+    d = d || {};
+    const stage = d.stage || 'progress';
+    if (stage === 'error') { verSetError(d.text); return; }
+    verShowDownload(true);
+    if (d.text) verSetStatus(d.text);
+    if (stage === 'progress') {
+      verSetProgress(d);
+    } else if (stage === 'ready') {
+      verDownloading = false;
+      verSetProgress({ percent: 100, downloaded: d.downloaded, total: d.total, speed: 0 });
+      toastTop('更新包已就绪, 正在重启并安装新版本…', 'success', 6000);
+    }
+  }
+
+  function openVersionModal(d) {
+    d = d || {};
+    const forced = !!(d.forced && d.has_update && d.can_update);
+    if (verModalEl) {
+      // 已在展示: 强制更新窗口优先 (替换信息窗口), 其余情况不重复弹出
+      if (verForced || !forced) return;
+      const old = verModalEl;
+      verModalEl = null;
+      closePanel(old);
+    }
+    verForced = forced;
+    verDownloading = false;
+
+    const panel = document.createElement('div');
+    panel.id = 'ver-modal';
+    panel.className = 'ver-overlay' + (forced ? ' forced' : '');
+    panel.innerHTML =
+      '<div class="ver-card">' +
+        '<div class="ver-head">' +
+          '<span class="ver-ico">🚀</span>' +
+          '<div class="ver-head-text">' +
+            '<div class="ver-title">' + esc(d.title || (forced ? '发现新版本' : '版本信息')) + '</div>' +
+            '<div class="ver-sub" id="ver-sub">' +
+              esc(forced ? '检测到新版本, 正在自动下载更新…' : (d.has_update ? '可更新到最新版本' : '')) +
+            '</div>' +
+          '</div>' +
+          (forced ? '' : '<button class="panel-close" id="ver-close" title="关闭">✕</button>') +
+        '</div>' +
+        '<div class="ver-chips">' +
+          '<span class="chip">当前版本: ' + esc(d.current || '未知') + '</span>' +
+          (d.latest
+            ? '<span class="chip' + (d.has_update ? ' ok' : '') + '">' +
+                (d.has_update ? '最新版本: ' : '云端版本: ') + esc(d.latest) + '</span>'
+            : '') +
+        '</div>' +
+        ((d.date || d.url)
+          ? '<div class="ver-meta">' +
+              (d.date ? '<span>🕐 ' + esc(d.date) + '</span>' : '') +
+              (d.url ? '<a href="' + esc(d.url) + '" target="_blank">🔗 ' + esc(d.url) + '</a>' : '') +
+            '</div>'
+          : '') +
+        '<div class="ver-body markdown-body" id="ver-body">' + (d.html || '<p>暂无更新说明</p>') + '</div>' +
+        '<div class="ver-dl" id="ver-dl" hidden>' +
+          '<div class="ver-dl-head"><span id="ver-dl-label">下载进度</span><span id="ver-dl-pct">0.0%</span></div>' +
+          '<div class="progress-track ver-dl-track"><div class="progress-fill" id="ver-dl-fill"></div></div>' +
+          '<div class="ver-dl-meta" id="ver-dl-meta">- / -</div>' +
+        '</div>' +
+        '<div class="ver-foot" id="ver-foot">' +
+          (forced
+            ? '<span class="ver-tip">🔒 该更新为强制更新, 窗口不可关闭</span>'
+            : ((d.has_update && d.can_update)
+                ? '<button class="btn btn-ghost" id="ver-later">稍后再说</button>' +
+                  '<button class="btn btn-primary" id="ver-now">⬇ 立即下载更新</button>'
+                : '<button class="btn btn-primary" id="ver-ok">确定</button>')) +
+        '</div>' +
+      '</div>';
+    document.body.appendChild(panel);
+    verModalEl = panel;
+
+    if (!forced) {
+      const closeBtn = $('#ver-close', panel);
+      if (closeBtn) closeBtn.onclick = closeVersionModal;
+      // 非强制模式: 点击遮罩 / Esc / 确定 均可关闭
+      panel.addEventListener('click', (e) => { if (e.target === panel) closeVersionModal(); });
+      const okBtn = $('#ver-ok', panel);
+      if (okBtn) okBtn.onclick = closeVersionModal;
+      const laterBtn = $('#ver-later', panel);
+      if (laterBtn) laterBtn.onclick = closeVersionModal;
+      const nowBtn = $('#ver-now', panel);
+      if (nowBtn) nowBtn.onclick = () => startVersionDownload();
+    }
+    // 强制更新: 打开后立即自动开始下载 (用户可同时阅读更新内容)
+    if (d.auto_start) {
+      setTimeout(() => { if (verModalEl === panel) startVersionDownload(); }, 900);
+    }
+  }
+
+  // Esc 关闭 (仅非强制模式生效)
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && verModalEl && !verForced) closeVersionModal();
+  });
+
+  // 后端推送入口: window.__onVersionModal(payload)
+  window.__onVersionModal = function (payload) { openVersionModal(payload); };
+
   // ---------------- 初始化 ----------------
   async function init() {
     // pywebview 注入时机不定, 每次初始化都重新探测
@@ -3642,6 +3850,8 @@ window.Faust = {
   fmtSpeed,
   openResModal,
   openDcModal,
+  openVersionModal,
+  closeVersionModal,
   get currentPage() { return currentPage; },
   get BOOT() { return BOOT; },
   get PROJECT_ICON() { return PROJECT_ICON; },
