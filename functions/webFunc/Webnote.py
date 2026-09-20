@@ -118,9 +118,7 @@ def _build_url(template, key):
     return t.rstrip("/") + "/" + str(key)
 
 
-# ============================================================
 # 本地缓存 (断网/线路故障时兜底, 保证启动器仍可用)
-# ============================================================
 def _cache_path(key):
     safe = re.sub(r"[^0-9A-Za-z._\-]", "_", str(key))[:80] or "note"
     return os.path.join(CACHE_DIR, safe + ".txt")
@@ -354,20 +352,20 @@ def _fetch_note(keys, verbose=True):
                     if not text.strip():
                         raise RuntimeError("HTTP 200 但内容为空 (笔记名是否正确/是否已迁移?)")
                     if verbose:
-                        print(f"[云端] {key} 获取成功: {url} ({len(text)} 字节, {cost:.2f}s)")
+                        print(f"[云端] {key} 获取成功: ({len(text)} 字节, {cost:.2f}s)")
                     cache_write(key, text)
                     return text, url, key, ""
                 except Exception as e:
                     cost = time.time() - t0
                     reason = f"{type(e).__name__}: {str(e)[:140]}"
-                    last_err = f"[{key}] {url} → {reason}"
+                    last_err = f"[{key}] {reason}"
                     # HTTP 层/内容为空属于"笔记名问题", 与线路无关, 不值得再跑 DoH
                     if isinstance(e, RuntimeError):
                         http_level_fail = True
                     if verbose:
                         print(f"[云端] {key} 第 {attempt} 次失败"
                               f"{' (IPv4)' if use_ipv4 else ' (IPv6 放开)'}: "
-                              f"{url} → {reason} ({cost:.2f}s)")
+                              f"{reason} ({cost:.2f}s)")
                     if attempt == 1 and _is_conn_error(e):
                         continue          # 换协议栈再试一次
                     break                 # HTTP 层错误或第 2 次失败: 换下一个源
@@ -385,11 +383,11 @@ def _fetch_note(keys, verbose=True):
                                         (min(conn_to, remain), min(READ_TIMEOUT, remain)))
                     if text:
                         if verbose:
-                            print(f"[云端] {key} DoH 直连获取成功: {url} ({len(text)} 字节, "
+                            print(f"[云端] {key} DoH 直连获取成功: ({len(text)} 字节, "
                                   f"{time.time() - t0:.2f}s)")
                         cache_write(key, text)
                         return text, url, key, ""
-                    last_err = f"[{key}] {url} → DoH 直连仍失败"
+                    last_err = f"[{key}] DoH 直连仍失败"
 
     _last_error[keys[0]] = last_err or "未知错误"
     return "", "", "", last_err or "未知错误"
@@ -401,9 +399,7 @@ def _fetch_text(key, verbose=True):
     return text, url, err
 
 
-# ============================================================
 # 写回 (与读取完全分开的一条链路)
-# ============================================================
 def parse_write_response(r):
     """解析 /update/ 响应, 返回 (是否成功, 信息字典)
 
@@ -446,7 +442,8 @@ def write_note(key, value, update_url=None):
         return {"status": 0, "error": "笔记名为空", "method": "", "req_id": None}
 
     methods = ["POST"]
-    if len(value) <= 4000:          # 大内容用 GET 会被 414, 只有小内容才兜底
+    if len(value) <= 4000:
+        # 大内容用 GET 会被 414, 只有小内容才兜底
         methods.append("GET")
 
     last_err = ""
@@ -470,7 +467,8 @@ def write_note(key, value, update_url=None):
                             "req_id": info.get("req_id") if isinstance(info, dict) else None}
                 last_err = str(info.get("error"))
                 print(f"[云端] {key} 写回失败 ({method}): {last_err} ({cost:.2f}s)")
-                break               # HTTP 层错误: 换个方法, 不重试
+                # HTTP 层错误: 换个方法, 不重试
+                break               
             except Exception as e:
                 cost = time.time() - t0
                 last_err = f"{type(e).__name__}: {str(e)[:140]}"
@@ -482,9 +480,7 @@ def write_note(key, value, update_url=None):
     return {"status": 0, "error": last_err or "未知错误", "method": "", "req_id": None}
 
 
-# ============================================================
 # Note: 对外接口 (保持与旧实现兼容)
-# ============================================================
 class Note:
     """云端笔记
 
@@ -512,7 +508,7 @@ class Note:
         1. 上次成功过的有效名 (磁盘记忆, 避免每次都为旧配置白跑一趟)
         2. 当前配置里的名字
         3. 构建时内嵌配置里的同名笔记 (纠正 exe 目录里残留的旧配置)
-        4. .v2 后缀增删变体 (历史迁移差异)
+        4. .vX 后缀增删变体 (历史迁移差异)
         """
         keys = []
 
