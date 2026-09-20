@@ -86,7 +86,8 @@ def get_web_config() -> dict:
     if data is None and embedded:
         data = embedded
         _config_source = "内嵌配置"
-        print("[云端] 使用内嵌配置 (exe 同目录无 config/web_config.json)")
+        # 静默正常分支运行。
+        # print("[云端] 使用内嵌配置 (exe 同目录无 config/web_config.json)")
     _config_cache = data if isinstance(data, dict) else {}
     return _config_cache
 
