@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>FaustLauncher 浮士德启动器</title>
-<link rel="stylesheet" href="css/style.css?v=98">
+<link rel="stylesheet" href="css/style.css?v=99">
 </head>
 <body>
 <div id="titlebar">
@@ -217,7 +217,38 @@
       <div class="dl-empty">暂无下载任务</div>
     </div>
   </aside>
-<script src="js/app.js?v=98"></script>
+<!-- ============================================================
+     前端脚本按功能拆分, 加载顺序固定为: core(基座) → ui(界面件) → features(业务) → app.js(入口)
+     注意: 所有文件共享同一个全局作用域(顶层函数/变量即全局 API, 便于插件扩展调用),
+           因此 1) 顺序不能随意调整  2) 重名声明会直接报错  3) 新增模块请追加到末尾(入口之前)。
+     各文件职责见文件头注释; 总览见 js/app.js 顶部。
+     ============================================================ -->
+<!-- core: 基座层(环境/状态/工具/后端通道/外壳) -->
+<script src="js/core/bootstrap.js?v=99"></script>
+<script src="js/core/state.js?v=99"></script>
+<script src="js/core/utils.js?v=99"></script>
+<script src="js/core/bridge.js?v=99"></script>
+<script src="js/core/events.js?v=99"></script>
+<!-- ui: 通用界面件(外观/反馈/装饰) -->
+<script src="js/ui/theme.js?v=99"></script>
+<script src="js/ui/sound.js?v=99"></script>
+<script src="js/ui/frame_loading.js?v=99"></script>
+<script src="js/ui/terminal.js?v=99"></script>
+<script src="js/ui/tilt.js?v=99"></script>
+<script src="js/ui/background.js?v=99"></script>
+<script src="js/ui/character.js?v=99"></script>
+<script src="js/ui/carousel.js?v=99"></script>
+<script src="js/ui/version_modal.js?v=99"></script>
+<!-- features: 业务功能(流水线/资源/下载/工具/主页/设置/关于) -->
+<script src="js/features/pipeline.js?v=99"></script>
+<script src="js/features/resources.js?v=99"></script>
+<script src="js/features/downloads.js?v=99"></script>
+<script src="js/features/tools.js?v=99"></script>
+<script src="js/features/home.js?v=99"></script>
+<script src="js/features/settings.js?v=99"></script>
+<script src="js/features/about.js?v=99"></script>
+<!-- 入口: 启动流程 + 对外插件 API (必须最后) -->
+<script src="js/app.js?v=99"></script>
 <script>
 /* 独立兜底: 完全不依赖 app.js。无论 app.js 是否崩溃, 只要内容加载完成或超时,
    就移除主页两张卡片的 loading 圆圈。 */
