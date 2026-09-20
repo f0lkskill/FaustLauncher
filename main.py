@@ -22,7 +22,7 @@ def main():
         except Exception:
             pass
 
-    # ── 成就监测独立进程模式 ──────────────────────────────────────────────
+    # 成就监测独立进程模式
     # 由 GameLauncher 通过 subprocess 启动，新开一个隐藏进程，
     # 持续监控 Player.log 直到用户手动关闭或游戏退出
     if "--achievement-hook" in sys.argv:

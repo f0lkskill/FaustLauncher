@@ -5,8 +5,11 @@
  *   · 分区切换、搜索、分页, 列表与卡片渲染(hover 渐变描边 + 3D 跟随)
  *   · 重装、打开目录、独立管理器入口, 卡片上的启用/禁用设置项
  *   · 资源详情模态窗口(设置表单自动保存 + 卸载等操作)
+ *   · 进入本页的加载态: 立刻清空旧列表 + 转圈, 直到本次刷新结束再渲染
  * 本文件提供:
- *  函数: syncResActions / bindResReinstallButtons / refreshMods / confirmReinstall / renderResList / renderResPagination / authorLinksHtml / buildResCard / renderSettingsFields / collectSettingsFields / openResModal
+ *  函数: syncResActions / bindResReinstallButtons / refreshMods / renderResFromCache / resNeedsFetch /
+ *        setResLoading / enterResourcePage / confirmReinstall / renderResList / renderResPagination /
+ *        authorLinksHtml / buildResCard / renderSettingsFields / collectSettingsFields / openResModal
  *  状态/常量: resKind / resPage / RES_PAGE_SIZE / resSearch / resAddons / resMods / resRefreshing / resRefreshedAt / RES_REFRESH_GAP / SETTING_LABELS
  * 依赖: bootstrap($/api) / state / utils; 卡片的 3D 跟随效果由 ui/tilt.js 的 addCardTilt 提供
  * 加载顺序: 16/22    (拆分自原 app.js 行 760-1104)
@@ -54,16 +57,14 @@ const RES_REFRESH_GAP = 400;   // ms, 同一次操作的重复刷新合并窗口
 async function refreshMods(keepPage) {
   if (!api) { toast('浏览器预览模式', 'warn'); return; }
   if (resRefreshing) return resRefreshing;                     // 刷新中: 复用同一次请求
-  if (Date.now() - resRefreshedAt < RES_REFRESH_GAP) return Promise.resolve();   // 刚刷完: 忽略重复请求
+  if (Date.now() - resRefreshedAt < RES_REFRESH_GAP) return;    // 刚刷完: 忽略重复请求(调用方自行决定怎么显示)
   resRefreshing = (async () => {
     try {
       const d = await api.get_mods_data();
       resAddons = d.addons || [];
       resMods = d.dir_mods || [];
       if (!keepPage) resPage = 1;
-      renderResList();
-      syncResActions();   // 保持按钮组与当前分区一致
-      bindResReinstallButtons();
+      renderResFromCache();
     } catch (e) {
       const list = $('#res-list');
       if (list) list.innerHTML = '<div class="res-empty">读取失败: ' + esc(String(e)) + '</div>';
@@ -73,6 +74,46 @@ async function refreshMods(keepPage) {
     }
   })();
   return resRefreshing;
+}
+
+// 用内存里已有的数据重画列表(不发请求): 三个渲染步骤固定成一组, 避免各处漏同步按钮组
+function renderResFromCache() {
+  renderResList();
+  syncResActions();              // 保持按钮组与当前分区一致
+  bindResReinstallButtons();
+}
+
+// ---- 资源管理页的加载态 ----
+// 进入本页时: 需要重新拉取就先清空旧列表并转圈, 数据到位后再整屏渲染一次。
+// 旧实现会保留上一轮的列表, 拉取回来又整体重画 —— 观感上像"刷新了两遍"。
+function resNeedsFetch() {
+  return !!resRefreshing || (Date.now() - resRefreshedAt >= RES_REFRESH_GAP);
+}
+
+// 清空列表/分页 + 显示或隐藏卡片上的转圈遮罩
+function setResLoading(on) {
+  const card = $('#page-mod_addon .card');
+  if (on) {
+    const list = $('#res-list');
+    const pg = $('#res-pagination');
+    if (list) list.innerHTML = '';   // 立刻清空: 不让旧列表先闪一下再被替换
+    if (pg) pg.innerHTML = '';
+    showFrameLoading(card);
+  } else {
+    hideFrameLoading(card);
+  }
+}
+
+// 页面入口(switchPage 调用): 该拉新数据就"清空 + 转圈 → 渲染", 去重窗口内则直接用现有数据重画
+function enterResourcePage() {
+  if (!resNeedsFetch()) { renderResFromCache(); return; }
+  setResLoading(true);
+  Promise.resolve(refreshMods()).catch(() => {}).finally(() => {
+    // 兜底: 本次既没拉到数据也没渲染(被去重跳过 / 后端不可用)时, 用内存数据补一次, 避免空列表
+    const list = $('#res-list');
+    if (list && !list.children.length) renderResFromCache();
+    setResLoading(false);
+  });
 }
 
 function confirmReinstall(kind, dirs, label) {

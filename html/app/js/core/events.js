@@ -31,7 +31,9 @@ function switchPage(name) {
       $$('.res-tab').forEach(x => x.classList.toggle('active', x.dataset.kind === 'addon'));
       syncResActions();
     }
-    refreshMods();
+    // 进入即清空旧列表 + 转圈, 等本次刷新结束再整屏渲染
+    // (避免"旧列表先显示 -> 拉回数据又重画一遍"看起来像刷新两次)
+    enterResourcePage();
   }
   if (name === 'download_center') {
     // 无条件清空已安装缓存并重测本地 (资源中心删除插件/Mod 后进入立即同步)
