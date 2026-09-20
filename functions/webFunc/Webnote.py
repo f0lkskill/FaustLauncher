@@ -30,9 +30,7 @@ from contextlib import contextmanager, nullcontext
 
 import requests
 
-# ============================================================
 # 路径 / 常量
-# ============================================================
 if getattr(sys, "frozen", False):
     _PROJECT_ROOT = os.path.dirname(os.path.abspath(sys.executable))
 else:
@@ -74,12 +72,11 @@ _HEADERS = {
 }
 
 _orig_getaddrinfo = socket.getaddrinfo
-_last_error = {}           # note_key -> 最近一次失败原因 (诊断用)
+_last_error = {}
+# note_key -> 最近一次失败原因 (诊断用)
 
 
-# ============================================================
 # 配置
-# ============================================================
 def get_note_bases():
     """读取笔记源模板列表 (config/web_config.json → webnote_bases)"""
     bases = []
@@ -158,8 +155,9 @@ def _fmt_age(seconds):
     return f"{seconds / 86400:.1f} 天"
 
 
-# ---- 进程内记忆: 同一次启动里同一条笔记只请求一次 (重启即失效) ----
-_MEMO = {}       # key -> (text, ts)
+# 进程内记忆: 同一次启动里同一条笔记只请求一次 (重启即失效)
+_MEMO = {}
+# key -> (text, ts)
 
 
 def memo_get(keys, ttl):
@@ -183,7 +181,7 @@ def memo_clear():
     _MEMO.clear()
 
 
-# ---- 笔记名自动纠正 (残旧配置里写的是旧笔记名时, 自动改用有效名并记住) ----
+# 笔记名自动纠正 (残旧配置里写的是旧笔记名时, 自动改用有效名并记住)
 _KEYMAP = None
 
 
