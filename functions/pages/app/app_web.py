@@ -450,10 +450,7 @@ class WebLogRedirector:
         sys.stderr = self.original_stderr
 
 
-# ============================================================
 # 无头下载进度 shim: 兼容 DownloadGUI 的鸭子类型接口
-# ============================================================
-
 class _VarHook:
     """模拟 tkinter StringVar 的 .set()/.get(), 值变化时回调"""
 
@@ -574,10 +571,7 @@ class HeadlessDownloadGUI:
                     pass
 
 
-# ============================================================
 # js_api 桥接
-# ============================================================
-
 def _res_icon_uri(base_dir, name):
     """读取插件/Mod 目录下的 icon.png/jpg 转 data URI"""
     try:
