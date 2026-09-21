@@ -28,6 +28,7 @@ def main():
     if "--achievement-hook" in sys.argv:
         from functions.achievement.hook import run_achievement_hook
         run_achievement_hook()  # 此函数内部会阻塞，不会返回
+        # return 意味着直接退出主进程
         return
 
     # 今日指令独立窗口模式: 打包环境下由主 exe 以 --nyos-window 二次拉起自身,
