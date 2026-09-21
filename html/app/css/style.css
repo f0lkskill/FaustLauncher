@@ -357,7 +357,7 @@ body.no-hw .hero {
 .res-list {
   display: flex; flex-direction: column; gap: 6px;
   padding: 8px 10px;
-  height: 500px;                         /* 固定高度: 恰好容纳 5 张卡片 */
+  height: 480px;                         /* 固定高度: 恰好容纳 5 张卡片 */
   overflow-y: auto; overflow-x: hidden;  /* 3D 倾斜不触发水平滚动条 */
 }
 .res-empty { color: var(--text-3); font-size: 13px; padding: 30px 6px; text-align: center; }
