@@ -113,19 +113,18 @@ def process_text_field(text: str, is_specified: bool) -> str:
 
 def main():
     """主函数"""
-    print("EGO技能文本颜色渐变处理器")
     
     try:
         success = process_ego_json_files()
         if success:
-            print("所有EGO技能JSON文件处理完成")
+            print("[美化] 所有EGO技能JSON文件处理完成")
         else:
-            print("EGO技能JSON文件处理失败，处理过程中出现错误")
+            print("[美化] EGO技能JSON文件处理失败，处理过程中出现错误")
         
         return success
         
     except Exception as e:
-        print(f"处理失败: {e}")
+        print(f"[美化] 处理失败: {e}")
         return False
 
 if __name__ == "__main__":
