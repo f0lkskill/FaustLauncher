@@ -114,10 +114,28 @@ def _steam_install_paths():
     return out
 
 
+def normalize_game_path(path):
+    r"""把游戏路径规范成统一、友好的形式 (显示与存储都用它)
+
+    - 统一分隔符: Steam 的 libraryfolders.vdf 里库路径写的是正斜杠 ('d:/steam'),
+      直接 os.path.join 的结果就是 'd:/steam\steamapps\common\Limbus Company' 这种混搭
+    - 去掉结尾分隔符: 尾部的反斜杠贴着引号时会变成转义 ('...Company\' 里那个 \' 会把引号吃掉),
+      放进 f-string / JS 字符串都是隐患
+    - 盘符大写: 显示更规整 ('d:/steam' -> 'D:\steam'); Windows 路径大小写不敏感,
+      且项目里所有消费方都走 os.path.join, 没有大小写敏感的字符串比较
+    """
+    if not path:
+        return path
+    p = os.path.normpath(str(path))
+    if len(p) >= 2 and p[1] == ':' and p[0].isalpha():
+        p = p[0].upper() + p[1:]
+    return p
+
+
 def find_steam_game_path(app_id=_APP_ID_STR, exe_name=GAME_EXE):
     """定位边狱巴士安装路径。
 
-    返回游戏目录 (带尾部分隔符, 与 settings 中 game_path 的存储格式一致);
+    返回游戏目录 (已规范化: 统一反斜杠 / 大写盘符 / 无尾部分隔符, 见 normalize_game_path);
     找不到返回 None。
     """
     for steam_dir in _steam_install_paths():
@@ -153,9 +171,9 @@ def find_steam_game_path(app_id=_APP_ID_STR, exe_name=GAME_EXE):
                 for d in ('Limbus Company', 'LimbusCompany'):
                     p = os.path.join(lib, 'steamapps', 'common', d)
                     if os.path.isfile(os.path.join(p, exe_name)):
-                        return p + os.sep
+                        return normalize_game_path(p)
                 continue
             p = os.path.join(lib, 'steamapps', 'common', installdir)
             if os.path.isfile(os.path.join(p, exe_name)):
-                return p + os.sep
+                return normalize_game_path(p)
     return None
