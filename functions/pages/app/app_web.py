@@ -2334,22 +2334,14 @@ def run_web_ui(debug: bool = False):
         except Exception:
             pass
 
-    from functions.pages.app.app_core import FaustLauncherCore
-    from functions.extension.addon.addon_utils import AddonManager
-    from functions.extension.mod.mod_utils import ModManager
+    # stdout/stderr 加固: 无控制台打包(console=False)时它们都是 None,
+    # rich 会退回它自己用 locale 编码(cp950 等)打开的 devnull, 打印简体字直接崩
+    from functions.base.common.stdio import harden_stdio
+    harden_stdio()
 
-    core = FaustLauncherCore()
-
-    # 全局防卡死: 所有网络请求默认带超时; Tk 模态对话框转发到前端
-    _patch_network_timeouts()
-
-    # 无头下载注入: 流水线在 web 模式使用 HeadlessDownloadGUI
-    import functions.web_update.zeroasso_download as zd
-    zd.main_gui = lambda parent, config_path="": HeadlessDownloadGUI(
-        config_path, download_func=zd.download_and_extract_gui)
-    zd.DownloadGUI = lambda parent=None, config_path="", auto_start=True, download_func=None, task=None: HeadlessDownloadGUI(
-        config_path, auto_start=auto_start, download_func=download_func, task=task) # type: ignore
-
+    # 先把 stdout/stderr 接到 Web 终端, 再创建核心对象:
+    # 这样 FaustLauncherCore 初始化期间(加载背景图/扫描 mod 等)的 print 也能在界面终端里看到,
+    # 而不再是无处可去(以前这段在 core 之后, 早期输出全丢)
     window_holder = {}
 
     def _evaluate_js(code):
@@ -2371,6 +2363,22 @@ def run_web_ui(debug: bool = False):
 
     log_redirector = WebLogRedirector(_push_log)
     log_redirector.start()
+
+    from functions.pages.app.app_core import FaustLauncherCore
+    from functions.extension.addon.addon_utils import AddonManager
+    from functions.extension.mod.mod_utils import ModManager
+
+    core = FaustLauncherCore()
+
+    # 全局防卡死: 所有网络请求默认带超时; Tk 模态对话框转发到前端
+    _patch_network_timeouts()
+
+    # 无头下载注入: 流水线在 web 模式使用 HeadlessDownloadGUI
+    import functions.web_update.zeroasso_download as zd
+    zd.main_gui = lambda parent, config_path="": HeadlessDownloadGUI(
+        config_path, download_func=zd.download_and_extract_gui)
+    zd.DownloadGUI = lambda parent=None, config_path="", auto_start=True, download_func=None, task=None: HeadlessDownloadGUI(
+        config_path, auto_start=auto_start, download_func=download_func, task=task) # type: ignore
 
     def _web_progress(event, data):
         try:

@@ -11,16 +11,18 @@ import tkinter as tk
 import os
 import sys
 
+from functions.base.common.stdio import harden_stdio
+
+# 必须最早执行: 打包时 console=False 会让 sys.stdout/stderr 为 None, 而 rich 会退回它自己
+# 用系统首选编码(cp950/cp936/cp932)打开的 devnull —— 打印简体字/emoji 直接 UnicodeEncodeError,
+# 用户看到的就是 PyInstaller 弹出的 "Unhandled exception in script"。
+# (会把编码不变地改成 errors='replace'，放不下的字符退化成 '?' 而不报错)
+harden_stdio()
+
 
 def main():
     """优化后的主函数"""
-    # 控制台切换为 UTF-8, 避免块状字符/emoji 在 GBK 控制台编码失败
-    for stream in (sys.stdout, sys.stderr):
-        try:
-            if hasattr(stream, 'reconfigure'):
-                stream.reconfigure(encoding='utf-8', errors='replace')  # type: ignore
-        except Exception:
-            pass
+    harden_stdio()          # 双保险(入口可能被别处直接调用)
 
     # 成就监测独立进程模式
     # 由 GameLauncher 通过 subprocess 启动，新开一个隐藏进程，
