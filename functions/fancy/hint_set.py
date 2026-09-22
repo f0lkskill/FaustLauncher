@@ -7,11 +7,12 @@ def simple_replace(battlehint_path:str):
 
     dir_path = os.path.dirname(battlehint_path)
     ui_file_path = os.path.join(dir_path, "LoginUIText.json")
-    ui_data = read_json(ui_file_path)
-    for k in ui_data["dataList"]:
-        if k['id'] == 'loginui_loading_battlehint':
-            k['content'] = '你知道吗？'
-    write_json(ui_file_path, ui_data, indent=4)
+    if os.path.isfile(ui_file_path):
+        ui_data = read_json(ui_file_path)
+        for k in (ui_data.get("dataList") or []):   # 空文件 {} / 结构不符时直接跳过
+            if k.get('id') == 'loginui_loading_battlehint':
+                k['content'] = '你知道吗？'
+        write_json(ui_file_path, ui_data, indent=4)
 
     # 文件路径
     loadingtext_path = r"config\loadingText.json"
@@ -19,15 +20,18 @@ def simple_replace(battlehint_path:str):
     # 读取loadingText.json
     loading_data = read_json(loadingtext_path)
     
-    loading_texts = loading_data["loadingTexts"]
+    loading_texts = loading_data.get("loadingTexts") or []
     
     # 读取BattleHint.json
     battlehint_data = read_json(battlehint_path)
     
-    data_list = battlehint_data["dataList"]
+    data_list = battlehint_data.get("dataList") or []
+    if not data_list or not loading_texts:
+        print("  [美化] 跳过战斗提示替换: BattleHint/loadingText 为空或结构不符")
+        return
     
     # 随机选择要替换的条目（替换1/3的条目）
-    num_replacements = max(1, len(data_list))
+    num_replacements = min(max(1, len(data_list)), len(loading_texts))   # 不足时按可替换条数
     indices_to_replace = random.sample(range(len(data_list)), num_replacements)
     
     # 随机选择替换文本
