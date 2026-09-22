@@ -5,7 +5,6 @@ from functions.base.common.json_io import read_json, write_json
 def simple_replace(battlehint_path:str):
     """简单版本，直接替换BattleHint.json中的内容"""
 
-    print("开始替换替换游戏 TIP...")
     dir_path = os.path.dirname(battlehint_path)
     ui_file_path = os.path.join(dir_path, "LoginUIText.json")
     ui_data = read_json(ui_file_path)
@@ -26,8 +25,6 @@ def simple_replace(battlehint_path:str):
     battlehint_data = read_json(battlehint_path)
     
     data_list = battlehint_data["dataList"]
-
-    print(f"共发现 {len(data_list)} 个 Tip 条目...")
     
     # 随机选择要替换的条目（替换1/3的条目）
     num_replacements = max(1, len(data_list))
@@ -43,4 +40,4 @@ def simple_replace(battlehint_path:str):
     # 保存修改后的文件
     write_json(battlehint_path, battlehint_data, indent=2)
     
-    print(f"成功替换了 {num_replacements} 个 Tip 的内容！")
+    print(f"[美化] 成功替换了 {num_replacements} 个 Tip 的内容！")
