@@ -57,7 +57,8 @@ except ImportError:             # pragma: no cover
 def _utf8_console():
     for stream in (sys.stdout, sys.stderr):
         try:
-            stream.reconfigure(encoding="utf-8") # type: ignore
+            # 编码不放的字符(简体/emoji)退化成 '?', 不要 strict 抛异常把加载器打挂
+            stream.reconfigure(encoding="utf-8", errors="replace") # type: ignore
         except Exception:
             pass
 
