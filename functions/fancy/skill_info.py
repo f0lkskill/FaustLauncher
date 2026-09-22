@@ -131,25 +131,25 @@ def handle_base_info(name:str) -> str:
     coin_color = "#d1a261"
 
     special_keywords = {
-        f"<u><color={deep_brown}>$</color></u>": 
+        f"<color={deep_brown}><u>$</u></color>": 
         ["自身","目标","行动槽","重复使用","基础威力","最终威力","拼点威力","混乱阈值","陷入混乱","混乱","回合结束","首个波次","首个回合","回合","波次","结束","首个","恐慌类型"],
         # f"<u>$</u>":
         # ["层数","强度","层","级"],
-        f"<u><color={backup_color}>$</color></u>":
+        f"<color={backup_color}><u>$</u></color>":
         ["护盾","理智值"],
-        f"<u><color={heal_color}>$</color></u>":
+        f"<color={heal_color}><u>$</u></color>":
         ["体力"],
-        f"<u><color={light_brown}>$</color></u>":
+        f"<color={light_brown}><u>$</u></color>":
         ["敌方单位", "友方单位", "常驻效果", "不稳定E.G.O状态", "战斗开始", "攻击者"],
-        f"<u><color={speed_color}>$</color></u>":
+        f"<color={speed_color}><u>$</u></color>":
         ["速度值"],
-        f"<u><color={cannot_color}>$</color></u>":
+        f"<color={cannot_color}><u>$</u></color>":
         ["无法使用", "无法解除", "无法进入", "无法生效", "无法", "解除"],
-        f"<u><color={use_color}>$</color></u>":
+        f"<color={use_color}><u>$</u></color>":
         ["正面命中", "反面命中", "命中", "正面", "反面"],
         # f"<u><color={damage_color}>$</color></u>":
         # ["伤害"],
-        f"<u><color={coin_color}>$</color></u>":
+        f"<color={coin_color}><u>$</u></color>":
         ["加算硬币","减算硬币","硬币威力","本硬币","硬币","减算","加算"],
     }
 
@@ -255,7 +255,7 @@ def handle_base(translate_pack_path, func_file, func_structure, label="美化") 
         except Exception as e:
             failed += 1
             print(f"  [美化/{label}] {name} 处理失败: {type(e).__name__}: {e}")
-    print(f"  [美化/{label}] 完成 {done} 个, 跳过 {skipped} 个(空文件/结构不符), 失败 {failed} 个")
+    print(f"  [美化/{label}] 完成 {done} 个, 跳过 {skipped} 个(空文件/结构不符), 异常 {failed} 个")
 
 
 def get_passive_files(translate_pack_path) -> list:
