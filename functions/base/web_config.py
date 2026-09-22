@@ -76,7 +76,7 @@ def get_web_config() -> dict:
         with open(CONFIG_PATH, 'r', encoding='utf-8') as f:
             data = json.load(f)
         _config_source = "本地文件"
-        print(f"[云端] 使用本地配置: {CONFIG_PATH}")
+        # print(f"[云端] 使用本地配置: {CONFIG_PATH}")
         if embedded:
             _warn_if_webnote_differs(data if isinstance(data, dict) else {}, embedded)
     except FileNotFoundError:
