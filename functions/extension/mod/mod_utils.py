@@ -9,6 +9,7 @@ from functions.base.settings_manager import SettingsManager
 from functions.base.common.path_utils import get_mod_root_dir
 from functions.web_update.translation_source import get_translation_dir_name as _translation_dir_name
 from subprocess import run, CREATE_NO_WINDOW
+from functions.base.common.json_io import read_json, write_json
 
 
 def _strip_suffix_number(name: str) -> str:
@@ -186,8 +187,7 @@ class ModManager:
         if not os.path.exists(mod_info_path):
             raise FileNotFoundError(f"Mod信息文件不存在: {mod_info_path}")
         
-        with open(mod_info_path, 'r', encoding='utf-8') as f:
-            return json.load(f)
+        return read_json(mod_info_path)
     
     @staticmethod
     def get_mod_path() -> List[str]:

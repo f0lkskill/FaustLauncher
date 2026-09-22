@@ -18,6 +18,7 @@ import requests
 from PIL import Image, ImageDraw, ImageFont
 
 from functions.base.web_config import get_webnote, get_lanzou_config
+from functions.base.common.json_io import read_json, write_json
 
 MODS_DIR = 'mods'
 ADDONS_DIR = 'addons'
@@ -96,8 +97,7 @@ def spawn_extension(name, info=None):
             info_json['desc'] = (info.get('desc') or '').strip()
             info_json['authors'] = info.get('authors') or {}
             info_json['version'] = (info.get('version') or '0.0.1').strip() or '0.0.1'
-        with open(os.path.join(target, 'addon_info.json'), 'w', encoding='utf-8') as f:
-            json.dump(info_json, f, ensure_ascii=False, indent=4)
+        write_json(os.path.join(target, 'addon_info.json'), info_json, indent=4)
         return True, f'插件模板已生成: {target}'
     except Exception as e:
         shutil.rmtree(target, ignore_errors=True)
@@ -217,8 +217,7 @@ def wrap_mod(source_folder, info=None, icon_path=None, extra_files=None, single_
         info_json['settings'] = {'enable': True}
         if single_file:
             info_json['single_file'] = True
-        with open(os.path.join(target, 'mod_info.json'), 'w', encoding='utf-8') as f:
-            json.dump(info_json, f, ensure_ascii=False, indent=4)
+        write_json(os.path.join(target, 'mod_info.json'), info_json, indent=4)
         return True, f'Mod 包装完成: {target}'
     except Exception as e:
         return False, f'包装 Mod 失败: {e}'
@@ -239,8 +238,7 @@ def load_mod_info(mod_folder):
     if not os.path.isfile(path):
         return None, f'未找到 mod_info.json: {path}'
     try:
-        with open(path, 'r', encoding='utf-8') as f:
-            info = json.load(f)
+        info = read_json(path)
     except Exception as e:
         return None, f'读取 mod_info.json 失败: {e}'
     if not isinstance(info, dict):

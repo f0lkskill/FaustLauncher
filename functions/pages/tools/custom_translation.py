@@ -5,6 +5,7 @@ import json
 from threading import Thread
 from functions.base.window_utils import center_window
 from functions.base.color_scheme import C, darken_color, lighten_color
+from functions.base.common.json_io import read_json, write_json
 
 
 def _make_default_nav_items():
@@ -207,13 +208,11 @@ class CustomTranslationTool:
     def _ensure_changes_file(self):
         os.makedirs(os.path.dirname(self.changes_file), exist_ok=True)
         if not os.path.exists(self.changes_file):
-            with open(self.changes_file, 'w', encoding='utf-8') as f:
-                json.dump({}, f, ensure_ascii=False, indent=4)
+            write_json(self.changes_file, {}, indent=4)
 
     def _load_existing_changes(self):
         try:
-            with open(self.changes_file, 'r', encoding='utf-8') as f:
-                self.changes = json.load(f)
+            self.changes = read_json(self.changes_file)
             self._normalize_changes_keys()
         except Exception as e:
             print(f"加载修改记录失败: {e}")
@@ -221,8 +220,7 @@ class CustomTranslationTool:
 
     def _save_changes_to_file(self):
         try:
-            with open(self.changes_file, 'w', encoding='utf-8') as f:
-                json.dump(self.changes, f, ensure_ascii=False, indent=4)
+            write_json(self.changes_file, self.changes, indent=4)
         except Exception as e:
             print(f"保存修改记录失败: {e}")
 
@@ -270,18 +268,16 @@ class CustomTranslationTool:
     def _load_nav_config(self):
         try:
             if os.path.exists(NAV_CONFIG_FILE):
-                with open(NAV_CONFIG_FILE, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-                    self.nav_items = data.get("items", list(DEFAULT_NAV_ITEMS))
-                    return
+                data = read_json(NAV_CONFIG_FILE)
+                self.nav_items = data.get("items", list(DEFAULT_NAV_ITEMS))
+                return
         except Exception as e:
             print(f"加载导航配置失败: {e}")
         self.nav_items = list(DEFAULT_NAV_ITEMS)
 
     def _save_nav_config(self):
         try:
-            with open(NAV_CONFIG_FILE, 'w', encoding='utf-8') as f:
-                json.dump({"items": self.nav_items}, f, ensure_ascii=False, indent=4)
+            write_json(NAV_CONFIG_FILE, {"items": self.nav_items}, indent=4)
         except Exception as e:
             print(f"保存导航配置失败: {e}")
 
@@ -897,8 +893,7 @@ class CustomTranslationTool:
         def _worker():
             try:
                 # 1. 读取文件
-                with open(file_path, 'r', encoding='utf-8') as f:
-                    loaded_data = json.load(f)
+                loaded_data = read_json(file_path)
 
                 # 2. 深拷贝
                 modified = self._deep_copy(loaded_data)

@@ -16,6 +16,7 @@ import sys
 import threading
 import time
 from io import BytesIO
+from functions.base.common.json_io import read_json, write_json
 
 if getattr(sys, "frozen", False):
     # 打包环境下模块在临时解压目录, 以 exe 所在目录为项目根目录
@@ -1037,8 +1038,7 @@ class AppApi:
                 os.path.join(_PROJECT_ROOT, "_internal", "config", "contributors.json"),
             ):
                 if os.path.isfile(root):
-                    with open(root, 'r', encoding='utf-8') as f:
-                        data = json.load(f)
+                    data = read_json(root)
                     break
         except Exception as e:
             print(f"读取贡献者配置失败: {e}")
@@ -1116,8 +1116,7 @@ class AppApi:
                     if not os.path.isfile(info_path):
                         continue
                     try:
-                        with open(info_path, 'r', encoding='utf-8') as f:
-                            info = json.load(f)
+                        info = read_json(info_path)
                     except Exception:
                         info = {}
                     local_name = str(info.get('name') or name)
@@ -1145,8 +1144,7 @@ class AppApi:
                     if not os.path.isfile(info_path):
                         continue
                     try:
-                        with open(info_path, 'r', encoding='utf-8') as f:
-                            info = json.load(f)
+                        info = read_json(info_path)
                     except Exception:
                         info = {}
                     local_name = str(info.get('name') or name)
@@ -1204,8 +1202,7 @@ class AppApi:
         if not os.path.isfile(info_path):
             return {'ok': False, 'error': f'资源信息不存在: {local_dir}'}
         try:
-            with open(info_path, 'r', encoding='utf-8') as f:
-                info = json.load(f)
+            info = read_json(info_path)
             cloud = self._cached_resource(kind, str(info.get('name') or local_dir))
             if cloud is None:
                 return {'ok': False, 'error': f'缓存中没有与 {info.get("name") or local_dir} 完全匹配的云端资源'}
@@ -1255,8 +1252,7 @@ class AppApi:
         if not os.path.isfile(info_path):
             return {'ok': False, 'error': f'资源信息不存在: {local_dir}'}
         try:
-            with open(info_path, 'r', encoding='utf-8') as f:
-                info = json.load(f)
+            info = read_json(info_path)
             cloud = self._cached_resource(kind, str(info.get('name') or local_dir))
             if cloud is None:
                 return {'ok': False, 'error': '缓存中没有完全匹配的云端资源'}
@@ -1366,11 +1362,9 @@ class AppApi:
         if not os.path.exists(path):
             return {'error': f"Mod 信息文件不存在: {path}"}
         try:
-            with open(path, 'r', encoding='utf-8') as f:
-                info = json.load(f)
+            info = read_json(path)
             info['settings'] = dict(settings or {})
-            with open(path, 'w', encoding='utf-8') as f:
-                json.dump(info, f, ensure_ascii=False, indent=4)
+            write_json(path, info, indent=4)
             return {'error': None}
         except Exception as e:
             return {'error': str(e)}
@@ -1391,11 +1385,9 @@ class AppApi:
         if not os.path.exists(path):
             return {'error': f"插件信息文件不存在: {path}"}
         try:
-            with open(path, 'r', encoding='utf-8') as f:
-                info = json.load(f)
+            info = read_json(path)
             info['settings'] = dict(settings or {})
-            with open(path, 'w', encoding='utf-8') as f:
-                json.dump(info, f, ensure_ascii=False, indent=4)
+            write_json(path, info, indent=4)
             self._reload_addons_async()   # 设置修改后自动重载插件
             return {'error': None}
         except Exception as e:
@@ -1408,11 +1400,9 @@ class AppApi:
         if not os.path.exists(path):
             return {'error': f"Mod 信息文件不存在: {path}"}
         try:
-            with open(path, 'r', encoding='utf-8') as f:
-                info = json.load(f)
+            info = read_json(path)
             info.setdefault('settings', {})['enable'] = bool(enabled)
-            with open(path, 'w', encoding='utf-8') as f:
-                json.dump(info, f, ensure_ascii=False, indent=4)
+            write_json(path, info, indent=4)
             return {'error': None}
         except Exception as e:
             return {'error': str(e)}
@@ -1424,11 +1414,9 @@ class AppApi:
         if not os.path.exists(path):
             return {'error': f"插件信息文件不存在: {path}"}
         try:
-            with open(path, 'r', encoding='utf-8') as f:
-                info = json.load(f)
+            info = read_json(path)
             info.setdefault('settings', {})['enable'] = bool(enabled)
-            with open(path, 'w', encoding='utf-8') as f:
-                json.dump(info, f, ensure_ascii=False, indent=4)
+            write_json(path, info, indent=4)
             self._reload_addons_async()   # 启用/禁用后自动重载插件
             return {'error': None}
         except Exception as e:
@@ -1696,8 +1684,7 @@ if %errorlevel% equ 0 (
                 try:
                     if os.path.isfile(info_file):
                         import json as _json
-                        with open(info_file, 'r', encoding='utf-8') as f:
-                            info = _json.load(f)
+                        info = read_json(info_file)
                         local_name = str(info.get('name', '')).strip()
                         if local_name == name:
                             return {'downloaded': True}

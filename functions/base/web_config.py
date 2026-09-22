@@ -11,6 +11,7 @@ config/web_config.json 已被 .gitignore 排除，不会随源码上传 GitHub�
 import json
 import os
 import sys
+from functions.base.common.json_io import read_json
 
 # 打包版: 构建时内嵌的配置 (编译进 PYZ, 非独立文件)
 EMBEDDED_CONFIG = None
@@ -73,8 +74,7 @@ def get_web_config() -> dict:
     data = None
     embedded = _embedded_dict()
     try:
-        with open(CONFIG_PATH, 'r', encoding='utf-8') as f:
-            data = json.load(f)
+        data = read_json(CONFIG_PATH)
         _config_source = "本地文件"
         # print(f"[云端] 使用本地配置: {CONFIG_PATH}")
         if embedded:

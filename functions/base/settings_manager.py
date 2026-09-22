@@ -1,6 +1,7 @@
 import json
 import os
 from pathlib import Path
+from functions.base.common.json_io import read_json, write_json
 
 class SettingsManager:
     def __init__(self, config_path="config/settings.json"):
@@ -18,8 +19,7 @@ class SettingsManager:
         """尝试从指定文件读取配置，文件缺失、解析失败或结构无效时返回 None。"""
         try:
             if os.path.exists(path):
-                with open(path, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
+                data = read_json(path)
                 if self._is_valid_settings(data):
                     return data
         except Exception as e:
@@ -64,11 +64,9 @@ class SettingsManager:
             # 备份当前有效配置（断电时至少保留上一次的完整版本）
             if os.path.exists(self.config_path):
                 try:
-                    with open(self.config_path, 'r', encoding='utf-8') as f:
-                        current = json.load(f)
+                    current = read_json(self.config_path)
                     if self._is_valid_settings(current):
-                        with open(self.config_path + '.bak', 'w', encoding='utf-8') as f:
-                            json.dump(current, f, indent=4, ensure_ascii=False)
+                        write_json(self.config_path + '.bak', current, indent=4)
                 except Exception:
                     pass  # 当前主文件无效时静默跳过备份（如自动恢复场景）
 
@@ -76,10 +74,7 @@ class SettingsManager:
             dir_name = os.path.dirname(self.config_path) or '.'
             tmp_path = os.path.join(dir_name, f'.settings_{os.getpid()}.tmp')
             try:
-                with open(tmp_path, 'w', encoding='utf-8') as f:
-                    json.dump(self.settings, f, indent=4, ensure_ascii=False)
-                    f.flush()
-                    os.fsync(f.fileno())
+                write_json(tmp_path, self.settings, indent=4, fsync=True)
                 os.replace(tmp_path, self.config_path)
             finally:
                 if os.path.exists(tmp_path):
