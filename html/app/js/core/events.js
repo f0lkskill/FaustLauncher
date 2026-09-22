@@ -50,6 +50,18 @@ function switchPage(name) {
   }
 }
 
+// 事件绑定助手: 元素不存在时只记一条 console 警告并跳过, 绝不抛异常。
+// 背景: 以前直接写 on('#xx', ...), 一旦某个元素被改名/移走(比如设置页
+// 的"恢复默认"按钮改成 renderSettings 动态创建), $() 拿到 null 就会抛错, 把 bindEvents
+// 后面的所有绑定一起中断 —— 表现为"资源管理按钮点不动 / 3D 聚焦失效 / 下载抽屉打不开"
+// 这类看似无关的集体失灵, 而且只能在 devtools 里看到一行报错。
+function on(selector, event, handler, opts) {
+  const el = typeof selector === 'string' ? $(selector) : selector;
+  if (!el) { console.warn('[UI] 绑定跳过, 未找到元素:', selector); return null; }
+  el.addEventListener(event, handler, opts);
+  return el;
+}
+
 // ---------------- 事件绑定 ----------------
 function bindEvents() {
   // 自定义标题栏: 拖动窗口 + 最小化/关闭
@@ -93,68 +105,53 @@ function bindEvents() {
   // 导航
   $$('.nav-item').forEach(b => b.addEventListener('click', () => switchPage(b.dataset.page)));
   // 主页按钮
-  $('#btn-launch').addEventListener('click', onLaunch);
-  $('#btn-translate').addEventListener('click', onTranslate);
+  on('#btn-launch', 'click', onLaunch);
+  on('#btn-translate', 'click', onTranslate);
   // 关于外链
   $$('[data-link]').forEach(b => b.addEventListener('click', () => {
     const url = b.dataset.link;
     if (api) api.open_url(url).catch(e => toast(String(e), 'error'));
     else window.open(url, '_blank');
   }));
-  // 设置: 自动保存 (各控件修改即保存, 无保存按钮)
-  $('#btn-reset-settings').addEventListener('click', async () => {
-    if (!api) { toast('浏览器预览模式', 'warn'); return; }
-    try {
-      const schema = BOOT.settings_schema;
-      for (const key of Object.keys(schema)) {
-        const s = schema[key];
-        if (s.type === 'UNABLE_TO_EDIT') continue;
-        if (s.default !== undefined) await api.set_setting(key, s.default);
-      }
-      await api.save_settings({});
-      SETTING_CHANGES = {};
-      const fresh = await api.get_bootstrap();
-      BOOT.settings_schema = fresh.settings_schema;
-      renderSettings(BOOT.settings_schema);
-      toast('已恢复默认设置', 'success');
-    } catch (e) { toast('重置失败: ' + e, 'error'); }
-  });
+  // 设置页"恢复默认"按钮由 renderSettings 动态创建, 点击逻辑写在 features/settings.js 的
+  // resetAllSettings() 里, 并在创建处直接绑定(不能再放在这里按 id 找 —— 这时按钮还不存在)
   // 终端
   const term = $('#terminal');
-  $('.term-head').addEventListener('click', () => {
+  on('.term-head', 'click', () => {
+    if (!term) return;
     const wasOpen = term.classList.contains('open');
     term.classList.toggle('open');
     if (!wasOpen && term.classList.contains('open')) retractCharIfBottom();
   });
-  $('#btn-copy-term').addEventListener('click', e => {
+  on('#btn-copy-term', 'click', e => {
     e.stopPropagation();
     const text = $$('.term-line', termBody).map(l => l.textContent).join('\n');
     if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(() => toast('已复制到剪贴板', 'success')).catch(() => toast('复制失败', 'error'));
     else toast('复制失败: 当前环境不支持剪贴板', 'error');
   });
-  $('#btn-clear-term').addEventListener('click', e => {
+  on('#btn-clear-term', 'click', e => {
     e.stopPropagation();
     termBody.innerHTML = '';
     if (api) api.clear_terminal().catch(() => {});
   });
   // 资源管理页: Mod 分区按钮
-  $('#btn-open-mod-dir').addEventListener('click', async () => {
+  on('#btn-open-mod-dir', 'click', async () => {
     if (!api) { toast('浏览器预览模式', 'warn'); return; }
     const r = await api.open_mods_dir('dir').catch(e => ({ error: String(e) }));
     if (r && r.error) toast(r.error, 'error');
   });
-  $('#btn-open-mod-window').addEventListener('click', async () => {
+  on('#btn-open-mod-window', 'click', async () => {
     if (!api) { toast('浏览器预览模式', 'warn'); return; }
     const ok = await api.open_mod_manager_window().catch(() => false);
     toast(ok ? '独立 Mod 管理器已打开' : '打开失败, 详见终端', ok ? 'success' : 'error');
   });
   // 资源管理页: 插件分区按钮
-  $('#btn-open-addon-dir').addEventListener('click', async () => {
+  on('#btn-open-addon-dir', 'click', async () => {
     if (!api) { toast('浏览器预览模式', 'warn'); return; }
     const r = await api.open_mods_dir('addon').catch(e => ({ error: String(e) }));
     if (r && r.error) toast(r.error, 'error');
   });
-  $('#btn-install-addon').addEventListener('click', async () => {
+  on('#btn-install-addon', 'click', async () => {
     if (!api) { toast('浏览器预览模式', 'warn'); return; }
     const r = await api.install_addon_dialog().catch(e => ({ error: String(e) }));
     if (r && r.error) toast('安装失败: ' + r.error, 'error');
@@ -200,13 +197,13 @@ function bindEvents() {
   }));
   // 初始化按钮组状态 (默认插件分区)
   syncResActions();
-  termBody.addEventListener('scroll', () => {
+  on(termBody, 'scroll', () => {
     termAutoScroll = (termBody.scrollTop + termBody.clientHeight >= termBody.scrollHeight - 4);
   });
   // 下载任务抽屉
-  $('#dl-fab').addEventListener('click', () => toggleDrawer(!$('#dl-drawer').classList.contains('open')));
-  $('#dl-close').addEventListener('click', () => toggleDrawer(false));
-  $('#dl-overlay').addEventListener('click', () => toggleDrawer(false));
+  on('#dl-fab', 'click', () => toggleDrawer(!$('#dl-drawer').classList.contains('open')));
+  on('#dl-close', 'click', () => toggleDrawer(false));
+  on('#dl-overlay', 'click', () => toggleDrawer(false));
   // 主页版本卡: 点击查看版本信息 (有更新时可从这里手动下载)
   const verCard = $('#stat-version-card');
   if (verCard) {

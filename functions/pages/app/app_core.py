@@ -221,7 +221,7 @@ class FaustLauncherCore:
         if not self.settings_manager.get_setting("game_path"):
             print("错误: 未配置游戏路径")
             # 尝试通过 Steam VDF 自动定位边狱巴士, 找到后询问用户确认
-            from functions.base.steam_locator import find_steam_game_path
+            from functions.base.steam_locator import find_steam_game_path, normalize_game_path
             found = find_steam_game_path()
             if found:
                 if interactive:
@@ -241,14 +241,14 @@ class FaustLauncherCore:
                     # Web 模式: 无交互, 自动采用 Steam 检测到的路径
                     self.settings_manager.set_setting("game_path", found)
                     self.settings_manager.save_settings()
-                    print(f"已自动设置游戏路径: {found}")
+                    print(f"[设置] 已通过 Steam 自动设置游戏路径: {found}")
                     found = None
             if found:
                 if interactive:
                     from tkinter.filedialog import askopenfilename
                     file_path = askopenfilename(title="选择边狱巴士主程序", filetypes=[("边狱巴士主程序", "LimbusCompany.exe")])
                     if file_path:
-                        self.settings_manager.set_setting("game_path", file_path.replace('LimbusCompany.exe', ''))
+                        self.settings_manager.set_setting("game_path", normalize_game_path(os.path.dirname(file_path)))
                         self.settings_manager.save_settings()
                         settings_page = self.page_loader.get_page('settings')  # type: ignore
                         if settings_page:

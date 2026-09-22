@@ -97,7 +97,7 @@ function shortPath(p) {
     const pathPart = parts.slice(0, -1).join('/');
     // 路径部分取前10个字符，加上文件名
     if (pathPart.length > 10) {
-        return pathPart.substring(0, 10) + '.../' + fileName.substring(0, 5);
+        return pathPart.substring(0, 10) + '.../' + fileName.substring(0, 5) + '...';
     }
     return p;
 }
