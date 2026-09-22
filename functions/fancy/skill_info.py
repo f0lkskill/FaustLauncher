@@ -155,8 +155,8 @@ def handle_base_info(name:str) -> str:
 
     for keyword, keywords in special_keywords.items():
         for k in keywords:
-            name = name.replace(k, keyword.replace("$", k))
-            # 两次？
+            # 只替换一遍: 替换结果里本身就含关键词(如 <u><color=#CAFE98>命中</color></u>),
+            # 再替换一次只会把标签又套一层(旧代码这里重复调了一次, 输出会两层嵌套)
             name = name.replace(k, keyword.replace("$", k))
     
     # 恢复被保护的 C# 占位符
@@ -206,81 +206,105 @@ def handle_passive_structure(passive_content:dict) -> dict:
     
     return passive_content
 
+def _shape_problem(content):
+    """返回"结构不符合美化预期"的说明; 没问题返回 None
+
+    汉化包/游戏目录里有些文件是 2 字节的 "{}" (该章节没有内容),
+    直接取 content["dataList"] 会抛 KeyError: 'dataList'; 以前这个异常会打断
+    整个美化步骤, 后面的文件全部不再处理(日志里就是"XX跳过: 'dataList'")。
+    """
+    if not isinstance(content, dict):
+        return "顶层不是对象(%s)" % type(content).__name__
+    data_list = content.get("dataList")
+    if data_list is None:
+        keys = list(content)[:3]
+        return "没有 dataList 键(%s)" % ("空对象 {}" if not keys else "keys=%s" % keys)
+    if not isinstance(data_list, list):
+        return "dataList 不是数组(%s)" % type(data_list).__name__
+    return None
+
+
 def get_skill_files(translate_pack_path) -> list:
-    # 遍历json文件, 并选择名字为Skill***.json的文件, 获取其文件名字为列表
-    import os
+    # 遍历json文件, 并选择名字为Skill***.json的文件, 返回完整路径列表
+    #   (返回完整路径而不是文件名: 原来外层再 join 一次, 子目录里的文件会拼错路径)
     skill_info_list = []
     for root, dirs, files in os.walk(translate_pack_path):
         for file in files:
             file:str
             if file.endswith('.json'):
                 if file[:5] == "Skill":
-                    skill_info_list.append(file)
+                    skill_info_list.append(os.path.join(root, file))
 
     return skill_info_list
 
-def handle_base(translate_pack_path, func_file, func_structure) -> None:
+def handle_base(translate_pack_path, func_file, func_structure, label="美化") -> None:
+    """逐文件处理: 单个文件结构不符/处理失败只跳过它自己, 不打断整批"""
     file_list = func_file(translate_pack_path)
-    for file in file_list:
-        file_path = os.path.join(translate_pack_path, file)
-        skill_content = read_json(file_path)
+    done = skipped = failed = 0
+    for file_path in file_list:
+        name = os.path.basename(file_path)
+        try:
+            content = read_json(file_path)
+            why = _shape_problem(content)
+            if why:
+                skipped += 1
+                print(f"  [美化/{label}] 跳过 {name}: {why}")
+                continue
+            write_json(file_path, func_structure(content), indent=4)
+            done += 1
+        except Exception as e:
+            failed += 1
+            print(f"  [美化/{label}] {name} 处理失败: {type(e).__name__}: {e}")
+    print(f"  [美化/{label}] 完成 {done} 个, 跳过 {skipped} 个(空文件/结构不符), 失败 {failed} 个")
 
-        # print(f"正在处理被动描述: {file}")
-        skill_content = func_structure(skill_content)
-        
-        # 保存处理后的文件
-        write_json(file_path, skill_content, indent=4)
 
 def get_passive_files(translate_pack_path) -> list:
-    # 遍历json文件, 并选择名字为Passive***.json的文件, 获取其文件名字为列表
-    import os
+    # 遍历json文件, 并选择名字为Passive***.json的文件, 返回完整路径列表
     passive_info_list = []
     for root, dirs, files in os.walk(translate_pack_path):
         for file in files:
             file:str
             if file.endswith('.json'):
                 if file[:8] == "Passives":
-                    passive_info_list.append(file)
+                    passive_info_list.append(os.path.join(root, file))
 
     return passive_info_list
 
 def get_EGOgift_files(translate_pack_path) -> list:
-    # 遍历json文件, 并选择名字为EGOgift***.json的文件, 获取其文件名字为列表
-    import os
+    # 遍历json文件, 并选择名字为EGOgift***.json的文件, 返回完整路径列表
     EGOgift_info_list = []
     for root, dirs, files in os.walk(translate_pack_path):
         for file in files:
             file:str
             if file.endswith('.json'):
                 if file[:7] == "EGOgift":
-                    EGOgift_info_list.append(file)
+                    EGOgift_info_list.append(os.path.join(root, file))
 
     return EGOgift_info_list
 
 def get_buff_files(translate_pack_path) -> list:
-    # 遍历json文件, 并选择名字为Bufs***.json的文件, 获取其文件名字为列表
-    import os
+    # 遍历json文件, 并选择名字为Bufs***.json的文件, 返回完整路径列表
     buff_info_list = []
     for root, dirs, files in os.walk(translate_pack_path):
         for file in files:
             file:str
             if file.endswith('.json'):
                 if file[:4] == "Bufs":
-                    buff_info_list.append(file)
+                    buff_info_list.append(os.path.join(root, file))
 
     return buff_info_list
 
 def handle_skill(translate_pack_path) -> None:
-    handle_base(translate_pack_path, get_skill_files, handle_skill_structure)
+    handle_base(translate_pack_path, get_skill_files, handle_skill_structure, "技能描述")
 
 def handle_passive(translate_pack_path) -> None:
-    handle_base(translate_pack_path, get_passive_files, handle_passive_structure)
+    handle_base(translate_pack_path, get_passive_files, handle_passive_structure, "被动描述")
 
 def handle_EGOgift(translate_pack_path) -> None:
-    handle_base(translate_pack_path, get_EGOgift_files, handle_passive_structure)
+    handle_base(translate_pack_path, get_EGOgift_files, handle_passive_structure, "EGO饰品")
 
 def handle_buff(translate_pack_path) -> None:
-    handle_base(translate_pack_path, get_buff_files, handle_passive_structure)
+    handle_base(translate_pack_path, get_buff_files, handle_passive_structure, "Buff效果")
 
 def total_handle(translate_pack_path) -> None:
     handle_skill(translate_pack_path)
