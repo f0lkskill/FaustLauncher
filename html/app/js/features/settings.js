@@ -90,11 +90,28 @@ function applySettingSideEffect(key, v) {
   else if (s && s.type === 'color') applyTheme(v);
 }
 
-// 切换设置分区 tab
+// 切换设置分区 tab (重播"设置项逐行淡入"的加载动画)
 function switchSettingsTab(page) {
   settingsActiveTab = page;
   $$('#settings-groups .set-tab').forEach(t => t.classList.toggle('active', t.dataset.page === page));
-  $$('#settings-groups .settings-group').forEach(g => { g.hidden = g.dataset.page !== page; });
+  let active = null;
+  $$('#settings-groups .settings-group').forEach(g => {
+    g.hidden = g.dataset.page !== page;
+    if (!g.hidden) active = g;
+  });
+  animateSettingsGroup(active);
+}
+
+// 重播分区的"设置项进入动画": 逐行错峰淡入上浮
+// (切换 tab / 首次渲染 / 恢复默认后重渲染时调用)
+function animateSettingsGroup(group) {
+  if (!group) return;
+  const rows = group.querySelectorAll('.set-row');
+  if (!rows.length) return;
+  group.classList.remove('sg-enter');
+  void group.offsetWidth;                   // 强制重排, 让动画可以重播
+  rows.forEach((row, i) => { row.style.animationDelay = Math.min(i * 0.03, 0.3) + 's'; });
+  group.classList.add('sg-enter');
 }
 
 // 重置单个设置项为默认值
@@ -112,6 +129,34 @@ async function resetOneSetting(key) {
     renderSettings(BOOT.settings_schema);
     toast('已重置: ' + (s.name || key), 'success');
   } catch (e) { toast('重置失败: ' + e, 'error'); }
+}
+
+// 恢复所有设置项为默认值
+// (设置页顶部右侧那个"↺ 恢复默认"按钮的逻辑; 按钮由 renderSettings 创建并绑定, 见那里)
+async function resetAllSettings() {
+  if (!api) { toast('浏览器预览模式', 'warn'); return; }
+  const btn = $('#btn-reset-settings');
+  if (btn && btn.disabled) return;                 // 防连点
+  if (btn) { btn.disabled = true; btn.textContent = '↺ 重置中…'; }
+  try {
+    const schema = BOOT.settings_schema;
+    for (const key of Object.keys(schema)) {
+      const s = schema[key];
+      // 跳过无法编辑的项
+      if (s.type === 'UNABLE_TO_EDIT' || s.type === 'unable_to_edit') continue;
+      if (s.default !== undefined) await api.set_setting(key, s.default);
+    }
+    await api.save_settings({});
+    SETTING_CHANGES = {};
+    const fresh = await api.get_bootstrap();
+    BOOT.settings_schema = fresh.settings_schema;
+    renderSettings(BOOT.settings_schema);           // 重渲染(会重建按钮), 各分区重播进入动画
+    toast('已恢复默认设置', 'success');
+  } catch (e) {
+    toast('重置失败: ' + e, 'error');
+    const b = $('#btn-reset-settings');             // 失败时恢复按钮可用
+    if (b) { b.disabled = false; b.textContent = '↺ 恢复默认'; }
+  }
 }
 
 // ---- 设置页渲染: 分组 / 分页签 ----
@@ -147,12 +192,23 @@ function renderSettings(schema) {
     t.onclick = () => switchSettingsTab(page);
     tabsBox.appendChild(t);
   });
+  
+  // 重置所有设置项按钮(靠右): 由本函数动态创建, 因此就在这里绑定点击行为
+  const resetBtn = document.createElement('button');
+  resetBtn.className = 'btn btn-ghost';
+  resetBtn.id = 'btn-reset-settings';
+  resetBtn.textContent = '↺ 恢复默认';
+  resetBtn.onclick = resetAllSettings;
+  tabsBox.appendChild(resetBtn);
+
   container.appendChild(tabsBox);
   // 分区内容 (仅显示当前 tab)
+  const groupEls = {};                      // page -> group 元素, 供切换 tab 时重播进入动画
   pages.forEach(page => {
     const g = document.createElement('div');
     g.className = 'settings-group';
     g.dataset.page = page;
+    groupEls[page] = g;
     if (page !== settingsActiveTab) g.hidden = true;
     groups[page].forEach(({ key, s }) => {
       try {
@@ -179,6 +235,8 @@ function renderSettings(schema) {
     });
     container.appendChild(g);
   });
+  // 首次渲染 / 恢复默认后重渲染: 当前分区也播一次"逐行淡入"
+  animateSettingsGroup(groupEls[settingsActiveTab]);
 }
 
 // ---- 控件构建: 开关 / 下拉 / 滑块 / 颜色 / 路径 / 只读 ----

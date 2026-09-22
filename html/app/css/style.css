@@ -1072,7 +1072,6 @@ body.modal-open .res-card {
   display: flex; flex-direction: column; align-items: center; justify-content: center;
   gap: 0.3em; padding: 0.6em 0.55em; text-align: center;
   text-shadow: 0 2px 10px rgba(0, 0, 0, .7);
-}
   border-radius: inherit;
 }
 /* 字号用 em, 随卡片尺寸 (stage font-size) 等比例缩放 */
@@ -1158,6 +1157,13 @@ body.modal-open .res-card {
   transform: rotate(-30deg);
 }
 .set-reset:active { transform: rotate(-30deg) scale(.92); }
+
+/* 设置页顶部"恢复默认"按钮靠右 —— 只针对它, 不要写进 .btn-ghost(那会波及全站幽灵按钮) */
+.settings-tabs #btn-reset-settings { margin-left: auto; }
+/* 切换 tab / 重渲染时的"设置项加载"动画: 逐行错峰淡入上浮 (错峰延迟由 settings.js 给) */
+@keyframes setRowIn { from { opacity: 0; transform: translateY(7px); } to { opacity: 1; transform: none; } }
+.settings-group.sg-enter .set-row { animation: setRowIn .3s cubic-bezier(.2, .7, .3, 1) backwards; }
+@media (prefers-reduced-motion: reduce) { .settings-group.sg-enter .set-row { animation: none; } }
 .set-info { flex: 1; min-width: 0; }
 .set-name { font-size: 14px; font-weight: 600; }
 .set-desc { font-size: 11.5px; color: var(--text-3); margin-top: 3px; line-height: 1.5; }

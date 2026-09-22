@@ -1,2 +1,2 @@
-venv\Scripts\python.exe main.py --debug
+venv\Scripts\python.exe main.py
 pause

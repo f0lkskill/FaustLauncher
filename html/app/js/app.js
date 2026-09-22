@@ -95,7 +95,11 @@ function startupBindUI() {
       if (currentPage === 'features' || currentPage === 'tools') applyFeatSize();
     });
   } catch (e) {
+    // 绑定中途抛异常会让它后面的交互静默失效(按钮点不动/3D 聚焦失效/抽屉打不开),
+    // 所以除了 console, 还要打到终端与提示上, 别再让这类问题藏起来
     console.error('UI 初始化出错:', e);
+    addLog('\u001b[91m[UI] 事件绑定失败: ' + (e && e.message ? e.message : e) + '\u001b[0m');
+    toast('界面初始化异常, 部分按钮可能不可用 (详见终端)', 'error', 6000);
   }
 }
 
