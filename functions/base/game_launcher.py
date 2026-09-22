@@ -163,6 +163,10 @@ class GameLauncher:
 
     def _prepare_translation(self):
         """复制当前平台的汉化目录到游戏目录。"""
+        # 先应用有色汉化气泡文件
+        from functions.fancy.bubble_transfer import main as transfer_bubble
+        transfer_bubble(config_path=self._lang_dir)
+
         target = translation_source_lib.get_game_lang_dir(self._game_path)
         print(f"[调试] _prepare_translation: 游戏路径={self._game_path!r}")
         print(f"[调试] _prepare_translation: 源={os.path.abspath(self._lang_dir)!r} 存在={os.path.exists(self._lang_dir)} 是目录={os.path.isdir(self._lang_dir)}")

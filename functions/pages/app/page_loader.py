@@ -912,7 +912,7 @@ def download_and_launch(obj=None, need_run_game=False, manual=False):
     from functions.base.game_launcher import GameLauncher
     from functions.web_update.zeroasso_download import main_gui as download_translation, DownloadGUI, download_and_extract_gui
     from functions.web_update.update_resource import check_resource_update
-    from functions.fancy.bubble_transfer import main as download_bubble
+    from functions.fancy.bubble_transfer import main as transfer_bubble
     import os
     import sys
     import shutil
@@ -1131,8 +1131,7 @@ def download_and_launch(obj=None, need_run_game=False, manual=False):
                         # 汉化包自带 info/version.json (含正确版本号), 合并后自然保留, 不覆写
                         # 合并 rmtree 会清掉之前复制的有色气泡, 这里重新覆盖回云端有色版
                         try:
-                            from functions.fancy.bubble_transfer import download_bubble_files as _bubble_apply
-                            _bubble_apply('lang')
+                            transfer_bubble('lang')
                         except Exception as e:
                             print(f"重新应用有色气泡失败: {e}")
                         _push_step('mods')
@@ -1175,14 +1174,10 @@ def download_and_launch(obj=None, need_run_game=False, manual=False):
             sleep(1)
         
         del dt
-        _push_step('bubble')
-        gui_res.root.destroy()
-        
-        print("开始下载气泡文本...")
-        download_bubble(download_path)
-        print("气泡文本载入完成")
-        _push_step('install')
 
+        gui_res.root.destroy()
+
+        _push_step('install')
         if need_run_game or obj is not None:
             _push_step('mods')
             _sync_cloud_items()
