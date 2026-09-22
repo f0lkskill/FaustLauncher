@@ -7,6 +7,7 @@ from functions.extension.mod.mod_utils import ModManager
 from functions.base.color_scheme import C, darken_color, border_color
 from functions.base.custom_notebook import CustomNotebook
 from functions.base.style_utils import apply_scrollbar_style, RoundedFrame, RoundedButton
+from functions.base.common.json_io import read_json, write_json
 
 class ModAddonManagerPage:
     def __init__(self, parent_frame, bg_color, lighten_bg_color, app):
@@ -266,8 +267,7 @@ class ModAddonManagerPage:
             
             # 更新插件信息
             addon_info_path = os.path.join(addon['path'], 'addon_info.json')
-            with open(addon_info_path, 'r', encoding='utf-8') as f:
-                info = json.load(f)
+            info = read_json(addon_info_path)
             
             if 'settings' not in info:
                 info['settings'] = {}
@@ -283,8 +283,7 @@ class ModAddonManagerPage:
                 self.addon_manager.when_addon_disabled(addon['name'])
             
             # 保存更新后的信息
-            with open(addon_info_path, 'w', encoding='utf-8') as f:
-                json.dump(info, f, indent=4, ensure_ascii=False)
+            write_json(addon_info_path, info, indent=4)
             
             # 刷新插件列表
             self.refresh_addons_tab()
@@ -322,8 +321,7 @@ class ModAddonManagerPage:
                 mod_info_path = os.path.join(item_path, 'mod_info.json')
                 if os.path.exists(mod_info_path):
                     try:
-                        with open(mod_info_path, 'r', encoding='utf-8') as f:
-                            info = json.load(f)
+                        info = read_json(mod_info_path)
                         mods.append({'name': os.path.basename(item_path), 'path': item_path, 'info': info})
                     except:
                         pass
@@ -339,8 +337,7 @@ class ModAddonManagerPage:
             info_path = os.path.join(item['path'], info_filename)
             try:
                 if os.path.exists(info_path):
-                    with open(info_path, 'r', encoding='utf-8') as f:
-                        info = json.load(f)
+                    info = read_json(info_path)
                     enabled_dict[item['name']] = info.get('settings', {}).get('enable', True)
                 else:
                     enabled_dict[item['name']] = True
@@ -359,11 +356,9 @@ class ModAddonManagerPage:
         info_path = os.path.join(item['path'], info_filename)
         try:
             if os.path.exists(info_path):
-                with open(info_path, 'r', encoding='utf-8') as f:
-                    info = json.load(f)
+                info = read_json(info_path)
                 info['enabled'] = not current
-                with open(info_path, 'w', encoding='utf-8') as f:
-                    json.dump(info, f, indent=4, ensure_ascii=False)
+                write_json(info_path, info, indent=4)
         except:
             pass
         return not current
@@ -494,8 +489,7 @@ class ModAddonManagerPage:
             
             # 更新Mod信息
             mod_info_path = os.path.join(mod['path'], 'mod_info.json')
-            with open(mod_info_path, 'r', encoding='utf-8') as f:
-                info = json.load(f)
+            info = read_json(mod_info_path)
             
             if 'settings' not in info:
                 info['settings'] = {}
@@ -503,8 +497,7 @@ class ModAddonManagerPage:
             info['settings'][setting_key] = new_value
             
             # 保存更新后的信息
-            with open(mod_info_path, 'w', encoding='utf-8') as f:
-                json.dump(info, f, indent=4, ensure_ascii=False)
+            write_json(mod_info_path, info, indent=4)
             
             # 刷新Mod列表
             self.refresh_mods_tab()

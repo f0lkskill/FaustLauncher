@@ -35,7 +35,8 @@ except ImportError:
     import json
 
     def read_json(path):
-        with open(path, 'r', encoding='utf-8') as f:
+        # 兜底实现同样容忍 UTF-8 BOM/UTF-16
+        with open(path, 'r', encoding='utf-8-sig') as f:
             return json.load(f)
 
 CONFIG_PATH = os.path.join(_PROJECT_ROOT, "config", "nyos_prescript.json")

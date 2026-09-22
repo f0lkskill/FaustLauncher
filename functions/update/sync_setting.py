@@ -5,6 +5,7 @@ TARGET_CONFIG_FILE = "cache/new_version/FaustLauncher/config/settings.json"
 
 import json
 import os
+from functions.base.common.json_io import read_json, write_json
 
 def sync_settings():
     if not os.path.exists(CURRENT_CONFIG_FILE):
@@ -14,11 +15,9 @@ def sync_settings():
         print(f"跳过设置同步：目标文件不存在 {TARGET_CONFIG_FILE}")
         return
     
-    with open(CURRENT_CONFIG_FILE, 'r', encoding='utf-8') as f:
-        current_config = json.load(f)
+    current_config = read_json(CURRENT_CONFIG_FILE)
 
-    with open(TARGET_CONFIG_FILE, 'r', encoding='utf-8') as f:
-        target_config = json.load(f)
+    target_config = read_json(TARGET_CONFIG_FILE)
 
     # 不能同步版本信息，否则意味着重复的更新。
     black_keys = ['version_info']
@@ -32,5 +31,4 @@ def sync_settings():
             except:
                 pass
 
-    with open(TARGET_CONFIG_FILE, 'w', encoding='utf-8') as f:
-        json.dump(target_config, f, indent=4, ensure_ascii=False)
+    write_json(TARGET_CONFIG_FILE, target_config, indent=4)

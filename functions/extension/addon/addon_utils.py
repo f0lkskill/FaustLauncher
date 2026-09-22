@@ -4,6 +4,7 @@ import sys
 from types import ModuleType
 from typing import Dict, List, Optional, Any
 from functions.web_update.translation_source import CustomTranslateSource
+from functions.base.common.json_io import read_json, write_json
 
 class AddonManager:
     """
@@ -192,8 +193,7 @@ class AddonManager:
             return None
         
         try:
-            with open(info_path, 'r', encoding='utf-8') as f:
-                return json.load(f)
+            return read_json(info_path)
         except Exception as e:
             print(f"读取插件信息失败: {e}")
             return None

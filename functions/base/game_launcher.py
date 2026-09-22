@@ -10,6 +10,7 @@ import tkinter.messagebox as messagebox
 from functions.base.settings_manager import get_settings_manager
 import functions.web_update.translation_source as translation_source_lib
 from functions.extension.addon.addon_utils import AddonManager
+from functions.base.common.json_io import read_json, write_json
 
 
 def safe_merge_dirs(src, dst, overwrite=True):
@@ -259,7 +260,7 @@ class GameLauncher:
                     info_path = os.path.join(dir, sub_dir, f'{dir.replace("s", "")}_info.json')
                     if not os.path.exists(info_path):
                         continue
-                    info = json.load(open(info_path, 'r', encoding='utf-8'))
+                    info = read_json(info_path)
                     if info.get('settings', {}).get('enable'):
                         dirs.append(os.path.join(dir, sub_dir))
                     
@@ -279,8 +280,7 @@ class GameLauncher:
             layer_state_file = os.path.join(dir_path, 'changes_layers.json')
             if os.path.exists(layer_state_file):
                 try:
-                    with open(layer_state_file, 'r', encoding='utf-8') as f:
-                        st = json.load(f)
+                    st = read_json(layer_state_file)
                     for marker, v in (st.items() if isinstance(st, dict) else []):
                         disabled = v.get('disabled', False) if isinstance(v, dict) else False
                         if disabled:
@@ -306,8 +306,7 @@ class GameLauncher:
 
                 file_path = os.path.join(dir_path, changes_file)
                 try:
-                    with open(file_path, 'r', encoding='utf-8') as f:
-                        changes_data = json.load(f)
+                    changes_data = read_json(file_path)
                 except Exception as e:
                     print(f"  警告: 无法解析 {file_path}: {e}")
                     continue
@@ -326,11 +325,9 @@ class GameLauncher:
                         print(f"  应用补丁 {relative_path} -> {len(targets)} 个文件夹")
                     for game_file in targets:
                         try:
-                            with open(game_file, 'r', encoding='utf-8') as f:
-                                original = json.load(f)
+                            original = read_json(game_file)
                             modified = apply_changes_to_data(original, file_changes)
-                            with open(game_file, 'w', encoding='utf-8') as f:
-                                json.dump(modified, f, ensure_ascii=False, indent=4)
+                            write_json(game_file, modified, indent=4)
                         except Exception as e:
                             print(f"  警告: 应用补丁 {game_file} 失败: {e}")
 
@@ -345,6 +342,7 @@ class GameLauncher:
         _bubble_color = self._settings.get_setting('enable_bubble_color')
         if _bubble_color is False:
             try:
+                print(f"[美化] 开启去除气泡文本颜色标签...")
                 self._progress("正在去除气泡文本颜色标签...", "🚀")
                 from functions.fancy.dialog_colorful import main_remove_color as remove_bubble_color
                 remove_bubble_color()
@@ -352,6 +350,7 @@ class GameLauncher:
                 print(f"[美化] 去除气泡文本颜色跳过: {e}")
         elif self._settings.get_setting('enable_text_gradient'):
             try:
+                print(f"[美化] 开启应用对话文本渐变色...")
                 self._progress("正在应用对话文本渐变色...", "🚀")
                 from functions.fancy.dialog_colorful import main as handle_colorful
                 handle_colorful()
@@ -359,6 +358,7 @@ class GameLauncher:
                 print(f"[美化] 对话文本渐变色跳过: {e}")
         if self._settings.get_setting('enable_ego_style'):
             try:
+                print(f"[美化] 开启应用 EGO 样式美化...")
                 self._progress("正在应用 EGO 样式美化...", "🚀")
                 from functions.fancy.EGO_colorful import main as apply_ego_style
                 apply_ego_style()
@@ -367,22 +367,25 @@ class GameLauncher:
 
         if self._settings.get_setting('enable_skill_style'):
             try:
+                print(f"[美化] 开启美化技能描述文本...")
                 self._progress("正在美化技能描述文本...", "🚀")
                 from functions.fancy.skill_info import total_handle
-                total_handle(lang_path + '/')
+                total_handle(lang_path)
             except Exception as e:
                 print(f"[美化] 技能描述美化跳过: {e}")
 
         if self._settings.get_setting('enable_ego_gift_style'):
             try:
+                print(f"[美化] 开启美化 EGO 饰品效果...")
                 self._progress("正在美化 EGO 饰品效果...", "🚀")
                 from functions.fancy.skill_info import handle_EGOgift
-                handle_EGOgift(lang_path + '/')
+                handle_EGOgift(lang_path)
             except Exception as e:
                 print(f"[美化] EGO 饰品跳过: {e}")
 
         if self._settings.get_setting('enable_buff_style'):
             try:
+                print(f"[美化] 开启美化 Buff 效果文本...")
                 self._progress("正在美化 Buff 效果文本...", "🚀")
                 from functions.fancy.skill_info import handle_buff
                 handle_buff(lang_path + '/')
@@ -391,6 +394,7 @@ class GameLauncher:
 
         if self._settings.get_setting('enable_special_tip'):
             try:
+                print(f"[美化] 开启替换战斗提示文本...")
                 self._progress("正在替换战斗提示文本...", "🚀")
                 from functions.fancy.hint_set import simple_replace
                 simple_replace(os.path.join(lang_path, 'BattleHint.json'))
@@ -399,6 +403,7 @@ class GameLauncher:
 
         if self._settings.get_setting('enable_skill_text_gradient'):
             try:
+                print(f"[美化] 开启应用技能文本渐变色...")
                 self._progress("正在应用技能文本渐变色...", "🚀")
                 from functions.fancy.skill_colorful import skill_color_process
                 skill_color_process(lang_root + '/')
@@ -430,14 +435,12 @@ class GameLauncher:
         if not os.path.exists(file_path):
             print("未找到 UserInfo_Friends.json, 跳过用户名设置")
             return
-        with open(file_path, 'r', encoding='utf-8') as f:
-            data = json.load(f)
+        data = read_json(file_path)
         for item in data.get('dataList', []):
             if item.get('id') == 'Uid_Copy':
                 item['content'] = str(user_name)
                 break
-        with open(file_path, 'w', encoding='utf-8') as f:
-            json.dump(data, f, ensure_ascii=False, indent=4)
+        write_json(file_path, data, indent=4)
 
     def _fire_addon_events(self):
         """逐个触发插件的游戏启动事件 (显示插件名与进度)。"""

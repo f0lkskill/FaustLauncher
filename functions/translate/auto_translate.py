@@ -4,6 +4,7 @@ import concurrent.futures
 from functions.translate.ai_translate import AITranslator
 
 import unicodedata
+from functions.base.common.json_io import read_json, write_json
 
 def is_all_punctuation(sentence):
     """检测句子是否完全由标点符号组成（允许包含空白字符）"""
@@ -70,8 +71,7 @@ class AutoTranslator:
         
         try:
             # 读取源文件
-            with open(source_file, 'r', encoding='utf-8') as f:
-                data = json.load(f)
+            data = read_json(source_file)
             
             # 翻译文件
             if is_skill:
@@ -112,8 +112,7 @@ class AutoTranslator:
                                             item[sub_key] = self._translate_value(item[sub_key])
             
             # 保存目标文件
-            with open(target_file, 'w', encoding='utf-8') as f:
-                json.dump(data, f, ensure_ascii=False, indent=2)
+            write_json(target_file, data, indent=2)
             
             return True
         except Exception as e:
