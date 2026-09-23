@@ -49,6 +49,7 @@ soupsieve==2.8.1
 tabulate==0.9.0
 texture2ddecoder==1.0.6
 tqdm==4.67.1
+capstone>=5.0.9
 typing-inspection==0.4.2
 typing_extensions==4.15.0
 UnityPy==1.24.2
