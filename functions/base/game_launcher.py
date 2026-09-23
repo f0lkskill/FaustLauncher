@@ -4,6 +4,7 @@ import os
 import sys
 import json
 import shutil
+import time
 import traceback
 import tkinter.messagebox as messagebox
 
@@ -469,16 +470,31 @@ class GameLauncher:
         # 先启动游戏进程
         launch_game_process()
         # 启动成就监测 Hook (独立子进程, 避免主进程结束时被 kill)
-        # TODO 完善成就系统功能
-        # self._start_achievement_hook()
+        # 子进程内部会：监控 Player.log + 注入 battle_watch.dll 观测战斗事件
+        self._start_achievement_hook()
 
     def _start_achievement_hook(self):
-        """启动成就监测 Hook（独立子进程），日志写入 logs/achievement_hook.log。"""
+        """启动成就监测 Hook（独立子进程），日志写入 logs/achievement_hook.log。
+
+        设置项 ``enable_achievement_hook``（缺省 true）可关闭；
+        子进程运行期间会向游戏进程注入 ``battle_watch.dll``（只读观测）。
+        """
         try:
             import subprocess
 
-            log_dir = r"C:\Users\folkskill\AppData\LocalLow\ProjectMoon\LimbusCompany"
-            game_log_path = os.path.join(log_dir, "Player.log")
+            try:
+                if self._settings.get_setting("enable_achievement_hook") is False:
+                    self._progress("已关闭成就监测（设置: 启用成就监测与战斗观测）", "🏆")
+                    return
+            except Exception:
+                pass
+
+            # Player.log 在 %USERPROFILE%\AppData\LocalLow\ProjectMoon\LimbusCompany 下
+            # （不要写死用户名，换个账号就会走到不存在的路径）
+            from functions.achievement.achievements import LOG_FILE as _player_log_name
+            log_dir = os.path.join(os.path.expanduser("~"), "AppData", "LocalLow",
+                                   "ProjectMoon", "LimbusCompany")
+            game_log_path = os.path.join(log_dir, _player_log_name)
 
             project_root = os.path.dirname(os.path.dirname(os.path.dirname(
                 os.path.abspath(__file__)
@@ -489,11 +505,18 @@ class GameLauncher:
 
             # 确保 logs 目录存在
             os.makedirs(logs_dir, exist_ok=True)
-            # 每次启动前清空上次的日志
+            # 每次启动前清空上次的日志（两个日志都清：battle_watch.log 由子进程自己清）
             with open(hook_log_path, 'w', encoding='utf-8') as f:
                 f.write("")
 
-            self._progress("启动成就监测...", "🏆")
+            # 上一次的成就监测子进程如果还活着（上次没退干净），先收掉：
+            # 否则新实例会撞上“共享内存已存在”而静默不注入，看起来就像功能坏了。
+            cache_dir = os.path.join(project_root, "cache", "achievement")
+            os.makedirs(cache_dir, exist_ok=True)
+            pid_file = os.path.join(cache_dir, "hook.pid")
+            self._kill_stale_hook_child(pid_file)
+
+            self._progress("启动成就监测与战斗观测...", "🏆")
 
             cmd = [
                 sys.executable,
@@ -502,7 +525,7 @@ class GameLauncher:
                 "--log", game_log_path,
                 "--output", hook_log_path,
             ]
-            subprocess.Popen(
+            proc = subprocess.Popen(
                 cmd,
                 cwd=project_root,
                 stdout=subprocess.DEVNULL,
@@ -510,6 +533,53 @@ class GameLauncher:
                 stdin=subprocess.DEVNULL,
                 creationflags=0x08000000,  # CREATE_NO_WINDOW
             )
+            try:
+                with open(pid_file, "w", encoding="utf-8") as fh:
+                    fh.write(str(proc.pid))
+            except OSError:
+                pass
         except Exception as e:
             print(f"[成就] 启动成就监测失败 (不影响游戏启动): {e}")
             traceback.print_exc()
+
+    @staticmethod
+    def _kill_stale_hook_child(pid_file: str) -> None:
+        """把上次记下的成就监测子进程收掉（只认我们自己拉起的那个解释器）。
+
+        只凭 PID 杀进程很危险（PID 会被复用），所以额外校验进程映像路径 ==
+        ``sys.executable`` —— 它就是我们用同一个解释器拉起的脚本子进程；
+        校验不过一律不动。
+        """
+        import ctypes
+        from ctypes import wintypes
+        try:
+            with open(pid_file, "r", encoding="utf-8") as fh:
+                pid = int(fh.read().strip() or 0)
+        except (OSError, ValueError):
+            return
+        try:
+            os.remove(pid_file)
+        except OSError:
+            pass
+        if pid <= 0 or pid == os.getpid():
+            return
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        handle = kernel32.OpenProcess(0x1000, False, pid)   # QUERY_LIMITED_INFORMATION
+        if not handle:
+            return                                          # 已经没了
+        try:
+            buf = ctypes.create_unicode_buffer(1024)
+            size = wintypes.DWORD(len(buf))
+            if not kernel32.QueryFullProcessImageNameW(handle, 0, buf,
+                                                       ctypes.byref(size)):
+                return
+            image = buf.value
+        finally:
+            kernel32.CloseHandle(handle)
+        if os.path.normcase(image) != os.path.normcase(sys.executable):
+            return                                          # PID 被复用成别的程序了
+        try:
+            os.kill(pid, 9)                                 # 我们自己拉起的，收掉
+            time.sleep(0.4)
+        except OSError:
+            pass

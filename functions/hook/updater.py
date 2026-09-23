@@ -228,12 +228,15 @@ def update_hook_index(game_path: str = "", force: bool = False, push: bool = Tru
     warnings: list[str] = []
 
     # ---- 钩子（代码偏移）
-    for target in targets_mod.HOOK_TARGETS:
+    for key, symbol, description, compat_field in targets_mod.hook_symbol_entries():
+        target = targets_mod.HookTarget(key=key, symbol=symbol, description=description,
+                                        compat_field=compat_field)
         item = symbols.find_method(target.symbol)
         if not item:
             old = (previous.hooks.get(target.key) if previous else None) or {}
-            warnings.append(f"符号 {target.symbol} 在 dump.cs 里没找到"
-                            + ("（沿用旧值）" if old.get("rva") else ""))
+            if compat_field or old.get("rva"):
+                warnings.append(f"符号 {target.symbol} 在 dump.cs 里没找到"
+                                + ("（沿用旧值）" if old.get("rva") else ""))
             note(f"[hook] {target.key}: 未找到 {target.symbol}")
             if old.get("rva"):
                 index.hooks[target.key] = old
@@ -256,6 +259,28 @@ def update_hook_index(game_path: str = "", force: bool = False, push: bool = Tru
         }
         note(f"[hook] {target.key}: {target.symbol} → RVA 0x{rva:X} "
              f"(prologue {prologue[:23]}...)")
+
+    # ---- 事件钩子要读的结构体字段（写进索引 fields 段；DLL 不写死偏移）
+    for key, (cls, fld, fallback) in targets_mod.BATTLE_FIELDS.items():
+        item = symbols.find_field(cls, fld)
+        if item is None:
+            warnings.append(f"字段 {cls}::{fld} 在 dump.cs 里没找到（使用回退偏移 0x{fallback:X}）")
+            index.fields[key] = {"symbol": f"{cls}::{fld}", "offset": fallback,
+                                 "source": "fallback"}
+            continue
+        offset = int(item.get("offset") or 0)
+        index.fields[key] = {
+            "symbol": f"{cls}::{fld}",
+            "class": cls,
+            "field": fld,
+            "offset": offset,
+            "offset_hex": f"0x{offset:X}",
+            "static": bool(item.get("static")),
+            "type": item.get("type", ""),
+            "source": "dump.cs",
+        }
+    note("[fields] " + ", ".join(
+        f"{k}=0x{int(v.get('offset') or 0):X}" for k, v in index.fields.items()))
 
     # ---- 兼容块（与 web.lcta.top/cheat_damage.json 同字段名）
     compat = {

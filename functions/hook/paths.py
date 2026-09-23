@@ -58,8 +58,17 @@ def cache_path(*parts: str) -> str:
 
 
 def local_index_path() -> str:
-    """本地 hook_index.json 路径。"""
+    """本地完整版索引路径（updater 写；符号表最全）。"""
     return cache_path("hook_index.json")
+
+
+def cloud_index_path() -> str:
+    """从云端拉下来的索引路径（可能被发布体积预算裁剪过，符号表只有几百条）。
+
+    单独放一个文件：否则成就进程启动时的云端刷新会把本地完整版索引覆盖掉，
+    反查“RVA → 符号名”、线下排查都会变残缺（实测踩到过）。
+    """
+    return cache_path("hook_index_cloud.json")
 
 
 # --------------------------------------------------------------------------- 游戏路径

@@ -62,6 +62,7 @@ class HookIndex:
     dumper: dict = field(default_factory=dict)
     hooks: dict = field(default_factory=dict)
     targets: dict = field(default_factory=dict)
+    fields: dict = field(default_factory=dict)      # 事件钩子要读的结构体字段（名 → 偏移）
     symbols: dict = field(default_factory=dict)
     cheat_damage: dict = field(default_factory=dict)
     warnings: list[str] = field(default_factory=list)
@@ -78,6 +79,7 @@ class HookIndex:
             "cheat_damage": self.cheat_damage,
             "hooks": self.hooks,
             "targets": self.targets,
+            "fields": self.fields,
             "symbols": (_compact_symbols(self.symbols, self.hooks, caps)
                         if compact else self.symbols),
             "warnings": self.warnings,
@@ -122,6 +124,7 @@ class HookIndex:
             dumper=dict(data.get("dumper") or {}),
             hooks=dict(data.get("hooks") or {}),
             targets=dict(data.get("targets") or {}),
+            fields=dict(data.get("fields") or {}),
             symbols=dict(data.get("symbols") or {}),
             cheat_damage=dict(data.get("cheat_damage") or {}),
             warnings=list(data.get("warnings") or []),
@@ -141,6 +144,14 @@ class HookIndex:
 
     def hook(self, key: str) -> dict:
         return dict(self.hooks.get(key) or {})
+
+    def field_offset(self, key: str, default: int = 0) -> int:
+        """取事件钩子字段的偏移（``fields`` 段；缺失时返回 ``default``）。"""
+        item = self.fields.get(key) or {}
+        try:
+            return int(item.get("offset"))
+        except (TypeError, ValueError):
+            return int(default)
 
     def symbol_offset(self, name: str) -> int | None:
         """按 ``类::字段``（或 ``类$$字段``）查字段偏移。"""
@@ -266,17 +277,17 @@ def already_published(index: HookIndex) -> bool:
             and marker.get("payload_sha1") == payload_hash(index.to_publish_json()))
 
 
-def save_local(index: HookIndex) -> str:
+def save_local(index: HookIndex, path: str = "") -> str:
     """写本地缓存（完整版，含 sig 等细节）。"""
-    path = paths_mod.local_index_path()
+    path = path or paths_mod.local_index_path()
     with open(path, "w", encoding="utf-8") as fh:
         fh.write(index.to_json(compact=False))
     return path
 
 
-def load_local() -> HookIndex | None:
+def load_local(path: str = "") -> HookIndex | None:
     """读本地缓存；不存在/损坏返回 None。"""
-    path = paths_mod.local_index_path()
+    path = path or paths_mod.local_index_path()
     try:
         with open(path, "r", encoding="utf-8") as fh:
             return HookIndex.from_json(fh.read())
@@ -340,10 +351,17 @@ def push_cloud(index: HookIndex, on_log=None) -> dict:
 
 
 def refresh_local_from_cloud(allow_refresh: bool = True, on_log=None) -> HookIndex | None:
-    """从云端拉一次并落到本地缓存（供启动/定时任务用）。"""
+    """从云端拉一次并存到**云端缓存文件**（不动本地完整版索引）。
+
+    本地完整版（``hook_index.json``）由 updater 生成，符号表最全；
+    云端那份受发布体积预算裁剪过，所以分开存放，别互相覆盖。
+    """
     index = pull_cloud(allow_refresh=allow_refresh, on_log=on_log)
     if index is not None:
-        save_local(index)
+        save_local(index, paths_mod.cloud_index_path())
+        if not os.path.isfile(paths_mod.local_index_path()):
+            # 首次使用（本地还没有任何索引）时顺手落一份，保证成就模块能读到
+            save_local(index)
     return index
 
 
@@ -369,6 +387,11 @@ def get_index(allow_cloud: bool = False, allow_refresh: bool = False,
     if _MEMO is not None:
         return _MEMO, _MEMO_SOURCE
     local = load_local()
+    if local is None:
+        local = load_local(paths_mod.cloud_index_path())
+        if local is not None:
+            _MEMO, _MEMO_SOURCE = local, "cloud-cache"
+            return _MEMO, _MEMO_SOURCE
     if local is not None:
         _MEMO, _MEMO_SOURCE = local, "cache"
         return _MEMO, _MEMO_SOURCE

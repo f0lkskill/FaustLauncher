@@ -420,6 +420,13 @@ class BuildGUI:
             os.makedirs(f'build_{vi}/resources/7-zip', exist_ok=True)
             if os.path.isdir('resources/7-zip'):
                 shutil.copytree('resources/7-zip', f'build_{vi}/resources/7-zip', dirs_exist_ok=True)
+            # 成就监测的战斗观测 DLL（进程注入需要真实文件路径）
+            hook_dll = 'functions/achievement/hook_dll'
+            if os.path.isfile(os.path.join(hook_dll, 'battle_watch.dll')):
+                shutil.copytree(hook_dll, f'build_{vi}/_internal/hook_dll',
+                                dirs_exist_ok=True,
+                                ignore=shutil.ignore_patterns('*.c', '*.ps1'))
+                self._log('\u2714 battle_watch.dll \u5df2\u968f\u6784\u5efa\u4ea7\u7269\u53d1\u5e03\n', SUCCESS)
         except Exception as e:
             self._set_step(7, 'failed')
             self._set_status(f'复制 resources 失败: {e}', DANGER)

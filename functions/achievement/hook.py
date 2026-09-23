@@ -107,6 +107,54 @@ class LogReader:
         self.last_size = size
 
 
+# ============ 日志时间轴 ============
+_TS_PREFIX_RE = re.compile(r"^\[\d{2}:\d{2}:\d{2}\]")
+
+
+def with_timestamp(message: str) -> str:
+    """给日志行加时间轴前缀 ``[HH:MM:SS]``（已经有前缀的保持原样）。"""
+    text = str(message)
+    if _TS_PREFIX_RE.match(text):
+        return text
+    return f"[{datetime.now().strftime('%H:%M:%S')}] {text}"
+
+
+# ============ 解锁日志（统一出口）============
+_logged_unlocks: set[str] = set()
+_unlock_log_lock = threading.Lock()
+
+
+def _report_unlocks(log_callback, unlocked, header: str = "") -> list:
+    """把“新解锁的成就”写进成就日志（**同一个成就只写一次**）。
+
+    为什么要统一出口：成就检查有好几条路径（Player.log 事件 / 输入计数 / 内存 /
+    战斗观测），它们跑在不同线程上，谁先跑到谁就把它置成 ``unlocked``。
+    以前其中一条（主循环的输入计数）只 ``print``（子进程 stdout 是 DEVNULL），
+    于是“成就确实解锁了（弹窗也弹了），但成就日志里看不到”——这里用已写集合
+    保证无论哪条路径先解锁，成就日志里都会有且只有一行。
+
+    返回真正新写进日志的成就列表。
+    """
+    if not unlocked:
+        return []
+    fresh = []
+    with _unlock_log_lock:
+        for ach in unlocked:
+            key = getattr(ach, "id", None) or getattr(ach, "name", "")
+            if key and key not in _logged_unlocks:
+                _logged_unlocks.add(key)
+                fresh.append(ach)
+    if not fresh:
+        return []
+    if header:
+        log_callback(header)
+    for ach in fresh:
+        detail = getattr(ach, "detail", "")
+        log_callback(f"  [成就] 解锁: {ach.name}"
+                     + (f"\n     判定依据: {detail}" if detail else ""))
+    return fresh
+
+
 # ============ 成就弹窗辅助 ============
 def _notify_toast(unlocked):
     """解锁通知: 播放音效 + 推送 GUI 弹窗 (失败自动降级)。"""
@@ -171,8 +219,7 @@ class LogProcessor:
             self.log_callback(f"[{self._ts()}] [登录] Steam 登录成功")
             unlocked = check_achievements(self.log_callback)
             if unlocked:
-                for ach in unlocked:
-                    self.log_callback(f"  [成就] 解锁: {ach.name}")
+                _report_unlocks(self.log_callback, unlocked)
                 _notify_toast(unlocked)
 
         # ── 2. 0 物品日志 → 视为一次背包/兑换页检视 ──
@@ -195,10 +242,15 @@ class LogProcessor:
             self.log_callback(
                 f"[{self._ts()}] [战斗] 完成关卡 (总计: {s.battle_count})"
             )
+            # 战斗结束也当作一次回合结算：避免最后那个回合的技能事件被浪费
+            try:
+                from functions.achievement import battle_watch as _bw
+                _bw.settle_turn("战斗结束")
+            except Exception:
+                pass
             unlocked = check_achievements(self.log_callback)
             if unlocked:
-                for ach in unlocked:
-                    self.log_callback(f"  [成就] 解锁: {ach.name}")
+                _report_unlocks(self.log_callback, unlocked)
                 _notify_toast(unlocked)
 
         # ── 5. 游戏退出检测 (参考日志: Quit Local Save → Cleanup → Shutdown) ──
@@ -224,6 +276,7 @@ class AchievementHook:
         self.log_processor = LogProcessor(log_callback)
         self.running = True
         self.monitor_thread: threading.Thread | None = None
+        self.battle_watch = None
 
     def start_monitoring(self):
         """启动后台线程监控日志文件。"""
@@ -232,6 +285,13 @@ class AchievementHook:
             daemon=False,  # 非 daemon，确保主进程等待此线程
         )
         self.monitor_thread.start()
+        # 战斗事件观测（注入 battle_watch.dll）：与日志监控并行，失败不影响成就监测
+        self.battle_watch = None
+        try:
+            from functions.achievement import battle_watch as bw
+            self.battle_watch = bw.start_battle_watch(self.log_callback)
+        except Exception as exc:  # noqa: BLE001
+            self.log_callback(f"[成就监测] 战斗事件观测不可用（仅日志成就生效）: {exc}")
 
     def _prepare_tail(self):
         """启动准备: 同步读取偏移到当前文件末尾。
@@ -272,6 +332,11 @@ class AchievementHook:
                         self._settle_inventory_browse(zero_ids)
                     # 内存成就按轮询周期检查；读取失败时 MemoryAchievement 保持未解锁。
                     self._check_memory_achievements()
+                    # 战斗事件成就（注入 DLL 观测：技能/速度/血量/理智）
+                    self._check_battle_achievements()
+                    # 兜底：不管是哪条路径解锁的，都保证成就日志里有一行
+                    _report_unlocks(self.log_callback,
+                                    [a for a in achievements if a.unlocked])
 
                 time.sleep(CHECK_INTERVAL)
             except Exception as e:
@@ -292,8 +357,26 @@ class AchievementHook:
                 except Exception:
                     pass
         if unlocked:
-            for ach in unlocked:
-                self.log_callback(f"  [成就] 解锁: {ach.name}")
+            _report_unlocks(self.log_callback, unlocked)
+            _notify_toast(unlocked)
+
+    def _check_battle_achievements(self):
+        """检查战斗事件类成就（battle_watch 观测到的技能 / 速度 / 血量 / 理智）。
+
+        这些成就自带 ``battle_driven`` 标记，``check()`` 只读 battle_watch 的结果，
+        所以轮询代价极低（判定由注入 DLL 的事件驱动）。
+        """
+        unlocked = []
+        for ach in achievements:
+            if ach.unlocked or not getattr(ach, "battle_driven", False):
+                continue
+            try:
+                if ach.check():  # type: ignore[attr-defined]
+                    unlocked.append(ach)
+            except Exception:
+                pass
+        if unlocked:
+            _report_unlocks(self.log_callback, unlocked)
             _notify_toast(unlocked)
 
     def _settle_inventory_browse(self, zero_ids: set[int]):
@@ -306,11 +389,7 @@ class AchievementHook:
                     self.log_callback(f"  [物品] {item_name} (ID:{item_id})")
             unlocked = check_achievements(self.log_callback)
             if unlocked:
-                self.log_callback("")
-                self.log_callback("==== 成就解锁 ====")
-                for ach in unlocked:
-                    self.log_callback(f"  [成就] {ach.name}: {ach.description}")
-                self.log_callback("")
+                _report_unlocks(self.log_callback, unlocked, "==== 成就解锁 ====")
                 _notify_toast(unlocked)
         except Exception as e:
             self.log_callback(f"[AchievementHook] 浏览结算错误: {e}")
@@ -320,6 +399,11 @@ class AchievementHook:
         self.running = False
         if self.monitor_thread:
             self.monitor_thread.join(timeout=5)
+        try:
+            from functions.achievement import battle_watch as bw
+            bw.stop_battle_watch()
+        except Exception:
+            pass
 
     def get_status(self) -> dict:
         """获取当前成就监测状态。"""
@@ -371,19 +455,12 @@ def run_achievement_hook():
     # 重定向输出到文件（如果指定了 --output）
     if args.output:
         import atexit as _atexit
+        # 每次实例运行都从空文件开始（只留本次运行，便于对照）
         _log_file = open(args.output, 'w', encoding='utf-8', buffering=1)
-        _line_count = 0
 
         def _write(msg: str):
-            nonlocal _line_count
-            _log_file.write(msg + '\n')
+            _log_file.write(with_timestamp(msg) + '\n')
             _log_file.flush()
-            _line_count += 1
-            # 每 1000 行截断文件避免无限膨胀
-            if _line_count >= 1000:
-                _log_file.truncate(0)
-                _log_file.seek(0)
-                _line_count = 0
 
         log_callback = _write
 
@@ -391,7 +468,7 @@ def run_achievement_hook():
             _log_file.close()
         _atexit.register(_cleanup)
     else:
-        log_callback = lambda msg: print(msg)  # noqa: E731
+        log_callback = lambda msg: print(with_timestamp(msg))  # noqa: E731
 
     # 确定游戏日志路径
     if not os.path.isabs(args.log):
@@ -422,9 +499,15 @@ def run_achievement_hook():
     for ach in achievements:
         status = "[已解锁]" if ach.unlocked else "[未解锁]"
         log_callback(f"  {status} {ach.name}: {ach.description}")
+    # 启动时就已解锁的（比如从存档恢复）不再重复播报，只播本次运行新解锁的
+    _logged_unlocks.update(
+        getattr(a, "id", None) or getattr(a, "name", "") for a in achievements if a.unlocked)
     log_callback("")
     log_callback("开始监控...")
     log_callback("-" * 60)
+    log_callback("[成就监测] 战斗观测详情: 事件流 logs/battle_watch.log；"
+                 "状态 cache/achievement/battle_watch_status.json；"
+                 "离线自查 python -m functions.achievement.battle_watch --probe/--status")
 
     # 创建 Hook（先不要启动监控线程：偏移索引相关模块要先在主线程 import 完，
     # 否则监控线程里的惰性 import 会与主线程撞上 Python 3.14 的 import 锁）
@@ -459,11 +542,11 @@ def run_achievement_hook():
                 for _ in range(16):
                     toast_ctrl.pump()
                     time.sleep(0.016)
-                # 输入计数成就: 每秒检查一次
-                _check_input_achievements()
+                # 输入计数成就: 每秒检查一次（带上日志回调，否则解锁不进成就日志）
+                _check_input_achievements(log_callback)
             else:
                 time.sleep(1)
-                _check_input_achievements()
+                _check_input_achievements(log_callback)
     except KeyboardInterrupt:
         log_callback("\n[成就监测] 收到停止信号，正在关闭...")
     finally:
@@ -527,14 +610,17 @@ def _start_hook_index_refresh(log_callback):
         log_callback(f"[成就监测] 偏移索引自动更新不可用: {exc}")
 
 
-def _check_input_achievements():
-    """检查 P键/点击 计数成就 (阈值达成即解锁)。"""
+def _check_input_achievements(log_callback=None):
+    """检查 P键/点击 计数成就 (阈值达成即解锁)。
+
+    必须传 ``log_callback``（主循环的循环体）：以前这里用 ``print``，
+    子进程 stdout 是 DEVNULL，会出现“成就解锁了但成就日志里没有”的情况。
+    """
     try:
-        s = get_state()
-        unlocked = check_achievements(lambda m: None)
+        get_state()
+        unlocked = check_achievements(log_callback or (lambda m: None))
         if unlocked:
-            for ach in unlocked:
-                print(f"[成就] 解锁: {ach.name}")
+            _report_unlocks(log_callback or (lambda m: None), unlocked)
             _notify_toast(unlocked)
     except Exception:
         pass
@@ -552,7 +638,7 @@ def start_achievement_monitoring(log_path: str = LOG_FILE) -> AchievementHook:
     global _hook_instance
 
     def log_callback(msg: str):
-        print(msg)
+        print(with_timestamp(msg))
 
     # 内嵌模式也尝试启用输入统计 (失败不影响)
     try:
