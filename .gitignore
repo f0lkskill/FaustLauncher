@@ -5,6 +5,7 @@ __pycache__/
 resource_info.json
 # C extensions
 *.so
+*.dll
 test/
 settings.json.bak
 bubble_speech/
