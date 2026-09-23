@@ -4009,6 +4009,66 @@
       "dlg": "<color=#5933cc>席卷而来的，唯有凄切的怨望。</color>"
     },
     {
+      "id": "battle_select_10416_1",
+      "desc": "############ 高级定制::黑派制鞋馆 良秀 16 ############",
+      "dlg": "<color=#ffd700>我……不和你们这样的多·脚顾客做生意。</color>"
+    },
+    {
+      "id": "battle_endcommand_10416_1",
+      "desc": "",
+      "dlg": "<color=#ffd700>我来给你特别接待。</color>"
+    },
+    {
+      "id": "battle_enemy_break_10416_1",
+      "desc": "",
+      "dlg": "<color=#ffd700>连自己的程度都不清楚。</color>"
+    },
+    {
+      "id": "battle_kill_10416_1",
+      "desc": "",
+      "dlg": "<color=#ffd700>与你相称的结局。</color>"
+    },
+    {
+      "id": "battle_break_10416_1",
+      "desc": "",
+      "dlg": "<color=#ffd700>咕！</color>"
+    },
+    {
+      "id": "battle_dead_10416_1",
+      "desc": "",
+      "dlg": "<color=#ffd700>还……没有达到完美……</color>"
+    },
+    {
+      "id": "battle_s3_10416_1_1",
+      "desc": "单脚良秀 3技能 1段",
+      "dlg": "<color=#ffd700>我踏出的每一步。</color>"
+    },
+    {
+      "id": "battle_s3_10416_1_3",
+      "desc": "单脚良秀 3技能 2段",
+      "dlg": "<color=#ffd700>都会在你们身上！</color>"
+    },
+    {
+      "id": "battle_s3_10416_1_4",
+      "desc": "单脚良秀 3技能 3段",
+      "dlg": "<color=#ffd700>刻下痛苦！</color>"
+    },
+    {
+      "id": "battle_special_10416_1_3",
+      "desc": "单脚良秀 3-2技能(强化3技能) 3段",
+      "dlg": "<color=#ffd700>我很乐意把你踩在脚下！</color>"
+    },
+    {
+      "id": "battle_special_10416_1_4",
+      "desc": "单脚良秀 3-2技能(强化3技能) 4段",
+      "dlg": "<color=#ffd700>退下！</color>"
+    },
+    {
+      "id": "battle_special_10416_2",
+      "desc": "单脚良秀 获得Realisation增益后下回合开始",
+      "dlg": "<color=#ffd700>干净利落。</color>"
+    },
+    {
       "id": "battle_select_10501_1",
       "desc": "############ LCB 罪人 默尔索 1 ############",
       "dlg": "<color=#293b95>有问题吗，经理？</color>"
@@ -4266,7 +4326,7 @@
     {
       "id": "battle_select_30501_1",
       "desc": "############ E.G.O变换形态::着影挥刀 默尔索 E1 ############",
-      "dlg": "<color=#3477f7>不存在无法投下阴影之日光，因此，我亦甘愿接纳这阴影。</color>"
+      "dlg": "<color=#3477f7>不存在无法投下阴影之阳光，因此，我亦甘愿接纳这阴影。</color>"
     },
     {
       "id": "battle_endcommand_30501_1",
@@ -6038,12 +6098,12 @@
     {
       "id": "battle_s3_10714_1_1",
       "desc": "",
-      "dlg": "<color=#ff100f>血爪炎火！</color>"
+      "dlg": "<color=#ff100f>血爪炎化！</color>"
     },
     {
       "id": "battle_special_10714_2",
       "desc": "",
-      "dlg": "<color=#ff100f>血爪炎火！</color>"
+      "dlg": "<color=#ff100f>血爪炎化！</color>"
     },
     {
       "id": "battle_special_10714_2-01",
@@ -6914,6 +6974,86 @@
       "id": "battle_special_10815_3_2",
       "desc": "",
       "dlg": "<color=#36e7dc>骨断！</color>"
+    },
+    {
+      "id": "battle_select_10816_1",
+      "desc": "############ 高级定制::红派精品店 以实玛利 16 ############",
+      "dlg": "<color=#e60004>要是穿着那样的服装，你去哪儿都不会受欢迎的……要不要，来我们的店里看看？</color>"
+    },
+    {
+      "id": "battle_endcommand_10816_1",
+      "desc": "",
+      "dlg": "<color=#e60004>请让我再一次听到您的声音！</color>"
+    },
+    {
+      "id": "battle_enemy_break_10816_1",
+      "desc": "",
+      "dlg": "<color=#e60004>愚昧……</color>"
+    },
+    {
+      "id": "battle_kill_10816_1",
+      "desc": "",
+      "dlg": "<color=#e60004>请你退场！</color>"
+    },
+    {
+      "id": "battle_break_10816_1",
+      "desc": "",
+      "dlg": "<color=#e60004>又被钉住了……</color>"
+    },
+    {
+      "id": "battle_dead_10816_1",
+      "desc": "",
+      "dlg": "<color=#e60004>啊……我再次跌到了地上……</color>"
+    },
+    {
+      "id": "battle_s3_10816_1_2",
+      "desc": "红派 以实玛利 3技能 2击",
+      "dlg": "<color=#e60004>固定！</color>"
+    },
+    {
+      "id": "battle_s3_10816_1_2-01",
+      "desc": "红派 以实玛利 3技能 2击",
+      "dlg": "<color=#e60004>固定！</color>"
+    },
+    {
+      "id": "battle_s3_10816_1_2-02",
+      "desc": "红派 以实玛利 3技能 2击",
+      "dlg": "<color=#e60004>固定！</color>"
+    },
+    {
+      "id": "battle_s3_10816_1_3",
+      "desc": "红派 以实玛利 3技能 3击",
+      "dlg": "<color=#e60004>击打！</color>"
+    },
+    {
+      "id": "battle_s3_10816_1_3-01",
+      "desc": "红派 以实玛利 3技能 3击",
+      "dlg": "<color=#e60004>击打！</color>"
+    },
+    {
+      "id": "battle_s3_10816_1_3-02",
+      "desc": "红派 以实玛利 3技能 3击",
+      "dlg": "<color=#e60004>击打！</color>"
+    },
+    {
+      "id": "battle_s3_10816_1_4",
+      "desc": "红派 以实玛利 3技能 再次使用",
+      "dlg": "<color=#e60004>钉入！</color>"
+    },
+    {
+      "id": "battle_s3_10816_1_4-01",
+      "desc": "红派 以实玛利 3技能 再次使用",
+      "dlg": "<color=#e60004>钉入！</color>"
+    },
+    {
+      "id": "battle_special_10816_1",
+      "desc": "进入茧状态",
+      "dlg": "<color=#e60004>我欣然地深入我之中。</color>"
+    },
+    {
+      "id": "battle_special_10816_2",
+      "desc": "进入羽化状态",
+      "dlg": "<color=#e60004>脱下旁人强加的谎言，展现真正的我自己！</color>"
     },
     {
       "id": "battle_select_10901_1",

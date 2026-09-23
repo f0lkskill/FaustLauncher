@@ -60,6 +60,26 @@ from functions.achievement.input_hook import (
     start_input_monitoring,
     stop_input_monitoring,
 )
+from functions.achievement.battle_achievements import (
+    BattleRuleAchievement,
+    SkillUseAchievement,
+    MentalThresholdAchievement,
+    DamageTakenAchievement,
+)
+from functions.achievement.battle_watch import (
+    BattleRule,
+    BattleWatch,
+    register_rule,
+    registered_rules,
+    rule_hit,
+    rule_hits,
+    start_battle_watch,
+    stop_battle_watch,
+    yisang_lcb_used_s3,
+    faust_kui_speed_nine,
+    settle_turn,
+    state_snapshot,
+)
 
 __all__ = [
     # 基础类
@@ -97,4 +117,22 @@ __all__ = [
     # 输入统计
     "start_input_monitoring",
     "stop_input_monitoring",
+    # 战斗事件观测（注入 battle_watch.dll）
+    "BattleWatch",
+    "BattleRule",
+    "register_rule",
+    "registered_rules",
+    "rule_hit",
+    "rule_hits",
+    "start_battle_watch",
+    "stop_battle_watch",
+    "yisang_lcb_used_s3",
+    "faust_kui_speed_nine",
+    "settle_turn",
+    "state_snapshot",
+    # 战斗类成就基类（只给数据就能造新成就）
+    "BattleRuleAchievement",
+    "SkillUseAchievement",
+    "MentalThresholdAchievement",
+    "DamageTakenAchievement",
 ]

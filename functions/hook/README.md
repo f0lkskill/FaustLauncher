@@ -297,6 +297,32 @@ GameAssembly.dll + base_offset → +0xB8 → +0x80 → +0x18 → +0x28 → int32
 
 ## 七、成就模块怎么用（`functions/achievement/memory_reader.py`）
 
+### 7.1 索引里的 battle 钩子与 `fields` 段
+
+索引除了上面两类目标，还带两组给**战斗事件观测**用的内容（细节见
+[`functions/achievement/hook_dll/README.md`](../achievement/hook_dll/README.md)）：
+
+```json
+"hooks": {
+  "unit_refresh_speed":            { "rva": 18629584, "prologue": "33 D2 E9 B9 FA FF FF CC …" },
+  "action_done_with_action":       { "rva": 18182464, "prologue": "48 89 5C 24 08 57 48 83 …" },
+  "manager_on_round_start_before": { "rva": 11943840, "prologue": "33 D2 E9 19 FE FF FF CC …" }
+},
+"fields": {
+  "unit_origin_id":  { "symbol": "BattleUnitModel::_originID",  "offset": 100 },
+  "skill_id":        { "symbol": "SkillDataModel::id",          "offset": 16 },
+  "skill_tier":      { "symbol": "SkillDataModel::skillTier",   "offset": 64 }
+  // …共 11 个字段，全部由 dump.cs 现算
+}
+```
+
+- 这三个 hook 的语义在 `targets.py` 的 `HOOK_TARGETS`（`group="battle"`）里声明，
+  要加观测点就加一条；字段清单在 `targets.BATTLE_FIELDS`；
+- 消费方：`functions/achievement/battle_watch.py`（读 RVA / prologue / 字段偏移后写进
+  注入 DLL 的共享内存配置）与 `test/damage_log.py --api-url <笔记地址>`（读 `cheat_damage` 兼容块）。
+
+### 7.2 读指针链
+
 ```python
 from functions.achievement.memory_reader import memory_target, refresh_chain_from_cloud
 
@@ -329,6 +355,8 @@ value = reader.read_enkephalin()
 | `index.py` | 索引模型 / 本地缓存 / 云端笔记读写 / 发布体积预算 / C 头文件渲染 |
 | `updater.py` | 编排（指纹快路径 → 解密 → dump → 解析 → 校验 → 落盘 → 上传）+ 后台自动更新 |
 | `main.py` | 命令行（status/update/pull/push/show/gen-header/decrypt/dump/locate/symbols） |
+| `test/hook_index_test.py` | 离线自检（头部布局 / dump.cs 解析 / 索引体积 / locator / 内存 dump）|
+| `test/battle_watch_test.py` | 战斗观测离线自检（共享内存布局 / 真注入 DLL / 事件状态机 / 成就判定）|
 
 缓存（都可以随时删）：
 
@@ -361,6 +389,7 @@ cache/hook/
 | 现象 | 原因 / 处理 |
 |---|---|
 | `Metadata file supplied is not valid metadata file` | 拿的还是加密的磁盘文件；用本模块的 `decrypt` / `update`，别直接喂 Il2CppDumper |
+| 成就战斗观测报 `prologue 自检失败`（DLL `last_error=3`） | 游戏更新了而索引没重建：`python -m functions.hook.main update` 后重启游戏 |
 | 静态解密报 `缺少 capstone` | `pip install capstone`（或 `main.py decrypt --install-capstone`） |
 | 静态解密 `solve` 阶段 REVIEW | 游戏的 metadata 版本表变了，往 `metadata_recovery/universal/versions.py` 加新版本节表 |
 | `没有可用的 Il2CppDumper` | 手动下载 Release 解压到 `cache/hook/tools/il2cppdumper/`，或放开 `--no-download` |

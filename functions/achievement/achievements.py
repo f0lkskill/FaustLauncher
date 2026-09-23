@@ -377,6 +377,27 @@ def _define_achievements():
     from functions.achievement.data.ach_enkephalin_100 import FullEnkephalinAchievement
     achievements.append(FullEnkephalinAchievement())
 
+    # === 战斗事件类成就（注入 battle_watch.dll 观测：回合边界 / 技能使用 / 速度 / 血量 / 理智）===
+    # 都只读 battle_watch 的规则结果；未注入/未观测到时保持未解锁。
+    # 新增一个同类成就 = 写一个 ``SkillUseAchievement`` / ``MentalThresholdAchievement`` /
+    # ``DamageTakenAchievement`` 子类（只给数据），然后在这里加一行。
+    _battle_achievements = (
+        ("将你李箱，也将我李箱。", "data.ach_yisang_lcb_s3", "YisangLcbThirdSkillAchievement"),
+        ("呃啊，我腿瘸了", "data.ach_faust_kui_speed9", "FaustKuiSpeedNineAchievement"),
+        ("仿造的一生", "data.ach_index_furioso", "IndexFuriosoReplicaAchievement"),
+        ("魔法少女的悲剧", "data.ach_magical_girl_tragedy",
+         "MagicalGirlTragedyAchievement"),
+        ("神也会受伤吗？", "data.ach_heathcliff_sunshower_hurt",
+         "HeathcliffSunshowerHurtAchievement"),
+    )
+    import importlib as _importlib
+    for _name, _module, _cls in _battle_achievements:
+        try:
+            _mod = _importlib.import_module(f"functions.achievement.{_module}")
+            achievements.append(getattr(_mod, _cls)())
+        except Exception as exc:  # noqa: BLE001
+            print(f"[成就] 「{_name}」注册失败: {exc}")
+
 
 _define_achievements()
 
@@ -414,6 +435,7 @@ def check_achievements(log_callback) -> list[Achievement]:
     unlocked = []
     for ach in achievements:
         if not ach.unlocked:
+            matched = False          # 必须初始化：check() 抛异常时才不会沿用上一轮的值
             try:
                 # 函数式 Achievement 使用 check_func；类式成就自行实现 check。
                 if hasattr(ach, "check_func"):
