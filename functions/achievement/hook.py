@@ -426,8 +426,10 @@ def run_achievement_hook():
     log_callback("开始监控...")
     log_callback("-" * 60)
 
-    # 创建并启动 Hook
+    # 创建 Hook（先不要启动监控线程：偏移索引相关模块要先在主线程 import 完，
+    # 否则监控线程里的惰性 import 会与主线程撞上 Python 3.14 的 import 锁）
     _hook_instance = AchievementHook(log_path, log_callback)
+    _start_hook_index_refresh(log_callback)
     _hook_instance.start_monitoring()
 
     # 启动全局输入统计 (P键/点击) - 失败不影响主监控
@@ -479,6 +481,50 @@ def run_achievement_hook():
         if _hook_instance:
             _hook_instance.stop_monitoring()
         log_callback("[成就监测] 已停止")
+
+
+def _hook_index_auto_enabled() -> bool:
+    """设置项 auto_update_hook_index（缺省 true）：是否在游戏启动时自动刷新偏移索引。"""
+    try:
+        from functions.base.settings_manager import get_settings_manager
+        value = get_settings_manager().get_setting("auto_update_hook_index")
+        return True if value is None else bool(value)
+    except Exception:
+        return True
+
+
+def _start_hook_index_refresh(log_callback):
+    """启动时刷新偏移：云端拉链（总是） + 按需重建索引（可通过设置关闭）。
+
+    依赖在主线程先导好（Python 3.14 的 import 锁下，后台线程承担首次导入会有
+    deadlock 风险）。
+    """
+    refresh = None
+    auto_update = None
+    try:
+        from functions.achievement.memory_reader import refresh_chain_from_cloud as refresh
+    except Exception as exc:  # noqa: BLE001
+        log_callback(f"[成就监测] 偏移链刷新模块不可用: {exc}")
+    try:
+        from functions.hook import auto_update_async as auto_update
+    except Exception as exc:  # noqa: BLE001
+        log_callback(f"[成就监测] 偏移索引模块不可用: {exc}")
+
+    if refresh is not None:
+        try:
+            refresh(background=True, on_log=log_callback)
+        except Exception as exc:  # noqa: BLE001
+            log_callback(f"[成就监测] 云端偏移链刷新不可用: {exc}")
+    if auto_update is None:
+        return
+    if not _hook_index_auto_enabled():
+        log_callback("[成就监测] 已关闭自动刷新偏移索引（设置: 自动刷新游戏偏移索引）")
+        return
+    try:
+        if auto_update(on_log=log_callback):
+            log_callback("[成就监测] 已在后台检查偏移索引（游戏更新时会自动重建）")
+    except Exception as exc:  # noqa: BLE001
+        log_callback(f"[成就监测] 偏移索引自动更新不可用: {exc}")
 
 
 def _check_input_achievements():

@@ -1,7 +1,17 @@
 """Limbus Company 进程内存读取器。
 
-当前支持读取脑啡肽容量。指针链来自桌面 ok.py:
-GameAssembly.dll + 0x07BB4F90 -> 0xB8 -> 0x80 -> 0x18 -> 0x28
+当前支持读取脑啡肽容量。指针链有两个来源：
+
+1. **云端笔记** ``FaustLauncher.hook_index``（由 functions.hook 自动生成，
+   ``targets.enkephalin`` 字段；本地 ``cache/hook/hook_index.json`` 缓存优先，
+   不阻塞读取）—— 游戏更新后偏移会自动跟着变，不需要改代码；
+2. 代码里的内置默认值（下面的 ``ENKEPHALIN_TARGET``，来自桌面 ok.py 的 CE 结果），
+   作为拿不到索引时的兜底。
+
+索引里的链只在 ``gameassembly_size`` 与本地 GameAssembly.dll 一致时才会被采用
+（大小不一致 = 索引对应的是另一个游戏版本，用了只会读出垃圾）。
+
+读不到索引时会在后台线程拉一次云端笔记（一次启动只拉一次），不影响读取。
 """
 
 from __future__ import annotations
@@ -9,7 +19,17 @@ from __future__ import annotations
 import ctypes
 import ctypes.wintypes as wintypes
 import os
+import threading
 from dataclasses import dataclass
+
+# 注意：``functions.hook`` 在**模块级**导入（不在读取路径里惰性 import）。
+# 成就监测是“监控线程 + 主线程”并发结构，而 Python 3.14 的 import 锁在“一个线程正在
+# 导入某模块时另一个线程也去 import 同一模块”会抛 DeadlockError —— 实测就是这么踩到的。
+# 这里在主线程 import 期间就把依赖解析完，读取路径上只剩纯计算。
+try:
+    from functions.hook import index as _hook_index_mod
+except Exception:            # 打包环境缺模块时仍要能用内置偏移
+    _hook_index_mod = None  # type: ignore[assignment]
 
 
 PROCESS_VM_READ = 0x0010
@@ -48,6 +68,130 @@ ENKEPHALIN_TARGET = MemoryTarget(
     base_offset=0x07BB4F90,
     offsets=(0xB8, 0x80, 0x18, 0x28),
 )
+
+# 笔记里允许拿到的目标名（键名 → 默认链）
+_KNOWN_TARGETS = {"enkephalin": ENKEPHALIN_TARGET}
+_CHAIN_LOCK = threading.Lock()
+_RESOLVED: dict[str, MemoryTarget] = {}
+_CHAIN_SOURCE: dict[str, str] = {}
+_CLOUD_REFRESHED = False
+_CLOUD_REFRESHING = False
+
+
+def _local_gameassembly_size() -> int:
+    """本地 GameAssembly.dll 大小（拿不到返回 0；只用来校验索引是否配套）。"""
+    try:
+        from functions.hook.paths import game_paths
+        paths = game_paths()
+        if paths.gameassembly and os.path.isfile(paths.gameassembly):
+            return os.path.getsize(paths.gameassembly)
+    except Exception:
+        pass
+    return 0
+
+
+def _target_from_dict(item: dict, default: MemoryTarget) -> MemoryTarget | None:
+    """把索引里的 target 字典转成 MemoryTarget（校验不通过返回 None）。"""
+    try:
+        base_offset = int(item.get("base_offset"))
+        offsets = tuple(int(x) for x in item.get("offsets") or [])
+    except (TypeError, ValueError):
+        return None
+    if base_offset <= 0 or not offsets:
+        return None
+    return MemoryTarget(
+        module_name=str(item.get("module") or default.module_name),
+        base_offset=base_offset,
+        offsets=offsets,
+        value_type=str(item.get("value_type") or default.value_type),
+    )
+
+
+def memory_target(key: str = "enkephalin") -> MemoryTarget:
+    """取某条链的当前可用参数（索引优先，回退内置默认值）。"""
+    default = _KNOWN_TARGETS.get(key, ENKEPHALIN_TARGET)
+    with _CHAIN_LOCK:
+        cached = _RESOLVED.get(key)
+        if cached is not None:
+            return cached
+    resolved, source = default, "builtin"
+    try:
+        get_index = getattr(_hook_index_mod, "get_index", None)
+        if get_index is None:
+            raise RuntimeError("functions.hook.index 不可用")
+        index, idx_source = get_index()
+        if index is not None:
+            item = index.target(key)
+            local_size = _local_gameassembly_size()
+            note_size = int(index.game.get("gameassembly_size") or 0)
+            if note_size and local_size and note_size != local_size:
+                print(f"[成就] 忽略链 {key}：索引对应 {note_size} 字节的 GameAssembly.dll，"
+                      f"本地是 {local_size} 字节（版本不匹配）")
+            else:
+                candidate = _target_from_dict(item, default)
+                if candidate is not None:
+                    resolved, source = candidate, idx_source or "index"
+    except Exception as exc:  # noqa: BLE001
+        print(f"[成就] 读取 hook_index 失败，使用内置偏移: {type(exc).__name__}: {exc}")
+    with _CHAIN_LOCK:
+        _RESOLVED[key] = resolved
+        _CHAIN_SOURCE[key] = source
+    print(f"[成就] {key} 指针链来源: {source} → {resolved.module_name}+"
+          f"0x{resolved.base_offset:X}+{[hex(x) for x in resolved.offsets]}")
+    return resolved
+
+
+def chain_source(key: str = "enkephalin") -> str:
+    """当前链的来源描述（诊断用）。"""
+    memory_target(key)
+    with _CHAIN_LOCK:
+        return _CHAIN_SOURCE.get(key, "unknown")
+
+
+def refresh_chain_from_cloud(background: bool = True, on_log=print) -> bool:
+    """从云端笔记拉一次 hook_index 并刷新本地缓存（一次启动只自动拉一次）。
+
+    成就监测进程启动时调一次即可：拿到新偏移后，下一次 ``memory_target()``
+    就会用新的链（读取过程中不会因此阻塞）。
+
+    注意：依赖模块在**调用线程**（主线程）里先导入好。Python 3.14 的 import 锁
+    在“主线程正在导入某模块时、后台线程再去 import 同一模块”会直接抛
+    ``_DeadlockError``（实测过），所以不能让工作线程承担首次导入。
+    """
+    global _CLOUD_REFRESHED, _CLOUD_REFRESHING
+    hook_index = _hook_index_mod
+    if hook_index is None:
+        if on_log:
+            on_log("[成就] hook 索引模块不可用，跳过云端刷新")
+        return False
+    with _CHAIN_LOCK:
+        if _CLOUD_REFRESHED or _CLOUD_REFRESHING:
+            return False
+        _CLOUD_REFRESHING = True
+
+    def worker() -> None:
+        global _CLOUD_REFRESHED, _CLOUD_REFRESHING
+        try:
+            got = hook_index.refresh_local_from_cloud(allow_refresh=True, on_log=on_log)
+            with _CHAIN_LOCK:
+                _RESOLVED.clear()          # 让下次读取重新解析
+            if got is not None and on_log:
+                on_log(f"[成就] 已从云端刷新偏移索引（游戏 sha256 "
+                       f"{str(got.game.get('gameassembly_sha256') or '')[:12]}...）")
+        except Exception as exc:  # noqa: BLE001
+            if on_log:
+                on_log(f"[成就] 云端刷新偏移索引失败（继续用本地/内置值）: "
+                       f"{type(exc).__name__}: {exc}")
+        finally:
+            with _CHAIN_LOCK:
+                _CLOUD_REFRESHED = True
+                _CLOUD_REFRESHING = False
+
+    if not background:
+        worker()
+        return True
+    threading.Thread(target=worker, name="ach-hook-index-refresh", daemon=True).start()
+    return True
 
 
 class LimbusMemoryReader:
@@ -192,9 +336,10 @@ class LimbusMemoryReader:
 
     def read_enkephalin(self) -> int | None:
         """读取脑啡肽容量，不是狂气。"""
-        if not self.is_attached and not self.attach(ENKEPHALIN_TARGET):
+        target = memory_target("enkephalin")
+        if not self.is_attached and not self.attach(target):
             return None
-        value = self.read_int32(ENKEPHALIN_TARGET)
+        value = self.read_int32(target)
         if value is None:
             self.detach()
         return value
