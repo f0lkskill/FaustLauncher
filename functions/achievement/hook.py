@@ -671,12 +671,17 @@ def run_achievement_hook():
     poll_thread = threading.Thread(target=_poll_loop, name="achievement-poll", daemon=True)
     poll_thread.start()
 
-    # 保持运行直到被停止（主线程只做一件事：以 ~60fps 驱动弹窗动画）
+    # 保持运行直到被停止
+    # 主线程只做一件事：弹窗动画。**没有弹窗时不空转**（实测 60fps 空转约 1.3%，
+    # 有弹窗 2.6%；降到 20Hz 惰性轮询后空闲≈0，观测线程本身几乎不占 CPU）。
     try:
         while _hook_instance.running:
             if toast_ctrl is not None:
-                toast_ctrl.pump()
-                time.sleep(1 / 60)
+                if toast_ctrl.has_work():
+                    toast_ctrl.pump()
+                    time.sleep(1 / 60)
+                else:
+                    time.sleep(0.05)
             else:
                 time.sleep(0.2)
     except KeyboardInterrupt:

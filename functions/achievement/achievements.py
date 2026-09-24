@@ -226,6 +226,9 @@ class Achievement:
         self.rarity = rarity
         return self
 
+    def check(self):
+        ...
+
 
 # ============ 成就定义列表 ============
 achievements: list[Achievement] = []
@@ -375,28 +378,61 @@ def _define_achievements():
     # === 内存成就 ===
     # 该成就自身维护内存读取器，不使用成就状态缓存。
     from functions.achievement.data.ach_enkephalin_100 import FullEnkephalinAchievement
-    achievements.append(FullEnkephalinAchievement())
+    achievements.append(FullEnkephalinAchievement()) # type: ignore
 
-    # === 战斗事件类成就（注入 battle_watch.dll 观测：回合边界 / 技能使用 / 速度 / 血量 / 理智）===
+    # === 战斗事件类成就（注入 battle_watch.dll 观测：技能 / 速度 / 血量 / 理智 / buff / 在场）===
     # 都只读 battle_watch 的规则结果；未注入/未观测到时保持未解锁。
-    # 新增一个同类成就 = 写一个 ``SkillUseAchievement`` / ``MentalThresholdAchievement`` /
-    # ``DamageTakenAchievement`` 子类（只给数据），然后在这里加一行。
-    _battle_achievements = (
-        ("将你李箱，也将我李箱。", "data.ach_yisang_lcb_s3", "YisangLcbThirdSkillAchievement"),
-        ("呃啊，我脚崴了", "data.ach_faust_kui_speed9", "FaustKuiSpeedNineAchievement"),
-        ("仿造的一生", "data.ach_index_furioso", "IndexFuriosoReplicaAchievement"),
-        ("魔法少女的悲剧", "data.ach_magical_girl_tragedy",
-         "MagicalGirlTragedyAchievement"),
-        ("神也会受伤吗？", "data.ach_heathcliff_sunshower_hurt",
-         "HeathcliffSunshowerHurtAchievement"),
+    #
+    # **一个文件可以写多个成就派生类**：下面只列模块，注册时会把该模块里所有
+    # ``BaseAchievement`` 子类**按定义顺序全部实例化**（想控制顺序/选择性注册，可在
+    # 模块里写 ``ACHIEVEMENTS = (实例, ...)``，那就以它为准）。
+    _battle_achievement_modules = (
+        "data.ach_yisang_lcb_s3",
+        "data.ach_faust_kui_speed9",
+        "data.ach_index_furioso",
+        "data.ach_magical_girl_tragedy",
+        "data.ach_heathcliff_sunshower_hurt",
+        "data.ach_custom_examples",
     )
     import importlib as _importlib
-    for _name, _module, _cls in _battle_achievements:
+    for _module in _battle_achievement_modules:
         try:
             _mod = _importlib.import_module(f"functions.achievement.{_module}")
-            achievements.append(getattr(_mod, _cls)())
         except Exception as exc:  # noqa: BLE001
-            print(f"[成就] 「{_name}」注册失败: {exc}")
+            print(f"[成就] 模块 {_module} 导入失败: {exc}")
+            continue
+        explicit = getattr(_mod, "ACHIEVEMENTS", None)
+        if explicit:
+            for _inst in explicit:
+                achievements.append(_inst)
+            continue
+        for _cls in _classes_in_module(_mod):
+            try:
+                achievements.append(_cls())
+            except Exception as exc:  # noqa: BLE001
+                print(f"[成就] {_module}.{_cls.__name__} 注册失败（抽象基类可忽略）: {exc}")
+
+
+def _classes_in_module(mod) -> list:
+    """列出某模块里**自己定义**的成就派生类（按定义顺序）。
+
+    - 只收 ``BaseAchievement`` 子类（含类式与战斗类基类的孙子类）；
+    - 只收 ``__module__`` 就是本模块的（避免把 import 进来的基类/别处类重复注册）；
+    - 实例化失败（比如只是个中间抽象基类）时由调用方跳过并打日志。
+    """
+    from functions.achievement.base_achievement import BaseAchievement
+    out = []
+    for _name, obj in vars(mod).items():
+        if not isinstance(obj, type):
+            continue
+        if obj is BaseAchievement or not issubclass(obj, BaseAchievement):
+            continue
+        if getattr(obj, "__module__", "") != getattr(mod, "__name__", ""):
+            continue
+        if getattr(obj, "abstract_battle_base", False):
+            continue
+        out.append(obj)
+    return out
 
 
 _define_achievements()
@@ -560,7 +596,7 @@ class AchievementManager:
 
     def check_all(self) -> list[BaseAchievement]:
         """检查所有成就并返回新解锁的列表（兼容接口）。"""
-        return check_achievements(lambda msg: print(msg))  # noqa
+        return check_achievements(lambda msg: print(msg))  # type: ignore # noqa
 
     def reset(self):
         reset_achievements()

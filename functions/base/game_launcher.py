@@ -533,7 +533,10 @@ class GameLauncher:
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 stdin=subprocess.DEVNULL,
-                creationflags=0x08000000,  # CREATE_NO_WINDOW
+                # CREATE_NO_WINDOW | BELOW_NORMAL_PRIORITY_CLASS
+                # 低优先级很重要：游戏更新后子进程要在后台跑一遍 metadata 解密 +
+                # Il2CppDumper（满核 1~2 分钟），正常优先级会把整个桌面卡住。
+                creationflags=0x08000000 | 0x00004000,
             )
             try:
                 with open(pid_file, "w", encoding="utf-8") as fh:

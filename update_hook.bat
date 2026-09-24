@@ -1,0 +1,1 @@
+python -m functions.hook.main update

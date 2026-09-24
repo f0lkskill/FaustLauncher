@@ -35,6 +35,15 @@
  * 为避免每枚硬币都刷屏，DLL 内按 (单位指针, hp, mp) 去重，只在上报值变化时发 VAL。
  * 因为多了 4 个偏移，结构体布局变了 → 魔数改为 FBW3，ring 偏移 1060 / 总大小 132132。
  *
+ * v5（2026-09-24）：新增 **buff 观测**（BUF 事件）。链路（dump.cs 确认）：
+ *     BattleUnitModel._buffDetail(0xE0) → BuffDetail._grantedBuffList(0x10) : List<BuffModel>
+ *     List → items(0x10)/size(0x18) → BuffModel._buffData(0x68) → BuffStaticData.id(0x18) : string
+ * buff 的 id 是**字符串**（如 HanafudaTwo / FutureEyeOnRodion，与 Lang/Bufs.json 的 id 一致）。
+ * 配置里带一张 **关注 buff 表**（buff_watch_count + buff_watch_hashes[]，Python 写入名字的
+ * FNV-1a 64 哈希）；DLL 只在命中关注表时发 `BUF ... m=<命中位掩码>`，没配规则时完全不算
+ * （连 buff 链都不读），所以不加成就时零开销。
+ * 因为多了 4 个偏移 + 末尾多了关注表 → 魔数改为 FBW4，ring 偏移 1076 / 总大小 132408。
+ *
  * ⚠️ 只读：所有读取都经 ReadProcessMemory(GetCurrentProcess()) 带边界校验，
  * 不写游戏内存、不调用游戏函数。
  */
@@ -46,7 +55,7 @@
 #include <stddef.h>
 #include "MinHook.h"
 
-#define BW_MAGIC        0x33574246u          /* "FBW3"（v2=FBW2，v1=FBW1；v4 加了 HP/理智偏移 → 布局变了）*/
+#define BW_MAGIC        0x34574246u          /* "FBW4"（v1=FBW1…v3=FBW3，v4=FBW3+HP/理智，v5 加 buff 偏移与关注表）*/
 #define BW_MAP_NAME     L"Local\\FaustLauncher_BattleWatch"
 #define BW_POLL_MS      300
 #define BW_GA_TIMEOUT_MS 60000
@@ -56,7 +65,9 @@
 #define BW_NAME_LEN     40
 #define BW_SPEED_SCALE  1000   /* 速度字段的定点比例：_CORRECTION_FOR_SPEED */
 #define BW_VITAL_UNREAD (-1000)  /* HP/理智读不出来时的哨兵（HP 不可能为负、理智只有 ±45）*/
-#define BW_VITAL_SLOTS  64       /* (单位指针, hp, mp) 去重表大小 */
+#define BW_VITAL_SLOTS  64       /* (单位指针, hp, mp, buff 掩码) 去重表大小 */
+#define BW_BUFF_WATCH_MAX 32     /* 关注 buff 上限（Python 端同值）*/
+#define BW_BUFF_LIST_MAX  96     /* 单个单位最多看多少个 buff（防脏数据卡死）*/
 
 /* ACTk ObscuredInt 内部布局（dump.cs 实测） */
 #define OBI_KEY    0
@@ -106,6 +117,13 @@ typedef struct _BW_CONFIG {
     volatile LONG off_state_hp;
     volatile LONG off_state_max_hp;
     volatile LONG off_state_mp;
+    /* buff 链：unit[off_unit_buff_detail] → BuffDetail[off_buff_detail_list]
+     *            → List<BuffModel> → BuffModel[off_buff_model_data]
+     *            → BuffStaticData[off_buff_static_id] : string */
+    volatile LONG off_unit_buff_detail;
+    volatile LONG off_buff_detail_list;
+    volatile LONG off_buff_model_data;
+    volatile LONG off_buff_static_id;
     volatile LONG off_action_skill;
     volatile LONG off_action_commander_id;
     volatile LONG off_action_actor_id;
@@ -125,11 +143,19 @@ typedef struct _BW_CONFIG {
     char           last_log[128];
     volatile LONG log_head;
     char           log_ring[BW_LOG_RING_CAP][BW_LOG_LINE_MAX + 1];
+
+    /* 关注 buff 表（放在结构体末尾：ring 偏移不变，只让总大小变）
+     * Python 把成就用到的 buff 名做 FNV-1a 64 哈希后填进来；DLL 只在命中关注表时发 BUF。*/
+    volatile LONG buff_watch_count;
+    volatile unsigned long long buff_watch_hashes[BW_BUFF_WATCH_MAX];
 } BW_CONFIG;
 
-/* 布局自检：ring 偏移 1060，总大小 1060 + 512*256 = 132132 */
-_Static_assert(offsetof(BW_CONFIG, log_ring) == 1060, "log_ring 偏移不对齐");
-_Static_assert(sizeof(BW_CONFIG) == 132132, "BW_CONFIG 大小不一致");
+/* 布局自检：ring 偏移 1076，总大小 1076 + 512*256 + 4(+4对齐) + 32*8 = 132408。
+ * Python 侧的 ctypes 结构体用同一份字段定义；注入后会比对 DLL 回写的
+ * ring_offset/struct_size，不一致就报错，所以这里只卡对齐与总大小。*/
+_Static_assert(offsetof(BW_CONFIG, log_ring) % 4 == 0, "log_ring 偏移未对齐");
+_Static_assert(offsetof(BW_CONFIG, buff_watch_hashes) % 8 == 0, "关注表未对齐");
+_Static_assert(sizeof(BW_CONFIG) == 132408, "BW_CONFIG 大小不一致（改了字段就同步改 Python）");
 
 static BW_CONFIG *g_cfg = NULL;
 static HANDLE      g_stop_event = NULL;
@@ -291,12 +317,15 @@ static void emit_unit_speed(void *unit, const char *tag)
  * 去重表按 (单位指针, hp, mp) 记忆，值没变就不发 —— 否则一次攻击的每枚硬币
  * 都会调受击钩子，一发就是几十行。
  */
-static struct {
+typedef struct {
     uintptr_t unit;
     int hp;
     int mp;
+    unsigned int buff_mask;
     BOOL used;
-} g_vital[BW_VITAL_SLOTS];
+} BW_VITAL_ENTRY;
+
+static BW_VITAL_ENTRY g_vital[BW_VITAL_SLOTS];
 
 static void read_unit_vitals(void *unit, int *hp, int *mhp, int *mp)
 {
@@ -310,6 +339,143 @@ static void read_unit_vitals(void *unit, int *hp, int *mhp, int *mp)
     read_obscured_int_ex((void *)(uintptr_t)(state + g_cfg->off_state_hp), hp, NULL);
     read_obscured_int_ex((void *)(uintptr_t)(state + g_cfg->off_state_max_hp), mhp, NULL);
     read_obscured_int_ex((void *)(uintptr_t)(state + g_cfg->off_state_mp), mp, NULL);
+}
+
+/* ---- buff（BUF）-------------------------------------------------------------
+ *
+ * 链路：unit[off_unit_buff_detail] → BuffDetail[off_buff_detail_list] : List<BuffModel>
+ *       List.items(0x10) / List.size(0x18) → BuffModel[off_buff_model_data]
+ *       → BuffStaticData[off_buff_static_id] : string（如 "HanafudaTwo"）
+ *
+ * il2cpp 容器布局（固定，不放配置）：
+ *   List<T> : +0x10 items 指针, +0x18 size      （Array : +0x18 长度, +0x20 元素）
+ *   string  : +0x10 长度(int32), +0x14 utf16 字符
+ *
+ * 只看配置里登记的**关注 buff**（Python 把名字 FNV-1a 64 后写进 buff_watch_hashes）：
+ * 没登记任何关注表时提前返回，连链都不读 → 不加 buff 类成就时零开销。
+ * 命中结果报成位掩码 m（第 i 位 = 命中关注表第 i 项），去重同 VAL（值（含掩码）变化才发）。
+ */
+
+static unsigned long long fnv1a64(const char *s, int len)
+{
+    unsigned long long h = 0xCBF29CE484222325ULL;   /* FNV-1a 64 offset basis */
+    int i;
+    for (i = 0; i < len; i++) {
+        h ^= (unsigned char)s[i];
+        h *= 0x100000001B3ULL;                       /* FNV-1a 64 prime */
+    }
+    return h;
+}
+
+/* 读 il2cpp string 到 buf（ASCII 取低字节；返回字符数，失败返回 0）*/
+static int read_il2cpp_string(uint64_t str_ptr, char *buf, int max_len)
+{
+    int32_t len = 0;
+    int i, take;
+    if (!str_ptr || max_len <= 1)
+        return 0;
+    if (!safe_read((char *)(uintptr_t)(str_ptr + 0x10), &len, 4))
+        return 0;
+    if (len <= 0 || len > 256)
+        return 0;
+    take = len < (max_len - 1) ? len : (max_len - 1);
+    for (i = 0; i < take; i++) {
+        uint16_t ch = 0;
+        if (!safe_read((char *)(uintptr_t)(str_ptr + 0x14 + 2 * i), &ch, 2))
+            break;
+        buf[i] = (char)(ch & 0xFF);
+    }
+    buf[i] = '\0';
+    return i;
+}
+
+/* 读单位的关注 buff 命中掩码（没命中/没配关注表返回 0）*/
+static unsigned int read_unit_buff_mask(void *unit)
+{
+    uint64_t detail = 0, list = 0, items = 0, model = 0, data = 0, sid = 0;
+    int32_t count = 0;
+    unsigned int mask = 0;
+    int i, j;
+    char name[64];
+
+    if (!unit || !g_cfg)
+        return 0;
+    if (g_cfg->buff_watch_count <= 0)
+        return 0;                                    /* 没成就用 buff → 不读 */
+    detail = read_ptr(unit, g_cfg->off_unit_buff_detail);
+    if (!detail)
+        return 0;
+    list = read_ptr((void *)(uintptr_t)detail, g_cfg->off_buff_detail_list);
+    if (!list)
+        return 0;
+    if (!safe_read((char *)(uintptr_t)(list + 0x10), &items, 8))
+        return 0;
+    if (!safe_read((char *)(uintptr_t)(list + 0x18), &count, 4))
+        return 0;
+    if (!items || count <= 0 || count > BW_BUFF_LIST_MAX)
+        return 0;
+    for (i = 0; i < count; i++) {
+        uint64_t elem = 0;
+        unsigned long long h;
+        if (!safe_read((char *)(uintptr_t)(items + 0x20 + 8 * i), &elem, 8) || !elem)
+            continue;
+        model = elem;
+        data = read_ptr((void *)(uintptr_t)model, g_cfg->off_buff_model_data);
+        if (!data)
+            continue;
+        if (!safe_read((char *)(uintptr_t)(data + g_cfg->off_buff_static_id), &sid, 8) || !sid)
+            continue;
+        if (read_il2cpp_string(sid, name, (int)sizeof(name)) <= 0)
+            continue;
+        h = fnv1a64(name, (int)strlen(name));
+        for (j = 0; j < g_cfg->buff_watch_count && j < BW_BUFF_WATCH_MAX; j++) {
+            if (g_cfg->buff_watch_hashes[j] == h) {
+                mask |= (1u << j);
+                break;
+            }
+        }
+    }
+    return mask;
+}
+
+static void emit_unit_buffs(void *unit, const char *tag)
+{
+    int iid = -1, oid = -1, count = 0;
+    unsigned int mask;
+    uintptr_t key;
+    int slot, i, n;
+    char line[200];
+
+    if (!unit || !g_cfg || g_cfg->buff_watch_count <= 0)
+        return;
+    mask = read_unit_buff_mask(unit);
+    read_i32(unit, g_cfg->off_unit_instance_id, &iid);
+    read_i32(unit, g_cfg->off_unit_origin_id, &oid);
+
+    key = (uintptr_t)unit;
+    slot = (int)((key >> 4) % BW_VITAL_SLOTS);
+    for (i = 0; i < 8; i++) {
+        int idx = (slot + i) % BW_VITAL_SLOTS;
+        if (g_vital[idx].used && g_vital[idx].unit == key) {
+            if (g_vital[idx].buff_mask == mask)
+                return;                              /* 关注 buff 集合没变：不发 */
+            g_vital[idx].buff_mask = mask;
+            break;
+        }
+        if (!g_vital[idx].used) {
+            g_vital[idx].used = TRUE;
+            g_vital[idx].unit = key;
+            g_vital[idx].buff_mask = mask;
+            break;
+        }
+    }
+    (void)count;
+    n = _snprintf(line, sizeof(line) - 1, "BUF tag=%s iid=%d oid=%d m=%u",
+                  tag, iid, oid, mask);
+    if (n < 0) n = 0;
+    if (n > (int)sizeof(line) - 1) n = (int)sizeof(line) - 1;
+    line[n] = '\0';
+    emit(line, TRUE);
 }
 
 static void emit_unit_vitals(void *unit, const char *tag)
@@ -407,6 +573,7 @@ typedef void (__fastcall *detour_fn)(void);
         if (g_cfg && g_cfg->observing) {                                         \
             emit_unit_speed(self, (const char *)g_cfg->hook_name[N]);            \
             emit_unit_vitals(self, (const char *)g_cfg->hook_name[N]);           \
+            emit_unit_buffs(self, (const char *)g_cfg->hook_name[N]);            \
         }                                                                        \
     }
 
@@ -419,6 +586,7 @@ typedef void (__fastcall *detour_fn)(void);
         if (g_cfg && g_cfg->observing) {                                         \
             emit_unit_speed(self, (const char *)g_cfg->hook_name[N]);            \
             emit_unit_vitals(self, (const char *)g_cfg->hook_name[N]);           \
+            emit_unit_buffs(self, (const char *)g_cfg->hook_name[N]);            \
         }                                                                        \
     }
 
@@ -449,6 +617,7 @@ typedef void (__fastcall *detour_fn)(void);
                 line[sizeof(line) - 1] = '\0';                                   \
                 emit(line, TRUE);                                                \
                 emit_unit_vitals(self, (const char *)g_cfg->hook_name[N]);        \
+                emit_unit_buffs(self, (const char *)g_cfg->hook_name[N]);         \
             }                                                                    \
         }                                                                        \
         return result;                                                           \
@@ -477,6 +646,7 @@ typedef void (__fastcall *detour_fn)(void);
                 read_i32(attacker, g_cfg->off_unit_origin_id, &aoid);            \
             emit_action_skill(action, aoid, (const char *)g_cfg->hook_name[N]);  \
             emit_unit_vitals(self, (const char *)g_cfg->hook_name[N]);           \
+            emit_unit_buffs(self, (const char *)g_cfg->hook_name[N]);            \
         }                                                                        \
         return value;                                                            \
     }

@@ -66,6 +66,10 @@ from functions.achievement.battle_achievements import (
     SpeedValueAchievement,
     MentalThresholdAchievement,
     DamageTakenAchievement,
+    BuffPresentAchievement,
+    FieldPresenceAchievement,
+    CompositeAchievement,
+    Condition,
 )
 from functions.achievement.battle_watch import (
     BattleRule,
@@ -133,4 +137,13 @@ __all__ = [
     "SpeedValueAchievement",
     "MentalThresholdAchievement",
     "DamageTakenAchievement",
+    "BuffPresentAchievement",
+    "FieldPresenceAchievement",
+    # 复合成就主类（任意组合 / 顺序 / 蕴含）
+    "CompositeAchievement",
+    "Condition",
+    # 规则查询（复合成就/自定义成就用）
+    "rule_hit",
+    "rule_order",
+    "rule_live",
 ]
