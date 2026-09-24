@@ -421,12 +421,13 @@
 <img id="bgimg" alt="">
 <div class="wrap">
     <div class="head-title">🧩 扩展工具</div>
-    <div class="head-sub">包装 Mod / 生成插件模板 / 发布 Mod 信息到云端</div>
+    <div class="head-sub">包装 Mod / 生成插件模板 / 发布 Mod·插件信息到云端</div>
 
     <div class="tabs">
         <div class="tab active" data-mode="1">📦 包装 Mod</div>
         <div class="tab" data-mode="2">🧩 生成插件模板</div>
         <div class="tab" data-mode="3">☁️ 发布 Mod 信息</div>
+        <div class="tab" data-mode="4">🧩 发布插件信息</div>
     </div>
 
     <!-- ══════════ 模式1: 包装 Mod ══════════ -->
@@ -488,6 +489,29 @@
             <div class="progress-text" id="pub-progress-text"></div>
         </div>
         <div class="log" id="pub-log"></div>
+    </div>
+
+    <!-- ══════════ 模式4: 发布插件信息 ══════════ -->
+    <div class="sec" id="sec-addon-publish">
+        <div class="hint">选择 addons/ 下已开发的插件文件夹（需含 addon_info.json 与 icon.png）。发布时自动压缩插件本体并上传蓝奏云（图标 → FaustLauncher.icons，压缩包 → FaustLauncher.Addons），以直链解析链接填写 dowload_url/icon_url 后，以与 Mod 相同的机制更新云端插件数据库。</div>
+        <div class="field">
+            <div class="field-label">插件文件夹</div>
+            <div class="row-input">
+                <input type="text" id="addon-pub-folder" placeholder="未选择">
+                <button class="btn" id="addon-pub-browse">浏览...</button>
+                <select id="addon-pub-addons"></select>
+                <button class="btn btn-sm" id="addon-pub-from-addons">从 addons/ 选择</button>
+            </div>
+        </div>
+        <div class="preview" id="addon-pub-preview">尚未选择插件文件夹</div>
+        <div class="action-row">
+            <button class="btn btn-primary" id="addon-pub-upload">🚀 上传到云端</button>
+        </div>
+        <div class="progress-wrap" id="addon-pub-progress" style="display:none">
+            <div class="progress-bar"><div class="progress-fill" id="addon-pub-progress-fill"></div></div>
+            <div class="progress-text" id="addon-pub-progress-text"></div>
+        </div>
+        <div class="log" id="addon-pub-log"></div>
     </div>
 
     <div class="statusbar">
@@ -570,7 +594,8 @@
     }
 
     /* ── 模式切换 ── */
-    const secIds = { "1": "sec-wrap", "2": "sec-plugin", "3": "sec-publish" };
+    const secIds = { "1": "sec-wrap", "2": "sec-plugin", "3": "sec-publish",
+                     "4": "sec-addon-publish" };
 
     function switchMode(mode) {
         document.querySelectorAll(".tab").forEach((t) => {
@@ -580,9 +605,10 @@
             $(id).classList.toggle("show", m === mode);
         }
         setMsg("");
-        // 每次切回相关模式时刷新 mods 选项 (目录可能已变化)
+        // 每次切回相关模式时刷新目录选项 (目录可能已变化)
         if (mode === "1") { fillModsSelect("wrap-mods", false); }
         if (mode === "3") { fillModsSelect("pub-mods", true); }
+        if (mode === "4") { fillAddonsSelect("addon-pub-addons", true); }
     }
 
     document.querySelectorAll(".tab").forEach((t) => {
@@ -608,6 +634,34 @@
                 const o = document.createElement("option");
                 o.value = m.path;
                 o.textContent = m.wrapped ? m.name : m.name + " (未打包)";
+                sel.appendChild(o);
+            });
+            if (prev) sel.value = prev;
+        } catch (e) {
+            console.error(e);
+        }
+    }
+
+    /* ── addons 下拉填充 (wrappedOnly=true 时只列含 addon_info.json 的) ── */
+    async function fillAddonsSelect(selId, usableOnly) {
+        try {
+            const addons = await api.list_addons();
+            const sel = $(selId);
+            if (!sel) return;
+            const prev = sel.value;
+            sel.innerHTML = "";
+            const usable = (addons || []).filter((a) => !usableOnly || a.wrapped);
+            if (!usable.length) {
+                const o = document.createElement("option");
+                o.value = "";
+                o.textContent = usableOnly ? "(addons/ 下暂无含 addon_info.json 的插件)" : "(addons/ 下没有文件夹)";
+                sel.appendChild(o);
+                return;
+            }
+            usable.forEach((a) => {
+                const o = document.createElement("option");
+                o.value = a.path;
+                o.textContent = a.wrapped ? a.name : a.name + " (缺 addon_info.json)";
                 sel.appendChild(o);
             });
             if (prev) sel.value = prev;
@@ -803,6 +857,106 @@
 
     window.__onPublishLog = function (s) {
         const el = $("pub-log");
+        if (!el) return;
+        el.textContent += (el.textContent ? "\n" : "") + String(s);
+        el.scrollTop = el.scrollHeight;
+    };
+
+    /* ── 模式4: 发布插件（与 Mod 同一套流程，只是蓝奏云目标目录/数据库不同）── */
+    async function loadAddonPreview(path) {
+        try {
+            const r = await api.preview_addon(path);
+            if (!r.ok) {
+                $("addon-pub-preview").textContent = r.error;
+                $("addon-pub-preview").classList.add("err");
+                return false;
+            }
+            const i = r.info;
+            const lines = [
+                "名称: " + (i.name || ""),
+                "版本: " + ((i.version || "").trim() || "0.0.1"),
+                "作者: " + JSON.stringify(i.authors || {}),
+                "描述: " + ((i.desc || "").trim() || "(空)"),
+                "",
+                "上传后: 图标 → 蓝奏云 FaustLauncher.icons, 压缩包 → FaustLauncher.Addons,",
+                "       dowload_url/icon_url = 直链解析链接, download_count 沿用云端旧值,",
+                "       同名插件视为更新并置顶（插件库 total_addons 重算）",
+                "单文件上限: " + (r.max_size_mb || 66) + " MB (web_config.json → lanzou.max_size_mb)",
+            ];
+            $("addon-pub-preview").textContent = lines.join("\n");
+            $("addon-pub-preview").classList.remove("err");
+            return true;
+        } catch (e) {
+            $("addon-pub-preview").textContent = "预览失败: " + errText(e);
+            $("addon-pub-preview").classList.add("err");
+            return false;
+        }
+    }
+
+    $("addon-pub-browse").addEventListener("click", () => pickFolderAndSet("addon-pub-folder", loadAddonPreview));
+    $("addon-pub-from-addons").addEventListener("click", async () => {
+        const sel = $("addon-pub-addons");
+        const path = sel && sel.value;
+        if (!path) {
+            showToast("addons/ 下没有可选的插件", true);
+            return;
+        }
+        $("addon-pub-folder").value = path;
+        await loadAddonPreview(path);
+    });
+    $("addon-pub-addons").addEventListener("change", () => {
+        const v = $("addon-pub-addons").value;
+        if (!v) return;
+        $("addon-pub-folder").value = v;
+        loadAddonPreview(v);
+    });
+    bindFolderInput("addon-pub-folder", loadAddonPreview);
+
+    $("addon-pub-upload").addEventListener("click", async () => {
+        const folder = $("addon-pub-folder").value.trim();
+        if (!folder) { setMsg("请先选择插件文件夹", true); return; }
+        if (!(await loadAddonPreview(folder))) return;
+        const btn = $("addon-pub-upload");
+        const progress = $("addon-pub-progress");
+        const fill = $("addon-pub-progress-fill");
+        const ptext = $("addon-pub-progress-text");
+        btn.disabled = true;
+        btn.textContent = "上传中...";
+        $("addon-pub-log").textContent = "";
+        $("addon-pub-log").className = "log";
+        progress.style.display = "";
+        fill.style.width = "0%";
+        ptext.textContent = "准备中...";
+        try {
+            const r = await api.publish_addon(folder);
+            const logEl = $("addon-pub-log");
+            logEl.textContent = r.log || "";
+            logEl.className = "log " + (r.ok ? "ok" : "err");
+            setMsg(r.msg, !r.ok);
+            if (r.ok) showToast("发布成功: " + (r.info && r.info.name || ""));
+        } catch (e) {
+            setMsg("发布失败: " + errText(e), true);
+        } finally {
+            btn.disabled = false;
+            btn.textContent = "🚀 上传到云端";
+            setTimeout(() => { progress.style.display = "none"; }, 3000);
+        }
+    });
+
+    /* 插件发布进度/日志实时推送 (Python 侧 push_addon 专用通道) */
+    window.__onAddonProgress = function (p) {
+        const progress = $("addon-pub-progress");
+        const fill = $("addon-pub-progress-fill");
+        const ptext = $("addon-pub-progress-text");
+        if (!progress || !fill || !ptext) return;
+        const pct = Math.max(0, Math.min(100, Math.round((p && p.percent) || 0)));
+        progress.style.display = "";
+        fill.style.width = pct + "%";
+        ptext.textContent = ((p && p.text) || "") + " " + pct + "%";
+    };
+
+    window.__onAddonLog = function (s) {
+        const el = $("addon-pub-log");
         if (!el) return;
         el.textContent += (el.textContent ? "\n" : "") + String(s);
         el.scrollTop = el.scrollHeight;

@@ -25,10 +25,13 @@ if _PROJECT_ROOT not in sys.path:
 
 from functions.tools.post_extension_tools import (
     MODS_DIR,
+    ADDONS_DIR,
     spawn_extension,
     wrap_mod,
     load_mod_info,
+    load_addon_info,
     publish_mod as _publish_mod_full,
+    publish_addon as _publish_addon_full,
     _scan_mod_files,
     _validate_wrap_source,
 )
@@ -96,6 +99,28 @@ class ExtensionToolsApi:
             return result
         except Exception as e:
             print(f"[扩展工具] 获取 mods 列表失败: {e}")
+            return []
+
+    def list_addons(self):
+        """addons/ 下所有子文件夹 [{name, path, wrapped}] (wrapped=是否已有 addon_info.json)
+
+        wrapped=False 的插件不能发布（缺信息文件），只能先补全/重新生成模板。
+        """
+        try:
+            addons_dir = os.path.join(_PROJECT_ROOT, ADDONS_DIR)
+            result = []
+            if os.path.isdir(addons_dir):
+                for d in sorted(os.listdir(addons_dir)):
+                    path = os.path.join(addons_dir, d)
+                    if os.path.isdir(path):
+                        result.append({
+                            'name': d,
+                            'path': path,
+                            'wrapped': os.path.isfile(os.path.join(path, 'addon_info.json')),
+                        })
+            return result
+        except Exception as e:
+            print(f"[扩展工具] 获取 addons 列表失败: {e}")
             return []
 
     def pick_folder(self):
@@ -221,6 +246,48 @@ class ExtensionToolsApi:
         info, err = load_mod_info(folder)
         try:
             ok, msg = _publish_mod_full(folder, log=_log, progress=_progress)
+            _progress(100, '完成')
+            return {
+                'ok': ok,
+                'msg': msg,
+                'log': '\n'.join(logs),
+                'info': info if not err else {},
+            }
+        except Exception as e:
+            return {'ok': False, 'msg': f'发布失败: {e}', 'log': '\n'.join(logs), 'info': {}}
+
+    def preview_addon(self, folder):
+        """读取 addon_info.json 用于预览, 返回 {ok, info, max_addon_mb, error}
+
+        max_addon_mb 对外统一叫 max_size_mb（与 Mod 同一个蓝奏云单文件上限）。
+        """
+        info, err = load_addon_info(folder)
+        if err:
+            return {'ok': False, 'info': {}, 'max_size_mb': None, 'error': err}
+        try:
+            from functions.base.web_config import get_lanzou_config
+            max_mb = int(get_lanzou_config().get('max_size_mb') or 66)
+        except Exception:
+            max_mb = 66
+        return {'ok': True, 'info': info, 'max_size_mb': max_mb, 'error': ''}
+
+    def publish_addon(self, folder):
+        """完整发布插件: 压缩+上传蓝奏云(图标→FaustLauncher.icons,
+        本体→FaustLauncher.Addons) → 直链解析 URL → 更新云端插件数据库 (addon_info)
+        返回 {ok, msg, log, info}; 期间推送进度 (__onAddonProgress/__onAddonLog)
+        """
+        logs = []
+
+        def _log(s):
+            logs.append(s)
+            _notify("__onAddonLog", s)
+
+        def _progress(percent, text):
+            _notify("__onAddonProgress", {'percent': percent, 'text': text})
+
+        info, err = load_addon_info(folder)
+        try:
+            ok, msg = _publish_addon_full(folder, log=_log, progress=_progress)
             _progress(100, '完成')
             return {
                 'ok': ok,
