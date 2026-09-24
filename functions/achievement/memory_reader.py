@@ -194,6 +194,19 @@ def refresh_chain_from_cloud(background: bool = True, on_log=print) -> bool:
     return True
 
 
+def _fast_find_process(process_name: str = "LimbusCompany.exe") -> int:
+    """用 ctypes 枚举进程（~7ms），拿不到返回 0。
+
+    内部复用 ``battle_watch.find_process_id``（同一套 CreateToolhelp32Snapshot 枚举），
+    避免每个模块各自实现一份；导入失败时返回 0，调用处会回退 tasklist。
+    """
+    try:
+        from functions.achievement.battle_watch import find_process_id
+        return int(find_process_id(process_name) or 0)
+    except Exception:
+        return 0
+
+
 class LimbusMemoryReader:
     """读取游戏进程内存的轻量封装。"""
 
@@ -229,25 +242,15 @@ class LimbusMemoryReader:
         k.Module32Next.restype = wintypes.BOOL
 
     def _find_process(self) -> tuple[int, int] | None:
-        """查找游戏进程，避免依赖 psutil。"""
-        try:
-            import subprocess
+        """查找游戏进程（ctypes 枚举，~7ms）。
 
-            result = subprocess.run(
-                ["tasklist", "/FO", "CSV", "/NH"],
-                capture_output=True,
-                text=True,
-                encoding="mbcs",
-                errors="replace",
-                check=False,
-            )
-            for line in result.stdout.splitlines():
-                fields = [field.strip('"') for field in line.split('","')]
-                if len(fields) >= 2 and fields[0].lower() == self.process_name:
-                    return int(fields[1]), 0
-        except (OSError, ValueError):
-            pass
-        return None
+        以前每次都 ``subprocess.run(["tasklist", ...])`` → 单次 ~400ms，而这个读取会被
+        成就轮询频繁问到（以前它还跑在弹窗动画的线程上，所以弹窗末尾卡顿/看着像卡死）。
+        现在只走 ctypes；游戏没开就是 ~7ms 返回 ``None``（不再回退去 spawn tasklist——
+        那才是那 400ms 的元凶）。
+        """
+        pid = _fast_find_process(self.process_name)
+        return (pid, 0) if pid else None
 
     def _find_module(self, pid: int, module_name: str) -> int | None:
         snapshot = self.kernel32.CreateToolhelp32Snapshot(TH32CS_SNAPMODULE, pid)

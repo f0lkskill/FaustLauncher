@@ -505,16 +505,18 @@ class GameLauncher:
 
             # 确保 logs 目录存在
             os.makedirs(logs_dir, exist_ok=True)
-            # 每次启动前清空上次的日志（两个日志都清：battle_watch.log 由子进程自己清）
-            with open(hook_log_path, 'w', encoding='utf-8') as f:
-                f.write("")
 
-            # 上一次的成就监测子进程如果还活着（上次没退干净），先收掉：
-            # 否则新实例会撞上“共享内存已存在”而静默不注入，看起来就像功能坏了。
+            # 先收掉上次的成就监测子进程（如果还活着），**再**清空日志：
+            # 否则残留实例会按自己的旧偏移继续写被清空后的文件，日志就会出现
+            # 错位/NUL 空洞（就是之前那次“日志损坏”）。
             cache_dir = os.path.join(project_root, "cache", "achievement")
             os.makedirs(cache_dir, exist_ok=True)
             pid_file = os.path.join(cache_dir, "hook.pid")
             self._kill_stale_hook_child(pid_file)
+
+            # 清空成就日志（battle_watch.log 由子进程自己清）
+            with open(hook_log_path, 'w', encoding='utf-8') as f:
+                f.write("")
 
             self._progress("启动成就监测与战斗观测...", "🏆")
 

@@ -3,6 +3,7 @@
 from abc import ABC, abstractmethod
 from datetime import datetime
 from typing import Callable
+import threading
 
 
 class BaseAchievement(ABC):
@@ -87,20 +88,24 @@ class MemoryAchievement(BaseAchievement):
         self._predicate = predicate
         self._reader = None
         self.current_value: int | None = None
+        # 读内存可能被多条线程问到（监控线程 + 成就轮询线程），串行化读取，
+        # 避免同一个句柄被并发 attach/read 搞乱。
+        self._read_lock = threading.Lock()
 
     def check(self) -> bool:
         """读取内存并检查条件。读取失败时保持未解锁。"""
         if self.unlocked:
             return True
-        try:
-            if self._reader is None:
-                self._reader = self._reader_factory()
-            value = self._reader.read_enkephalin() # type: ignore
-            self.current_value = value
-            if value is not None and self._predicate(value):
-                self.mark_unlocked()
-        except Exception:
-            self.current_value = None
+        with self._read_lock:
+            try:
+                if self._reader is None:
+                    self._reader = self._reader_factory()
+                value = self._reader.read_enkephalin() # type: ignore
+                self.current_value = value
+                if value is not None and self._predicate(value):
+                    self.mark_unlocked()
+            except Exception:
+                self.current_value = None
         return self.unlocked
 
     def detach(self) -> None:
