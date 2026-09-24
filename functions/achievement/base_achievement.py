@@ -65,7 +65,14 @@ class BaseAchievement(ABC):
 
 
 class MemoryAchievement(BaseAchievement):
-    """基于游戏进程内存状态的成就。"""
+    """基于游戏进程内存状态的成就。
+
+    ``memory_driven = True`` 是给监测循环看的**类型标记**：``hook.AchievementHook`` 按标记
+    轮询（而不是按类名特判），加新的内存类成就时不需要改监测循环。
+    """
+
+    memory_driven = True
+
 
     def __init__(
         self,

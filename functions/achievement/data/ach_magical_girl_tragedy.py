@@ -20,6 +20,11 @@ from __future__ import annotations
 
 from functions.achievement.battle_achievements import MentalThresholdAchievement
 
+# ---- 业务常量（游戏数据；与偏移无关，驱动不认识它们）----
+IDENTITY_RODION_DESPAIR_KNIGHT = 10913   # 脑叶公司E.G.O:: 泪锋之剑 罗佳（绝望骑士的 E.G.O）
+IDENTITY_DON_QUIXOTE_HATRED_QUEEN = 10312  # 脑叶公司E.G.O:: 以爱与憎之名 堂吉诃德（憎恶女王的 E.G.O）
+MENTAL_THRESHOLD = 0                     # 理智(SP) < 0
+
 
 class MagicalGirlTragedyAchievement(MentalThresholdAchievement):
     """战斗事件类成就：观测单位理智（VAL 事件的 mp 字段）。"""
@@ -29,9 +34,9 @@ class MagicalGirlTragedyAchievement(MentalThresholdAchievement):
             ach_id="ach_magical_girl_tragedy",
             name="魔法少女的悲剧",
             description="让任意一位魔法少女陷入负理智状态。",
-            identity_ids=(10913,      # 10913 绝望骑士 罗佳
-                          10312),  # 10312 憎恶女王 堂吉诃德
-            threshold=0,
+            identity_ids=(IDENTITY_RODION_DESPAIR_KNIGHT,
+                          IDENTITY_DON_QUIXOTE_HATRED_QUEEN),
+            threshold=MENTAL_THRESHOLD,
             label="魔法少女（绝望骑士·罗佳 / 憎恶女王·堂吉诃德）",
             rarity="uncommon",
         )

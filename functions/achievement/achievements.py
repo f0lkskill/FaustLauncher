@@ -383,7 +383,7 @@ def _define_achievements():
     # ``DamageTakenAchievement`` 子类（只给数据），然后在这里加一行。
     _battle_achievements = (
         ("将你李箱，也将我李箱。", "data.ach_yisang_lcb_s3", "YisangLcbThirdSkillAchievement"),
-        ("呃啊，我腿瘸了", "data.ach_faust_kui_speed9", "FaustKuiSpeedNineAchievement"),
+        ("呃啊，我脚崴了", "data.ach_faust_kui_speed9", "FaustKuiSpeedNineAchievement"),
         ("仿造的一生", "data.ach_index_furioso", "IndexFuriosoReplicaAchievement"),
         ("魔法少女的悲剧", "data.ach_magical_girl_tragedy",
          "MagicalGirlTragedyAchievement"),

@@ -32,26 +32,33 @@
 
     logs/battle_watch.log      全量事件流（RND/SPD/VAL/ACT 每行都写）—— 用来看细节
     logs/achievement_hook.log  只留成就相关：生命周期 / 错误 / 观测点首次命中 /
-                               心跳 / 速度与理智判定 / 成就置位；**不刷事件**
+                               心跳 / 规则命中（★）；**不刷事件**
 
 事件行默认不进成就日志（``verbose=True``，或设置项 ``achievement_log_verbose`` 才进）。
 两个日志都在每次实例启动时清空重写（只保留本次运行）。
 
-判定规则（``BattleRule``）—— 成就侧只登记数据，判定在驱动侧::
+本模块**不认识任何具体成就**：身份 ID / 技能 ID / 阈值这些业务常量全部写在成就模块里
+（``functions/achievement/data/*.py``），通过 ``BattleRule`` 登记进来。驱动只提供
+「事件字段解释」与下面这张规则表——加新成就不需要改本文件。
 
-    BattleRule(key="ach_x", kind="skill",  identity_ids=(10101,), skill_ids=(1010103,))
-    BattleRule(key="ach_y", kind="mental", identity_ids=(10913, 10312), threshold=0)
-    BattleRule(key="ach_z", kind="hp",     identity_ids=(10705,), ratio=1.0)
+判定规则（``BattleRule``）—— 一次登记，驱动按类型统一求值（**没有针对具体成就的分支**）::
 
-- ``kind="skill"``：ACT 事件里出现 ``skill_ids``（技能 ID 自带身份）或
-  （``gated_skill_ids`` 且 actor 身份 == ``identity_ids``）；**回合边界结算**（与李箱成就同逻辑）
-- ``kind="mental"``：观察到该身份的 ``mp < threshold`` 就**立刻**置位
-- ``kind="hp"``：观察到 ``hp < mhp * ratio``（默认 1.0 = 只要掉血就算受伤）就立刻置位
+使用示例（id 均为占位值——真实身份/技能常量只存在于成就模块里）::
 
-游戏数据 id（业务常量，与偏移无关）：``10101`` LCB 罪人李箱、``10212`` 黑兽-卯 魁首浮士德、
-``10115`` 蜘蛛巢 食指 父辈 李箱、``10913`` 脑叶公司E.G.O::泪锋之剑 罗佳（绝望骑士）、
-``10312`` 脑叶公司E.G.O::以爱与憎之名 堂吉诃德（憎恶女王）、``10705`` 脑叶公司E.G.O::狐雨 希斯克利夫，
-``1010103`` 李箱 LCB 三技能（技能 id = ``<身份5位><槽位2位>``）。
+    BattleRule(key="ach_demo_skill",  kind="skill",  identity_ids=(10001,), skill_ids=(1000101,))
+    BattleRule(key="ach_demo_speed",  kind="speed",  identity_ids=(10002,), threshold=9)
+    BattleRule(key="ach_demo_mental", kind="mental", identity_ids=(10003,), threshold=0)
+    BattleRule(key="ach_demo_hp",     kind="hp",     identity_ids=(10004,), ratio=1.0)
+
+| kind | 看的事件 | 命中条件 | 何时置位 |
+|---|---|---|---|
+| ``skill`` | ``ACT`` | ``skill_ids`` 命中，或（``identity_ids``+``tiers``）拼出的技能 ID 命中，或（``gated_skill_ids`` 且 actor 身份在 ``identity_ids`` 里） | 回合边界结算 |
+| ``speed`` | ``SPD`` | 身份命中且 ``fields``（默认全部速度字段）里任一 == ``threshold`` | 立刻（回合边界兜底） |
+| ``mental`` | ``VAL`` | 身份命中且 ``mp < threshold`` | 立刻（回合边界兜底） |
+| ``hp`` | ``VAL`` | 身份命中且 ``hp < mhp * ratio`` | 立刻（回合边界兜底） |
+
+“立刻”类都走同一个求值器（``BattleWatch._eval_immediate_locked``）：加新类型 = 在
+``BattleRule`` 里加一个 ``match_*`` + 一个 ``RULE_KIND_*``，调用处不用 if/else。
 """
 
 from __future__ import annotations
@@ -87,13 +94,10 @@ KIND_NUMBERS = {"plain": KIND_PLAIN, "unit": KIND_UNIT,
                 "unit_int_bool": KIND_UNIT_INT_BOOL, "unit_get_int": KIND_UNIT_GET_INT,
                 "action_int": KIND_ACTION_INT, "damage_action": KIND_DAMAGE_ACTION}
 
-# --------------------------------------------------------------------------- 游戏数据
+# --------------------------------------------------------------------------- 字段语义
 
-IDENTITY_FAUST_KUISHOU = 10212       # 黑兽 - 卯 魁首 浮士德
-IDENTITY_RODION_DESPAIR_KNIGHT = 10913   # 脑叶公司E.G.O::泪锋之剑 罗佳（绝望骑士，魔法少女）
-IDENTITY_DON_QUIXOTE_HATRED_QUEEN = 10312  # 脑叶公司E.G.O::以爱与憎之名 堂吉诃德（憎恶女王）
-SKILL_LCB_YISANG_S3 = 1010103        # 李箱 LCB 三技能（skillId = 身份*100 + 槽位）
-SPEED_TARGET = 9
+# 驱动只负责解释「事件里的字节」，不认识任何具体成就：
+# 具体身份/技能/阈值全部是成就侧登记的 ``BattleRule`` 数据（见本文件末尾的规则表章节）。
 
 # 速度字段的单位（**关键**，2026-09-17 build 实测）：
 # ``_originSpeed``(0xCC) / ``_overwritedSpeed``(0xD0) 存的是「速度 ×1000」的定点数，
@@ -112,12 +116,12 @@ SPEED_SCALE = 1000
 # 避免把“读失败”当成“理智负数”误触发成就。
 VITAL_UNREAD = -1000
 
-# 速度判定看哪些字段（值都是**整数速度**：os/ow/eff 已归一化，its 本来就是整数）：
+# SPD 事件的字段清单（驱动知道事件里有什么，成就只用 ``fields`` 选自己要看的那几个），
+# 值都是**整数速度**：os/ow/eff 已归一化，its 本来就是整数。
 # os=_originSpeed（本回合掷出的速度）、ow=_overwritedSpeed（被技能覆盖后的速度）、
-# its=_thisTurnIntSpeedOnCmdPhase（命令阶段快照，回合开始那一刻还是上一回合的值，别当唯一依据）、
-# eff=有效速度（游戏 GetIntegerOfOriginSpeed 的语义：ow>=0 用 ow，否则用 os）。
-# 任一等于目标值即命中，命中时成就会写明是哪个字段——想收紧就改这里。
-SPEED_FIELDS = ("os", "ow", "its", "eff")
+# its=_thisTurnIntSpeedOnCmdPhase（命令阶段快照，回合开始那一刻还是上一回合的值）、
+# eff=有效速度（游戏 GetIntegerOfOriginSpeed 语义：ow>=0 用 ow，否则用 os）。
+SPEED_FIELD_ORDER = ("os", "ow", "its", "eff")
 
 
 def speed_int(raw: int) -> int:
@@ -142,10 +146,18 @@ def speed_text(value: int, raw: int) -> str:
 # --------------------------------------------------------------------------- 判定规则
 
 # 成就侧只登记「数据」，具体判定全在驱动里（见模块头部说明）。
-RULE_KIND_SKILL = "skill"        # ACT 里出现目标技能 → 回合边界结算（与李箱成就同逻辑）
-RULE_KIND_MENTAL = "mental"      # 理智(SP) 低于阈值 → 立刻置位
-RULE_KIND_HP = "hp"              # 血量低于最大血量的比例 → 立刻置位
-RULE_KINDS = (RULE_KIND_SKILL, RULE_KIND_MENTAL, RULE_KIND_HP)
+# 加新类型 = 在 ``BattleRule`` 里加一个 ``match_*`` + 一个 ``RULE_KIND_*``，调用处不需要 if：
+#   skill  → ACT 里出现目标技能（回合边界结算）
+#   speed  → SPD 里目标身份的速度命中某值（立刻）
+#   mental → VAL 里目标身份的理智(SP) 低于阈值（立刻）
+#   hp     → VAL 里目标身份的血量低于最大血量的比例（立刻）
+RULE_KIND_SKILL = "skill"
+RULE_KIND_SPEED = "speed"
+RULE_KIND_MENTAL = "mental"
+RULE_KIND_HP = "hp"
+RULE_KINDS = (RULE_KIND_SKILL, RULE_KIND_SPEED, RULE_KIND_MENTAL, RULE_KIND_HP)
+# “观测到就立刻置位”的类型（skill 类走回合边界结算，单独一条路）
+RULE_KINDS_IMMEDIATE = (RULE_KIND_SPEED, RULE_KIND_MENTAL, RULE_KIND_HP)
 
 
 @dataclass(frozen=True)
@@ -154,22 +166,23 @@ class BattleRule:
 
     匹配技能（``kind="skill"``）有三种写法，任一命中即可：
 
-    1. ``skill_ids``：完整技能 ID（自带身份，最硬，如 ``1010103``）；
+    1. ``skill_ids``：完整技能 ID（自带身份，最硬，如 ``1000101``）；
     2. ``identity_ids`` + ``tiers``：按「技能 ID = 身份×100 + 槽位」拼，
-       例如 ``identity_ids=(10115,), tiers=(3,)`` 就是「10115 的三技能」；
+       例如 ``identity_ids=(10001,), tiers=(3,)`` 就是「10001 的三技能」；
     3. ``gated_skill_ids``：ID 里不带身份的技能（例如被转化后的技能），
        此时额外要求 actor 身份在 ``identity_ids`` 里，避免敌人用同名技能误触发。
     """
 
     key: str                                  # 规则名（= 成就 id，成就侧按它取结果）
-    label: str = ""                           # 日志里显示的可读名
+    label: str = ""                           # 日志里显示的可读名（由成就侧提供）
     kind: str = RULE_KIND_SKILL
     identity_ids: tuple[int, ...] = ()        # 目标身份（5 位身份 ID）
     skill_ids: tuple[int, ...] = ()           # kind=skill：完整技能 ID
     tiers: tuple[int, ...] = ()               # kind=skill：技能槽位（1/2/3/4）
     gated_skill_ids: tuple[int, ...] = ()     # kind=skill：需 actor 身份匹配的技能 ID
-    threshold: int = 0                        # kind=mental：mp < threshold
-    ratio: float = 1.0                        # kind=hp：hp < mhp * ratio
+    threshold: int = 0                        # mental：mp < threshold；speed：速度 == threshold
+    ratio: float = 1.0                        # hp：hp < mhp * ratio
+    fields: tuple[str, ...] = ()              # speed：看哪几个速度字段（空 = SPEED_FIELD_ORDER）
 
     # 匹配
     def match_skill(self, skid: int, actor_oid: int) -> bool:
@@ -198,12 +211,26 @@ class BattleRule:
             return hp < mhp * self.ratio
         return False
 
+    def match_speed(self, oid: int, speeds: dict) -> tuple[bool, tuple[str, ...]]:
+        """速度命中判定：返回 ``(是否命中, 命中的字段名)``。
+
+        ``speeds`` 是驱动归一化后的 SPD 字段（``os``/``ow``/``its``/``eff``）。
+        ``fields`` 为空时看全部字段；未掷速度（-1 哨兵）不会等于任何非负阈值。
+        """
+        if self.kind != RULE_KIND_SPEED or oid not in self.identity_ids:
+            return False, ()
+        names = self.fields or SPEED_FIELD_ORDER
+        hit = tuple(name for name in names if speeds.get(name) == self.threshold)
+        return bool(hit), hit
+
     def threshold_text(self) -> str:
         """阈值的人类可读写法（写进成就详情/日志）。"""
         if self.kind == RULE_KIND_MENTAL:
             return f"理智 < {self.threshold}"
         if self.kind == RULE_KIND_HP:
             return f"血量 < 最大血量的 {self.ratio:.0%}"
+        if self.kind == RULE_KIND_SPEED:
+            return f"速度 == {self.threshold}"
         return "技能命中"
 
 
@@ -498,7 +525,7 @@ class BattleEvent:
 class BattleState:
     round_seq: int = 0
     units: dict = field(default_factory=dict)        # instanceID → originID
-    speeds: dict = field(default_factory=dict)       # instanceID → {os,ow,its,eff,oid,os_raw,ow_raw}（整数速度）
+    speeds: dict = field(default_factory=dict)       # instanceID → {oid,os,ow,its,eff,os_raw,ow_raw}
     vitals: dict = field(default_factory=dict)       # instanceID → {oid,hp,mhp,mp,tag,round}
     skills: list = field(default_factory=list)       # 本回合 ACTION 事件（未结算）
     flags: dict = field(default_factory=dict)        # 规则 key → 命中详情（含本回合已结算的）
@@ -508,13 +535,12 @@ class BattleState:
     vitals_total: int = 0
     rnd_total: int = 0
     settled_by: str = ""
-    faust_kui_speed_nine: bool = False
-    faust_kui_speed_detail: str = ""
 
     def snapshot(self) -> dict:
-        faust = {iid: info for iid, info in self.speeds.items()
-                 if info.get("oid") == IDENTITY_FAUST_KUISHOU}
+        """状态文件内容：全部由规则表驱动，不含任何成就专属字段。"""
         watched = watched_identities()
+        speeds = {iid: info for iid, info in self.speeds.items()
+                  if not watched or info.get("oid") in watched}
         vitals = {iid: info for iid, info in self.vitals.items()
                   if not watched or info.get("oid") in watched}
         return {
@@ -526,14 +552,13 @@ class BattleState:
             "rnd_total": self.rnd_total,
             "pending_skills": len(self.skills),
             "settled_by": self.settled_by,
+            "rules": {key: {"kind": rule.kind, "label": rule.label,
+                            "targets": list(rule.identity_ids),
+                            "threshold": rule.threshold_text()}
+                      for key, rule in sorted(registered_rules().items())},
             "rule_hits": dict(self.flags),
             "rule_pending": sorted(self.pending_flags),
-            # 兼容旧状态文件字段（李箱成就现在是规则驱动）
-            "yisang_lcb_s3_used": "ach_yisang_lcb_s3" in self.flags,
-            "yisang_lcb_s3_detail": self.flags.get("ach_yisang_lcb_s3", ""),
-            "faust_kui_speed_nine": self.faust_kui_speed_nine,
-            "faust_kui_speed_detail": self.faust_kui_speed_detail,
-            "faust_speeds": faust,
+            "watched_speeds": speeds,
             "watched_vitals": vitals,
         }
 
@@ -700,7 +725,6 @@ class BattleWatch:
         self._last_boundary_ts = 0.0
         self._event_file = None
         self._phase = "未启动"
-        self._speed_log_seen: set = set()
 
     # ---------------------------------------------------------------- 对外
     def start(self) -> bool:
@@ -725,37 +749,42 @@ class BattleWatch:
         return bool(self._thread and self._thread.is_alive() and not self._stop.is_set())
 
     def settle_turn(self, reason: str = "") -> list:
-        """结算本回合：技能类规则置位 + 血量/理智类规则兜底复核。
+        """回合结算：技能类规则置位 + 立刻类规则拿最后观测值兜底复核。
+
+        “兜底”的含义：本回合如果一条 VAL/SPD 都没来过（或成就登记得比观测晚），
+        就拿最后观测到的血量/理智/速度再按同一套规则跑一遍——
+        所以各类型共用同一条路径，避免每个成就自己一套。
 
         返回本回合已结算的技能事件列表。注意：``_write_status`` 必须在**锁外**调用
         （它内部会 ``snapshot()`` 再拿同一把非重入锁）。
         """
-        settled: list[tuple[str, str]] = []
+        settled: list[str] = []
         with self._lock:
             pending = list(self.state.skills)
             self.state.skills.clear()
             if pending:
                 self.state.settled_by = reason
+            # 技能类规则：本回合命中过的现在置位
             for key, detail in list(self.state.pending_flags.items()):
                 self.state.pending_flags.pop(key, None)
                 if key in self.state.flags:
                     continue
                 self.state.flags[key] = detail
-                settled.append((key, detail))
-            # 兜底：用最后观测到的血量/理智再判一次（本回合一条 VAL 都没来时也不会漏）
-            for key, rule in registered_rules().items():
-                if rule.kind == RULE_KIND_SKILL or key in self.state.flags:
-                    continue
-                for info in self.state.vitals.values():
-                    if rule.match_vitals(info.get("oid", -1), info.get("hp", VITAL_UNREAD),
-                                         info.get("mhp", VITAL_UNREAD),
-                                         info.get("mp", VITAL_UNREAD)):
-                        detail = self._vitals_detail(rule, info,
-                                                     f"{reason or '回合边界'}兜底")
-                        self.state.flags[key] = detail
-                        settled.append((key, detail))
-                        break
-        for _key, detail in settled:
+                settled.append(detail)
+            suffix = f"{reason or '回合边界'}兜底"
+            # 立刻类规则（速度 / 理智 / 血量）：统一拿最后一次观测复核
+            for info in list(self.state.vitals.values()):
+                settled += self._eval_immediate_locked(
+                    lambda rule, i=info: rule.match_vitals(
+                        i.get("oid", -1), i.get("hp", VITAL_UNREAD),
+                        i.get("mhp", VITAL_UNREAD), i.get("mp", VITAL_UNREAD)),
+                    lambda rule, i=info: self._vitals_detail(rule, i, suffix))
+            for speeds in list(self.state.speeds.values()):
+                oid = speeds.get("oid", -1)
+                settled += self._eval_immediate_locked(
+                    lambda rule, o=oid, s=speeds: rule.match_speed(o, s)[0],
+                    lambda rule, o=oid, s=speeds: self._speed_detail(rule, o, s, suffix))
+        for detail in settled:
             self._log(f"[战斗观测] ★ {detail}")
         self._write_status(force=True)
         return pending
@@ -1029,6 +1058,11 @@ class BattleWatch:
         return event
 
     def _apply_spd(self, event: BattleEvent) -> None:
+        """速度事件：先把字段归一成整数速度，再交给规则表（``kind="speed"``，立刻置位）。
+
+        驱动只管「SPD 事件里有什么字段、怎么把字节变成整数」；
+        「哪个身份、等于几、看哪几个字段」全部由成就登记的 ``BattleRule`` 提供。
+        """
         iid = event.get("iid", -1)
         oid = event.get("oid", -1)
         # os/ow 是「速度 ×1000」的定点原始值 → 一律换成整数速度；DLL v3 会额外给 osi/owi，
@@ -1043,34 +1077,20 @@ class BattleWatch:
         eff_int = event.opt("eff")
         if eff_int is None or eff_int < 0:
             eff_int = ow_int if ow_raw >= 0 else os_int
-        info = {"oid": oid, "os": os_int, "ow": ow_int,
-                "its": event.get("its", -1), "eff": eff_int,
-                "os_raw": os_raw, "ow_raw": ow_raw}
+        speeds = {"os": os_int, "ow": ow_int, "its": event.get("its", -1),
+                  "eff": eff_int, "os_raw": os_raw, "ow_raw": ow_raw}
+        hits: list[str] = []
         with self._lock:
             self.state.spd_total += 1
             if iid >= 0:
-                self.state.speeds[iid] = info
+                self.state.speeds[iid] = dict(speeds, oid=oid)
                 if oid > 0:
                     self.state.units[iid] = oid
-            if oid == IDENTITY_FAUST_KUISHOU:
-                if not self.state.faust_kui_speed_nine:
-                    matched = [name for name in SPEED_FIELDS if info.get(name) == SPEED_TARGET]
-                    if matched:
-                        self.state.faust_kui_speed_nine = True
-                        self.state.faust_kui_speed_detail = (
-                            f"第 {self.state.round_seq} 回合 浮士德-魁首 速度={SPEED_TARGET}"
-                            f"（命中字段 {','.join(matched)}；os={speed_text(os_int, os_raw)} "
-                            f"ow={speed_text(ow_int, ow_raw)} its={info.get('its')} "
-                            f"eff={eff_int} via {event.tag}）")
-                        self._log(f"[战斗观测] ★ {self.state.faust_kui_speed_detail}")
-                key = (self.state.round_seq, tuple(sorted((k, v) for k, v in info.items()
-                                                          if k != "oid")))
-                if key not in self._speed_log_seen:
-                    self._speed_log_seen.add(key)
-                    self._log(f"[战斗观测] 浮士德-魁首 速度: 有效={eff_int}"
-                              f"（os={speed_text(os_int, os_raw)} "
-                              f"ow={speed_text(ow_int, ow_raw)} its={info.get('its')}"
-                              f"；{event.tag}, iid={iid}）")
+            hits = self._eval_immediate_locked(
+                lambda rule: rule.match_speed(oid, speeds)[0],
+                lambda rule: self._speed_detail(rule, oid, speeds, event.tag))
+        for detail in hits:
+            self._log(f"[战斗观测] ★ {detail}")
         if event.get("iid", -1) < 0 and event.get("oid", -1) < 0:
             # 钩子命中了但不是单位对象（例如钩到了非单位函数）→ 提示
             self._log(f"[战斗观测] 注意: {event.tag} 的 SPD 事件里没有单位字段，"
@@ -1110,21 +1130,17 @@ class BattleWatch:
             self.state.skills.append(record)
             if len(self.state.skills) > 64:
                 self.state.skills = self.state.skills[-64:]
-            # 技能类规则：命中先记在本回合待结算表（回合边界才置位，与旧李箱成就同逻辑）
+            # 技能类规则：命中先记在本回合待结算表（回合边界才置位）
+            # 技能命中不写进成就日志（事件流在 battle_watch.log），置位时统一写 ★
             for key, rule in registered_rules().items():
                 if rule.kind != RULE_KIND_SKILL or key in self.state.flags:
                     continue
                 if rule.match_skill(record["skid"], actor_oid):
                     self.state.pending_flags.setdefault(
                         key, self._skill_detail(rule, record, "待结算"))
-        # 与两个成就相关的技能额外提醒
-        if record["skid"] == SKILL_LCB_YISANG_S3 or record["actor_oid"] == 10101:
-            self._log(f"[战斗观测] 行动完成: skid={record['skid']} slot={record['slot']} "
-                      f"tier={record['tier']} actor={record['actor']} "
-                      f"(oid={record['actor_oid']}) via {record['tag']}")
 
     def _apply_vitals(self, event: BattleEvent) -> None:
-        """血量 / 理智事件：命中规则当场置位（不等回合结束）。
+        """血量 / 理智事件：交给规则表（``kind="mental"/"hp"``，立刻置位）。
 
         日志只写在规则命中时（没命中就只落到 ``battle_watch.log`` 与状态文件里），
         这样成就日志不会被每秒几十条的 VAL 事件刷屏。
@@ -1143,17 +1159,30 @@ class BattleWatch:
                 self.state.vitals[iid] = info
                 if oid > 0:
                     self.state.units[iid] = oid
-            for key, rule in registered_rules().items():
-                if rule.kind == RULE_KIND_SKILL or key in self.state.flags:
-                    continue
-                if rule.match_vitals(oid, hp, mhp, mp):
-                    detail = self._vitals_detail(rule, info, event.tag)
-                    self.state.flags[key] = detail
-                    hits.append(detail)
+            hits = self._eval_immediate_locked(
+                lambda rule: rule.match_vitals(oid, hp, mhp, mp),
+                lambda rule: self._vitals_detail(rule, info, event.tag))
         for detail in hits:
             self._log(f"[战斗观测] ★ {detail}")
 
-    # ---------------------------------------------------------- 规则详情文本
+    # ---------------------------------------------------------- 规则求值与详情文本
+    def _eval_immediate_locked(self, match_fn, detail_fn) -> list[str]:
+        """非技能类规则的**统一求值器**（调用方必须已持有 ``self._lock``）。
+
+        ``match_fn(rule)`` 决定是否命中，``detail_fn(rule)`` 生成详情；
+        命中就写进 ``state.flags``（同一规则只置位一次）。
+        理智 / 血量 / 速度 都走这一条路——加新类型时不用改这里。
+        """
+        hits: list[str] = []
+        for key, rule in registered_rules().items():
+            if rule.kind not in RULE_KINDS_IMMEDIATE or key in self.state.flags:
+                continue
+            if match_fn(rule):
+                detail = detail_fn(rule)
+                self.state.flags[key] = detail
+                hits.append(detail)
+        return hits
+
     def _skill_detail(self, rule: BattleRule, record: dict, reason: str) -> str:
         label = rule.label or rule.key
         return (f"第 {self.state.round_seq} 回合结算（{reason or '回合边界'}）"
@@ -1173,6 +1202,15 @@ class BattleWatch:
             body = f"受伤 hp={hp}/{mhp}，阈值 {rule.threshold_text()}"
         return (f"第 {self.state.round_seq} 回合 {label} {body}"
                 f"（oid={oid} via {info.get('tag', '?')}）")
+
+    def _speed_detail(self, rule: BattleRule, oid: int, speeds: dict, reason: str) -> str:
+        label = rule.label or rule.key
+        _matched, names = rule.match_speed(oid, speeds)
+        fields = ", ".join(speed_text(speeds.get(name, -1), speeds.get(f"{name}_raw", -1))
+                          if name in ("os", "ow") else f"{name}={speeds.get(name)}"
+                          for name in (rule.fields or SPEED_FIELD_ORDER))
+        return (f"第 {self.state.round_seq} 回合 {label} {rule.threshold_text()}"
+                f"（命中字段 {','.join(names)}；{fields}；oid={oid} via {reason}）")
 
     # ---------------------------------------------------------------- 线程
     def _run_guarded(self) -> None:
@@ -1379,16 +1417,6 @@ def stop_battle_watch() -> None:
             _watch = None
 
 
-def yisang_lcb_used_s3() -> bool:
-    """兼容旧 API：李箱三技能成就（现在是规则 ``ach_yisang_lcb_s3`` 驱动）。"""
-    return rule_hit("ach_yisang_lcb_s3") is not None
-
-
-def faust_kui_speed_nine() -> bool:
-    with _watch_lock:
-        return bool(_watch and _watch.state.faust_kui_speed_nine)
-
-
 def rule_hits() -> dict:
     """所有命中过的规则（key → 详情文本；启动器界面/状态文件用）。"""
     with _watch_lock:
@@ -1481,7 +1509,8 @@ def main(argv=None) -> int:
             time.sleep(5)
             snap = watch.snapshot()
             log("[战斗观测] 状态: " + ", ".join(
-                f"{k}={v}" for k, v in snap.items() if k not in ("faust_speeds", "hook_hits")))
+                f"{k}={v}" for k, v in snap.items()
+                if k not in ("watched_speeds", "watched_vitals", "rules", "hook_hits")))
     except KeyboardInterrupt:
         pass
     finally:

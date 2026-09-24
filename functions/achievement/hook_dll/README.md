@@ -172,33 +172,45 @@ DLL 按这个布局解密，并把 `fakeValue` 一起上报（`tf=`）做交叉�
 
 ## 六、战斗类成就怎么判定
 
-**架构**：成就只声明数据 → ``functions/achievement/battle_achievements.py`` 的基类把它
-转成一条 ``battle_watch.BattleRule`` → 驱动（``battle_watch.py``）负责观测与判定。
-加一个新成就基本只要写一个 ``__init__``。
+**架构（重要：驱动不认识任何具体成就）**
 
-| 成就 | 基类 | 数据（可改） |
-|---|---|---|
-| 将你李箱，也将我李箱。 | `SkillUseAchievement` | 身份 `10101` + 三技能 `1010103` |
-| 仿造的一生 | `SkillUseAchievement` | 身份 `10115`（蜘蛛巢 食指 父辈 李箱）+ 三技能 `1011503`（层数9时转化为 Furioso-Replica），另加受控 ID `134711/138010/955110`（需 actor 身份 = 10115） |
-| 呃啊，我腿瘸了 | （速度专用）`battle_watch` 的速度判定 | 身份 `10212` + 整数速度 == 9 |
-| 魔法少女的悲剧 | `MentalThresholdAchievement` | 身份 `10913`（绝望骑士 罗佳）/`10312`（憎恶女王 堂吉诃德）+ `threshold=0`（理智 < 0） |
-| 神也会受伤吗？ | `DamageTakenAchievement` | 身份 `10705`（狐雨 希斯克利夫）+ `ratio=1.0`（掉血即算） |
+```
+成就模块（functions/achievement/data/*.py）
+  └─ 业务常量（身份 ID / 技能 ID / 阈值）+ 基类构造 → 登记一条 BattleRule
+battle_achievements.py
+  └─ 四类数据基类：Skill / Speed / MentalThreshold / DamageTaken
+battle_watch.py（驱动）
+  └─ 只管事件字段解释 + 一张规则表：按 kind 统一求值，没有 if 成就名的分支
+```
 
-三类基类的语义：
+规则类型是**统一清单**（``battle_watch.RULE_KINDS``），加新类型 = 在 ``BattleRule`` 里
+加一个 ``match_*`` + 一个 ``RULE_KIND_*``，调用处不用改：
 
-- **技能类**（`SkillUseAchievement`）：`ACT` 里出现目标技能 → **回合边界结算**
-  （与李箱成就同一套逻辑）。匹配支持三种写法：完整 `skill_ids`、
-  `identity_id + tiers`（技能 ID = 身份×100 + 槽位）、`gated_skill_ids`（ID 不带身份的
-  转化技能，需 actor 身份匹配）。
-- **理智类**（`MentalThresholdAchievement`）：`VAL` 的 `mp < threshold` → **立刻**置位，
-  回合边界再兜底复核一次。
-- **血量类**（`DamageTakenAchievement`）：`VAL` 的 `hp < mhp * ratio` → 立刻置位。
+| kind | 看的事件 | 命中条件 | 何时置位 |
+|---|---|---|---|
+| ``skill`` | ``ACT`` | ``skill_ids``，或（``identity_ids``+``tiers``）拼出的技能 ID，或（``gated_skill_ids`` 且 actor 身份匹配） | 回合边界结算 |
+| ``speed`` | ``SPD`` | 身份命中且 ``fields``（默认全部速度字段）里任一 == ``threshold`` | 立刻（边界兜底） |
+| ``mental`` | ``VAL`` | 身份命中且 ``mp < threshold`` | 立刻（边界兜底） |
+| ``hp`` | ``VAL`` | 身份命中且 ``hp < mhp * ratio`` | 立刻（边界兜底） |
+
+“立刻”类全走同一个求值器（``BattleWatch._eval_immediate_locked``）。
+
+当前五个战斗类成就的数据（全部写在各自模块里，驱动只是“照数办事”）：
+
+| 成就 | 文件 | 基类 | 数据 |
+|---|---|---|---|
+| 将你李箱，也将我李箱。 | `data/ach_yisang_lcb_s3.py` | `SkillUseAchievement` | 身份 `10101` + 技能 `1010103` / `tiers=(3,)` |
+| 呃啊，我脚崴了 | `data/ach_faust_kui_speed9.py` | `SpeedValueAchievement` | 身份 `10212` + `value=9` + 四个速度字段 |
+| 仿造的一生 | `data/ach_index_furioso.py` | `SkillUseAchievement` | 身份 `10115` + 技能 `1011505/1011503` + 受控 ID `134711/138010/955110` |
+| 魔法少女的悲剧 | `data/ach_magical_girl_tragedy.py` | `MentalThresholdAchievement` | 身份 `10913`/`10312` + `threshold=0` |
+| 神也会受伤吗？ | `data/ach_heathcliff_sunshower_hurt.py` | `DamageTakenAchievement` | 身份 `10705` + `ratio=1.0` |
 
 ### 自定义成就怎么写
 
 ```python
 from functions.achievement.battle_achievements import (
-    SkillUseAchievement, MentalThresholdAchievement, DamageTakenAchievement)
+    SkillUseAchievement, SpeedValueAchievement,
+    MentalThresholdAchievement, DamageTakenAchievement)
 
 class MyAchievement(SkillUseAchievement):
     def __init__(self):
@@ -206,8 +218,8 @@ class MyAchievement(SkillUseAchievement):
                          identity_id=10115, tiers=(3,), rarity="legendary")
 ```
 
-然后把它 append 到 ``functions/achievement/achievements.py`` 的 ``_battle_achievements`` 元组。
-阈值、身份、技能、比例全是构造参数（数据），不用碰 DLL / 驱动。
+然后把类名 append 到 ``functions/achievement/achievements.py`` 的 ``_battle_achievements``
+元组（一行）。身份/技能/阈值/比例全是构造参数，**不需要碰 DLL，也不可能需要碰驱动**。
 
 ---
 
@@ -267,7 +279,7 @@ python test\battle_watch_test.py
 | `打开游戏进程失败` | 游戏以更高权限启动过（例如 Steam 用管理员启动）；用管理员权限跑启动器 |
 | `CreateRemoteThread 失败` | 杀软拦截注入；加白名单或关掉本功能 |
 | `共享内存已存在…本次不注入以免双钩` | 上次成就子进程没退干净；关掉旧进程或重启游戏 |
-| 速度界面显示 9 但没解锁 | 先看 `logs/battle_watch.log` 里 `SPD … os=14518 osi=14` —— `osi`/`owi` 才是整数速度（×1000 定点数，见第四节）；确认是整数速度后若仍不中，把日志发我或改 `battle_watch.SPEED_FIELDS` |
+| 速度界面显示 9 但没解锁 | 先看 `logs/battle_watch.log` 里 `SPD … os=14518 osi=14` —— `osi`/`owi` 才是整数速度（×1000 定点数，见第四节）；确认是整数速度后仍不中，就改那个**成就模块**里的 `fields`/`value`（例：`data/ach_faust_kui_speed9.py`）——驱动没有可调的"速度阈值" |
 | 事件抽取丢行 | 轮询太慢（日志会写 `抽取过慢，丢弃了 N 行`）；调小 `BattleWatch.poll_interval` |
 
 `RND seq=` 里的序号是共享内存会话计数，跨关卡继续累加（不归零）；它只当回合边界用。
