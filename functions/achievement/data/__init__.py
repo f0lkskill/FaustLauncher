@@ -19,6 +19,16 @@
   | ``SpeedValueAchievement`` | ``speed`` | ``identity_ids`` / ``value`` / ``fields`` |
   | ``MentalThresholdAchievement`` | ``mental`` | ``identity_ids`` / ``threshold`` |
   | ``DamageTakenAchievement`` | ``hp`` | ``identity_ids`` / ``ratio`` |
+  | ``BuffPresentAchievement`` | ``buff`` | ``identity_ids`` / ``buffs``（Bufs.json 的字符串 id）/ 回合窗口 |
+  | ``FieldPresenceAchievement`` | ``presence`` | ``identity_ids``（场上是否存在该身份）|
+
+  以上都支持 ``max_round`` / ``min_round`` 回合窗口；**多个条件任意组合**用
+  ``CompositeAchievement``（``require`` 布尔表达式 / ``chain`` 顺序 / ``implied`` 蕴含 /
+  ``state_only`` 状态条件）。
+
+  ⚠️ **一个文件可以写多个成就派生类**：``achievements.py`` 会按模块自动扫描
+  ``BaseAchievement`` 子类并逐个实例化（想控制顺序/选择性注册，就在模块里定义
+  ``ACHIEVEMENTS = (实例, ...)``）。
 
   构造时会把数据登记成一条 ``battle_watch.BattleRule``；观测与判定在
   ``functions/achievement/battle_watch.py``（注入 ``hook_dll/battle_watch.dll``，

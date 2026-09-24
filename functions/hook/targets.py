@@ -237,10 +237,17 @@ BATTLE_FIELDS: dict[str, tuple[str, str, int]] = {
     # ``_mp`` 就是界面上的理智(SP)：同类的 ``_maxMp = 45`` / ``_minMp = -45``
     # 常量正好就是 SP 的上下限（负数理智 = 陷入恐慌、魔法少女成就用）。
     # 三个值都是 ACTk ``ObscuredInt``（value = hiddenValue ^ currentCryptoKey）。
-    "unit_state": ("BattleUnitModel", "_state", 0x148),
-    "state_hp": ("CharacterState", "_hp", 0x148),
+    "unit_state": ("BattleUnitModel", "_state", 0x148),    "state_hp": ("CharacterState", "_hp", 0x148),
     "state_max_hp": ("CharacterState", "_maxHp", 0x11C),
     "state_mp": ("CharacterState", "_mp", 0x158),
+    # ---- buff 链（buff 名是字符串，如 HanafudaTwo / FutureEyeOnRodion）----
+    # unit[0xE0] → BuffDetail[0x10] : List<BuffModel>
+    #   → BuffModel[0x68] → BuffStaticData[0x18] : string（id 与 Lang/Bufs.json 的 id 一致）
+    # 驱动把成就用到的 buff 名做 FNV-1a 64 写进关注表，DLL 只在命中关注表时上报。
+    "unit_buff_detail": ("BattleUnitModel", "_buffDetail", 0xE0),
+    "buff_detail_list": ("BuffDetail", "_grantedBuffList", 0x10),
+    "buff_model_data": ("BuffModel", "_buffData", 0x68),
+    "buff_static_id": ("BuffStaticData", "id", 0x18),
     # ---- BattleActionModel ----
     "action_skill": ("BattleActionModel", "_skill", 0x20),
     "action_commander_id": ("BattleActionModel", "_commanderInstanceID", 0xB4),

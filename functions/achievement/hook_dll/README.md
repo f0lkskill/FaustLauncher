@@ -2,10 +2,11 @@
 
 只做一件事：**在游戏里读若干个点位，把事实写成文本事件**；判定全部交给 Python。
 
-> 当前版本 **v4**（协议 FBW3）：
+> 当前版本 **v5**（协议 FBW4）：
 > - v3：`SPD` 补整数速度 `osi`/`owi`（速度字段是「×1000 定点数」，见第四节）；
-> - v4：新增 `VAL` 事件（**血量 / 理智**，见第四节），结构体多了 4 个偏移，
->   所以魔数改为 **FBW3**、`log_ring` 偏移 **1060**、总大小 **132132**。
+> - v4：新增 `VAL` 事件（**血量 / 理智**，见第四节），结构体多了 4 个偏移；
+> - v5：新增 `BUF` 事件（**buff**）+ 配置末尾的 **关注 buff 表**，又多了 4 个偏移
+>   → 魔数 **FBW4**、`log_ring` 偏移 **1076**、总大小 **132408**。
 
 ```
 游戏进程                                      成就监测进程（Python）
@@ -75,7 +76,7 @@ DLL 会写 `WARN prologue check skipped`）。
 
 ---
 
-## 三、共享内存协议（v2，v4 起魔数 FBW3）
+## 三、共享内存协议（v5，魔数 FBW4）
 
 - 名字 `Local\FaustLauncher_BattleWatch`，魔数 `0x33574246`（"FBW3"；v2 是 FBW2）
 - 结构体 `BW_CONFIG` ↔ `battle_watch.py` 的 `BWConfig`：`log_ring` 偏移 **1060**、
@@ -131,6 +132,10 @@ DLL 会写 `WARN prologue check skipped`）。
 | `state_hp` | `CharacterState::_hp`（ObscuredInt） | `0x148` |
 | `state_max_hp` | `CharacterState::_maxHp`（ObscuredInt） | `0x11C` |
 | `state_mp` | `CharacterState::_mp`（ObscuredInt，**理智/SP**） | `0x158` |
+| `unit_buff_detail` | `BattleUnitModel::_buffDetail`（→ `BuffDetail*`） | `0xE0` |
+| `buff_detail_list` | `BuffDetail::_grantedBuffList`（`List<BuffModel>`） | `0x10` |
+| `buff_model_data` | `BuffModel::_buffData`（→ `BuffStaticData*`） | `0x68` |
+| `buff_static_id` | `BuffStaticData::id`（**string**） | `0x18` |
 | `action_skill` | `BattleActionModel::_skill`（→ SkillModel） | `0x20` |
 | `action_commander_id` | `BattleActionModel::_commanderInstanceID` | `0xB4` |
 | `action_actor_id` | `BattleActionModel::_orderedActionActorInstanceId` | `0xBC` |
@@ -145,6 +150,19 @@ DLL 会写 `WARN prologue check skipped`）。
 > `_maxMp = 45` / `_minMp = -45` 正好就是它的上下限，负数 = 陷入恐慌。
 > 读不出来一律发 `BW_VITAL_UNREAD(-1000)`，绝不会被误当成“真的负数理智”。
 > DLL 内按 `(单位指针, hp, mp)` 去重，只在上报值变化时发 `VAL`（否则一枚硬币一行）。
+
+> **buff（v5）**：链子是
+> `unit[0xE0] → BuffDetail[0x10] → List<BuffModel>`，每个
+> `BuffModel[0x68] → BuffStaticData[0x18]` 是一个 **字符串 id**
+> （如 `HanafudaTwo` = 组札-芒上月、`FutureEyeOnRodion` = 预知眼，与
+> `Lang/LLC_zh-CN/Bufs.json` 的 `id` 一致）。
+> il2cpp 容器布局是固定的（不放配置）：`List<T>` → items@0x10 / size@0x18；
+> 数组元素从 `+0x20` 开始（每个 8 字节）；`string` → 长度@0x10、utf16 字符@0x14。
+>
+> 跨进程传名字太占地方，所以配置里带一张**关注 buff 表**
+> （`buff_watch_count` + `buff_watch_hashes[32]`，Python 写入名字的 **FNV-1a 64**）；
+> DLL 只上报“命中了关注表第几位”的位掩码 `m`，而且**没配关注表时连 buff 链都不读**。
+> 两边必须用同一个哈希（自检里有专门的 C 编译对照项）。
 
 `SkillDataModel` 的这两个字段是 **ACTk（Anti-Cheat Toolkit）混淆类型 `ObscuredInt`**：
 
@@ -188,14 +206,26 @@ battle_watch.py（驱动）
 
 | kind | 看的事件 | 命中条件 | 何时置位 |
 |---|---|---|---|
-| ``skill`` | ``ACT`` | ``skill_ids``，或（``identity_ids``+``tiers``）拼出的技能 ID，或（``gated_skill_ids`` 且 actor 身份匹配） | 回合边界结算 |
+| ``skill`` | ``ACT`` | ``skill_ids``，或（``identity_ids``+``tiers``）拼出的技能 ID，或（``gated_skill_ids`` 且 actor 身份匹配），或 ``any_skill``（只看身份） | **技能动画结束**（收尾事件 ``action_done_with_action``/``action_on_end_turn``，或 1.5s 静默期；回合边界兼着兜底） |
 | ``speed`` | ``SPD`` | 身份命中且 ``fields``（默认全部速度字段）里任一 == ``threshold`` | 立刻（边界兜底） |
 | ``mental`` | ``VAL`` | 身份命中且 ``mp < threshold`` | 立刻（边界兜底） |
 | ``hp`` | ``VAL`` | 身份命中且 ``hp < mhp * ratio`` | 立刻（边界兜底） |
+| ``buff`` | ``BUF`` | 身份命中且身上有目标 buff（名字哈希对关注表） | 立刻（边界兜底） |
+| ``presence`` | ``VAL``/``SPD``/``BUF`` | 目标身份出现在单位表里（“在场上”） | 立刻（边界兜底） |
 
-“立刻”类全走同一个求值器（``BattleWatch._eval_immediate_locked``）。
+部分类型还支持 **回合窗口** ``max_round`` / ``min_round``（0 = 不限）：例如
+「首个回合身上带着某 buff」就用 ``max_round=1``。
 
-当前五个战斗类成就的数据（全部写在各自模块里，驱动只是“照数办事”）：
+“立刻”类全走同一个求值器（``BattleWatch._eval_immediate_locked``）；技能类走
+``settle_turn()``，调用时机是**技能动画结束**（收尾事件 / 静默期），不再是回合边界 ——
+否则一个技能要等到整回合结束才报，玩家已经看不到因果关系了。
+
+复合成就主类 ``CompositeAchievement`` 把多条规则按任意组合拼起来：
+``require``（``and/or/not`` 表达式）、``chain``（顺序约束）、``implied``（“完成 1 也算完成 2”），
+并且支持 ``state_only=True`` 的**状态条件**（如“场上是否存在某身份”——他在场是状态，
+不该当成事件先后）。
+
+当前七个战斗类成就的数据（全部写在各自模块里，驱动只是“照数办事”）：
 
 | 成就 | 文件 | 基类 | 数据 |
 |---|---|---|---|
@@ -204,21 +234,43 @@ battle_watch.py（驱动）
 | 仿造的一生 | `data/ach_index_furioso.py` | `SkillUseAchievement` | 身份 `10115` + 技能 `1011505/1011503` + 受控 ID `134711/138010/955110` |
 | 魔法少女的悲剧 | `data/ach_magical_girl_tragedy.py` | `MentalThresholdAchievement` | 身份 `10913`/`10312` + `threshold=0` |
 | 神也会受伤吗？ | `data/ach_heathcliff_sunshower_hurt.py` | `DamageTakenAchievement` | 身份 `10705` + `ratio=1.0` |
+| 这他妈的烂牌！ | `data/ach_custom_examples.py` | `BuffPresentAchievement` | 身份 `10813` + buff `HanafudaTwo` + `max_round=1` |
+| 心脏，心脏！ | `data/ach_custom_examples.py` | `CompositeAchievement` | 10916 用技能 → 10916 带 `FutureEyeOnRodion` → 场上存在 `10716`（带顺序约束） |
+
+> 最后两个在**同一个文件**里 —— 注册时会把模块里所有 ``BaseAchievement`` 子类
+> 按定义顺序自动实例化，所以一个文件写多个人格/系列成就不用逐个去登记。
 
 ### 自定义成就怎么写
 
 ```python
 from functions.achievement.battle_achievements import (
-    SkillUseAchievement, SpeedValueAchievement,
+    SkillUseAchievement, SpeedValueAchievement, BuffPresentAchievement,
+    FieldPresenceAchievement, CompositeAchievement, Condition,
     MentalThresholdAchievement, DamageTakenAchievement)
 
+# 1) 单条件：身份 10115 用了三技能
 class MyAchievement(SkillUseAchievement):
     def __init__(self):
         super().__init__(ach_id="ach_my", name="我的成就", description="…",
                          identity_id=10115, tiers=(3,), rarity="legendary")
+
+# 2) 复合：先 A 再 B，且场上要有 C（C 是状态条件）
+class MyCombo(CompositeAchievement):
+    def __init__(self):
+        a = Condition("a", battle_watch.BattleRule(key="ach_my.a", kind="skill",
+                                                   identity_ids=(10916,), any_skill=True))
+        b = Condition("b", battle_watch.BattleRule(key="ach_my.b", kind="buff",
+                                                   identity_ids=(10916,),
+                                                   buffs=("FutureEyeOnRodion",)))
+        c = Condition("c", battle_watch.BattleRule(key="ach_my.c", kind="presence",
+                                                   identity_ids=(10716,)), state_only=True)
+        super().__init__(ach_id="ach_my_combo", name="…", description="…",
+                         conditions=(a, b, c), chain=("a", "b"),
+                         require="a and b and c")
 ```
 
-然后把类名 append 到 ``functions/achievement/achievements.py`` 的 ``_battle_achievements``
+同一个文件里可以写多个派生类；然后只需把**模块名**加到
+``functions/achievement/achievements.py`` 的 ``_battle_achievement_modules``
 元组（一行）。身份/技能/阈值/比例全是构造参数，**不需要碰 DLL，也不可能需要碰驱动**。
 
 ---
@@ -281,6 +333,8 @@ python test\battle_watch_test.py
 |---|---|
 | 心跳里所有钩子命中数都是 0 | 这些函数当前没被调用（v1 就是这个）→ 把心跳那段日志发我，或跑 `--probe` 看钩子表 |
 | 速度/理智/血量没反应 | 先看 `logs/battle_watch.log` 里有没有对应的 `SPD`/`VAL` 行：没有就是钩子没命中或字段偏移不对；有但 `mp=-1000`/`hp=-1000` 就是 `_state` 读失败（看第四节） |
+| buff 成就没反应 | 1) `logs/achievement_hook.log` 启动时应有一行「关注 buff N 个: …」——没有就说明 `battle_watch.watched_buff_names()` 是空的（成就没登记 / 没在模块列表里）；2) `logs/battle_watch.log` 里搜 `BUF`：有行但掩码 `m=0` 就是哈希对不上（改过 C 或 Python 的 fnv1a64？自检里有 C/Python 对照项）；根本没 `BUF` 行就是 buff 链偏移不对（链见第四节） |
+| 启动后整台机器卡顿 | 一般是**游戏更新后的索引重建**（capstone 解密 + Il2CppDumper，满核 1~2 分钟），不是观测本身。启动器已把 hook 子进程改成 `BELOW_NORMAL_PRIORITY_CLASS`（不再抢桌面），弹窗空闲时也不 60fps 空转 |
 | 成就日志里看不到战斗事件 | 正常：事件默认只进 `logs/battle_watch.log`；要一起看就打开设置项「成就日志记录全部战斗事件」 |
 | `ERR prologue mismatch` / `last_error=3` | 游戏更新了而索引没重建：`python -m functions.hook.main update` 后重启游戏 |
 | `打开游戏进程失败` | 游戏以更高权限启动过（例如 Steam 用管理员启动）；用管理员权限跑启动器 |

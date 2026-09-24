@@ -75,13 +75,30 @@ from dataclasses import dataclass, field
 
 # --------------------------------------------------------------------------- 协议常量
 
-BW_MAGIC = 0x33574246            # "FBW3"（v2=FBW2；v3 加了血量/理智字段偏移 → 布局变了）
+BW_MAGIC = 0x34574246            # "FBW4"（v3 加血量/理智，v5 加 buff 偏移与关注表）
 MAP_NAME = "Local\\FaustLauncher_BattleWatch"
 LOG_RING_CAP = 512
 LOG_LINE_MAX = 255
 MAX_HOOKS = 12
 HOOK_NAME_LEN = 40
 TARGET_PROCESS = "LimbusCompany.exe"
+
+# 关注 buff 表大小（与 C 端 BW_BUFF_WATCH_MAX 一致）
+BUFF_WATCH_MAX = 32
+
+
+def fnv1a64(text) -> int:
+    """FNV-1a 64 哈希（与 C 端 fnv1a64 逐位一致）—— 用于把 buff 名写进关注表。
+
+    buff 的 id 是字符串（如 ``HanafudaTwo`` / ``FutureEyeOnRodion``），
+    跨进程传名字太占空间，所以两边用同一个哈希对身份。
+    """
+    data = text.encode("utf-8", "replace") if isinstance(text, str) else bytes(text)
+    h = 0xCBF29CE484222325
+    for byte in data:
+        h ^= byte
+        h = (h * 0x100000001B3) & 0xFFFFFFFFFFFFFFFF
+    return h
 
 # 钩子 kind（必须与 battle_watch.c 的 BWK_* 一致）
 KIND_PLAIN = 0        # void (self, mi)                                   → RND
@@ -155,9 +172,13 @@ RULE_KIND_SKILL = "skill"
 RULE_KIND_SPEED = "speed"
 RULE_KIND_MENTAL = "mental"
 RULE_KIND_HP = "hp"
-RULE_KINDS = (RULE_KIND_SKILL, RULE_KIND_SPEED, RULE_KIND_MENTAL, RULE_KIND_HP)
-# “观测到就立刻置位”的类型（skill 类走回合边界结算，单独一条路）
-RULE_KINDS_IMMEDIATE = (RULE_KIND_SPEED, RULE_KIND_MENTAL, RULE_KIND_HP)
+RULE_KIND_BUFF = "buff"        # 目标身份身上有指定 buff（BUF 事件，立刻）
+RULE_KIND_PRESENCE = "presence"  # 目标身份在场上（由单位表推出，立刻）
+RULE_KINDS = (RULE_KIND_SKILL, RULE_KIND_SPEED, RULE_KIND_MENTAL, RULE_KIND_HP,
+              RULE_KIND_BUFF, RULE_KIND_PRESENCE)
+# “观测到就立刻置位”的类型（skill 类走「技能动画结束」结算，单独一条路）
+RULE_KINDS_IMMEDIATE = (RULE_KIND_SPEED, RULE_KIND_MENTAL, RULE_KIND_HP,
+                        RULE_KIND_BUFF, RULE_KIND_PRESENCE)
 
 
 @dataclass(frozen=True)
@@ -183,10 +204,28 @@ class BattleRule:
     threshold: int = 0                        # mental：mp < threshold；speed：速度 == threshold
     ratio: float = 1.0                        # hp：hp < mhp * ratio
     fields: tuple[str, ...] = ()              # speed：看哪几个速度字段（空 = SPEED_FIELD_ORDER）
+    buffs: tuple[str, ...] = ()               # buff：要看的 buff 名（Bufs.json 的 id，如 "HanafudaTwo"）
+    any_skill: bool = False                   # skill："用了任意技能"（只看身份，不看具体技能）
+    max_round: int = 0                        # 只在第 max_round 回合及以前生效（0 = 不限）
+    min_round: int = 0                        # 从第 min_round 回合开始生效（0 = 不限）
+
+    # 回合窗口（0 = 不限制）。"首个回合"就用 max_round=1。
+    def round_ok(self, round_seq: int) -> bool:
+        if self.max_round and round_seq > self.max_round:
+            return False
+        if self.min_round and round_seq < self.min_round:
+            return False
+        return True
 
     # 匹配
-    def match_skill(self, skid: int, actor_oid: int) -> bool:
-        """技能 ID / 技能身份槽位 / 受控技能 ID 三种写法任一命中。"""
+    def match_skill(self, skid: int, actor_oid: int, round_seq: int = 0) -> bool:
+        """技能命中：``skill_ids`` / 身份+槽位 / 受控 ID / ``any_skill`` 任一。"""
+        if not self.round_ok(round_seq):
+            return False
+        if self.any_skill:
+            if actor_oid in self.identity_ids:
+                return True
+            return bool(skid is not None and skid >= 0 and (skid // 100) in self.identity_ids)
         if skid is not None and skid >= 0:
             if skid in self.skill_ids:
                 return True
@@ -195,6 +234,24 @@ class BattleRule:
             if skid in self.gated_skill_ids and actor_oid in self.identity_ids:
                 return True
         return False
+
+    def match_buff(self, oid: int, names: set, round_seq: int = 0) -> tuple:
+        """buff 命中：返回 ``(是否命中, 命中的 buff 名)``。
+
+        ``names`` 是该单位当前身上（且在关注表里的）buff 名集合；
+        ``max_round`` 可实现"首个回合开始时是否带某 buff"这类需求。
+        """
+        if self.kind != RULE_KIND_BUFF or oid not in self.identity_ids:
+            return False, ()
+        if not self.round_ok(round_seq):
+            return False, ()
+        hit = tuple(n for n in self.buffs if n in names)
+        return bool(hit), hit
+
+    def match_presence(self, oid: int, round_seq: int = 0) -> bool:
+        """场上存在该身份（``kind="presence"``）。"""
+        return (self.kind == RULE_KIND_PRESENCE and oid in self.identity_ids
+                and self.round_ok(round_seq))
 
     def match_vitals(self, oid: int, hp: int, mhp: int, mp: int) -> bool:
         """血量/理智类的命中判定（``oid`` 不在目标身份里一律不命中）。
@@ -231,6 +288,12 @@ class BattleRule:
             return f"血量 < 最大血量的 {self.ratio:.0%}"
         if self.kind == RULE_KIND_SPEED:
             return f"速度 == {self.threshold}"
+        if self.kind == RULE_KIND_BUFF:
+            return f"身上有 buff {'/'.join(self.buffs)}"
+        if self.kind == RULE_KIND_PRESENCE:
+            return "在场上"
+        if self.any_skill:
+            return "使用了任意技能"
         return "技能命中"
 
 
@@ -239,11 +302,19 @@ _rules_lock = threading.Lock()
 
 
 def register_rule(rule) -> BattleRule:
-    """登记一条判定规则（重复 key 以最后一次为准）。支持传 dict。"""
+    """登记一条判定规则（重复 key 以最后一次为准）。支持传 dict。
+
+    登记后会把「buff 类规则用到的 buff 名」同步到关注表（驱动侧读它决定要不要
+    去看 buff 链）—— 所以成就构造完就不需要额外操作。
+    """
     if isinstance(rule, dict):
         rule = BattleRule(**rule)
     with _rules_lock:
         _rules[rule.key] = rule
+    try:
+        _sync_buff_watch()
+    except Exception:
+        pass
     return rule
 
 
@@ -258,13 +329,40 @@ def clear_rules() -> None:
 
 
 def watched_identities() -> set[int]:
-    """所有规则里出现过的目标身份（状态文件只保留这些单位的血量/理智）。"""
+    """所有规则里出现过的目标身份（状态文件只保留这些单位的血量/理智/buff）。"""
     with _rules_lock:
         rules = list(_rules.values())
     ids: set[int] = set()
     for rule in rules:
         ids.update(rule.identity_ids)
     return ids
+
+
+def watched_buff_names() -> tuple[str, ...]:
+    """所有 buff 类规则用到的 buff 名（稳定排序）。
+
+    关注表的第 i 位就是这个 tuple 的第 i 项 → DLL 发的位掩码能直接映射回名字。
+    """
+    with _rules_lock:
+        rules = list(_rules.values())
+    names: list[str] = []
+    for rule in rules:
+        if rule.kind == RULE_KIND_BUFF:
+            for name in rule.buffs:
+                if name and name not in names:
+                    names.append(name)
+    names.sort()
+    return tuple(names[:BUFF_WATCH_MAX])
+
+
+def _sync_buff_watch() -> tuple[str, ...]:
+    """把关注 buff 名（FNV-1a 64）写进共享内存关注表；没配就写 0。"""
+    names = watched_buff_names()
+    with _watch_lock:
+        watch = _watch
+    if watch is not None:
+        watch.sync_buff_watch(names)
+    return names
 
 
 def rule_hit(key: str) -> str | None:
@@ -275,9 +373,32 @@ def rule_hit(key: str) -> str | None:
         return None
     return watch.rule_detail(key)
 
+
+def rule_order(key: str) -> int:
+    """规则命中的先后序号（越小越早；未命中返回 0）。"""
+    with _watch_lock:
+        watch = _watch
+    if watch is None:
+        return 0
+    return watch.rule_order(key)
+
+
+def rule_live(key: str) -> bool:
+    """按当前观测重新判一次规则（不置位；给复合成就的“状态条件”用）。"""
+    with _watch_lock:
+        watch = _watch
+    if watch is None:
+        return False
+    return watch.rule_live(key)
+
 # 回合边界信号：这些钩子的命中计数增加 = 新回合（或每单位回合开始的第一次）
 BOUNDARY_PREFERRED = ("manager_init", "manager_on_round_start_before")
 BOUNDARY_FALLBACK = ("unit_round_start",)
+
+# 「技能动画结束」的收尾事件（命中就立刻结算技能类规则，不再等到回合边界）
+ACTION_END_TAGS = ("action_done_with_action", "action_on_end_turn")
+# 静默期：事件停了这么久就当作动画放完（兜住收尾事件没被调到的技能）
+SKILL_SETTLE_QUIET_SEC = 1.5
 
 HEARTBEAT_SEC = 20.0
 STATUS_WRITE_SEC = 2.0
@@ -323,6 +444,11 @@ FALLBACK_FIELDS: dict[str, int] = {
     "state_hp": 0x148,            # CharacterState::_hp
     "state_max_hp": 0x11C,        # CharacterState::_maxHp
     "state_mp": 0x158,            # CharacterState::_mp（理智/SP，±45）
+    # buff 链（buff 的 id 是字符串，如 HanafudaTwo / FutureEyeOnRodion，与 Lang/Bufs.json 一致）
+    "unit_buff_detail": 0xE0,     # BattleUnitModel::_buffDetail → BuffDetail*
+    "buff_detail_list": 0x10,     # BuffDetail::_grantedBuffList : List<BuffModel>
+    "buff_model_data": 0x68,      # BuffModel::_buffData → BuffStaticData*
+    "buff_static_id": 0x18,       # BuffStaticData::id : string
     "action_skill": 0x20,
     "action_commander_id": 0xB4,
     "action_actor_id": 0xBC,
@@ -362,6 +488,10 @@ class BWConfig(ctypes.Structure):
         ("off_state_hp", ctypes.c_int32),
         ("off_state_max_hp", ctypes.c_int32),
         ("off_state_mp", ctypes.c_int32),
+        ("off_unit_buff_detail", ctypes.c_int32),
+        ("off_buff_detail_list", ctypes.c_int32),
+        ("off_buff_model_data", ctypes.c_int32),
+        ("off_buff_static_id", ctypes.c_int32),
         ("off_action_skill", ctypes.c_int32),
         ("off_action_commander_id", ctypes.c_int32),
         ("off_action_actor_id", ctypes.c_int32),
@@ -379,6 +509,9 @@ class BWConfig(ctypes.Structure):
         ("last_log", ctypes.c_char * 128),
         ("log_head", ctypes.c_int32),
         ("log_ring", (ctypes.c_char * (LOG_LINE_MAX + 1)) * LOG_RING_CAP),
+        # 关注 buff 表（在结构体末尾：ring 偏移不变，只让总大小变）
+        ("buff_watch_count", ctypes.c_int32),
+        ("buff_watch_hashes", ctypes.c_uint64 * BUFF_WATCH_MAX),
     ]
 
 
@@ -527,14 +660,18 @@ class BattleState:
     units: dict = field(default_factory=dict)        # instanceID → originID
     speeds: dict = field(default_factory=dict)       # instanceID → {oid,os,ow,its,eff,os_raw,ow_raw}
     vitals: dict = field(default_factory=dict)       # instanceID → {oid,hp,mhp,mp,tag,round}
+    buffs: dict = field(default_factory=dict)        # instanceID → {oid,mask,names,tag,round}
     skills: list = field(default_factory=list)       # 本回合 ACTION 事件（未结算）
     flags: dict = field(default_factory=dict)        # 规则 key → 命中详情（含本回合已结算的）
+    flag_seq: dict = field(default_factory=dict)     # 规则 key → 命中序号（复合成就判“先后顺序”用）
     pending_flags: dict = field(default_factory=dict)  # 技能类规则本回合待结算：key → 详情
     acts_total: int = 0
     spd_total: int = 0
     vitals_total: int = 0
+    buff_total: int = 0
     rnd_total: int = 0
     settled_by: str = ""
+    flag_counter: int = 0
 
     def snapshot(self) -> dict:
         """状态文件内容：全部由规则表驱动，不含任何成就专属字段。"""
@@ -543,6 +680,8 @@ class BattleState:
                   if not watched or info.get("oid") in watched}
         vitals = {iid: info for iid, info in self.vitals.items()
                   if not watched or info.get("oid") in watched}
+        buffs = {iid: info for iid, info in self.buffs.items()
+                 if not watched or info.get("oid") in watched}
         return {
             "round_seq": self.round_seq,
             "units": len(self.units),
@@ -557,9 +696,13 @@ class BattleState:
                             "threshold": rule.threshold_text()}
                       for key, rule in sorted(registered_rules().items())},
             "rule_hits": dict(self.flags),
+            "rule_order": dict(self.flag_seq),
             "rule_pending": sorted(self.pending_flags),
             "watched_speeds": speeds,
             "watched_vitals": vitals,
+            "watched_buffs": buffs,
+            "watched_buff_names": list(watched_buff_names()),
+            "buff_total": self.buff_total,
         }
 
 
@@ -720,6 +863,7 @@ class BattleWatch:
         self._status_logged: set[str] = set()
         self._last_hits: dict[str, int] = {}
         self._boundary_keys: set[str] = set()
+        self._last_event_ts = 0.0
         self._last_heartbeat = 0.0
         self._last_status_write = 0.0
         self._last_boundary_ts = 0.0
@@ -748,12 +892,15 @@ class BattleWatch:
     def running(self) -> bool:
         return bool(self._thread and self._thread.is_alive() and not self._stop.is_set())
 
-    def settle_turn(self, reason: str = "") -> list:
-        """回合结算：技能类规则置位 + 立刻类规则拿最后观测值兜底复核。
+    def settle_turn(self, reason: str = "", fallback_immediate: bool = True,
+                    only_skills: bool = False) -> list:
+        """结算：技能类规则置位（+ 立刻类规则拿最后观测值兜底复核）。
 
-        “兜底”的含义：本回合如果一条 VAL/SPD 都没来过（或成就登记得比观测晚），
-        就拿最后观测到的血量/理智/速度再按同一套规则跑一遍——
-        所以各类型共用同一条路径，避免每个成就自己一套。
+        调用时机：
+
+        - **技能动画结束**（``action_done_with_action`` / ``action_on_end_turn`` 事件），
+          以及一段静默期之后 —— ``settle_turn(reason, only_skills=True)``；
+        - **回合边界** —— 全量结算（含立刻类兜底复核）。
 
         返回本回合已结算的技能事件列表。注意：``_write_status`` 必须在**锁外**调用
         （它内部会 ``snapshot()`` 再拿同一把非重入锁）。
@@ -764,36 +911,101 @@ class BattleWatch:
             self.state.skills.clear()
             if pending:
                 self.state.settled_by = reason
-            # 技能类规则：本回合命中过的现在置位
+            # 技能类规则：命中过的现在置位
             for key, detail in list(self.state.pending_flags.items()):
                 self.state.pending_flags.pop(key, None)
                 if key in self.state.flags:
                     continue
-                self.state.flags[key] = detail
+                self._set_flag_locked(key, detail)
                 settled.append(detail)
-            suffix = f"{reason or '回合边界'}兜底"
-            # 立刻类规则（速度 / 理智 / 血量）：统一拿最后一次观测复核
-            for info in list(self.state.vitals.values()):
-                settled += self._eval_immediate_locked(
-                    lambda rule, i=info: rule.match_vitals(
-                        i.get("oid", -1), i.get("hp", VITAL_UNREAD),
-                        i.get("mhp", VITAL_UNREAD), i.get("mp", VITAL_UNREAD)),
-                    lambda rule, i=info: self._vitals_detail(rule, i, suffix))
-            for speeds in list(self.state.speeds.values()):
-                oid = speeds.get("oid", -1)
-                settled += self._eval_immediate_locked(
-                    lambda rule, o=oid, s=speeds: rule.match_speed(o, s)[0],
-                    lambda rule, o=oid, s=speeds: self._speed_detail(rule, o, s, suffix))
+            if fallback_immediate:
+                suffix = f"{reason or '回合边界'}兜底"
+                # 立刻类规则（速度/理智/血量/buff）：统一拿最后一次观测复核
+                for info in list(self.state.vitals.values()):
+                    settled += self._eval_immediate_locked(
+                        lambda rule, i=info: rule.match_vitals(
+                            i.get("oid", -1), i.get("hp", VITAL_UNREAD),
+                            i.get("mhp", VITAL_UNREAD), i.get("mp", VITAL_UNREAD)),
+                        lambda rule, i=info: self._vitals_detail(rule, i, suffix))
+                for speeds in list(self.state.speeds.values()):
+                    oid = speeds.get("oid", -1)
+                    settled += self._eval_immediate_locked(
+                        lambda rule, o=oid, s=speeds: rule.match_speed(o, s)[0],
+                        lambda rule, o=oid, s=speeds: self._speed_detail(rule, o, s, suffix))
+                for info in list(self.state.buffs.values()):
+                    names = set(info.get("names") or ())
+                    settled += self._eval_immediate_locked(
+                        lambda rule, i=info, n=names: rule.match_buff(
+                            i.get("oid", -1), n, self.state.round_seq)[0],
+                        lambda rule, i=info, n=names: self._buff_detail(rule, i, suffix, n))
+                settled += self._eval_presence_locked()
+        if only_skills and not settled and not pending:
+            return pending
         for detail in settled:
             self._log(f"[战斗观测] ★ {detail}")
         self._write_status(force=True)
         return pending
+
+    def settle_skills_if_quiet(self, reason: str = "技能动画结束（静默）") -> bool:
+        """静默期兜底：有待结算技能且距上次事件超过阈值 → 结算技能类规则。
+
+        动画结束时游戏不一定会调我们钩到的收尾函数（且不同技能收尾时机不一），
+        所以主循环每隔一小段就来看一眼：事件停了就当作“这一手的动画放完了”。
+        """
+        with self._lock:
+            if not self.state.pending_flags:
+                return False
+            quiet = time.time() - self._last_event_ts
+        if quiet < SKILL_SETTLE_QUIET_SEC:
+            return False
+        return bool(self.settle_turn(reason, fallback_immediate=False,
+                                     only_skills=True))
 
     def rule_detail(self, key: str) -> str | None:
         """规则是否命中；命中返回详情文本（未命中返回 None）。"""
         with self._lock:
             detail = self.state.flags.get(key)
         return detail or None
+
+    def rule_order(self, key: str) -> int:
+        """规则命中的先后序号（越小越早；未命中返回 0）—— 复合成就判顺序用。"""
+        with self._lock:
+            return int(self.state.flag_seq.get(key, 0))
+
+    def rule_live(self, key: str) -> bool:
+        """按**当前观测**重新判一次规则（不置位）—— 给复合成就的“状态条件”用。
+
+        例如“满足前面两步后，现在场上是否存在拇指子辈希斯克里夫”：这是一条**状态**
+        而不是事件顺序（他从第一回合就在场，不能因为记录得早而算顺序不对），
+        所以要在检查的那一刻拿单位表/观测快照来判。
+        """
+        rule = registered_rules().get(key)
+        if rule is None:
+            return False
+        with self._lock:
+            round_seq = self.state.round_seq
+            if rule.kind == RULE_KIND_PRESENCE:
+                return any(rule.match_presence(oid, round_seq)
+                           for oid in set(self.state.units.values()))
+            if rule.kind in (RULE_KIND_MENTAL, RULE_KIND_HP):
+                for info in self.state.vitals.values():
+                    if rule.match_vitals(info.get("oid", -1), info.get("hp", VITAL_UNREAD),
+                                         info.get("mhp", VITAL_UNREAD),
+                                         info.get("mp", VITAL_UNREAD)):
+                        return True
+                return False
+            if rule.kind == RULE_KIND_SPEED:
+                for info in self.state.speeds.values():
+                    if rule.match_speed(info.get("oid", -1), info)[0]:
+                        return True
+                return False
+            if rule.kind == RULE_KIND_BUFF:
+                for info in self.state.buffs.values():
+                    if rule.match_buff(info.get("oid", -1),
+                                       set(info.get("names") or ()), round_seq)[0]:
+                        return True
+                return False
+        return False
 
     def snapshot(self) -> dict:
         with self._lock:
@@ -1020,6 +1232,24 @@ class BattleWatch:
             self._log(f"[战斗观测] 抽取过慢，丢弃了 {dropped} 行事件（可调小轮询间隔）")
         return rows, head
 
+    # ---------------------------------------------------------- buff 关注表
+    def sync_buff_watch(self, names=()) -> None:
+        """把关注 buff 名（FNV-1a 64）写进共享内存关注表。
+
+        关注表下标 = ``watched_buff_names()`` 的下标（两边同一份排序）；
+        写 0 条时 DLL 会完全跳过 buff 链读取。
+        """
+        cfg = self._config()
+        if cfg is None:
+            return
+        names = tuple(names)[:BUFF_WATCH_MAX]
+        for i, name in enumerate(names):
+            cfg.buff_watch_hashes[i] = fnv1a64(name)
+        for i in range(len(names), BUFF_WATCH_MAX):
+            cfg.buff_watch_hashes[i] = 0
+        cfg.buff_watch_count = len(names)
+
+    # ---------------------------------------------------------- 事件处理
     def handle_line(self, line: str) -> BattleEvent | None:
         """解析并应用一行事件（测试可直接调用）。"""
         if not line:
@@ -1042,6 +1272,8 @@ class BattleWatch:
                           f"`python -m functions.hook.main update` 再重启游戏")
             return event
         self._event(line)
+        with self._lock:
+            self._last_event_ts = time.time()
         if self.verbose:
             self._log(f"[战斗观测] 事件 {line}")
         if kind == "RND":
@@ -1053,6 +1285,8 @@ class BattleWatch:
             self._apply_spd(event)
         elif kind == "VAL":
             self._apply_vitals(event)
+        elif kind == "BUF":
+            self._apply_buffs(event)
         elif kind == "ACT":
             self._apply_act(event)
         return event
@@ -1089,6 +1323,7 @@ class BattleWatch:
             hits = self._eval_immediate_locked(
                 lambda rule: rule.match_speed(oid, speeds)[0],
                 lambda rule: self._speed_detail(rule, oid, speeds, event.tag))
+            hits += self._eval_presence_locked()
         for detail in hits:
             self._log(f"[战斗观测] ★ {detail}")
         if event.get("iid", -1) < 0 and event.get("oid", -1) < 0:
@@ -1130,14 +1365,19 @@ class BattleWatch:
             self.state.skills.append(record)
             if len(self.state.skills) > 64:
                 self.state.skills = self.state.skills[-64:]
-            # 技能类规则：命中先记在本回合待结算表（回合边界才置位）
-            # 技能命中不写进成就日志（事件流在 battle_watch.log），置位时统一写 ★
+            # 技能类规则：命中先记入待结算表；**不在这里置位** ——
+            # 等到「技能动画结束」（收尾事件或静默期）或回合边界才结算。
+            round_seq = self.state.round_seq
             for key, rule in registered_rules().items():
                 if rule.kind != RULE_KIND_SKILL or key in self.state.flags:
                     continue
-                if rule.match_skill(record["skid"], actor_oid):
+                if rule.match_skill(record["skid"], actor_oid, round_seq):
                     self.state.pending_flags.setdefault(
                         key, self._skill_detail(rule, record, "待结算"))
+        # 动画结束的收尾事件（不同技能收尾时机不一，钩到的这两个都当结束信号）
+        if event.tag in ACTION_END_TAGS:
+            self.settle_turn(f"技能动画结束({event.tag})", fallback_immediate=False,
+                             only_skills=True)
 
     def _apply_vitals(self, event: BattleEvent) -> None:
         """血量 / 理智事件：交给规则表（``kind="mental"/"hp"``，立刻置位）。
@@ -1162,16 +1402,25 @@ class BattleWatch:
             hits = self._eval_immediate_locked(
                 lambda rule: rule.match_vitals(oid, hp, mhp, mp),
                 lambda rule: self._vitals_detail(rule, info, event.tag))
+            hits += self._eval_presence_locked()
         for detail in hits:
             self._log(f"[战斗观测] ★ {detail}")
 
     # ---------------------------------------------------------- 规则求值与详情文本
+    def _set_flag_locked(self, key: str, detail: str) -> None:
+        """置位一条规则（已持有锁）。同时记下命中序号，供复合成就判先后顺序。"""
+        if key in self.state.flags:
+            return
+        self.state.flag_counter += 1
+        self.state.flags[key] = detail
+        self.state.flag_seq[key] = self.state.flag_counter
+
     def _eval_immediate_locked(self, match_fn, detail_fn) -> list[str]:
         """非技能类规则的**统一求值器**（调用方必须已持有 ``self._lock``）。
 
         ``match_fn(rule)`` 决定是否命中，``detail_fn(rule)`` 生成详情；
         命中就写进 ``state.flags``（同一规则只置位一次）。
-        理智 / 血量 / 速度 都走这一条路——加新类型时不用改这里。
+        速度 / 理智 / 血量 / buff / 在场 都走这一条路——加新类型时不用改这里。
         """
         hits: list[str] = []
         for key, rule in registered_rules().items():
@@ -1179,9 +1428,55 @@ class BattleWatch:
                 continue
             if match_fn(rule):
                 detail = detail_fn(rule)
-                self.state.flags[key] = detail
+                self._set_flag_locked(key, detail)
                 hits.append(detail)
         return hits
+
+    def _eval_presence_locked(self) -> list[str]:
+        """presence 类规则：目标身份出现在已观测到的单位表里就算命中。"""
+        if not self.state.units:
+            return []
+        round_seq = self.state.round_seq
+        oids = set(self.state.units.values())
+        return self._eval_immediate_locked(
+            lambda rule: any(rule.match_presence(oid, round_seq) for oid in oids),
+            lambda rule: self._presence_detail(rule))
+
+    def _presence_detail(self, rule) -> str:
+        oid = next((o for o in self.state.units.values() if o in rule.identity_ids), -1)
+        return (f"第 {self.state.round_seq} 回合 {rule.label or rule.key} 在场上"
+                f"（oid={oid}，目标 {'/'.join(str(i) for i in rule.identity_ids)}）")
+
+    def _apply_buffs(self, event: BattleEvent) -> None:
+        """buff 事件：位掩码 → 关注表里的 buff 名集合 → 交给规则表（立刻置位）。"""
+        iid = event.get("iid", -1)
+        oid = event.get("oid", -1)
+        mask = event.get("m", 0)
+        names = watched_buff_names()
+        present = {names[i] for i in range(min(len(names), BUFF_WATCH_MAX))
+                   if mask & (1 << i)}
+        info = {"oid": oid, "mask": mask, "names": sorted(present),
+                "tag": event.tag, "round": self.state.round_seq}
+        hits: list[str] = []
+        with self._lock:
+            self.state.buff_total += 1
+            if iid >= 0:
+                self.state.buffs[iid] = info
+                if oid > 0:
+                    self.state.units[iid] = oid
+            round_seq = self.state.round_seq
+            hits = self._eval_immediate_locked(
+                lambda rule: rule.match_buff(oid, present, round_seq)[0],
+                lambda rule: self._buff_detail(rule, info, event.tag, present))
+            hits += self._eval_presence_locked()
+        for detail in hits:
+            self._log(f"[战斗观测] ★ {detail}")
+
+    def _buff_detail(self, rule, info: dict, tag: str, present: set) -> str:
+        hit, names = rule.match_buff(info.get("oid", -1), present, self.state.round_seq)
+        return (f"第 {self.state.round_seq} 回合 {rule.label or rule.key} "
+                f"身上有 buff {'/'.join(names)}（看 {'/'.join(rule.buffs)}；"
+                f"oid={info.get('oid', -1)} via {tag}）")
 
     def _skill_detail(self, rule: BattleRule, record: dict, reason: str) -> str:
         label = rule.label or rule.key
@@ -1255,8 +1550,12 @@ class BattleWatch:
             self._phase = "写配置失败"
             log("[战斗观测] 写入共享内存配置失败")
             return
+        # 关注 buff 表：成就侧登记了 buff 规则才写（没登记时 DLL 连 buff 链都不读）
+        names = watched_buff_names()
+        self.sync_buff_watch(names)
+        if names:
+            log(f"[战斗观测] 关注 buff {len(names)} 个: {'/'.join(names)}")
         self._write_status(force=True)
-
         pid = None
         waited = 0.0
         while not self._stop.is_set():
@@ -1290,6 +1589,8 @@ class BattleWatch:
                 except Exception as exc:  # noqa: BLE001
                     log(f"[战斗观测] 事件解析失败: {line!r} {exc}")
             self._scan_hits(cfg)
+            # 技能类规则的“动画结束”兜底：事件停了 SKILL_SETTLE_QUIET_SEC 就结算
+            self.settle_skills_if_quiet()
             self._heartbeat()
             self._write_status()
             self._sleep(self.poll_interval)

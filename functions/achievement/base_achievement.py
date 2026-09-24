@@ -83,6 +83,15 @@ class MemoryAchievement(BaseAchievement):
         reader_factory: Callable[[], object],
         predicate: Callable[[int], bool],
     ):
+        """初始化内存成就。
+        
+        Args:
+            ach_id (str): 成就ID
+            name (str): 成就名称
+            description (str): 成就描述
+            reader_factory (Callable[[], object]): 内存读取器工厂函数
+            predicate (Callable[[int], bool]): 条件判断函数
+        """
         super().__init__(ach_id, name, description)
         self._reader_factory = reader_factory
         self._predicate = predicate
@@ -144,6 +153,15 @@ class BattleAchievement(BaseAchievement):
     
     def __init__(self, ach_id: str, name: str, description: str, 
                  target_count: int = 1, track_deaths: bool = True):
+        """初始化战斗成就。
+
+        Args:
+            ach_id (str): 成就ID
+            name (str): 成就名称
+            description (str): 成就描述
+            target_count (int, optional): 目标战斗次数。 Defaults to 1.
+            track_deaths (bool, optional): 是否追踪角色死亡。 Defaults to True.
+        """
         super().__init__(ach_id, name, description)
         self.target_count = target_count
         self.track_deaths = track_deaths
@@ -192,6 +210,14 @@ class SteamAchievement(BaseAchievement):
     """追踪Steam登录状态的成就。"""
     
     def __init__(self, ach_id: str, name: str, description: str, rarity: str = "common"):
+        """初始化Steam成就。
+
+        Args:
+            ach_id (str): 成就ID
+            name (str): 成就名称
+            description (str): 成就描述
+            rarity (str, optional): 稀有度。 Defaults to "common".
+        """
         super().__init__(ach_id, name, description, rarity)
 
     def check(self, steam_logged: bool = False) -> bool:
@@ -213,6 +239,15 @@ class CollectionAchievement(BaseAchievement):
     
     def __init__(self, ach_id: str, name: str, description: str, 
                  required_count: int, item_ids: list[int] | None = None):
+        """初始化收藏成就。
+
+        Args:
+            ach_id (str): 成就ID
+            name (str): 成就名称
+            description (str): 成就描述
+            required_count (int): 所需收藏数量
+            item_ids (list[int] | None, optional): 物品ID列表。 Defaults to None.
+        """
         super().__init__(ach_id, name, description)
         self.required_count = required_count
         self.item_ids = item_ids or []
@@ -253,6 +288,15 @@ class HiddenAchievement(BaseAchievement):
     
     def __init__(self, ach_id: str, name: str, description: str, 
                  check_func, hidden: bool = True):
+        """初始化隐藏成就。
+
+        Args:
+            ach_id (str): 成就ID
+            name (str): 成就名称
+            description (str): 成就描述
+            check_func (_type_): 检查函数
+            hidden (bool, optional): 是否隐藏成就。 Defaults to True.
+        """
         super().__init__(ach_id, name, description)
         self._check_func = check_func
         self.hidden = hidden

@@ -410,6 +410,14 @@ class ToastController:
         for i in range(n):
             self._active[i].set_slot(n - 1 - i)
 
+    def has_work(self) -> bool:
+        """是否还有弹窗要驱动（有活动卡片或有排队）。
+
+        主循环用它决定要不要 60fps 跑动画：没弹窗时降到 20Hz 惰性轮询，
+        监听线程空闲时几乎不占 CPU。
+        """
+        return bool(self._active) or not _toast_q.empty()
+
     def pump(self):
         try:
             # 一帧最多新建 1 个卡片：同时解锁好几个时不会把某一帧撑到几十毫秒
