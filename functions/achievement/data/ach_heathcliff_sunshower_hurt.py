@@ -17,7 +17,6 @@
 
 from __future__ import annotations
 
-from functions.achievement import battle_watch
 from functions.achievement.battle_achievements import DamageTakenAchievement
 
 
@@ -28,9 +27,9 @@ class HeathcliffSunshowerHurtAchievement(DamageTakenAchievement):
         super().__init__(
             ach_id="ach_heathcliff_sunshower_hurt",
             name="神也会受伤吗？",
-            description="希斯克利夫（脑叶公司E.G.O::狐雨）在战斗中受伤",
-            identity_ids=(battle_watch.IDENTITY_HEATHCLIFF_SUNSHOWER,),   # 10705
+            description="脑叶公司E.G.O::狐雨-希斯克里夫 在战斗中受到一次伤害。",
+            identity_ids=(10705,),
             ratio=1.0,
-            label="狐雨 希斯克利夫",
-            rarity="epic",
+            label="狐雨 希斯克里夫",
+            rarity="uncommon",
         )

@@ -1,4 +1,4 @@
-"""成就「呃啊，我腿瘸了」—— 浮士德-魁首 速度为 9。
+"""成就「呃啊，我脚崴了」—— 浮士德-魁首 速度为 9。
 
 判定链路（全部只读）：
 
@@ -37,10 +37,10 @@ class FaustKuiSpeedNineAchievement(BaseAchievement):
     def __init__(self) -> None:
         super().__init__(
             ach_id="ach_faust_kui_speed9",
-            name="呃啊，我腿瘸了",
-            description="浮士德-魁首 速度为 9",
+            name="呃啊，我脚崴了",
+            description="浮士德-魁首速度为 9。\n我缺的重投谁给我补啊！",
         )
-        self.rarity = "legendary"
+        self.rarity = "rare"
 
     def check(self) -> bool:
         if self.unlocked:

@@ -12,6 +12,7 @@ class AchSteam(SteamAchievement):
     def __init__(self):
         super().__init__(
             ach_id="ach_steam",
-            name="Steam玩家",
-            description="通过Steam登录游戏"
+            name="Steam 玩家",
+            description="通过 Steam 登录游戏",
+            rarity="common"
         )

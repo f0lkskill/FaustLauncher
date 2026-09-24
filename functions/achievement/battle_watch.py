@@ -89,16 +89,10 @@ KIND_NUMBERS = {"plain": KIND_PLAIN, "unit": KIND_UNIT,
 
 # --------------------------------------------------------------------------- 游戏数据
 
-IDENTITY_LCB_YISANG = 10101          # LCB 罪人 李箱
 IDENTITY_FAUST_KUISHOU = 10212       # 黑兽 - 卯 魁首 浮士德
-IDENTITY_YISANG_INDEX_PROXY = 10115  # 蜘蛛巢 食指 父辈 李箱（S3 层数=9 时转化为 Furioso-Replica）
 IDENTITY_RODION_DESPAIR_KNIGHT = 10913   # 脑叶公司E.G.O::泪锋之剑 罗佳（绝望骑士，魔法少女）
 IDENTITY_DON_QUIXOTE_HATRED_QUEEN = 10312  # 脑叶公司E.G.O::以爱与憎之名 堂吉诃德（憎恶女王）
-IDENTITY_HEATHCLIFF_SUNSHOWER = 10705     # 脑叶公司E.G.O::狐雨 希斯克利夫
 SKILL_LCB_YISANG_S3 = 1010103        # 李箱 LCB 三技能（skillId = 身份*100 + 槽位）
-SKILL_YISANG_INDEX_FURIOSO = 1011503  # 食指父辈李箱 三技能（同样变成 Furioso-Replica 的那个）
-# 转化后 / 敌方侧同名技能 ID（id 里不带身份，所以必须同时确认 actor 身份才认）
-FURIOSO_REPLICA_IDS = (134711, 138010, 955110)
 SPEED_TARGET = 9
 
 # 速度字段的单位（**关键**，2026-09-17 build 实测）：
@@ -177,7 +171,7 @@ class BattleRule:
     threshold: int = 0                        # kind=mental：mp < threshold
     ratio: float = 1.0                        # kind=hp：hp < mhp * ratio
 
-    # ------------------------------------------------------------ 匹配
+    # 匹配
     def match_skill(self, skid: int, actor_oid: int) -> bool:
         """技能 ID / 技能身份槽位 / 受控技能 ID 三种写法任一命中。"""
         if skid is not None and skid >= 0:
@@ -1124,7 +1118,7 @@ class BattleWatch:
                     self.state.pending_flags.setdefault(
                         key, self._skill_detail(rule, record, "待结算"))
         # 与两个成就相关的技能额外提醒
-        if record["skid"] == SKILL_LCB_YISANG_S3 or record["actor_oid"] == IDENTITY_LCB_YISANG:
+        if record["skid"] == SKILL_LCB_YISANG_S3 or record["actor_oid"] == 10101:
             self._log(f"[战斗观测] 行动完成: skid={record['skid']} slot={record['slot']} "
                       f"tier={record['tier']} actor={record['actor']} "
                       f"(oid={record['actor_oid']}) via {record['tag']}")

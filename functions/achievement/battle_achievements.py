@@ -43,7 +43,7 @@ class BattleRuleAchievement(BaseAchievement):
     battle_driven = True
 
     def __init__(self, ach_id: str, name: str, description: str,
-                 rules=(), rarity: str = "epic"):
+                 rules=(), rarity: str = "common"):
         """战斗事件类成就基类构造函数。
 
         注册 ``BattleRule`` 到 ``battle_watch``，``check()`` 只是读结果。
@@ -53,10 +53,9 @@ class BattleRuleAchievement(BaseAchievement):
             name (str): 名称
             description (str): 描述
             rules (tuple, optional): 规则列表。 Defaults to ().
-            rarity (str, optional): 稀有度。 Defaults to "epic".
+            rarity (str, optional): 稀有度。 Defaults to "common".
         """
-        super().__init__(ach_id, name, description)
-        self.rarity = rarity
+        super().__init__(ach_id, name, description, rarity)
         self.detail = ""                      # 命中详情（日志/界面用）
         # 登记规则（重复 key 以最后一次为准；成就模块可能被重复导入）
         self.rules = tuple(battle_watch.register_rule(rule) for rule in rules)
@@ -135,6 +134,19 @@ class MentalThresholdAchievement(BattleRuleAchievement):
     def __init__(self, *, ach_id: str, name: str, description: str,
                  identity_ids, threshold: int = 0, label: str = "",
                  rarity: str = "legendary"):
+        """战斗事件类成就基类构造函数。
+
+        注册 ``BattleRule`` 到 ``battle_watch``，``check()`` 只是读结果。
+
+        Args:
+            ach_id (str): 成就 ID
+            name (str): 名称
+            description (str): 描述
+            identity_ids (_type_): 身份
+            threshold (int, optional): 阈值。 Defaults to 0.
+            label (str, optional): 标签。 Defaults to "".
+            rarity (str, optional): 稀有度。 Defaults to "legendary".
+        """
         rule = battle_watch.BattleRule(
             key=ach_id,
             label=label or " / ".join(f"身份 {i}" for i in identity_ids),
@@ -155,7 +167,18 @@ class DamageTakenAchievement(BattleRuleAchievement):
 
     def __init__(self, *, ach_id: str, name: str, description: str,
                  identity_ids, ratio: float = 1.0, label: str = "",
-                 rarity: str = "epic"):
+                 rarity: str = "common"):
+        """初始化伤害承受成就。
+
+        Args:
+            ach_id (str): 成就ID
+            name (str): 成就名称
+            description (str): 成就描述
+            identity_ids (_type_): 身份IDs
+            ratio (float, optional): 血量占比阈值。 Defaults to 1.0.
+            label (str, optional): 标签。 Defaults to "".
+            rarity (str, optional): 稀有度。 Defaults to "common".
+        """
         rule = battle_watch.BattleRule(
             key=ach_id,
             label=label or " / ".join(f"身份 {i}" for i in identity_ids),

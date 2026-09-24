@@ -18,7 +18,6 @@ ObscuredInt）就是界面上的理智(SP)，同类的 ``_maxMp = 45`` / ``_minM
 
 from __future__ import annotations
 
-from functions.achievement import battle_watch
 from functions.achievement.battle_achievements import MentalThresholdAchievement
 
 
@@ -29,10 +28,10 @@ class MagicalGirlTragedyAchievement(MentalThresholdAchievement):
         super().__init__(
             ach_id="ach_magical_girl_tragedy",
             name="魔法少女的悲剧",
-            description="让任意一位魔法少女陷入负理智状态",
-            identity_ids=(battle_watch.IDENTITY_RODION_DESPAIR_KNIGHT,      # 10913 绝望骑士 罗佳
-                          battle_watch.IDENTITY_DON_QUIXOTE_HATRED_QUEEN),  # 10312 憎恶女王 堂吉诃德
+            description="让任意一位魔法少女陷入负理智状态。",
+            identity_ids=(10913,      # 10913 绝望骑士 罗佳
+                          10312),  # 10312 憎恶女王 堂吉诃德
             threshold=0,
             label="魔法少女（绝望骑士·罗佳 / 憎恶女王·堂吉诃德）",
-            rarity="legendary",
+            rarity="uncommon",
         )
