@@ -573,24 +573,400 @@ _kernel32.Process32FirstW.argtypes = [_HANDLE, ctypes.POINTER(PROCESSENTRY32W)]
 _kernel32.Process32NextW.argtypes = [_HANDLE, ctypes.POINTER(PROCESSENTRY32W)]
 
 
-def find_process_id(process_name: str = TARGET_PROCESS) -> int | None:
+# ============================================================================
+# 注入流程的基础设施：身份校验 / 挂起窗口 / 远端模块与 PE 身份回读
+# ============================================================================
+# 注入要同时保证三件事，任何一件不成立都会表现成“钩子没装上 / 事件全 0”：
+#   1) **注对进程**：这个 PID 的映像路径必须是配置里的 ``game_path\LimbusCompany.exe``
+#      （同名残留进程、别的副本、Steam 拉起的短命引导进程都要排除）；
+#   2) **注对时机**：在“进程线程挂起 / 游戏还没跑起来”的窗口里注入。进程本来就处于挂起态
+#      就直接借用；否则临时挂起它的全部线程，注入完只恢复我们自己加的那次挂起
+#      —— 这样注入是原子的，不可能因为“游戏已经跑起来”而漏掉早期观测点；
+#   3) **注对文件**：注入后回读远端模块表，确认加载的是这份 DLL 的完整路径
+#      （``LoadLibraryW`` 遇到同名已加载模块只会返回旧句柄，不会重新加载）。
+# 另外把“游戏 DLL（GameAssembly.dll）是不是最新那份”也校验掉：
+#   - 钩子表来源索引 vs 磁盘文件（``_check_index_freshness``）；
+#   - 进程内 GameAssembly.dll vs 磁盘文件（``_verify_gameassembly``）。
+TH32CS_SNAPTHREAD = 0x00000004
+TH32CS_SNAPMODULE = 0x00000008
+TH32CS_SNAPMODULE32 = 0x00000010
+THREAD_SUSPEND_RESUME = 0x0002
+PROCESS_QUERY_LIMITED = 0x1000
+SYNCHRONIZE = 0x00100000
+SUSPEND_FAILED = 0xFFFFFFFF
+GAME_STABLE_SECONDS = 1.0        # 与 resources/mod_loader/_internal/main.py 的判定约定一致
+MODULE_VERIFY_SECONDS = 5.0      # 注入后回读远端模块的上限
+GA_VERIFY_RETRY = 3              # 进程内 GameAssembly.dll 没枚举到时的重试次数
+PE_HEADER_BYTES = 0x400
+
+
+class THREADENTRY32(ctypes.Structure):
+    _fields_ = [
+        ("dwSize", wt.DWORD),
+        ("cntUsage", wt.DWORD),
+        ("th32ThreadID", wt.DWORD),
+        ("th32OwnerProcessID", wt.DWORD),
+        ("tpBasePri", ctypes.c_long),
+        ("tpDeltaPri", ctypes.c_long),
+        ("dwFlags", wt.DWORD),
+    ]
+
+
+class MODULEENTRY32W(ctypes.Structure):
+    _fields_ = [
+        ("dwSize", wt.DWORD),
+        ("th32ModuleID", wt.DWORD),
+        ("th32ProcessID", wt.DWORD),
+        ("GlblcntUsage", wt.DWORD),
+        ("ProccntUsage", wt.DWORD),
+        ("modBaseAddr", ctypes.c_void_p),
+        ("modBaseSize", wt.DWORD),
+        ("hModule", _HANDLE),
+        ("szModule", ctypes.c_wchar * 256),
+        ("szExePath", ctypes.c_wchar * 260),
+    ]
+
+
+_kernel32.Thread32First.argtypes = [_HANDLE, ctypes.POINTER(THREADENTRY32)]
+_kernel32.Thread32Next.argtypes = [_HANDLE, ctypes.POINTER(THREADENTRY32)]
+_kernel32.Module32FirstW.argtypes = [_HANDLE, ctypes.POINTER(MODULEENTRY32W)]
+_kernel32.Module32NextW.argtypes = [_HANDLE, ctypes.POINTER(MODULEENTRY32W)]
+_kernel32.OpenThread.restype = _HANDLE
+_kernel32.OpenThread.argtypes = [wt.DWORD, wt.BOOL, wt.DWORD]
+_kernel32.SuspendThread.argtypes = [_HANDLE]
+_kernel32.SuspendThread.restype = wt.DWORD
+_kernel32.ResumeThread.argtypes = [_HANDLE]
+_kernel32.ResumeThread.restype = wt.DWORD
+_kernel32.QueryFullProcessImageNameW.argtypes = [_HANDLE, wt.DWORD, ctypes.c_wchar_p,
+                                                 ctypes.POINTER(wt.DWORD)]
+_kernel32.ReadProcessMemory.argtypes = [_HANDLE, _LPVOID, _LPVOID, ctypes.c_size_t,
+                                        ctypes.POINTER(ctypes.c_size_t)]
+_kernel32.GetProcessTimes.argtypes = [_HANDLE, ctypes.POINTER(wt.FILETIME),
+                                      ctypes.POINTER(wt.FILETIME),
+                                      ctypes.POINTER(wt.FILETIME),
+                                      ctypes.POINTER(wt.FILETIME)]
+
+
+# 最近一次 dll_path() 的选择说明（多份候选同时存在时用来说清楚“注的是哪一份”）
+_DLL_CHOICE_NOTE = ""
+
+
+def _process_image_path(pid: int) -> str:
+    """进程映像的完整路径（不是命令行，也不受工作目录影响）。"""
+    proc = _kernel32.OpenProcess(PROCESS_QUERY_LIMITED, False, pid)
+    if not proc:
+        return ""
+    try:
+        size = wt.DWORD(1024)
+        buf = ctypes.create_unicode_buffer(1024)
+        if _kernel32.QueryFullProcessImageNameW(proc, 0, buf, ctypes.byref(size)):
+            return buf.value
+    except Exception:  # noqa: BLE001
+        pass
+    finally:
+        _kernel32.CloseHandle(proc)
+    return ""
+
+
+def _process_start_time(pid: int) -> int:
+    """进程创建时间（FILETIME 合成长整数；拿不到返回 0）。同名多进程时用它挑最新的。"""
+    proc = _kernel32.OpenProcess(PROCESS_QUERY_LIMITED, False, pid)
+    if not proc:
+        return 0
+    try:
+        created = wt.FILETIME()
+        empty = wt.FILETIME()
+        if _kernel32.GetProcessTimes(proc, ctypes.byref(created), ctypes.byref(empty),
+                                     ctypes.byref(empty), ctypes.byref(empty)):
+            return (int(created.dwHighDateTime) << 32) | int(created.dwLowDateTime)
+    except Exception:  # noqa: BLE001
+        pass
+    finally:
+        _kernel32.CloseHandle(proc)
+    return 0
+
+
+def _expected_game_exe() -> str:
+    """配置里那台游戏的可执行文件完整路径（拿不到返回空串 → 跳过身份校验）。"""
+    try:
+        from functions.hook.paths import game_paths
+        paths = game_paths()
+        root = str(getattr(paths, "root", "") or "")
+        if root:
+            return os.path.join(root, TARGET_PROCESS)
+    except Exception:  # noqa: BLE001
+        pass
+    return ""
+
+
+def _expected_gameassembly() -> str:
+    """配置里那台游戏的 GameAssembly.dll 路径（拿不到返回空串）。"""
+    try:
+        from functions.hook.paths import game_paths
+        return str(getattr(game_paths(), "gameassembly", "") or "")
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def _same_file(a: str, b: str) -> bool:
+    if not a or not b:
+        return False
+    try:
+        return os.path.normcase(os.path.abspath(a)) == os.path.normcase(os.path.abspath(b))
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def find_process_candidates(process_name: str = TARGET_PROCESS) -> list[tuple[int, str]]:
+    """所有同名进程的 ``(pid, 映像完整路径)`` 列表（不保证顺序）。"""
     wanted = process_name.lower()
     if not wanted.endswith(".exe"):
         wanted += ".exe"
     snapshot = _kernel32.CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0)
+    out: list[tuple[int, str]] = []
     if not snapshot or snapshot == -1:
-        return None
+        return out
     try:
         entry = PROCESSENTRY32W()
         entry.dwSize = ctypes.sizeof(PROCESSENTRY32W)
         ok = _kernel32.Process32FirstW(snapshot, ctypes.byref(entry))
         while ok:
             if str(entry.szExeFile).lower() == wanted:
-                return int(entry.th32ProcessID)
+                pid = int(entry.th32ProcessID)
+                out.append((pid, _process_image_path(pid)))
             ok = _kernel32.Process32NextW(snapshot, ctypes.byref(entry))
     finally:
         _kernel32.CloseHandle(snapshot)
-    return None
+    return out
+
+
+def select_game_process(process_name: str = TARGET_PROCESS) -> tuple[int | None, str, str]:
+    """挑出真正要注入的游戏进程。返回 ``(pid, 映像路径, 说明)``。
+
+    优先级：映像路径 == 配置的游戏 exe；同名多进程时取创建时间最新的那个。
+    """
+    expected = _expected_game_exe()
+    candidates = find_process_candidates(process_name)
+    if not candidates:
+        return None, "", ""
+    if expected:
+        for pid, image in candidates:
+            if image and _same_file(image, expected):
+                return pid, image, ""
+    if len(candidates) > 1:
+        candidates.sort(key=lambda item: _process_start_time(item[0]), reverse=True)
+        pid, image = candidates[0]
+        return pid, image, (f"发现 {len(candidates)} 个同名进程，取创建时间最新的 PID {pid}"
+                            f"（映像 {image or '未知'}）")
+    pid, image = candidates[0]
+    if expected and image and not _same_file(image, expected):
+        return pid, image, f"映像 {image} 与配置 {expected} 不一致（唯一同名进程，仍尝试注入）"
+    return pid, image, ""
+
+
+def find_process_id(process_name: str = TARGET_PROCESS) -> int | None:
+    """兼容旧入口：返回第一个同名进程 PID（``--probe``/``--status`` 用）。"""
+    candidates = find_process_candidates(process_name)
+    return candidates[0][0] if candidates else None
+
+
+def pid_alive_for(pid: int, seconds: float) -> bool:
+    """进程在 ``seconds`` 秒内是否一直存活（句柄判定，不受 PID 复用影响）。"""
+    handle = _kernel32.OpenProcess(SYNCHRONIZE, False, pid)
+    if not handle:
+        return False
+    try:
+        return _kernel32.WaitForSingleObject(handle, int(seconds * 1000)) == 0x00000102
+    finally:
+        _kernel32.CloseHandle(handle)
+
+
+def remote_modules(pid: int) -> list[tuple[str, str, int]]:
+    """目标进程已加载模块的 ``(模块名, 完整路径, 基址)``（失败返回空列表）。"""
+    snapshot = _kernel32.CreateToolhelp32Snapshot(TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32,
+                                                  pid)
+    out: list[tuple[str, str, int]] = []
+    if not snapshot or snapshot == -1:
+        return out
+    try:
+        entry = MODULEENTRY32W()
+        entry.dwSize = ctypes.sizeof(MODULEENTRY32W)
+        ok = _kernel32.Module32FirstW(snapshot, ctypes.byref(entry))
+        while ok:
+            out.append((str(entry.szModule), str(entry.szExePath),
+                        int(entry.modBaseAddr or 0)))
+            ok = _kernel32.Module32NextW(snapshot, ctypes.byref(entry))
+    finally:
+        _kernel32.CloseHandle(snapshot)
+    return out
+
+
+def read_remote(pid: int, address: int, size: int) -> bytes:
+    """读目标进程内存（只读，读不到返回空串）。"""
+    proc = _kernel32.OpenProcess(PROCESS_QUERY_LIMITED | 0x0010, False, pid)
+    if not proc:
+        return b""
+    try:
+        buf = ctypes.create_string_buffer(size)
+        got = ctypes.c_size_t()
+        if _kernel32.ReadProcessMemory(proc, ctypes.c_void_p(address), buf, size,
+                                       ctypes.byref(got)):
+            return buf.raw[:int(got.value)]
+    except Exception:  # noqa: BLE001
+        pass
+    finally:
+        _kernel32.CloseHandle(proc)
+    return b""
+
+
+def _parse_pe_header(head: bytes) -> dict:
+    """从 PE 头部字节里取身份字段（时间戳 / 映像大小 / 入口 RVA）。
+
+    ⚠ 不要拿整段头部哈希当判据：加载器会往头部写几个字节（实测 python.exe 偏移
+    0x13A 处存的是模块基址），磁盘文件与内存映像的头部并不逐字节相等；
+    ``header_sha256`` 只当诊断信息保留。
+    """
+    import hashlib
+    import struct as _struct
+    info = {"timestamp": 0, "size_of_image": 0, "entry_rva": 0, "header_sha256": ""}
+    if len(head) < 0x40 or head[:2] != b"MZ":
+        return info
+    e_lfanew = _struct.unpack_from("<I", head, 0x3C)[0]
+    if e_lfanew + 0x40 > len(head) or head[e_lfanew:e_lfanew + 4] != b"PE\0\0":
+        return info
+    opt = e_lfanew + 24
+    info["timestamp"] = _struct.unpack_from("<I", head, e_lfanew + 8)[0]
+    info["entry_rva"] = _struct.unpack_from("<I", head, opt + 16)[0]
+    info["size_of_image"] = _struct.unpack_from("<I", head, opt + 56)[0]
+    info["header_sha256"] = hashlib.sha256(head).hexdigest().upper()
+    return info
+
+
+def pe_identity_same(a: dict, b: dict) -> bool:
+    """两份 PE 身份是不是同一份构建：时间戳 + 映像大小 + 入口 RVA。"""
+    if not a or not b:
+        return False
+    for key in ("timestamp", "size_of_image", "entry_rva"):
+        if int(a.get(key) or 0) != int(b.get(key) or 0):
+            return False
+    return True
+
+
+def local_pe_identity(path: str) -> dict:
+    """磁盘上某个 PE 文件的身份字段（前 0x400 字节就够）。"""
+    try:
+        with open(path, "rb") as fh:
+            return _parse_pe_header(fh.read(PE_HEADER_BYTES))
+    except OSError:
+        return {"timestamp": 0, "size_of_image": 0, "entry_rva": 0, "header_sha256": ""}
+
+
+def remote_pe_identity(pid: int, module_name: str = "gameassembly.dll") -> dict:
+    """进程内某个模块的 PE 身份（含基址/路径）；没加载时返回空 dict。"""
+    wanted = module_name.lower()
+    for name, path, base in remote_modules(pid):
+        if name.lower() != wanted or not base:
+            continue
+        info = _parse_pe_header(read_remote(pid, base, PE_HEADER_BYTES))
+        if not info["timestamp"] and not info["size_of_image"]:
+            return {}
+        info.update({"base": base, "path": path, "module": name})
+        return info
+    return {}
+
+
+def dll_info(path: str) -> dict:
+    """要注入的那份 DLL 的文件身份（大小 / 修改时间 / 哈希），用于日志自证“注的是哪份”。"""
+    import hashlib
+    out = {"path": path, "size": 0, "mtime": "", "sha256": ""}
+    try:
+        st = os.stat(path)
+        with open(path, "rb") as fh:
+            out["sha256"] = hashlib.sha256(fh.read()).hexdigest().upper()
+        out["size"] = int(st.st_size)
+        out["mtime"] = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(st.st_mtime))
+    except OSError:
+        pass
+    return out
+
+
+class SuspendWindow:
+    """注入窗口：在“进程线程挂起”的状态下做注入，退出时精确恢复。
+
+    - 逐线程把 ``SuspendThread`` 的返回值当“既有挂起计数”：返回 0 = 这次挂起是我们加的
+      （退出时恢复一次）；返回 >0 = 线程本来就挂起，立刻回滚，**不替游戏恢复它自己的挂起**。
+    - 全部线程在进入前就已挂起 → 说明进程当前处于挂起态，直接借用这个窗口（这正是
+      “检测到进程挂起再注入”想要的效果；Steam 拉起的进程通常不会挂起，所以更多时候
+      是我们自己建立窗口）。
+    """
+
+    def __init__(self, pid: int, log=None) -> None:
+        self.pid = pid
+        self.log = log or (lambda _m: None)
+        self.thread_ids: list[int] = []
+        self.owned: list[int] = []      # 我们加了挂起的线程 id
+        self.already = 0                # 进入前就已挂起的线程数
+        self.was_suspended = False      # 进入前整个进程是否已挂起
+
+    def _enumerate_threads(self) -> list[int]:
+        snapshot = _kernel32.CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0)
+        if not snapshot or snapshot == -1:
+            return []
+        out: list[int] = []
+        try:
+            entry = THREADENTRY32()
+            entry.dwSize = ctypes.sizeof(THREADENTRY32)
+            ok = _kernel32.Thread32First(snapshot, ctypes.byref(entry))
+            while ok:
+                if int(entry.th32OwnerProcessID) == self.pid:
+                    out.append(int(entry.th32ThreadID))
+                ok = _kernel32.Thread32Next(snapshot, ctypes.byref(entry))
+        finally:
+            _kernel32.CloseHandle(snapshot)
+        return out
+
+    def __enter__(self) -> "SuspendWindow":
+        self.thread_ids = self._enumerate_threads()
+        for tid in self.thread_ids:
+            handle = _kernel32.OpenThread(THREAD_SUSPEND_RESUME, False, tid)
+            if not handle:
+                continue
+            try:
+                prev = int(_kernel32.SuspendThread(handle))
+                if prev == SUSPEND_FAILED:
+                    continue
+                if prev == 0:
+                    self.owned.append(tid)
+                else:
+                    self.already += 1
+                    _kernel32.ResumeThread(handle)      # 回滚，保持它原本的挂起状态
+            finally:
+                _kernel32.CloseHandle(handle)
+        total = len(self.thread_ids)
+        self.was_suspended = bool(total) and not self.owned and self.already >= total
+        if self.was_suspended:
+            self.log(f"[战斗观测] 检测到游戏进程已处于挂起态（{total}/{total} 个线程挂起）"
+                     "→ 直接在这个挂起窗口内注入")
+        elif self.owned:
+            self.log(f"[战斗观测] 已建立注入窗口：挂起 {len(self.owned)} 个线程"
+                     f"（共 {total} 个，其中 {self.already} 个本来就挂起）")
+        else:
+            self.log(f"[战斗观测] 未能挂起任何线程（共 {total} 个），按普通方式注入")
+        return self
+
+    def __exit__(self, *_exc) -> bool:
+        for tid in self.owned:
+            handle = _kernel32.OpenThread(THREAD_SUSPEND_RESUME, False, tid)
+            if not handle:
+                continue
+            try:
+                _kernel32.ResumeThread(handle)
+            finally:
+                _kernel32.CloseHandle(handle)
+        if self.owned:
+            self.log(f"[战斗观测] 注入窗口关闭：恢复 {len(self.owned)} 个线程")
+        self.owned = []
+        return False
 
 
 def _project_root() -> str:
@@ -598,7 +974,42 @@ def _project_root() -> str:
     return os.path.abspath(os.path.join(here, "..", ".."))
 
 
+def _pick_newest_dll(candidates: list[str]) -> tuple[str, str]:
+    """从候选路径里取 mtime 最新的一份。返回 ``(路径, 说明)``（说明为空 = 只有一份）。"""
+    found: list[tuple[str, float]] = []
+    seen: set[str] = set()
+    for path in candidates:
+        if not path or not os.path.isfile(path):
+            continue
+        key = os.path.normcase(os.path.abspath(path))
+        if key in seen:
+            continue
+        seen.add(key)
+        try:
+            found.append((path, os.path.getmtime(path)))
+        except OSError:
+            continue
+    if not found:
+        return "", ""
+    found.sort(key=lambda item: item[1], reverse=True)
+    if len(found) == 1:
+        return found[0][0], ""
+    others = ", ".join(f"{p}（{time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(t))}）"
+                       for p, t in found[1:])
+    note = (f"发现 {len(found)} 份 battle_watch.dll，选用最新的一份 {found[0][0]}；"
+            f"忽略: {others}")
+    return found[0][0], note
+
+
 def dll_path() -> str:
+    """要注入的 battle_watch.dll（发布包里就是编译好的那份，**不会**在注入前现编译）。
+
+    候选里可能同时存在多份（``_MEIPASS`` 打包副本 / 开发目录刚编译的 / ``_internal`` 部署的），
+    此时取 **mtime 最新** 的一份 —— 否则开发目录里重新 build 之后，打包版会一直注入包里那份旧
+    DLL，表现就是“改了代码/新功能没生效，因为注进去的还是旧 DLL”。选择结果记在
+    ``_DLL_CHOICE_NOTE`` 里，由驱动与 ``--probe`` 输出出来。
+    """
+    global _DLL_CHOICE_NOTE
     here = os.path.dirname(os.path.abspath(__file__))
     root = _project_root()
     candidates = [
@@ -611,10 +1022,8 @@ def dll_path() -> str:
     meipass = getattr(sys, "_MEIPASS", "")
     if meipass:
         candidates.insert(0, os.path.join(meipass, "hook_dll", "battle_watch.dll"))
-    for path in candidates:
-        if path and os.path.isfile(path):
-            return path
-    return ""
+    chosen, _DLL_CHOICE_NOTE = _pick_newest_dll(candidates)
+    return chosen
 
 
 def event_log_path() -> str:
@@ -869,6 +1278,14 @@ class BattleWatch:
         self._last_boundary_ts = 0.0
         self._event_file = None
         self._phase = "未启动"
+        # 注入现场（状态文件里能直接看到“注的是哪个进程/哪份 DLL”）
+        self._injected_image = ""
+        self._injected_dll = ""
+        # 游戏 DLL（GameAssembly.dll）新鲜度校验结果
+        self._ga_verified = False
+        self._ga_retry = 0
+        self._ga_note: dict = {}
+        self._index_game_note: dict = {}
 
     # ---------------------------------------------------------------- 对外
     def start(self) -> bool:
@@ -1013,6 +1430,16 @@ class BattleWatch:
         snap["phase"] = self._phase
         snap["injected_pid"] = self._injected_pid
         snap["hook_hits"] = dict(self._last_hits)
+        if self._injected_image or self._injected_dll:
+            snap["injection"] = {
+                "image": self._injected_image,
+                "dll": self._injected_dll,
+                "dll_info": dll_info(self._injected_dll) if self._injected_dll else {},
+            }
+        if self._index_game_note:
+            snap["index_game"] = dict(self._index_game_note)
+        if self._ga_note:
+            snap["gameassembly_check"] = dict(self._ga_note)
         return snap
 
     # ---------------------------------------------------------------- 事件日志
@@ -1144,49 +1571,186 @@ class BattleWatch:
         return True
 
     # ---------------------------------------------------------------- 注入
-    def _inject(self, pid: int, path: str) -> bool:
-        proc = _kernel32.OpenProcess(PROCESS_ACCESS, False, pid)
-        if not proc:
-            self._log("[战斗观测] 打开游戏进程失败（游戏可能以管理员权限启动过；"
-                      "可尝试以管理员权限运行启动器）")
+    def _inject(self, pid: int, path: str, expect_exe: str | None = None) -> bool:
+        """把 battle_watch.dll 注入游戏进程。
+
+        ``expect_exe=None`` → 用配置里的游戏 exe 做身份校验；传空串则跳过（离线自检用）。
+
+        流程（任何一步失败都只记日志、不改游戏状态）：
+          ① 身份校验：PID 的映像必须是 ``game_path\\LimbusCompany.exe``（排除同名残留进程）；
+          ② 检查进程里是否已有一份同名模块（``LoadLibraryW`` 对已加载模块只会返回旧句柄）；
+          ③ 在 **SuspendWindow**（进程本来就挂起则直接借用，否则临时挂起全部线程）里
+             VirtualAllocEx + WriteProcessMemory + CreateRemoteThread(LoadLibraryW)；
+          ④ 窗口关闭后回读远端模块表，确认加载的确实是我们注入的这个路径。
+        """
+        expected = _expected_game_exe() if expect_exe is None else expect_exe
+        image = _process_image_path(pid)
+        if expected and image and not _same_file(image, expected):
+            self._log(f"[战斗观测] 跳过 PID {pid}：映像是 {image}，与配置的游戏（{expected}）"
+                      "不一致 —— 同名残留进程/别的副本，不注入")
             return False
-        remote = None
+        info = dll_info(path)
+        self._log(f"[战斗观测] 准备注入 {os.path.basename(path)}（{info['size']} 字节，"
+                  f"mtime {info['mtime']}，sha256 {info['sha256'][:12]}…）"
+                  + (f"；目标映像 {image}" if image else ""))
+        want_name = os.path.basename(path).lower()
+        for name, mpath, base in remote_modules(pid):
+            if name.lower() == want_name:
+                self._log(f"[战斗观测] 注意：目标进程已有一份 {name}"
+                          f"（{mpath or '路径未知'} @0x{base:X}）—— LoadLibraryW 会直接"
+                          "返回它、不会重新加载；若它来自旧构建，本次注入不会生效")
+                break
+
+        with SuspendWindow(pid, self._log) as window:
+            proc = _kernel32.OpenProcess(PROCESS_ACCESS, False, pid)
+            if not proc:
+                self._log("[战斗观测] 打开游戏进程失败（游戏可能以管理员权限启动过；"
+                          "可尝试以管理员权限运行启动器）")
+                return False
+            remote = None
+            try:
+                wide = ctypes.c_wchar_p(path)
+                size = (len(path) + 1) * 2
+                remote = _kernel32.VirtualAllocEx(proc, None, size, 0x3000, 0x04)
+                if not remote:
+                    self._log("[战斗观测] VirtualAllocEx 失败")
+                    return False
+                written = ctypes.c_size_t()
+                if not _kernel32.WriteProcessMemory(proc, remote, wide, size,
+                                                    ctypes.byref(written)):
+                    self._log("[战斗观测] WriteProcessMemory 失败")
+                    return False
+                kernel32 = _kernel32.GetModuleHandleW("kernel32.dll")
+                load_lib = _kernel32.GetProcAddress(kernel32, b"LoadLibraryW")
+                if not load_lib:
+                    self._log("[战斗观测] 定位 LoadLibraryW 失败")
+                    return False
+                thread = _kernel32.CreateRemoteThread(proc, None, 0, load_lib, remote, 0, None)
+                if not thread:
+                    self._log("[战斗观测] CreateRemoteThread 失败（杀毒软件可能拦截）")
+                    return False
+                waited = _kernel32.WaitForSingleObject(thread, 10000)
+                exit_code = wt.DWORD()
+                _kernel32.GetExitCodeThread(thread, ctypes.byref(exit_code))
+                _kernel32.CloseHandle(thread)
+                if waited == 0x00000102:                                   # WAIT_TIMEOUT
+                    self._log("[战斗观测] LoadLibraryW 超时（远程线程还没返回，可能撞上了"
+                              "加载器锁；线程已恢复，下面按模块表实际结果判定）")
+                elif not exit_code.value:
+                    self._log("[战斗观测] DLL 加载失败（远程线程退出码为 0）")
+                    return False
+            finally:
+                if remote:
+                    _kernel32.VirtualFreeEx(proc, remote, 0, 0x8000)
+                _kernel32.CloseHandle(proc)
+
+        # ④ 回读校验（窗口已关闭，进程正常跑）：确认加载的是“这份路径”的 DLL
+        if not self._verify_remote_dll(pid, path):
+            return False
+        self._injected_pid = pid
+        self._injected_image = image
+        self._injected_dll = path
+        mode = "借用进程原有的挂起窗口" if window.was_suspended else "临时挂起窗口"
+        self._log(f"[战斗观测] 已注入 battle_watch.dll (PID {pid}，{mode})")
+        self._event(f"注入成功 PID={pid} dll={path} sha256={info['sha256'][:12]}")
+        return True
+
+    def _verify_remote_dll(self, pid: int, path: str) -> bool:
+        """回读目标进程模块表，确认 battle_watch.dll 已加载且来自我们注入的路径。"""
+        want_name = os.path.basename(path).lower()
+        found: tuple[str, str, int] | None = None
+        deadline = time.time() + MODULE_VERIFY_SECONDS
+        while time.time() < deadline:
+            for name, mpath, base in remote_modules(pid):
+                if name.lower() == want_name:
+                    found = (name, mpath, base)
+                    break
+            if found:
+                break
+            time.sleep(0.2)
+        if not found:
+            self._log("[战斗观测] 注入后没在目标进程里看到 battle_watch.dll"
+                      "（被拦截或加载失败）")
+            return False
+        name, mpath, base = found
+        if mpath and path and not _same_file(mpath, path):
+            self._log(f"[战斗观测] 目标进程里的 {name} 来自 {mpath}，不是刚注入的 {path}"
+                      " —— 进程里已有一份旧副本（同名模块不会被重新加载），本次注入未生效")
+            return False
+        self._remote_module = int(base)
+        self._log(f"[战斗观测] 已确认目标进程加载 {name} @0x{base:X}"
+                  + (f"（{mpath}）" if mpath else ""))
+        return True
+
+    # ------------------------------------------------------- 游戏 DLL 新鲜度校验
+    def _check_index_freshness(self) -> None:
+        """钩子表来源索引是否基于磁盘上这版 GameAssembly.dll（游戏更新后必须重建）。"""
+        ga = _expected_gameassembly()
+        if not ga or not os.path.isfile(ga):
+            return
         try:
-            wide = ctypes.c_wchar_p(path)
-            size = (len(path) + 1) * 2
-            remote = _kernel32.VirtualAllocEx(proc, None, size, 0x3000, 0x04)
-            if not remote:
-                self._log("[战斗观测] VirtualAllocEx 失败")
-                return False
-            written = ctypes.c_size_t()
-            if not _kernel32.WriteProcessMemory(proc, remote, wide, size, ctypes.byref(written)):
-                self._log("[战斗观测] WriteProcessMemory 失败")
-                return False
-            kernel32 = _kernel32.GetModuleHandleW("kernel32.dll")
-            load_lib = _kernel32.GetProcAddress(kernel32, b"LoadLibraryW")
-            if not load_lib:
-                self._log("[战斗观测] 定位 LoadLibraryW 失败")
-                return False
-            thread = _kernel32.CreateRemoteThread(proc, None, 0, load_lib, remote, 0, None)
-            if not thread:
-                self._log("[战斗观测] CreateRemoteThread 失败（杀毒软件可能拦截）")
-                return False
-            _kernel32.WaitForSingleObject(thread, 10000)
-            exit_code = wt.DWORD()
-            _kernel32.GetExitCodeThread(thread, ctypes.byref(exit_code))
-            _kernel32.CloseHandle(thread)
-            if not exit_code.value:
-                self._log("[战斗观测] DLL 加载失败（远程线程退出码为 0）")
-                return False
-            self._injected_pid = pid
-            self._remote_module = int(exit_code.value)
-            self._log(f"[战斗观测] 已注入 battle_watch.dll (PID {pid})")
-            self._event(f"注入成功 PID={pid}")
-            return True
-        finally:
-            if remote:
-                _kernel32.VirtualFreeEx(proc, remote, 0, 0x8000)
-            _kernel32.CloseHandle(proc)
+            from functions.hook.index import get_index
+            index, source = get_index()
+        except Exception as exc:  # noqa: BLE001
+            self._log(f"[战斗观测] 读不到 hook_index（{exc}），钩子表只用内置回退偏移")
+            return
+        if index is None:
+            self._log("[战斗观测] 没有可用的 hook_index，钩子表全部来自内置回退值")
+            return
+        rec_size = int(index.game.get("gameassembly_size") or 0)
+        rec_ts = int(index.game.get("pe_timestamp") or 0)
+        self._index_game_note = {"size": rec_size, "pe_timestamp": rec_ts,
+                                 "game_version": str(index.game.get("game_version") or "")}
+        try:
+            disk_size = os.path.getsize(ga)
+        except OSError:
+            return
+        disk_ts = int(local_pe_identity(ga).get("timestamp") or 0)
+        stale = bool((rec_size and rec_size != disk_size)
+                     or (rec_ts and disk_ts and rec_ts != disk_ts))
+        if stale:
+            self._log(f"[战斗观测] ⚠ 偏移索引与磁盘上的 GameAssembly.dll 不匹配"
+                      f"（索引 size={rec_size} ts=0x{rec_ts:X}"
+                      f"；磁盘 size={disk_size} ts=0x{disk_ts:X}）—— 游戏更新过，"
+                      "跑 `python -m functions.hook.main update` 重建索引，"
+                      "否则钩子会被 prologue 自检挡下")
+        else:
+            self._log(f"[战斗观测] 偏移索引与磁盘 GameAssembly.dll 匹配"
+                      f"（size={disk_size} ts=0x{disk_ts:X}；来源 {source}）")
+
+    def _verify_gameassembly(self) -> None:
+        """游戏 DLL 新鲜度：进程里加载的 GameAssembly.dll 是不是磁盘上最新那份。
+
+        ``prologue`` 自检只是“装钩前”的最后一道闸；这里给的是**可读的判断**：
+        进程内模块的 PE 时间戳/映像大小/头部哈希 vs 磁盘文件。
+        """
+        pid = self._injected_pid
+        if not pid or self._ga_verified:
+            return
+        remote = remote_pe_identity(pid)
+        if not remote:
+            self._ga_retry += 1
+            if self._ga_retry <= GA_VERIFY_RETRY:
+                self._log("[战斗观测] 还没枚举到进程内的 GameAssembly.dll，稍后再校验")
+            return
+        disk = local_pe_identity(_expected_gameassembly())
+        same = pe_identity_same(remote, disk)
+        self._ga_verified = True
+        self._ga_note = {"remote": {k: remote.get(k) for k in ("timestamp", "size_of_image",
+                                                              "entry_rva", "base", "path")},
+                         "disk": {k: disk.get(k) for k in ("timestamp", "size_of_image",
+                                                           "entry_rva")},
+                         "same": same}
+        if same:
+            self._log(f"[战斗观测] 游戏 DLL 校验通过：进程内 GameAssembly.dll == 磁盘最新那份"
+                      f"（PE 时间戳 0x{int(remote['timestamp']):X}，"
+                      f"映像 {int(remote['size_of_image'])} 字节，基址 0x{int(remote['base']):X}）")
+        else:
+            self._log(f"[战斗观测] ⚠ 游戏 DLL 不一致：进程内 ts=0x{int(remote['timestamp']):X} "
+                      f"size={int(remote['size_of_image'])} entry=0x{int(remote['entry_rva']):X}；"
+                      f"磁盘 ts=0x{int(disk['timestamp']):X} size={int(disk['size_of_image'])} "
+                      f"entry=0x{int(disk['entry_rva']):X} —— 游戏可能正在更新/加载了旧版本，"
+                      "钩子会被 prologue 自检拦下（跑 `python -m functions.hook.main update`）")
 
     def _eject(self) -> None:
         if not self._injected_pid or not self._remote_module:
@@ -1537,11 +2101,15 @@ class BattleWatch:
         self.table = build_hook_table(on_log=log, pe_path=pe_path)
         table = self.table
         self._phase = "已解析钩子表"
+        if _DLL_CHOICE_NOTE:
+            log(f"[战斗观测] {_DLL_CHOICE_NOTE}")
         log(f"[战斗观测] 偏移来源={table['source']}；下发 {len(table['entries'])} 个观测点：")
         log(describe_hook_table(table))
         missing = [k for k, item in table["entries"].items() if not item.get("prologue")]
         if missing:
             log(f"[战斗观测] 注意: 以下观测点没有 prologue（将跳过版本自检）: {missing}")
+        # 游戏 DLL（GameAssembly.dll）新鲜度：索引是不是基于盘上这版（避免钩到过期偏移）
+        self._check_index_freshness()
 
         if not self._open_map():
             self._phase = "共享内存失败"
@@ -1560,7 +2128,7 @@ class BattleWatch:
         waited = 0.0
         while not self._stop.is_set():
             if pid is None or not self._pid_alive(pid):
-                pid = find_process_id(self.process_name)
+                pid, image, note = select_game_process(self.process_name)
                 if pid is None:
                     self._phase = f"等待游戏进程（{self.process_name}）"
                     if waited == 0.0:
@@ -1572,11 +2140,25 @@ class BattleWatch:
                     waited += 2.0
                     self._write_status()
                     continue
+                if note:
+                    log(f"[战斗观测] 进程选择: PID {pid}（{image or '映像未知'}）；{note}")
+                # 稳定性：Steam 拉起的第一个同名进程可能几秒就退出（引导/闪退），
+                # 注进去只会白加载一份 DLL；与 mod loader 的判定约定保持一致。
+                if not pid_alive_for(pid, GAME_STABLE_SECONDS):
+                    log(f"[战斗观测] PID {pid} 存活不足 {GAME_STABLE_SECONDS:g}s"
+                        "（疑似 Steam 引导进程/闪退），继续等真正的游戏进程")
+                    pid = None
+                    self._sleep(1.0)
+                    continue
                 if not self._inject(pid, path):
                     self._sleep(5.0)
                     continue
                 waited = 0.0
                 self._last_hits = {}
+                # 新进程 = 可能换了游戏构建，重新校一次游戏 DLL 新鲜度
+                self._ga_verified = False
+                self._ga_retry = 0
+                self._ga_note = {}
             cfg = self._config()
             if cfg is None:
                 self._sleep(self.poll_interval)
@@ -1648,6 +2230,9 @@ class BattleWatch:
             self._status_logged.add("ga")
             self._phase = "GameAssembly 已加载"
             self._log("[战斗观测] 游戏已加载 GameAssembly.dll，等待装钩")
+        # 游戏 DLL 新鲜度：进程内那份 vs 磁盘上最新那份（加载晚的话留着重试）
+        if not self._ga_verified and int(cfg.gameassembly_found):
+            self._verify_gameassembly()
         if int(cfg.verified) and "verified" not in self._status_logged:
             self._status_logged.add("verified")
             self._log("[战斗观测] prologue 自检通过")
@@ -1755,7 +2340,7 @@ def _print(message: str) -> None:
 
 
 def cmd_probe() -> int:
-    """离线自查：打印将要下发的钩子表（含尾调用桩解引用结果），不注入。"""
+    """离线自查：钩子表 + 将要注入的 DLL + 进程身份 + 游戏 DLL 新鲜度，不注入。"""
     from functions.hook.paths import game_paths
     paths = game_paths()
     _print(f"游戏目录: {paths.root or '（未找到）'}")
@@ -1764,11 +2349,28 @@ def cmd_probe() -> int:
     _print(f"\n偏移来源: {table['source']}；索引可用={table['index_available']}")
     _print(f"将下发 {len(table['entries'])} 个观测点:")
     _print(describe_hook_table(table))
-    _print(f"\nbattle_watch.dll: {dll_path() or '（未找到，需先编译）'}")
-    _print(f"事件日志: {event_log_path()}")
+    dll = dll_path()
+    _print(f"\nbattle_watch.dll: {dll or '（未找到，需先编译）'}")
+    if dll:
+        info = dll_info(dll)
+        _print(f"  大小 {info['size']} 字节 / mtime {info['mtime']} / "
+               f"sha256 {info['sha256'][:16]}…")
+    if _DLL_CHOICE_NOTE:
+        _print(f"  {_DLL_CHOICE_NOTE}")
+    # 游戏 DLL 新鲜度（钩子表来源索引 vs 磁盘上的 GameAssembly.dll）
+    _print("")
+    BattleWatch(log_callback=_print)._check_index_freshness()
+    # 进程身份：真正注入时按这张表挑 PID（映像路径优先）
+    expected = _expected_game_exe()
+    _print(f"\n期望的游戏进程: {expected or '（配置里没拿到游戏路径，将退化为同名第一个）'}")
+    candidates = find_process_candidates(TARGET_PROCESS)
+    for pid, image in candidates:
+        mark = "→ 将注入" if (expected and image and _same_file(image, expected)) else "（映像不符）"
+        _print(f"  同名进程 PID {pid}: {image or '（取不到映像路径）'} {mark}")
+    if not candidates:
+        _print("  游戏进程: 未运行")
+    _print(f"\n事件日志: {event_log_path()}")
     _print(f"状态文件: {status_path()}")
-    running = find_process_id(TARGET_PROCESS)
-    _print(f"游戏进程: {'PID ' + str(running) if running else '未运行'}")
     return 0
 
 

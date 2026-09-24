@@ -421,12 +421,23 @@ class BuildGUI:
             if os.path.isdir('resources/7-zip'):
                 shutil.copytree('resources/7-zip', f'build_{vi}/resources/7-zip', dirs_exist_ok=True)
             # 成就监测的战斗观测 DLL（进程注入需要真实文件路径）
+            # 发布包里**只带编译好的 DLL**：运行时不编译、不读 .c/.ps1，源码不进分发产物；
+            # 注入时也会按 mtime 挑最新的一份（battle_watch.dll 优先于包里那份）。
             hook_dll = 'functions/achievement/hook_dll'
-            if os.path.isfile(os.path.join(hook_dll, 'battle_watch.dll')):
-                shutil.copytree(hook_dll, f'build_{vi}/_internal/hook_dll',
-                                dirs_exist_ok=True,
-                                ignore=shutil.ignore_patterns('*.c', '*.ps1'))
-                self._log('\u2714 battle_watch.dll \u5df2\u968f\u6784\u5efa\u4ea7\u7269\u53d1\u5e03\n', SUCCESS)
+            src_dll = os.path.join(hook_dll, 'battle_watch.dll')
+            src_c = os.path.join(hook_dll, 'battle_watch.c')
+            if os.path.isfile(src_dll):
+                dst_dir = f'build_{vi}/_internal/hook_dll'
+                os.makedirs(dst_dir, exist_ok=True)
+                shutil.copy2(src_dll, os.path.join(dst_dir, 'battle_watch.dll'))
+                _dll_size = os.path.getsize(src_dll)
+                _dll_mtime = time.strftime('%Y-%m-%d %H:%M:%S',
+                                           time.localtime(os.path.getmtime(src_dll)))
+                self._log(f'\u2714 battle_watch.dll \u5df2\u968f\u6784\u5efa\u4ea7\u7269\u53d1\u5e03'
+                          f'\uff08{_dll_size} \u5b57\u8282\uff0c{_dll_mtime}\uff09\n', SUCCESS)
+                if os.path.isfile(src_c) and os.path.getmtime(src_c) > os.path.getmtime(src_dll):
+                    self._log('\u26a0 battle_watch.c \u6bd4 DLL \u65b0\uff1a\u53d1\u5e03\u5305\u91cc\u7684\u662f\u65e7\u6784\u5efa\uff0c\u8bf7\u5148\u8dd1 '
+                              'functions/achievement/hook_dll/build.ps1\n', DANGER)
         except Exception as e:
             self._set_step(7, 'failed')
             self._set_status(f'复制 resources 失败: {e}', DANGER)
