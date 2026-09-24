@@ -19,6 +19,10 @@ from __future__ import annotations
 
 from functions.achievement.battle_achievements import DamageTakenAchievement
 
+# ---- 业务常量（游戏数据；与偏移无关，驱动不认识它们）----
+IDENTITY_HEATHCLIFF_SUNSHOWER = 10705    # 脑叶公司E.G.O:: 狐雨 希斯克利夫
+HP_RATIO = 1.0                           # hp < 最大血量 × 1.0 = 掉过血就算受伤
+
 
 class HeathcliffSunshowerHurtAchievement(DamageTakenAchievement):
     """战斗事件类成就：观测单位血量（VAL 事件的 hp / mhp 字段）。"""
@@ -28,8 +32,8 @@ class HeathcliffSunshowerHurtAchievement(DamageTakenAchievement):
             ach_id="ach_heathcliff_sunshower_hurt",
             name="神也会受伤吗？",
             description="脑叶公司E.G.O::狐雨-希斯克里夫 在战斗中受到一次伤害。",
-            identity_ids=(10705,),
-            ratio=1.0,
+            identity_ids=(IDENTITY_HEATHCLIFF_SUNSHOWER,),
+            ratio=HP_RATIO,
             label="狐雨 希斯克里夫",
             rarity="uncommon",
         )

@@ -5,26 +5,30 @@
 ``battle_watch.BattleRule``，``check()`` 只读观测结果 —— 所以加一个新成就
 基本只需要写一个 ``__init__``，不用碰 DLL / 驱动。
 
-现成的三类基类（都用关键字参数，阈值也是数据）::
+现成的四类基类（都用关键字参数，阈值也是数据）::
 
     SkillUseAchievement(ach_id=..., name=..., description=...,
                         identity_id=10115, tiers=(3,))          # 身份 + 技能槽位
     SkillUseAchievement(..., identity_id=10101, skill_ids=(1010103,))  # 或直接给技能 ID
 
+    SpeedValueAchievement(..., identity_ids=(10212,), value=9)
+        # 这些身份任一「速度 == 9」时解锁（fields 可指定看哪几个速度字段）
+
     MentalThresholdAchievement(..., identity_ids=(10913, 10312), threshold=0)
-        # 这些身份任一「理智(SP) < 0」时立刻解锁（负数理智 = 恐慌）
+        # 这些身份任一「理智(SP) < 0」时解锁（负数理智 = 恐慌）
 
     DamageTakenAchievement(..., identity_ids=(10705,), ratio=1.0)
-        # 这些身份任一「hp < 最大血量 × ratio」时立刻解锁（ratio=1.0 = 掉过血）
+        # 这些身份任一「hp < 最大血量 × ratio」时解锁（ratio=1.0 = 掉过血）
 
-规律：
+规律（与规则表 ``kind`` 一一对应）：
 
-- 技能类：**回合边界结算**（和「将你李箱，也将我李箱。」完全同一套逻辑）；
-- 血量/理智类：观测到就**立刻**置位，回合边界还会兜底复核一次；
+- ``skill``：**回合边界结算**；
+- ``speed`` / ``mental`` / ``hp``：观测到就**立刻**置位，回合边界还会兜底复核一次；
 - 想要更复杂的规则：继承 ``BattleRuleAchievement``，用 ``rules=(BattleRule(...),)``
   直接给规则；
 - 想加新*类别*的判定（例如「某身份获得了某 buff」）：在 ``battle_watch`` 里加
-  ``RULE_KIND_*`` + 对应的匹配函数，这里加一个薄薄的数据类即可。
+  ``RULE_KIND_*`` + 对应的 ``match_*``，这里加一个薄薄的数据类即可；
+- **业务常量（身份/技能 ID、阈值）写在各自的成就模块里**，驱动不认识它们。
 """
 
 from __future__ import annotations
@@ -123,6 +127,43 @@ class SkillUseAchievement(BattleRuleAchievement):
         self.skill_ids = tuple(skill_ids)
         self.tiers = tuple(tiers)
         self.gated_skill_ids = tuple(gated_skill_ids)
+
+
+class SpeedValueAchievement(BattleRuleAchievement):
+    """「某个身份的速度等于某个值」—— 观测到就立刻解锁（回合边界兜底复核）。
+
+    ``fields`` 指定看哪几个速度字段（``os``/``ow``/``its``/``eff``），默认全部都看。
+    """
+
+    def __init__(self, *, ach_id: str, name: str, description: str,
+                 identity_ids, value: int, fields=(), label: str = "",
+                 rarity: str = "common"):
+        """速度战斗事件类成就基类构造函数。
+
+        注册 ``BattleRule`` 到 ``battle_watch``，``check()`` 只是读结果。
+
+        Args:
+            ach_id (str): 成就 ID
+            name (str): 名称
+            description (str): 描述
+            identity_ids (_type_): 身份
+            value (int): 值
+            fields (tuple, optional): 速度字段。 Defaults to ().
+            label (str, optional): 标签。 Defaults to "".
+            rarity (str, optional): 稀有度。 Defaults to "common".
+        """
+        rule = battle_watch.BattleRule(
+            key=ach_id,
+            label=label or " / ".join(f"身份 {i}" for i in identity_ids),
+            kind=battle_watch.RULE_KIND_SPEED,
+            identity_ids=tuple(identity_ids),
+            threshold=int(value),
+            fields=tuple(fields),
+        )
+        super().__init__(ach_id, name, description, rules=(rule,), rarity=rarity)
+        self.identity_ids = tuple(identity_ids)
+        self.value = int(value)
+        self.fields = tuple(fields)
 
 
 class MentalThresholdAchievement(BattleRuleAchievement):

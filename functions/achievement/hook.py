@@ -344,18 +344,16 @@ class AchievementHook:
                 time.sleep(1)
 
     def _check_memory_achievements(self):
-        """检查基于进程内存的成就。"""
+        """检查基于进程内存的成就（按 ``memory_driven`` 标记，不认具体类名）。"""
         unlocked = []
         for ach in achievements:
-            if ach.unlocked or not hasattr(ach, "check"):
+            if ach.unlocked or not getattr(ach, "memory_driven", False):
                 continue
-            # 只处理 MemoryAchievement，避免重复触发普通 check_func。
-            if ach.__class__.__name__ == "FullEnkephalinAchievement":
-                try:
-                    if ach.check(): # type: ignore
-                        unlocked.append(ach)
-                except Exception:
-                    pass
+            try:
+                if ach.check():  # type: ignore[attr-defined]
+                    unlocked.append(ach)
+            except Exception:
+                pass
         if unlocked:
             _report_unlocks(self.log_callback, unlocked)
             _notify_toast(unlocked)
