@@ -171,7 +171,13 @@ class _LogSink:
     现在：启动时显式清空一次（可关），之后用 ``O_APPEND`` 打开 —— 每次写入都追加到
     文件末尾，不可能再有偏移错位/空洞；一行一次 ``os.write`` + 一把锁，保证多线程
     （监控线程 / 战斗观测线程 / 主线程）写出来的行不会互相插队。
+
+    另外文件头和每行都是 **UTF-8（带 BOM）**：没有 BOM 时，Windows 记事本／
+    PowerShell 5.1 的 ``Get-Content`` 会按系统 ANSI(GBK) 解码，中文全变“乱码”
+    （实测踩到过）。
     """
+
+    _BOM = b"\xef\xbb\xbf"
 
     def __init__(self, path: str, truncate: bool = True) -> None:
         self.path = path
@@ -182,7 +188,8 @@ class _LogSink:
             os.makedirs(directory, exist_ok=True)
         if truncate:
             try:
-                open(path, "wb").close()      # 每次实例运行只留本次运行
+                with open(path, "wb") as fh:  # 每次实例运行只留本次运行
+                    fh.write(self._BOM)       # 顺手写 BOM，让记事本/PowerShell 认得编码
             except OSError:
                 pass
         self._open()
@@ -193,6 +200,9 @@ class _LogSink:
             flags |= os.O_BINARY
         try:
             self._fd = os.open(self.path, flags, 0o666)
+            # 文件是空的（首次创建 / 被清空）→ 补上 BOM
+            if self._fd is not None and os.fstat(self._fd).st_size == 0:
+                os.write(self._fd, self._BOM)
         except OSError:
             self._fd = None
 

@@ -275,9 +275,26 @@ class MyCombo(CompositeAchievement):
 
 ---
 
-## 七、注入流程（身份校验 / 挂起窗口 / DLL 版本）
+## 七、注入流程（偏移预检 / 身份校验 / 挂起窗口 / DLL 版本）
 
-`battle_watch.py` 侧（`BattleWatch._run` → `_inject`）在“进程一出现就注入”之上加了四道闸 ——
+### 注入前的偏移量预检（`functions/hook/preflight.py`）
+
+先看「偏移量还能不能用」，顺序是 **先本地、后云端、最后才重建**：
+
+| 步 | 动作 | 是否联网 | verdict |
+|---|---|---|---|
+| 1 | 把手头索引的**每条钩子 prologue** 与本机 `GameAssembly.dll` 字节逐条比对（另核 size / PE 时间戳）。对得上 → 直接用 | ❌ 一个请求都不发 | `local-ok` |
+| 2 | 本地对不上才与云端对照（强制拉一次 `FaustLauncher.hook_index`）；云端对得上 → 采用云端（写进 `cache/hook/hook_index_cloud.json`，**不覆盖**本地完整版；进程内固定来源=cloud） | ✅ | `cloud-updated` |
+| 3 | 云端也对不上 → 本地重建（解密→dump→解析→四重校验），写本地，`push=True` 时**上传云端** | ✅ | `rebuilt` |
+
+- 重建那一步受设置项 **「自动刷新游戏偏移索引」**（`auto_update_hook_index`）控制；关掉时只看不下手（`stale`）。
+- 启动时可能已经有一个后台重建在跑（`hook._start_hook_index_refresh` → `auto_update_async`）：预检会**等它结束**再校验，不重复解密/dump。
+- 选定的索引会固定成进程内「本次就用它」（`hook.index.use_index`），保证钩子表 / 字段偏移 / 数据链用**同一份**，不会出现「钩子表来自云端、字段偏移来自旧本地文件」。
+- 离线看：`python -m functions.achievement.battle_watch --probe`（只做第 1 步，不联网、不重建）。
+
+### 注入本身的身份 / 时机 / 落点
+
+`battle_watch.py` 侧（`BattleWatch._run` → `_inject`）在「进程一出现就注入」之上加了四道闸 ——
 “钩子没装上 / 事件全 0”历史上多半不是 DLL 写错了，而是**注错了进程 / 注错了时机 /
 注的是旧文件 / 游戏 DLL 已经更新**：
 
@@ -382,7 +399,9 @@ python test\battle_watch_test.py
 | 心跳里所有钩子命中数都是 0 | 这些函数当前没被调用（v1 就是这个）→ 把心跳那段日志发我，或跑 `--probe` 看钩子表 |
 | 日志里没有“已注入” | 看同段日志的前几行：`跳过 PID … 映像不一致`（注错进程）/ `存活不足 1s`（Steam 引导进程）/ `CreateRemoteThread 失败`（杀软）/ `打开游戏进程失败`（权限）|
 | 改了 DLL 代码但没生效 | 看 `发现 N 份 battle_watch.dll，选用最新的一份 …`：说明注的是另一份（旧）副本；`发现 N 份` 那句后面列的就是被忽略的路径 |
-| `⚠ 偏移索引与磁盘上的 GameAssembly.dll 不匹配` | 游戏更新过： `python -m functions.hook.main update` 重建索引 |
+| `⚠ 偏移索引与磁盘上的 GameAssembly.dll 不匹配` | 游戏更新过：预检会自动走云端/重建；若看到 `stale` 就是设置项「自动刷新游戏偏移索引」被关了，或手动 `python -m functions.hook.main update` |
+| 预检 `cloud-updated` | 本地偏移量旧了、已采用云端那份（本地完整版索引没被覆盖，下次启动的后台任务会补齐）|
+| 预检 `rebuilt` | 本地+云端都对不上 → 已本地重建（并按需上传）；耗时 1~2 分钟，属正常 |
 | `⚠ 游戏 DLL 不一致`（进程内 vs 磁盘） | 进程加载的 GameAssembly.dll 不是磁盘上那份（游戏正在更新/加载了旧版本）→ 重启游戏；若目录里的文件已更新过就先 `update` |
 | 游戏内模块已有同名 battle_watch.dll | `LoadLibraryW` 不会重新加载同名模块 → 重启游戏（旧模块随进程退出消失）|
 | 速度/理智/血量没反应 | 先看 `logs/battle_watch.log` 里有没有对应的 `SPD`/`VAL` 行：没有就是钩子没命中或字段偏移不对；有但 `mp=-1000`/`hp=-1000` 就是 `_state` 读失败（看第四节） |
@@ -394,7 +413,7 @@ python test\battle_watch_test.py
 | `CreateRemoteThread 失败` | 杀软拦截注入；加白名单或关掉本功能 |
 | `共享内存已存在…本次不注入以免双钩` | 上次成就子进程没退干净；关掉旧进程或重启游戏 |
 | 速度界面显示 9 但没解锁 | 先看 `logs/battle_watch.log` 里 `SPD … os=14518 osi=14` —— `osi`/`owi` 才是整数速度（×1000 定点数，见第四节）；确认是整数速度后仍不中，就改那个**成就模块**里的 `fields`/`value`（例：`data/ach_faust_kui_speed9.py`）——驱动没有可调的"速度阈值" |
-| 成就日志出现空洞 / 乱码 / 被杀断 | 两个实例在写同一个文件（旧实现是固定偏移覆写）。现在：启动器先收残留子进程再清空；写入改成 `O_APPEND` 单行原子写；发现有别的实例时会跳过清空并写一行告警 |
+| 成就日志出现空洞 / 乱码 / 被杀断 | 1) **乱码**：日志是 UTF-8（现在带 BOM）—— 用记事本 / `Get-Content` / VS Code 打开都正常；若用只按 ANSI/GBK 解码的工具读就会花，改成 `Get-Content -Encoding UTF8` 或用支持 UTF-8 的编辑器。2) **空洞**：两个实例在写同一个文件（旧实现是固定偏移覆写）。现在：启动器先收残留子进程再清空；写入改成 `O_APPEND` 单行原子写；发现有别的实例时会跳过清空并写一行告警 |
 | 弹窗动画末尾卡顿 / 像卡死 | 旧版把成就轮询（含一次 ~400ms 的读内存）跑在**驱动动画的主线程**上。现在：轮询在独立线程（`ACHIEVEMENT_POLL_SEC`）；内存读取从 ~400ms 降到 ~7ms（不再 `spawn tasklist`，改 ctypes 枚举）；卡片背景改 C 级合成 + 缓存；每帧最多新建 1 张卡；启动时预热 Toplevel/图片 |
 | 弹窗描述被截断 | 现在按**像素宽度自动换行**（显式 `\n` 也认；最多 `MAX_DESC_LINES` 行，超出用省略号），卡片高度随行数自适应 |
 | 事件抽取丢行 | 轮询太慢（日志会写 `抽取过慢，丢弃了 N 行`）；调小 `BattleWatch.poll_interval` |
