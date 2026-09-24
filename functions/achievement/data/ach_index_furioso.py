@@ -32,11 +32,11 @@ class IndexFuriosoReplicaAchievement(SkillUseAchievement):
         super().__init__(
             ach_id="ach_index_furioso_replica",
             name="仿造的一生",
-            description="蜘蛛巢 食指 父辈 李箱 使用 Furioso-Replica",
-            identity_id=battle_watch.IDENTITY_YISANG_INDEX_PROXY,
-            skill_ids=(battle_watch.SKILL_YISANG_INDEX_FURIOSO,),
+            description="使用 食指父辈-李箱 进行一次 Furioso-Replica。\n '我听到海浪的声音了。'",
+            identity_id=10115,
+            skill_ids=(1011505,),
             tiers=(3,),
-            gated_skill_ids=battle_watch.FURIOSO_REPLICA_IDS,
-            label="食指父辈 李箱 Furioso-Replica",
-            rarity="legendary",
+            gated_skill_ids=(134711, 138010, 955110),
+            label="食指父辈-李箱 Furioso-Replica",
+            rarity="uncommon",
         )

@@ -93,7 +93,7 @@ def _local_gameassembly_size() -> int:
 def _target_from_dict(item: dict, default: MemoryTarget) -> MemoryTarget | None:
     """把索引里的 target 字典转成 MemoryTarget（校验不通过返回 None）。"""
     try:
-        base_offset = int(item.get("base_offset"))
+        base_offset = int(item.get("base_offset")) # type: ignore
         offsets = tuple(int(x) for x in item.get("offsets") or [])
     except (TypeError, ValueError):
         return None

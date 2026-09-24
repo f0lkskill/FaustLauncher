@@ -12,12 +12,21 @@ class BaseAchievement(ABC):
     解锁此成就的特定条件。
     """
 
-    def __init__(self, ach_id: str, name: str, description: str):
+    def __init__(self, ach_id: str, name: str, description: str, rarity: str = "common"):
+        """
+        初始化基础成就。
+
+        Args:
+            ach_id (str): 成就ID
+            name (str): 成就名称
+            description (str): 成就描述
+            rarity (str, optional): 成就稀有度。 Defaults to "common".
+        """
         self.ach_id = ach_id
         self.id = ach_id  # 与函数式 Achievement 使用相同的标识字段
         self.name = name
         self.description = description
-        self.rarity = "common"
+        self.rarity = rarity
         self.unlocked = False
         self.unlock_time: datetime | None = None
         self.progress = 0
@@ -79,7 +88,7 @@ class MemoryAchievement(BaseAchievement):
         try:
             if self._reader is None:
                 self._reader = self._reader_factory()
-            value = self._reader.read_enkephalin()
+            value = self._reader.read_enkephalin() # type: ignore
             self.current_value = value
             if value is not None and self._predicate(value):
                 self.mark_unlocked()
@@ -91,7 +100,7 @@ class MemoryAchievement(BaseAchievement):
         """释放进程句柄。"""
         if self._reader is not None:
             try:
-                self._reader.detach()
+                self._reader.detach() # type: ignore
             except Exception:
                 pass
             self._reader = None
@@ -170,8 +179,8 @@ class BattleAchievement(BaseAchievement):
 class SteamAchievement(BaseAchievement):
     """追踪Steam登录状态的成就。"""
     
-    def __init__(self, ach_id: str, name: str, description: str):
-        super().__init__(ach_id, name, description)
+    def __init__(self, ach_id: str, name: str, description: str, rarity: str = "common"):
+        super().__init__(ach_id, name, description, rarity)
 
     def check(self, steam_logged: bool = False) -> bool:
         """检查Steam登录条件是否满足。

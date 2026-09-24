@@ -10,8 +10,8 @@ class FullEnkephalinAchievement(MemoryAchievement):
     def __init__(self):
         super().__init__(
             ach_id="ach_enkephalin_100",
-            name="满分脑啡肽",
-            description="脑啡肽容量达到100",
+            name="满分脑啡肽！",
+            description="脑啡肽容量达到100。\n燃料满满，随时准备出发！",
             reader_factory=LimbusMemoryReader,
             predicate=lambda value: value >= 100,
         )

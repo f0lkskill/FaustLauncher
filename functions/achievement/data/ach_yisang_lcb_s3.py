@@ -22,7 +22,6 @@
 
 from __future__ import annotations
 
-from functions.achievement import battle_watch
 from functions.achievement.battle_achievements import SkillUseAchievement
 
 
@@ -33,10 +32,10 @@ class YisangLcbThirdSkillAchievement(SkillUseAchievement):
         super().__init__(
             ach_id="ach_yisang_lcb_s3",
             name="将你李箱，也将我李箱。",
-            description="回合结束时检测到 LCB 罪人 李箱 使用了自己的三技能",
-            identity_id=battle_watch.IDENTITY_LCB_YISANG,
-            skill_ids=(battle_watch.SKILL_LCB_YISANG_S3,),
+            description="让 LCB罪人-李箱 使用一次三技能。\n '将鸟字抹去一点，乌鸦俯瞰大地。'",
+            identity_id=10101,
+            skill_ids=(1010103,),
             tiers=(3,),
-            label="LCB 罪人 李箱 三技能",
-            rarity="epic",
+            label="LCB罪人-李箱 三技能",
+            rarity="common",
         )

@@ -44,12 +44,12 @@ RARITY_TITLE_COLORS = {
     "mythic":    (255, 80, 70),
 }
 RARITY_BORDER_COLORS = {
-    "common":    (150, 150, 150),
-    "uncommon":  (60, 140, 72),
-    "rare":      (48, 100, 200),
-    "epic":      (120, 68, 190),
-    "legendary": (190, 145, 32),
-    "mythic":    (200, 50, 44),
+    "common":    (150, 150, 150), # 白
+    "uncommon":  (60, 140, 72),   # 绿
+    "rare":      (48, 100, 200),  # 蓝
+    "epic":      (120, 68, 190),  # 紫
+    "legendary": (190, 145, 32),  # 金
+    "mythic":    (200, 50, 44),   # 红
 }
 
 _ICON_PATH = None
