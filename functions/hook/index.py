@@ -371,6 +371,18 @@ _MEMO: HookIndex | None = None
 _MEMO_SOURCE = ""
 
 
+def use_index(index: HookIndex | None, source: str = "") -> None:
+    """把“本次进程要用的索引”固定成这一份（写进进程内记忆）。
+
+    用途：注入前的偏移预检（``functions/hook/preflight.py``）已经选定了“校验得过的”
+    那一份（本地 / 云端），后面所有消费者（钩子表、字段偏移、数据链）必须用**同一份**；
+    否则会出现“钩子表来自云端、字段偏移却来自旧本地文件”的错配。
+    """
+    global _MEMO, _MEMO_SOURCE
+    _MEMO = index
+    _MEMO_SOURCE = source
+
+
 def clear_memo() -> None:
     global _MEMO, _MEMO_SOURCE
     _MEMO = None

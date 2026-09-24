@@ -584,9 +584,10 @@ _kernel32.Process32NextW.argtypes = [_HANDLE, ctypes.POINTER(PROCESSENTRY32W)]
 #      —— 这样注入是原子的，不可能因为“游戏已经跑起来”而漏掉早期观测点；
 #   3) **注对文件**：注入后回读远端模块表，确认加载的是这份 DLL 的完整路径
 #      （``LoadLibraryW`` 遇到同名已加载模块只会返回旧句柄，不会重新加载）。
-# 另外把“游戏 DLL（GameAssembly.dll）是不是最新那份”也校验掉：
-#   - 钩子表来源索引 vs 磁盘文件（``_check_index_freshness``）；
-#   - 进程内 GameAssembly.dll vs 磁盘文件（``_verify_gameassembly``）。
+# 另外把“偏移量还能不能用”在**注入前**就查清楚（``_run_preflight`` →
+# ``functions/hook/preflight.py``）：先用偏移量对**本机 GameAssembly.dll** 逐条比 prologue
+# （不联网）；对不上才与云端对照（采用云端新版）；云端也对不上就本地重建并按需上传。
+# 注入之后再比一次**进程内**的 GameAssembly.dll（``_verify_gameassembly``）作为收尾。
 TH32CS_SNAPTHREAD = 0x00000004
 TH32CS_SNAPMODULE = 0x00000008
 TH32CS_SNAPMODULE32 = 0x00000010
@@ -1286,6 +1287,7 @@ class BattleWatch:
         self._ga_retry = 0
         self._ga_note: dict = {}
         self._index_game_note: dict = {}
+        self._preflight: dict = {}
 
     # ---------------------------------------------------------------- 对外
     def start(self) -> bool:
@@ -1438,6 +1440,8 @@ class BattleWatch:
             }
         if self._index_game_note:
             snap["index_game"] = dict(self._index_game_note)
+        if self._preflight:
+            snap["preflight"] = dict(self._preflight)
         if self._ga_note:
             snap["gameassembly_check"] = dict(self._ga_note)
         return snap
@@ -1450,7 +1454,9 @@ class BattleWatch:
         path = event_log_path()
         try:
             os.makedirs(os.path.dirname(path), exist_ok=True)
-            self._event_file = open(path, "w", encoding="utf-8", buffering=1)
+            # utf-8-sig = 带 BOM 的 UTF-8：记事本 / PowerShell 5.1 的 Get-Content
+            # 才能正确识别编码（无 BOM 会被当成 GBK 读成“乱码”）
+            self._event_file = open(path, "w", encoding="utf-8-sig", buffering=1)
             self._event_file.write(f"==== 会话开始 {time.strftime('%Y-%m-%d %H:%M:%S')} "
                                    f"====\n")
         except OSError:
@@ -1682,41 +1688,45 @@ class BattleWatch:
                   + (f"（{mpath}）" if mpath else ""))
         return True
 
-    # ------------------------------------------------------- 游戏 DLL 新鲜度校验
-    def _check_index_freshness(self) -> None:
-        """钩子表来源索引是否基于磁盘上这版 GameAssembly.dll（游戏更新后必须重建）。"""
-        ga = _expected_gameassembly()
-        if not ga or not os.path.isfile(ga):
-            return
+    # ------------------------------------------------------- 偏移量预检（注入前）
+    # 顺序：先用偏移量对**本机 DLL** 校验（prologue 逐条比对，不联网）；
+    # 对不上 → 云端对照（采用云端新版）；云端也对不上 → 本地重建并按需上传。
+    # 具体逻辑在 functions/hook/preflight.py（同步执行，只有重建那一步才久）。
+    _PREFLIGHT_TEXT = {
+        "local-ok": "本地偏移量对得上本机 DLL（未联网、未重建）",
+        "cloud-updated": "本地偏移量是旧版本 → 已采用云端偏移量",
+        "rebuilt": "本地重建偏移量完成（校验通过；push=True 时已上传云端）",
+        "rebuilt-unverified": "本地重建完成，但校验仍未通过（看上条日志）",
+        "stale": "偏移量对不上本机 DLL，且不允许自动重建（钩子可能装不上）",
+        "no-index": "没有任何可用索引（将用内置回退偏移）",
+        "no-game-dll": "找不到 GameAssembly.dll（跳过偏移校验）",
+        "error": "偏移预检异常（继续用现有索引）",
+    }
+
+    def _run_preflight(self) -> dict:
+        """注入前跑一遍偏移量预检，并把选定索引固定成进程内“本次就用它”。"""
         try:
-            from functions.hook.index import get_index
-            index, source = get_index()
+            from functions.hook.preflight import ensure_offsets_ready
+            info = ensure_offsets_ready(on_log=self._log, push=True)
         except Exception as exc:  # noqa: BLE001
-            self._log(f"[战斗观测] 读不到 hook_index（{exc}），钩子表只用内置回退偏移")
-            return
-        if index is None:
-            self._log("[战斗观测] 没有可用的 hook_index，钩子表全部来自内置回退值")
-            return
-        rec_size = int(index.game.get("gameassembly_size") or 0)
-        rec_ts = int(index.game.get("pe_timestamp") or 0)
-        self._index_game_note = {"size": rec_size, "pe_timestamp": rec_ts,
-                                 "game_version": str(index.game.get("game_version") or "")}
-        try:
-            disk_size = os.path.getsize(ga)
-        except OSError:
-            return
-        disk_ts = int(local_pe_identity(ga).get("timestamp") or 0)
-        stale = bool((rec_size and rec_size != disk_size)
-                     or (rec_ts and disk_ts and rec_ts != disk_ts))
-        if stale:
-            self._log(f"[战斗观测] ⚠ 偏移索引与磁盘上的 GameAssembly.dll 不匹配"
-                      f"（索引 size={rec_size} ts=0x{rec_ts:X}"
-                      f"；磁盘 size={disk_size} ts=0x{disk_ts:X}）—— 游戏更新过，"
-                      "跑 `python -m functions.hook.main update` 重建索引，"
-                      "否则钩子会被 prologue 自检挡下")
-        else:
-            self._log(f"[战斗观测] 偏移索引与磁盘 GameAssembly.dll 匹配"
-                      f"（size={disk_size} ts=0x{disk_ts:X}；来源 {source}）")
+            info = {"verdict": "error", "detail": f"{type(exc).__name__}: {exc}"}
+            self._log(f"[战斗观测] 偏移预检不可用（继续用现有索引）: {exc}")
+        verdict = str(info.get("verdict") or "")
+        text = self._PREFLIGHT_TEXT.get(verdict, verdict)
+        self._preflight = dict(info)
+        self._preflight.pop("index", None)          # 索引对象不进状态文件
+        check = info.get("check") or {}
+        self._log(f"[战斗观测] 偏移预检结果: {verdict}（{text}）"
+                  + (f"；{check['detail']}" if check.get("detail") else ""))
+        index = info.get("index")
+        if index is not None:
+            self._index_game_note = {
+                "size": int((index.game or {}).get("gameassembly_size") or 0),
+                "pe_timestamp": int((index.game or {}).get("pe_timestamp") or 0),
+                "game_version": str((index.game or {}).get("game_version") or ""),
+                "source": str(info.get("source") or ""),
+            }
+        return info
 
     def _verify_gameassembly(self) -> None:
         """游戏 DLL 新鲜度：进程里加载的 GameAssembly.dll 是不是磁盘上最新那份。
@@ -2098,6 +2108,8 @@ class BattleWatch:
             pe_path = game_paths().gameassembly
         except Exception:
             pe_path = ""
+        # 注入前的偏移量预检（先用偏移量对本地 DLL 校验；对不上才云端 / 重建）
+        self._run_preflight()
         self.table = build_hook_table(on_log=log, pe_path=pe_path)
         table = self.table
         self._phase = "已解析钩子表"
@@ -2108,8 +2120,6 @@ class BattleWatch:
         missing = [k for k, item in table["entries"].items() if not item.get("prologue")]
         if missing:
             log(f"[战斗观测] 注意: 以下观测点没有 prologue（将跳过版本自检）: {missing}")
-        # 游戏 DLL（GameAssembly.dll）新鲜度：索引是不是基于盘上这版（避免钩到过期偏移）
-        self._check_index_freshness()
 
         if not self._open_map():
             self._phase = "共享内存失败"
@@ -2339,6 +2349,25 @@ def _print(message: str) -> None:
     print(message, flush=True)
 
 
+def _probe_preflight() -> None:
+    """``--probe`` 用：只做本地校验（**不联网、不重建**），看偏移量对不对得上本机 DLL。"""
+    try:
+        from functions.hook.preflight import ensure_offsets_ready
+        info = ensure_offsets_ready(on_log=_print, allow_cloud=False, allow_rebuild=False)
+    except Exception as exc:  # noqa: BLE001
+        _print(f"[偏移预检] 不可用: {type(exc).__name__}: {exc}")
+        return
+    verdict = str(info.get("verdict") or "")
+    _print(f"[偏移预检] {verdict}（"
+           f"{BattleWatch._PREFLIGHT_TEXT.get(verdict, verdict)}）")
+    check = info.get("check") or {}
+    if check.get("detail") and verdict != "local-ok":
+        _print(f"[偏移预检] {check['detail']}")
+    elif verdict == "local-ok":
+        _print(f"[偏移预检] {check.get('detail', '')}")
+        _print("[偏移预检] （离线 --probe 不联网、不重建；云端对照/本地重建只在游戏启动时按需发生）")
+
+
 def cmd_probe() -> int:
     """离线自查：钩子表 + 将要注入的 DLL + 进程身份 + 游戏 DLL 新鲜度，不注入。"""
     from functions.hook.paths import game_paths
@@ -2357,9 +2386,9 @@ def cmd_probe() -> int:
                f"sha256 {info['sha256'][:16]}…")
     if _DLL_CHOICE_NOTE:
         _print(f"  {_DLL_CHOICE_NOTE}")
-    # 游戏 DLL 新鲜度（钩子表来源索引 vs 磁盘上的 GameAssembly.dll）
+    # 偏移量预检（**只做本地校验**：不联网、不重建，适合 --probe 离线看）/ 进程身份 / 注入用 DLL
     _print("")
-    BattleWatch(log_callback=_print)._check_index_freshness()
+    _probe_preflight()
     # 进程身份：真正注入时按这张表挑 PID（映像路径优先）
     expected = _expected_game_exe()
     _print(f"\n期望的游戏进程: {expected or '（配置里没拿到游戏路径，将退化为同名第一个）'}")
@@ -2385,7 +2414,7 @@ def cmd_status() -> int:
     if os.path.isfile(path):
         _print(f"---- {path} 末尾 25 行 ----")
         try:
-            with open(path, "r", encoding="utf-8", errors="replace") as fh:
+            with open(path, "r", encoding="utf-8-sig", errors="replace") as fh:
                 lines = fh.readlines()[-25:]
             for line in lines:
                 _print("  " + line.rstrip())
