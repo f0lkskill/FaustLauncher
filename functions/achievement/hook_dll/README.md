@@ -275,13 +275,61 @@ class MyCombo(CompositeAchievement):
 
 ---
 
-## 七、怎么用 / 怎么看运行情况
+## 七、注入流程（身份校验 / 挂起窗口 / DLL 版本）
+
+`battle_watch.py` 侧（`BattleWatch._run` → `_inject`）在“进程一出现就注入”之上加了四道闸 ——
+“钩子没装上 / 事件全 0”历史上多半不是 DLL 写错了，而是**注错了进程 / 注错了时机 /
+注的是旧文件 / 游戏 DLL 已经更新**：
+
+| 闸 | 做什么 | 关键日志 |
+|---|---|---|
+| ① 身份校验 | 按 PID 取映像路径（`QueryFullProcessImageNameW`），必须等于配置的 `game_path\LimbusCompany.exe`；同名多进程时取**创建时间最新**那个 | `跳过 PID …：映像是 …，与配置的游戏（…）不一致` |
+| ② 稳定性 | 找到的进程必须连续存活 1s（`GAME_STABLE_SECONDS`，与 mod loader 的判定约定一致），排除 Steam 拉起的短命引导进程 | `PID … 存活不足 1s（疑似 Steam 引导进程/闪退）` |
+| ③ 挂起窗口 | 注入期间让进程**不执行游戏代码**：进程本来就挂着（全部线程挂起）就直接借用；否则临时挂起它全部线程（`SuspendThread`，用返回值区分“本来就挂起”，退出时**只恢复自己加的那一次**），注入完立刻恢复 | `检测到游戏进程已处于挂起态（N/N 个线程挂起）→ 直接在这个挂起窗口内注入` / `已建立注入窗口：挂起 N 个线程` |
+| ④ 落点回读 | 注入后枚举目标进程模块，确认 `battle_watch.dll` 已加载、且路径 == 刚注入的那份文件；进程里本来就有同名模块（`LoadLibraryW` 只会返回旧句柄）会直接告警 | `已确认目标进程加载 battle_watch.dll @0x…` / `来自 …，不是刚注入的 …` |
+
+> 为什么不是“等进程自己挂起”：LimbusCompany.exe 是 **Steam 拉起的**
+> （`steam://rungameid/1973530`），我们既不是 `CreateProcess` 的调用方，也看不到
+> `CREATE_SUSPENDED` 那个窗口，而正常游戏进程不会静止挂起 —— 所以 ③ 的做法是
+> **自己建立挂起窗口**（如果碰巧它真的处于挂起态，就顺手借用）。
+
+### 注入的是哪份 DLL（“确保 DLL 是最新版本”）
+
+- 运行时**只注入编译好的文件，绝不现编译**；发布包（`build.py`）只把 `battle_watch.dll`
+  复制进 `_internal/hook_dll/`，`.c` / `.ps1` / README 不进分发产物。
+- 候选路径可能同时存在多份（打包副本 `_MEIPASS/hook_dll/`、开发目录
+  `functions/achievement/hook_dll/`、部署目录 `_internal/hook_dll/`），`dll_path()` 取
+  **mtime 最新**的一份，并把被忽略的旧份写进日志
+  （`发现 N 份 battle_watch.dll，选用最新的一份 …`）—— 否则开发目录里重新编译之后，
+  打包版会一直注入包里那份旧 DLL。注入时还会把该文件的**大小 / mtime / sha256 前 12 位**
+  打进日志与状态文件。
+- `build.py` 额外防一手：`battle_watch.c` 比 DLL 新时会直接报
+  “发布包里的是旧构建，请先跑 build.ps1”。
+
+### 游戏的 DLL（GameAssembly.dll）是不是最新
+
+| 检查 | 时机 | 判定 |
+|---|---|---|
+| 索引 vs 磁盘 | 建完钩子表（`_check_index_freshness`） | `index.game.gameassembly_size` / `pe_timestamp` vs 磁盘文件；不一致 → `⚠ 偏移索引与磁盘上的 GameAssembly.dll 不匹配 …（跑 python -m functions.hook.main update）` |
+| 进程内 vs 磁盘 | DLL 报 `GameAssembly 已加载` 之后（`_verify_gameassembly`） | 读远端模块 PE 头（时间戳 / 映像大小 / 入口 RVA）与磁盘文件比对 → `游戏 DLL 校验通过` 或 `⚠ 游戏 DLL 不一致` |
+
+⚠ **判据不能用头部哈希**：加载器会往头部写几个字节（实测 `python.exe` 偏移 `0x13A`
+处存的是模块基址），磁盘文件与内存映像的头部并不逐字节相等；所以用
+`时间戳 + 映像大小 + 入口 RVA`（`pe_identity_same()`）作为判据。
+
+状态文件 `cache/achievement/battle_watch_status.json` 因此多了三段：`injection`
+（注入的映像 / DLL + 文件信息）、`index_game`（索引记录的游戏构建）、
+`gameassembly_check`（远端 vs 磁盘 + `same` 布尔）。
+
+---
+
+## 八、怎么用 / 怎么看运行情况
 
 ```powershell
 # 编译（MinGW-w64 gcc + MinHook；默认取 D:\LCTA_CheatingCore-main\vendor\minhook）
 powershell -NoProfile -ExecutionPolicy Bypass -File functions\achievement\hook_dll\build.ps1
 
-# 离线自查：打印将要下发的钩子表（含桩解引用结果）、DLL/日志/进程状态，不注入
+# 离线自查：钩子表（含桩解引用）+ 要注入的 DLL（大小/mtime/sha256）+ 游戏 DLL 新鲜度 + 同名进程映像，不注入
 python -m functions.achievement.battle_watch --probe
 
 # 看观测状态 + 事件日志末尾（游戏通过启动器跑过之后才有）
@@ -327,11 +375,16 @@ python test\battle_watch_test.py
 
 ---
 
-## 八、排障
+## 九、排障
 
 | 现象 | 原因 / 处理 |
 |---|---|
 | 心跳里所有钩子命中数都是 0 | 这些函数当前没被调用（v1 就是这个）→ 把心跳那段日志发我，或跑 `--probe` 看钩子表 |
+| 日志里没有“已注入” | 看同段日志的前几行：`跳过 PID … 映像不一致`（注错进程）/ `存活不足 1s`（Steam 引导进程）/ `CreateRemoteThread 失败`（杀软）/ `打开游戏进程失败`（权限）|
+| 改了 DLL 代码但没生效 | 看 `发现 N 份 battle_watch.dll，选用最新的一份 …`：说明注的是另一份（旧）副本；`发现 N 份` 那句后面列的就是被忽略的路径 |
+| `⚠ 偏移索引与磁盘上的 GameAssembly.dll 不匹配` | 游戏更新过： `python -m functions.hook.main update` 重建索引 |
+| `⚠ 游戏 DLL 不一致`（进程内 vs 磁盘） | 进程加载的 GameAssembly.dll 不是磁盘上那份（游戏正在更新/加载了旧版本）→ 重启游戏；若目录里的文件已更新过就先 `update` |
+| 游戏内模块已有同名 battle_watch.dll | `LoadLibraryW` 不会重新加载同名模块 → 重启游戏（旧模块随进程退出消失）|
 | 速度/理智/血量没反应 | 先看 `logs/battle_watch.log` 里有没有对应的 `SPD`/`VAL` 行：没有就是钩子没命中或字段偏移不对；有但 `mp=-1000`/`hp=-1000` 就是 `_state` 读失败（看第四节） |
 | buff 成就没反应 | 1) `logs/achievement_hook.log` 启动时应有一行「关注 buff N 个: …」——没有就说明 `battle_watch.watched_buff_names()` 是空的（成就没登记 / 没在模块列表里）；2) `logs/battle_watch.log` 里搜 `BUF`：有行但掩码 `m=0` 就是哈希对不上（改过 C 或 Python 的 fnv1a64？自检里有 C/Python 对照项）；根本没 `BUF` 行就是 buff 链偏移不对（链见第四节） |
 | 启动后整台机器卡顿 | 一般是**游戏更新后的索引重建**（capstone 解密 + Il2CppDumper，满核 1~2 分钟），不是观测本身。启动器已把 hook 子进程改成 `BELOW_NORMAL_PRIORITY_CLASS`（不再抢桌面），弹窗空闲时也不 60fps 空转 |
