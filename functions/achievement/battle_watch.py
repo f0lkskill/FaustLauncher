@@ -1717,13 +1717,13 @@ class BattleWatch:
         self._preflight.pop("index", None)          # 索引对象不进状态文件
         check = info.get("check") or {}
         self._log(f"[战斗观测] 偏移预检结果: {verdict}（{text}）"
-                  + (f"；{check['detail']}" if check.get("detail") else ""))
+                  + (f"；{check['detail']}" if check.get("detail") else "")) # type: ignore
         index = info.get("index")
         if index is not None:
             self._index_game_note = {
-                "size": int((index.game or {}).get("gameassembly_size") or 0),
-                "pe_timestamp": int((index.game or {}).get("pe_timestamp") or 0),
-                "game_version": str((index.game or {}).get("game_version") or ""),
+                "size": int((index.game or {}).get("gameassembly_size") or 0), # type: ignore
+                "pe_timestamp": int((index.game or {}).get("pe_timestamp") or 0), # type: ignore
+                "game_version": str((index.game or {}).get("game_version") or ""), # type: ignore
                 "source": str(info.get("source") or ""),
             }
         return info
@@ -2232,8 +2232,7 @@ class BattleWatch:
                   f"成就判定 {len(flags)} 条{('（' + ','.join(flags) + '）') if flags else ''} | "
                   f"钩子命中: {hits or '（全 0）'}")
         if not hits:
-            self._log("[战斗观测] 提示: 所有观测点命中数都是 0 —— 说明这些函数当前没被调用，"
-                      "把这段日志发我（或跑 --probe 看钩子表）")
+            self._log("[战斗观测] 提示: 所有观测点命中数都是 0")
 
     def _report_status(self, cfg: BWConfig) -> None:
         if int(cfg.gameassembly_found) and "ga" not in self._status_logged:
