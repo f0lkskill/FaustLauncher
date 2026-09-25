@@ -167,6 +167,9 @@ function renderResList() {
       (it.name || '').toLowerCase().includes(kw) ||
       (it.description || '').toLowerCase().includes(kw));
   }
+  // 显示顺序: 已启用的排前面, 已禁用的一律沉到后面 (组内保持后端给的顺序;
+  // 关掉开关后这张卡会立刻下移, 打开则回到启用区)。排序在分页之前, 所以翻页也一致。
+  items = items.slice().sort((a, b) => Number(!!b.enabled) - Number(!!a.enabled));
   const totalPages = Math.max(1, Math.ceil(items.length / RES_PAGE_SIZE));
   if (resPage > totalPages) resPage = totalPages;
   const pageItems = items.slice((resPage - 1) * RES_PAGE_SIZE, resPage * RES_PAGE_SIZE);
