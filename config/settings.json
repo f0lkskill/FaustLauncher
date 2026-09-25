@@ -360,8 +360,8 @@
         "type": "boolean",
         "default": true,
         "value": true,
-        "description": "游戏更新后自动重建偏移索引并同步到云端笔记\nFaustLauncher.hook_index（供注入DLL/插件/成就监测读取）\n关闭后只有手动运行 python -m functions.hook.main update 才会更新\n首次运行会解密 metadata 并跑一遍 Il2CppDumper（约 1 分钟）",
-        "page": "其它"
+        "description": "游戏更新后自动重建偏移索引并同步到云端笔记\nFaustLauncher.hook_index（供注入DLL/插件/成就监测读取）\n首次运行会解密 metadata 并跑一遍 Il2CppDumper（约 1 分钟）",
+        "page": "成就"
     },
     "enable_achievement_hook": {
         "name": "启用成就监测与战斗观测",
@@ -369,7 +369,7 @@
         "default": true,
         "value": true,
         "description": "启动游戏时拉起成就监测子进程：监控 Player.log，并向游戏进程注入\nbattle_watch.dll（只读观测：回合边界/技能使用/速度/血量/理智）以解锁战斗类成就\n关闭后不启动子进程、不注入任何DLL",
-        "page": "其它"
+        "page": "成就"
     },
     "achievement_log_verbose": {
         "name": "成就日志记录全部战斗事件",
@@ -377,7 +377,7 @@
         "default": false,
         "value": false,
         "description": "默认关闭：logs/achievement_hook.log 只留成就相关内容\n（生命周期/错误/观测点首次命中/心跳/判定结果）并带时间轴，\n全部事件请到 logs/battle_watch.log 看。\n排查问题时打开它，可以把每一条 RND/SPD/VAL/ACT 事件也写进成就日志。\n两个日志都在每次运行时清空重写。",
-        "page": "其它"
+        "page": "成就"
     },
     "ui_mode": {
         "name": "界面模式",
