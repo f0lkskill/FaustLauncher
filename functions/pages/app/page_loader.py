@@ -1134,7 +1134,9 @@ def download_and_launch(obj=None, need_run_game=False, manual=False):
                             transfer_bubble('lang')
                         except Exception as e:
                             print(f"重新应用有色气泡失败: {e}")
-                        _push_step('mods')
+                        # 注意: 这里属于"下载汉化包"这一步, 不要推 _push_step('mods')。
+                        # 步骤表里 mods 排在 install 之后(第 6 步), 提前推会直接跳步,
+                        # 并把后续 resource / install 的推送全部变成回退而被忽略。
                     else:
                         print(f"错误: 未找到 lang 下的 {get_translation_dir_name()} 文件夹")
             else:
