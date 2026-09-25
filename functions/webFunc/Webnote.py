@@ -18,6 +18,9 @@
   4. DoH 兜底: 常规线路失败时用 223.5.5.5 / doh.pub 解析, 再按原域名 SNI 直连 IP (绕过 DNS 污染)
   5. 本地缓存兜底: 全部源失败时用 cache/webnote/<key>.txt, 启动器仍可用 (可能过期)
   6. 明确日志: 打印每个源的 URL/状态/耗时/异常, 失败不再被静默吞掉
+
+**笔记名规则**: 就用 `config/web_config.json`(打包后是构建时内嵌)里写死的那个名字,
+不加也不减任何后缀; 内嵌名与本地配置名不同时(残留旧配置)才依次尝试, 供旧配置自动迁移。
 """
 
 import json
@@ -179,43 +182,6 @@ def memo_put(key, text):
 
 def memo_clear():
     _MEMO.clear()
-
-
-# 笔记名自动纠正 (残旧配置里写的是旧笔记名时, 自动改用有效名并记住)
-_KEYMAP = None
-
-
-def _keymap_path():
-    return os.path.join(CACHE_DIR, "_keymap.json")
-
-
-def _load_keymap() -> dict:
-    global _KEYMAP
-    if _KEYMAP is None:
-        try:
-            with open(_keymap_path(), "r", encoding="utf-8") as f:
-                data = json.load(f)
-            _KEYMAP = data if isinstance(data, dict) else {}
-        except Exception:
-            _KEYMAP = {}
-    return _KEYMAP
-
-
-def _remember_key(requested, effective):
-    """记住 配置名 → 有效名 的映射, 下次启动直接命中有效名"""
-    requested, effective = str(requested or ""), str(effective or "")
-    if not requested or not effective or requested == effective:
-        return
-    m = _load_keymap()
-    if m.get(requested) == effective:
-        return
-    m[requested] = effective
-    try:
-        os.makedirs(CACHE_DIR, exist_ok=True)
-        with open(_keymap_path(), "w", encoding="utf-8") as f:
-            json.dump(m, f, ensure_ascii=False, indent=2)
-    except Exception:
-        pass
 
 
 # ============================================================
@@ -520,12 +486,15 @@ class Note:
         self.has_get = False
 
     def _candidate_keys(self):
-        """候选笔记名 (按优先级):
+        """候选笔记名 —— **配置里写什么就用什么, 不做任何后缀猜测**
 
-        1. 上次成功过的有效名 (磁盘记忆, 避免每次都为旧配置白跑一趟)
-        2. 当前配置里的名字
-        3. 构建时内嵌配置里的同名笔记 (纠正 exe 目录里残留的旧配置)
-        4. .vX 后缀增删变体 (历史迁移差异)
+        顺序 (只有这两条, 不加也不减任何后缀):
+          1. 当前配置里的名字 (config/web_config.json)
+          2. 构建时内嵌配置里的同名笔记 (仅当与上面不同: exe 旁边残留旧配置时的兜底)
+
+        以前这里还会自动增删 `.v2` 变体, 并把"纠正后"的名字记进 cache/webnote/_keymap.json ——
+        结果 FaustLauncher.version_info 明明没有 .v2 后缀, 打包版的日志里也会凭空冒出
+        "FaustLauncher.version_info.v2" 白跑一趟请求 (2026-09-25 用户要求彻底去掉)。
         """
         keys = []
 
@@ -534,15 +503,12 @@ class Note:
             if k and k not in keys:
                 keys.append(k)
 
-        add(_load_keymap().get(self._requested, ""))
         add(self._requested)
         try:
             from functions.base.web_config import get_embedded_webnote_address
             add(get_embedded_webnote_address(self.note_id))
         except Exception:
             pass
-        for k in list(keys):
-            add(k[:-3] if k.endswith(".v2") else k + ".v2")
         return keys or [self._requested]
 
     def _use_key(self, key):
@@ -551,8 +517,8 @@ class Note:
         if not key:
             return
         if key != self._requested:
-            print(f"[云端] {self.note_id} 已改用有效笔记名: {key} (配置里是 {self._requested})")
-            _remember_key(self._requested, key)
+            print(f"[云端] {self.note_id} 使用内嵌配置里的笔记名: {key} "
+                  f"(本地配置写的是 {self._requested})")
         self.note_name = key
 
     def fetch_note_info(self, allow_refresh=False):
