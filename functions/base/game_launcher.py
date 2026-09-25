@@ -623,6 +623,7 @@ class GameLauncher:
                       "cache/achievement/hook_fatal.log")
 
         try:
+            import threading
             threading.Thread(target=worker, name="hook-child-watch", daemon=True).start()
         except Exception as exc:  # noqa: BLE001
             print(f"[成就] 子进程健康检查线程启动失败: {exc}")
