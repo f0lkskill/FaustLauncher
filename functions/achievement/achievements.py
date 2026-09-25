@@ -124,17 +124,6 @@ class ItemFamily:
                 return idx
         return -1
 
-# ============ 角色映射 ============
-CHARACTER_ID_MAP = {
-    "10110": "李箱",
-    "11114": "奥提斯",
-    "10209": "浮士德",
-    "10715": "希斯克利夫",
-    "11115": "奥提斯",
-    "10116": "李箱",
-}
-
-
 # ============ 全局状态 ============
 class GlobalState:
     """全局游戏状态 - 所有成就检查共享这些状态。"""
@@ -209,6 +198,7 @@ class Achievement:
         check_func,
         max_progress: int = 1,
         hidden: bool = False,
+        rarity: str = RARITY_COMMON,
     ):
         self.id = ach_id
         self.name = name
@@ -218,7 +208,7 @@ class Achievement:
         self.progress = 0
         self.max_progress = max_progress
         self.hidden = hidden
-        self.rarity: str = RARITY_COMMON
+        self.rarity: str = rarity
         self.unlock_time: datetime | None = None
 
     def with_rarity(self, rarity: str):
@@ -250,96 +240,24 @@ def _define_achievements():
     """
     s = get_state
 
-    # === 战斗成就 ===
-    achievements.append(Achievement(
-        "ach_battle_01", "初次战斗", "完成1场战斗",
-        lambda: s().battle_count >= 1
-    ))
-    achievements.append(Achievement(
-        "ach_battle_02", "战斗达人", "完成10场战斗",
-        lambda: s().battle_count >= 10
-    ))
-    achievements.append(Achievement(
-        "ach_battle_03", "战斗大师", "完成100场战斗",
-        lambda: s().battle_count >= 100
-    ))
-    achievements.append(Achievement(
-        "ach_battle_04", "通关百战", "累计完成500场战斗后继续征战",
-        lambda: s().battle_count >= 500
-    ))
-
     # === Steam 成就 ===
     achievements.append(Achievement(
         "ach_steam", "Steam玩家", "通过Steam登录游戏",
-        lambda: s().steam_logged
+        lambda: s().steam_logged,
+        rarity=RARITY_COMMON,
     ))
 
     # === 物品反向检测成就 ===
     # 物品状态来自当前背包检查批次，不使用跨会话缓存。
     achievements.append(Achievement(
-        "ach_item_101", "提取券持有者", f"拥有1张{RARE_ITEM_IDS[101]}",
-        lambda: 101 in s().owned_items,
-    ))
-    achievements.append(Achievement(
         "ach_item_102", "十连券持有者", f"拥有1张{RARE_ITEM_IDS[102]}",
         lambda: 102 in s().owned_items,
-    ))
-    achievements.append(Achievement(
-        "ach_guaranteed_general", "必得券持有者", f"拥有1张{RARE_ITEM_IDS[103]}",
-        lambda: 103 in s().owned_items,
-    ))
-    for season, item_id in ((1, 104), (2, 105), (3, 106)):
-        achievements.append(Achievement(
-            f"ach_season_{season}_guaranteed",
-            f"第{season}赛季必得券持有者",
-            f"拥有1张{RARE_ITEM_IDS[item_id]}",
-            lambda i=item_id: i in s().owned_items,
-        ))
-    achievements.append(Achievement(
-        "ach_ten_pull_1", "十连券收集者 I", "拥有1种以上的十连券",
-        lambda: any(i in s().owned_items for i in TEN_PULL_IDS),
-    ))
-    achievements.append(Achievement(
-        "ach_ten_pull_3", "十连券收集者 II", "拥有3种以上的十连券",
-        lambda: sum(i in s().owned_items for i in TEN_PULL_IDS) >= 3,
-    ))
-    achievements.append(Achievement(
-        "ach_ten_pull_5", "十连券大师", "拥有5种以上的十连券",
-        lambda: sum(i in s().owned_items for i in TEN_PULL_IDS) >= 5,
-    ))
-    achievements.append(Achievement(
-        "ach_guaranteed_2", "必得券收集者", "拥有2种以上的必得券",
-        lambda: sum(i in s().owned_items for i in GUARANTEED_IDS) >= 2,
-    ))
-    achievements.append(Achievement(
-        "ach_guaranteed_4", "必得券大师", "拥有4种以上的必得券",
-        lambda: sum(i in s().owned_items for i in GUARANTEED_IDS) >= 4,
-    ))
-    achievements.append(Achievement(
-        "ach_self_select", "自选券收藏家", "拥有1张赛季人格自选券",
-        lambda: any(i in s().owned_items for i in SELF_SELECT_IDS),
-    ))
-    achievements.append(Achievement(
-        "ach_total_5", "物品收集者", "拥有5种不同的稀有物品",
-        lambda: len(s().owned_items) >= 5,
-    ))
-    achievements.append(Achievement(
-        "ach_total_10", "物品收藏家", "拥有10种不同的稀有物品",
-        lambda: len(s().owned_items) >= 10,
     ))
 
     # === 背包/兑换页浏览系列 ===
     achievements.append(Achievement(
         "ach_inventory_1", "初次检视", "浏览1次背包/兑换页",
         lambda: s().inventory_open_count >= 1
-    ))
-    achievements.append(Achievement(
-        "ach_inventory_10", "检视达人", "累计浏览背包/兑换页10次",
-        lambda: s().inventory_open_count >= 10
-    ))
-    achievements.append(Achievement(
-        "ach_inventory_100", "检视大师", "累计浏览背包/兑换页100次",
-        lambda: s().inventory_open_count >= 100
     ))
 
     # === P 键 (自动战斗) 系列成就 ===
@@ -436,26 +354,6 @@ def _classes_in_module(mod) -> list:
 
 
 _define_achievements()
-
-
-def _assign_legacy_rarities():
-    """为既有成就按类别标注稀有度 (系列成就已在定义处标注)。"""
-    rarity_map = {
-        "ach_battle_01": RARITY_COMMON,
-        "ach_battle_02": RARITY_UNCOMMON,
-        "ach_battle_03": RARITY_RARE,
-        "ach_battle_04": RARITY_LEGENDARY,
-        "ach_steam": RARITY_COMMON,
-        "ach_inventory_1": RARITY_COMMON,
-        "ach_inventory_10": RARITY_UNCOMMON,
-        "ach_inventory_100": RARITY_RARE,
-    }
-    for ach in achievements:
-        if ach.id in rarity_map:
-            ach.rarity = rarity_map[ach.id]
-
-
-_assign_legacy_rarities()
 
 
 # ============ 成就检查函数 ============
