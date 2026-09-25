@@ -175,6 +175,8 @@ function startupRender() {
 
 // ⑧ 收尾: 标记启动完成, 并与 Splash 淡出同时显示, 避免转场结束时集中切换造成卡顿
 function startupFinish(startupRoots) {
+  // 通知图标水合闸门: app 已经就绪 (后端 bootstrap 拿到了), 可以开始拉图标了
+  APP_READY = true;
   const reveal = () => startupRoots.forEach(el => {
     el.classList.remove('startup-pending');
     el.classList.add('startup-ready');
@@ -199,6 +201,9 @@ async function init() {
   await startupFetchBootstrap();
   startupRender();
   startupFinish(startupRoots);
+  // splash 收尾 (~460ms) 之后再弹游戏路径窗口: 入场动画才播在用户看得见的时候,
+  // 而且这时 PROJECT_ICON 已是 bootstrap 的 data URI (不会有坏图)
+  setTimeout(() => { try { showPathGate(); } catch (e) { console.error('路径窗口失败:', e); } }, 520);
 }
 
 // pywebview 注入 window.pywebview 存在时序竞态, 等待 pywebviewready
