@@ -439,16 +439,24 @@ class SettingsPage:
             self.settings_manager.set_setting(key, color)
 
     def browse_game_path(self, entry):
+        from functions.base.steam_locator import resolve_game_dir, GAME_EXE
         path = filedialog.askopenfilename(
-            title="选择边狱巴士主程序",
-            filetypes=[("边狱巴士主程序", "LimbusCompany.exe")])
+            title=f"选择边狱巴士主程序 ({GAME_EXE})",
+            filetypes=[("边狱巴士主程序", GAME_EXE), ("可执行文件", "*.exe"),
+                       ("所有文件", "*.*")])
         if not path:
             return
-        if path.endswith('LimbusCompany.exe'):
-            path = path[:-len('LimbusCompany.exe')]
+        # 硬校验: 目录里必须有 LimbusCompany.exe (少点一层会自动下探)
+        game_dir = resolve_game_dir(path)
+        if not game_dir:
+            print(f"错误: 选择的路径下没有 {GAME_EXE}: {path}")
+            messagebox.showerror("路径无效",
+                                 f"选择的目录下没有 {GAME_EXE}:\n{path}\n\n"
+                                 f"请重新选择游戏主程序。")
+            return
         entry.delete(0, tk.END)
-        entry.insert(0, path)
-        self.settings_manager.set_setting('game_path', path)
+        entry.insert(0, game_dir)
+        self.settings_manager.set_setting('game_path', game_dir)
 
     def reset_setting(self, key):
         setting_info = self.settings_manager.get_setting_info(key)
