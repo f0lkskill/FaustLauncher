@@ -33,16 +33,24 @@ _BUILD_STEPS = [
 
 
 def upload_version_info(address, version, download_url='', log=None): # type: ignore
-    """上传版本信息到 webnote。
+    """上传版本信息到 webnote —— 与其它笔记 (mod/addon/hook 索引) **完全同一套读写构造**。
+
+    构造 (别再自己 requests, 见 functions/webFunc/Webnote.py):
+      · 读: Webnote.read_note_live() —— 多源 + IPv4 优先 + DoH 直连兜底, 但只走网络;
+        **200 + 0 字节 / HTML 错误页一律算读取失败**, 绝不当作"笔记是空的"
+        (以前自己 requests 读空响应 -> 当成全新笔记 -> 上传后抹掉云端几十个版本历史)
+      · 写: Webnote.write_note() —— POST(/update/) + 小内容 GET 兜底 + 连接类错误重试
+        + 严格响应解析 (HTML/414/非 JSON/status!=1 都算失败)
 
     规则:
+    - **读不到云端内容 -> 直接跳过上传** (宁可不上传, 也不能覆盖云端已有版本)
     - 版本号已存在 → 跳过上传
     - 只登记版本号与上传时间; 描述预置空值键, 由开发者到服务器(textdb)上填写
     - download_url 传入时一并登记 (蓝奏云直链解析 URL)
     - 不切换 latest_release_version 标签 (缺失时预置空值键, 由服务器侧填写)
 
-    address: webnote 笔记完整地址(如 FaustLauncher.version_info)
-    version: 要登记的版本号(如 V0.6.0-pre.7.fix.2)
+    address: webnote 笔记名 (如 FaustLauncher.version_info)
+    version: 要登记的版本号 (如 V0.6.0-pre.7.fix.2)
     download_url: 下载直链 (可为空)
     log: 可选日志回调(text), 默认 print
     """
@@ -54,15 +62,31 @@ def upload_version_info(address, version, download_url='', log=None): # type: ig
                 print(msg.encode(sys.stdout.encoding or 'utf-8', 'replace')
                           .decode(sys.stdout.encoding or 'utf-8'), end='')
     try:
-        note_url = f'https://folkskill.pythonanywhere.com/note/{address}'
-        print(f'获取云端版本信息: {note_url}')
-        r = requests.get(note_url, verify=False, timeout=20)
-        r.raise_for_status()
-        if not r.text.strip():
-            data = {'versions': {}}
-        else:
-            data = json.loads(r.text)
-        versions = data.get('versions', {})
+        from functions.webFunc.Webnote import read_note_live, write_note
+
+        address = str(address or get_webnote('version_info')[0] or '').strip()
+        if not address:
+            log('⚠ 未配置版本信息笔记名, 跳过上传\n')
+            return
+
+        print(f'获取云端版本信息: {address}')
+        text, used_key, err = read_note_live('version_info', address)
+        if not str(text or '').strip():
+            log(f'⚠ 读不到云端版本信息内容, 为避免覆盖已有版本历史已跳过上传'
+                f'{f" ({err})" if err else ""}\n')
+            return
+
+        try:
+            data = json.loads(text)
+        except Exception as e:
+            log(f'⚠ 云端版本信息不是合法 JSON ({e}), 已跳过上传\n')
+            return
+        if not isinstance(data, dict):
+            log('⚠ 云端版本信息结构异常 (顶层不是对象), 已跳过上传\n')
+            return
+        versions = data.get('versions')
+        if not isinstance(versions, dict):
+            versions = {}
 
         if version in versions:
             log(f'⏭ 版本 {version} 已存在于云端版本信息, 跳过上传\n')
@@ -82,16 +106,14 @@ def upload_version_info(address, version, download_url='', log=None): # type: ig
         new_content = json.dumps(data, ensure_ascii=False, indent=4)
 
         print(f'上传版本信息: {version}')
-        ur = requests.post(f'https://folkskill.pythonanywhere.com/update/?key={address}',
-                           data={'value': new_content},
-                           verify=False, timeout=30)
-        result = ur.json()
+        result = write_note(used_key, new_content) or {}
         if result.get('status') == 1:
             log(f'✔ 版本信息上传成功: {version}\n')
         else:
-            log(f'✕ 版本信息上传失败: {result}\n')
+            log(f'✕ 版本信息上传失败: {result.get("error") or result}\n')
     except Exception as e:
         log(f'⚠ 上传版本信息失败(不影响构建结果): {e}\n')
+
 
 class BuildGUI:
     def __init__(self, version_info):
