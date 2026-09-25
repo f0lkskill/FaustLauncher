@@ -795,9 +795,19 @@ class AppApi:
         for t in tools:
             t["image_uri"] = _tool_image_uri(t.get("image", ""))
         icon_uri = _get_project_icon_uri()
+        try:
+            from functions.base.steam_locator import resolve_game_dir as _rgd
+            _boot_game_path_ok = bool(_rgd(str(sm.get_setting("game_path") or "")))
+        except Exception as _e:
+            print(f"[设置] 启动时校验游戏路径失败(按有效处理, 不锁界面): {_e}")
+            _boot_game_path_ok = True
         return {
             "version": str(sm.get_setting("version_info")),
             "game_path": str(sm.get_setting("game_path") or ""),
+            # 路径里是否有 LimbusCompany.exe: 前端据此在启动瞬间就锁住界面
+            # (异常时给 True, 宁可不在启动瞬间锁, 也不能因为一个 import 失败把界面锁死;
+            #  真正的检测结果随后仍由 check_settings 推送的 path_confirm 兜底)
+            "game_path_ok": _boot_game_path_ok,
             "bg_color": str(sm.get_setting("bg_color") or "#181818"),
             "features": features,
             "tools": tools,
@@ -921,19 +931,25 @@ class AppApi:
         """待确认的 Steam 自动检测结果 (前端兜底轮询用)
 
         Returns: {checked: 后端是否已完成检测, path: 检测到的路径(可能为空串),
+                  path_ok: 该路径下是否确实有 LimbusCompany.exe,
                   game_exe: 游戏主程序名(仅供界面提示)}
         """
-        from functions.base.steam_locator import GAME_EXE
+        from functions.base.steam_locator import GAME_EXE, resolve_game_dir
+        path = str(getattr(self.core, "pending_steam_path", "") or "")
         return {
             "checked": bool(getattr(self.core, "_steam_path_checked", False)),
-            "path": str(getattr(self.core, "pending_steam_path", "") or ""),
+            "path": path,
+            # path_ok=False: 这个路径下没有 LimbusCompany.exe, 视为无效路径 (不能直接确认)
+            "path_ok": bool(resolve_game_dir(path)),
             "game_exe": GAME_EXE,
         }
 
     def confirm_steam_game_path(self, accept):
         """用户对"自动检测到的游戏路径"的回答
 
-        accept=True  -> 写入该路径; accept=False -> 丢弃, 等前端让用户自己选。
+        accept=True  -> 写入该路径 (仍然必须过 LimbusCompany.exe 硬校验,
+                        目录里没有这个文件会返回 error='no_exe');
+        accept=False -> 丢弃, 等前端让用户自己选。
         """
         path = str(getattr(self.core, "pending_steam_path", "") or "").strip()
         if not accept:
@@ -946,19 +962,29 @@ class AppApi:
         return self.apply_game_path(path)
 
     def apply_game_path(self, path):
-        """写入游戏路径: 非空校验 -> 规范化 -> 落盘 -> 通知前端同步
+        """写入游戏路径: 非空 -> 目录存在 -> 目录里必须有 LimbusCompany.exe (硬校验)
 
-        Returns: {ok, path, has_exe, error}
+        - 找不到 exe 的目录一律拒绝 (error='no_exe'), Steam 自动检测到的路径同样对待;
+        - 用户少点一层 (例如选了 steamapps\\common 或游戏目录的父级) 时,
+          自动下探到唯一含 exe 的子目录, 返回 auto_fixed=True 让前端提示一下。
+
+        Returns: {ok, path, has_exe, auto_fixed, error}
         """
-        from functions.base.steam_locator import normalize_game_path, has_game_exe
+        from functions.base.steam_locator import normalize_game_path, resolve_game_dir, GAME_EXE
         raw = str(path or "").strip()
         if not raw:
             print("[设置] 游戏路径为空, 拒绝写入")
             return {"ok": False, "error": "empty", "path": ""}
-        game_path = normalize_game_path(raw)
-        if not os.path.isdir(game_path):
-            print(f"[设置] 游戏路径不存在: {game_path}")
-            return {"ok": False, "error": "not_found", "path": game_path}
+        norm = normalize_game_path(raw)
+        picked = resolve_game_dir(norm)
+        if not picked:
+            if not os.path.isdir(norm):
+                print(f"[设置] 游戏路径不存在: {norm}")
+                return {"ok": False, "error": "not_found", "path": norm}
+            print(f"[设置] 目录下没有 {GAME_EXE}, 拒绝写入: {norm}")
+            return {"ok": False, "error": "no_exe", "path": norm, "game_exe": GAME_EXE}
+        auto_fixed = os.path.normcase(picked) != os.path.normcase(norm)
+        game_path = picked
         self.core.settings_manager.set_setting("game_path", game_path)
         self.core.settings_manager.save_settings()
         self.core.pending_steam_path = ""
@@ -969,9 +995,10 @@ class AppApi:
         except Exception:
             pass
         self._notify_path_synced()
-        exe_ok = has_game_exe(game_path)
-        print(f"[设置] 游戏路径已写入: {game_path} (LimbusCompany.exe: {'有' if exe_ok else '未找到'})")
-        return {"ok": True, "path": game_path, "has_exe": exe_ok}
+        print(f"[设置] 游戏路径已写入: {game_path} (LimbusCompany.exe: 有)"
+              + (f" [自动下探一层: {norm} -> {game_path}]" if auto_fixed else ""))
+        return {"ok": True, "path": game_path, "has_exe": True,
+                "auto_fixed": auto_fixed}
 
     def get_translate_source_name(self):
         """主页"汉化源"显示名: 插件注册的自定义汉化源优先(取第一个), 否则内置平台名"""
@@ -1016,7 +1043,31 @@ class AppApi:
         return True
 
     # ---- 启动/更新 ----
+    def _require_game_path(self):
+        """游戏路径硬校验: 返回 None 表示可用, 否则返回给前端的错误对象
+
+        路径必须存在, 且目录里 (或其唯一子目录) 有 LimbusCompany.exe ——
+        没通过校验前, 任何依赖游戏目录的功能一律拒绝执行, 并把路径确认窗口
+        重新推给前端 (force=True: 界面重新锁住, 直到用户选出有效路径)。
+        """
+        from functions.base.steam_locator import resolve_game_dir, find_steam_game_path
+        try:
+            cur = self.core.settings_manager.get_setting("game_path") or ""
+        except Exception:
+            cur = ""
+        if resolve_game_dir(cur):
+            return None
+        print(f"[设置] 游戏路径无效, 拒绝执行该功能: {cur or '(未设置)'}")
+        try:
+            self.core._ask_web_game_path(find_steam_game_path() or "", force=True)
+        except Exception as e:
+            print(f"[设置] 重新推送游戏路径确认窗口失败: {e}")
+        return {"ok": False, "error": "no_game_path", "path": cur}
+
     def launch_game(self):
+        blocked = self._require_game_path()
+        if blocked:
+            return blocked
         def _run():
             from functions.pages.app.page_loader import download_and_launch
             obj = type("WebAppShim", (), {"root": None, "core": self.core})()
@@ -1029,6 +1080,9 @@ class AppApi:
         return True
 
     def update_translation(self):
+        blocked = self._require_game_path()
+        if blocked:
+            return blocked
         # 必须阻塞等待下载线程真正完成, 否则前端 await 立即返回,
         # 800ms 后 pipelineDone 会在后端仍在下载时就显示"流水线完成"
         from threading import Event as _Event

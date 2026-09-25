@@ -1395,6 +1395,9 @@ img.icon-fade { animation: iconFadeIn .26s ease both; }
 .pc-hint.warn { color: #f0b429; }
 .pc-hint.error { color: #ef6b6b; }
 .pc-foot { display: flex; justify-content: flex-end; gap: 10px; padding: 20px 24px 22px; }
+/* 没选出有效游戏路径之前: 页面主体整体不可交互 (标题栏仍可用, 还能最小化/关窗口) */
+body.path-locked #app { pointer-events: none; user-select: none; }
+body.path-locked #app *:focus { outline: none; }
 
 /* ---------- 启动流水线 出现/退出动画 ---------- */
 #pipeline-card {

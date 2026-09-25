@@ -132,19 +132,58 @@ def normalize_game_path(path):
     return p
 
 
-def is_valid_game_path(path) -> bool:
-    """游戏路径是否可用: 非空 + 目录存在 (只做这两条硬校验)"""
+def resolve_game_dir(path) -> str:
+    r"""把给定路径解析成"确实含 LimbusCompany.exe 的游戏目录", 解析不出返回 ""。
+
+    规则 (按顺序):
+      ① 传进来的就是 exe 文件本身 → 取它的所在目录
+      ② 目录本身有 LimbusCompany.exe → 用它
+      ③ 目录下**唯一一个**一级子目录有 exe → 用那个子目录
+         (用户多半选了上一层, 例如 steamapps\\common 或游戏目录的父级)
+      ④ 其它情况 (没 exe / 多候选分不清) → ""
+
+    路径里必须有 LimbusCompany.exe 是硬要求: 拿不到这个文件就说明目录选错了,
+    启动器不能把它当成有效游戏路径来用。
+    """
     raw = str(path or "").strip()
     if not raw:
-        return False
+        return ""
     try:
-        return os.path.isdir(normalize_game_path(raw))
+        p = normalize_game_path(raw)
     except Exception:
-        return False
+        return ""
+    # ① 直接指到 exe 文件本身
+    try:
+        if os.path.isfile(p) and os.path.basename(p).lower() == GAME_EXE.lower():
+            p = os.path.dirname(p)
+    except Exception:
+        return ""
+    if not p or not os.path.isdir(p):
+        return ""
+    if os.path.isfile(os.path.join(p, GAME_EXE)):
+        return normalize_game_path(p)
+    # ③ 唯一一级子目录带 exe (多个候选一律不猜)
+    try:
+        hits = [d for d in os.listdir(p)
+                if os.path.isfile(os.path.join(p, d, GAME_EXE))]
+    except Exception:
+        return ""
+    if len(hits) == 1:
+        return normalize_game_path(os.path.join(p, hits[0]))
+    return ""
+
+
+def is_valid_game_path(path) -> bool:
+    """游戏路径是否可用: 非空 + 目录存在 + 里面有 LimbusCompany.exe
+
+    硬校验: 找不到 LimbusCompany.exe 的路径一律无效 (含 Steam 自动检测到的路径,
+    见 resolve_game_dir)。
+    """
+    return bool(resolve_game_dir(path))
 
 
 def has_game_exe(path) -> bool:
-    """目录下是否存在 LimbusCompany.exe (软校验, 只用于给用户提示)"""
+    """目录**本身**是否存在 LimbusCompany.exe (不递归, 仅供界面提示)"""
     try:
         return os.path.isfile(os.path.join(normalize_game_path(path), GAME_EXE))
     except Exception:

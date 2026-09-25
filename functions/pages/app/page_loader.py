@@ -920,6 +920,28 @@ def download_and_launch(obj=None, need_run_game=False, manual=False):
     from threading import Thread
     from time import sleep
     
+    # 游戏路径硬校验: 目录里必须有 LimbusCompany.exe, 否则整个流程没有意义
+    # (拿不到 exe 说明路径无效: 未配置 / 选错目录 / 游戏被卸载或移动)
+    try:
+        from functions.base.settings_manager import get_settings_manager as _get_sm
+        from functions.base.steam_locator import resolve_game_dir as _resolve_game_dir
+        _game_path = _get_sm().get_setting('game_path') or ''
+        if not _resolve_game_dir(_game_path):
+            _msg = (f"游戏路径无效: {_game_path or '(未设置)'}\n"
+                    f"请选择一个包含 LimbusCompany.exe 的游戏目录后再操作。")
+            print("[启动流程] " + _msg.replace("\n", " "))
+            try:
+                from functions.web_update import zeroasso_download as _zd0
+                _push0 = getattr(_zd0, '_web_progress', None)
+                if _push0:
+                    _push0('dialog', {'kind': 'warning', 'title': '游戏路径无效',
+                                      'message': _msg})
+            except Exception:
+                pass
+            return False
+    except Exception as _e:
+        print(f"[启动流程] 游戏路径校验失败: {_e}")
+
     global downloading
     if downloading:
         return
