@@ -319,7 +319,7 @@ def _win32_show_window_impl(window, show=True):
 
 def _patch_network_timeouts():
     """给所有 requests 请求补默认超时, 防止断网/网络缓慢时无限阻塞线程 (卡死);
-    同时禁用 InsecureRequestWarning (textdb 等源使用 verify=False 的合法请求)"""
+    同时禁用 InsecureRequestWarning (云端笔记等源使用 verify=False 的合法请求)"""
     try:
         import urllib3
         urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)

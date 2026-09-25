@@ -56,7 +56,7 @@ ALLOW_UP_TYPES = [
 # 蓝奏云直链解析 (分享页 -> 可下载直链)
 # ============================================================
 # 云端数据库里的下载链接历史上写成第三方解析服务的地址:
-#     https://lz.qaiu.top/parser?url=<分享链接>[&pwd=<密码>]
+#     https://lz0.qaiu.top/parser?url=<分享链接>[&pwd=<密码>]
 # 这里在本地把同一件事做掉, 不再依赖第三方解析服务:
 #     1. 取分享页 —— 先过阿里云 WAF 的 acw_sc__v2 JS 挑战;
 #     2. 从页面里读出 ajaxfile.php/ajaxm.php 接口、sign 与 kd;
@@ -137,7 +137,7 @@ def _ResolveOnce(session, share_url, pwd, timeout):
 def GetDirectLink(url, pwd=None, session=None, timeout=(10, 30)):
     """把蓝奏云分享链接 (或指向它的解析服务链接) 解析成可下载直链
 
-    :param url: 分享链接, 或 https://lz.qaiu.top/parser?url=<分享链接>&pwd=<密码>
+    :param url: 分享链接, 或 https://lz0.qaiu.top/parser?url=<分享链接>&pwd=<密码>
     :param pwd: 分享密码 (可选; 解析服务链接里的 pwd 会自动取用)
     :param session: 可复用的 requests.Session (不传则用线程内默认会话)
     :return: 直链 (时效性 URL, 建议拿到后立刻下载); 解析失败返回 None
@@ -192,7 +192,8 @@ def ResolveDownloadUrl(url, pwd=None, session=None, log=None, retries=0, retry_w
                     log("蓝奏云直链解析失败，%.0f 秒后重试（%d/%d）" % (retry_wait, attempt, retries))
                 time.sleep(retry_wait)
             if log:
-                log("正在解析蓝奏云直链...")
+                # log("正在解析蓝奏云直链...")
+                pass
             direct = GetDirectLink(url, pwd=pwd, session=session)
             if direct:
                 if log:
@@ -376,10 +377,28 @@ def LinkCacheSize():
         return len(_link_cache)
 
 
-def GetWithDirectLink(url, accept=None, timeout=(10, 30), session=None, **kwargs):
-    """解析成直链并 GET 取内容; 直链失效(或内容不合 accept) 时丢缓存重解析一次
+def LooksLikeFileResponse(resp):
+    """响应像"文件本体", 而不是解析服务回给我们的 JSON/HTML 错误页
 
-    :param accept: 可选回调 (response) -> bool, 返回 False 视为该直链不可用
+    用于判断"解析服务链接直接下"的结果: 修复版解析服务 (lz0.qaiu.top) 会 302 到
+    真文件 (requests 自动跟完, 拿到的就是文件); 老解析服务 (lz.qaiu.top) 已坏, 回
+    200 + application/json 的 {"code":500,"msg":"解析异常"}。
+    """
+    if resp is None or resp.status_code != 200:
+        return False
+    ctype = (resp.headers.get("Content-Type") or "").lower()
+    return not any(part in ctype for part in ("json", "html", "xml"))
+
+
+def GetWithDirectLink(url, accept=None, timeout=(10, 30), session=None, **kwargs):
+    """默认先本地解析成直链再 GET 取内容; 直链失效(或内容不合 accept) 时丢缓存重解析一次
+
+    解析不出直链时 (ResolveDownloadUrl 把入参原样返回) 自动退回原链接 ——
+    云端条目里的 lz0.qaiu.top 这类"修复版解析服务"链接本身就能下载 (GET 会 302
+    到真文件), 所以解析失败也照样能拿到文件。
+
+    :param accept: 可选回调 (response) -> bool, 返回 False 视为该直链不可用;
+        不传时用 LooksLikeFileResponse 兜底判断 (JSON/HTML 错误页不算文件)
     :return: requests.Response (两次都不行时返回最后一次的响应, 可能为 None)
     """
     sess = session or _http_session()
@@ -391,7 +410,7 @@ def GetWithDirectLink(url, accept=None, timeout=(10, 30), session=None, **kwargs
         except requests.RequestException as e:
             print("GetWithDirectLink 请求失败：%s" % e)
             resp = None
-        if resp is not None and (accept is None or accept(resp)):
+        if resp is not None and (accept(resp) if accept else LooksLikeFileResponse(resp)):
             return resp
         if resp is not None:
             resp.close()
@@ -1360,7 +1379,7 @@ if __name__ == "__main__":
     print('\n\n')
 
     # 直链解析示例 (不依赖第三方解析服务):
-    # link = "https://lz.qaiu.top/parser?url=https://folkskill.lanzoum.com/irAGt3iha71c&pwd=3z4n"
+    # link = "https://lz0.qaiu.top/parser?url=https://folkskill.lanzoum.com/irAGt3iha71c&pwd=3z4n"
     # print(GetDirectLink(link))
     # print(ResolveDownloadUrl(link))
 

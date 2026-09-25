@@ -70,9 +70,10 @@ print('loads')
 | 上传压缩包 | 蓝奏云 **`FaustLauncher.Addons`**（目录名可在 `config/web_config.json` → `lanzou.addons_folder` 改） |
 | 云端数据库 | 以直链解析链接填写 `dowload_url`/`icon_url`，写入插件笔记（`config/web_config.json` → `webnote.addon_info`） |
 
-> `dowload_url`/`icon_url` 存的是 `https://lz.qaiu.top/parser?url=<分享链接>` 这类解析链接（兼容旧版启动器）；
-> 新版启动器下载前会用 `functions/web_update/lanzou_utils.py` 的 `GetDirectLink` 在**本地**解析成蓝奏云直链
-> （含 WAF 挑战求解），解析失败才回退原链接。
+> `dowload_url`/`icon_url` 存的是 `https://lz0.qaiu.top/parser?url=<分享链接>` 这类解析链接（兼容旧版启动器）；
+> 新版启动器下载时会先用 `functions/web_update/lanzou_utils.py` 的 `GetDirectLink` 在**本地**解析成
+> 蓝奏云直链（含 WAF 挑战求解），解析不出直链（或解析出的直链已失效）时才退回这个原链接下载
+> —— `lz0.qaiu.top` 这类修复版解析服务链接本身就是可下载地址（GET 会 302 到真文件）。
 > 解析结果按「源 URL → 直链」落盘缓存在 `cache/lanzou_links.json`：蓝奏云直链本身约 30 分钟失效，所以缓存按
 > 25 分钟有效（`config/web_config.json` → `lanzou.link_cache_ttl_sec`，设 0 表示不过期）、用前自动重新解析；
 > 链接若提前失效，下载会丢掉缓存重解析一次。**改了条目链接（源 URL 变了）就会自动重新解析**，不用手工清缓存；
