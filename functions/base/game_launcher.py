@@ -484,7 +484,7 @@ class GameLauncher:
 
             try:
                 if self._settings.get_setting("enable_achievement_hook") is False:
-                    self._progress("已关闭成就监测（设置: 启用成就监测与战斗观测）", "🏆")
+                    print("[成就监测] 已关闭成就监测（设置: 启用成就监测与战斗观测）")
                     return
             except Exception:
                 pass
