@@ -787,15 +787,18 @@ class DownloadCenterPage:
         if not icon_url:
             return None
 
-        # 图标缓存: 文件名含 icon_url 的哈希, URL 变更(重新上传/更换图标)后自动失效,
-        # 避免旧图标缓存导致界面一直显示过期图标
-        icon_path = self._icon_cache_path(icon_url, item_name)
+        from functions.base.common import icon_cache
+        # 图标缓存: 文件名含 icon_url 的哈希, URL 变更(重新上传/更换图标)后自动失效。
+        # 查找只按 icon_url 的哈希兜底 —— 条目名在不同调用方(云端名/目录名)可能不一样,
+        # 不能因为名字不同就当成没缓存、又下载一遍
+        icon_path = icon_cache.find_cached_icon(icon_url, item_name, self.icon_cache_dir)
 
         # 如果图标已存在，直接返回 (不再触发任何网络请求)
-        if os.path.exists(icon_path):
+        if icon_path and os.path.exists(icon_path):
             return icon_path
 
-        from functions.base.common import icon_cache
+        # 落盘统一用标准命名
+        icon_path = self._icon_cache_path(icon_url, item_name)
         # 刚失败过的图标先跳过, 页面反复重绘时不必反复请求
         if icon_cache.icon_failed_recently(icon_url):
             return None

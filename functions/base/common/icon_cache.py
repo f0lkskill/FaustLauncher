@@ -46,6 +46,29 @@ def looks_like_image(data):
     return any(head.startswith(magic) for magic in _IMAGE_MAGIC)
 
 
+def find_cached_icon(icon_url, item_name, cache_dir=DEFAULT_ICON_CACHE_DIR):
+    """找已经缓存好的图标: 先按标准命名, 找不到再只按 icon_url 的哈希兜底
+
+    文件名里的条目名可能因调用方不同而不同 (云端显示名 / 本地目录名 / 改名后的名字),
+    甚至同一条目在不同页面用不同名字 —— 只按 icon_url 哈希兜底, 就不会出现
+    "缓存里明明有却当成没有, 又去下载一遍" 的情况。
+    """
+    if not icon_url:
+        return ""
+    exact = icon_cache_path(icon_url, item_name, cache_dir)
+    if exact and os.path.exists(exact):
+        return exact
+    digest = hashlib.md5(icon_url.encode("utf-8")).hexdigest()[:12]
+    suffix = "_%s_icon.png" % digest
+    try:
+        for filename in os.listdir(cache_dir):
+            if filename.endswith(suffix):
+                return os.path.join(cache_dir, filename)
+    except OSError:
+        pass
+    return exact
+
+
 def icon_failed_recently(icon_url):
     """该图标刚失败过吗 (期间不必再试)"""
     if not icon_url:

@@ -73,8 +73,13 @@ print('loads')
 > `dowload_url`/`icon_url` 存的是 `https://lz.qaiu.top/parser?url=<分享链接>` 这类解析链接（兼容旧版启动器）；
 > 新版启动器下载前会用 `functions/web_update/lanzou_utils.py` 的 `GetDirectLink` 在**本地**解析成蓝奏云直链
 > （含 WAF 挑战求解），解析失败才回退原链接。
-> 蓝奏云的 downprocess 接口有 IP 频控：请求会自动节流（`config/web_config.json` → `lanzou.min_interval_sec`，默认 1.5 秒），
-> 一旦命中限流就进入冷却期（120 秒起、最长 15 分钟，跨重启保留），期间解析直接回退原链接而不是继续撞墙。
+> 解析结果按「源 URL → 直链」落盘缓存在 `cache/lanzou_links.json`：蓝奏云直链本身约 30 分钟失效，所以缓存按
+> 25 分钟有效（`config/web_config.json` → `lanzou.link_cache_ttl_sec`，设 0 表示不过期）、用前自动重新解析；
+> 链接若提前失效，下载会丢掉缓存重解析一次。**改了条目链接（源 URL 变了）就会自动重新解析**，不用手工清缓存；
+> 想整体重置可以删掉 `cache/lanzou_links.json` 或调 `lanzou_utils.ClearLinkCache()`。
+> 蓝奏云的 downprocess 接口有 IP 频控：请求节流按域名走令牌桶 —— 允许一页图标（`lanzou.burst_requests`，默认 4）
+> 并发起步，额度用完才按 `lanzou.min_interval_sec`（默认 1.5 秒）匀速补充；
+> 一旦命中限流就进入冷却期（120 秒起、最长 15 分钟，跨重启保留），期间不再撞墙。
 
 数据库更新规则（与 Mod 一致）：
 
