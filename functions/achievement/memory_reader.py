@@ -148,6 +148,27 @@ def chain_source(key: str = "enkephalin") -> str:
         return _CHAIN_SOURCE.get(key, "unknown")
 
 
+def _local_index_matches_game() -> bool:
+    """本地索引是否已经对得上本机 GameAssembly.dll（对得上就不用联网拉云端）。
+
+    直接复用注入前预检的判据（``functions/hook/preflight.prologue_check``）：
+    逐条扝索引里的 prologue 与本机 DLL 字节比对，读不到/对不上都算 False。
+    """
+    try:
+        from functions.hook import index as index_mod
+        from functions.hook import paths as paths_mod
+        from functions.hook import preflight as preflight_mod
+        ga = str(getattr(paths_mod.game_paths(), "gameassembly", "") or "")
+        if not ga:
+            return False
+        index = index_mod.load_local()
+        if index is None:
+            return False
+        return bool(preflight_mod.prologue_check(index, ga).get("ok"))
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def refresh_chain_from_cloud(background: bool = True, on_log=print) -> bool:
     """从云端笔记拉一次 hook_index 并刷新本地缓存（一次启动只自动拉一次）。
 
@@ -172,6 +193,15 @@ def refresh_chain_from_cloud(background: bool = True, on_log=print) -> bool:
     def worker() -> None:
         global _CLOUD_REFRESHED, _CLOUD_REFRESHING
         try:
+            # 本地偏移索引已经对得上本机游戏 DLL 时**不联网**：
+            # 以前这里无条件拉云端，日志里就会出现“本地已是最新却还从云端刷新”。
+            # 判据与 battle_watch 的注入前预检同一套（prologue 逐条比本机 DLL）。
+            if _local_index_matches_game():
+                with _CHAIN_LOCK:
+                    _RESOLVED.clear()
+                if on_log:
+                    on_log("[成就] 本地偏移索引已对得上本机游戏 DLL → 跳过云端刷新")
+                return
             got = hook_index.refresh_local_from_cloud(allow_refresh=True, on_log=on_log)
             with _CHAIN_LOCK:
                 _RESOLVED.clear()          # 让下次读取重新解析

@@ -395,10 +395,14 @@ def rule_live(key: str) -> bool:
 BOUNDARY_PREFERRED = ("manager_init", "manager_on_round_start_before")
 BOUNDARY_FALLBACK = ("unit_round_start",)
 
-# 「技能动画结束」的收尾事件（命中就立刻结算技能类规则，不再等到回合边界）
-ACTION_END_TAGS = ("action_done_with_action", "action_on_end_turn")
-# 静默期：事件停了这么久就当作动画放完（兜住收尾事件没被调到的技能）
-SKILL_SETTLE_QUIET_SEC = 1.5
+# 「技能动画结束」的收尾事件：**只用 done_with_action**。
+# 实测同一手技能里 ``action_on_end_turn`` 先到、``action_done_with_action`` 后到
+# （中间还夹着 take_attack_dmg_multiplier 的伤害事件）—— 拿 on_end_turn 结算
+# 等于“动画还没播完就结算”，所以只在 done 上结算。
+ACTION_END_TAGS = ("action_done_with_action",)
+# 静默期兜底：个别技能不调收尾函数时，事件停这么久就当作动画放完。
+# 2.5s ≈ 一手技能动画的时长（太短会在动画中途结算，太长会让成就慢半拍）。
+SKILL_SETTLE_QUIET_SEC = 2.5
 
 HEARTBEAT_SEC = 20.0
 STATUS_WRITE_SEC = 2.0
@@ -2030,6 +2034,7 @@ class BattleWatch:
         present = {names[i] for i in range(min(len(names), BUFF_WATCH_MAX))
                    if mask & (1 << i)}
         info = {"oid": oid, "mask": mask, "names": sorted(present),
+                "count": event.get("n", -1),
                 "tag": event.tag, "round": self.state.round_seq}
         hits: list[str] = []
         with self._lock:
@@ -2050,6 +2055,7 @@ class BattleWatch:
         hit, names = rule.match_buff(info.get("oid", -1), present, self.state.round_seq)
         return (f"第 {self.state.round_seq} 回合 {rule.label or rule.key} "
                 f"身上有 buff {'/'.join(names)}（看 {'/'.join(rule.buffs)}；"
+                f"该单位当前共有 {info.get('count', -1)} 个 buff；"
                 f"oid={info.get('oid', -1)} via {tag}）")
 
     def _skill_detail(self, rule: BattleRule, record: dict, reason: str) -> str:
@@ -2227,7 +2233,8 @@ class BattleWatch:
         flags = list(snap.get("rule_hits") or {})
         self._log(f"[战斗观测] 心跳: 阶段={self._phase} PID={self._injected_pid} | "
                   f"事件: RND {snap['rnd_total']} / SPD {snap['spd_total']} / "
-                  f"VAL {snap.get('vitals_total', 0)} / ACT {snap['acts_total']} | "
+                  f"VAL {snap.get('vitals_total', 0)} / ACT {snap['acts_total']} / "
+                  f"BUF {snap.get('buff_total', 0)} | "
                   f"单位 {snap['units']} | 本回合待结算 {snap['pending_skills']} | "
                   f"成就判定 {len(flags)} 条{('（' + ','.join(flags) + '）') if flags else ''} | "
                   f"钩子命中: {hits or '（全 0）'}")

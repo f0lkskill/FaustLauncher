@@ -513,6 +513,8 @@ class GameLauncher:
                 if self._settings.get_setting("enable_achievement_hook") is False:
                     print("[成就监测] 已关闭成就监测（设置: 启用成就监测与战斗观测）")
                     return
+                else:
+                    print("[成就监测] 已开启成就监测")
             except Exception:
                 pass
 

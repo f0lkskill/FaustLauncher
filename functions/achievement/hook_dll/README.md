@@ -89,6 +89,7 @@ DLL 会写 `WARN prologue check skipped`）。
     RND tag=manager_on_round_start_before
     SPD tag=unit_refresh_speed iid=1234 oid=10101 os=7000 osi=7 ow=-1 owi=-1 its=7   （或 eff=..）
     VAL tag=take_attack_dmg_multiplier iid=1234 oid=10705 hp=41 mhp=58 mp=-3        （血量/理智）
+    BUF tag=sampler iid=1234 oid=10916 m=2 n=5                                       （buff：m=关注表命中位掩码，n=该单位当前 buff 总数）
     ACT tag=take_attack_dmg_multiplier actor=1234 cmd=1234 skid=1010103 slot=3 tier=3 aoid=10101
     INFO/WARN/ERR ...   （DLL 自己的提示）
 
@@ -150,6 +151,17 @@ DLL 会写 `WARN prologue check skipped`）。
 > `_maxMp = 45` / `_minMp = -45` 正好就是它的上下限，负数 = 陷入恐慌。
 > 读不出来一律发 `BW_VITAL_UNREAD(-1000)`，绝不会被误当成“真的负数理智”。
 > DLL 内按 `(单位指针, hp, mp)` 去重，只在上报值变化时发 `VAL`（否则一枚硬币一行）。
+> `BUF` 同理，按 `(关注位掩码, buff 总数)` 去重 —— 只比掩码的话，`m` 恒为 0 的单位
+> 永远不会有输出，排查时无法区分「身上没有关注的 buff」和「整条 buff 链读不到」。
+>
+> **采样线程（v5-DLL 起）**：`watcher_thread` 之外还有一个 `sampler_thread`，每
+> `BW_SAMPLE_MS`（250ms）把**已经见过的单位**重读一遍 hp / sp / buff，值一变就发
+> `VAL`/`BUF`（`tag=sampler`）。为什么需要它：我们只能在自己挂上的函数被调用时读值，
+> 而受击钩子（`GetTakeAttackDmgMultiplier`）是在**算伤害的当下**进的 —— 那时 hp 还没扣、
+> buff 还没上，所以「打到身上」造成的变化要等下一个单位级钩子（多半就是回合开始）才被看见，
+> 表现就是「血量/理智/buff 要等回合结束才结算」。采样线程把这个间隔压到 250ms，
+> 驱动侧本来就是即时判定，于是全链路实时。指针被复用（`_instanceID`/`_originID` 变了）
+> 就丢弃该单位，只读、全程 `safe_read` 边界校验。
 
 > **buff（v5）**：链子是
 > `unit[0xE0] → BuffDetail[0x10] → List<BuffModel>`，每个
@@ -206,12 +218,12 @@ battle_watch.py（驱动）
 
 | kind | 看的事件 | 命中条件 | 何时置位 |
 |---|---|---|---|
-| ``skill`` | ``ACT`` | ``skill_ids``，或（``identity_ids``+``tiers``）拼出的技能 ID，或（``gated_skill_ids`` 且 actor 身份匹配），或 ``any_skill``（只看身份） | **技能动画结束**（收尾事件 ``action_done_with_action``/``action_on_end_turn``，或 1.5s 静默期；回合边界兼着兜底） |
+| ``skill`` | ``ACT`` | ``skill_ids``，或（``identity_ids``+``tiers``）拼出的技能 ID，或（``gated_skill_ids`` 且 actor 身份匹配），或 ``any_skill``（只看身份） | **这手技能的动画结束**：只在 ``action_done_with_action`` 上结算（实测它比 ``action_on_end_turn`` 后到，中间还夹着伤害事件，拿 on_end_turn 结算等于动画还没播完就结算）；收尾事件没被调到时用 ``SKILL_SETTLE_QUIET_SEC``（2.5s）静默兜底 |
 | ``speed`` | ``SPD`` | 身份命中且 ``fields``（默认全部速度字段）里任一 == ``threshold`` | 立刻（边界兜底） |
-| ``mental`` | ``VAL`` | 身份命中且 ``mp < threshold`` | 立刻（边界兜底） |
-| ``hp`` | ``VAL`` | 身份命中且 ``hp < mhp * ratio`` | 立刻（边界兜底） |
-| ``buff`` | ``BUF`` | 身份命中且身上有目标 buff（名字哈希对关注表） | 立刻（边界兜底） |
-| ``presence`` | ``VAL``/``SPD``/``BUF`` | 目标身份出现在单位表里（“在场上”） | 立刻（边界兜底） |
+| ``mental`` | ``VAL`` | 身份命中且 ``mp < threshold`` | 立刻（采样线程 250ms 内） |
+| ``hp`` | ``VAL`` | 身份命中且 ``hp < mhp * ratio`` | 立刻（采样线程 250ms 内） |
+| ``buff`` | ``BUF`` | 身份命中且身上有目标 buff（名字哈希对关注表） | 立刻（采样线程 250ms 内） |
+| ``presence`` | ``VAL``/``SPD``/``BUF`` | 目标身份出现在单位表里（“在场上”） | 立刻 |
 
 部分类型还支持 **回合窗口** ``max_round`` / ``min_round``（0 = 不限）：例如
 「首个回合身上带着某 buff」就用 ``max_round=1``。
@@ -405,7 +417,7 @@ python test\battle_watch_test.py
 | `⚠ 游戏 DLL 不一致`（进程内 vs 磁盘） | 进程加载的 GameAssembly.dll 不是磁盘上那份（游戏正在更新/加载了旧版本）→ 重启游戏；若目录里的文件已更新过就先 `update` |
 | 游戏内模块已有同名 battle_watch.dll | `LoadLibraryW` 不会重新加载同名模块 → 重启游戏（旧模块随进程退出消失）|
 | 速度/理智/血量没反应 | 先看 `logs/battle_watch.log` 里有没有对应的 `SPD`/`VAL` 行：没有就是钩子没命中或字段偏移不对；有但 `mp=-1000`/`hp=-1000` 就是 `_state` 读失败（看第四节） |
-| buff 成就没反应 | 1) `logs/achievement_hook.log` 启动时应有一行「关注 buff N 个: …」——没有就说明 `battle_watch.watched_buff_names()` 是空的（成就没登记 / 没在模块列表里）；2) `logs/battle_watch.log` 里搜 `BUF`：有行但掩码 `m=0` 就是哈希对不上（改过 C 或 Python 的 fnv1a64？自检里有 C/Python 对照项）；根本没 `BUF` 行就是 buff 链偏移不对（链见第四节） |
+| buff 成就没反应 | 1) `logs/achievement_hook.log` 启动时应有一行「关注 buff N 个: …」——没有就说明 `battle_watch.watched_buff_names()` 是空的（成就没登记 / 没在模块列表里）；2) `logs/battle_watch.log` 里搜 `BUF`：有行但掩码 `m=0` 就是哈希对不上（改过 C 或 Python 的 fnv1a64？自检里有 C/Python 对照项）；根本没 `BUF` 行就是 buff 链偏移不对（链见第四节） |；3) `logs/battle_watch.log` 里看 `BUF` 行的 `n=`：`n=-1` = 整条 buff 链读不到（`_buffDetail`/`_grantedBuffList`/`_buffData`/`id` 任一环断了，看第四节字段表）；`n>0 m=0` = 链正常、只是身上没有我们关注的 buff（检查成就模块里的 buff 名拼写）；`n=0` = 那一刻该单位身上确实没 buff
 | 启动后整台机器卡顿 | 一般是**游戏更新后的索引重建**（capstone 解密 + Il2CppDumper，满核 1~2 分钟），不是观测本身。启动器已把 hook 子进程改成 `BELOW_NORMAL_PRIORITY_CLASS`（不再抢桌面），弹窗空闲时也不 60fps 空转 |
 | 成就日志里看不到战斗事件 | 正常：事件默认只进 `logs/battle_watch.log`；要一起看就打开设置项「成就日志记录全部战斗事件」 |
 | `ERR prologue mismatch` / `last_error=3` | 游戏更新了而索引没重建：`python -m functions.hook.main update` 后重启游戏 |
