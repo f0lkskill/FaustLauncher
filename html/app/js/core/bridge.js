@@ -135,6 +135,10 @@ window.__onEvent = function (event, data) {
     if (txtEl) txtEl.textContent = '等待游戏启动超时, 请检查游戏是否正常安装';
     toast('等待游戏启动超时', 'error', 6000);
     setTimeout(() => { pipelineIdle(); }, 4000);
+  } else if (event === 'path_confirm') {
+    // Steam VDF 自动检测到游戏路径 -> 弹模态窗口问用户 (path 为空则直接要求手选)
+    if (typeof openPathConfirmModal === 'function') openPathConfirmModal(data || {});
+    return;
   } else if (event === 'version_update') {
     // 应用内版本更新模态窗口: 下载进度/状态 (status/progress/ready/error)
     updateVersionModalProgress(data);

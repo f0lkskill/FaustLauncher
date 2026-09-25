@@ -907,6 +907,72 @@ class AppApi:
     def get_setting(self, key):
         return self.core.settings_manager.get_setting(key)
 
+    def _notify_path_synced(self):
+        """通知前端同步设置页输入框与主页路径芯片"""
+        try:
+            win = self.window_ref.get("win") if self.window_ref else None
+            if win is not None:
+                win.evaluate_js("window.__onPathSynced()")
+        except Exception as e:
+            print(f"通知前端同步游戏路径失败: {e}")
+
+    # ---- 游戏路径 (Steam VDF 自动检测 -> 用户确认) ----
+    def get_pending_steam_path(self):
+        """待确认的 Steam 自动检测结果 (前端兜底轮询用)
+
+        Returns: {checked: 后端是否已完成检测, path: 检测到的路径(可能为空串),
+                  game_exe: 游戏主程序名(仅供界面提示)}
+        """
+        from functions.base.steam_locator import GAME_EXE
+        return {
+            "checked": bool(getattr(self.core, "_steam_path_checked", False)),
+            "path": str(getattr(self.core, "pending_steam_path", "") or ""),
+            "game_exe": GAME_EXE,
+        }
+
+    def confirm_steam_game_path(self, accept):
+        """用户对"自动检测到的游戏路径"的回答
+
+        accept=True  -> 写入该路径; accept=False -> 丢弃, 等前端让用户自己选。
+        """
+        path = str(getattr(self.core, "pending_steam_path", "") or "").strip()
+        if not accept:
+            self.core.pending_steam_path = ""
+            print("[设置] 用户否认了自动检测到的游戏路径, 等待手动选择")
+            return {"ok": True, "accepted": False, "path": ""}
+        if not path:
+            # 检测到的是空路径: 不能写, 让用户自己选
+            return {"ok": False, "error": "empty", "path": ""}
+        return self.apply_game_path(path)
+
+    def apply_game_path(self, path):
+        """写入游戏路径: 非空校验 -> 规范化 -> 落盘 -> 通知前端同步
+
+        Returns: {ok, path, has_exe, error}
+        """
+        from functions.base.steam_locator import normalize_game_path, has_game_exe
+        raw = str(path or "").strip()
+        if not raw:
+            print("[设置] 游戏路径为空, 拒绝写入")
+            return {"ok": False, "error": "empty", "path": ""}
+        game_path = normalize_game_path(raw)
+        if not os.path.isdir(game_path):
+            print(f"[设置] 游戏路径不存在: {game_path}")
+            return {"ok": False, "error": "not_found", "path": game_path}
+        self.core.settings_manager.set_setting("game_path", game_path)
+        self.core.settings_manager.save_settings()
+        self.core.pending_steam_path = ""
+        try:
+            page = self.core.page_loader.get_page("settings")   # Tk 设置页(Web 模式下通常为空)
+            if page:
+                page.refresh_all_displays()
+        except Exception:
+            pass
+        self._notify_path_synced()
+        exe_ok = has_game_exe(game_path)
+        print(f"[设置] 游戏路径已写入: {game_path} (LimbusCompany.exe: {'有' if exe_ok else '未找到'})")
+        return {"ok": True, "path": game_path, "has_exe": exe_ok}
+
     def get_translate_source_name(self):
         """主页"汉化源"显示名: 插件注册的自定义汉化源优先(取第一个), 否则内置平台名"""
         try:

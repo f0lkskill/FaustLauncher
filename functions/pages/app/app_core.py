@@ -216,6 +216,37 @@ class FaustLauncherCore:
             from tkinter import messagebox
             messagebox.showerror("错误", f"打开mod管理器失败: {str(e)}")
             
+    def _ask_web_game_path(self, found: str) -> None:
+        """Web 模式: 把 Steam 自动检测到的路径推给前端, 由模态窗口问用户
+
+        只记录待确认路径 (self.pending_steam_path), 不写设置 —— 用户在前端点
+        "是" 才写 (AppApi.confirm_steam_game_path), 点 "不是" 则由前端强制选目录
+        (AppApi.apply_game_path)。found 为空串表示没检测到, 前端直接要求手动选择。
+        """
+        self.pending_steam_path = str(found or "").strip()
+        self._steam_path_checked = True      # 供前端兜底查询: 检测已做完
+        try:
+            from functions.base.steam_locator import GAME_EXE
+        except Exception:
+            GAME_EXE = "LimbusCompany.exe"
+        try:
+            from functions.web_update import zeroasso_download as _zd
+            push = getattr(_zd, "_web_progress", None)
+            if not push:
+                print("[设置] 前端推送不可用, 无法弹出游戏路径确认窗口 (请在设置页手动选择)")
+                return
+            push("path_confirm", {
+                "path": self.pending_steam_path,
+                "from_steam": bool(self.pending_steam_path),
+                "game_exe": GAME_EXE,
+            })
+            if self.pending_steam_path:
+                print(f"[设置] 已从 Steam VDF 获取到游戏路径, 等待用户确认: {self.pending_steam_path}")
+            else:
+                print("[设置] 未从 Steam VDF 获取到游戏路径, 等待用户手动选择")
+        except Exception as e:
+            print(f"[设置] 推送游戏路径确认窗口失败: {e}")
+
     def check_settings(self, skip_auto_download=False, interactive=True):
         """检查设置"""
         if not self.settings_manager.get_setting("game_path"):
@@ -223,26 +254,24 @@ class FaustLauncherCore:
             # 尝试通过 Steam VDF 自动定位边狱巴士, 找到后询问用户确认
             from functions.base.steam_locator import find_steam_game_path, normalize_game_path
             found = find_steam_game_path()
-            if found:
-                if interactive:
-                    from tkinter import messagebox
-                    if messagebox.askyesno("检测到边狱巴士",
-                                           f"已通过 Steam 检测到边狱巴士安装路径:\n{found}\n\n这是你的游戏路径吗？",
-                                           parent=self.root):
-                        self.settings_manager.set_setting("game_path", found)
-                        self.settings_manager.save_settings()
-                        settings_page = self.page_loader.get_page('settings')  # type: ignore
-                        if settings_page:
-                            settings_page.refresh_all_displays()
-                        found = None
-                    else:
-                        print("用户未确认自动检测的路径, 回退到手动选择")
-                else:
-                    # Web 模式: 无交互, 自动采用 Steam 检测到的路径
+            if not interactive:
+                # Web 模式: 不静默写入, 交给前端模态窗口问用户
+                # 检测不到路径时传空串 —— 前端会直接要求用户自己选目录 (路径非空是硬要求)
+                self._ask_web_game_path(found or "")
+                found = None
+            elif found:
+                from tkinter import messagebox
+                if messagebox.askyesno("检测到边狱巴士",
+                                       f"启动器已自动从 Steam VDF 获取到边狱巴士安装路径:\n{found}\n\n这是你的游戏路径吗？",
+                                       parent=self.root):
                     self.settings_manager.set_setting("game_path", found)
                     self.settings_manager.save_settings()
-                    print(f"[设置] 已通过 Steam 自动设置游戏路径: {found}")
+                    settings_page = self.page_loader.get_page('settings')  # type: ignore
+                    if settings_page:
+                        settings_page.refresh_all_displays()
                     found = None
+                else:
+                    print("用户未确认自动检测的路径, 回退到手动选择")
             if found:
                 if interactive:
                     from tkinter.filedialog import askopenfilename
