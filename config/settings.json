@@ -66,7 +66,7 @@
         "name": "用户名",
         "type": "string",
         "default": "Player",
-        "value": "Player",
+        "value": "folkskill",
         "description": "你的用户名，将显示在边狱巴士的个人车票上。",
         "page": "美化"
     },
@@ -168,7 +168,7 @@
         "name": "启用Mod功能",
         "type": "boolean",
         "default": true,
-        "value": false,
+        "value": true,
         "description": "是否加载 Mod\n注意: 由于游戏切换了新的引擎，导致大部分mod已经完全失效，不建议您启用 Mod 加载。\n我们将会在接下来的版本进行修复。",
         "page": "Mod"
     },

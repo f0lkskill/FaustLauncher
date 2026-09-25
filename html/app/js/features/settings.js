@@ -95,13 +95,26 @@ function updatePathChip() {
 //   2) 没选出有效路径之前, 界面被这个模态完全锁住: 没有关闭按钮, 点遮罩/Esc 都无效,
 //      同时给 body 加 .path-locked 让 #app 整体不可点 (标题栏的最小化/关闭仍可用);
 //   3) 只有后端确认写入成功 (ok=true) 才关窗解锁; 取消选择 / 选到没有 exe 的目录都停在原地。
-// 后端 path_confirm 事件: path 非空且 path_ok -> 问"这是你的游戏路径吗？";
-//   path 为空, 或 path_ok=false (Steam 里读到但目录里没 exe) -> 直接要求手动选择。
+//
+// 渲染流程 (2026-09-25 修: 不再"先说检测不到, 又突然改口弹新窗口"):
+//   锁定(检测中, 转圈) --后端结果--> 确认窗口(是/不是) 或 手选窗口
+//   · 启动时路径无效/未设置 -> 立刻锁界面并显示"正在检测", 后端结果没到之前不下结论;
+//   · 后端结果 (push path_confirm, 或兜底轮询 get_pending_steam_path) 到了才渲染最终状态;
+//   · 等满 PC_POLL_MAX_MS 仍没结果 (后端异常) -> 兜底切到"请选择游戏目录";
+//   · **同一状态绝不重建 DOM** (以前每次重渲染都把按钮组顶掉, 结果没到前点都点不到);
+//   · 轮询拿到结果立刻收工, 不会反复触发; 用户正在操作时收到的推送延后应用, 不打断操作。
 let pcModalEl = null;      // 当前模态 DOM
-let pcShown = false;       // 本次启动是否已经弹过 (后端 force=true 时可再弹)
-let pcSettled = false;     // 已经写入有效路径 -> 不再弹
-let pcPulling = false;     // 兜底轮询是否在跑
+let pcState = '';          // 当前渲染状态签名 (loading / ask:路径 / manual:原因)
+let pcSettled = false;     // 已经写入有效路径 -> 不再打扰
+let pcPolled = false;      // 兜底轮询已结束 (拿到结果 / 超时 / 接口不可用)
+let pcPulling = false;     // 轮询是否在跑
 let pcBusy = false;        // 正在等待后端写入 / 用户选目录
+let pcDeferred = null;     // 交互中收到的后端推送, 等交互结束再应用
+let pcLastRaw = '';        // 最近一次后端给的原始路径 (被否掉时用于说明)
+let pcExeName = 'LimbusCompany.exe';   // 后端给的 exe 名 (界面提示用)
+
+const PC_POLL_MAX_MS = 15000;    // 等后端检测结果的上限
+const PC_POLL_STEP_MS = 800;
 
 function pcLock(on) {
   try {
@@ -113,7 +126,9 @@ function pcLock(on) {
 function closePathModal() {
   const el = pcModalEl;
   pcModalEl = null;
+  pcState = '';
   pcBusy = false;
+  pcDeferred = null;
   pcLock(false);
   if (el) closePanel(el);
 }
@@ -131,20 +146,31 @@ function pcHint(text, kind) {
 function pcErrorText(err) {
   if (err === 'empty') return '路径不能为空';
   if (err === 'not_found') return '目录不存在';
-  if (err === 'no_exe') return '这个目录下没有 ' + (pcExeName || 'LimbusCompany.exe');
+  if (err === 'no_exe') return '这个目录下没有 ' + pcExeName;
   if (err === 'no_game_path') return '还没有设置有效的游戏路径';
   return err || '未知错误';
 }
-let pcExeName = 'LimbusCompany.exe';   // 后端给的 exe 名 (界面提示用)
 
-// 底部按钮: 只有"确认可用的路径"才给"是/不是"; 其余一律强制手选 (没有关闭/取消按钮)
-function pcRenderFoot(canConfirm) {
+// 结束一次交互: 把期间收到的后端推送补上 (同状态不重建, 所以不会顶掉按钮)
+function pcEndBusy() {
+  pcBusy = false;
+  const d = pcDeferred;
+  pcDeferred = null;
+  if (d && !pcSettled) renderPathConfirmModal(d);
+}
+
+// 底部按钮: 确认模式给"是/不是"; 手选模式给"选择游戏目录"; 检测中不给按钮
+function pcRenderFoot(mode) {
   const foot = document.getElementById('pc-foot');
   if (!foot) return;
-  foot.innerHTML = canConfirm
-    ? '<button class="btn btn-ghost" id="pc-no">不是，我自己选</button>' +
-      '<button class="btn btn-primary" id="pc-yes">是，就用它</button>'
-    : '<button class="btn btn-primary" id="pc-pick">选择游戏目录…</button>';
+  if (mode === 'ask') {
+    foot.innerHTML = '<button class="btn btn-ghost" id="pc-no">不是，我自己选</button>' +
+      '<button class="btn btn-primary" id="pc-yes">是，就用它</button>';
+  } else if (mode === 'manual') {
+    foot.innerHTML = '<button class="btn btn-primary" id="pc-pick">选择游戏目录…</button>';
+  } else {
+    foot.innerHTML = '<span class="pc-foot-note">正在等待检测结果…</span>';
+  }
   const yes = document.getElementById('pc-yes');
   if (yes) yes.onclick = pcAcceptDetected;
   const no = document.getElementById('pc-no');
@@ -153,9 +179,92 @@ function pcRenderFoot(canConfirm) {
   if (pick) pick.onclick = pcPickManually;
 }
 
+// 状态签名: 相同就不重建 DOM (这是"按钮组被顶掉"的根治点)
+function pcStateKey(d) {
+  const raw = String((d && d.path) || '').trim();
+  if (raw && d.path_ok !== false) return 'ask:' + raw;
+  return raw ? 'manual:invalid:' + raw : 'manual:empty';
+}
+
+// 构建/就地替换模态 (替换时不做关闭动画, 避免遮罩闪一下)
+function pcMount(eyebrow, title, bodyHtml, footMode, hint, hintKind) {
+  if (pcModalEl) { const old = pcModalEl; pcModalEl = null; old.remove(); }
+  const panel = document.createElement('div');
+  panel.id = 'pc-modal';
+  panel.className = 'pc-overlay';
+  panel.innerHTML =
+    '<div class="pc-card">' +
+      '<span class="pc-accent" aria-hidden="true"></span>' +
+      '<header class="pc-head">' +
+        '<img class="pc-mark" src="' + PROJECT_ICON + '" alt="" draggable="false">' +
+        '<div class="pc-head-main">' +
+          '<div class="pc-eyebrow">' + eyebrow + '</div>' +
+          '<div class="pc-title">' + title + '</div>' +
+        '</div>' +
+      '</header>' +
+      '<div class="pc-rule"></div>' + bodyHtml +
+      '<div class="pc-hint" id="pc-hint" hidden></div>' +
+      '<footer class="pc-foot" id="pc-foot"></footer>' +
+    '</div>';
+  document.body.appendChild(panel);
+  pcModalEl = panel;
+  pcLock(true);           // 锁住 #app: 没选出有效路径之前什么都点不了
+  pcRenderFoot(footMode);
+  if (hint) pcHint(hint, hintKind || '');
+}
+
+// 检测中: 只锁界面 + 转圈, 不下"没检测到"的结论
+function renderPathLoading() {
+  if (pcBusy) return;
+  if (pcModalEl && pcState === 'loading') return;
+  pcState = 'loading';
+  pcMount('正在检测游戏路径', '正在从 Steam 读取边狱巴士路径…',
+    '<div class="pc-loading"><span class="pc-spin" aria-hidden="true"></span>' +
+      '<span>正在解析 Steam 库文件，稍等片刻…</span></div>' +
+    '<div class="pc-desc">检测到有效路径会请你确认；没检测到就需要你自己选一个游戏目录。</div>',
+    'loading');
+}
+
+function renderPathConfirmModal(d) {
+  d = d || {};
+  if (pcBusy) { pcDeferred = d; return; }        // 用户正在操作: 别打断, 结束再应用
+  if (d.game_exe) pcExeName = String(d.game_exe);
+  const exe = pcExeName;
+  const key = pcStateKey(d);
+  if (pcModalEl && pcState === key) return;      // 状态没变 -> 绝不重建
+  const raw = String(d.path || '').trim();
+  pcLastRaw = raw;
+  const canConfirm = !!raw && d.path_ok !== false;   // 目录里有 exe 才允许"是"
+  pcState = key;
+  if (canConfirm) {
+    pcMount('检测到游戏路径', '这是你的游戏路径吗？',
+      '<div class="pc-desc">启动器已自动从 <b>Steam VDF</b> 读取到边狱巴士安装路径（不是你手填的）：</div>' +
+      '<div class="pc-path" title="' + esc(raw) + '">' + esc(raw) + '</div>',
+      'ask');
+    return;
+  }
+  const body = raw
+    ? '<div class="pc-desc">启动器从 <b>Steam VDF</b> 读到的路径里<b>没有 ' + esc(exe) + '</b>，按无效路径处理：</div>' +
+      '<div class="pc-path" title="' + esc(raw) + '">' + esc(raw) + '</div>' +
+      '<div class="pc-desc">请手动选择游戏根目录（目录里必须有 <code>' + esc(exe) + '</code>），否则启动器无法继续使用。</div>'
+    : '<div class="pc-desc">启动器没能从 <b>Steam VDF</b> 自动找到边狱巴士。' +
+      '请手动选择游戏根目录（目录里必须有 <code>' + esc(exe) + '</code>），否则启动器无法继续使用。</div>';
+  pcMount('需要设置游戏路径', '请选择游戏目录', body, 'manual',
+    raw ? 'Steam 里读到的是上面这个路径，但里面没有 ' + exe + '，请自己选一个游戏目录。' : '',
+    raw ? 'warn' : '');
+}
+
+function openPathConfirmModal(d) {
+  d = d || {};
+  if (d.force) { pcSettled = false; pcPolled = false; }   // 路径后来失效: 重新锁界面
+  if (pcSettled) return;                                  // 已写入有效路径, 不再打扰
+  renderPathConfirmModal(d);
+}
+
 // 写入成功: 关窗解锁 + 提示 (自动下探一层时说明一下)
 function pcDone(r) {
   pcSettled = true;
+  pcPolled = true;
   closePathModal();
   const path = (r && r.path) || '';
   const extra = (r && r.auto_fixed) ? '（已自动定位到含 ' + pcExeName + ' 的子目录）' : '';
@@ -170,13 +279,14 @@ async function pcAcceptDetected() {
   pcBusy = true;
   pcHint('正在写入…');
   const r = await api.confirm_steam_game_path(true).catch(e => ({ ok: false, error: String(e) }));
+  if (r && r.ok) { pcDone(r); return; }
+  // 后端否掉了自动检测到的路径 (没 exe / 目录没了) -> 直接换成手选窗口
+  const code = (r && r.error) || '';
   pcBusy = false;
-  if (!r || !r.ok) {
-    pcHint('自动检测到的路径不可用（' + pcErrorText(r && r.error) + '），请自己选一个游戏目录。', 'error');
-    pcRenderFoot(false);
-    return;
-  }
-  pcDone(r);
+  renderPathConfirmModal({ path: code === 'no_exe' ? pcLastRaw : '', path_ok: false,
+                           game_exe: pcExeName });
+  pcHint('自动检测到的路径不可用（' + pcErrorText(code) + '），请自己选一个游戏目录。', 'error');
+  pcEndBusy();
 }
 
 // 「不是」/ 没检测到: 强制自己选 (非空 + 目录里有 exe 才算选好; 取消就停在这里等重选)
@@ -190,104 +300,55 @@ async function pcPickManually() {
   const picked = await api.pick_folder().catch(() => '');
   const path = String(picked || '').trim();
   if (!path) {
-    pcBusy = false;
     // 路径非空是硬要求: 空路径不写入, 窗口也不关, 等用户重新选
     pcHint('没有选择任何目录。游戏路径不能为空，请重新点「选择游戏目录…」选一个。', 'warn');
+    pcEndBusy();
     return;
   }
   const r = await api.apply_game_path(path).catch(e => ({ ok: false, error: String(e) }));
-  pcBusy = false;
   if (r && r.ok) { pcDone(r); return; }
   const code = r && r.error;
   pcHint(code === 'no_exe'
     ? '这个目录里没有 ' + pcExeName + '。请选到游戏根目录（' + pcExeName + ' 所在的那个文件夹），否则启动器无法继续。'
     : '这个路径不可用（' + pcErrorText(code) + '），请重新选择。', 'error');
+  pcEndBusy();
 }
 
-// 渲染/刷新模态: 新信息到了 (例如后端刚检测出 Steam 路径) 就地重渲染
-function renderPathConfirmModal(d) {
-  d = d || {};
-  if (pcBusy) return;                // 用户正在选目录/写设置, 别把窗口重建掉
-  const raw = String(d.path || '').trim();
-  const canConfirm = !!raw && d.path_ok !== false;   // 目录里有 exe 才允许"是"
-  const invalid = !!raw && !canConfirm;              // Steam 里读到了, 但里面没有 exe
-  if (d.game_exe) pcExeName = String(d.game_exe);
-  const exe = pcExeName;
-
-  if (pcModalEl) closePathModal();
-  const panel = document.createElement('div');
-  panel.id = 'pc-modal';
-  panel.className = 'pc-overlay';
-  let body;
-  if (canConfirm) {
-    body = '<div class="pc-desc">启动器已自动从 <b>Steam VDF</b> 读取到边狱巴士安装路径（不是你手填的）：</div>' +
-      '<div class="pc-path" title="' + esc(raw) + '">' + esc(raw) + '</div>' +
-      '<div class="pc-desc">如果不对，点「不是，我自己选」自己指定游戏根目录。</div>';
-  } else if (invalid) {
-    body = '<div class="pc-desc">启动器从 <b>Steam VDF</b> 读到的路径里<b>没有 ' + esc(exe) + '</b>，按无效路径处理：</div>' +
-      '<div class="pc-path" title="' + esc(raw) + '">' + esc(raw) + '</div>' +
-      '<div class="pc-desc">请手动选择游戏根目录（目录里必须有 <code>' + esc(exe) + '</code>），否则启动器无法继续使用。</div>';
-  } else {
-    body = '<div class="pc-desc">启动器没能从 <b>Steam VDF</b> 自动找到边狱巴士。' +
-      '请手动选择游戏根目录（目录里必须有 <code>' + esc(exe) + '</code>），否则启动器无法继续使用。</div>';
-  }
-  panel.innerHTML =
-    '<div class="pc-card">' +
-      '<span class="pc-accent" aria-hidden="true"></span>' +
-      '<header class="pc-head">' +
-        '<img class="pc-mark" src="' + PROJECT_ICON + '" alt="" draggable="false">' +
-        '<div class="pc-head-main">' +
-          '<div class="pc-eyebrow">' + (canConfirm ? '检测到游戏路径' : '需要设置游戏路径') + '</div>' +
-          '<div class="pc-title">' + (canConfirm ? '这是你的游戏路径吗？' : '请选择游戏目录') + '</div>' +
-        '</div>' +
-      '</header>' +
-      '<div class="pc-rule"></div>' + body +
-      '<div class="pc-hint" id="pc-hint" hidden></div>' +
-      '<footer class="pc-foot" id="pc-foot"></footer>' +
-    '</div>';
-  document.body.appendChild(panel);
-  pcModalEl = panel;
-  pcLock(true);            // 锁住 #app: 没选出有效路径之前什么都点不了
-  pcRenderFoot(canConfirm);
-  if (invalid) {
-    pcHint('Steam 里读到的是上面这个路径，但里面没有 ' + exe + '，请自己选一个游戏目录。', 'warn');
-  }
-}
-
-function openPathConfirmModal(d) {
-  d = d || {};
-  if (pcSettled) return;              // 已经写入有效路径, 不再打扰
-  if (pcBusy) return;                 // 用户正在选目录, 别打断
-  if (pcShown && !pcModalEl && !d.force) return;   // 关掉过就不再弹 (force: 路径后来失效了)
-  pcShown = true;
-  renderPathConfirmModal(d);
-}
-
-// 启动即锁: 设置里存的路径无效 (或压根没设置) 时, 不等后端 6 秒的检查, 立刻锁界面
+// 启动即锁: 设置里存的路径无效 (或压根没设置) 时, 不等后端延迟检查, 立刻锁界面。
+// 只显示"检测中", 等后端结果到了再决定弹确认窗口还是手选窗口 (避免先说"没检测到"又改口)。
 function lockFromBootPath() {
   if (!api || pcSettled || pcModalEl) return;
   if (typeof BOOT === 'undefined' || !BOOT) return;
   if (BOOT.game_path_ok === undefined) return;       // 老后端 / 预览模式: 不做预锁
   if (BOOT.game_path_ok) return;                     // 路径有效, 放行
-  openPathConfirmModal({ path: '', path_ok: false, game_exe: pcExeName });
+  renderPathLoading();
 }
 
-// 兜底: 后端是启动后延迟 6 秒才检查设置的, 万一推送早于前端就绪, 这里主动拉一次
+// 兜底: 后端检测是异步的, 结果可能早于/晚于前端就绪 —— 轮询到结果立刻收工并渲染最终状态
 async function pullPendingPathConfirm() {
   lockFromBootPath();
-  if (!api || pcSettled || pcPulling) return;
+  if (!api || pcSettled || pcPolled || pcPulling) return;
+  if (typeof api.get_pending_steam_path !== 'function') {
+    pcPolled = true;
+    renderPathConfirmModal({ path: '', path_ok: false, game_exe: pcExeName });
+    return;
+  }
   pcPulling = true;
+  const t0 = Date.now();
   try {
-    for (let i = 0; i < 8; i++) {
-      await new Promise(r => setTimeout(r, i === 0 ? 7000 : 4000));
+    while (Date.now() - t0 < PC_POLL_MAX_MS) {
       if (pcSettled) return;
       const info = await api.get_pending_steam_path().catch(() => null);
-      if (!info || typeof info !== 'object') continue;
-      if (info.checked) {                 // 后端检测完了
-        if (!pcModalEl || !pcShown) openPathConfirmModal(info);
-        else renderPathConfirmModal(info);   // 已经锁着: 把检测结果刷进来 (可能是有效路径)
+      if (info && typeof info === 'object' && info.checked) {
+        pcPolled = true;                 // 一次性: 拿到结果就再也不轮询
+        openPathConfirmModal(info);
         return;
       }
+      await new Promise(r => setTimeout(r, PC_POLL_STEP_MS));
+    }
+    if (!pcSettled) {                    // 后端一直没结果 (异常): 兜底让用户自己选
+      pcPolled = true;
+      renderPathConfirmModal({ path: '', path_ok: false, game_exe: pcExeName });
     }
   } finally {
     pcPulling = false;

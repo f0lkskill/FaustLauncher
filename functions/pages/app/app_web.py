@@ -818,9 +818,15 @@ class AppApi:
         }
 
     def get_backgrounds(self):
-        """返回背景图 data URI 列表, 应用 bg_gaussian_blur 模糊设置 (限制数量并压缩)"""
+        """返回**一张随机背景图**的 data URI 列表, 应用 bg_gaussian_blur 模糊设置
+
+        2026-09-25 修: 以前是 sorted() 取前 4 张 —— 文件名靠后的图永远轮不到, 前端又每
+        25 秒在这 4 张里换, 看着就是"轮询"。现在每次调用都从 background 目录的**全部**
+        图片里随机抽 1 张 (顺带省掉 3/4 的编码开销与传输量)。
+        """
         uris = []
         try:
+            import random
             from PIL import Image, ImageFilter
             from functions.base.settings_manager import get_settings_manager
             blur = 0.0
@@ -830,11 +836,12 @@ class AppApi:
                 blur = 0.0
             bg_dir = os.path.join(_PROJECT_ROOT, "assets", "images", "background")
             if os.path.isdir(bg_dir):
-                for name in sorted(os.listdir(bg_dir)):
-                    if len(uris) >= 4:
-                        break
-                    if not name.lower().endswith((".png", ".jpg", ".jpeg")):
-                        continue
+                names = [n for n in os.listdir(bg_dir)
+                         if n.lower().endswith((".png", ".jpg", ".jpeg"))]
+                random.shuffle(names)
+                for name in names:
+                    if uris:
+                        break        # 已经拿到一张 (解码失败会顺延到下一张)
                     try:
                         img = Image.open(os.path.join(bg_dir, name)).convert("RGB")
                         img.thumbnail((1600, 1600), Image.Resampling.LANCZOS)
@@ -2705,7 +2712,13 @@ def run_web_ui(debug: bool = False):
 
     # 启动后检查设置 (延迟到前端就绪; web 模式无交互, 不弹 Tk 对话框)
     def _delayed_check():
-        time.sleep(6)
+        # 游戏路径检测尽量提前: 前端在启动瞬间就锁屏等这个结果 (避免"先说没检测到又改口")
+        try:
+            time.sleep(1)
+            core.ensure_game_path(interactive=False)
+        except Exception as e:
+            print(f"游戏路径检查失败: {e}")
+        time.sleep(5)
         try:
             # 只做设置检查, 不触发 check_settings 内部的简单汉化下载 (汉化由 download_and_launch 内部控制)
             core.check_settings(skip_auto_download=True, interactive=False)
