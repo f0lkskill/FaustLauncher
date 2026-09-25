@@ -293,6 +293,110 @@ def _default_pid_file() -> str:
     base = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     return os.path.join(base, "cache", "achievement", "hook.pid")
 
+# ============ 单实例策略（2026-09-25）========================================
+# 以前的做法只是“别打架”：发现另一个实例就不清空日志、继续并存 → 两个进程重复解锁成就、
+# 抢共享内存、日志交替追加。现在改成**新的接管**：
+#   1) 用命名互斥体判断有没有活着的实例（进程一死内核自动释放，比 pid 文件可靠）；
+#   2) 有 → 从 pid 文件拿它的 PID，校验映像 == 本解释器（防 PID 复用误杀）后收掉它；
+#   3) 收不掉 / 等不到互斥体 → **本次自己退出**，绝不让两个实例并存。
+HOOK_MUTEX_NAME = "Local\\FaustLauncher_AchievementHook"
+WAIT_OBJECT_0 = 0x00000000
+WAIT_ABANDONED = 0x00000080
+WAIT_TIMEOUT = 0x00000102
+ERROR_ALREADY_EXISTS = 183
+
+
+def _write_own_pid(pid_file: str = "") -> None:
+    """把本进程 PID 写进 hook.pid —— 这样**任何**实例（哪怕手工启动的）都能被下一个收掉。"""
+    try:
+        path = pid_file or _default_pid_file()
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(str(os.getpid()))
+    except OSError:
+        pass
+
+
+def _terminate_pid(pid: int, on_log=None) -> bool:
+    """终止另一个监测进程（只认映像 == ``sys.executable`` 的，防 PID 复用误杀）。"""
+    import ctypes
+    from ctypes import wintypes
+    log = on_log or (lambda _m: None)
+    if pid <= 0 or pid == os.getpid():
+        return False
+    PROCESS_TERMINATE = 0x0001
+    PROCESS_QUERY_LIMITED = 0x1000
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.OpenProcess.restype = wintypes.HANDLE
+    kernel32.QueryFullProcessImageNameW.argtypes = [wintypes.HANDLE, wintypes.DWORD,
+                                                    ctypes.c_wchar_p,
+                                                    ctypes.POINTER(wintypes.DWORD)]
+    handle = kernel32.OpenProcess(PROCESS_TERMINATE | PROCESS_QUERY_LIMITED, False, pid)
+    if not handle:
+        log(f"[成就监测] 打不开旧实例 PID {pid}（可能已经退出了）")
+        return False
+    try:
+        buf = ctypes.create_unicode_buffer(1024)
+        size = wintypes.DWORD(len(buf))
+        if kernel32.QueryFullProcessImageNameW(handle, 0, buf, ctypes.byref(size)):
+            image = buf.value
+            if os.path.normcase(image) != os.path.normcase(sys.executable):
+                log(f"[成就监测] PID {pid} 的映像是 {image}，不是我们拉起的监测进程 → 不动它")
+                return False
+        ok = bool(kernel32.TerminateProcess(handle, 0))
+        log(f"[成就监测] 已收掉旧实例 PID {pid}" if ok
+            else f"[成就监测] 终止 PID {pid} 失败")
+        return ok
+    except Exception as exc:  # noqa: BLE001
+        log(f"[成就监测] 终止 PID {pid} 异常: {type(exc).__name__}: {exc}")
+        return False
+    finally:
+        kernel32.CloseHandle(handle)
+
+
+def _acquire_single_instance(pid_file: str = "", on_log=None,
+                             timeout: float = 8.0) -> tuple[bool, str]:
+    """保证同一时刻只有一个成就监测实例。返回 ``(是否继续, 说明)``。"""
+    import ctypes
+    from ctypes import wintypes
+    log = on_log or (lambda _m: None)
+    pid_file = pid_file or _default_pid_file()
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.CreateMutexW.restype = wintypes.HANDLE
+    kernel32.CreateMutexW.argtypes = [ctypes.c_void_p, wintypes.BOOL, ctypes.c_wchar_p]
+    handle = kernel32.CreateMutexW(None, False, HOOK_MUTEX_NAME)
+    if not handle:
+        log("[成就监测] 创建单实例互斥体失败 → 按老行为继续（可能并存）")
+        return True, "互斥体不可用"
+    globals()["_hook_mutex"] = handle          # 持有到进程结束（内核自动释放）
+
+    def _try_take(seconds: float) -> bool:
+        rc = kernel32.WaitForSingleObject(handle, int(seconds * 1000))
+        return rc in (WAIT_OBJECT_0, WAIT_ABANDONED)
+
+    if _try_take(0):
+        _write_own_pid(pid_file)
+        return True, "本进程是唯一实例"
+
+    other = _other_hook_running(pid_file)
+    if not other:
+        log("[成就监测] 互斥体被占用，但 pid 文件里没有可用的 PID（手工启动/上次没记录）"
+            "→ 本次直接退出，避免两个实例并存")
+        return False, "已有实例且拿不到它的 PID"
+    log(f"[成就监测] 检测到已有监测实例在跑（PID {other}）→ 按“新的接管”策略收掉它")
+    if not _terminate_pid(other, log):
+        log("[成就监测] 收不掉旧实例 → 本次直接退出（避免两个实例并存）")
+        return False, f"无法收掉旧实例 PID {other}"
+    deadline = time.time() + max(1.0, timeout)
+    while time.time() < deadline:
+        if _try_take(1.0):
+            _write_own_pid(pid_file)
+            return True, f"已接管（收掉旧实例 PID {other}）"
+    log(f"[成就监测] 旧实例 PID {other} 没收干净（{int(timeout)}s 内没放开互斥体）"
+        "→ 本次直接退出")
+    return False, f"旧实例 PID {other} 未退出"
+
+
 
 # ============ 成就弹窗辅助 ============
 def _notify_toast(unlocked):
@@ -649,31 +753,39 @@ def run_achievement_hook():
     )
     args, _ = parser.parse_known_args()
 
-    # 重定向输出到文件（如果指定了 --output）
+    # ---- 单实例：先解决“有没有别的实例”，再开日志（保证只有一个实例在写日志）
+    pid_file = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+        "cache", "achievement", "hook.pid")
+    sole, sole_note = _acquire_single_instance(pid_file, on_log=_boot)
+    _boot(f"单实例检查：{sole_note}")
+    if not sole:
+        # 拿不到唯一身份 → 直接退出（绝不让两个实例并存：会重复解锁成就 + 抢共享内存）
+        raise SystemExit(0)
+    try:
+        from functions.achievement import battle_watch as _bw_mod
+        _bw_mod.set_sole_instance(True)      # 允许接管上次遗留的共享内存（DLL 还挂在游戏里）
+    except Exception:  # noqa: BLE001
+        pass
+
     if args.output:
         import atexit as _atexit
-        # 双实例保护：另一个实例也在写同一个文件时**不再清空**（改为追加），
-        # 否则两边各自按自己的偏移写会把日志写成夹空洞的“损坏”文件。
-        other = _other_hook_running(os.path.join(
-            os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-            "cache", "achievement", "hook.pid"))
-        sink = _LogSink(args.output, truncate=not other)
+        # 到这里已经确认自己是唯一实例 → 放心清空日志（不会再有第二个写者）
+        sink = _LogSink(args.output, truncate=True)
 
         def _write(msg: str):
             sink.write_line(msg)
 
         log_callback = _write
-        if other:
-            log_callback(f"[成就监测] 注意: 已有另一个监测实例在运行（PID {other}），"
-                         f"本次不清空日志以免损坏文件；两边日志会交替追加。")
+        log_callback(f"[成就监测] 单实例：{sole_note}")
 
         def _cleanup():
             sink.close()
         _atexit.register(_cleanup)
-        _boot(f"成就日志 sink 就绪: {args.output}"
-              f"（truncate={not other}，另一实例={other or '无'}）")
+        _boot(f"成就日志 sink 就绪: {args.output}（已独占）")
     else:
         log_callback = lambda msg: print(with_timestamp(msg))  # noqa: E731
+        _boot("未指定 --output，日志走 stdout")
 
     # 确定游戏日志路径
     if not os.path.isabs(args.log):

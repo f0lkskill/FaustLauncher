@@ -395,6 +395,15 @@ def rule_live(key: str) -> bool:
 BOUNDARY_PREFERRED = ("manager_init", "manager_on_round_start_before")
 BOUNDARY_FALLBACK = ("unit_round_start",)
 
+# 表现层动画 tick（DLL 用 plain kind 发 ``RND tag=skv_*``）：它们**不是**回合边界，
+# 只用来推进"动画相位"。见 BattleSkillViewBase（Skill_Start / Skill_Complete / Skill_End）。
+ANIM_TICK_TAGS = ("skv_start", "skv_complete", "skv_end")
+
+# 要"等动画"的规则类型：命中后先进待放行队列，由动画 tick 逐个放行。
+# 技能类本来就走待结算（pending_flags）；hp/理智/buff 之前是立刻置位，而这游戏的值变化
+# 全在回合开头的结算瞬间 → 立刻置位 = "回合开始立刻结算"，所以一起改成等动画。
+RULE_KINDS_ANIM_WAIT = ("hp", "mental", "buff")
+
 # 「技能动画结束」的收尾事件：**只用 done_with_action**。
 # 实测同一手技能里 ``action_on_end_turn`` 先到、``action_done_with_action`` 后到
 # （中间还夹着 take_attack_dmg_multiplier 的伤害事件）—— 拿 on_end_turn 结算
@@ -436,6 +445,14 @@ FALLBACK_HOOKS: dict[str, tuple[str, int, str]] = {
     "action_done_with_action": ("BattleActionModel::DoneWithAction", 0x11AD140, "action_int"),
     "take_attack_dmg_multiplier": ("BattleUnitModel::GetTakeAttackDmgMultiplier", 0x11E1D10,
                                   "damage_action"),
+    # ---- 表现层（动画相位）-----------------------------------------------
+    # ⚠ 这游戏的战斗是"**先算完整回合、再播动画**"：结算阶段（伤害/收尾回调）全挤在回合
+    # 刚开始的一瞬间，拿它们当"动画结束"必然变成"回合一开始就解锁"。只有表现层的
+    # BattleSkillViewBase 回调能反映动画进度（RVA 来自 dump.cs，build 34E76109）。
+    # 它们走 plain kind（DLL 发 RND tag=<钩子名>），驱动按 tag 前缀 ``skv_`` 区分相位。
+    "skv_start": ("BattleSkillViewBase::Skill_Start", 0x9B4D80, "plain"),
+    "skv_complete": ("BattleSkillViewBase::Skill_Complete", 0x9BD810, "plain"),
+    "skv_end": ("BattleSkillViewBase::Skill_End", 0x9475C0, "plain"),
 }
 FALLBACK_FIELDS: dict[str, int] = {
     "unit_instance_id": 0x60,
@@ -769,6 +786,21 @@ def select_game_process(process_name: str = TARGET_PROCESS) -> tuple[int | None,
     return pid, image, ""
 
 
+# 是否已确认“本进程是唯一的成就监测实例”（由 hook.py 拿到单实例互斥体后置位）。
+# 只有它为真时，_open_map 才允许**接管**上次遗留的共享内存 —— 否则两实例会双钩。
+_SOLE_INSTANCE = False
+
+
+def set_sole_instance(value: bool = True) -> None:
+    """由 hook.py 在拿到单实例互斥体后调用。"""
+    global _SOLE_INSTANCE
+    _SOLE_INSTANCE = bool(value)
+
+
+def sole_instance() -> bool:
+    return _SOLE_INSTANCE
+
+
 def find_process_id(process_name: str = TARGET_PROCESS) -> int | None:
     """兼容旧入口：返回第一个同名进程 PID（``--probe``/``--status`` 用）。"""
     candidates = find_process_candidates(process_name)
@@ -1079,6 +1111,11 @@ class BattleState:
     flags: dict = field(default_factory=dict)        # 规则 key → 命中详情（含本回合已结算的）
     flag_seq: dict = field(default_factory=dict)     # 规则 key → 命中序号（复合成就判“先后顺序”用）
     pending_flags: dict = field(default_factory=dict)  # 技能类规则本回合待结算：key → 详情
+    pending_immediate: dict = field(default_factory=dict)  # hp/理智/buff 待动画放行：key → 详情
+    pending_seqs: dict = field(default_factory=dict)   # key → 入队序号（跨类型按先后放行）
+    pending_seq: int = 0                               # 入队计数器
+    anim_ticks_total: int = 0                          # 收到的动画 tick 数（skv_*）
+    anim_last_tag: str = ""                            # 最近一次 tick 的钩子名
     acts_total: int = 0
     spd_total: int = 0
     vitals_total: int = 0
@@ -1112,6 +1149,9 @@ class BattleState:
             "rule_hits": dict(self.flags),
             "rule_order": dict(self.flag_seq),
             "rule_pending": sorted(self.pending_flags),
+            "rule_pending_immediate": sorted(self.pending_immediate),
+            "anim_ticks": self.anim_ticks_total,
+            "anim_last_tag": self.anim_last_tag,
             "watched_speeds": speeds,
             "watched_vitals": vitals,
             "watched_buffs": buffs,
@@ -1228,7 +1268,7 @@ def build_hook_table(on_log=None, pe_path: str = "") -> dict:
                 item["prologue"] = data
         key_owner = used_rva.get(rva)
         if key_owner is not None:
-            log(f"[战斗观测] {key} 与 {key_owner} 指向同一地址 0x{rva:X}，"
+            log(f"\n[战斗观测] {key} 与 {key_owner} 指向同一地址 0x{rva:X}，"
                 f"已合并（{HOOK_MERGE_WARN}）")
             resolved[key_owner].setdefault("merged_keys", []).append(key)
             continue
@@ -1334,13 +1374,11 @@ class BattleWatch:
             self.state.skills.clear()
             if pending:
                 self.state.settled_by = reason
-            # 技能类规则：命中过的现在置位
-            for key, detail in list(self.state.pending_flags.items()):
-                self.state.pending_flags.pop(key, None)
-                if key in self.state.flags:
-                    continue
-                self._set_flag_locked(key, detail)
-                settled.append(detail)
+            # 挂起的判定（技能 + 等动画的 hp/理智/buff）按先后顺序全部放行
+            flushed = self._flush_all_pending_locked()
+            if flushed:
+                self.state.settled_by = reason
+                settled.extend(flushed)
             if fallback_immediate:
                 suffix = f"{reason or '回合边界'}兜底"
                 # 立刻类规则（速度/理智/血量/buff）：统一拿最后一次观测复核
@@ -1362,6 +1400,10 @@ class BattleWatch:
                             i.get("oid", -1), n, self.state.round_seq)[0],
                         lambda rule, i=info, n=names: self._buff_detail(rule, i, suffix, n))
                 settled += self._eval_presence_locked()
+                # 兜底复核可能刚刚挂起新的判定（例：规则是后登记的）→ 一并放行
+                more = self._flush_all_pending_locked()
+                if more:
+                    settled.extend(more)
         if only_skills and not settled and not pending:
             return pending
         for detail in settled:
@@ -1376,7 +1418,7 @@ class BattleWatch:
         所以主循环每隔一小段就来看一眼：事件停了就当作“这一手的动画放完了”。
         """
         with self._lock:
-            if not self.state.pending_flags:
+            if not self.state.pending_flags and not self.state.pending_immediate:
                 return False
             quiet = time.time() - self._last_event_ts
         if quiet < SKILL_SETTLE_QUIET_SEC:
@@ -1478,7 +1520,10 @@ class BattleWatch:
         """只写事件日志（不进成就日志），用于全量事件记录。"""
         if self._event_file is not None:
             try:
-                self._event_file.write(f"{time.strftime('%H:%M:%S')} {message}\n")
+                # 带毫秒：结算阶段（一回合的伤害/收尾）全挤在同一秒里，只有毫秒能看清先后
+                self._event_file.write(
+                    f"{time.strftime('%H:%M:%S')}.{int(time.time() * 1000) % 1000:03d} "
+                    f"{message}\n")
             except OSError:
                 pass
 
@@ -1512,14 +1557,25 @@ class BattleWatch:
         existing = _kernel32.OpenFileMappingW(0x0006, False, ctypes.c_wchar_p(MAP_NAME))
         if existing:
             view = _kernel32.MapViewOfFile(existing, 0x0006, 0, 0, CONFIG_SIZE)
-            _kernel32.CloseHandle(existing)
             if view:
                 magic = ctypes.c_int32.from_address(view).value
-                _kernel32.UnmapViewOfFile(view)
                 if magic == BW_MAGIC:
-                    self._log("[战斗观测] 共享内存已存在（上次未正常退出或另一实例在跑），"
-                              "本次不注入以免双钩")
+                    if sole_instance():
+                        # 自己已经是唯一实例 → 这块内存只可能是上次遗留的（旧实例被杀，
+                        # 但它注入的 DLL 还挂在游戏里）。直接接管：接着用这块内存，
+                        # 下面的 _write_config 会把新配置覆盖进去，DLL 照新配置继续报事件。
+                        self._map_handle = existing
+                        self._map_view = view
+                        self._log("[战斗观测] 接管上次遗留的共享内存（本进程是唯一实例；"
+                                  "游戏里那份 DLL 若还在，会读到下面写入的新配置）")
+                        return True
+                    _kernel32.UnmapViewOfFile(view)
+                    _kernel32.CloseHandle(existing)
+                    self._log("[战斗观测] 共享内存已存在且**还有别的监测实例在跑** → "
+                              "本次不注入以免双钩（另一个实例被杀掉后会自动接管）")
                     return False
+                _kernel32.UnmapViewOfFile(view)
+            _kernel32.CloseHandle(existing)
         handle = _kernel32.CreateFileMappingW(-1, None, 0x04, 0, CONFIG_SIZE,
                                               ctypes.c_wchar_p(MAP_NAME))
         if not handle:
@@ -1855,10 +1911,14 @@ class BattleWatch:
         if self.verbose:
             self._log(f"[战斗观测] 事件 {line}")
         if kind == "RND":
-            with self._lock:
-                self.state.round_seq = event.get("seq", self.state.round_seq + 1)
-                self.state.rnd_total += 1
-            self.settle_turn(f"回合边界({tag or 'hook'})")
+            if tag in ANIM_TICK_TAGS:
+                # 表现层动画 tick（不是回合边界！）：放行一条挂起判定，让解锁跟着动画走
+                self._apply_anim_tick(tag)
+            else:
+                with self._lock:
+                    self.state.round_seq = event.get("seq", self.state.round_seq + 1)
+                    self.state.rnd_total += 1
+                self.settle_turn(f"回合边界({tag or 'hook'})")
         elif kind == "SPD":
             self._apply_spd(event)
         elif kind == "VAL":
@@ -1868,6 +1928,22 @@ class BattleWatch:
         elif kind == "ACT":
             self._apply_act(event)
         return event
+
+    def _apply_anim_tick(self, tag: str) -> None:
+        """表现层动画 tick：放行**一条**最早挂起的判定。
+
+        为什么一次一条：动画按结算顺序逐个播，而结算阶段的事件全挤在一瞬间，
+        所以"第 N 次动画 tick"≈"第 N 个行动"。一次放一条，解锁时机就跟着动画走；
+        没有挂起项时只计数（用来看钩子活不活）。
+        """
+        with self._lock:
+            self.state.anim_ticks_total += 1
+            self.state.anim_last_tag = tag
+            detail = self._flush_one_pending_locked()
+        if not detail:
+            return
+        self._log(f"[战斗观测] ▶ 动画 tick（{tag}）放行: {detail}")
+        self._write_status(force=True)
 
     def _apply_spd(self, event: BattleEvent) -> None:
         """速度事件：先把字段归一成整数速度，再交给规则表（``kind="speed"``，立刻置位）。
@@ -1950,8 +2026,10 @@ class BattleWatch:
                 if rule.kind != RULE_KIND_SKILL or key in self.state.flags:
                     continue
                 if rule.match_skill(record["skid"], actor_oid, round_seq):
-                    self.state.pending_flags.setdefault(
-                        key, self._skill_detail(rule, record, "待结算"))
+                    if key not in self.state.pending_flags and key not in self.state.flags:
+                        self.state.pending_seq += 1
+                        self.state.pending_seqs[key] = self.state.pending_seq
+                        self.state.pending_flags[key] = self._skill_detail(rule, record, "待结算")
         # 动画结束的收尾事件（不同技能收尾时机不一，钩到的这两个都当结束信号）
         if event.tag in ACTION_END_TAGS:
             self.settle_turn(f"技能动画结束({event.tag})", fallback_immediate=False,
@@ -1993,6 +2071,41 @@ class BattleWatch:
         self.state.flags[key] = detail
         self.state.flag_seq[key] = self.state.flag_counter
 
+    def _queue_pending_locked(self, key: str, detail: str) -> None:
+        """把一条判定挂起（等动画 tick 放行），并记下先后序号。"""
+        if key in self.state.flags or key in self.state.pending_immediate \
+                or key in self.state.pending_flags:
+            return
+        self.state.pending_seq += 1
+        self.state.pending_seqs[key] = self.state.pending_seq
+        self.state.pending_immediate[key] = detail
+
+    def _flush_one_pending_locked(self) -> str | None:
+        """放行**最早挂起的一条**判定（已持有锁）。返回详情文本。"""
+        best_key, best_seq = None, None
+        for store in (self.state.pending_flags, self.state.pending_immediate):
+            for key in store:
+                seq = self.state.pending_seqs.get(key, 0)
+                if best_seq is None or seq < best_seq:
+                    best_key, best_seq = key, seq
+        if best_key is None:
+            return None
+        detail = (self.state.pending_immediate.pop(best_key, None)
+                  or self.state.pending_flags.pop(best_key, None))
+        self.state.pending_seqs.pop(best_key, None)
+        self._set_flag_locked(best_key, detail or "")
+        return detail
+
+    def _flush_all_pending_locked(self) -> list[str]:
+        """按挂起先后放行全部（已持有锁）——回合边界 / 静默期 / 战斗结束的兜底。"""
+        out: list[str] = []
+        while True:
+            detail = self._flush_one_pending_locked()
+            if detail is None:
+                break
+            out.append(detail)
+        return out
+
     def _eval_immediate_locked(self, match_fn, detail_fn) -> list[str]:
         """非技能类规则的**统一求值器**（调用方必须已持有 ``self._lock``）。
 
@@ -2004,9 +2117,14 @@ class BattleWatch:
         for key, rule in registered_rules().items():
             if rule.kind not in RULE_KINDS_IMMEDIATE or key in self.state.flags:
                 continue
+            if key in self.state.pending_immediate or key in self.state.pending_flags:
+                continue
             if match_fn(rule):
                 detail = detail_fn(rule)
-                self._set_flag_locked(key, detail)
+                if rule.kind in RULE_KINDS_ANIM_WAIT:
+                    self._queue_pending_locked(key, detail)   # 等动画 tick 放行
+                else:
+                    self._set_flag_locked(key, detail)        # 速度/在场：本来就该立刻
                 hits.append(detail)
         return hits
 
@@ -2141,6 +2259,7 @@ class BattleWatch:
             log(f"[战斗观测] 关注 buff {len(names)} 个: {'/'.join(names)}")
         self._write_status(force=True)
         pid = None
+        starting_flag = False
         waited = 0.0
         while not self._stop.is_set():
             if pid is None or not self._pid_alive(pid):
@@ -2155,7 +2274,12 @@ class BattleWatch:
                     self._sleep(2.0 if waited < 300 else 10.0)
                     waited += 2.0
                     self._write_status()
+                    starting_flag = True
                     continue
+                else:
+                    if starting_flag:
+                        print(f"[战斗观测] {self.process_name} 启动，PID: {pid}，进入 hook 注入流程。")
+                        starting_flag = False
                 if note:
                     log(f"[战斗观测] 进程选择: PID {pid}（{image or '映像未知'}）；{note}")
                 # 稳定性：Steam 拉起的第一个同名进程可能几秒就退出（引导/闪退），
@@ -2235,6 +2359,7 @@ class BattleWatch:
                   f"事件: RND {snap['rnd_total']} / SPD {snap['spd_total']} / "
                   f"VAL {snap.get('vitals_total', 0)} / ACT {snap['acts_total']} / "
                   f"BUF {snap.get('buff_total', 0)} | "
+                  f"动画 tick {snap.get('anim_ticks', 0)}（{snap.get('anim_last_tag') or '无'}） | "
                   f"单位 {snap['units']} | 本回合待结算 {snap['pending_skills']} | "
                   f"成就判定 {len(flags)} 条{('（' + ','.join(flags) + '）') if flags else ''} | "
                   f"钩子命中: {hits or '（全 0）'}")
