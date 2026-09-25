@@ -780,7 +780,13 @@ class DownloadCenterPage:
         # 下载图标
         try:
             # print(f"正在下载图标: {icon_url}")
-            response = requests.get(icon_url, timeout=10, verify=False)
+            # 下载前预处理: 蓝奏云分享/解析链接 -> 直链
+            try:
+                from functions.web_update.lanzou_utils import ResolveDownloadUrl
+                fetch_url = ResolveDownloadUrl(icon_url)
+            except Exception:
+                fetch_url = icon_url
+            response = requests.get(fetch_url, timeout=10, verify=False)
             if response.status_code == 200:
                 with open(icon_path, 'wb') as f:
                     f.write(response.content)

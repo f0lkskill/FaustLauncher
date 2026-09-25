@@ -70,6 +70,10 @@ print('loads')
 | 上传压缩包 | 蓝奏云 **`FaustLauncher.Addons`**（目录名可在 `config/web_config.json` → `lanzou.addons_folder` 改） |
 | 云端数据库 | 以直链解析链接填写 `dowload_url`/`icon_url`，写入插件笔记（`config/web_config.json` → `webnote.addon_info`） |
 
+> `dowload_url`/`icon_url` 存的是 `https://lz.qaiu.top/parser?url=<分享链接>` 这类解析链接（兼容旧版启动器）；
+> 新版启动器下载前会用 `functions/web_update/lanzou_utils.py` 的 `GetDirectLink` 在**本地**解析成蓝奏云直链
+> （含 WAF 挑战求解），解析失败才回退原链接。
+
 数据库更新规则（与 Mod 一致）：
 
 - **同名插件视为更新**：替换描述/版本/链接并**置顶**，`download_count` 保留（不归零）；

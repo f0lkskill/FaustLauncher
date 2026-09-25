@@ -1794,7 +1794,13 @@ if %errorlevel% equ 0 (
         if not os.path.exists(icon_path):
             try:
                 import requests
-                r = requests.get(icon_url, timeout=10, verify=False)
+                # 下载前预处理: 蓝奏云分享/解析链接 -> 直链
+                try:
+                    from functions.web_update.lanzou_utils import ResolveDownloadUrl
+                    fetch_url = ResolveDownloadUrl(icon_url)
+                except Exception:
+                    fetch_url = icon_url
+                r = requests.get(fetch_url, timeout=10, verify=False)
                 if r.status_code == 200:
                     with open(icon_path, 'wb') as f:
                         f.write(r.content)
