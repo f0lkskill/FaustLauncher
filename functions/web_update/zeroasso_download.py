@@ -48,11 +48,40 @@ def get_github_release_url() -> tuple[str, str] | None:
         return None, None # type: ignore
 
 
+# 下载前置处理: 所有下载入口统一走这里 (蓝奏云链接 -> 直链)
+def resolve_download_url(url, gui=None, label=''):
+    """下载前预处理: 蓝奏云分享/解析链接 -> 直链 (解析失败退回原链接)
+
+    云端数据库里的 dowload_url / icon_url 与字体包链接都是蓝奏云分享链接
+    (历史上经 lz.qaiu.top 这类服务解析), 这里统一在本地解析成直链再下载,
+    不依赖第三方解析服务; 非蓝奏云链接原样返回, 永不抛异常。
+    """
+    if not url:
+        return url
+    try:
+        from functions.web_update.lanzou_utils import IsLanzouUrl, ResolveDownloadUrl
+        if not IsLanzouUrl(url):
+            return url
+        if gui is not None and getattr(gui, 'current_file_var', None) is not None:
+            try:
+                gui.current_file_var.set(f"正在解析 {label or '下载'} 直链...")
+            except Exception:
+                pass
+        resolved = ResolveDownloadUrl(url)
+        print(f"[下载] 直链解析 {label or ''}: {url[:90]} -> {resolved[:90]}")
+        return resolved
+    except Exception as e:
+        print(f"[下载] 直链解析失败，使用原始链接: {e}")
+        return url
+
+
 # 保留原有的函数（用于命令行模式）
 def download_file(url, local_filename):
     """下载文件并显示进度"""
     try:
         # 发送请求
+        # 下载前预处理: 蓝奏云分享/解析链接 -> 直链 (失败退回原链接)
+        url = resolve_download_url(url, label=os.path.basename(local_filename))
         response = requests.get(url, stream=True)
         response.raise_for_status()
         
@@ -264,6 +293,8 @@ def download_file_with_gui(url, local_filename, gui, file_name):
     """带GUI进度显示的下载文件函数"""
     try:
         # 更新GUI状态
+        # 下载前预处理: 蓝奏云分享/解析链接 -> 直链 (失败退回原链接)
+        url = resolve_download_url(url, gui, file_name)
         gui.current_file_var.set(f"{file_name}")
         
         # 发送请求

@@ -92,6 +92,44 @@ def ParseShareUrl(url, pwd=None):
     return inner, (unquote(pwd_match.group(1)) if pwd_match else pwd)
 
 
+def _ResolveOnce(session, share_url, pwd, timeout):
+    """按给定密码解析一次 (失败返回 None)"""
+    page_url = share_url
+    resp = _RequestWithWaf(session, page_url, timeout=timeout)
+    if resp.status_code != 200 or "html" not in (resp.headers.get("Content-Type") or "").lower():
+        print("GetDirectLink 失败：分享页不可用(%s)" % resp.status_code)
+        return None
+    info = _ParseSharePage(resp.text, _OriginOf(page_url), pwd)
+    if not info:
+        # 无密码分享页把下载入口放在 <iframe src="/fn?..."> 里, 进去再找一次
+        frame = _FindDownloadFrame(resp.text, _OriginOf(page_url))
+        if frame:
+            try:
+                inner = _RequestWithWaf(session, frame, timeout=timeout,
+                                        headers={"Referer": page_url})
+            except requests.RequestException as e:
+                print("GetDirectLink 失败：%s" % e)
+                return None
+            if inner.status_code == 200:
+                page_url = frame
+                info = _ParseSharePage(inner.text, _OriginOf(frame), pwd)
+    if not info:
+        print("GetDirectLink 失败：页面结构未匹配(可能是文件夹/新页面格式)")
+        return None
+
+    payload = _PostDownProcess(session, info["api"], info["data"], page_url, timeout)
+    if not isinstance(payload, dict) or str(payload.get("zt")) != "1":
+        print("GetDirectLink 失败：%s" % (payload.get("inf") if isinstance(payload, dict) else payload))
+        return None
+
+    dom = str(payload.get("dom") or "").rstrip("/")
+    path = str(payload.get("url") or "")
+    if not dom or not path:
+        print("GetDirectLink 失败：未取到 dom/url")
+        return None
+    return _FollowToFile(session, dom + "/file/" + path.lstrip("/"), page_url, timeout)
+
+
 def GetDirectLink(url, pwd=None, session=None, timeout=(10, 30)):
     """把蓝奏云分享链接 (或指向它的解析服务链接) 解析成可下载直链
 
@@ -103,39 +141,13 @@ def GetDirectLink(url, pwd=None, session=None, timeout=(10, 30)):
     if not url or not IsLanzouUrl(url):
         return None
     share_url, pwd = ParseShareUrl(url, pwd)
-    origin = "{0.scheme}://{0.netloc}".format(urlparse(share_url))
     sess = session or _http_session()
-
-    resp = _RequestWithWaf(sess, share_url, timeout=timeout)
-    if resp.status_code != 200 or "html" not in (resp.headers.get("Content-Type") or "").lower():
-        print("GetDirectLink 失败：分享页不可用(%s)" % resp.status_code)
-        return None
-    info = _ParseSharePage(resp.text, origin)
-    if not info:
-        print("GetDirectLink 失败：分享页结构未匹配(可能是文件夹/新页面格式)")
-        return None
-
-    data = {"action": "downprocess", "sign": info["sign"], "kd": info["kd"]}
-    if pwd:
-        data["p"] = pwd
-    payload = _PostDownProcess(sess, info["api"], data, share_url, timeout)
-    if not isinstance(payload, dict) or str(payload.get("zt")) != "1":
-        # 部分链接不接受 p 字段, 或密码写错; 再试一次不带 p
-        if "p" in data:
-            payload = _PostDownProcess(sess, info["api"],
-                                       {k: v for k, v in data.items() if k != "p"},
-                                       share_url, timeout)
-    if not isinstance(payload, dict) or str(payload.get("zt")) != "1":
-        print("GetDirectLink 失败：%s" % (payload.get("inf") if isinstance(payload, dict) else payload))
-        return None
-
-    dom = str(payload.get("dom") or "").rstrip("/")
-    path = str(payload.get("url") or "")
-    if not dom or not path:
-        print("GetDirectLink 失败：未取到 dom/url")
-        return None
-    file_url = dom + "/file/" + path.lstrip("/")
-    return _FollowToFile(sess, file_url, share_url, timeout)
+    direct = _ResolveOnce(sess, share_url, pwd, timeout)
+    if not direct and pwd:
+        # 条目里存的密码可能是多余的/已失效 (sign 一次性, 必须换一张新页面),
+        # 不带密码再试一次
+        direct = _ResolveOnce(sess, share_url, None, timeout)
+    return direct
 
 
 def ResolveDownloadUrl(url, pwd=None, session=None, log=None):
@@ -218,6 +230,19 @@ def _RecallAcw(host):
     return item[0] if item and item[1] > time.time() else None
 
 
+def _ApplyChallenge(session, resp, host):
+    """响应是 WAF 挑战页时算出 cookie 写回会话, 返回是否命中挑战"""
+    arg1 = _ChallengeArg1(resp)
+    if not arg1:
+        return False
+    value = _AcwScV2(arg1)
+    if not value:
+        return False
+    _RememberAcw(host, value)
+    session.cookies.set("acw_sc__v2", value, domain=host, path="/")
+    return True
+
+
 def _RequestWithWaf(session, url, **kwargs):
     """GET, 命中阿里云 WAF 的 acw_sc__v2 挑战时自动求解并重试"""
     host = urlparse(url).hostname or ""
@@ -226,14 +251,8 @@ def _RequestWithWaf(session, url, **kwargs):
         session.cookies.set("acw_sc__v2", cached, domain=host, path="/")
     resp = session.get(url, **kwargs)
     for _ in range(3):
-        arg1 = _ChallengeArg1(resp)
-        if not arg1:
+        if not _ApplyChallenge(session, resp, host):
             break
-        value = _AcwScV2(arg1)
-        if not value:
-            break
-        _RememberAcw(host, value)
-        session.cookies.set("acw_sc__v2", value, domain=host, path="/")
         resp = session.get(url, **kwargs)
     return resp
 
@@ -252,18 +271,93 @@ def _ChallengeArg1(resp):
     return match.group(1) if match else None
 
 
-def _ParseSharePage(html, origin):
-    """从分享页提取 {接口地址, sign, kd}"""
+def _Absolutize(target, origin):
+    """把页面里的相对地址补成绝对地址"""
+    if not target:
+        return target
+    if target.startswith("//"):
+        return "https:" + target
+    if target.startswith("/"):
+        return (origin or "").rstrip("/") + target
+    if target.startswith("http"):
+        return target
+    return urljoin((origin or "").rstrip("/") + "/", target)
+
+
+def _OriginOf(url):
+    """取 URL 的 scheme://host, 用于补全相对的接口地址"""
+    return "{0.scheme}://{0.netloc}".format(urlparse(url))
+
+
+def _LookupVar(html, name):
+    """取页面里 var <name> = ... 的值
+
+    字符串取最长的一次赋值 (页面常先声明空串再赋真值);
+    数字取声明处的默认值 (后面的条件重赋值不参与)。
+    """
+    name_re = re.escape(name)
+    strings = (re.findall(r"var\s+%s\s*=\s*'([^']*)'" % name_re, html)
+               + re.findall(r'var\s+%s\s*=\s*"([^"]*)"' % name_re, html))
+    if strings:
+        return max(strings, key=len)
+    numbers = re.findall(r"var\s+%s\s*=\s*(\d+)" % name_re, html)
+    return int(numbers[0]) if numbers else None
+
+
+def _ParseSubmitData(html, pwd=None):
+    """还原页面 $.ajax 里 data 对象的提交字段 (逐个求值: 字面量 / var / pwd / 数字)
+
+    蓝奏云会时不时在 data 里加减字段 (websignkey / signs / websign / ves ...),
+    直接照页面自己的对象还原, 比只认 sign+kd 稳固得多。
+    """
+    block = re.search(r"data\s*:\s*\{(.*?)\}", html, re.S)
+    if not block:
+        return None
+    pattern = (r"['\"]?([A-Za-z_$][\w$]*)['\"]?\s*:\s*"
+               r"(?:'([^']*)'|\"([^\"]*)\"|\b(pwd)\b|([A-Za-z_$][\w$]*)|(\d+))")
+    data = {}
+    for item in re.finditer(pattern, block.group(1)):
+        key = item.group(1)
+        if item.group(2) is not None:
+            data[key] = item.group(2)
+        elif item.group(3) is not None:
+            data[key] = item.group(3)
+        elif item.group(4):        # 'p':pwd
+            if pwd:
+                data[key] = pwd
+        elif item.group(5):        # 变量引用
+            value = _LookupVar(html, item.group(5))
+            if value is not None:
+                data[key] = value
+        elif item.group(6) is not None:
+            data[key] = int(item.group(6))
+    return data or None
+
+
+def _FindDownloadFrame(html, origin):
+    """无密码分享页把下载入口放在 <iframe src="/fn?..."> 里, 取出该地址"""
+    match = re.search(r"<iframe[^>]+src=['\"]([^'\"]*?/fn\?[^'\"]*)['\"]", html)
+    return _Absolutize(match.group(1), origin) if match else None
+
+
+def _ParseSharePage(html, origin, pwd=None):
+    """从分享页/下载页提取 {api: 提交地址, data: 提交字段}"""
     match = (re.search(r"url\s*:\s*['\"]([^'\"]*(?:ajaxfile|ajaxm)\.php[^'\"]*)['\"]", html)
              or re.search(r"['\"]([^'\"]*(?:ajaxfile|ajaxm)\.php\?file=\d+[^'\"]*)['\"]", html))
     if not match:
         return None
-    api = match.group(1)
-    if api.startswith("//"):
-        api = "https:" + api
-    elif api.startswith("/"):
-        api = origin.rstrip("/") + api
+    api = _Absolutize(match.group(1), origin)
 
+    data = _ParseSubmitData(html, pwd)
+    if not data:
+        data = _ParseSignKd(html, pwd)
+    if not data:
+        return None
+    return {"api": api, "data": data}
+
+
+def _ParseSignKd(html, pwd=None):
+    """兜底: data 对象认不出时, 只按 sign/kd 拼一份提交字段"""
     sign = None
     literal = re.search(r"['\"]sign['\"]\s*:\s*['\"]([^'\"]+)['\"]", html)
     if literal:
@@ -271,39 +365,39 @@ def _ParseSharePage(html, origin):
     else:
         var_ref = re.search(r"['\"]sign['\"]\s*:\s*([A-Za-z_$][\w$]*)", html)
         if var_ref:
-            name = re.escape(var_ref.group(1))
-            var_value = (re.search(r"var\s+%s\s*=\s*'([^']*)'" % name, html)
-                         or re.search(r'var\s+%s\s*=\s*"([^"]*)"' % name, html))
-            if var_value:
-                sign = var_value.group(1)
+            sign = _LookupVar(html, var_ref.group(1))
     if not sign:
         return None
-
     kd = 1
     kd_ref = re.search(r"['\"]kd['\"]\s*:\s*([A-Za-z_$][\w$]*|\d+)", html)
     if kd_ref:
         raw = kd_ref.group(1)
-        if raw.isdigit():
-            kd = int(raw)
-        else:
-            var_value = re.search(r"var\s+%s\s*=\s*(\d+)" % re.escape(raw), html)
-            if var_value:
-                kd = int(var_value.group(1))
-    return {"api": api, "sign": sign, "kd": kd}
+        value = int(raw) if raw.isdigit() else _LookupVar(html, raw)
+        if value is not None:
+            kd = value
+    data = {"action": "downprocess", "sign": sign, "kd": kd}
+    if pwd:
+        data["p"] = pwd
+    return data
 
 
 def _PostDownProcess(session, api, data, referer, timeout):
     """POST downprocess, 返回解析后的 JSON (失败返回 None)"""
+    headers = {"Referer": referer, "X-Requested-With": "XMLHttpRequest"}
+    host = urlparse(api).hostname or ""
+    cached = _RecallAcw(host)
+    if cached and not session.cookies.get("acw_sc__v2", domain=host):
+        session.cookies.set("acw_sc__v2", cached, domain=host, path="/")
     try:
-        resp = session.post(api, data=data, timeout=timeout,
-                            headers={"Referer": referer, "X-Requested-With": "XMLHttpRequest"})
+        resp = session.post(api, data=data, timeout=timeout, headers=headers)
+        for _ in range(3):
+            # 挑战页必须用 POST 重放 (不能退回 GET)
+            if not _ApplyChallenge(session, resp, host):
+                break
+            resp = session.post(api, data=data, timeout=timeout, headers=headers)
     except requests.RequestException as e:
         print("_PostDownProcess 请求失败：%s" % e)
         return None
-    if _ChallengeArg1(resp):
-        resp = _RequestWithWaf(session, api, timeout=timeout, data=data,
-                               headers={"Referer": referer,
-                                        "X-Requested-With": "XMLHttpRequest"})
     try:
         return json.loads(resp.text)
     except (ValueError, TypeError):
@@ -719,7 +813,7 @@ def GetOrCreateFolder(session, folder_name, parent_id=-1):
         # 根目录下找不到时, 在一级子目录中继续找, 避免对已有子文件夹重复创建
         if str(parent_id) in ("-1", ""):
             for f in folders:
-                subs = GetFolderList(session, f.get("id"))
+                subs = GetFolderList(session, f.get("id")) # type: ignore
                 if subs:
                     for s in subs:
                         if s.get("name") == folder_name:
@@ -856,6 +950,11 @@ def UploadFile(session, file_path, folder_id=-1, progress_callback=None, max_siz
 
 if __name__ == "__main__":
     print('\n\n')
+
+    # 直链解析示例 (不依赖第三方解析服务):
+    # link = "https://lz.qaiu.top/parser?url=https://folkskill.lanzoum.com/irAGt3iha71c&pwd=3z4n"
+    # print(GetDirectLink(link))
+    # print(ResolveDownloadUrl(link))
 
     # filelists=GetAllFileListByUrl("https://wwyi.lanzoub.com/b014wpn02j",'fib6')
     # print(filelists)
