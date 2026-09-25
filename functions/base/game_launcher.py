@@ -2,6 +2,7 @@
 
 import os
 import sys
+import hashlib
 import json
 import shutil
 import time
@@ -307,34 +308,192 @@ class GameLauncher:
             targets.append(raw)
         return targets
 
+    # ── changes*.json 文本补丁 (插件 / Mod / 自定义翻译) ──────────────
+    CHANGES_BACKUP_ROOT = os.path.join('cache', 'changes_backup')
+
+    @staticmethod
+    def _resource_enabled(kind: str, info: dict) -> bool:
+        """资源是否启用 —— 与资源管理页 (app_web.get_mods_data) 完全同一判定:
+
+        插件 (addon) 的 settings.enable 默认 True, 目录 Mod 默认 False;
+        判定不出来时按"禁用"处理 (宁可不动文本, 也不要让被禁用的资源生效)。
+        """
+        default = True if kind == 'addon' else False
+        try:
+            return bool((info or {}).get('settings', {}).get('enable', default))
+        except Exception:
+            return bool(default)
+
+    @classmethod
+    def _changes_backup_dir(cls, kind: str, res_dir: str) -> str:
+        return os.path.join(cls.CHANGES_BACKUP_ROOT, kind, res_dir)
+
+    @staticmethod
+    def _load_backup_index(backup_dir: str) -> dict:
+        """快照索引: {changes 文件名: {游戏文件相对路径: 快照文件名}}"""
+        if not backup_dir:
+            return {}
+        p = os.path.join(backup_dir, 'index.json')
+        if not os.path.isfile(p):
+            return {}
+        try:
+            data = read_json(p)
+            return data if isinstance(data, dict) else {}
+        except Exception:
+            return {}
+
+    @staticmethod
+    def _save_backup_index(backup_dir: str, index: dict) -> None:
+        try:
+            os.makedirs(backup_dir, exist_ok=True)
+            write_json(os.path.join(backup_dir, 'index.json'), index, indent=2)
+        except Exception as e:
+            print(f"  警告: 写入文本补丁快照索引失败: {e}")
+
+    @staticmethod
+    def _rel_target(lang_root: str, game_file: str) -> str:
+        try:
+            return os.path.relpath(game_file, lang_root).replace('\\', '/')
+        except Exception:
+            return os.path.basename(game_file)
+
+    @classmethod
+    def _snapshot_before_patch(cls, backup_dir, index, changes_file, lang_root, game_file):
+        """第一次用这个 changes 文件改这个游戏文件之前, 存一份原始内容 (禁用后用它还原)"""
+        if not backup_dir:
+            return False
+        rel = cls._rel_target(lang_root, game_file)
+        slot = index.setdefault(changes_file, {})
+        if rel in slot:
+            return False
+        name = hashlib.md5(rel.encode('utf-8')).hexdigest()[:16] + '.json'
+        try:
+            os.makedirs(backup_dir, exist_ok=True)
+            shutil.copy2(game_file, os.path.join(backup_dir, name))
+            slot[rel] = name
+            return True
+        except Exception as e:
+            print(f"  警告: 备份 {game_file} 失败 (禁用后可能残留文本): {e}")
+            return False
+
+    def _restore_backups(self, kind: str, res_dir: str, lang_root: str,
+                         only_changes_files=None, skip_folder=None) -> int:
+        """按快照还原某个资源 (或其某个图层) 之前改过的游戏文件, 返回还原个数。
+
+        only_changes_files: 只还原这几个 changes 文件 (图层被禁用时用);
+        skip_folder: 跳过这个汉化文件夹下的文件 (当前平台文件夹每次启动都会被汉化包重建,
+                     快照可能比汉化包旧, 拿旧快照回写等于把新汉化顶掉)。
+        """
+        backup_dir = self._changes_backup_dir(kind, res_dir)
+        index = self._load_backup_index(backup_dir)
+        if not index:
+            return 0
+        restored = 0
+        for cf, slot in index.items():
+            if only_changes_files is not None and cf not in only_changes_files:
+                continue
+            for rel, name in (slot or {}).items():
+                top = str(rel).split('/')[0]
+                if skip_folder and top == skip_folder:
+                    continue
+                src = os.path.join(backup_dir, str(name))
+                if not os.path.isfile(src):
+                    continue
+                target = os.path.join(lang_root, *str(rel).split('/'))
+                if not os.path.isfile(target):
+                    continue
+                try:
+                    # 时间戳护栏: 目标文件比快照新 -> 后来被别的插件/汉化包重写过, 别拿旧的盖新的
+                    if os.path.getmtime(target) > os.path.getmtime(src) + 2:
+                        print(f"  提示: {rel} 比快照新 (已被其他来源改写), 保持现状不还原")
+                        continue
+                    shutil.copy2(src, target)
+                    restored += 1
+                except Exception as e:
+                    print(f"  警告: 还原 {target} 失败: {e}")
+        return restored
+
+    @classmethod
+    def _prune_changes_backups(cls, alive) -> None:
+        """清掉已删除资源的快照目录 (alive = {(kind, 资源目录名)})"""
+        root = cls.CHANGES_BACKUP_ROOT
+        if not os.path.isdir(root):
+            return
+        for kind in os.listdir(root):
+            kdir = os.path.join(root, kind)
+            if not os.path.isdir(kdir):
+                continue
+            for res in os.listdir(kdir):
+                if (kind, res) not in alive:
+                    shutil.rmtree(os.path.join(kdir, res), ignore_errors=True)
+
     def _apply_changes(self):
-        """应用所有启用 mod 和 插件 的 changes*.json 补丁到游戏语言文件。
-        支持多个修改记录图层: changes.json + changes_标记.json (按名称排序, 后应用者覆盖);
-        changes_layers.json 中 visible=false 的图层跳过 (编辑器里的 PS 式图层可见性)。"""
+        """应用所有**已启用**资源的 changes*.json 文本补丁到游戏语言文件。
+
+        规则 (2026-09-25 修订):
+          · **先看资源是否被禁用** (与资源管理页同一判定): 禁用的资源不应用, 并且把它上次
+            应用过的文本按快照还原回原始内容 —— 否则 LCTA / LCTA_AU 这类不由启动器接管的
+            Lang 文件夹里的旧文本会一直留着, 表现为"禁用后文本还生效";
+          · 图层: changes.json + changes_标记.json (按名称排序, 后应用者覆盖),
+            changes_layers.json 里 disabled=true 的图层同样跳过并还原;
+          · 顺序: 先还原 (禁用/停用图层) -> 再应用 (启用), 保证启用的最后覆盖;
+          · 快照在 cache/changes_backup/<kind>/<目录>/(index.json + 原始文件)。
+        """
         from functions.extension.mod.mod_utils import ModManager
         from functions.pages.tools.custom_translation_window import CHANGES_PATTERN
 
-        # 收集所有需要处理的目录
-        dirs = []
-        for dir in ['addons', 'mods']:
-            if self._settings.get_setting('enable_mods'):
-                for sub_dir in os.listdir(dir):
-                    info_path = os.path.join(dir, sub_dir, f'{dir.replace("s", "")}_info.json')
-                    if not os.path.exists(info_path):
-                        continue
+        lang_data_dir = os.path.join(self._game_path, 'LimbusCompany_Data', 'Lang')
+        mods_off = not self._settings.get_setting('enable_mods')
+        # 当前平台文件夹: 每次启动都被汉化包整目录重建, 不用 (也不该) 拿旧快照还原
+        try:
+            cur_folder = os.path.basename(translation_source_lib.get_game_lang_dir(self._game_path))
+        except Exception:
+            cur_folder = None
+
+        # ---- 1) 扫描资源: 分成"要应用"和"要还原" ----
+        apply_jobs, revert_jobs = [], []
+        alive = set()
+        for kind in ('addons', 'mods'):
+            if not os.path.isdir(kind):
+                continue
+            is_mods = (kind == 'mods')
+            if is_mods and mods_off:
+                print("[文本补丁] 设置里关闭了 Mod 功能: 不应用 mods 的文本补丁")
+            for res_dir in sorted(os.listdir(kind)):
+                info_path = os.path.join(kind, res_dir, f"{kind[:-1]}_info.json")
+                if not os.path.isfile(info_path):
+                    continue
+                alive.add((kind, res_dir))
+                try:
                     info = read_json(info_path)
-                    if info.get('settings', {}).get('enable'):
-                        dirs.append(os.path.join(dir, sub_dir))
-                    
-        #TODO 有点奇怪，先空着。
+                except Exception as e:
+                    print(f"  警告: 解析 {info_path} 失败 ({e}), 按禁用处理")
+                    info = {}
+                enabled = self._resource_enabled(kind[:-1], info) and not (is_mods and mods_off)
+                if not enabled:
+                    print(f"[文本补丁] {kind}/{res_dir} 已禁用: 不应用它的文本补丁")
+                (apply_jobs if enabled else revert_jobs).append((kind, res_dir))
+
+        # ---- 2) 先还原被禁用资源的改动 ----
+        for kind, res_dir in revert_jobs:
+            res_path = os.path.join(kind, res_dir)
+            has_snapshot = bool(self._load_backup_index(self._changes_backup_dir(kind, res_dir)))
+            n = self._restore_backups(kind, res_dir, lang_data_dir, skip_folder=cur_folder)
+            if n:
+                print(f"[文本补丁] {kind}/{res_dir} 已禁用 -> 还原它之前改过的 {n} 个文本文件")
+            elif not has_snapshot and self._list_changes_files(res_path):
+                # 修复前就应用过 (没有快照可还原): 明确告诉用户残留怎么清
+                print(f"[文本补丁] 提示: {kind}/{res_dir} 已禁用且没有改动快照, 无法自动还原; "
+                      f"若游戏里还能看到它的文本 (早期应用留下的), "
+                      f"可在资源管理里对相关汉化插件点一次「重装」恢复原始文本")
+
+        # ---- 3) 再应用已启用资源 (lang 的自定义翻译补丁放最后) ----
+        dirs = [os.path.join(kind, res_dir) for kind, res_dir in apply_jobs]
         dirs.append('lang')
-        
         print(f"[调试] _apply_changes: 需要处理的目录: {dirs}")
 
         # 载入替换文件
         ModManager.load_language('', 'lang')
-
-        lang_data_dir = os.path.join(self._game_path, 'LimbusCompany_Data', 'Lang')
 
         for dir_path in dirs:
             # 读取记录文件禁用状态 (不存在 = 全部参与合并)
@@ -344,8 +503,7 @@ class GameLauncher:
                 try:
                     st = read_json(layer_state_file)
                     for marker, v in (st.items() if isinstance(st, dict) else []):
-                        disabled = v.get('disabled', False) if isinstance(v, dict) else False
-                        if disabled:
+                        if isinstance(v, dict) and v.get('disabled', False):
                             disabled_layers.add(marker)
                 except Exception as e:
                     print(f"  警告: 解析 {layer_state_file} 失败: {e}")
@@ -354,9 +512,27 @@ class GameLauncher:
             if not changes_files:
                 continue
 
-            # 逐个来源显示: 正在应用 插件/Mod xxx 的文本补丁
             src_label = '插件' if dir_path.startswith('addons') else ('Mod' if dir_path.startswith('mods') else '汉化')
             src_name = os.path.basename(dir_path)
+            kind = ('addons' if dir_path.startswith('addons')
+                    else ('mods' if dir_path.startswith('mods') else 'lang'))
+            backup_dir = None if kind == 'lang' else self._changes_backup_dir(kind, src_name)
+            index = self._load_backup_index(backup_dir)
+            index_dirty = False
+
+            # 图层被禁用: 把那个图层之前改过的文件还原回去 (资源本身是启用的)
+            if kind != 'lang' and disabled_layers:
+                for changes_file in changes_files:
+                    m = CHANGES_PATTERN.match(changes_file)
+                    marker = m.group(1)[1:] if m and m.group(1) else ""
+                    if marker in disabled_layers:
+                        n = self._restore_backups(kind, src_name, lang_data_dir,
+                                                  only_changes_files={changes_file},
+                                                  skip_folder=cur_folder)
+                        if n:
+                            print(f"[文本补丁] {dir_path} 的图层 {changes_file} 已禁用 -> 还原 {n} 个文本文件")
+
+            # 逐个来源显示: 正在应用 插件/Mod xxx 的文本补丁
             self._progress(f"正在应用 {src_label} {src_name} 的文本补丁...", "🚀")
 
             for changes_file in changes_files:
@@ -387,11 +563,21 @@ class GameLauncher:
                         print(f"  应用补丁 {relative_path} -> {len(targets)} 个文件夹")
                     for game_file in targets:
                         try:
+                            # 改之前先存一份原始内容 (资源被禁用时用它还原)
+                            if self._snapshot_before_patch(backup_dir, index, changes_file,
+                                                           lang_data_dir, game_file):
+                                index_dirty = True
                             original = read_json(game_file)
                             modified = apply_changes_to_data(original, file_changes)
                             write_json(game_file, modified, indent=4)
                         except Exception as e:
                             print(f"  警告: 应用补丁 {game_file} 失败: {e}")
+
+            if index_dirty:
+                self._save_backup_index(backup_dir, index)
+
+        # ---- 4) 已删除资源的快照清掉 ----
+        self._prune_changes_backups(alive)
 
     def _apply_cosmetic_features(self):
         """应用气泡渐变、EGO 样式、技能描述、提示替换、技能渐变色 (逐项推送进度, 单项失败不中断)"""
