@@ -79,13 +79,60 @@ def _open_stream(url, source_url, **kwargs):
         return resp
 
 
-# 下载前置处理: 所有下载入口统一走这里 (蓝奏云链接 -> 直链)
-def resolve_download_url(url, gui=None, label=''):
-    """下载前预处理: 蓝奏云分享/解析链接 -> 直链 (解析失败退回原链接)
+def _status_reporter(gui, label=''):
+    """下载流程的状态回调: 有 GUI 就同步到界面, 同时 print"""
+    prefix = f"{label}: " if label else ""
 
-    云端数据库里的 dowload_url / icon_url 与字体包链接都是蓝奏云分享链接
-    (历史上经 lz.qaiu.top 这类服务解析), 这里统一在本地解析成直链再下载,
-    不依赖第三方解析服务; 非蓝奏云链接原样返回, 永不抛异常。
+    def _status(text):
+        try:
+            if gui is not None and getattr(gui, 'current_file_var', None) is not None:
+                gui.current_file_var.set(prefix + str(text))
+        except Exception:
+            pass
+        print(f"[下载] {prefix}{text}")
+    return _status
+
+
+def open_download_source(url, gui=None, label='', **kwargs):
+    """取下载流: **默认先本地直链解析**, 解析不出(或直链已失效)时用原链接
+
+    云端条目里的下载链接是蓝奏云分享链接或指向它的解析服务链接
+    (lz0.qaiu.top/parser?url=<分享链接>)。默认先用本地实现解析成蓝奏云直链
+    (自带 WAF 挑战求解, 不依赖第三方解析服务); 解析不出直链时就退回原链接 ——
+    lz0 这类修复版解析服务链接本身就是可下载地址 (GET 会 302 到真文件)。
+    非蓝奏云链接 (GitHub / ghproxy 等) 解析步骤原样返回, 等于直连, 与历史行为一致。
+
+    :return: (response, 原始链接)
+    """
+    if not url:
+        raise ValueError('下载链接为空')
+
+    from functions.web_update.lanzou_utils import LooksLikeFileResponse
+
+    status = _status_reporter(gui, label)
+    # ① 先本地解析成直链 (直链失效由 _open_stream 丢缓存重解析一次)
+    resolved = resolve_download_url(url, gui=gui, label=label)
+    if resolved and resolved != url:
+        try:
+            return _open_stream(resolved, url, **kwargs), url
+        except requests.exceptions.RequestException as e:
+            status(f'直链下载失败({type(e).__name__})，改用原链接')
+    # ② 退回原链接 (解析不出直链, 或直链已失效)
+    raw = requests.get(url, **kwargs)
+    if not LooksLikeFileResponse(raw):
+        status(f'原链接返回的不是文件(HTTP {raw.status_code})')
+    return raw, url
+
+
+# 下载前置处理: 先本地直链解析, 解析不出/失效再用原链接
+def resolve_download_url(url, gui=None, label=''):
+    """把蓝奏云分享/解析链接在本地解析成直链 (解析失败退回原链接)
+
+    下载入口 (open_download_source) 与图标入口 (GetWithDirectLink) 都先走这里:
+    云端数据库里的 dowload_url / icon_url 与字体包链接都是蓝奏云分享链接 (新条目写
+    lz0.qaiu.top 这类修复版解析服务, 老条目写已失效的 lz.qaiu.top), 这里用自带实现
+    本地解析成直链再下载, 不依赖第三方解析服务; 解析不出来就返回原链接
+    (lz0 这类链接本身可下载), 非蓝奏云链接原样返回, 永不抛异常。
     """
     if not url:
         return url
@@ -94,15 +141,7 @@ def resolve_download_url(url, gui=None, label=''):
         if not IsLanzouUrl(url):
             return url
 
-        prefix = f"{label}: " if label else ""
-
-        def _status(text):
-            try:
-                if gui is not None and getattr(gui, 'current_file_var', None) is not None:
-                    gui.current_file_var.set(prefix + str(text))
-            except Exception:
-                pass
-            print(f"[下载] {prefix}{text}")
+        _status = _status_reporter(gui, label)
 
         # 用户主动点的下载值得等一会儿 (蓝奏云接口偶发限流/超时)
         resolved = ResolveDownloadUrl(url, log=_status, retries=2)
@@ -116,12 +155,10 @@ def resolve_download_url(url, gui=None, label=''):
 # 保留原有的函数（用于命令行模式）
 def download_file(url, local_filename):
     """下载文件并显示进度"""
-    source_url = url
     try:
-        # 下载前预处理: 蓝奏云分享/解析链接 -> 直链 (失败退回原链接)
-        url = resolve_download_url(url, label=os.path.basename(local_filename))
-        # 发送请求 (直链失效会自动重新解析一次)
-        response = _open_stream(url, source_url, stream=True)
+        # 先直连原链接, 不可直接下载时才解析成直链 (失效会自动重新解析一次)
+        response, _source = open_download_source(
+            url, label=os.path.basename(local_filename), stream=True)
         response.raise_for_status()
         
         # 获取文件大小
@@ -332,13 +369,11 @@ def download_file_with_gui(url, local_filename, gui, file_name):
     """带GUI进度显示的下载文件函数"""
     try:
         # 更新GUI状态
-        # 下载前预处理: 蓝奏云分享/解析链接 -> 直链 (失败退回原链接)
-        source_url = url
-        url = resolve_download_url(url, gui, file_name)
+        # 更新GUI状态: 先直连原链接, 不可直接下载时才解析成直链
+        response, source_url = open_download_source(url, gui=gui, label=file_name,
+                                                    stream=True, verify=False)
         gui.current_file_var.set(f"{file_name}")
         
-        # 发送请求
-        response = _open_stream(url, source_url, stream=True, verify=False)
         response.raise_for_status()
         
         # 获取文件大小
@@ -676,7 +711,7 @@ def download_and_extract_gui(gui:DownloadGUI, config_path: str = "", download_fi
             {
                 # OurPlay 汉化包本身不带字体 (转换时跳过 Font), 需同零协会一样单独下载字体
                 'name': 'TTF 字体文件',
-                'url': 'https://lz.qaiu.top/parser?url=https://folkskill.lanzoum.com/irAGt3iha71c&pwd=3z4n',
+                'url': 'https://lz0.qaiu.top/parser?url=https://folkskill.lanzoum.com/irAGt3iha71c&pwd=3z4n',
                 'temp_filename': 'LLCCN-Font.7z'
             }
         ]
@@ -689,7 +724,7 @@ def download_and_extract_gui(gui:DownloadGUI, config_path: str = "", download_fi
             },
             {
                 'name': 'TTF 字体文件',
-                'url': 'https://lz.qaiu.top/parser?url=https://folkskill.lanzoum.com/irAGt3iha71c&pwd=3z4n',
+                'url': 'https://lz0.qaiu.top/parser?url=https://folkskill.lanzoum.com/irAGt3iha71c&pwd=3z4n',
                 'temp_filename': 'LLCCN-Font.7z'
             }
         ]

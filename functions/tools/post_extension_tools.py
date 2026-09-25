@@ -4,7 +4,7 @@
 #?   复制必需结构到 mods/, 按用户填写的信息生成 icon.png 与 mod_info.json
 #? - 生成插件模板: 在 addons/ 下生成 插件名/ 目录 (scr.py + icon.png + addon_info.json)
 #? - 发布 Mod 信息: 压缩 Mod 本体, 图标/压缩包上传到蓝奏云 (FaustLauncher.icons / FaustLauncher.Mods),
-#?   以 lz.qaiu.top 直链解析 URL 填写 dowload_url/icon_url, 再上传 mod_info 到 textdb
+#?   以 lz0.qaiu.top 直链解析 URL 填写 dowload_url/icon_url, 再上传 mod_info 到云端笔记
 #? - 发布插件信息: 同样流程, 压缩包上传到蓝奏云 FaustLauncher.Addons (web_config.json → lanzou.addons_folder),
 #?   再以同一套机制更新云端插件数据库 (web_config.json → webnote.addon_info)
 #?   蓝奏云凭据 (phpdisk_info/ylogin) 配置于 config/web_config.json 的 lanzou 节
@@ -32,9 +32,37 @@ DEFAULT_ICON_BG = (30, 41, 59, 255)
 DEFAULT_ICON_ACCENT = (99, 102, 241, 255)
 
 PAGE_SIZE = 5  # 云端 mod 分页: 每页 5 个
-TEXTDB_READ = 'https://textdb.online/{address}'
-TEXTDB_UPDATE = 'https://textdb.online/update/?key={address}'
-PARSER_BASE = 'https://lz.qaiu.top/parser?url='  # 蓝奏云直链解析服务 (与其他 mod 条目一致)
+
+# 云端笔记地址一律取自 config/web_config.json (webnote_bases / webnote_update_url):
+# 不再硬编码 textdb.online —— 该域名已弃用 (2026-09-25 起)
+PARSER_BASE = 'https://lz0.qaiu.top/parser?url='  # 蓝奏云直链解析服务 (修复版; 老域名 lz.qaiu.top 已失效)
+
+
+def _note_read_url(address):
+    """云端笔记读取地址 (与启动器读取走同一套 webnote_bases 源)"""
+    try:
+        from functions.webFunc.Webnote import get_note_bases
+        bases = get_note_bases()
+        base = str((bases[0] if bases else '') or '').strip()
+    except Exception:
+        base = ''
+    if not base:
+        return ''
+    return (base.replace('{key}', str(address)) if '{key}' in base
+            else base.rstrip('/') + '/' + str(address))
+
+
+def _note_update_url(address):
+    """云端笔记写回地址 (webnote_update_url; key 走 query, value 走表单体)"""
+    try:
+        from functions.webFunc.Webnote import get_update_url
+        base = str(get_update_url() or '').strip()
+    except Exception:
+        base = ''
+    if not base:
+        return ''
+    sep = '&' if '?' in base else '?'
+    return f'{base}{sep}key={address}'
 
 
 # ============================================================
@@ -229,7 +257,7 @@ def wrap_mod(source_folder, info=None, icon_path=None, extra_files=None, single_
 
 
 # ============================================================
-# 发布扩展信息到云端 (textdb) —— Mod / 插件 共用一套核心
+# 发布扩展信息到云端笔记 —— Mod / 插件 共用一套核心
 # ============================================================
 
 # 两类扩展的全部差异都集中在这张表里（以后再加第三类只需加一行）：
@@ -303,13 +331,26 @@ def load_addon_info(addon_folder):
 def _fetch_note(address, label='Mod'):
     """只读拉取云端数据, 返回解析后的完整结构 (list) 或 None (笔记为空/不存在)。
 
+    读取走 Webnote 的网络链路 (配置里的 webnote_bases + IPv4 优先 + DoH 兜底),
+    不再硬编码域名; **只走网络、不落缓存兜底**。
+    读取失败一律抛异常让调用方中止发布 —— 把"读不到"当成"笔记是空的"会把云端
+    已有条目整份覆盖掉 (2026-09-25 version_info 就是这样被清空的)。
     格式异常时抛 ValueError。
     """
-    r = requests.get(TEXTDB_READ.format(address=address), verify=False, timeout=20)
-    r.raise_for_status()
-    text = r.text.strip()
+    from functions.webFunc.Webnote import read_note_live
+    text, _used, err = read_note_live(None, address)
+    text = str(text or '').strip()
     if not text:
-        return None
+        # 区分"笔记确实还不存在(200 + 空)"与"读取失败": 后者绝不能当成新笔记
+        url = _note_read_url(address)
+        if url:
+            try:
+                probe = requests.get(url, verify=False, timeout=20)
+            except Exception as e:
+                raise RuntimeError(f'云端{label}笔记读取失败: {e}')
+            if probe.status_code == 200 and not (probe.text or '').strip():
+                return None                     # 真·空笔记: 首次发布, 安全初始化
+        raise RuntimeError(f'云端{label}笔记读取失败: {err or "内容为空"}')
     try:
         data = json.loads(text)
     except Exception as e:
@@ -490,7 +531,7 @@ def upload_addon_to_lanzou(addon_folder, log=None, progress=None):
 
 
 def publish_extension(kind, folder, address=None, log=None, progress=None):
-    """完整发布: 蓝奏云上传 (图标+压缩包) → 直链解析 URL → 发布信息到 textdb
+    """完整发布: 蓝奏云上传 (图标+压缩包) → 直链解析 URL → 发布信息到云端笔记
 
     蓝奏云上传失败时不会中止: 仍会将信息发布到云端数据库
     (已成功的链接会填入; 缺失的 dowload_url/icon_url 沿用云端旧值),
@@ -569,7 +610,7 @@ def upload_extension_info(kind, folder, address=None, log=None, urls=None, keep_
     urls = urls or {}
 
     try:
-        log(f'读取云端{label}信息: {TEXTDB_READ.format(address=address)}\n')
+        log(f'读取云端{label}信息: {address}\n')
         data = _fetch_note(address, label)
 
         # 笔记为空/不存在 -> 视为全新列表, 安全初始化 (不会覆盖已有数据)
@@ -627,25 +668,25 @@ def upload_extension_info(kind, folder, address=None, log=None, urls=None, keep_
 
         new_content = json.dumps(new_data, ensure_ascii=False, indent=4)
         log(f'上传{label}信息: {name}\n')
-        ur = requests.post(TEXTDB_UPDATE.format(address=address),
+        ur = requests.post(_note_update_url(address),
                            data={'value': new_content},
                            verify=False, timeout=30)
         result = ur.json()
         if result.get('status') == 1:
-            return True, f'发布成功: {name} → {TEXTDB_READ.format(address=address)}'
+            return True, f'发布成功: {name} → {address}'
         return False, f'发布失败: {result}'
     except Exception as e:
         return False, f'发布失败: {e}'
 
 
 def upload_mod_info(mod_folder, address=None, log=None, urls=None, keep_old_urls=True):
-    """将 Mod 信息发布到 textdb (默认使用 web_config.json 中 mod_info 的地址)"""
+    """将 Mod 信息发布到云端笔记 (默认使用 web_config.json 中 mod_info 的地址)"""
     return upload_extension_info('mod', mod_folder, address=address, log=log, urls=urls,
                                  keep_old_urls=keep_old_urls)
 
 
 def upload_addon_info(addon_folder, address=None, log=None, urls=None, keep_old_urls=True):
-    """将插件信息发布到 textdb (默认使用 web_config.json 中 addon_info 的地址)
+    """将插件信息发布到云端笔记 (默认使用 web_config.json 中 addon_info 的地址)
 
     与 upload_mod_info 完全同一套机制：同名更新、保留 download_count、
     缺失链接沿用旧值、分页与头部计数（total_addons）重算。

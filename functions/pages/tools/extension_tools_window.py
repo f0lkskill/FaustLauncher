@@ -3,7 +3,7 @@
 #? 三种模式:
 #? - 包装 Mod: 选择原始文件夹(标准: Installer.bat / Assets / Uninstaller.bat; 单文件类型: 仅 .bank/.carra2) -> 填写信息表单 -> 复制到 mods/
 #? - 生成插件模板: 填写插件信息 -> addons/ 下生成 scr.py + icon.png + addon_info.json
-#? - 发布 Mod 信息: 选择 mods/ 下的 Mod -> 上传 mod_info.json 到云端 textdb
+#? - 发布 Mod 信息: 选择 mods/ 下的 Mod -> 上传 mod_info.json 到云端笔记
 #? 后端操作全部位于 functions/tools/post_extension_tools.py
 #? pywebview 6 要求 webview.start() 运行在主线程, 与 tkinter 主循环互斥,
 #? 故以独立子进程方式拉起窗口 (与 Mod管理器同一模式):
@@ -231,7 +231,7 @@ class ExtensionToolsApi:
 
     def publish_mod(self, folder):
         """完整发布: 压缩+上传蓝奏云(图标→FaustLauncher.icons, 本体→FaustLauncher.Mods)
-        → 直链解析 URL → 发布 Mod 信息到云端 textdb
+        → 直链解析 URL → 发布 Mod 信息到云端笔记
         返回 {ok, msg, log, info}; 期间实时推送进度到页面 (__onPublishProgress/__onPublishLog)
         """
         logs = []
