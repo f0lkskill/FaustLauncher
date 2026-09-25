@@ -25,7 +25,6 @@ from functions.achievement.battle_achievements import SkillUseAchievement
 # ---- 业务常量（游戏数据；与偏移无关，驱动不认识它们）----
 IDENTITY_YISANG_INDEX_PROXY = 10115    # 蜘蛛巢 食指 父辈 李箱
 SKILL_YISANG_FURIOSO = 1011505         # Furioso-Replica 本体
-SKILL_YISANG_INDEX_S3 = 1011503        # 同一人格的三技能（层数 9 时转化为 Furioso-Replica）
 FURIOSO_REPLICA_IDS = (134711, 138010, 955110)  # 同名但 id 不带身份的技能
 
 
@@ -38,7 +37,7 @@ class IndexFuriosoReplicaAchievement(SkillUseAchievement):
             name="仿造的一生",
             description="使用 食指父辈-李箱 进行一次 Furioso-Replica。\n '我听到海浪的声音了。'",
             identity_id=IDENTITY_YISANG_INDEX_PROXY,
-            skill_ids=(SKILL_YISANG_FURIOSO, SKILL_YISANG_INDEX_S3),
+            skill_ids=(SKILL_YISANG_FURIOSO),
             tiers=(3,),
             gated_skill_ids=FURIOSO_REPLICA_IDS,
             label="食指父辈-李箱 Furioso-Replica",
