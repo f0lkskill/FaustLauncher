@@ -35,9 +35,14 @@
 
 规律（与规则表 ``kind`` 一一对应）：
 
-- ``skill``：**技能动画结束**（收尾事件 / 静默期）结算；
-- ``speed`` / ``mental`` / ``hp`` / ``buff`` / ``presence``：观测到就**立刻**置位，
-  回合边界还会兜底复核一次；
+- ``skill``：**技能动画结束**（表现层 ``skv_end`` tick；静默期/回合边界只做兜底）结算；
+  ⚠ 别用 ``action_done_with_action`` 这类收尾回调 —— 实测它们全在一整个回合的结算
+  瞬间（动画开播**之前**）到齐；
+- ``speed`` / ``presence``：观测到就**立刻**置位，回合边界还会兜底复核一次；
+- ``mental`` / ``hp`` / ``buff``：命中后先挂起，**跟着“自己那个行动组”的动画结束一起放行**
+  （battle_watch 的「行动分组」一节：一个行动里的技能/血量/理智/buff 判定在那手动画
+  结束时**一起**落地，而不是全部堆在第一个动画后面）；
+  （实测这游戏的值变化全在结算瞬间，立刻置位等于"回合一开始就解锁"）；
 - 想要更复杂的规则：继承 ``BattleRuleAchievement``，用 ``rules=(BattleRule(...),)``
   直接给规则；
 - 想加新*类别*的判定：在 ``battle_watch`` 里加 ``RULE_KIND_*`` + 对应的 ``match_*``，
@@ -340,8 +345,12 @@ class CompositeAchievement(BattleRuleAchievement):
                              implied=(("1", "2"),))
 
     判定时机：监控线程每秒轮询一次；技能类条件本身已经是**技能动画结束**才置位
-    （见 battle_watch 的 ``ACTION_END_TAGS`` / 静默结算），所以复合成就也在那之后
+    （见 battle_watch 的 ``skv_end`` 放行 / 静默结算），所以复合成就也在那之后
     才会满足。
+
+    ⚠ 写 ``chain`` 时注意谁先谁后：像"常驻 buff + 玩家出手"这种组合，buff 从开局就
+    在（第一次采样必然早于出手），链必须写成 ``("buff", "skill")``；写反了 rule_order
+    永远不满足，成就永远不会触发。
     """
 
     def __init__(self, *, ach_id: str, name: str, description: str,

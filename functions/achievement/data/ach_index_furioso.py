@@ -14,8 +14,10 @@
 「回合开始时，若自身的 [StackYisangSpecialSkill] 层数为 9 层，则使本技能转化为
 “Furioso-Replica”(每回合最多 1 次)」—— 两种上报形式都盖住。
 
-判定时机：技能类规则在这手技能的**动画结束**时结算（``action_done_with_action``；
-只在收尾事件没被调到时才用静默期兜底）。
+判定时机：技能类规则在这手技能的**动画结束**时结算 —— 看表现层 ``skv_end``
+（``BattleSkillViewBase::Skill_End``）tick，逐条放行；静默期与回合边界只做兜底。
+⚠ 不能用 ``action_done_with_action`` 这类收尾回调：实测它们全在一整个回合的
+结算瞬间（动画开播**之前**）到齐。
 """
 
 from __future__ import annotations

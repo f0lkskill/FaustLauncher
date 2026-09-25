@@ -75,7 +75,10 @@ from dataclasses import dataclass, field
 
 # --------------------------------------------------------------------------- 协议常量
 
-BW_MAGIC = 0x34574246            # "FBW4"（v3 加血量/理智，v5 加 buff 偏移与关注表）
+BW_MAGIC_V5 = 0x34574246         # "FBW4"：旧协议（v5）
+# 2026-09-25 v6 / "FBW5"：多了 off_skv_attacker_iid（动画 tick 带 iid，判定才能按行动对齐）。
+# 魔数不一致时 DLL 会拒收配置并报版本不符，所以“Python/DLL 不同版”不会静默错位。
+BW_MAGIC = 0x35574246            # "FBW5"（当前）
 MAP_NAME = "Local\\FaustLauncher_BattleWatch"
 LOG_RING_CAP = 512
 LOG_LINE_MAX = 255
@@ -107,9 +110,12 @@ KIND_UNIT_INT_BOOL = 2  # void (self, int value, bool checkMinMax, mi)     → S
 KIND_UNIT_GET_INT = 3   # int (self, mi)                                  → SPD（去重）
 KIND_ACTION_INT = 4     # void (self, int timing, mi)                     → ACT
 KIND_DAMAGE_ACTION = 5  # float(self, action, coin, attacker, bool, mi)    → ACT
+KIND_SKV = 6            # void (self, mi)：表现层动画 → RND + iid（self->_attackerInstanceID）
+                        #   动画 tick 带身份，判定才能“按行动”对齐（否则只能一股脑延后）
 KIND_NUMBERS = {"plain": KIND_PLAIN, "unit": KIND_UNIT,
                 "unit_int_bool": KIND_UNIT_INT_BOOL, "unit_get_int": KIND_UNIT_GET_INT,
-                "action_int": KIND_ACTION_INT, "damage_action": KIND_DAMAGE_ACTION}
+                "action_int": KIND_ACTION_INT, "damage_action": KIND_DAMAGE_ACTION,
+                "skv": KIND_SKV}
 
 # --------------------------------------------------------------------------- 字段语义
 
@@ -398,20 +404,56 @@ BOUNDARY_FALLBACK = ("unit_round_start",)
 # 表现层动画 tick（DLL 用 plain kind 发 ``RND tag=skv_*``）：它们**不是**回合边界，
 # 只用来推进"动画相位"。见 BattleSkillViewBase（Skill_Start / Skill_Complete / Skill_End）。
 ANIM_TICK_TAGS = ("skv_start", "skv_complete", "skv_end")
+# 只有 ``skv_end``（BattleSkillViewBase::Skill_End）才算"这手动画播完了"，才放行判定；
+# ``skv_start`` / ``skv_complete`` 只用来证明"动画在跑"（心跳里的 tick 计数）。
+ANIM_RELEASE_TAGS = ("skv_end",)
+# 注：同一次"动画结束"有时会被多份技能视图各发一条（实测同一毫秒收到两条 skv_end），
+# 那就是一次放行两条判定 —— 无害（比卡住不放行好），所以不做时间去重。
+# 一个回合实测有 5 组以上的 skv_end（= 至少 10 次放行），远多于待放行条数。
 
 # 要"等动画"的规则类型：命中后先进待放行队列，由动画 tick 逐个放行。
 # 技能类本来就走待结算（pending_flags）；hp/理智/buff 之前是立刻置位，而这游戏的值变化
 # 全在回合开头的结算瞬间 → 立刻置位 = "回合开始立刻结算"，所以一起改成等动画。
 RULE_KINDS_ANIM_WAIT = ("hp", "mental", "buff")
+# 挂起项详情里的占位符：放行时会被换成真实原因（"动画结束" / "回合边界兜底"）。
+PENDING_REASON = "待动画结束"
 
-# 「技能动画结束」的收尾事件：**只用 done_with_action**。
-# 实测同一手技能里 ``action_on_end_turn`` 先到、``action_done_with_action`` 后到
-# （中间还夹着 take_attack_dmg_multiplier 的伤害事件）—— 拿 on_end_turn 结算
-# 等于“动画还没播完就结算”，所以只在 done 上结算。
-ACTION_END_TAGS = ("action_done_with_action",)
-# 静默期兜底：个别技能不调收尾函数时，事件停这么久就当作动画放完。
-# 2.5s ≈ 一手技能动画的时长（太短会在动画中途结算，太长会让成就慢半拍）。
+
+def _stamp_reason(detail: str, reason: str) -> str:
+    """把“为什么现在才放行”写进详情（解锁依据/日志都要能一眼看出）。
+
+    技能类详情里本来就有占位符 ``（待动画结束）``，直接替掉；
+    hp/理智/buff 那种没占位符的就在末尾补一个 ``（动画结束…）``，
+    否则日志里会看不出它是被动画放行的还是被回合边界兜底的。
+    """
+    if not reason:
+        return detail
+    if PENDING_REASON in detail:
+        return detail.replace(PENDING_REASON, reason)
+    if reason in detail:
+        return detail
+    return f"{detail}（{reason}）"
+
+# ⚠ 结算阶段钩子**不能**当"技能动画结束"用（常量保留只为兼容旧引用，不再触发结算）。
+# 实测 2026-09-25 11:04:49（logs/battle_watch.log 带毫秒）：
+#   11:04:49.165~.170 一整个回合的全部 ACT/VAL（伤害、收尾回调 action_on_end_turn /
+#                     action_done_with_action）在 5ms 内算完 ← 这是**结算瞬间**
+#   11:04:49.9 起      表现层才慢慢播 skv_start / skv_complete / skv_end
+# 所以拿 done_with_action 结算 = "回合一开始就解锁"（用户反馈的现象）。
+# 真动画进度只认表现层 tick，见 ANIM_RELEASE_TAGS。
+ACTION_END_TAGS: tuple[str, ...] = ()
+# 回合边界去重：实测同一回合会收到**两次**边界钩子（OnRoundStart_Before 在命令阶段与
+# 战斗阶段各调一次，间隔 2~3 秒）→ 不去重 round_seq 会翻倍，max_round/min_round 全错。
+# 真回合之间相隔 20s 以上，4s 窗口很安全。
+ROUND_BOUNDARY_DEDUPE_SEC = 4.0
+# 静默期兜底（**只在从未见过 skv tick 时用**）：表现层钩子没命中时，事件停这么久
+# 就当作动画放完（否则挂起判定要一直等到回合边界）。
 SKILL_SETTLE_QUIET_SEC = 2.5
+# 见过 skv tick（说明能看见动画进度）→ 只用这个很长的阈值（以最后一次 tick 计时）。
+# 而**同一个回合内**两段动画之间 tick 最长能空 10.5s（回合之间是 26s+）→ 阈值必须
+# 明显大于 10.5s，否则会在动画中途放行（曾用 2.5/6/8s，现象就是用户反馈的
+# “回合开始就结算”）。
+SKILL_SETTLE_QUIET_TICKED_SEC = 15.0
 
 HEARTBEAT_SEC = 20.0
 STATUS_WRITE_SEC = 2.0
@@ -449,10 +491,11 @@ FALLBACK_HOOKS: dict[str, tuple[str, int, str]] = {
     # ⚠ 这游戏的战斗是"**先算完整回合、再播动画**"：结算阶段（伤害/收尾回调）全挤在回合
     # 刚开始的一瞬间，拿它们当"动画结束"必然变成"回合一开始就解锁"。只有表现层的
     # BattleSkillViewBase 回调能反映动画进度（RVA 来自 dump.cs，build 34E76109）。
-    # 它们走 plain kind（DLL 发 RND tag=<钩子名>），驱动按 tag 前缀 ``skv_`` 区分相位。
-    "skv_start": ("BattleSkillViewBase::Skill_Start", 0x9B4D80, "plain"),
-    "skv_complete": ("BattleSkillViewBase::Skill_Complete", 0x9BD810, "plain"),
-    "skv_end": ("BattleSkillViewBase::Skill_End", 0x9475C0, "plain"),
+    # 它们走 ``skv`` kind：DLL 发 ``RND tag=<钩子名> iid=<attackerInstanceID>``，
+    # 驱动按 tag 前缀 ``skv_`` 区分相位，按 iid 把判定对齐到具体行动。
+    "skv_start": ("BattleSkillViewBase::Skill_Start", 0x9B4D80, "skv"),
+    "skv_complete": ("BattleSkillViewBase::Skill_Complete", 0x9BD810, "skv"),
+    "skv_end": ("BattleSkillViewBase::Skill_End", 0x9475C0, "skv"),
 }
 FALLBACK_FIELDS: dict[str, int] = {
     "unit_instance_id": 0x60,
@@ -476,6 +519,8 @@ FALLBACK_FIELDS: dict[str, int] = {
     "skill_data": 0x10,
     "skill_id": 0x10,
     "skill_tier": 0x40,
+    # 表现层 BattleSkillViewBase::_attackerInstanceID（动画 tick 的身份）
+    "skv_attacker_iid": 0x120,
 }
 # 该候选不做桩解引用（本身就是真实实现/已验证可用）
 NO_STUB_RESOLVE = {"take_attack_dmg_multiplier"}
@@ -519,6 +564,8 @@ class BWConfig(ctypes.Structure):
         ("off_skill_data", ctypes.c_int32),
         ("off_skill_id", ctypes.c_int32),
         ("off_skill_tier", ctypes.c_int32),
+        # 表现层动画 tick 的身份：BattleSkillViewBase::_attackerInstanceID
+        ("off_skv_attacker_iid", ctypes.c_int32),
         ("gameassembly_found", ctypes.c_int32),
         ("verified", ctypes.c_int32),
         ("installed", ctypes.c_int32),
@@ -1114,7 +1161,17 @@ class BattleState:
     pending_immediate: dict = field(default_factory=dict)  # hp/理智/buff 待动画放行：key → 详情
     pending_seqs: dict = field(default_factory=dict)   # key → 入队序号（跨类型按先后放行）
     pending_seq: int = 0                               # 入队计数器
+    pending_group: dict = field(default_factory=dict)   # key → 行动组号（决定跟哪段动画一起放）
+    # 行动组：gid → {oid, keys, open}（组 0 = 不属于任何行动的判定）
+    groups: dict = field(default_factory=lambda: {0: {"oid": -1, "keys": [], "open": True}})
+    released_groups: set = field(default_factory=set)   # 已放行的组号
+    cur_group: int = 0                                  # 当前正在入队的组号
+    next_group: int = 1                                 # 下一个可分配的组号
+    group_binding: int = -1                             # 当前正在播的动画绑定的组号（-1 = 无）
+    bound_iid: int = -1                                 # 绑定时动画 tick 带的 iid
+    group_flushes: int = 0                              # 因“动画结束”而放行的组数（诊断用）
     anim_ticks_total: int = 0                          # 收到的动画 tick 数（skv_*）
+    anim_ticks_with_iid: int = 0                        # 其中带了可用 iid 的（说明新 DLL 生效）
     anim_last_tag: str = ""                            # 最近一次 tick 的钩子名
     acts_total: int = 0
     spd_total: int = 0
@@ -1150,7 +1207,16 @@ class BattleState:
             "rule_order": dict(self.flag_seq),
             "rule_pending": sorted(self.pending_flags),
             "rule_pending_immediate": sorted(self.pending_immediate),
+            "rule_pending_groups": {k: g for k, g in sorted(self.pending_group.items())},
+            "action_groups": {g: {"oid": v.get("oid", -1), "keys": list(v.get("keys") or ()),
+                                  "open": bool(v.get("open"))}
+                             for g, v in sorted(self.groups.items())},
+            "released_groups": sorted(self.released_groups),
+            "group_binding": self.group_binding,
+            "bound_iid": self.bound_iid,
+            "group_flushes": self.group_flushes,
             "anim_ticks": self.anim_ticks_total,
+            "anim_ticks_with_iid": self.anim_ticks_with_iid,
             "anim_last_tag": self.anim_last_tag,
             "watched_speeds": speeds,
             "watched_vitals": vitals,
@@ -1268,7 +1334,7 @@ def build_hook_table(on_log=None, pe_path: str = "") -> dict:
                 item["prologue"] = data
         key_owner = used_rva.get(rva)
         if key_owner is not None:
-            log(f"\n[战斗观测] {key} 与 {key_owner} 指向同一地址 0x{rva:X}，"
+            log(f"[战斗观测] {key} 与 {key_owner} 指向同一地址 0x{rva:X}，"
                 f"已合并（{HOOK_MERGE_WARN}）")
             resolved[key_owner].setdefault("merged_keys", []).append(key)
             continue
@@ -1288,7 +1354,7 @@ def describe_hook_table(table: dict) -> str:
         lines.append(f"    [{i:2}] {key:32} 0x{int(item['final_rva']):X} "
                      f"kind={item['kind']:14} prologue={pro.hex(' ')}"
                      + (f"  已合并: {item['merged_keys']}" if item.get("merged_keys") else ""))
-    return "\n".join(lines)
+    return "\n" + "\n".join(lines)
 
 
 # --------------------------------------------------------------------------- 驱动
@@ -1321,6 +1387,10 @@ class BattleWatch:
         self._last_heartbeat = 0.0
         self._last_status_write = 0.0
         self._last_boundary_ts = 0.0
+        # 动画相位辅助：最后一次表现层 tick / 最后一次"动画结束"放行 / 最后一次回合边界
+        self._last_anim_tick_ts = 0.0
+        self._last_anim_release_ts = 0.0
+        self._last_round_boundary_ts = 0.0
         self._event_file = None
         self._phase = "未启动"
         # 注入现场（状态文件里能直接看到“注的是哪个进程/哪份 DLL”）
@@ -1361,8 +1431,8 @@ class BattleWatch:
 
         调用时机：
 
-        - **技能动画结束**（``action_done_with_action`` / ``action_on_end_turn`` 事件），
-          以及一段静默期之后 —— ``settle_turn(reason, only_skills=True)``；
+        - **技能动画结束**（表现层 ``skv_end`` tick，见 ``_apply_anim_tick``）
+          以及一段静默期之后 —— 由驱动内部逐条/一次性放行；
         - **回合边界** —— 全量结算（含立刻类兜底复核）。
 
         返回本回合已结算的技能事件列表。注意：``_write_status`` 必须在**锁外**调用
@@ -1375,7 +1445,7 @@ class BattleWatch:
             if pending:
                 self.state.settled_by = reason
             # 挂起的判定（技能 + 等动画的 hp/理智/buff）按先后顺序全部放行
-            flushed = self._flush_all_pending_locked()
+            flushed = self._flush_all_pending_locked(reason or "回合边界")
             if flushed:
                 self.state.settled_by = reason
                 settled.extend(flushed)
@@ -1401,7 +1471,7 @@ class BattleWatch:
                         lambda rule, i=info, n=names: self._buff_detail(rule, i, suffix, n))
                 settled += self._eval_presence_locked()
                 # 兜底复核可能刚刚挂起新的判定（例：规则是后登记的）→ 一并放行
-                more = self._flush_all_pending_locked()
+                more = self._flush_all_pending_locked(suffix)
                 if more:
                     settled.extend(more)
         if only_skills and not settled and not pending:
@@ -1411,17 +1481,22 @@ class BattleWatch:
         self._write_status(force=True)
         return pending
 
-    def settle_skills_if_quiet(self, reason: str = "技能动画结束（静默）") -> bool:
-        """静默期兜底：有待结算技能且距上次事件超过阈值 → 结算技能类规则。
+    def settle_skills_if_quiet(self, reason: str = "动画结束（静默兜底）") -> bool:
+        """兜底：表现层 tick 没装钩 / 没命中时，停这么久就当作"动画放完了"。
 
-        动画结束时游戏不一定会调我们钩到的收尾函数（且不同技能收尾时机不一），
-        所以主循环每隔一小段就来看一眼：事件停了就当作“这一手的动画放完了”。
+        兜底路径：表现层 tick 没装钩 / 没命中时（例如战斗视图换了实现），
+        主循环每隔一小段就来看一眼：表现层停下来就当作"动画放完了"。
         """
         with self._lock:
             if not self.state.pending_flags and not self.state.pending_immediate:
                 return False
-            quiet = time.time() - self._last_event_ts
-        if quiet < SKILL_SETTLE_QUIET_SEC:
+            # 有 tick → 阈值 15s（实测同一回合内两段动画之间 tick 最长空 10.5s）；
+            # 从未见过 tick（表现层钩子没命中）→ 只能用短阈值，否则要等到回合边界。
+            ts = max(self._last_event_ts, self._last_anim_tick_ts)
+            quiet = time.time() - ts
+            ticked = self.state.anim_ticks_total > 0
+        # 正常路径是 skv_end 逐条放行 + 回合边界清场，这里只防万一
+        if quiet < (SKILL_SETTLE_QUIET_TICKED_SEC if ticked else SKILL_SETTLE_QUIET_SEC):
             return False
         return bool(self.settle_turn(reason, fallback_immediate=False,
                                      only_skills=True))
@@ -1599,6 +1674,20 @@ class BattleWatch:
             self._map_handle = None
 
     def _config(self) -> BWConfig | None:
+        """共享内存配置的**活视图**（读写都直接作用于共享内存）。
+
+        ⚠ 这里以前是 ``BWConfig()`` + ``memmove`` 出来的**快照拷贝** —— 改它不会影响共享
+        内存。buff 关注表就因此永远写不进去：拷贝里写着 2、回读也是 2，DLL 那侧读到的却
+        一直是 0，于是整条 buff 链被跳过（"buff 检测一个都不生效"）。要快照请显式用
+        ``_config_snapshot()``。
+        """
+        if self._map_view is None:
+            return None
+        cfg = BWConfig.from_address(self._map_view)
+        return cfg if cfg.magic == BW_MAGIC else None
+
+    def _config_snapshot(self) -> BWConfig | None:
+        """共享内存配置的一份**拷贝**（只读用途，或需要脱离共享内存时用）。"""
         if self._map_view is None:
             return None
         cfg = BWConfig()
@@ -1868,20 +1957,25 @@ class BattleWatch:
 
     # ---------------------------------------------------------- buff 关注表
     def sync_buff_watch(self, names=()) -> None:
-        """把关注 buff 名（FNV-1a 64）写进共享内存关注表。
+        """把关注 buff 名（FNV-1a 64）写进共享内存关注表，并**回读**确认写进去了。
 
         关注表下标 = ``watched_buff_names()`` 的下标（两边同一份排序）；
-        写 0 条时 DLL 会完全跳过 buff 链读取。
+        写 0 条时 DLL 会完全跳过 buff 链读取 —— 所以"日志说有 N 个关注 buff"不等于
+        "DLL 那侧看到了"，这里写完后立刻回读一遍并返回结果，两头对得上才算数。
         """
         cfg = self._config()
         if cfg is None:
-            return
+            self._log("[战斗观测] ⚠ 关注 buff 表没写进去：共享内存配置不可用（magic 不对？）")
+            return None
         names = tuple(names)[:BUFF_WATCH_MAX]
         for i, name in enumerate(names):
             cfg.buff_watch_hashes[i] = fnv1a64(name)
         for i in range(len(names), BUFF_WATCH_MAX):
             cfg.buff_watch_hashes[i] = 0
         cfg.buff_watch_count = len(names)
+        readback = (int(cfg.buff_watch_count), int(cfg.buff_watch_hashes[0]),
+                    int(cfg.buff_watch_hashes[1]))
+        return readback # type: ignore
 
     # ---------------------------------------------------------- 事件处理
     def handle_line(self, line: str) -> BattleEvent | None:
@@ -1912,13 +2006,29 @@ class BattleWatch:
             self._log(f"[战斗观测] 事件 {line}")
         if kind == "RND":
             if tag in ANIM_TICK_TAGS:
-                # 表现层动画 tick（不是回合边界！）：放行一条挂起判定，让解锁跟着动画走
-                self._apply_anim_tick(tag)
+                # 表现层动画 tick（不是回合边界！）：带 iid 的就按行动分组放行
+                self._apply_anim_tick(tag, event.get("iid", -1))
             else:
+                now = time.time()
                 with self._lock:
-                    self.state.round_seq = event.get("seq", self.state.round_seq + 1)
                     self.state.rnd_total += 1
-                self.settle_turn(f"回合边界({tag or 'hook'})")
+                    # 同一回合会收到两次边界钩子（命令阶段 + 战斗阶段）→ 只当一次，
+                    # 否则 round_seq 翻倍、max_round / min_round 的回合窗口全错位。
+                    dup = (tag in BOUNDARY_PREFERRED
+                           and now - self._last_round_boundary_ts
+                           < ROUND_BOUNDARY_DEDUPE_SEC)
+                    if not dup:
+                        self._last_round_boundary_ts = now
+                        self.state.round_seq = event.get("seq", self.state.round_seq + 1)
+                if not dup:
+                    self.settle_turn(f"回合边界({tag or 'hook'})")
+                    self._begin_action_batch()   # 上一回合的分组清空，新回合从组 0 开始
+                elif self.verbose:
+                    self._log(f"[战斗观测] 回合边界({tag}) 与上一次同回合（{ROUND_BOUNDARY_DEDUPE_SEC:.0f}s 内）→ 不重复计数")
+        elif kind == "BUFDIAG":
+            # DLL 侧 buff 链现场（n=-1 链读不到 / n>0 但一个都没命中关注表时会打）
+            # self._log(f"[战斗观测] buff 诊断（DLL）: {line}")
+            self._event(f"DLL {line}")
         elif kind == "SPD":
             self._apply_spd(event)
         elif kind == "VAL":
@@ -1929,20 +2039,47 @@ class BattleWatch:
             self._apply_act(event)
         return event
 
-    def _apply_anim_tick(self, tag: str) -> None:
-        """表现层动画 tick：放行**一条**最早挂起的判定。
+    def _apply_anim_tick(self, tag: str, iid: int = -1) -> None:
+        """表现层动画 tick：放行**这一手动画对应的那个行动组**的判定。
 
-        为什么一次一条：动画按结算顺序逐个播，而结算阶段的事件全挤在一瞬间，
-        所以"第 N 次动画 tick"≈"第 N 个行动"。一次放一条，解锁时机就跟着动画走；
-        没有挂起项时只计数（用来看钩子活不活）。
+        ``iid`` 来自 DLL（``BattleSkillViewBase::_attackerInstanceID``）：
+
+        - **带 iid（新 DLL）**：先按身份把“正在播的动画”绑到一个行动组，到
+          ``skv_end`` 就把那一组的挂起判定**全部**放行 —— 这是“跟着动画走”的正路：
+          一个行动里的技能/血量/理智/buff 判定一起、在那手动画结束时落地。
+        - **不带 iid（旧 DLL / 读不到）**：退回“一次动画结束放一条”，总比卡住好。
+
+        ``skv_start`` / ``skv_complete`` 只用来绑定与计时（用它们放行 = 动画刚开播就解锁）。
         """
+        now = time.time()
         with self._lock:
             self.state.anim_ticks_total += 1
             self.state.anim_last_tag = tag
-            detail = self._flush_one_pending_locked()
+            self._last_anim_tick_ts = now
+            if iid >= 0:
+                self.state.anim_ticks_with_iid += 1
+            if tag not in ANIM_RELEASE_TAGS:
+                # 动画开播/播完：把这一段绑到对应的行动组（skv_end 时才放行）
+                if iid >= 0:
+                    self._bind_group_locked(iid)
+                detail = None
+            elif iid >= 0:
+                self._last_anim_release_ts = now
+                gid = self._bind_group_locked(iid)
+                if gid < 0:
+                    detail = None            # 没有挂起项，只计数
+                else:
+                    oid = self.state.groups.get(gid, {}).get("oid", -1)
+                    reason = f"动画结束(oid={oid})" if oid > 0 else "动画结束"
+                    out = self._release_group_locked(gid, reason)
+                    self.state.group_flushes += 1
+                    detail = "；".join(out) if out else None
+            else:
+                self._last_anim_release_ts = now
+                detail = self._flush_one_pending_locked("动画结束")
         if not detail:
             return
-        self._log(f"[战斗观测] ▶ 动画 tick（{tag}）放行: {detail}")
+        self._log(f"[战斗观测] ▶ 动画结束（{tag}）放行: {detail}")
         self._write_status(force=True)
 
     def _apply_spd(self, event: BattleEvent) -> None:
@@ -1992,6 +2129,7 @@ class BattleWatch:
                 with self._lock:
                     self.state.round_seq += 1
                 self.settle_turn("回合边界(unit_round_start 兜底)")
+                self._begin_action_batch()
 
     def _boundary_seen(self) -> bool:
         """首选边界钩子是否至少命中过一次。"""
@@ -2019,8 +2157,9 @@ class BattleWatch:
             self.state.skills.append(record)
             if len(self.state.skills) > 64:
                 self.state.skills = self.state.skills[-64:]
-            # 技能类规则：命中先记入待结算表；**不在这里置位** ——
-            # 等到「技能动画结束」（收尾事件或静默期）或回合边界才结算。
+            # 技能类规则：命中先记入待结算表；**不在这里置位** —— 立刻置位的话就是
+            # "回合一开始（结算瞬间）就解锁"。等到表现层 skv_end（动画结束）、静默期
+            # 或回合边界才逐条放行。
             round_seq = self.state.round_seq
             for key, rule in registered_rules().items():
                 if rule.kind != RULE_KIND_SKILL or key in self.state.flags:
@@ -2029,9 +2168,22 @@ class BattleWatch:
                     if key not in self.state.pending_flags and key not in self.state.flags:
                         self.state.pending_seq += 1
                         self.state.pending_seqs[key] = self.state.pending_seq
-                        self.state.pending_flags[key] = self._skill_detail(rule, record, "待结算")
-        # 动画结束的收尾事件（不同技能收尾时机不一，钩到的这两个都当结束信号）
-        if event.tag in ACTION_END_TAGS:
+                        self.state.pending_flags[key] = self._skill_detail(
+                            rule, record, PENDING_REASON)
+                        self._assign_group_locked(key)   # 归到“当前行动组”
+            # 行动分组：带 aoid 的事件告诉我们这一组是哪个身份在打（动画 tick 靠它对账）
+            if event.tag in ("take_attack_dmg_multiplier", "action_on_end_turn"):
+                self._mark_group_actor_locked(actor_oid)
+            # 每个行动结束时收尾 → 封存本组（身份兜底用 skid//100）、开下一组
+            if event.tag == "action_done_with_action":
+                skid = record["skid"]
+                if skid and skid > 0:
+                    self._mark_group_actor_locked(skid // 100)
+                self._open_group_locked()
+        # ⚠ 结算阶段的收尾回调（action_done_with_action / action_on_end_turn）**不**结算：
+        # 实测它们在一整个回合的结算瞬间（动画开播之前）全部到齐，用它们结算 = 回合一开始就解锁。
+        # 挂起判定由动画 tick（skv_end + iid）按行动分组放行，兜底是静默期与回合边界。
+        if ACTION_END_TAGS and event.tag in ACTION_END_TAGS:  # pragma: no cover - 默认空
             self.settle_turn(f"技能动画结束({event.tag})", fallback_immediate=False,
                              only_skills=True)
 
@@ -2071,6 +2223,110 @@ class BattleWatch:
         self.state.flags[key] = detail
         self.state.flag_seq[key] = self.state.flag_counter
 
+    # ------------------------------------------------- 行动分组（跟动画走）
+    def _begin_action_batch(self) -> None:
+        """新回合：清空行动分组，开第一组（组 0 = 不属于任何行动的判定）。
+
+        **为什么需要分组**：这游戏先算完整回合、再播动画 —— 一整个回合的伤害/收尾事件全挤
+        在几毫秒里（实测 5ms），光看“第几次动画结束”无法把判定对齐到“哪个行动”，于是只能
+        一股脑延后几秒再全部解锁（用户反馈过：“延后之后依旧立刻全部解锁”）。
+
+        做法：结算阶段按 ``action_done_with_action``（每个行动末尾一次）切段，事件落在哪段
+        就属于哪个行动；动画 tick 带上 iid（DLL 读 ``BattleSkillViewBase::_attackerInstanceID``）
+        后，就能把“正在播的动画”与“对应那一段”绑起来 → 那一手动画结束时才放行它的判定。
+        """
+        with self._lock:
+            st = self.state
+            st.groups = {0: {"oid": -1, "keys": [], "open": True}}
+            st.released_groups = set()
+            st.cur_group = 0
+            st.next_group = 1
+            st.group_binding = -1
+            st.bound_iid = -1
+            st.pending_group.clear()
+
+    def _open_group_locked(self) -> int:
+        """开一个新的行动组并设为“当前组”（已持有锁）。"""
+        st = self.state
+        gid = st.next_group
+        st.next_group += 1
+        st.groups[gid] = {"oid": -1, "keys": [], "open": True}
+        st.cur_group = gid
+        return gid
+
+    def _assign_group_locked(self, key: str) -> int:
+        """把挂起项归到“当前行动组”（已持有锁）。
+
+        若当前组已经放行过了（例如动画播完后采样线程又报了个 buff），就开一个新组 ——
+        它会在下一个动画 tick 放行，而不是永远卡着。
+        """
+        st = self.state
+        gid = st.cur_group
+        if gid in st.released_groups or gid not in st.groups:
+            gid = self._open_group_locked()
+        st.groups[gid].setdefault("keys", []).append(key)
+        st.pending_group[key] = gid
+        return gid
+
+    def _mark_group_actor_locked(self, oid: int) -> None:
+        """记下“当前行动组是哪个身份在打”（已持有锁）——动画 tick 用身份来对账。"""
+        if oid <= 0:
+            return
+        st = self.state
+        group = st.groups.get(st.cur_group)
+        if group is None:
+            return
+        if group.get("oid", -1) <= 0:
+            group["oid"] = oid
+
+    def _release_group_locked(self, gid: int, reason: str = "动画结束") -> list[str]:
+        """放行一个行动组的全部挂起项（已持有锁）。"""
+        st = self.state
+        group = st.groups.pop(gid, None)
+        st.released_groups.add(gid)
+        if st.group_binding == gid:
+            st.group_binding = -1
+            st.bound_iid = -1
+        if not group:
+            return []
+        out: list[str] = []
+        for key in list(group.get("keys") or ()):
+            detail = (st.pending_immediate.pop(key, None)
+                      or st.pending_flags.pop(key, None))
+            st.pending_seqs.pop(key, None)
+            st.pending_group.pop(key, None)
+            if detail is None:
+                continue                      # 这一组里已经放行过了（去重）
+            detail = _stamp_reason(detail, reason)
+            self._set_flag_locked(key, detail)
+            out.append(detail)
+        return out
+
+    def _bind_group_locked(self, iid: int) -> int:
+        """把“正在播的动画”绑到最早还没放行的行动组（已持有锁）。
+
+        优先挑**身份对得上**的组（组里记着该行动的攻击者身份）；对不上（比如技能被转化、
+        读不出 iid）就按顺序挑最早那个 —— 动画本来就是按结算顺序播的。
+        """
+        st = self.state
+        if st.group_binding >= 0:
+            return st.group_binding
+        candidates = [g for g in sorted(st.groups) if st.groups[g].get("keys")]
+        if not candidates:
+            return -1
+        oid = st.units.get(iid, -1) if iid >= 0 else -1
+        pick = -1
+        if oid > 0:
+            for gid in candidates:
+                if st.groups[gid].get("oid") == oid:
+                    pick = gid
+                    break
+        if pick < 0:
+            pick = candidates[0]
+        st.group_binding = pick
+        st.bound_iid = iid
+        return pick
+
     def _queue_pending_locked(self, key: str, detail: str) -> None:
         """把一条判定挂起（等动画 tick 放行），并记下先后序号。"""
         if key in self.state.flags or key in self.state.pending_immediate \
@@ -2079,9 +2335,14 @@ class BattleWatch:
         self.state.pending_seq += 1
         self.state.pending_seqs[key] = self.state.pending_seq
         self.state.pending_immediate[key] = detail
+        self._assign_group_locked(key)
 
-    def _flush_one_pending_locked(self) -> str | None:
-        """放行**最早挂起的一条**判定（已持有锁）。返回详情文本。"""
+    def _flush_one_pending_locked(self, reason: str = "") -> str | None:
+        """放行**最早挂起的一条**判定（已持有锁）。返回详情文本。
+
+        ``reason`` 会被填进详情里的待放行标记（让日志/解锁依据写明到底是"动画结束"
+        还是"回合边界兜底"，而不是永远一句"待动画结束"）。
+        """
         best_key, best_seq = None, None
         for store in (self.state.pending_flags, self.state.pending_immediate):
             for key in store:
@@ -2093,14 +2354,23 @@ class BattleWatch:
         detail = (self.state.pending_immediate.pop(best_key, None)
                   or self.state.pending_flags.pop(best_key, None))
         self.state.pending_seqs.pop(best_key, None)
+        self.state.pending_group.pop(best_key, None)
+        if reason and detail:
+            detail = _stamp_reason(detail, reason)
         self._set_flag_locked(best_key, detail or "")
         return detail
 
-    def _flush_all_pending_locked(self) -> list[str]:
-        """按挂起先后放行全部（已持有锁）——回合边界 / 静默期 / 战斗结束的兜底。"""
+    def _flush_all_pending_locked(self, reason: str = "") -> list[str]:
+        """放行全部挂起项（已持有锁）——回合边界 / 静默期 / 战斗结束的兜底。
+
+        按行动组走（组序 = 结算顺序），再扫一遍漏网的（理论上不会漏）。
+        """
+        st = self.state
         out: list[str] = []
+        for gid in sorted(st.groups):
+            out.extend(self._release_group_locked(gid, reason or "回合边界"))
         while True:
-            detail = self._flush_one_pending_locked()
+            detail = self._flush_one_pending_locked(reason)
             if detail is None:
                 break
             out.append(detail)
@@ -2254,7 +2524,11 @@ class BattleWatch:
             return
         # 关注 buff 表：成就侧登记了 buff 规则才写（没登记时 DLL 连 buff 链都不读）
         names = watched_buff_names()
-        self.sync_buff_watch(names)
+        readback = self.sync_buff_watch(names)
+        if names and readback is not None:
+            log(f"[战斗观测] 关注 buff 回读: count={readback[0]} "
+                f"hash0=0x{readback[1]:016X} hash1=0x{readback[2]:016X}"
+                f"（Python 端 hash0=0x{fnv1a64(names[0]):016X}）")
         if names:
             log(f"[战斗观测] 关注 buff {len(names)} 个: {'/'.join(names)}")
         self._write_status(force=True)
@@ -2359,8 +2633,12 @@ class BattleWatch:
                   f"事件: RND {snap['rnd_total']} / SPD {snap['spd_total']} / "
                   f"VAL {snap.get('vitals_total', 0)} / ACT {snap['acts_total']} / "
                   f"BUF {snap.get('buff_total', 0)} | "
-                  f"动画 tick {snap.get('anim_ticks', 0)}（{snap.get('anim_last_tag') or '无'}） | "
+                  f"动画 tick {snap.get('anim_ticks', 0)}"
+                  f"（{snap.get('anim_last_tag') or '无'}，带 iid {snap.get('anim_ticks_with_iid', 0)}） | "
                   f"单位 {snap['units']} | 本回合待结算 {snap['pending_skills']} | "
+                  f"行动分组 {len(snap.get('action_groups') or {})}"
+                  f"（待放行 {len(snap.get('rule_pending_groups') or {})}，"
+                  f"已按动画放行 {snap.get('group_flushes', 0)} 组） | "
                   f"成就判定 {len(flags)} 条{('（' + ','.join(flags) + '）') if flags else ''} | "
                   f"钩子命中: {hits or '（全 0）'}")
         if not hits:

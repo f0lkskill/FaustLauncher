@@ -12,7 +12,9 @@
 补充说明：
 
 * buff 的名字来自游戏 ``Lang/LLC_zh-CN/Bufs.json`` 的 ``id``（字符串，不是数字）；
-* 技能类条件在**技能动画结束**时结算（收尾事件或 1.5s 静默期），不是回合边界；
+* 技能类条件在**技能动画结束**时结算（表现层 skv_end tick；静默期与回合边界只做兜底），
+  不是回合边界 —— 实测 ``action_done_with_action`` 这类收尾回调全在动画开播**之前**的
+  结算瞬间到齐，拿它当“动画结束”会变成“回合一开始就解锁”；
 * 「场上是否存在某身份」用 ``state_only=True`` 的条件：他在场是**状态**，
   从第一回合就在场，不能因为“记录得早”而算顺序不对。
 """
@@ -89,7 +91,11 @@ class HeartHeartAchievement(CompositeAchievement):
             name="心脏，心脏！",
             description="拇指父辈罗佳 使用技能且带上预知眼时，若场上存在拇指子辈希斯克里夫，则触发。",
             conditions=(skill, eyebuff, ally),
-            chain=("skill", "eyebuff"),      # 先看到她出手，再看到预知眼
+            # ⚠ 顺序必须是「先有预知眼，再出手」：预知眼是她开局就带着的常驻 buff，
+            # 第一次被采样必然早于她出手 —— 写成 ("skill", "eyebuff") 的话
+            # rule_order(skill) 永远大于 rule_order(eyebuff)，链永远不成立、成就永不触发。
+            # 这正好也是想要的语义：“带着预知眼出手”。
+            chain=("eyebuff", "skill"),
             require="skill and eyebuff and ally",
             label="心脏，心脏！",
             rarity="rare",
