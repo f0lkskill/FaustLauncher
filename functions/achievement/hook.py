@@ -183,6 +183,7 @@ class _LogSink:
         self.path = path
         self._lock = threading.Lock()
         self._fd: int | None = None
+        self.failures = 0            # 写不进去的次数（不再静默吞掉，见 _report_failure）
         directory = os.path.dirname(path)
         if directory:
             os.makedirs(directory, exist_ok=True)
@@ -194,6 +195,18 @@ class _LogSink:
                 pass
         self._open()
 
+    def _report_failure(self, message: str) -> None:
+        """日志写不进去时**必须留痕**：以前这里静默 return／吞 OSError，
+        现象就是“成就日志只有 3 字节（BOM）却毫无提示”。
+        """
+        self.failures += 1
+        if self.failures <= 3 or self.failures % 100 == 0:
+            try:
+                print(f"[成就日志] {message}（第 {self.failures} 次；path={self.path}）",
+                      file=sys.stderr, flush=True)
+            except Exception:  # noqa: BLE001
+                pass
+
     def _open(self) -> None:
         flags = os.O_WRONLY | os.O_CREAT | os.O_APPEND
         if hasattr(os, "O_BINARY"):
@@ -203,8 +216,9 @@ class _LogSink:
             # 文件是空的（首次创建 / 被清空）→ 补上 BOM
             if self._fd is not None and os.fstat(self._fd).st_size == 0:
                 os.write(self._fd, self._BOM)
-        except OSError:
+        except OSError as exc:
             self._fd = None
+            self._report_failure(f"打开失败: {exc}")
 
     def write_line(self, message: str) -> None:
         text = with_timestamp(message)
@@ -216,7 +230,7 @@ class _LogSink:
                 return
             try:
                 os.write(self._fd, data)       # 单行一次写入（append）
-            except OSError:
+            except OSError as exc:
                 try:
                     os.close(self._fd)
                 except OSError:
@@ -226,8 +240,11 @@ class _LogSink:
                 if self._fd is not None:
                     try:
                         os.write(self._fd, data)
-                    except OSError:
+                    except OSError as exc2:
                         self._fd = None
+                        self._report_failure(f"写入失败: {exc2}")
+                else:
+                    self._report_failure(f"重开仍失败: {exc}")
 
     def close(self) -> None:
         with self._lock:
@@ -541,6 +558,64 @@ class AchievementHook:
         }
 
 
+
+def _hook_boot_path() -> str:
+    """子进程启动面包屑日志（cache/achievement/hook_boot.log）。
+
+    成就子进程的 stdout/stderr 以前是 DEVNULL：一旦它在写出第一行成就日志之前出事
+    （被重复启动的实例杀掉 / 导入期异常 / 原生崩溃），就什么都看不到——只剩“日志只有 3
+    字节（BOM）”这个现象。这里把每一步都落到盘上，并开 faulthandler，把“静默死亡”变成可定位记录。
+    """
+    base = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    return os.path.join(base, "cache", "achievement", "hook_boot.log")
+
+
+def _boot(message: str) -> None:
+    """面包屑：写 cache/achievement/hook_boot.log + stderr（启动器已把 stderr 转存到文件）。"""
+    line = f"[{time.strftime('%H:%M:%S')}] pid={os.getpid()} {message}"
+    try:
+        path = _hook_boot_path()
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "a", encoding="utf-8", errors="replace") as fh:
+            fh.write(line + "\n")
+    except OSError:
+        pass
+    try:
+        print(line, file=sys.stderr, flush=True)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _install_child_diagnostics() -> None:
+    """子进程级诊断：faulthandler（原生崩溃/卡死留堆栈）+ excepthook + 启动面包屑。"""
+    try:
+        import faulthandler
+        import threading as _threading
+        import traceback as _tb
+        path = os.path.join(os.path.dirname(_hook_boot_path()), "hook_fatal.log")
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        _fatal_fh = open(path, "a", encoding="utf-8", errors="replace")   # 进程结束才关闭
+        faulthandler.enable(file=_fatal_fh, all_threads=True)
+        globals()["_fatal_handle"] = _fatal_fh
+
+        def _dump_hook(exc_type, exc, tb):
+            _boot("未捕获异常:\n" + "".join(_tb.format_exception(exc_type, exc, tb)))
+
+        def _thread_hook(args):
+            _boot(f"线程 {getattr(args.thread, 'name', '?')} 未捕获异常:\n"
+                  + "".join(_tb.format_exception(args.exc_type, args.exc_value,
+                                                 args.exc_traceback)))
+
+        sys.excepthook = _dump_hook
+        _threading.excepthook = _thread_hook
+    except Exception as exc:  # noqa: BLE001
+        _boot(f"诊断初始化失败: {type(exc).__name__}: {exc}")
+    try:
+        _boot(f"启动成就子进程 argv={sys.argv!r} exe={sys.executable}")
+    except Exception:  # noqa: BLE001
+        pass
+
+
 # ============ 独立进程入口 ============
 _hook_instance: AchievementHook | None = None
 
@@ -552,6 +627,8 @@ def run_achievement_hook():
     用于 subprocess 启动时调用。
     """
     global _hook_instance
+    _install_child_diagnostics()
+    _boot("进入成就监测主流程")
 
     # 解析命令行参数
     parser = argparse.ArgumentParser(description="Limbus Company 成就追踪器")
@@ -594,6 +671,8 @@ def run_achievement_hook():
         def _cleanup():
             sink.close()
         _atexit.register(_cleanup)
+        _boot(f"成就日志 sink 就绪: {args.output}"
+              f"（truncate={not other}，另一实例={other or '无'}）")
     else:
         log_callback = lambda msg: print(with_timestamp(msg))  # noqa: E731
 
@@ -619,9 +698,11 @@ def run_achievement_hook():
     # 输出启动信息
 
     from functions.base.terminal_banner import get_banner_with_random_style
-    # log_callback("=" * 60)
-    # log_callback("Limbus Company - 成就追踪器")
-    log_callback(f"{get_banner_with_random_style('Limbus Company')}")
+    # 横幅可能因字体/排版抛错，绝不能因此拖死整个监测
+    try:
+        log_callback(f"{get_banner_with_random_style('Limbus Company')}")
+    except Exception as exc:  # noqa: BLE001
+        _boot(f"横幅渲染失败（不影响监测）: {type(exc).__name__}: {exc}")
     log_callback(f"监控日志: {log_path}")
     # log_callback("=" * 60)
     # log_callback("")
@@ -642,8 +723,11 @@ def run_achievement_hook():
     # 创建 Hook（先不要启动监控线程：偏移索引相关模块要先在主线程 import 完，
     # 否则监控线程里的惰性 import 会与主线程撞上 Python 3.14 的 import 锁）
     _hook_instance = AchievementHook(log_path, log_callback)
+    _boot("AchievementHook 构造完成")
     _start_hook_index_refresh(log_callback)
+    _boot("偏移索引刷新已下发（后台）")
     _hook_instance.start_monitoring()
+    _boot("监控线程与战斗观测已启动")
 
     # 启动全局输入统计 (P键/点击) - 失败不影响主监控
     input_ctrl = None

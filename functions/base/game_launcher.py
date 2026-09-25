@@ -5,6 +5,7 @@ import sys
 import json
 import shutil
 import time
+import ctypes
 import traceback
 import tkinter.messagebox as messagebox
 
@@ -94,6 +95,32 @@ def apply_changes_to_data(original_data, changes):
         return result
     else:
         return original_data
+
+
+# “残留子进程”判定：比这个秒数还年轻的一律不杀（防重复启动互掐）
+STALE_HOOK_MIN_AGE = 30.0
+
+
+def _process_age_seconds(kernel32, handle) -> float | None:
+    """进程已存活秒数（拿不到返回 None）。"""
+    try:
+        from ctypes import wintypes
+        kernel32.GetProcessTimes.argtypes = [wintypes.HANDLE, ctypes.POINTER(wintypes.FILETIME),
+                                             ctypes.POINTER(wintypes.FILETIME),
+                                             ctypes.POINTER(wintypes.FILETIME),
+                                             ctypes.POINTER(wintypes.FILETIME)]
+        created = wintypes.FILETIME()
+        dummy = (wintypes.FILETIME(), wintypes.FILETIME(), wintypes.FILETIME())
+        if not kernel32.GetProcessTimes(handle, ctypes.byref(created),
+                                        ctypes.byref(dummy[0]), ctypes.byref(dummy[1]),
+                                        ctypes.byref(dummy[2])):
+            return None
+        ticks = (int(created.dwHighDateTime) << 32) | int(created.dwLowDateTime)
+        if not ticks:
+            return None
+        return max(0.0, time.time() - (ticks / 1e7 - 11644473600))
+    except Exception:  # noqa: BLE001
+        return None
 
 
 class GameLauncher:
@@ -527,25 +554,78 @@ class GameLauncher:
                 "--log", game_log_path,
                 "--output", hook_log_path,
             ]
-            proc = subprocess.Popen(
-                cmd,
-                cwd=project_root,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                stdin=subprocess.DEVNULL,
-                # CREATE_NO_WINDOW | BELOW_NORMAL_PRIORITY_CLASS
-                # 低优先级很重要：游戏更新后子进程要在后台跑一遍 metadata 解密 +
-                # Il2CppDumper（满核 1~2 分钟），正常优先级会把整个桌面卡住。
-                creationflags=0x08000000 | 0x00004000,
-            )
+            # 子进程的 stdout/stderr 以前是 DEVNULL：一旦它在写下第一行成就日志之前出事
+            # （被重复启动的实例杀掉 / 导入期异常 / 原生崩溃），就只剩“成就日志 3 字节（BOM）”
+            # 这个现象，什么都查不到。现在落到 logs/achievement_hook_child.log。
+            # 排查“成就/观测不生效”的现场：
+            #   logs/achievement_hook.log        成就日志（子进程自己写）
+            #   logs/achievement_hook_child.log  子进程 stdout/stderr（异常/警告）
+            #   cache/achievement/hook_boot.log  子进程启动面包屑（死在哪一步）
+            #   cache/achievement/hook_fatal.log faulthandler（原生崩溃堆栈）
+            child_log_path = os.path.join(logs_dir, "achievement_hook_child.log")
+            child_log = None
+            try:
+                child_log = open(child_log_path, "w", encoding="utf-8-sig", errors="replace")
+            except OSError as exc:
+                print(f"[成就] 无法创建子进程日志 {child_log_path}: {exc}")
+            try:
+                proc = subprocess.Popen(
+                    cmd,
+                    cwd=project_root,
+                    stdout=child_log if child_log is not None else subprocess.DEVNULL,
+                    stderr=child_log if child_log is not None else subprocess.DEVNULL,
+                    stdin=subprocess.DEVNULL,
+                    # CREATE_NO_WINDOW | BELOW_NORMAL_PRIORITY_CLASS
+                    # 低优先级很重要：游戏更新后子进程要在后台跑一遍 metadata 解密 +
+                    # Il2CppDumper（满核 1~2 分钟），正常优先级会把整个桌面卡住。
+                    creationflags=0x08000000 | 0x00004000,
+                )
+            finally:
+                if child_log is not None:
+                    try:
+                        child_log.close()
+                    except OSError:
+                        pass
             try:
                 with open(pid_file, "w", encoding="utf-8") as fh:
                     fh.write(str(proc.pid))
             except OSError:
                 pass
+            self._watch_hook_child(proc, hook_log_path, child_log_path)
         except Exception as e:
             print(f"[成就] 启动成就监测失败 (不影响游戏启动): {e}")
             traceback.print_exc()
+
+    def _watch_hook_child(self, proc, hook_log_path: str, child_log_path: str) -> None:
+        """子进程健康检查：起来 20s 后成就日志还只有 BOM（3 字节）就主动告警。
+
+        以前这种情况是“静默”的：用户只看到启动器一句进度，成就日志没内容，也没提示。
+        """
+
+        def worker() -> None:
+            import threading  # noqa: F401  （保持方法自足；主进程已导入也一样）
+            deadline = time.time() + 20
+            while time.time() < deadline and proc.poll() is None:
+                time.sleep(1.0)
+            try:
+                size = os.path.getsize(hook_log_path)
+            except OSError:
+                size = -1
+            code = proc.poll()
+            if code is not None:
+                print(f"[成就] 成就监测子进程已退出（exit={code}）→ 看 {child_log_path}"
+                      f" 与 cache/achievement/hook_boot.log")
+                return
+            if size <= 3:
+                print("[成就] 成就监测子进程在跑，但成就日志没有任何内容"
+                      "（成就解锁与战斗观测都不会生效）→ 现场: "
+                      f"{child_log_path} / cache/achievement/hook_boot.log / "
+                      "cache/achievement/hook_fatal.log")
+
+        try:
+            threading.Thread(target=worker, name="hook-child-watch", daemon=True).start()
+        except Exception as exc:  # noqa: BLE001
+            print(f"[成就] 子进程健康检查线程启动失败: {exc}")
 
     @staticmethod
     def _kill_stale_hook_child(pid_file: str) -> None:
@@ -583,6 +663,14 @@ class GameLauncher:
             kernel32.CloseHandle(handle)
         if os.path.normcase(image) != os.path.normcase(sys.executable):
             return                                          # PID 被复用成别的程序了
+        # 但“刚起来”的子进程不能收：重复点启动 / 同时开着两个启动器实例时，
+        # hook.pid 已经指向**最新**那个子进程了，收掉它 = 子进程刚起就被杀，
+        # 现场正是“成就日志只有 3 字节（BOM）、没有任何内容”。
+        age = _process_age_seconds(kernel32, handle)
+        if age is not None and age < STALE_HOOK_MIN_AGE:
+            print(f"[成就] 上一个成就监测子进程（PID {pid}）只启动了 {age:.0f}s，"
+                  f"疑似重复启动留下的 → 本次不收它（避免掐死新子进程）")
+            return
         try:
             os.kill(pid, 9)                                 # 我们自己拉起的，收掉
             time.sleep(0.4)
