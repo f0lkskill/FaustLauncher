@@ -95,7 +95,7 @@ def _is_mod_file(filename):
 
 
 def _scan_files():
-    """扫描 Mod 目录中的单文件, 返回列表 (按名称排序)"""
+    """扫描 Mod 目录中的单文件, 返回列表 (已启用在前, 组内按名称排序)"""
     mod_dir = _get_mod_dir()
     files = []
     if os.path.exists(mod_dir):
@@ -124,7 +124,8 @@ def _scan_files():
                 'size': size_str,
                 'enabled': not disabled,
             })
-    files.sort(key=lambda f: f['name'].lower())
+    # 已启用的排前面, 已禁用(文件名带禁用后缀)的沉到后面; 组内按名称排序
+    files.sort(key=lambda f: (not f['enabled'], f['name'].lower()))
     return files
 
 
