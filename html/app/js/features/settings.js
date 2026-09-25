@@ -32,14 +32,39 @@ function getSettingOptions(key) {
   return (s && s.options) || [];
 }
 
-// 主页汉化源芯片: 设置更改后立即调用同步
+// 主页汉化源芯片: 名字以后端为准 (插件可注册自定义汉化源, 插件加载/重载后会变)
 function updateSourceChip() {
   const sc = $('#chip-source');
   if (!sc) return;
-  const src = getSettingValue('translate_source');
-  if (typeof src === 'number') {
+  const render = (name) => {
+    sc.innerHTML = '<span class="dot"></span><span>汉化源: ' + esc(name || '未知') + '</span>';
+  };
+  const fallback = () => {
+    const src = getSettingValue('translate_source');
+    if (typeof src !== 'number') return;
     const opts = getSettingOptions('translate_source');
-    sc.innerHTML = '<span class="dot"></span><span>汉化源: ' + esc(opts[src] || '未知') + '</span>';
+    render(opts[src] || '未知');
+  };
+  if (!api) { fallback(); return; }
+  withTimeout(api.get_translate_source_name(), 4000, '')
+    .then(name => { if (name) render(name); else fallback(); })
+    .catch(fallback);
+}
+
+// 主页问候语: 用设置里的玩家名 (user_name), 改设置后立即同步
+function updateHeroUser() {
+  const el = $('#hero-user');
+  if (!el) return;
+  const render = (v) => {
+    const name = String(v == null ? '' : v).trim();
+    el.textContent = name || '但丁';   // 没设置就保留原来的味道
+  };
+  render(getSettingValue('user_name'));
+  // 开机时再向后端核对一次 (与游戏路径芯片同一套做法, 保证显示的一定是已保存的值)
+  if (api) {
+    withTimeout(api.get_setting('user_name'), 3000, null)
+      .then(v => { if (v != null) render(v); })
+      .catch(() => {});
   }
 }
 
@@ -78,6 +103,7 @@ function applySettingSideEffect(key, v) {
   const s = BOOT.settings_schema[key];
   if (key === 'glass_enabled') { BOOT.settings_schema[key].value = v; applyHwAccel(); }
   else if (key === 'translate_source') updateSourceChip();
+  else if (key === 'user_name') updateHeroUser();
   else if (key === 'page_layout') {
     BOOT.settings_schema[key].value = v;
     if (currentPage === 'features' && BOOT.features) renderFeatures(BOOT.features);
@@ -372,10 +398,14 @@ function buildControl(key, s) {
     inp.onchange = () => { markChanged(key, inp.value); if (api) api.set_setting(key, inp.value).catch(e => toast(String(e), 'error')); updatePathChip(); };
     return wrap;
   }
+  inp.oninput = () => {   // 主页称呼随输入即时同步
+    if (key === 'user_name') { updateBootSetting(key, inp.value); updateHeroUser(); }
+  };
   inp.onchange = () => {
     markChanged(key, inp.value);
     if (api) api.set_setting(key, inp.value).catch(err => toast(String(err), 'error'));
     if (key === 'game_path') updatePathChip();   // 主页游戏路径实时同步
+    if (key === 'user_name') { updateBootSetting(key, inp.value); updateHeroUser(); }   // 主页称呼立即同步
   };
   wrap.appendChild(inp);
   return wrap;

@@ -1317,6 +1317,24 @@ body.modal-open .res-card {
   transition: transform .4s ease, opacity .4s ease;
 }
 
+/* ---------- 图标加载中: 圆环转圈 ---------- */
+/* 遮罩只留圆环, 所以旋转的是圆环而不是方块; 颜色跟随主题 accent */
+img.icon-loading {
+  border-radius: 50%;
+  background: conic-gradient(var(--accent) 0turn, var(--accent) .72turn,
+                             rgba(255, 255, 255, .14) .72turn 1turn);
+  -webkit-mask: radial-gradient(circle, transparent 60%, #000 62%);
+  mask: radial-gradient(circle, transparent 60%, #000 62%);
+  animation: iconSpin .9s linear infinite;
+}
+/* 图标到手后轻微淡入, 避免"啪"一下跳出来 */
+img.icon-fade { animation: iconFadeIn .26s ease both; }
+@keyframes iconSpin { to { transform: rotate(360deg); } }
+@keyframes iconFadeIn {
+  from { opacity: 0; transform: scale(.92); }
+  to   { opacity: 1; transform: none; }
+}
+
 /* ---------- 启动流水线 出现/退出动画 ---------- */
 #pipeline-card {
   visibility: hidden;

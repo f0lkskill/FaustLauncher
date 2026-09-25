@@ -25,6 +25,13 @@ DIR_NAME_BY_SOURCE = {
     SOURCE_OURPLAY_GOD: "OurPlayHanHua",
 }
 
+# 各平台的显示名 (主页"汉化源"芯片 / 日志用)
+SOURCE_NAMES = {
+    SOURCE_ZERO: "零协会",
+    SOURCE_OURPLAY: "OurPlay 普通版",
+    SOURCE_OURPLAY_GOD: "OurPlay 神人版",
+}
+
 # 各平台写入 version.json 的 platform 标记 (用于区分普通/神人包, 防止 versionCode 撞号装错包)
 PLATFORM_TAG_BY_SOURCE = {
     SOURCE_ZERO: "zeroasso",
@@ -59,6 +66,27 @@ def get_translate_source() -> int:
         return value
     except Exception:
         return SOURCE_ZERO
+
+
+def set_extend_translate_source(sources=None) -> list:
+    """同步插件注册的自定义汉化源 (插件加载/重载完成后调用)
+
+    原地更新列表, 保持引用不变 (别处 import 到的还是同一个对象)。
+    """
+    try:
+        extend_translate_source[:] = list(sources or [])
+    except Exception:
+        pass
+    return extend_translate_source
+
+
+def get_translate_source_name() -> str:
+    """当前汉化源显示名: 优先插件注册的第一个自定义汉化源, 否则内置平台名"""
+    for source in extend_translate_source:
+        name = str(getattr(source, "name", "") or "").strip()
+        if name:
+            return name
+    return SOURCE_NAMES.get(get_translate_source(), "未知")
 
 
 def get_translation_dir_name() -> str:

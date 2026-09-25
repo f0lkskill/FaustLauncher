@@ -50,24 +50,6 @@ let downloadTasks = [];
 // 统一交给后端 get_icon (带磁盘缓存) 换成 data URI, 并把结果缓存在任务对象上。
 function isRemoteIcon(u) { return /^https?:\/\//i.test(String(u || '')); }
 
-function hydrateTaskIcons(root) {
-  const promises = [];
-  if (!api) return promises;
-  const imgs = (root || document).querySelectorAll('img[data-icon-url]');
-  imgs.forEach(img => {
-    const url = img.getAttribute('data-icon-url');
-    const name = img.getAttribute('data-icon-name') || '';
-    if (!url) return;
-    promises.push(withTimeout(api.get_icon(url, name), 8000, '').then(uri => {
-      if (!uri) return;
-      img.src = uri;
-      const task = downloadTasks.find(x => x.name === img.getAttribute('data-icon-task'));
-      if (task) task.iconUri = uri;   // 下次渲染直接用, 不再请求
-    }).catch(() => {}));
-  });
-  return promises;
-}
-
 // ---- 任务模型: 新增 / 更新进度 / 失败 / 移除 ----
 function addDownloadTask(t) {
   const idx = downloadTasks.findIndex(x => x.name === t.name);
@@ -208,7 +190,7 @@ function renderDownloadDrawer() {
       '</div>';
     list.appendChild(row);
   });
-  hydrateTaskIcons(list);
+  hydrateIcons(list);   // 统一入口: 加载中转圈 + 完成后淡入
   // FLIP: 保留下来的任务从旧位置平滑滑上去
   requestAnimationFrame(() => {
     [...list.children].forEach(c => {

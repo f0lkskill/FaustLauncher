@@ -468,6 +468,22 @@ class AddonManager:
                 self.run_addon(name, ADDON_ARG if ADDON_ARG is not None else {})
             except Exception as e:
                 print(f"运行插件 {name} 时发生未捕获错误: {e}")
+        # 插件都跑完了: 把它们注册的自定义汉化源同步出去 (主页"汉化源"显示 / 目录名都要读)
+        self._sync_extend_translate_source()
+
+    def _sync_extend_translate_source(self) -> None:
+        """把插件注册的自定义汉化源同步给 translation_source
+
+        插件通过 ADDON_ARG['ExtendTranslateSource'] 注册 (self.extend_translate_source),
+        主页汉化源芯片 / get_translation_dir_name() 都读 translation_source 里那份。
+        """
+        try:
+            from functions.web_update.translation_source import set_extend_translate_source
+            set_extend_translate_source(self.extend_translate_source)
+            names = [str(getattr(x, "name", "") or "?") for x in self.extend_translate_source]
+            print(f"已同步插件自定义汉化源: {names or '无'}")
+        except Exception as e:
+            print(f"同步插件自定义汉化源失败: {e}")
 
     def run_game_start_event(self) -> None:
         """触发所有注册的游戏启动回调"""
