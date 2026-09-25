@@ -50,8 +50,49 @@ function withTimeout(p, ms, fallback) {
   ]);
 }
 
+// 1x1 透明图: 图标加载期间拿它占位, 配合 .icon-loading 显示转圈动画
+const ICON_BLANK = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+
+// 图标进入"加载中": 转圈动画 (避免先显示占位图再跳变)
+function setIconLoading(img) {
+  if (!img) return;
+  img.classList.remove('icon-fade');
+  img.classList.add('icon-loading');
+  img.src = ICON_BLANK;
+}
+
+// 图标到手: 落图 + 淡入; uri 为空则回退项目图标
+function setIconReady(img, uri) {
+  if (!img) return;
+  img.classList.remove('icon-loading');
+  img.src = uri || PROJECT_ICON;
+  img.classList.remove('icon-fade');
+  void img.offsetWidth;              // 强制重排, 让淡入动画能重播
+  img.classList.add('icon-fade');
+}
+
+// 图标解析统一入口: 同一个 url 并发只请求一次, 结果缓存在内存
+const _iconUriCache = new Map();     // url -> data URI
+const _iconPending = new Map();      // url -> Promise<data URI>
+
+function resolveIconUri(url, name) {
+  if (!url) return Promise.resolve('');
+  if (_iconUriCache.has(url)) return Promise.resolve(_iconUriCache.get(url));
+  if (_iconPending.has(url)) return _iconPending.get(url);
+  const done = (uri) => {
+    _iconPending.delete(url);
+    if (uri) _iconUriCache.set(url, uri);
+    return uri || '';
+  };
+  const p = withTimeout(api.get_icon(url, name), 9000, '')
+    .then(uri => done(uri))
+    .catch(() => done(''));
+  _iconPending.set(url, p);
+  return p;
+}
+
 // 图标走后端 get_icon (带磁盘缓存), 避免每次渲染都重新下载远程图标
-// 返回 Promise 数组, 便于调用方在图标全部加载完成后才结束 loading (圆圈)
+// 加载期间先播转圈动画; 返回 Promise 数组, 便于调用方在图标全部加载完成后才结束 loading
 function hydrateIcons(root) {
   const promises = [];
   if (!api) return promises;
@@ -60,9 +101,16 @@ function hydrateIcons(root) {
     const url = img.getAttribute('data-icon-url');
     const name = img.getAttribute('data-icon-name') || '';
     if (!url) return;
-    promises.push(withTimeout(api.get_icon(url, name), 6000, '').then(uri => {
-      if (uri) img.src = uri;
-    }).catch(() => {}));
+    setIconLoading(img);
+    promises.push(resolveIconUri(url, name).then(uri => {
+      setIconReady(img, uri);
+      // 下载任务抽屉: 顺带把结果记到任务上, 下次渲染直接用
+      const taskName = img.getAttribute('data-icon-task');
+      if (taskName && typeof downloadTasks !== 'undefined') {
+        const task = downloadTasks.find(x => x.name === taskName);
+        if (task) task.iconUri = uri || '';
+      }
+    }));
   });
   return promises;
 }

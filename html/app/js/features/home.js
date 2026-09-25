@@ -36,7 +36,8 @@ function render() {
   }
   // 状态芯片 (游戏路径实时从后端读取, 自动填充/设置修改都会同步)
   updatePathChip();
-  // 快捷方式 & 工具
+  // 主页称呼 (玩家名) + 快捷方式 & 工具
+  updateHeroUser();
   updateSourceChip();
   renderFeatures(b.features);
   renderTools(b.tools);

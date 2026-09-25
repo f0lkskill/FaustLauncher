@@ -907,6 +907,15 @@ class AppApi:
     def get_setting(self, key):
         return self.core.settings_manager.get_setting(key)
 
+    def get_translate_source_name(self):
+        """主页"汉化源"显示名: 插件注册的自定义汉化源优先(取第一个), 否则内置平台名"""
+        try:
+            from functions.web_update.translation_source import get_translate_source_name
+            return get_translate_source_name()
+        except Exception as e:
+            print(f"读取汉化源名称失败: {e}")
+            return ""
+
     def set_setting(self, key, value):
         self.core.settings_manager.set_setting(key, value)
         self.core.settings_manager.save_settings()

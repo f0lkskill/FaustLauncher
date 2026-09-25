@@ -32,6 +32,8 @@ if (typeof renderDCList === 'function') {
 if (typeof _currentRec !== 'undefined' && _currentRec && typeof renderRecommend === 'function') {
   renderRecommend(_currentRec);
 }
+// 插件增删/重载后: 插件可能注册了自定义汉化源, 主页"汉化源"名字要重新取
+if (typeof updateSourceChip === 'function') updateSourceChip();
 };
 // 后端自动设置游戏路径后同步前端 (设置页控件 + 首页路径 chip)
 window.__onPathSynced = function () {

@@ -176,7 +176,7 @@ class GameLauncher:
 
         # 同步插件自定义汉化包平台方
         if self._addon_manager:
-            translation_source_lib.extend_translate_source = self._addon_manager.extend_translate_source
+            translation_source_lib.set_extend_translate_source(self._addon_manager.extend_translate_source)
             print(f"已同步插件自定义汉化: {[x.name for x in translation_source_lib.extend_translate_source]}")
         # 获取语言目录
         self._lang_dir = translation_source_lib.get_translation_dir()
