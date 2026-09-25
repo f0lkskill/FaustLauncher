@@ -1,5 +1,11 @@
 """汉化包平台方统一入口
 
+两条线要分清 (2026-09-25 修):
+  ① **内置汉化包** (零协会 LLC_zh-CN / OurPlay OurPlayHanHua): 下载 / 版本比对 /
+     解压合并 -> 一律用 get_builtin_dir_name() / get_builtin_translation_dir();
+  ② **插件自定义汉化源**: 决定"往游戏里部署哪份汉化 / 美化作用于哪个目录 /
+     config.json 指向哪个目录" -> 用 get_translation_dir_name() / get_translation_dir()。
+
 翻译目录名跟随所选平台动态变化, 启动器内所有硬编码的 LLC_zh-CN
 路径都应改为通过本模块获取当前平台对应的目录名, 以保证汉化包
 下载/同步/美化处理正常。
@@ -110,6 +116,22 @@ def get_translation_dir() -> str:
         dir_source = extend_translate_source[-1].source
     return dir_source
 
+def get_builtin_dir_name() -> str:
+    """内置平台 (零协会 / OurPlay) 的翻译目录名 —— **不受插件自定义汉化源影响**
+
+    插件自定义汉化源 (CustomTranslateSource) 只决定"启动器往游戏里部署哪份汉化、
+    美化作用于哪个目录、config.json 指向哪个目录"; 而**内置汉化包的下载 / 版本比对 /
+    解压合并**走的是零协会或 OurPlay 自己的目录名, 两者不能混 —— 混了就会出现
+    "本地版本去插件目录里找, 找不到 -> 每次都判定需要更新" (2026-09-25 修)。
+    """
+    return DIR_NAME_BY_SOURCE[get_translate_source()]
+
+
+def get_builtin_translation_dir() -> str:
+    """内置汉化包在 lang/ 下的目录 (如 lang/LLC_zh-CN), 同样不跟随插件自定义源"""
+    return os.path.join("lang", get_builtin_dir_name())
+
+
 def get_game_lang_dir(game_path: str) -> str:
     """游戏目录中的汉化目录 (LimbusCompany_Data/Lang/<目录名>)"""
     if len(extend_translate_source) == 0:
@@ -128,8 +150,11 @@ def is_god_source() -> bool:
 
 
 def get_local_version() -> str:
-    """读取当前平台汉化包本地版本 (lang/<目录>/info/version.json), 无则返回空串"""
-    version_path = os.path.join(get_translation_dir(), "info", "version.json")
+    """读取**内置**汉化包本地版本 (lang/<内置目录>/info/version.json), 无则返回空串
+
+    用内置目录名 (不是插件自定义源目录): 内置包的版本信息只可能写在那里。
+    """
+    version_path = os.path.join(get_builtin_translation_dir(), "info", "version.json")
     try:
         from json import load
         with open(version_path, "r", encoding="utf-8") as f:
@@ -139,8 +164,8 @@ def get_local_version() -> str:
 
 
 def get_local_platform() -> str:
-    """读取本地 version.json 的 platform 标记 (无则返回空串)"""
-    version_path = os.path.join(get_translation_dir(), "info", "version.json")
+    """读取内置汉化包 version.json 的 platform 标记 (无则返回空串)"""
+    version_path = os.path.join(get_builtin_translation_dir(), "info", "version.json")
     try:
         from json import load
         with open(version_path, "r", encoding="utf-8") as f:
@@ -155,9 +180,12 @@ def check_need_up_translate(version_info: str = "") -> bool:
     本地目录不存在或版本信息缺失时返回 True (需要下载/安装);
     传入远端版本时与本地版本比较, 不一致返回 True。
     """
-    if not os.path.isdir(get_translation_dir()):
+    local_dir = get_builtin_translation_dir()      # 内置包目录: 插件自定义源不影响这里
+    if not os.path.isdir(local_dir):
+        print(f"[汉化版本] 本地没有内置汉化包目录 {local_dir}, 需要下载")
         return True
-    if not os.path.isfile(os.path.join(get_translation_dir(), "info", "version.json")):
+    if not os.path.isfile(os.path.join(local_dir, "info", "version.json")):
+        print(f"[汉化版本] 本地 {local_dir} 缺少 info/version.json, 需要下载")
         return True
     if version_info == "":
         return False
@@ -165,10 +193,16 @@ def check_need_up_translate(version_info: str = "") -> bool:
         local_platform = get_local_platform()
         # 平台类型不匹配 (普通版切神人版等) 必须强制更新, 防止 versionCode 撞号装错包
         if local_platform and local_platform != PLATFORM_TAG_BY_SOURCE[get_translate_source()]:
+            print(f"[汉化版本] 平台标记不一致 (本地 {local_platform}), 需要重新下载")
             return True
         # OurPlay 旧版安装的 version.json 无 platform 字段, 无法区分普通/神人, 强制更新一次补全
         if not local_platform and is_ourplay_source():
+            print("[汉化版本] OurPlay 旧版安装缺 platform 标记, 强制更新一次补全")
             return True
-        return version_info.strip() != get_local_version().strip()
-    except Exception:
+        same = str(version_info).strip() == get_local_version().strip()
+        print(f"[汉化版本] 本地 {get_local_version()} / 云端 {version_info} -> "
+              f"{'一致, 无需更新' if same else '需要更新'}")
+        return not same
+    except Exception as e:
+        print(f"[汉化版本] 比对失败 ({e}), 按需要更新处理")
         return True
