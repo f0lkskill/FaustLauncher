@@ -31,6 +31,40 @@ _DEDUPE_SECONDS = 8.0
 _DOWNLOAD_LOCK = Lock()
 _DOWNLOAD_STATE = {"running": False}
 
+# 本次启动已经抓到的版本信息 (内存缓存)
+#   主页版本卡"点开看版本信息"直接读这里, 不再为了打开一个窗口去请求云端;
+#   启动时的版本检查 (version_utils.check_version_update / 本模块 collect_version_info)
+#   拿到什么就在这里留一份。
+_MEM = {"info": None, "payload": None, "t": 0.0}
+
+
+def remember_version_info(info):
+    """把本次启动抓到的版本信息留在内存 (供手动打开版本窗口复用)"""
+    if not isinstance(info, dict):
+        return
+    _MEM["info"] = dict(info)
+    _MEM["t"] = time.time()
+
+
+def remember_version_payload(payload):
+    """把刚构建/推送过的版本窗口数据留在内存 (含渲染好的描述 HTML)"""
+    if not isinstance(payload, dict):
+        return
+    _MEM["payload"] = dict(payload)
+    _MEM["t"] = time.time()
+
+
+def cached_version_info():
+    """内存里的版本信息 (没有则 None)"""
+    info = _MEM.get("info")
+    return dict(info) if isinstance(info, dict) else None
+
+
+def cached_version_payload():
+    """内存里的版本窗口数据 (没有则 None)"""
+    payload = _MEM.get("payload")
+    return dict(payload) if isinstance(payload, dict) else None
+
 
 def register_web_pusher(pusher):
     """注册 Web 前端推送函数 (callable(payload) -> bool), 返回 True 表示已接管"""
@@ -93,6 +127,7 @@ def collect_version_info(allow_refresh=False):
         result["latest"] = latest
         result["entry"] = entry if isinstance(entry, dict) else {}
         result["has_update"] = bool(latest and latest != current)
+        remember_version_info(result)      # 留在内存: 手动打开版本窗口不再联网
     except Exception as e:
         result["error"] = str(e)
     return result
@@ -160,6 +195,7 @@ def notify_version(current_version, latest_info, info="发现新版本", root=No
         if (not payload["forced"]) or _LAST_SHOWN["forced"]:
             return True
 
+    remember_version_payload(payload)      # 留在内存: 手动打开版本窗口不再联网
     try:
         ok = bool(pusher(payload))
     except Exception as e:
@@ -332,8 +368,21 @@ def _download_and_install(version_name, url, push):
 
 # 供 js_api 层使用的便捷构建 (手动打开版本窗口时调用)
 def manual_payload():
-    """手动打开版本窗口时的数据 (强制联网取最新, 避免看到本次启动的旧内容)"""
-    info = collect_version_info(allow_refresh=True)
+    """手动打开版本窗口的数据 —— **只用本次启动已经在内存里的信息, 不再联网**。
+
+    ① 内存里有启动时推送过的窗口数据 (含渲染好的更新说明 HTML) -> 直接用;
+    ② 只有版本信息 (最新版本号 / 更新说明 / 链接) -> 现场拼一个窗口数据;
+    ③ 都还没有 (极端: 启动检查还没跑完) -> 读一次本地缓存补上 (也不强制刷新)。
+    手动打开一律非强制 (forced=False, 不会自动开始下载)。
+    """
+    payload = cached_version_payload()
+    if payload:
+        payload["forced"] = False
+        return payload
+    info = cached_version_info()
+    if not info:
+        print("[版本更新] 内存里还没有版本信息 (启动检查未完成), 用本地缓存兜底")
+        info = collect_version_info(allow_refresh=False)
     entry = dict(info.get("entry") or {})
     entry["version_name"] = info.get("latest") or ""
     title = "发现新版本" if info.get("has_update") else "已是最新版本"
