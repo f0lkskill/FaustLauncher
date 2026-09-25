@@ -76,7 +76,8 @@ function renderFeatures(features) {
       list.forEach((f) => {
         const card = document.createElement('button');
         card.className = 'box-card';
-        const bg = f.image_uri || (f.image ? '../../assets/images/features/' + f.image : '');
+        // 只认后端内嵌的 data URI: 相对路径在 pywebview 的 http 服务下必然 404 (坏图)
+        const bg = f.image_uri || '';
         card.innerHTML =
           '<div class="box-card-bg">' + (bg ? '<img src="' + esc(bg) + '" alt="" draggable="false">' : '') + '</div>' +
           '<div class="box-card-body">' +
@@ -99,7 +100,7 @@ function renderFeatures(features) {
     wrap.className = 'carousel-item';
     const inner = document.createElement('div');
     inner.className = 'carousel-item-inner';
-    const bg = f.image_uri || (f.image ? '../../assets/images/features/' + f.image : '');
+    const bg = f.image_uri || '';   // 同上: 不用相对路径, 拿不到就不放图
     const bgHtml = bg ? '<img class="carousel-item-bg" src="' + esc(bg) + '" alt="" draggable="false">' : '';
     inner.innerHTML = bgHtml +
       '<div class="carousel-item-content">' +
@@ -344,7 +345,7 @@ function renderTools(tools) {
       list.forEach((t) => {
         const card = document.createElement('button');
         card.className = 'box-card';
-        const bg = t.image_uri || (t.image ? '../../assets/images/tools/' + t.image : '');
+        const bg = t.image_uri || '';   // 相对路径在 http 服务下 404, 只认内嵌 data URI
         card.innerHTML =
           '<div class="box-card-bg">' + (bg ? '<img src="' + esc(bg) + '" alt="" draggable="false">' : '') + '</div>' +
           '<div class="box-card-body">' +
@@ -365,7 +366,7 @@ function renderTools(tools) {
     const inner = document.createElement('div');
     inner.className = 'carousel-item-inner';
     // 图片处理逻辑与快捷方式一致: 无图片则留空
-    const bg = t.image_uri || (t.image ? '../../assets/images/tools/' + t.image : '');
+    const bg = t.image_uri || '';   // 同上
     const bgHtml = bg ? '<img class="carousel-item-bg" src="' + esc(bg) + '" alt="" draggable="false">' : '';
     inner.innerHTML = bgHtml +
       '<div class="carousel-item-content">' +

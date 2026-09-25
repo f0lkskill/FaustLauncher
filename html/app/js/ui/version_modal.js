@@ -159,7 +159,7 @@ function openVersionModal(d) {
     '<div class="ver-card">' +
       (forced ? '<span class="ver-accent" aria-hidden="true"></span>' : '') +
       '<header class="ver-head">' +
-        '<img class="ver-mark" src="' + PROJECT_ICON + '" alt="" draggable="false">' +
+        '<img class="ver-mark" data-project-icon src="' + PROJECT_ICON + '" alt="" draggable="false">' +
         '<div class="ver-head-main">' +
           '<div class="ver-eyebrow">' + esc(d.title || (d.has_update ? '发现新版本' : '已是最新版本')) + '</div>' +
           '<div class="ver-vers">' + verVersionLine(d) + '</div>' +

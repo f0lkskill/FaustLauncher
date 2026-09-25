@@ -71,22 +71,122 @@ function setIconReady(img, uri) {
   img.classList.add('icon-fade');
 }
 
-// 图标解析统一入口: 同一个 url 并发只请求一次, 结果缓存在内存
+// 项目图标统一刷新: PROJECT_ICON 拿到 (或变化) 之后, 把页面上所有标了 data-project-icon 的
+// 图标重挂一遍 —— 万一某窗口/面板在 bootstrap 之前就渲染了 (那时还是默认路径), 也不会停在坏图上。
+function refreshProjectIcons() {
+  try {
+    document.querySelectorAll('img[data-project-icon]').forEach(img => {
+      if (img.getAttribute('src') !== PROJECT_ICON) img.src = PROJECT_ICON;
+    });
+  } catch (e) {}
+}
+
+// ---------------- 远程图标水合 ----------------
+// 启动时序保护 (2026-09-25 修「首次进入图标初始化错误」):
+//   ① 闸门: 先等 app 就绪 (BOOT 拿到 = 后端 js_api 真的能用) 再等 HYDRATE_GATE_DELAY_MS。
+//      启动瞬间后端还在忙 (加载插件/查更新), 这时候几十个图标一起砸过去 -> 蓝奏云限流或
+//      超时 -> 失败结果被后端负缓存 60 秒 -> 首次进入图标全成兜底图, 要等一会儿或重进页面
+//      才恢复。所以第一次水合整体延后, 并限制并发, 给后端留出喘息时间。
+//   ② 限并发 + 错开: 同时最多 ICON_MAX_CONCURRENT 个 get_icon, 其余排队, 每次开始前错开
+//      ICON_QUEUE_STAGGER_MS, 避免"46 个图标 ≈ 200+ 请求"的冷启动集中打击。
+//   ③ 失败自愈: 单次失败**不卡住 spinner** (立刻回退兜底图), 之后按 ICON_RETRY_DELAYS
+//      后台重试; 重试成功就把它写回当前 DOM 里所有同 url 的图标 (后端负缓存只有 60 秒,
+//      最后一次重试能兜住), 不需要用户重进页面。
+let APP_READY = false;                       // app.js 的 startupFinish 里置 true
+const HYDRATE_GATE_DELAY_MS = 900;           // app 就绪后再等一会儿才开始拉图标
+const ICON_GATE_MAX_WAIT_MS = 8000;          // 就绪信号一直没来也要放行 (避免图标永不加载)
+const ICON_MAX_CONCURRENT = 4;               // 并发上限
+const ICON_QUEUE_STAGGER_MS = 120;           // 排队任务开始前错开的时间
+const ICON_TIMEOUT_MS = 12000;               // 单个图标请求超时
+const ICON_RETRY_DELAYS = [5000, 20000, 65000];  // 失败后的后台重试退避
+//   最后一次 65s 是刻意跨过后端的图标负缓存 (NEGATIVE_TTL=60s), 否则重试必然瞬时失败
+
+let _iconGatePromise = null;
+let _iconRunning = 0;
+const _iconQueue = [];
 const _iconUriCache = new Map();     // url -> data URI
 const _iconPending = new Map();      // url -> Promise<data URI>
 
+// 闸门: 等 app 就绪 + 再等一会儿; 超时兜底放行
+function iconGate() {
+  if (!_iconGatePromise) {
+    _iconGatePromise = new Promise(res => {
+      const t0 = Date.now();
+      const wait = () => {
+        if (APP_READY) { setTimeout(res, HYDRATE_GATE_DELAY_MS); return; }
+        if (Date.now() - t0 >= ICON_GATE_MAX_WAIT_MS) { APP_READY = true; res(); return; }
+        setTimeout(wait, 200);
+      };
+      wait();
+    });
+  }
+  return _iconGatePromise;
+}
+
+// 队列: 限并发 + 错开开始时间
+function _iconEnqueue(task) {
+  return new Promise((resolve, reject) => {
+    _iconQueue.push({ task, resolve, reject });
+    _iconPump();
+  });
+}
+
+function _iconPump() {
+  if (_iconRunning >= ICON_MAX_CONCURRENT || !_iconQueue.length) return;
+  const job = _iconQueue.shift();
+  _iconRunning++;
+  setTimeout(() => {
+    Promise.resolve()
+      .then(job.task)
+      .then(v => { _iconRunning--; job.resolve(v); _iconPump(); },
+            e => { _iconRunning--; job.reject(e); _iconPump(); });
+  }, ICON_QUEUE_STAGGER_MS);
+}
+
+// 重试成功后写回 DOM: 页面上所有还挂着同一 url 的图标一起补上
+function _applyIconToDom(url, uri) {
+  if (!uri) return;
+  try {
+    document.querySelectorAll('img[data-icon-url]').forEach(img => {
+      if (img.getAttribute('data-icon-url') === url) setIconReady(img, uri);
+    });
+  } catch (e) {}
+}
+
+// 单次请求 (+ 失败后按退避后台重试; 重试不占用 spinner/不阻塞调用方)
+function _iconFetch(url, name, attempt) {
+  return withTimeout(api.get_icon(url, name), ICON_TIMEOUT_MS, '')
+    .catch(() => '')
+    .then(uri => {
+      if (uri) return uri;
+      const delay = ICON_RETRY_DELAYS[attempt];
+      if (delay != null) {
+        setTimeout(() => {
+          _iconEnqueue(() => _iconFetch(url, name, attempt + 1))
+            .then(again => {
+              if (again) { _iconUriCache.set(url, again); _applyIconToDom(url, again); }
+            })
+            .catch(() => {});
+        }, delay);
+      }
+      return '';
+    });
+}
+
+// 图标解析统一入口: 同一个 url 并发只请求一次, 成功结果缓存在内存
+// (解析完成 = 第一次尝试结束; 失败的重试在后台跑, 不拖着调用方)
 function resolveIconUri(url, name) {
   if (!url) return Promise.resolve('');
   if (_iconUriCache.has(url)) return Promise.resolve(_iconUriCache.get(url));
   if (_iconPending.has(url)) return _iconPending.get(url);
-  const done = (uri) => {
-    _iconPending.delete(url);
-    if (uri) _iconUriCache.set(url, uri);
-    return uri || '';
-  };
-  const p = withTimeout(api.get_icon(url, name), 9000, '')
-    .then(uri => done(uri))
-    .catch(() => done(''));
+  const p = iconGate()
+    .then(() => _iconEnqueue(() => _iconFetch(url, name, 0)))
+    .then(uri => {
+      _iconPending.delete(url);
+      if (uri) _iconUriCache.set(url, uri);
+      return uri || '';
+    })
+    .catch(() => { _iconPending.delete(url); return ''; });
   _iconPending.set(url, p);
   return p;
 }

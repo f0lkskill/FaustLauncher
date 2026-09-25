@@ -54,7 +54,9 @@ const MOCK = {
 // ---------------- 全局状态 ----------------
 let BOOT = null;
 // 项目图标 (后端 bootstrap 就绪后替换为 data URI, 供下载中心/推荐卡/关于页图标回退)
-let PROJECT_ICON = '../../assets/images/icon/icon.png';
+// 默认值必须是**页面同源**的文件 (pywebview 用本地 http 服务加载页面, root = html/app/,
+// ../../assets/... 会被服务端拒绝 -> 坏图; bootstrap 到了之后这里会换成 data URI)
+let PROJECT_ICON = 'assets/icon/icon.png';
 let SETTING_CHANGES = {};   // key -> {value, touched}
 let currentPage = 'home';
 let pipeline = {

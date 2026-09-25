@@ -48,7 +48,9 @@ function initCharacter() {
 }
 
 function charFallbackItem() {
-  return { name: 'faust_1.png', uri: '../../assets/images/character/faust_1.png' };
+  // 不再用文件路径兜底: pywebview 用本地 http 服务加载页面 (root = html/app/),
+  // '../../assets/...' 必然 404 -> 坏图。后端 get_characters 拿不到图时干脆不显示角色小人。
+  return { name: '', uri: '' };
 }
 
 // 角色间隔范围设置 [min,max] (可在设置页调整)
@@ -225,7 +227,8 @@ function posCollides(edge, pos) {
 }
 
 function characterCycle() {
-  if (!charEl || !charImages.length) { scheduleCharacter(); return; }
+  const usable = (charImages || []).filter(x => x && x.uri);   // 没图的条目直接跳过
+  if (!charEl || !usable.length) { scheduleCharacter(); return; }
   // 终端展开时避开底部边缘 (底部被终端占用)
   const termEl = document.getElementById('terminal');
   const termOpen = termEl ? termEl.classList.contains('open') : false;
@@ -240,7 +243,7 @@ function characterCycle() {
   charEl._edge = edge;
   charEl._pos = pos;
   // 随机选图片, 并按图片名取问候语表 (循环展示)
-  const item = charImages[Math.floor(Math.random() * charImages.length)];
+  const item = usable[Math.floor(Math.random() * usable.length)];
   charImgEl.src = item.uri;
   const greetings = charGreetings[item.name] || [];
   clearCharTimers();

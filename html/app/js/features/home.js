@@ -39,8 +39,10 @@ function render() {
   // 主页称呼 (玩家名) + 快捷方式 & 工具
   updateHeroUser();
   updateSourceChip();
-  // 游戏路径确认窗口兜底拉取 (后端延迟检查设置, 推送可能早于前端就绪)
-  pullPendingPathConfirm();
+  // 项目图标: 拿到 bootstrap 的 data URI 后, 把所有标记过的项目图标重挂一遍
+  refreshProjectIcons();
+  // 游戏路径: 先锁界面 (窗口等 splash 收尾后再弹, 见 app.js 的 showPathGate)
+  armPathGate();
   renderFeatures(b.features);
   renderTools(b.tools);
   // 设置
