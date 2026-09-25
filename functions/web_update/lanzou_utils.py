@@ -213,10 +213,11 @@ def ResolveDownloadUrl(url, pwd=None, session=None, log=None, retries=0, retry_w
 
 # --- 解析结果持久化缓存 ---------------------------------------------
 # 一次解析要打 4~5 个请求 (其中 downprocess 是最容易被频控的那个),
-# 所以直链解析结果落盘长期保存:
+# 所以直链解析结果落盘保存:
 #   * 键就是调用方给的原始 url —— 源 url 换了(重新上传/条目改链接) 自然是新键,
 #     会重新解析, 不用靠 TTL 去猜链接还有没有效;
-#   * 默认永久有效 (config/web_config.json -> lanzou.link_cache_ttl_sec, 0 = 永久);
+#   * 默认 25 分钟有效 (config/web_config.json -> lanzou.link_cache_ttl_sec, 0 = 永久);
+#     蓝奏云直链约 30 分钟就失效, 所以过期即重新解析, 不会"先失败一次再重试";
 #   * 蓝奏云的直链带签名, 过一段时间会失效 —— 那时下载会失败, 调用方调
 #     InvalidateDirectLink(url) 丢掉这一条, 下一次立刻重新解析 (自愈)。
 # 想整体重置: 删掉 cache/lanzou_links.json, 或调 ClearLinkCache()。
@@ -225,11 +226,16 @@ LINK_CACHE_FILE = os.path.join("cache", "lanzou_links.json")
 
 _link_cache = {}
 _link_cache_lock = threading.Lock()
+_link_cache_save_lock = threading.Lock()
 _link_cache_loaded = False
 
 
 def _LinkCacheTTL():
-    """缓存有效期(秒); 0 = 永久 (config/web_config.json -> lanzou.link_cache_ttl_sec)"""
+    """直链缓存有效期(秒); 0 = 永久
+
+    默认 25 分钟 —— 蓝奏云直链实测约 30 分钟失效, 提前一档自动刷新;
+    可在 config/web_config.json -> lanzou.link_cache_ttl_sec 调。
+    """
     try:
         from functions.base.web_config import get_lanzou_config
         raw = get_lanzou_config().get("link_cache_ttl_sec")
@@ -237,7 +243,7 @@ def _LinkCacheTTL():
             return max(float(raw), 0.0)
     except Exception:
         pass
-    return 0.0
+    return DEFAULT_LINK_CACHE_TTL
 
 
 def _LoadLinkCache():
@@ -251,35 +257,76 @@ def _LoadLinkCache():
             data = json.load(fh)
     except Exception:
         return
-    if isinstance(data, dict):
-        with _link_cache_lock:
-            _link_cache.update({k: v for k, v in data.items() if isinstance(v, dict)})
+    if not isinstance(data, dict):
+        return
+    cleaned = {}
+    dropped = 0
+    for key, item in data.items():
+        if not isinstance(item, dict) or not item.get("direct"):
+            dropped += 1
+            continue
+        age = _EntryAgeSeconds(item)
+        if age is None or age > LINK_CACHE_KEEP_SEC:
+            dropped += 1
+            continue
+        cleaned[key] = item
+    with _link_cache_lock:
+        _link_cache.update(cleaned)
+    if dropped:
+        print("蓝奏云直链缓存清理: 丢掉 %d 条无效/过旧条目" % dropped)
+        _SaveLinkCache()
 
 
 def _SaveLinkCache():
+    """原子写: 先写临时文件再替换, 免得写到一半崩了把整个缓存弄坏
+
+    临时文件名按线程区分(并发解析图标时多个线程各写各的), 替换再串行化 ——
+    否则 Windows 上会出现 WinError 32 (另一个程序正在使用此文件)。
+    """
     try:
         os.makedirs(os.path.dirname(LINK_CACHE_FILE) or ".", exist_ok=True)
         with _link_cache_lock:
             snapshot = dict(_link_cache)
-        with open(LINK_CACHE_FILE, "w", encoding="utf-8") as fh:
+        tmp = "%s.%d.tmp" % (LINK_CACHE_FILE, threading.get_ident())
+        with open(tmp, "w", encoding="utf-8") as fh:
             json.dump(snapshot, fh, ensure_ascii=False, indent=1)
+        with _link_cache_save_lock:
+            os.replace(tmp, LINK_CACHE_FILE)
     except Exception as e:
         print("蓝奏云直链缓存写入失败：%s" % e)
 
 
+def _EntryAgeSeconds(item):
+    """缓存条目的年龄(秒): 优先用写入时间 ts, 退而求其次用直链自带的 e (=签发时间)"""
+    ts = item.get("ts")
+    if ts:
+        return max(time.time() - float(ts), 0.0)
+    match = re.search(r"[?&]e=([0-9a-fA-F]{4,})", str(item.get("direct") or ""))
+    if match:
+        return max(time.time() - int(match.group(1), 16), 0.0)
+    return None
+
+
 def CachedDirectLink(url):
-    """取持久缓存的直链 (键为源 url 原样; 过期返回 None)"""
+    """取持久缓存的直链; 超过有效期就丢掉并返回 None (调用方会自动重新解析)
+
+    直链带签名, 约 30 分钟失效 —— 过期条目留着也没用, 顺手清掉。
+    """
     if not url:
         return None
     _LoadLinkCache()
     with _link_cache_lock:
         item = _link_cache.get(url)
-    if not isinstance(item, dict):
+    if not isinstance(item, dict) or not item.get("direct"):
         return None
     ttl = _LinkCacheTTL()
-    if ttl and time.time() - float(item.get("ts") or 0) > ttl:
+    age = _EntryAgeSeconds(item)
+    if age is None or (ttl and age > ttl):
+        with _link_cache_lock:
+            _link_cache.pop(url, None)
+        _SaveLinkCache()
         return None
-    return item.get("direct") or None
+    return item["direct"]
 
 
 def CacheDirectLink(url, direct):
@@ -376,18 +423,24 @@ _lanzou_host_re = re.compile(r"(^|\.)lanzou[\w-]*\.[a-z]{2,}$", re.I)
 # denied by http_ratelimit 与人机验证页)。这里统一节流, 一旦命中就进入冷却期,
 # 期间不再继续撞墙, 避免把限流越撞越久。
 
-_LANZOU_GATE = threading.Lock()
-_lanzou_next_slot = 0.0
+_buckets = {}
+_buckets_lock = threading.Lock()
 _ratelimit_until = 0.0
 _ratelimit_hits = 0
 _direct_cache = {}
 
-DEFAULT_MIN_INTERVAL = 1.5        # downprocess(最容易触发频控) 请求的最小间隔 (秒)
-PAGE_INTERVAL = 0.3               # 分享页/下载页 GET 的最小间隔 (秒)
+DEFAULT_MIN_INTERVAL = 1.5        # 额度用完后 downprocess 的补充间隔 (秒)
+DEFAULT_BURST = 4                 # 一次允许的突发请求数 (一页 5 个图标可并行起步)
+GET_BURST = 8                     # 分享页/下载页 GET: 基本放开
+GET_INTERVAL = 0.1
 RATELIMIT_COOLDOWN_BASE = 120.0   # 首次命中限流的冷却时长
 RATELIMIT_COOLDOWN_MAX = 900.0    # 冷却时长上限 (连续命中会翻倍)
 _COOLDOWN_FILE = os.path.join("cache", "lanzou_cooldown.json")  # 冷却状态跨重启保留
-DIRECT_CACHE_TTL = 600.0          # 直链结果缓存时长 (蓝奏云链接约 30 分钟有效)
+DIRECT_CACHE_TTL = 600.0          # 兜底: 未配置有效期时的会话内内存缓存时长
+# 蓝奏云直链带签名, 实测约 30 分钟就失效(403)。所以缓存按 25 分钟有效:
+# 用之前发现过期就自动重新解析, 不会"先失败一次再重试"。
+DEFAULT_LINK_CACHE_TTL = 1500.0   # 25 分钟 (config -> lanzou.link_cache_ttl_sec)
+LINK_CACHE_KEEP_SEC = 7 * 24 * 3600   # 缓存文件里最多保留 7 天没碰过的条目
 
 _thread_local = threading.local()
 _acw_cache = {}
@@ -406,19 +459,61 @@ def _MinInterval():
     return DEFAULT_MIN_INTERVAL
 
 
-def _Throttle(interval=None):
-    """所有蓝奏云请求共用一个节拍器: 避免并发(图标线程)打出请求风暴
+class _TokenBucket:
+    """令牌桶: 桶里先给 burst 个额度, 之后每 interval 秒回 1 个"""
 
-    interval 为 None 时用 _MinInterval() (downprocess 接口最容易被频控);
-    页面 GET 传 PAGE_INTERVAL 即可, 否则一次解析要白等好几秒。
+    __slots__ = ("lock", "tokens", "last")
+
+    def __init__(self, burst):
+        self.lock = threading.Lock()
+        self.tokens = float(burst)
+        self.last = time.time()
+
+
+def _Burst():
+    """单次允许的突发请求数 (config/web_config.json -> lanzou.burst_requests)"""
+    try:
+        from functions.base.web_config import get_lanzou_config
+        raw = get_lanzou_config().get("burst_requests")
+        if raw is not None:
+            return max(int(raw), 1)
+    except Exception:
+        pass
+    return DEFAULT_BURST
+
+
+def _BucketFor(host, burst):
+    with _buckets_lock:
+        bucket = _buckets.get(host)
+        if bucket is None:
+            bucket = _TokenBucket(burst)
+            _buckets[host] = bucket
+        return bucket
+
+
+def _Throttle(host, burst=None, interval=None):
+    """按 host 限速(令牌桶): 图标这类多线程解析能并行起步, 又不会持续冲击
+
+    不同 host 各用一个桶, 互不阻塞; 桶里额度用完后按 interval 匀速补充。
     """
-    global _lanzou_next_slot
-    step = _MinInterval() if interval is None else interval
-    with _LANZOU_GATE:
-        wait = _lanzou_next_slot - time.time()
-        if wait > 0:
-            time.sleep(wait)
-        _lanzou_next_slot = time.time() + step
+    if not host:
+        return
+    burst = float(_Burst() if burst is None else burst)
+    interval = float(_MinInterval() if interval is None else interval)
+    if burst < 1 and interval <= 0:
+        return
+    bucket = _BucketFor(host, burst)
+    while True:
+        with bucket.lock:
+            now = time.time()
+            bucket.tokens = (min(burst, bucket.tokens + (now - bucket.last) / interval)
+                             if interval > 0 else burst)
+            bucket.last = now
+            if bucket.tokens >= 1:
+                bucket.tokens -= 1
+                return
+            wait = (1 - bucket.tokens) * interval
+        time.sleep(min(max(wait, 0.02), 0.25))
 
 
 def _IsRateLimited(resp):
@@ -477,14 +572,22 @@ def _SaveCooldown():
 
 
 def _CacheDirect(key, direct):
+    ttl = _LinkCacheTTL() or DIRECT_CACHE_TTL
     with _acw_lock:
-        _direct_cache[key] = (direct, time.time() + DIRECT_CACHE_TTL)
+        _direct_cache[key] = (direct, time.time() + ttl)
 
 
 def _CachedDirect(key):
     with _acw_lock:
         item = _direct_cache.get(key)
-    return item[0] if item and item[1] > time.time() else None
+    if not item:
+        return None
+    direct, expire = item[0], item[1]
+    if expire and expire < time.time():
+        with _acw_lock:
+            _direct_cache.pop(key, None)
+        return None
+    return direct
 
 
 _LoadCooldown()
@@ -544,7 +647,7 @@ def _RequestWithWaf(session, url, **kwargs):
     cached = _RecallAcw(host)
     if cached and not session.cookies.get("acw_sc__v2", domain=host):
         session.cookies.set("acw_sc__v2", cached, domain=host, path="/")
-    _Throttle(PAGE_INTERVAL)
+    _Throttle(host, GET_BURST, GET_INTERVAL)
     resp = session.get(url, **kwargs)
     for _ in range(3):
         if _IsRateLimited(resp):
@@ -552,7 +655,7 @@ def _RequestWithWaf(session, url, **kwargs):
             return resp
         if not _ApplyChallenge(session, resp, host):
             break
-        _Throttle(PAGE_INTERVAL)
+        _Throttle(host, GET_BURST, GET_INTERVAL)
         resp = session.get(url, **kwargs)
     return resp
 
@@ -689,7 +792,7 @@ def _PostDownProcess(session, api, data, referer, timeout):
     if cached and not session.cookies.get("acw_sc__v2", domain=host):
         session.cookies.set("acw_sc__v2", cached, domain=host, path="/")
     try:
-        _Throttle()
+        _Throttle(host)          # downprocess: 最容易被频控, 用配置的间隔 + 突发额度
         resp = session.post(api, data=data, timeout=timeout, headers=headers)
         for _ in range(3):
             if _IsRateLimited(resp):
@@ -698,7 +801,7 @@ def _PostDownProcess(session, api, data, referer, timeout):
             # 挑战页必须用 POST 重放 (不能退回 GET)
             if not _ApplyChallenge(session, resp, host):
                 break
-            _Throttle()
+            _Throttle(host)
             resp = session.post(api, data=data, timeout=timeout, headers=headers)
     except requests.RequestException as e:
         print("_PostDownProcess 请求失败：%s" % e)

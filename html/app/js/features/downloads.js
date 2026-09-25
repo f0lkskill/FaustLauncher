@@ -45,15 +45,40 @@ function markItemDownloaded(kind, name) {
 // ---------------- 下载任务抽屉 ----------------
 let downloadTasks = [];
 
+// ---- 任务图标: 远程 URL 不能直接当 <img src> ----
+// 云端给的是蓝奏云分享/解析链接, 浏览器直接加载必然失败(要么不是图片, 要么解析服务没开)。
+// 统一交给后端 get_icon (带磁盘缓存) 换成 data URI, 并把结果缓存在任务对象上。
+function isRemoteIcon(u) { return /^https?:\/\//i.test(String(u || '')); }
+
+function hydrateTaskIcons(root) {
+  const promises = [];
+  if (!api) return promises;
+  const imgs = (root || document).querySelectorAll('img[data-icon-url]');
+  imgs.forEach(img => {
+    const url = img.getAttribute('data-icon-url');
+    const name = img.getAttribute('data-icon-name') || '';
+    if (!url) return;
+    promises.push(withTimeout(api.get_icon(url, name), 8000, '').then(uri => {
+      if (!uri) return;
+      img.src = uri;
+      const task = downloadTasks.find(x => x.name === img.getAttribute('data-icon-task'));
+      if (task) task.iconUri = uri;   // 下次渲染直接用, 不再请求
+    }).catch(() => {}));
+  });
+  return promises;
+}
+
 // ---- 任务模型: 新增 / 更新进度 / 失败 / 移除 ----
 function addDownloadTask(t) {
   const idx = downloadTasks.findIndex(x => x.name === t.name);
+  const nextIcon = t.icon || PROJECT_ICON;
   if (idx >= 0) {
     downloadTasks[idx].status = 'waiting';
-    downloadTasks[idx].icon = t.icon || PROJECT_ICON;
+    if (nextIcon !== downloadTasks[idx].icon) downloadTasks[idx].iconUri = null;
+    downloadTasks[idx].icon = nextIcon;
     downloadTasks[idx].percent = 0;
   } else {
-    downloadTasks.push({ name: t.name, kind: t.kind, icon: t.icon || PROJECT_ICON, status: 'waiting', percent: 0, downloaded: 0, total: 0, speed: 0 });
+    downloadTasks.push({ name: t.name, kind: t.kind, icon: nextIcon, iconUri: null, status: 'waiting', percent: 0, downloaded: 0, total: 0, speed: 0 });
   }
   renderDownloadDrawer();
   updateFabVisibility();
@@ -166,8 +191,15 @@ function renderDownloadDrawer() {
       : t.status === 'waiting' ? '等待中…'
       : fmtBytes(t.downloaded) + ' / ' + fmtBytes(t.total) +
         (t.speed ? ' · ' + fmtSpeed(t.speed) : '');
+    // 图标: 优先用已解析好的 data URI; 远程链接先占位, 渲染后交给后端解析
+    const needResolve = !t.iconUri && isRemoteIcon(t.icon);
+    const iconSrc = t.iconUri || (needResolve ? PROJECT_ICON : (t.icon || PROJECT_ICON));
+    const iconAttrs = needResolve
+      ? ' data-icon-url="' + esc(t.icon) + '" data-icon-name="' + esc(t.name) + '" data-icon-task="' + esc(t.name) + '"'
+      : '';
     row.innerHTML =
-      '<img class="dl-icon" src="' + esc(t.icon || PROJECT_ICON) + '" onerror="this.src=\'' + PROJECT_ICON + '\'">' +
+      '<img class="dl-icon" src="' + esc(iconSrc) + '"' + iconAttrs +
+        ' onerror="this.src=\'' + PROJECT_ICON + '\'">' +
       '<div class="dl-info">' +
         '<div class="dl-name">' + esc(t.name) +
           '<span class="dl-kind">' + (t.kind === 'addon' ? '插件' : 'Mod') + '</span></div>' +
@@ -176,6 +208,7 @@ function renderDownloadDrawer() {
       '</div>';
     list.appendChild(row);
   });
+  hydrateTaskIcons(list);
   // FLIP: 保留下来的任务从旧位置平滑滑上去
   requestAnimationFrame(() => {
     [...list.children].forEach(c => {

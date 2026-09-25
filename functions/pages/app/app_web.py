@@ -1788,8 +1788,11 @@ if %errorlevel% equ 0 (
         from functions.base.common import icon_cache
         cache_dir = os.path.join(_PROJECT_ROOT, 'cache', 'icons')
         os.makedirs(cache_dir, exist_ok=True)
-        icon_path = icon_cache.icon_cache_path(icon_url, item_name, cache_dir)
-        if not os.path.exists(icon_path):
+        # 查找按 icon_url 哈希兜底: 条目名不同(云端名/目录名/改名)也要能命中已有缓存
+        icon_path = icon_cache.find_cached_icon(icon_url, item_name, cache_dir)
+        if not (icon_path and os.path.exists(icon_path)):
+            # 落盘统一用标准命名
+            icon_path = icon_cache.icon_cache_path(icon_url, item_name, cache_dir)
             # 刚失败过的图标先跳过, 前端反复重绘时不必反复请求
             if icon_cache.icon_failed_recently(icon_url):
                 return ''
