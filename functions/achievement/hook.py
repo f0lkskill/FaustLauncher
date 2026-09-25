@@ -21,7 +21,6 @@ from datetime import datetime
 from functions.achievement.achievements import (
     LOG_FILE, CHECK_INTERVAL, RETRY_COUNT,
     RARE_ITEM_IDS, TEN_PULL_IDS,
-    CHARACTER_ID_MAP,
     get_state, check_achievements,
     record_zero_item, poll_inventory_window, detect_owned_items,
     register_inventory_open, achievements,

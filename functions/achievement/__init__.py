@@ -38,7 +38,6 @@ from functions.achievement.achievements import (
     TEN_PULL_IDS,
     GUARANTEED_IDS,
     SELF_SELECT_IDS,
-    CHARACTER_ID_MAP,
     LOG_FILE,
     RARITY_COMMON,
     RARITY_UNCOMMON,
