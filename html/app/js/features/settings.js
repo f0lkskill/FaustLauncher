@@ -207,6 +207,7 @@ async function pcPickManually() {
 // 渲染/刷新模态: 新信息到了 (例如后端刚检测出 Steam 路径) 就地重渲染
 function renderPathConfirmModal(d) {
   d = d || {};
+  if (pcBusy) return;                // 用户正在选目录/写设置, 别把窗口重建掉
   const raw = String(d.path || '').trim();
   const canConfirm = !!raw && d.path_ok !== false;   // 目录里有 exe 才允许"是"
   const invalid = !!raw && !canConfirm;              // Steam 里读到了, 但里面没有 exe
@@ -593,14 +594,35 @@ function buildControl(key, s) {
     btn.onclick = async () => {
       if (!api) { toast('浏览器预览模式', 'warn'); return; }
       const p = await api.pick_folder();
-      if (p) { inp.value = p; markChanged(key, p); api.set_setting(key, p).catch(e => toast(String(e), 'error')); }
+      if (!p) return;
+      // 游戏路径必须过 exe 硬校验 (与启动时的确认窗口同一套规则)
+      const r = await api.apply_game_path(p).catch(e => ({ ok: false, error: String(e) }));
+      if (!r || !r.ok) {
+        toast('这个目录不能用：' + pcErrorText(r && r.error) + '（目录里必须有 ' + pcExeName + '）', 'error', 6000);
+        return;
+      }
+      inp.value = r.path;
+      markChanged(key, r.path);
+      updatePathChip();
+      if (r.auto_fixed) toast('已自动定位到含 ' + pcExeName + ' 的子目录：' + r.path, 'info', 5000);
     };
     const rw = document.createElement('div');
     rw.style.display = 'flex'; rw.style.gap = '8px'; rw.style.alignItems = 'center';
     rw.appendChild(inp); rw.appendChild(btn);
     wrap.appendChild(rw);
     inp.style.width = '200px';
-    inp.onchange = () => { markChanged(key, inp.value); if (api) api.set_setting(key, inp.value).catch(e => toast(String(e), 'error')); updatePathChip(); };
+    inp.onchange = async () => {
+      const v = String(inp.value || '').trim();
+      if (!v) { toast('游戏路径不能为空', 'warn'); return; }
+      const r = await api.apply_game_path(v).catch(e => ({ ok: false, error: String(e) }));
+      if (!r || !r.ok) {
+        toast('路径无效：' + pcErrorText(r && r.error) + '（目录里必须有 ' + pcExeName + '）', 'error', 6000);
+        return;
+      }
+      if (r.path !== inp.value) inp.value = r.path;
+      markChanged(key, r.path);
+      updatePathChip();
+    };
     return wrap;
   }
   inp.oninput = () => {   // 主页称呼随输入即时同步
