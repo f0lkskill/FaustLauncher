@@ -100,6 +100,19 @@ def check_version_update(root):
         print("云端版本信息未填写最新版本 (latest_release_version 为空), 跳过更新检查")
         return need_update, {}, current_version, None
 
+    # 这次抓到的版本信息留在内存: 主页版本卡"手动打开版本窗口"直接读它, 不再联网
+    try:
+        from functions.pages.notice.version_notify import remember_version_info
+        remember_version_info({
+            "current": current_version,
+            "latest": latest_release,
+            "has_update": latest_release != current_version,
+            "entry": (version_info.get('versions') or {}).get(latest_release) or {},
+            "error": None,
+        })
+    except Exception as _e:
+        print(f"[版本更新] 记录内存版本信息失败: {_e}")
+
     if latest_release != current_version:
         print(f"[版本更新] 检测到启动器新版本: {latest_release}，当前版本: {current_version}")
         latest_entry = version_info['versions'][latest_release]
