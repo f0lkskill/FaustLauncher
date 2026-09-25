@@ -397,6 +397,25 @@ def _fetch_text(key, verbose=True):
     return text, url, err
 
 
+def read_note_live(note_id: str, address: str, pwd: str = "") -> tuple:
+    """**只走网络**读笔记 (不落本地缓存兜底), 供"读-改-写"型调用方使用。
+
+    与 Note.fetch_note_info() 的区别: 后者在全部网络源失败时会回退本地缓存 (对读方更友好),
+    但写方拿着**可能过期的旧内容**去覆盖云端会丢数据 (2026-09-25 build.py 上传版本信息就踩了:
+    服务器抖动返回 200 + 0 字节, 还被当成"笔记是空的", 直接抹掉云端几十个版本历史)。
+
+    Returns:
+        (内容, 实际生效的笔记名, 错误信息): 内容为空即读取失败, 调用方应当放弃写回。
+    """
+    try:
+        note = Note(note_id, address, pwd)
+        keys = note._candidate_keys()
+    except Exception as e:
+        return "", str(address or ""), f"构造笔记失败: {e}"
+    text, _source, used, err = _fetch_note(keys)
+    return (text or ""), (used or str(address or "")), (err or "")
+
+
 # 写回 (与读取完全分开的一条链路)
 def parse_write_response(r):
     """解析 /update/ 响应, 返回 (是否成功, 信息字典)
