@@ -574,7 +574,8 @@ def _install_ourplay(gui, temp_file, game_path, version, is_god):
     """下载并安装 OurPlay 汉化包 (结构处理 + 落到 lang/<平台目录名>), 成功返回 True"""
     import json
     from functions.web_update.ourplay_download import prepare_ourplay_dir
-    from functions.web_update.translation_source import get_translation_dir
+    # OurPlay 是内置平台: 落地目录用内置目录名 (lang/OurPlayHanHua), 不受插件自定义源影响
+    from functions.web_update.translation_source import get_builtin_translation_dir
     from functions.base.game_launcher import safe_merge_dirs
     import shutil as _shutil
 
@@ -597,7 +598,7 @@ def _install_ourplay(gui, temp_file, game_path, version, is_god):
         return False
 
     try:
-        target = get_translation_dir()
+        target = get_builtin_translation_dir()
         if os.path.exists(target):
             _shutil.rmtree(target, ignore_errors=True)
         os.makedirs(target, exist_ok=True)

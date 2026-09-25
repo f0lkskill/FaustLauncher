@@ -517,7 +517,7 @@ class GameLauncher:
             kind = ('addons' if dir_path.startswith('addons')
                     else ('mods' if dir_path.startswith('mods') else 'lang'))
             backup_dir = None if kind == 'lang' else self._changes_backup_dir(kind, src_name)
-            index = self._load_backup_index(backup_dir)
+            index = self._load_backup_index(backup_dir) # type: ignore
             index_dirty = False
 
             # 图层被禁用: 把那个图层之前改过的文件还原回去 (资源本身是启用的)
@@ -574,7 +574,7 @@ class GameLauncher:
                             print(f"  警告: 应用补丁 {game_file} 失败: {e}")
 
             if index_dirty:
-                self._save_backup_index(backup_dir, index)
+                self._save_backup_index(backup_dir, index) # type: ignore
 
         # ---- 4) 已删除资源的快照清掉 ----
         self._prune_changes_backups(alive)
@@ -714,6 +714,8 @@ class GameLauncher:
         launch_game_process()
         # 启动成就监测 Hook (独立子进程, 避免主进程结束时被 kill)
         # 子进程内部会：监控 Player.log + 注入 battle_watch.dll 观测战斗事件
+        print("[成就监测] 警告：本版本暂时不开放成就系统。")
+        return
         self._start_achievement_hook()
 
     def _start_achievement_hook(self):

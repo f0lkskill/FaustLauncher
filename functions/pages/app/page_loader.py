@@ -949,7 +949,9 @@ def download_and_launch(obj=None, need_run_game=False, manual=False):
     
     try:
         from functions.web_update.translation_source import (
-            get_translation_dir, get_translation_dir_name, is_ourplay_source
+            get_translation_dir, get_translation_dir_name, is_ourplay_source,
+            # 内置汉化包的下载/合并一律用内置目录名: 插件自定义汉化源不该影响这一步
+            get_builtin_translation_dir, get_builtin_dir_name,
         )
         def _push_step(step):
             """推送流水线步骤事件 (web 模式经 _web_progress 钩子实时到前端)"""
@@ -1095,7 +1097,8 @@ def download_and_launch(obj=None, need_run_game=False, manual=False):
             # 避免 need_up() 无参调用(汉化存在即返回 False)误判已是最新
             _need_translate = True
 
-        lang_path = get_translation_dir()
+        # 内置汉化包的落地目录 (零协会 LLC_zh-CN / OurPlay OurPlayHanHua)
+        lang_path = get_builtin_translation_dir()
         download_path = 'lang'
         is_ourplay = is_ourplay_source()
         main_root = obj.root if obj else None
@@ -1118,7 +1121,7 @@ def download_and_launch(obj=None, need_run_game=False, manual=False):
 
             # 汉化包已下载解压: 以解压产物 src_lang 是否存在判断是否需要安装,
             # 不再依赖 need_up() (无参调用永远返回 False, 会导致合并被跳过, 完整汉化被清理)
-            src_lang = os.path.join(download_path, 'LimbusCompany_Data', 'Lang', get_translation_dir_name())
+            src_lang = os.path.join(download_path, 'LimbusCompany_Data', 'Lang', get_builtin_dir_name())
 
             if os.path.exists(src_lang) or (is_ourplay and os.path.isdir(lang_path)):
                 print("检测到新的汉化版本，准备更新汉化文件...")
@@ -1160,9 +1163,10 @@ def download_and_launch(obj=None, need_run_game=False, manual=False):
                         # 步骤表里 mods 排在 install 之后(第 6 步), 提前推会直接跳步,
                         # 并把后续 resource / install 的推送全部变成回退而被忽略。
                     else:
-                        print(f"错误: 未找到 lang 下的 {get_translation_dir_name()} 文件夹")
+                        print(f"错误: 未找到 lang 下的 {get_builtin_dir_name()} 文件夹")
             else:
-                print("当前汉化已是最新版本，无需更新")
+                # 版本检查说"已是最新"时不会有新解压产物; 这里说明清楚, 免得看起来像白下载
+                print(f"没有新解压的汉化包 ({src_lang}), 跳过合并 (本地已是最新版本)")
 
             if not is_ourplay and not os.path.exists('assets/Font/Context/ChineseFont.ttf'):
                 if os.path.isdir('lang/Font') and os.listdir('lang/Font'):
