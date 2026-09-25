@@ -216,19 +216,24 @@ class FaustLauncherCore:
             from tkinter import messagebox
             messagebox.showerror("错误", f"打开mod管理器失败: {str(e)}")
             
-    def _ask_web_game_path(self, found: str) -> None:
+    def _ask_web_game_path(self, found: str, force=False) -> None:
         """Web 模式: 把 Steam 自动检测到的路径推给前端, 由模态窗口问用户
 
         只记录待确认路径 (self.pending_steam_path), 不写设置 —— 用户在前端点
         "是" 才写 (AppApi.confirm_steam_game_path), 点 "不是" 则由前端强制选目录
-        (AppApi.apply_game_path)。found 为空串表示没检测到, 前端直接要求手动选择。
+        (AppApi.apply_game_path)。
+
+        路径里必须有 LimbusCompany.exe: 检测到的路径没有这个文件时 path_ok=False
+        (pending_steam_path 仍保留原值, 只用于界面提示"Steam 里读到的是这个, 但无效"),
+        前端会跳过确认、直接要求用户自己选目录。found 为空串表示没检测到。
+
+        force=True 用于"路径后来失效了"的重复弹出 (前端平时只问一次)。
         """
-        self.pending_steam_path = str(found or "").strip()
-        self._steam_path_checked = True      # 供前端兜底查询: 检测已做完
-        try:
-            from functions.base.steam_locator import GAME_EXE
-        except Exception:
-            GAME_EXE = "LimbusCompany.exe"
+        from functions.base.steam_locator import resolve_game_dir, GAME_EXE
+        found = str(found or "").strip()
+        resolved = resolve_game_dir(found) if found else ""
+        self.pending_steam_path = found          # 展示用原始路径 (可能是无效路径)
+        self._steam_path_checked = True          # 供前端兜底查询: 检测已做完
         try:
             from functions.web_update import zeroasso_download as _zd
             push = getattr(_zd, "_web_progress", None)
@@ -236,12 +241,16 @@ class FaustLauncherCore:
                 print("[设置] 前端推送不可用, 无法弹出游戏路径确认窗口 (请在设置页手动选择)")
                 return
             push("path_confirm", {
-                "path": self.pending_steam_path,
-                "from_steam": bool(self.pending_steam_path),
+                "path": found,
+                "path_ok": bool(resolved),
+                "from_steam": bool(resolved),
                 "game_exe": GAME_EXE,
+                "force": bool(force),
             })
-            if self.pending_steam_path:
-                print(f"[设置] 已从 Steam VDF 获取到游戏路径, 等待用户确认: {self.pending_steam_path}")
+            if resolved:
+                print(f"[设置] 已从 Steam VDF 获取到游戏路径, 等待用户确认: {resolved}")
+            elif found:
+                print(f"[设置] Steam 检测到的路径下没有 {GAME_EXE}, 视为无效路径: {found}")
             else:
                 print("[设置] 未从 Steam VDF 获取到游戏路径, 等待用户手动选择")
         except Exception as e:
@@ -252,42 +261,57 @@ class FaustLauncherCore:
         if not self.settings_manager.get_setting("game_path"):
             print("错误: 未配置游戏路径")
             # 尝试通过 Steam VDF 自动定位边狱巴士, 找到后询问用户确认
-            from functions.base.steam_locator import find_steam_game_path, normalize_game_path
-            found = find_steam_game_path()
+            # resolve_game_dir: 目录里必须有 LimbusCompany.exe 才算有效路径
+            from functions.base.steam_locator import (
+                find_steam_game_path, resolve_game_dir, GAME_EXE,
+            )
+            raw_found = find_steam_game_path() or ""
+            found = resolve_game_dir(raw_found) or None
             if not interactive:
-                # Web 模式: 不静默写入, 交给前端模态窗口问用户
-                # 检测不到路径时传空串 —— 前端会直接要求用户自己选目录 (路径非空是硬要求)
-                self._ask_web_game_path(found or "")
+                # Web 模式: 不静默写入, 交给前端模态窗口问用户。
+                # 没检测到 / 检测到的路径里没有 LimbusCompany.exe, 都算"没检测到",
+                # 前端会跳过确认、直接要求用户自己选目录 (路径里有 exe 是硬要求)。
+                self._ask_web_game_path(raw_found)
                 found = None
-            elif found:
+            else:
+                # 桌面版: 纯系统询问窗口; 没选 / 选到没有 exe 的目录都直接退出启动器
                 from tkinter import messagebox
-                if messagebox.askyesno("检测到边狱巴士",
-                                       f"启动器已自动从 Steam VDF 获取到边狱巴士安装路径:\n{found}\n\n这是你的游戏路径吗？",
-                                       parent=self.root):
-                    self.settings_manager.set_setting("game_path", found)
-                    self.settings_manager.save_settings()
-                    settings_page = self.page_loader.get_page('settings')  # type: ignore
-                    if settings_page:
-                        settings_page.refresh_all_displays()
+                from tkinter.filedialog import askopenfilename
+                if found and messagebox.askyesno(
+                        "检测到边狱巴士",
+                        f"启动器已自动从 Steam VDF 获取到边狱巴士安装路径:\n{found}\n\n这是你的游戏路径吗？",
+                        parent=self.root):
+                    print(f"用户确认了自动检测到的路径: {found}")
+                else:
+                    if raw_found and not found:
+                        print(f"错误: Steam 检测到的路径下没有 {GAME_EXE}, 视为无效: {raw_found}")
+                    elif found:
+                        print("用户未确认自动检测的路径, 回退到手动选择")
                     found = None
-                else:
-                    print("用户未确认自动检测的路径, 回退到手动选择")
-            if found:
-                if interactive:
-                    from tkinter.filedialog import askopenfilename
-                    file_path = askopenfilename(title="选择边狱巴士主程序", filetypes=[("边狱巴士主程序", "LimbusCompany.exe")])
-                    if file_path:
-                        self.settings_manager.set_setting("game_path", normalize_game_path(os.path.dirname(file_path)))
-                        self.settings_manager.save_settings()
-                        settings_page = self.page_loader.get_page('settings')  # type: ignore
-                        if settings_page:
-                            settings_page.refresh_all_displays()
-                    else:
-                        print("错误: 未选择游戏文件")
+                while found is None:
+                    file_path = askopenfilename(
+                        title=f"请选择边狱巴士主程序 ({GAME_EXE})",
+                        filetypes=[("边狱巴士主程序", GAME_EXE), ("可执行文件", "*.exe"),
+                                   ("所有文件", "*.*")])
+                    if not file_path:
+                        print("错误: 未选择游戏主程序, 退出启动器")
                         os._exit(-1)
-                else:
-                    print("未通过 Steam 检测到游戏路径, 请在设置页手动选择游戏目录")
-                
+                    found = resolve_game_dir(file_path) or None
+                    if found is None:
+                        print(f"错误: 选择的路径下没有 {GAME_EXE}: {file_path}")
+                        messagebox.showerror(
+                            "路径无效",
+                            f"选择的目录下没有 {GAME_EXE}:\n{file_path}\n\n"
+                            f"请重新选择游戏主程序, 或点取消退出启动器。",
+                            parent=self.root)
+            if found:
+                self.settings_manager.set_setting("game_path", found)
+                self.settings_manager.save_settings()
+                settings_page = self.page_loader.get_page('settings')  # type: ignore
+                if settings_page:
+                    settings_page.refresh_all_displays()
+                print(f"游戏路径已保存: {found}")
+
         mems: dict = self.settings_manager.get_setting('mems')  # type: ignore
         has_notify = mems.get('version_notify_flag')
         from functions.update.version_utils import check_version_update
