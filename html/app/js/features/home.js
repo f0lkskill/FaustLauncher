@@ -39,6 +39,8 @@ function render() {
   // 主页称呼 (玩家名) + 快捷方式 & 工具
   updateHeroUser();
   updateSourceChip();
+  // 游戏路径确认窗口兜底拉取 (后端延迟检查设置, 推送可能早于前端就绪)
+  pullPendingPathConfirm();
   renderFeatures(b.features);
   renderTools(b.tools);
   // 设置

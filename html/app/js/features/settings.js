@@ -88,6 +88,147 @@ function updatePathChip() {
   }
 }
 
+// ---------------- 游戏路径确认 (Steam VDF 自动检测 -> 询问用户) ----------------
+// 后端 path_confirm 事件触发:
+//   path 非空 -> 问"这是你的游戏路径吗？"(「是」= 写入 / 「不是」= 强制自己选)
+//   path 为空 -> 没从 Steam VDF 检测到, 直接要求用户手动选择 (路径非空是硬要求)
+// 窗口没有关闭按钮, 点遮罩/Esc 都不生效 (必须做出选择)
+let pcModalEl = null;      // 当前模态 DOM
+let pcShown = false;       // 本次启动是否已经问过 (避免重复弹)
+let pcPulling = false;     // 兜底轮询是否在跑
+
+function closePathModal() {
+  const el = pcModalEl;
+  pcModalEl = null;
+  if (el) closePanel(el);
+}
+
+function pcHint(text, kind) {
+  const el = document.getElementById('pc-hint');
+  if (!el) return;
+  if (!text) { el.hidden = true; el.textContent = ''; return; }
+  el.hidden = false;
+  el.className = 'pc-hint' + (kind ? ' ' + kind : '');
+  el.textContent = text;
+}
+
+// 底部按钮: 检测到路径时给"是/不是"; 没检测到只给"选择游戏目录"
+function pcRenderFoot(hasDetected) {
+  const foot = document.getElementById('pc-foot');
+  if (!foot) return;
+  foot.innerHTML = hasDetected
+    ? '<button class="btn btn-ghost" id="pc-no">不是，我自己选</button>' +
+      '<button class="btn btn-primary" id="pc-yes">是，就用它</button>'
+    : '<button class="btn btn-primary" id="pc-pick">选择游戏目录…</button>';
+  const yes = document.getElementById('pc-yes');
+  if (yes) yes.onclick = pcAcceptDetected;
+  const no = document.getElementById('pc-no');
+  if (no) no.onclick = pcPickManually;
+  const pick = document.getElementById('pc-pick');
+  if (pick) pick.onclick = pcPickManually;
+}
+
+// 「是」: 让后端写入自动检测到的路径
+async function pcAcceptDetected() {
+  if (!api) { pcHint('浏览器预览模式无法写入设置', 'warn'); return; }
+  pcHint('正在写入…');
+  const r = await api.confirm_steam_game_path(true).catch(e => ({ ok: false, error: String(e) }));
+  if (!r || !r.ok) {
+    pcHint('写入失败: ' + ((r && r.error) || '未知错误') + '，请选择目录试试。', 'error');
+    pcRenderFoot(false);
+    return;
+  }
+  closePathModal();
+  toastTop(r.has_exe ? ('游戏路径已保存: ' + r.path)
+                     : '已保存，但该目录下没找到 LimbusCompany.exe，请确认路径是否正确',
+           r.has_exe ? 'success' : 'warn', 5000);
+  updatePathChip();
+}
+
+// 「不是」/ 没检测到: 强制自己选 (非空才算选好; 取消就停在这里等用户再点)
+async function pcPickManually() {
+  if (!api) { pcHint('浏览器预览模式无法选择目录', 'warn'); return; }
+  // 先否定自动检测到的路径, 让后端别再用它
+  api.confirm_steam_game_path(false).catch(() => {});
+  pcHint('正在等待选择游戏目录…');
+  const picked = await api.pick_folder().catch(() => '');
+  const path = String(picked || '').trim();
+  if (!path) {
+    // 路径非空是硬要求: 空路径不写入, 窗口也不关, 等用户重新选
+    pcHint('没有选择任何目录。游戏路径不能为空，请重新点「选择游戏目录…」选一个。', 'warn');
+    return;
+  }
+  const r = await api.apply_game_path(path).catch(e => ({ ok: false, error: String(e) }));
+  if (r && r.ok) {
+    closePathModal();
+    toastTop(r.has_exe ? ('游戏路径已保存: ' + r.path)
+                       : '已保存，但该目录下没找到 LimbusCompany.exe，请确认路径是否正确',
+             r.has_exe ? 'success' : 'warn', 5000);
+    updatePathChip();
+    return;
+  }
+  const reason = (r && r.error) === 'empty' ? '路径不能为空'
+    : (r && r.error) === 'not_found' ? '目录不存在' : ((r && r.error) || '未知错误');
+  pcHint('这个路径不可用（' + reason + '），请重新选择。', 'error');
+}
+
+function openPathConfirmModal(d) {
+  if (pcShown) return;      // 每次启动只问一次 (回答过就别再弹)
+  d = d || {};
+  const detected = String(d.path || '').trim();
+  const exe = d.game_exe || 'LimbusCompany.exe';
+  pcShown = true;
+  if (pcModalEl) closePathModal();
+
+  const panel = document.createElement('div');
+  panel.id = 'pc-modal';
+  panel.className = 'pc-overlay';
+  panel.innerHTML =
+    '<div class="pc-card">' +
+      '<span class="pc-accent" aria-hidden="true"></span>' +
+      '<header class="pc-head">' +
+        '<img class="pc-mark" src="' + PROJECT_ICON + '" alt="" draggable="false">' +
+        '<div class="pc-head-main">' +
+          '<div class="pc-eyebrow">' + (detected ? '检测到游戏路径' : '需要设置游戏路径') + '</div>' +
+          '<div class="pc-title">' + (detected ? '这是你的游戏路径吗？' : '请选择游戏目录') + '</div>' +
+        '</div>' +
+      '</header>' +
+      '<div class="pc-rule"></div>' +
+      (detected
+        ? '<div class="pc-desc">启动器已自动从 <b>Steam VDF</b> 读取到边狱巴士安装路径（不是你手填的）：</div>' +
+          '<div class="pc-path" title="' + esc(detected) + '">' + esc(detected) + '</div>' +
+          '<div class="pc-desc">如果不对，点「不是，我自己选」自己指定游戏根目录。</div>'
+        : '<div class="pc-desc">启动器没能从 <b>Steam VDF</b> 自动找到边狱巴士。' +
+          '请手动选择游戏根目录（目录里应有 <code>' + esc(exe) + '</code>）。</div>') +
+      '<div class="pc-hint" id="pc-hint" hidden></div>' +
+      '<footer class="pc-foot" id="pc-foot"></footer>' +
+    '</div>';
+  document.body.appendChild(panel);
+  document.body.classList.add('modal-open');
+  pcModalEl = panel;
+  pcRenderFoot(!!detected);
+}
+
+// 兜底: 后端是启动后延迟 6 秒才检查设置的, 万一推送早于前端就绪, 这里主动拉一次
+async function pullPendingPathConfirm() {
+  if (!api || pcShown || pcPulling) return;
+  pcPulling = true;
+  try {
+    for (let i = 0; i < 8; i++) {
+      await new Promise(r => setTimeout(r, i === 0 ? 7000 : 4000));
+      if (pcShown) return;
+      const info = await api.get_pending_steam_path().catch(() => null);
+      if (!info || typeof info !== 'object') continue;
+      if (info.checked) {                 // 后端检测完了, 且前端还没问过
+        openPathConfirmModal(info);
+        return;
+      }
+    }
+  } finally {
+    pcPulling = false;
+  }
+}
+
 // ---- 改动收集与即时生效 ----
 function markChanged(key, value) {
   SETTING_CHANGES[key] = { value };

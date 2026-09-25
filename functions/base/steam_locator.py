@@ -132,6 +132,25 @@ def normalize_game_path(path):
     return p
 
 
+def is_valid_game_path(path) -> bool:
+    """游戏路径是否可用: 非空 + 目录存在 (只做这两条硬校验)"""
+    raw = str(path or "").strip()
+    if not raw:
+        return False
+    try:
+        return os.path.isdir(normalize_game_path(raw))
+    except Exception:
+        return False
+
+
+def has_game_exe(path) -> bool:
+    """目录下是否存在 LimbusCompany.exe (软校验, 只用于给用户提示)"""
+    try:
+        return os.path.isfile(os.path.join(normalize_game_path(path), GAME_EXE))
+    except Exception:
+        return False
+
+
 def find_steam_game_path(app_id=_APP_ID_STR, exe_name=GAME_EXE):
     """定位边狱巴士安装路径。
 
