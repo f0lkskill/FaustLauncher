@@ -264,7 +264,7 @@ def _define_achievements():
         lambda: s().battle_count >= 100
     ))
     achievements.append(Achievement(
-        "ach_battle_04", "通关百战", "累计完成100场战斗后继续征战",
+        "ach_battle_04", "通关百战", "累计完成500场战斗后继续征战",
         lambda: s().battle_count >= 500
     ))
 

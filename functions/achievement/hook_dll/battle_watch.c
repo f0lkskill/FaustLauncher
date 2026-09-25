@@ -66,6 +66,7 @@
 #define BW_SPEED_SCALE  1000   /* 速度字段的定点比例：_CORRECTION_FOR_SPEED */
 #define BW_VITAL_UNREAD (-1000)  /* HP/理智读不出来时的哨兵（HP 不可能为负、理智只有 ±45）*/
 #define BW_VITAL_SLOTS  64       /* (单位指针, hp, mp, buff 掩码) 去重表大小 */
+#define BW_SAMPLE_MS      250    /* 采样线程重读 hp/sp/buff 的间隔 */
 #define BW_BUFF_WATCH_MAX 32     /* 关注 buff 上限（Python 端同值）*/
 #define BW_BUFF_LIST_MAX  96     /* 单个单位最多看多少个 buff（防脏数据卡死）*/
 
@@ -160,6 +161,7 @@ _Static_assert(sizeof(BW_CONFIG) == 132408, "BW_CONFIG 大小不一致（改了�
 static BW_CONFIG *g_cfg = NULL;
 static HANDLE      g_stop_event = NULL;
 static HANDLE      g_watcher = NULL;
+static HANDLE      g_sampler = NULL;
 static BOOL        g_hooked = FALSE;
 
 typedef void  (__fastcall *fn_plain)(void *self, const void *method);
@@ -321,6 +323,9 @@ typedef struct {
     uintptr_t unit;
     int hp;
     int mp;
+    int iid;                     /* 采样线程用它判断指针有没有被复用 */
+    int oid;
+    int buff_count;              /* 上次看到的 buff 总数（列表大小；-1 = 链读不到）*/
     unsigned int buff_mask;
     BOOL used;
 } BW_VITAL_ENTRY;
@@ -389,8 +394,13 @@ static int read_il2cpp_string(uint64_t str_ptr, char *buf, int max_len)
     return i;
 }
 
-/* 读单位的关注 buff 命中掩码（没命中/没配关注表返回 0）*/
-static unsigned int read_unit_buff_mask(void *unit)
+/* 读单位的关注 buff 命中掩码（没命中/没配关注表返回 0）
+ *
+ * ``out_count``：本次看到的 buff **总数**（列表大小）。链读不到时给 -1 ——
+ * 有了它才能区分"身上没有我们关注的 buff"（`m=0 n=3`）和"整条链读不到"
+ * （`m=0 n=-1`），排查时不用再猜。可以为 NULL。
+ */
+static unsigned int read_unit_buff_mask(void *unit, int *out_count)
 {
     uint64_t detail = 0, list = 0, items = 0, model = 0, data = 0, sid = 0;
     int32_t count = 0;
@@ -398,6 +408,8 @@ static unsigned int read_unit_buff_mask(void *unit)
     int i, j;
     char name[64];
 
+    if (out_count)
+        *out_count = -1;
     if (!unit || !g_cfg)
         return 0;
     if (g_cfg->buff_watch_count <= 0)
@@ -412,6 +424,8 @@ static unsigned int read_unit_buff_mask(void *unit)
         return 0;
     if (!safe_read((char *)(uintptr_t)(list + 0x18), &count, 4))
         return 0;
+    if (out_count)
+        *out_count = (count < 0 || count > BW_BUFF_LIST_MAX) ? -1 : (int)count;
     if (!items || count <= 0 || count > BW_BUFF_LIST_MAX)
         return 0;
     for (i = 0; i < count; i++) {
@@ -440,7 +454,7 @@ static unsigned int read_unit_buff_mask(void *unit)
 
 static void emit_unit_buffs(void *unit, const char *tag)
 {
-    int iid = -1, oid = -1, count = 0;
+    int iid = -1, oid = -1, count = -1;
     unsigned int mask;
     uintptr_t key;
     int slot, i, n;
@@ -448,7 +462,7 @@ static void emit_unit_buffs(void *unit, const char *tag)
 
     if (!unit || !g_cfg || g_cfg->buff_watch_count <= 0)
         return;
-    mask = read_unit_buff_mask(unit);
+    mask = read_unit_buff_mask(unit, &count);
     read_i32(unit, g_cfg->off_unit_instance_id, &iid);
     read_i32(unit, g_cfg->off_unit_origin_id, &oid);
 
@@ -457,21 +471,28 @@ static void emit_unit_buffs(void *unit, const char *tag)
     for (i = 0; i < 8; i++) {
         int idx = (slot + i) % BW_VITAL_SLOTS;
         if (g_vital[idx].used && g_vital[idx].unit == key) {
-            if (g_vital[idx].buff_mask == mask)
-                return;                              /* 关注 buff 集合没变：不发 */
+            /* 掩码或总数有一个变了就发：只比掩码的话，mask 恒为 0 的单位
+             * （链读不到 / 身上没有关注 buff）永远不会有输出，排查时两眼一抹黑。*/
+            if (g_vital[idx].buff_mask == mask && g_vital[idx].buff_count == count)
+                return;
             g_vital[idx].buff_mask = mask;
+            g_vital[idx].buff_count = count;
+            g_vital[idx].iid = iid;
+            g_vital[idx].oid = oid;
             break;
         }
         if (!g_vital[idx].used) {
             g_vital[idx].used = TRUE;
             g_vital[idx].unit = key;
             g_vital[idx].buff_mask = mask;
+            g_vital[idx].buff_count = count;
+            g_vital[idx].iid = iid;
+            g_vital[idx].oid = oid;
             break;
         }
     }
-    (void)count;
-    n = _snprintf(line, sizeof(line) - 1, "BUF tag=%s iid=%d oid=%d m=%u",
-                  tag, iid, oid, mask);
+    n = _snprintf(line, sizeof(line) - 1, "BUF tag=%s iid=%d oid=%d m=%u n=%d",
+                  tag, iid, oid, mask, count);
     if (n < 0) n = 0;
     if (n > (int)sizeof(line) - 1) n = (int)sizeof(line) - 1;
     line[n] = '\0';
@@ -502,6 +523,8 @@ static void emit_unit_vitals(void *unit, const char *tag)
                 return;               /* 值没变：不发 */
             g_vital[idx].hp = hp;
             g_vital[idx].mp = mp;
+            g_vital[idx].iid = iid;
+            g_vital[idx].oid = oid;
             break;
         }
         if (!g_vital[idx].used) {
@@ -509,6 +532,8 @@ static void emit_unit_vitals(void *unit, const char *tag)
             g_vital[idx].unit = key;
             g_vital[idx].hp = hp;
             g_vital[idx].mp = mp;
+            g_vital[idx].iid = iid;
+            g_vital[idx].oid = oid;
             break;
         }
     }
@@ -522,6 +547,52 @@ static void emit_unit_vitals(void *unit, const char *tag)
 }
 
 /* 读 action 的 actor/cmd/技能，发 ACT；fallback_actor_oid 用不到时传 -1 */
+/* 采样线程：把已经见过的单位每 BW_SAMPLE_MS 重读一次 hp / sp / buff。
+ *
+ * 为什么必须有它：我们只能在自己挂上的函数被调用时读值，而受击钩子
+ * （GetTakeAttackDmgMultiplier）是在**算伤害的当下**进的 —— 那一刻 hp 还没扣、
+ * buff 也还没上，所以"打到身上"造成的血量/理智/buff 变化要等下一个单位级钩子
+ * （通常就是回合开始）才被看见，表现就是"血量/理智/buff 要等回合结束才结算"。
+ * 这里按固定节奏重采样：值一变就发 VAL/BUF（去重表保证只在变化时发），
+ * 驱动侧本来就是**即时判定**，于是全链路都变成实时的。
+ *
+ * 只读：safe_read 全程带边界校验；指针被复用（iid/oid 变了）就丢弃该槽位。
+ */
+static DWORD WINAPI sampler_thread(LPVOID unused)
+{
+    int i;
+    (void)unused;
+    for (;;) {
+        if (WaitForSingleObject(g_stop_event, BW_SAMPLE_MS) == WAIT_OBJECT_0)
+            break;
+        if (!g_cfg || !g_cfg->observing || !g_cfg->installed)
+            continue;
+        for (i = 0; i < BW_VITAL_SLOTS; i++) {
+            void *unit;
+            int iid = -1, oid = -1;
+            if (!g_vital[i].used)
+                continue;
+            unit = (void *)g_vital[i].unit;
+            if (!read_i32(unit, g_cfg->off_unit_instance_id, &iid) ||
+                !read_i32(unit, g_cfg->off_unit_origin_id, &oid)) {
+                g_vital[i].used = FALSE;        /* 读不到 → 对象已经没了 */
+                continue;
+            }
+            if (g_vital[i].iid > 0 && iid > 0 && g_vital[i].iid != iid) {
+                g_vital[i].used = FALSE;        /* 指针被复用成别的单位 */
+                continue;
+            }
+            if (g_vital[i].oid > 0 && oid > 0 && g_vital[i].oid != oid) {
+                g_vital[i].used = FALSE;
+                continue;
+            }
+            emit_unit_vitals(unit, "sampler");
+            emit_unit_buffs(unit, "sampler");
+        }
+    }
+    return 0;
+}
+
 static void emit_action_skill(void *action, int actor_oid_hint, const char *tag)
 {
     int actor = -1, cmd = -1, fake = 0, skid = -1, tier = -1, tfake = 0;
@@ -991,6 +1062,7 @@ static void attach(void)
     }
 
     g_watcher = CreateThread(NULL, 0, watcher_thread, NULL, 0, NULL);
+    g_sampler = CreateThread(NULL, 0, sampler_thread, NULL, 0, NULL);
 }
 
 static void detach(void)
