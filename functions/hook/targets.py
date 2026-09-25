@@ -203,6 +203,20 @@ OBSERVE_TARGETS: tuple[ObserveTarget, ...] = (
         key="action_done_with_action", symbol="BattleActionModel::DoneWithAction", kind="action_int",
         fallback_rva=0x11AD140, description="行动完成（实测普通战斗不触发，留作对照）",
     ),
+    # ---- 表现层（动画相位）-----------------------------------------------
+    # 这游戏的战斗是"先算完整回合、再播动画"：结算阶段（伤害/收尾回调）全挤在回合刚开始的
+    # 一瞬间，所以"动画播到哪"只能看表现层。BattleSkillViewBase 的这三个回调是技能动画的
+    # 开始 / 完成 / 结束，驱动拿它们当"动画 tick"。kind="skv"：DLL 除了发 RND tag=skv_*，
+    # 还读 self->_attackerInstanceID 带上 iid —— 判定要“跟着动画走”就必须知道这手是谁在打。
+    ObserveTarget(
+        key="skv_start", symbol="BattleSkillViewBase::Skill_Start", kind="skv",
+        fallback_rva=0x9B4D80, description="技能动画开始（表现层，事件带 iid）"),
+    ObserveTarget(
+        key="skv_complete", symbol="BattleSkillViewBase::Skill_Complete", kind="skv",
+        fallback_rva=0x9BD810, description="技能动画完成（表现层，事件带 iid）"),
+    ObserveTarget(
+        key="skv_end", symbol="BattleSkillViewBase::Skill_End", kind="skv",
+        fallback_rva=0x9475C0, description="技能动画结束（表现层，实测是 jmp 桩→Skill_EndMethod）"),
     ObserveTarget(
         key="take_attack_dmg_multiplier", symbol="BattleUnitModel::GetTakeAttackDmgMultiplier",
         kind="damage_action", fallback_rva=0x11E1D10,

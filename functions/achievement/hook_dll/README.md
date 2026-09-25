@@ -2,11 +2,14 @@
 
 只做一件事：**在游戏里读若干个点位，把事实写成文本事件**；判定全部交给 Python。
 
-> 当前版本 **v5**（协议 FBW4）：
+> 当前版本 **v6**（协议 FBW5）：
 > - v3：`SPD` 补整数速度 `osi`/`owi`（速度字段是「×1000 定点数」，见第四节）；
 > - v4：新增 `VAL` 事件（**血量 / 理智**，见第四节），结构体多了 4 个偏移；
-> - v5：新增 `BUF` 事件（**buff**）+ 配置末尾的 **关注 buff 表**，又多了 4 个偏移
->   → 魔数 **FBW4**、`log_ring` 偏移 **1076**、总大小 **132408**。
+> - v5：新增 `BUF` 事件（**buff**）+ 配置末尾的 **关注 buff 表**，又多了 4 个偏移；
+> - v6：`skv_*` 改走新的 **`skv` kind** —— 动画 tick 额外读
+>   ``BattleSkillViewBase::_attackerInstanceID``（配置多了 `off_skv_attacker_iid`）
+>   → 魔数 **FBW5**、`log_ring` 偏移 **1080**、总大小 **132416**。
+>   **只有知道“这手动画是哪个单位在打”，判定才能按行动对齐**（见第六节）。
 
 ```
 游戏进程                                      成就监测进程（Python）
@@ -68,6 +71,9 @@ BattleActionModel::DoneWithAction          0x11AD140  = 48 89 5C 24 08 ...（真
 | `action_on_end_turn` | `BattleActionModel::OnEndTurn` | `0x11ACBA0` | action_int | 行动在回合结束时（技能） |
 | `action_done_with_action` | `BattleActionModel::DoneWithAction` | `0x11AD140` | action_int | 行动完成（v1 实测不触发，留作对照） |
 | `take_attack_dmg_multiplier` | `BattleUnitModel::GetTakeAttackDmgMultiplier` | `0x11E1D10` | damage_action | **已证实会被调用**：拿 attacker 身份 + action 技能 |
+| `skv_start` | `BattleSkillViewBase::Skill_Start` | `0x9B4D80` | skv | 技能动画开始（带 iid，只用于绑定/计时） |
+| `skv_complete` | `BattleSkillViewBase::Skill_Complete` | `0x9BD810` | skv | 技能动画完成（带 iid，只用于绑定/计时） |
+| `skv_end` | `BattleSkillViewBase::Skill_End` | `0x9475C0` → `0x9BE680` | skv | **技能动画结束**（带 iid）→ 放行它那一组的判定 |
 
 RVA / prologue / 字段偏移都不写死在 DLL 里：驱动从云端笔记 `FaustLauncher.hook_index`
 （`functions/hook` 自动生成，含这 11 个钩子与 15 个字段）读出后写进共享内存配置。
@@ -76,12 +82,12 @@ DLL 会写 `WARN prologue check skipped`）。
 
 ---
 
-## 三、共享内存协议（v5，魔数 FBW4）
+## 三、共享内存协议（v6，魔数 FBW5）
 
-- 名字 `Local\FaustLauncher_BattleWatch`，魔数 `0x33574246`（"FBW3"；v2 是 FBW2）
-- 结构体 `BW_CONFIG` ↔ `battle_watch.py` 的 `BWConfig`：`log_ring` 偏移 **1060**、
-  总大小 **132132**（C 端 `_Static_assert` + Python 断言 + DLL 回写 `ring_offset`
-  /`struct_size` 三重校验）
+- 名字 `Local\FaustLauncher_BattleWatch`，魔数 `0x35574246`（"FBW5"；v5 是 `0x34574246`）
+- 结构体 `BW_CONFIG` ↔ `battle_watch.py` 的 `BWConfig`：`log_ring` 偏移 **1080**、
+  总大小 **132416**（C 端 `_Static_assert` + Python 断言 + DLL 回写 `ring_offset`
+  /`struct_size` 三重校验）；魔数不一致就直接报版本不符，不会静默错位
 - 钩子表（Python 写入）：`hook_count` / `hook_rva[12]` / `hook_kind[12]` /
   `hook_prologue[12][16]` / `hook_name[12][40]`；DLL 回写 `hook_hits[12]`
 - 事件行（环形缓冲，按 `log_head` 单调递增增量抽取）::
@@ -91,6 +97,7 @@ DLL 会写 `WARN prologue check skipped`）。
     VAL tag=take_attack_dmg_multiplier iid=1234 oid=10705 hp=41 mhp=58 mp=-3        （血量/理智）
     BUF tag=sampler iid=1234 oid=10916 m=2 n=5                                       （buff：m=关注表命中位掩码，n=该单位当前 buff 总数）
     ACT tag=take_attack_dmg_multiplier actor=1234 cmd=1234 skid=1010103 slot=3 tier=3 aoid=10101
+    RND tag=skv_end iid=1234                                                         （表现层动画 tick：iid = _attackerInstanceID，-1 = 没读到）
     INFO/WARN/ERR ...   （DLL 自己的提示）
 
 - 状态回写：`gameassembly_found` / `verified` / `installed` / `last_error` /
@@ -216,26 +223,85 @@ battle_watch.py（驱动）
 规则类型是**统一清单**（``battle_watch.RULE_KINDS``），加新类型 = 在 ``BattleRule`` 里
 加一个 ``match_*`` + 一个 ``RULE_KIND_*``，调用处不用改：
 
+### ⚠ 关键事实：这游戏的战斗是「先算完整回合、再播动画」
+
+日志实测（`logs/battle_watch.log`，已带毫秒）：一整回合里 **4~5 个行动**的伤害
+（`take_attack_dmg_multiplier`）、收尾（`action_on_end_turn` / `done_with_action`）
+全挤在同一秒里算完 —— 也就是说这些钩子属于**结算阶段**，动画是之后才逐个播的。
+2026-09-25 11:04:49 那一段最清楚：``11:04:49.165~.170``（**5ms 内**）把一整回合的伤害
+与收尾回调全发完，而该回合的第一个 ``skv_start`` 要到 ``11:04:49.9`` 之后才来。
+所以**结算阶段的钩子（`action_done_with_action` / `action_on_end_turn` / 伤害回调）一律
+不能用来当“动画结束”**——拿它们结算必然变成“回合一开始就解锁”。
+（`ACTION_END_TAGS` 因此置空；这些钩子仍然装着，只当诊断数据用。）
+
+真正的动画进度只能来自**表现层**：`BattleSkillViewBase` 的
+`Skill_Start` / `Skill_Complete` / `Skill_End`（`skv_start` / `skv_complete` / `skv_end`，
+`kind=skv`，DLL 发 ``RND tag=skv_* iid=<attackerInstanceID>``）。驱动把它们当 **动画 tick**。
+
+### ★ 按行动分组放行（v6 起；之前只是“延后”，等于没对齐）
+
+第一版只是把判定“延后”到 skv_end —— 实测**没用**：挂起项只有 1~3 条，而一个回合有
+28+ 个 skv_end，于是它们还是在第一个 skv_end 一起解锁（用户反馈：“延时之后依旧立刻
+全部解锁”）。要真的跟着动画走，就必须知道**每一条判定属于哪个行动**。
+
+做法（两边配合）：
+
+1. **Python 切段**：结算阶段按 ``action_done_with_action``（每个行动末尾一次）把事件
+   切成一段段 —— 落在哪一段就属于哪个行动（``BattleState.groups``）；每段的“身份”取这
+   一段里 ACT 事件带的 ``aoid``（没有就拿收尾的 ``skid // 100`` 兜）。
+2. **DLL 带身份**：``skv`` kind 每次动画回调额外读
+   ``BattleSkillViewBase::_attackerInstanceID``（偏移来自配置 ``off_skv_attacker_iid``，
+   当前 ``0x120``，dump.cs 实测）→ 事件里带上 ``iid``；读不到/值离谱就发 ``-1``。
+3. **绑定 + 放行**：``skv_start`` 把“正在播的动画”绑到**身份对得上的最早那个未放行组**
+   （对不上就按顺序），到 ``skv_end`` 就把**那一组的全部判定**一起放行。
+
+于是：一个行动里的技能/血量/理智/buff 判定会**一起、在那手动画结束时**落地，而不是
+全部堆在第一个动画后面。
+
+| 规则类型 | 命中后 | 何时置位 |
+|---|---|---|
+| ``skill`` | 进待结算队列 | 归属于它的那个行动组的 ``skv_end`` |
+| ``hp`` / ``mental`` / ``buff`` | 进待放行队列 | 同上（否则就会在回合开头的结算瞬间全部解锁）|
+| ``speed`` / ``presence`` | —— | 立刻（速度是回合开始就定下来的，本来就不该等动画）|
+
+没带 iid 的 tick（旧 DLL / 读不到）退回“一次动画结束放一条”，总比卡住好；
+心跳里的 ``带 iid N`` 就是看新 DLL 有没有真的生效的。
+
+兜底（防 tick 没来 / 钩子失效）：**回合边界**、**静默期**（见过 tick 时
+`SKILL_SETTLE_QUIET_TICKED_SEC=15s`，从未见过 tick 时 `SKILL_SETTLE_QUIET_SEC=2.5s`）、
+**战斗结束** 都会把队列里剩下的全部放行；`RND tag=skv_*` **不会**被当成回合边界（不 +
+`round_seq`）。
+
 | kind | 看的事件 | 命中条件 | 何时置位 |
 |---|---|---|---|
-| ``skill`` | ``ACT`` | ``skill_ids``，或（``identity_ids``+``tiers``）拼出的技能 ID，或（``gated_skill_ids`` 且 actor 身份匹配），或 ``any_skill``（只看身份） | **这手技能的动画结束**：只在 ``action_done_with_action`` 上结算（实测它比 ``action_on_end_turn`` 后到，中间还夹着伤害事件，拿 on_end_turn 结算等于动画还没播完就结算）；收尾事件没被调到时用 ``SKILL_SETTLE_QUIET_SEC``（2.5s）静默兜底 |
+| ``skill`` | ``ACT`` | ``skill_ids``，或（``identity_ids``+``tiers``）拼出的技能 ID，或（``gated_skill_ids`` 且 actor 身份匹配），或 ``any_skill``（只看身份） | **所属行动组的 ``skv_end`` 放行**（见上节：收尾回调属于结算阶段，**一个都不能**当动画结束）；表现层钩子没命中时用静默兜底 + 回合边界清场 |
 | ``speed`` | ``SPD`` | 身份命中且 ``fields``（默认全部速度字段）里任一 == ``threshold`` | 立刻（边界兜底） |
-| ``mental`` | ``VAL`` | 身份命中且 ``mp < threshold`` | 立刻（采样线程 250ms 内） |
-| ``hp`` | ``VAL`` | 身份命中且 ``hp < mhp * ratio`` | 立刻（采样线程 250ms 内） |
-| ``buff`` | ``BUF`` | 身份命中且身上有目标 buff（名字哈希对关注表） | 立刻（采样线程 250ms 内） |
+| ``mental`` | ``VAL`` | 身份命中且 ``mp < threshold`` | 动画 tick 放行（值由采样线程 250ms 内刷新）|
+| ``hp`` | ``VAL`` | 身份命中且 ``hp < mhp * ratio`` | 动画 tick 放行 |
+| ``buff`` | ``BUF`` | 身份命中且身上有目标 buff（名字哈希对关注表） | 动画 tick 放行 |
 | ``presence`` | ``VAL``/``SPD``/``BUF`` | 目标身份出现在单位表里（“在场上”） | 立刻 |
 
 部分类型还支持 **回合窗口** ``max_round`` / ``min_round``（0 = 不限）：例如
 「首个回合身上带着某 buff」就用 ``max_round=1``。
 
-“立刻”类全走同一个求值器（``BattleWatch._eval_immediate_locked``）；技能类走
-``settle_turn()``，调用时机是**技能动画结束**（收尾事件 / 静默期），不再是回合边界 ——
-否则一个技能要等到整回合结束才报，玩家已经看不到因果关系了。
+“立刻”类全走同一个求值器（``BattleWatch._eval_immediate_locked``）；技能类进待结算队列，
+由 ``_apply_anim_tick`` 按行动分组放行（见上节）。解锁依据文本会写明
+``（动画结束(oid=…)）`` 还是 ``（回合边界兜底）``，一眼能看出是哪条路。
+
+⚠ **回合边界会重复发两次**：实测 ``manager_on_round_start_before`` 一个回合来两条
+（间隔 2.3~3.0s，真回合之间隔着 23s+），不去重 ``round_seq`` 会翻倍、
+``max_round``/``min_round`` 的回合窗口全错位 → 常量 ``ROUND_BOUNDARY_DEDUPE_SEC=4.0``。
 
 复合成就主类 ``CompositeAchievement`` 把多条规则按任意组合拼起来：
 ``require``（``and/or/not`` 表达式）、``chain``（顺序约束）、``implied``（“完成 1 也算完成 2”），
 并且支持 ``state_only=True`` 的**状态条件**（如“场上是否存在某身份”——他在场是状态，
 不该当成事件先后）。
+
+⚠ **写 ``chain`` 时小心常驻条件**：链比的是**第一次置位的先后**（``rule_order``）。
+像“预知眼”这种**开局就在身上的 buff**，第一次被采样必然早于玩家出手 ——
+链写成 ``("skill", "eyebuff")`` 的话 ``rule_order(skill)`` 永远大于 ``rule_order(eyebuff)``，
+**成就永远不会触发**（实测定位：buff 在 11:06:51 置位、skill 在 11:07:02 置位）。
+要表达“带着它出手”就写 ``("eyebuff", "skill")``。
 
 当前七个战斗类成就的数据（全部写在各自模块里，驱动只是“照数办事”）：
 
@@ -247,7 +313,7 @@ battle_watch.py（驱动）
 | 魔法少女的悲剧 | `data/ach_magical_girl_tragedy.py` | `MentalThresholdAchievement` | 身份 `10913`/`10312` + `threshold=0` |
 | 神也会受伤吗？ | `data/ach_heathcliff_sunshower_hurt.py` | `DamageTakenAchievement` | 身份 `10705` + `ratio=1.0` |
 | 这他妈的烂牌！ | `data/ach_custom_examples.py` | `BuffPresentAchievement` | 身份 `10813` + buff `HanafudaTwo` + `max_round=1` |
-| 心脏，心脏！ | `data/ach_custom_examples.py` | `CompositeAchievement` | 10916 用技能 → 10916 带 `FutureEyeOnRodion` → 场上存在 `10716`（带顺序约束） |
+| 心脏，心脏！ | `data/ach_custom_examples.py` | `CompositeAchievement` | 10916 带 `FutureEyeOnRodion`（先） → 10916 用任意技能（后） → 场上存在 `10716`（带顺序约束） |
 
 > 最后两个在**同一个文件**里 —— 注册时会把模块里所有 ``BaseAchievement`` 子类
 > 按定义顺序自动实例化，所以一个文件写多个人格/系列成就不用逐个去登记。
@@ -352,6 +418,42 @@ class MyCombo(CompositeAchievement):
 
 ---
 
+## 七点五、两个"看起来像 DLL 问题、其实是 Python 侧"的坑（2026-09-25 实测）
+
+### 1. buff 检测一个都不生效 —— `_config()` 是拷贝
+
+`BattleWatch._config()` 原实现是 ``BWConfig()`` + ``memmove`` 出来的**快照拷贝**，
+而 ``sync_buff_watch`` 往这个拷贝里写关注表 → 真实共享内存里 ``buff_watch_count`` 一直是 0
+→ DLL 在 ``emit_unit_buffs`` 开头就 ``return``（**整条 buff 链压根不去读**）。
+更坑的是"回读确认"读的也是同一个拷贝，所以日志里一直显示 ``count=2``（假绿）。
+
+- 修：`_config()` 改成 **``BWConfig.from_address(self._map_view)`` 活视图**，
+  另留 ``_config_snapshot()`` 给需要脱离共享内存的只读用途。
+- 回归测试：第 17 组（用**另开的一个视图**校验关注表 + 断言 ``_config()`` 的地址 == 映射地址）。
+- DLL 侧留了两条诊断（平时不刷屏）：
+  - ``INFO cfg view=0x… buffwatch=N hash0=…``：DLL **第一次映射成功时**回读配置 ——
+    N 对不对得上 Python 那侧，是这类"写了没到"问题的第一判据；
+  - ``BUFDIAG iid=… n=… m=… ids=…``：buff 链读不到（n=-1）/读到但没命中关注表（n>0,m=0）
+    时每个单位每 20s 一行，``ids`` 是链上真正读到的前几个 buff 名。
+
+### 2. 判定“回合开始就结算” —— **两个**原因叠在一起（2026-09-25 第二次修）
+
+节奏实测：**结算阶段（一整回合的伤害/收尾）→ 动画才开播**。
+11:04:49 那次：``11:04:49.165~.170`` 一整个回合的 ACT/VAL 全发完（5ms），
+而动画 tick 从 ``11:04:49.9`` 起才陆续来。
+
+- 元凶 A：``ACTION_END_TAGS = ("action_done_with_action",)`` 一响就 ``settle_turn()``，
+  而它正好在结算瞬间 → 队列里技能/血量/理智/buff **全部**被提前放行。
+  修：``ACTION_END_TAGS`` 清空，只认 ``skv_end``（``ANIM_RELEASE_TAGS``）。
+- 元凶 B：静默兜底短。第一版改 8s 仍然不够 —— 实测**同一回合内**两段动画之间
+  tick 最长能空 **10.5s**（回合之间是 26s+），8s 会在动画中途放行。
+  修：见过 tick 时阈值提到 ``SKILL_SETTLE_QUIET_TICKED_SEC=15s``。
+
+回归验证：``test/replay_battle_log.py`` 把真机 ``logs/battle_watch.log`` 按**日志时间**
+回放给驱动（不跑游戏），可以直接看到每条规则的重位时刻：修好后
+``ach_yisang_lcb_s3`` 在 ``11:04:54.933``（结算后 5.8s、动画 tick 上）才解锁，
+而不是 ``11:04:49.16`` 的结算瞬间。
+
 ## 八、怎么用 / 怎么看运行情况
 
 ```powershell
@@ -369,6 +471,11 @@ python -m functions.achievement.battle_watch
 
 # 离线自检（不需要游戏）：布局 / 桩解引用 / 真注入 / 状态机 / 状态文件 / 成就
 python test\battle_watch_test.py
+
+# 回放真机日志（不需要游戏）：把 logs/battle_watch.log 按日志时间喂给驱动，
+# 打印每条规则的**置位时刻**与同刻附近的事件类别（结算瞬间 vs 动画 tick），
+# 最后直接问每个成就“这场战斗该不该解锁”（含 require/chain）
+python test\replay_battle_log.py
 ```
 
 正常流程不用手动跑：启动器启动游戏时会拉起 `main.py --achievement-hook`，
@@ -405,6 +512,47 @@ python test\battle_watch_test.py
    **直接收掉它**，并等互斥体放开 → 新实例接管（日志重新清空，不会再交错）；
 3. 收不掉 / 等不到 → **本次自己退出**，绝不让两个实例并存。
 
+⚠ **映像比对不能只看 `sys.executable`（2026-09-25 修）**：实测本机
+`venv\Scripts\python.exe` 其实是 **py.exe launcher**（`InternalName = Python Launcher`，
+255200 字节），它把真解释器当**子进程**拉起来 —— 子进程里 `sys.executable` 指向 launcher，
+而**进程映像**是 `…\Python314\python.exe`，两者永远不相等。后果：
+`_terminate_pid` 收不掉旧实例（报“不是我们拉起的监测进程”）、`_other_hook_running`
+也认不出旧实例 → 新实例只能 BUSY 退出，严重时两个实例并存（抢共享内存、把 buff 关注表覆盖成 0）。
+修：`hook._self_image_paths()` 把 `executable` / `_base_executable` / `GetModuleFileNameW(NULL)`
+三个都当自己人。另外互斥体拿到手后再拿 pid 文件复核一遍：若还有一个活着的监测进程就先收掉
+（互斥体万一失效就不会双双自称“唯一实例”）。
+
+⚠⚠ **但“收旧实例”差点把自己的父进程杀掉（2026-09-25 11:26 / 11:28 现场）**：
+本机 venv 的 `python.exe` 是 py.exe launcher，真解释器是它拉起的**子进程** —— 也就是说
+**子进程的父进程就是一个名字跟它一模一样的解释器**。而启动器当时把 `Popen(...).pid`
+（= launcher 的 PID，不是跑 main.py 的那个）写进了 `hook.pid`；新的“接管”看到那条记录
+是活的、映像又是自己人 → 一刀把**自己的父进程**砍了 → 子进程随之一块儿死。现象：
+
+```
+[成就监测] 互斥体给了本进程，但 pid 文件里还有一个活着的监测进程 PID 27264 → 先收掉它
+[成就监测] 已收掉旧实例 PID 27264        ← boot 日志到此为止
+（成就日志 0 字节；启动器 1 秒后报“成就监测子进程已退出（exit=0）”）
+```
+
+三条修正（都必需）：
+
+1. **`hook.pid` 只能由子进程自己写**（`hook._write_own_pid` 写 `os.getpid()`）；
+   启动器**不要**再写 `Popen().pid`（那是 launcher）——`game_launcher` 里已改为只打印一行。
+2. `hook._self_and_ancestors()`：收旧实例时**自己与父进程一律豁免**
+   （`_terminate_pid` / `_other_hook_running` / 启动器的 `_kill_stale_hook_child` 都用它）。
+3. 启动器侧因 `STALE_HOOK_MIN_AGE`（30s）决定“不收”时，**绝不能删 pid 文件** ——
+   它是那个活实例的**唯一记录**；删了就轮到新子进程报“互斥体被占用，但 pid 文件里没有可用的
+   PID → 本次直接退出”（启动器白点一次）。现在那个分支只打印一行、保留文件，接管交给新子进程。
+   另外“互斥体占着但认不出持有者”时不再立即退出，而是先等它放开互斥体（≤timeout），
+   拿不到才退出。
+
+集成自检（真拉起两轮子进程，验证不会自杀 + 能接管）：
+
+```powershell
+python test\repro_hook_launch.py     # 全绿 = 子进程活着、PID 记录正确、第二次能接管
+python test\probe_launcher_shim.py   # 看看本机解释器到底是不是 launcher（Popen pid vs os.getpid）
+```
+
 子进程现在也会把自己的 PID 写进 `hook.pid`（以前只有启动器写），手工启动的实例也能被下一个收掉。
 启动器侧仍保留一道保险（下次启动先收残留子进程，但**小于 30s 的一律不杀**，免得把另一次启动
 刚拉起来的新子进程掐死）。新实例接管后会**接管上次遗留的共享内存**（旧实例被收掉，但它注入的
@@ -418,7 +566,10 @@ DLL 还挂在游戏里）—— 直接把新配置写进那块内存，DLL 接�
 
 | 现象 | 原因 / 处理 |
 |---|---|
-| 日志里出现“已有另一个监测实例在运行” | 旧版本的行为（两边并存）；现在应当看到 `[成就监测] 单实例：已接管（收掉旧实例 PID …）`。若看到“本次直接退出”，说明旧实例收不掉（看 `logs/achievement_hook_child.log` 里的终止失败原因）|
+| 日志里出现“已有另一个监测实例在运行” | 旧版本的行为（两边并存）；现在应当看到 `[成就监测] 单实例：已接管（收掉旧实例 PID …）`。若看到“本次直接退出（拿不到它的 PID）”，基本就是解释器映像比对不匹配（见第七节单实例那段：venv 的 python.exe 是 launcher）——先看 `hook._self_image_paths()` 有没有把真解释器算进去 |
+| 判定在“回合一开始”就解锁 | 先看成就日志的解锁依据写的是「动画结束」还是「回合边界」；再看着心跳里的 `动画 tick N`：若恒为 0，说明 `skv_*` 钩子没命中（跑 `update` 重建索引，或改 `battle_watch.FALLBACK_HOOKS` 里的 skv_* RVA）。若写着「动画结束」却仍然早，检查 `skv_end` 的 RVA 是不是回到了 0x9BE680（备选 0x9466D0）|
+| 所有判定还是“一起解锁”（不是逐个行动） | 看心跳里的 `带 iid N`：若为 0，说明装的还是**旧 DLL**（v5/FBW4）或 `off_skv_attacker_iid` 读不到 → 跑 `powershell -File functions\achievement\hook_dll\build.ps1` 重编（v6 起动画 tick 才带 iid），并确认日志里没有 `版本不符`|
+| 装钩时报“版本不符 / 魔数不一致” | Python 与 DLL 不是同一代：v6/FBW5 的 `BWConfig` 多了 `off_skv_attacker_iid`（total 132416）。重新编 DLL，或把 `_internal/hook_dll/battle_watch.dll` 一起更新 |
 | 心跳里所有钩子命中数都是 0 | 这些函数当前没被调用（v1 就是这个）→ 把心跳那段日志发我，或跑 `--probe` 看钩子表 |
 | 日志里没有“已注入” | 看同段日志的前几行：`跳过 PID … 映像不一致`（注错进程）/ `存活不足 1s`（Steam 引导进程）/ `CreateRemoteThread 失败`（杀软）/ `打开游戏进程失败`（权限）|
 | 改了 DLL 代码但没生效 | 看 `发现 N 份 battle_watch.dll，选用最新的一份 …`：说明注的是另一份（旧）副本；`发现 N 份` 那句后面列的就是被忽略的路径 |

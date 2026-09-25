@@ -255,10 +255,81 @@ class _LogSink:
                 self._fd = None
 
 
+def _self_image_paths() -> set[str]:
+    """本解释器的“可接受映像路径”集合（已 normcase + 绝对化）。
+
+    ⚠ **不能只比 ``sys.executable``**：venv 里的 ``python.exe`` 有可能是个
+    **py.exe launcher**（实测本机 ``venv\\Scripts\\python.exe`` 的 InternalName 就是
+    “Python Launcher”、大小 255200），它会把真解释器当**子进程**拉起来 —— 于是子进程里
+    ``sys.executable`` 指向 launcher，而**进程映像**是 base python.exe，两边永远不相等：
+
+    - ``_other_hook_running`` 认不出旧实例 → 新实例报“拿不到 PID”直接退出；
+    - ``_terminate_pid`` 收不掉旧实例 → 两个实例可能并存（抢共享内存 / 覆盖 buff 关注表）。
+
+    所以把 “executable / _base_executable / 本进程真实映像(GetModuleFileNameW)” 全部
+    当成自己人。
+    """
+    import sys as _sys
+    cand = {getattr(_sys, "executable", "") or "",
+            getattr(_sys, "_base_executable", "") or ""}
+    try:
+        import ctypes
+        from ctypes import wintypes
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel32.GetModuleFileNameW.argtypes = [ctypes.c_void_p, ctypes.c_wchar_p,
+                                                wintypes.DWORD]
+        kernel32.GetModuleFileNameW.restype = wintypes.DWORD
+        buf = ctypes.create_unicode_buffer(1024)
+        if kernel32.GetModuleFileNameW(None, buf, wintypes.DWORD(len(buf))):
+            cand.add(buf.value)                      # 本进程真正跑的那个 python.exe
+    except Exception:  # noqa: BLE001
+        pass
+    out: set[str] = set()
+    for path in cand:
+        if path:
+            try:
+                out.add(os.path.normcase(os.path.abspath(path)))
+            except OSError:
+                continue
+    return out
+
+
+def _self_and_ancestors() -> set[int]:
+    """本进程 + 它的**父进程**（py.exe launcher 那一层）。
+
+    ⚠ 绝不能拿这个集合里的 PID 去“收旧实例”：venv 的 ``python.exe`` 是 py.exe
+    launcher，真解释器是它拉起的子进程 —— 也就是说**子进程的父进程就是一个名字跟
+    自己一模一样的解释器**。如果 pid 文件里存的是 launcher 的 PID（启动器以前就是
+    这么写的：``open(pid_file).write(str(proc.pid))``），新实例的“接管”就会把
+    **自己的父进程**杀掉 → 子进程随即一起死（实测：boot 日志停在
+    “已收掉旧实例 PID …”，成就日志 0 字节，启动器报“子进程已退出（exit=0）”）。
+    """
+    pids = {os.getpid()}
+    try:
+        ppid = os.getppid()
+    except OSError:
+        ppid = 0
+    if ppid > 0:
+        pids.add(ppid)
+    return pids
+
+
+def _is_self_image(image: str) -> bool:
+    """远端进程映像是不是“我们自己这类解释器”（见 ``_self_image_paths``）。"""
+    if not image:
+        return False
+    try:
+        image = os.path.normcase(os.path.abspath(image))
+    except OSError:
+        return False
+    return image in _self_image_paths()
+
+
 def _other_hook_running(pid_file: str = "") -> int:
     """返回另一个还活着的成就监测子进程 PID（没有则 0）。
 
     只认“记录的 PID 存在且进程映像 == 本解释器”—— 避免误导（PID 会复用）。
+    映像比对走 ``_is_self_image``（兼容 venv 的 launcher 子进程，见那里说明）。
     """
     import ctypes
     try:
@@ -283,8 +354,9 @@ def _other_hook_running(pid_file: str = "") -> int:
             kernel32.CloseHandle(handle)
     except Exception:
         return 0
-    import sys as _sys
-    if os.path.normcase(image) != os.path.normcase(_sys.executable):
+    if pid in _self_and_ancestors():
+        return 0
+    if not _is_self_image(image):
         return 0
     return pid
 
@@ -322,7 +394,10 @@ def _terminate_pid(pid: int, on_log=None) -> bool:
     import ctypes
     from ctypes import wintypes
     log = on_log or (lambda _m: None)
-    if pid <= 0 or pid == os.getpid():
+    guard = _self_and_ancestors()
+    if pid <= 0 or pid in guard:
+        if pid in guard and pid != os.getpid():
+            log(f"[成就监测] PID {pid} 是本进程的父进程（解释器 launcher）→ 绝不动它")
         return False
     PROCESS_TERMINATE = 0x0001
     PROCESS_QUERY_LIMITED = 0x1000
@@ -340,7 +415,7 @@ def _terminate_pid(pid: int, on_log=None) -> bool:
         size = wintypes.DWORD(len(buf))
         if kernel32.QueryFullProcessImageNameW(handle, 0, buf, ctypes.byref(size)):
             image = buf.value
-            if os.path.normcase(image) != os.path.normcase(sys.executable):
+            if not _is_self_image(image):
                 log(f"[成就监测] PID {pid} 的映像是 {image}，不是我们拉起的监测进程 → 不动它")
                 return False
         ok = bool(kernel32.TerminateProcess(handle, 0))
@@ -375,13 +450,33 @@ def _acquire_single_instance(pid_file: str = "", on_log=None,
         return rc in (WAIT_OBJECT_0, WAIT_ABANDONED)
 
     if _try_take(0):
+        # 互斥体虽然给了我们，pid 文件里却还活着另一个监测进程 —— 那说明互斥体没拦住它
+        # （实测出现过两个实例都自称“唯一实例”，后开的把 buff 关注表覆盖成 0）。
+        # 这里再兜一道：按“新的接管”策略收掉它，然后才认领。
+        stale = _other_hook_running(pid_file)
+        if stale:
+            log(f"[成就监测] 互斥体给了本进程，但 pid 文件里还有一个活着的监测进程 "
+                f"PID {stale} → 先收掉它（新实例接管）")
+            _terminate_pid(stale, log)
+            deadline = time.time() + 3.0
+            while time.time() < deadline and _other_hook_running(pid_file):
+                time.sleep(0.1)
         _write_own_pid(pid_file)
-        return True, "本进程是唯一实例"
+        return True, (f"本进程是唯一实例（已收掉旧实例 PID {stale}）" if stale
+                      else "本进程是唯一实例")
 
     other = _other_hook_running(pid_file)
     if not other:
-        log("[成就监测] 互斥体被占用，但 pid 文件里没有可用的 PID（手工启动/上次没记录）"
-            "→ 本次直接退出，避免两个实例并存")
+        # 认不出持有者（手工启动 / 记录坏了 / 它刚好要退出）——先给它一点时间放开
+        # 互斥体，能拿到就接管；拿不到才退出（绝不让两个实例并存）。
+        log("[成就监测] 互斥体被占用，但 pid 文件里没有可用的 PID"
+            "（手工启动 / 记录坏了）→ 等它放开互斥体…")
+        deadline = time.time() + max(1.0, timeout)
+        while time.time() < deadline:
+            if _try_take(1.0):
+                _write_own_pid(pid_file)
+                return True, "本进程是唯一实例（上一个实例刚好退出）"
+        log("[成就监测] 等不到互斥体（认不出持有者）→ 本次直接退出，避免两个实例并存")
         return False, "已有实例且拿不到它的 PID"
     log(f"[成就监测] 检测到已有监测实例在跑（PID {other}）→ 按“新的接管”策略收掉它")
     if not _terminate_pid(other, log):

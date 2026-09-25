@@ -101,6 +101,36 @@ def apply_changes_to_data(original_data, changes):
 STALE_HOOK_MIN_AGE = 30.0
 
 
+def _is_own_interpreter_image(image: str) -> bool:
+    """远端进程映像是不是“我们自己这类解释器”。
+
+    优先用成就侧的实现（``functions.achievement.hook._is_self_image``，它会额外把
+    ``sys._base_executable`` 与 ``GetModuleFileNameW(NULL)`` 算进来），
+    拿不到就退回本文件里的一份最小实现（venv 的 python.exe 可能是 py.exe launcher，
+    真解释器是它拉起的子进程，光比 ``sys.executable`` 会永远不相等）。
+    """
+    try:
+        from functions.achievement.hook import _is_self_image
+        return bool(_is_self_image(image))
+    except Exception:  # noqa: BLE001
+        pass
+    if not image:
+        return False
+    cand = {sys.executable, getattr(sys, "_base_executable", "") or ""}
+    try:
+        from ctypes import wintypes
+        k = ctypes.WinDLL("kernel32", use_last_error=True)
+        k.GetModuleFileNameW.argtypes = [ctypes.c_void_p, ctypes.c_wchar_p,
+                                         wintypes.DWORD]
+        buf = ctypes.create_unicode_buffer(1024)
+        if k.GetModuleFileNameW(None, buf, wintypes.DWORD(len(buf))):
+            cand.add(buf.value)
+    except Exception:  # noqa: BLE001
+        pass
+    want = {os.path.normcase(os.path.abspath(p)) for p in cand if p}
+    return os.path.normcase(os.path.abspath(image)) in want
+
+
 def _process_age_seconds(kernel32, handle) -> float | None:
     """进程已存活秒数（拿不到返回 None）。"""
     try:
@@ -588,11 +618,16 @@ class GameLauncher:
                         child_log.close()
                     except OSError:
                         pass
-            try:
-                with open(pid_file, "w", encoding="utf-8") as fh:
-                    fh.write(str(proc.pid))
-            except OSError:
-                pass
+            # ⚠ 这里**不要**写 hook.pid！``proc.pid`` 是 **launcher（py.exe）的 PID**，
+            # 不是跑 main.py 的那个进程 —— 本机 venv 的 ``python.exe`` 其实是
+            # py.exe launcher（InternalName = Python Launcher），真解释器是它拉起的**子进程**。
+            # 以前就把 ``proc.pid`` 写了进去，后果是：子进程启动时拿 hook.pid 里的 PID
+            # 去“收掉上一个实例”，而里面存的正是**它自己的父进程** → 连根拔掉自己
+            # （现场：成就日志 0 字节，boot 日志停在“已收掉旧实例 PID …”，
+            #  启动器 1 秒后报“子进程已退出（exit=0）”）。
+            # hook.pid 一律由**子进程自己**写（``hook._write_own_pid`` 写的是 os.getpid()）。
+            print(f"[成就] 成就监测子进程已拉起（launcher pid={proc.pid}；"
+                  f"子进程会把自己的 PID 写进 {os.path.basename(pid_file)}）")
             self._watch_hook_child(proc, hook_log_path, child_log_path)
         except Exception as e:
             print(f"[成就] 启动成就监测失败 (不影响游戏启动): {e}")
@@ -634,9 +669,12 @@ class GameLauncher:
     def _kill_stale_hook_child(pid_file: str) -> None:
         """把上次记下的成就监测子进程收掉（只认我们自己拉起的那个解释器）。
 
-        只凭 PID 杀进程很危险（PID 会被复用），所以额外校验进程映像路径 ==
-        ``sys.executable`` —— 它就是我们用同一个解释器拉起的脚本子进程；
-        校验不过一律不动。
+        只凭 PID 杀进程很危险（PID 会被复用），所以额外校验进程映像路径是不是
+        我们自己这类解释器（``hook._is_self_image``）；校验不过一律不动。
+
+        ⚠ 不能直接比 ``sys.executable``：venv 里的 ``python.exe`` 有可能是 py.exe
+        launcher，真解释器是它拉起的子进程（映像路径不一样）—— 实测这么比会永远
+        不相等，于是“上次的残留子进程”根本收不掉。
         """
         import ctypes
         from ctypes import wintypes
@@ -645,16 +683,15 @@ class GameLauncher:
                 pid = int(fh.read().strip() or 0)
         except (OSError, ValueError):
             return
-        try:
-            os.remove(pid_file)
-        except OSError:
-            pass
-        if pid <= 0 or pid == os.getpid():
+        # 自己的父进程绝不动（见 hook._self_and_ancestors：venv 的解释器是
+        # launcher+子进程两层，父进程名字跟自己一模一样）
+        if pid <= 0 or pid == os.getpid() or pid == os.getppid():
             return
         kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
         handle = kernel32.OpenProcess(0x1000, False, pid)   # QUERY_LIMITED_INFORMATION
         if not handle:
-            return                                          # 已经没了
+            GameLauncher._forget_pid_file(pid_file)         # 已经没了 → 清掉记录
+            return
         try:
             buf = ctypes.create_unicode_buffer(1024)
             size = wintypes.DWORD(len(buf))
@@ -662,20 +699,34 @@ class GameLauncher:
                                                        ctypes.byref(size)):
                 return
             image = buf.value
+            # ⚠ 存活时长必须在**句柄还开着**的时候读：关掉之后再 GetProcessTimes
+            # 必然失败 → 下面那道 STALE_HOOK_MIN_AGE 保护就会静默失效。
+            age = _process_age_seconds(kernel32, handle)
         finally:
             kernel32.CloseHandle(handle)
-        if os.path.normcase(image) != os.path.normcase(sys.executable):
+        if not _is_own_interpreter_image(image):
             return                                          # PID 被复用成别的程序了
         # 但“刚起来”的子进程不能收：重复点启动 / 同时开着两个启动器实例时，
         # hook.pid 已经指向**最新**那个子进程了，收掉它 = 子进程刚起就被杀，
         # 现场正是“成就日志只有 3 字节（BOM）、没有任何内容”。
-        age = _process_age_seconds(kernel32, handle)
         if age is not None and age < STALE_HOOK_MIN_AGE:
             print(f"[成就] 上一个成就监测子进程（PID {pid}）只启动了 {age:.0f}s，"
                   f"疑似重复启动留下的 → 本次不收它（避免掐死新子进程）")
+            # ⚠ **绝不能删 pid 文件**：它是那个活实例的**唯一记录**。删了之后新子进程
+            # 在 `_acquire_single_instance` 里就认不出旧实例（互斥体占着、PID 又没了）
+            # → 只能“已有实例且拿不到它的 PID → 本次直接退出”，白点一次启动器。
             return
         try:
             os.kill(pid, 9)                                 # 我们自己拉起的，收掉
             time.sleep(0.4)
+        except OSError:
+            pass
+        GameLauncher._forget_pid_file(pid_file)
+
+    @staticmethod
+    def _forget_pid_file(pid_file: str) -> None:
+        """清掉 pid 记录（只在“确实已经不在了 / 确实收掉了”时调）。"""
+        try:
+            os.remove(pid_file)
         except OSError:
             pass

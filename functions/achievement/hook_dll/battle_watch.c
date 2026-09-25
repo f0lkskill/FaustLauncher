@@ -44,6 +44,11 @@
  * （连 buff 链都不读），所以不加成就时零开销。
  * 因为多了 4 个偏移 + 末尾多了关注表 → 魔数改为 FBW4，ring 偏移 1076 / 总大小 132408。
  *
+ * v6 / FBW5（2026-09-25）：多一个 off_skv_attacker_iid（表现层动画 tick 的身份）
+ * → 多 4 字节，后面的字段与 ring 一起后移、总大小 132416。驱动按“动画 tick 带 iid”
+ * 把判定对齐到具体行动（不再是一股脑延后），所以这是必需的一格；
+ * 与旧 DLL 混用会被魔数拦住（报版本不符，不会静默错位）。
+ *
  * ⚠️ 只读：所有读取都经 ReadProcessMemory(GetCurrentProcess()) 带边界校验，
  * 不写游戏内存、不调用游戏函数。
  */
@@ -55,7 +60,8 @@
 #include <stddef.h>
 #include "MinHook.h"
 
-#define BW_MAGIC        0x34574246u          /* "FBW4"（v1=FBW1…v3=FBW3，v4=FBW3+HP/理智，v5 加 buff 偏移与关注表）*/
+#define BW_MAGIC        0x35574246u          /* "FBW5"（v1=FBW1…v3=FBW3，v4=FBW3+HP/理智，v5 加 buff 偏移与关注表，
+                                              * v6 加占位层动画 tick 的 off_skv_attacker_iid）*/
 #define BW_MAP_NAME     L"Local\\FaustLauncher_BattleWatch"
 #define BW_POLL_MS      300
 #define BW_GA_TIMEOUT_MS 60000
@@ -83,6 +89,13 @@
 #define BWK_UNIT_GET_INT   3   /* int  (self, mi)                                  → SPD（按 iid+值去重）*/
 #define BWK_ACTION_INT     4   /* void (self, int timing, mi)                      → ACT */
 #define BWK_DAMAGE_ACTION  5   /* float(self, action, coin, attacker, bool, mi)     → ACT（attacker 身份 + action 技能）*/
+#define BWK_SKV            6   /* void (self, mi)：表现层技能动画 → RND + iid（self->_attackerInstanceID）
+                                *
+                                * 为什么要带 iid：这游戏先算完整回合再播动画，结算阶段的事件全挤在
+                                * 一瞬间 —— 光看“第几次动画结束”无法把判定对齐到“哪个行动”。
+                                * 动画层 self 上的 _attackerInstanceID 就是“这手是谁在打”，
+                                * Python 据此把挂起的判定按行动放行。读不到/越界就发 iid=-1，
+                                * Python 退回“一次 tick 放一条”的老行为。 */
 
 /* 错误码 */
 #define BW_ERR_OK         0
@@ -131,6 +144,8 @@ typedef struct _BW_CONFIG {
     volatile LONG off_skill_data;
     volatile LONG off_skill_id;
     volatile LONG off_skill_tier;
+    /* 表现层 BattleSkillViewBase::_attackerInstanceID（动画 tick 的身份，见 BWK_SKV）*/
+    volatile LONG off_skv_attacker_iid;
 
     /* 状态回写 */
     volatile LONG gameassembly_found;
@@ -151,12 +166,12 @@ typedef struct _BW_CONFIG {
     volatile unsigned long long buff_watch_hashes[BW_BUFF_WATCH_MAX];
 } BW_CONFIG;
 
-/* 布局自检：ring 偏移 1076，总大小 1076 + 512*256 + 4(+4对齐) + 32*8 = 132408。
+/* 布局自检：v6/FBW5 → ring 偏移 1080，总大小 1080 + 512*256 + 4(+4对齐) + 32*8 = 132416。
  * Python 侧的 ctypes 结构体用同一份字段定义；注入后会比对 DLL 回写的
  * ring_offset/struct_size，不一致就报错，所以这里只卡对齐与总大小。*/
 _Static_assert(offsetof(BW_CONFIG, log_ring) % 4 == 0, "log_ring 偏移未对齐");
 _Static_assert(offsetof(BW_CONFIG, buff_watch_hashes) % 8 == 0, "关注表未对齐");
-_Static_assert(sizeof(BW_CONFIG) == 132408, "BW_CONFIG 大小不一致（改了字段就同步改 Python）");
+_Static_assert(sizeof(BW_CONFIG) == 132416, "BW_CONFIG 大小不一致（改了字段就同步改 Python）");
 
 static BW_CONFIG *g_cfg = NULL;
 static HANDLE      g_stop_event = NULL;
@@ -327,10 +342,12 @@ typedef struct {
     int oid;
     int buff_count;              /* 上次看到的 buff 总数（列表大小；-1 = 链读不到）*/
     unsigned int buff_mask;
+    DWORD diag_tick;             /* BUFDIAG 节流用 */
     BOOL used;
 } BW_VITAL_ENTRY;
 
 static BW_VITAL_ENTRY g_vital[BW_VITAL_SLOTS];
+static BOOL g_cfg_logged = FALSE;   /* 配置回读只打一次 */
 
 static void read_unit_vitals(void *unit, int *hp, int *mhp, int *mp)
 {
@@ -400,7 +417,8 @@ static int read_il2cpp_string(uint64_t str_ptr, char *buf, int max_len)
  * 有了它才能区分"身上没有我们关注的 buff"（`m=0 n=3`）和"整条链读不到"
  * （`m=0 n=-1`），排查时不用再猜。可以为 NULL。
  */
-static unsigned int read_unit_buff_mask(void *unit, int *out_count)
+static unsigned int read_unit_buff_mask(void *unit, int *out_count,
+                                           char *ids_out, int ids_len)
 {
     uint64_t detail = 0, list = 0, items = 0, model = 0, data = 0, sid = 0;
     int32_t count = 0;
@@ -410,6 +428,8 @@ static unsigned int read_unit_buff_mask(void *unit, int *out_count)
 
     if (out_count)
         *out_count = -1;
+    if (ids_out && ids_len > 0)
+        ids_out[0] = '\0';
     if (!unit || !g_cfg)
         return 0;
     if (g_cfg->buff_watch_count <= 0)
@@ -442,6 +462,12 @@ static unsigned int read_unit_buff_mask(void *unit, int *out_count)
         if (read_il2cpp_string(sid, name, (int)sizeof(name)) <= 0)
             continue;
         h = fnv1a64(name, (int)strlen(name));
+        /* 诊断用：把前几个 buff 名带出去，方便和关注表对照（读不到就说明链/字段不对）*/
+        if (ids_out && ids_len > 0 && strlen(ids_out) < (size_t)(ids_len - 48)) {
+            if (ids_out[0])
+                strncat(ids_out, "|", (size_t)ids_len - strlen(ids_out) - 1);
+            strncat(ids_out, name, (size_t)ids_len - strlen(ids_out) - 1);
+        }
         for (j = 0; j < g_cfg->buff_watch_count && j < BW_BUFF_WATCH_MAX; j++) {
             if (g_cfg->buff_watch_hashes[j] == h) {
                 mask |= (1u << j);
@@ -452,6 +478,37 @@ static unsigned int read_unit_buff_mask(void *unit, int *out_count)
     return mask;
 }
 
+/* buff 链诊断（每个单位最多 20s 打一行）：链读不到 / 读到但一个都没命中关注表时，
+ * 把 n、掩码和前几个 buff 名打出来 —— 这是"buff 检测一个都不生效"唯一能定案的办法。*/
+static void maybe_emit_bufdiag(void *unit, int iid, int oid, int count, unsigned int mask,
+                               const char *ids)
+{
+    uintptr_t key = (uintptr_t)unit;
+    int slot = (int)((key >> 4) % BW_VITAL_SLOTS);
+    int i;
+    DWORD now = GetTickCount();
+    char line[320];
+    int n;
+
+    if (count > 0 && mask != 0)
+        return;                                   /* 正常命中 → 不用诊断 */
+    for (i = 0; i < 4; i++) {
+        int idx = (slot + i) % BW_VITAL_SLOTS;
+        if (g_vital[idx].used && g_vital[idx].unit == key) {
+            if (g_vital[idx].diag_tick && now - g_vital[idx].diag_tick < 20000)
+                return;
+            g_vital[idx].diag_tick = now;
+            break;
+        }
+    }
+    n = _snprintf(line, sizeof(line) - 1, "BUFDIAG iid=%d oid=%d n=%d m=%u ids=%s",
+                  iid, oid, count, mask, ids && ids[0] ? ids : "(none)");
+    if (n < 0) n = 0;
+    if (n > (int)sizeof(line) - 1) n = (int)sizeof(line) - 1;
+    line[n] = '\0';
+    emit(line, TRUE);
+}
+
 static void emit_unit_buffs(void *unit, const char *tag)
 {
     int iid = -1, oid = -1, count = -1;
@@ -459,12 +516,14 @@ static void emit_unit_buffs(void *unit, const char *tag)
     uintptr_t key;
     int slot, i, n;
     char line[200];
+    char ids[160];
 
     if (!unit || !g_cfg || g_cfg->buff_watch_count <= 0)
         return;
-    mask = read_unit_buff_mask(unit, &count);
+    mask = read_unit_buff_mask(unit, &count, ids, (int)sizeof(ids));
     read_i32(unit, g_cfg->off_unit_instance_id, &iid);
     read_i32(unit, g_cfg->off_unit_origin_id, &oid);
+    maybe_emit_bufdiag(unit, iid, oid, count, mask, ids);
 
     key = (uintptr_t)unit;
     slot = (int)((key >> 4) % BW_VITAL_SLOTS);
@@ -736,9 +795,34 @@ typedef void (__fastcall *detour_fn)(void);
         }                                                                        \
     }
 
+/* 表现层动画 tick：签名跟 plain 一样（void(self, mi)），额外读 self 上的
+ * _attackerInstanceID，让事件带上“这手是谁在打”。读不到 / 值离谱就发 -1。*/
+#define DEF_SKV_THUNK(N)                                                         \
+    static void __fastcall hk_skv_##N(void *self, const void *method)            \
+    {                                                                            \
+        char line[96];                                                           \
+        int iid = -1;                                                            \
+        bump_hit(N);                                                             \
+        ((fn_plain)g_original[N])(self, method);                                 \
+        if (g_cfg && g_cfg->observing) {                                         \
+            if (self && g_cfg->off_skv_attacker_iid > 0)                         \
+                read_i32(self, g_cfg->off_skv_attacker_iid, &iid);               \
+            if (iid < 0 || iid > 255)                                            \
+                iid = -1;              /* 偏移不对 / 读失败 → 不下发髒值 */     \
+            _snprintf(line, sizeof(line) - 1, "RND tag=%s iid=%d",               \
+                      (const char *)g_cfg->hook_name[N], iid);                   \
+            line[sizeof(line) - 1] = '\0';                                        \
+            emit(line, TRUE);                                                    \
+        }                                                                        \
+    }
+
 DEF_PLAIN_THUNK(0)  DEF_PLAIN_THUNK(1)  DEF_PLAIN_THUNK(2)  DEF_PLAIN_THUNK(3)
 DEF_PLAIN_THUNK(4)  DEF_PLAIN_THUNK(5)  DEF_PLAIN_THUNK(6)  DEF_PLAIN_THUNK(7)
 DEF_PLAIN_THUNK(8)  DEF_PLAIN_THUNK(9)  DEF_PLAIN_THUNK(10) DEF_PLAIN_THUNK(11)
+
+DEF_SKV_THUNK(0)    DEF_SKV_THUNK(1)    DEF_SKV_THUNK(2)    DEF_SKV_THUNK(3)
+DEF_SKV_THUNK(4)    DEF_SKV_THUNK(5)    DEF_SKV_THUNK(6)    DEF_SKV_THUNK(7)
+DEF_SKV_THUNK(8)    DEF_SKV_THUNK(9)    DEF_SKV_THUNK(10)   DEF_SKV_THUNK(11)
 
 DEF_UNIT_THUNK(0)    DEF_UNIT_THUNK(1)    DEF_UNIT_THUNK(2)    DEF_UNIT_THUNK(3)
 DEF_UNIT_THUNK(4)    DEF_UNIT_THUNK(5)    DEF_UNIT_THUNK(6)    DEF_UNIT_THUNK(7)
@@ -812,6 +896,15 @@ static detour_fn pick_detour(int index, LONG kind)
         case 6: return (detour_fn)hk_plain_6;  case 7: return (detour_fn)hk_plain_7;
         case 8: return (detour_fn)hk_plain_8;  case 9: return (detour_fn)hk_plain_9;
         case 10: return (detour_fn)hk_plain_10; default: return (detour_fn)hk_plain_11;
+        }
+    case BWK_SKV:
+        switch (index) {
+        case 0: return (detour_fn)hk_skv_0;    case 1: return (detour_fn)hk_skv_1;
+        case 2: return (detour_fn)hk_skv_2;    case 3: return (detour_fn)hk_skv_3;
+        case 4: return (detour_fn)hk_skv_4;    case 5: return (detour_fn)hk_skv_5;
+        case 6: return (detour_fn)hk_skv_6;    case 7: return (detour_fn)hk_skv_7;
+        case 8: return (detour_fn)hk_skv_8;    case 9: return (detour_fn)hk_skv_9;
+        case 10: return (detour_fn)hk_skv_10;  default: return (detour_fn)hk_skv_11;
         }
     default:
         return (detour_fn)hk_plain_0;
@@ -957,6 +1050,21 @@ static void install_hooks(void)
     }
 
     g_hooked = TRUE;
+    /* 一次性回读：确认 DLL 这侧看到的关注 buff 表（Python 侧同时也回读一遍，两头对得上
+     * 才能排除"Python 写了、DLL 没看到"这种错位）。*/
+    {
+        char info[160];
+        int ni = _snprintf(info, sizeof(info) - 1,
+                           "INFO installed buffwatch=%d hash0=%016llx hash1=%016llx",
+                           (int)g_cfg->buff_watch_count,
+                           (unsigned long long)g_cfg->buff_watch_hashes[0],
+                           (unsigned long long)g_cfg->buff_watch_hashes[1]);
+        if (ni > 0) {
+            if (ni > (int)sizeof(info) - 1) ni = (int)sizeof(info) - 1;
+            info[ni] = '\0';
+            emit(info, TRUE);
+        }
+    }
     g_cfg->installed = TRUE;
     g_cfg->last_error = BW_ERR_OK;
     _snprintf(line, sizeof(line) - 1, "INFO hooks installed (%d)", wanted);
@@ -1001,6 +1109,22 @@ static void ensure_config(void)
             g_cfg = NULL;
         } else {
             publish_layout();
+            if (!g_cfg_logged) {
+                char info[192];
+                int ni;
+                g_cfg_logged = TRUE;
+                ni = _snprintf(info, sizeof(info) - 1,
+                               "INFO cfg view=0x%llx buffwatch=%d hash0=%016llx hash1=%016llx",
+                               (unsigned long long)(uintptr_t)g_cfg,
+                               (int)g_cfg->buff_watch_count,
+                               (unsigned long long)g_cfg->buff_watch_hashes[0],
+                               (unsigned long long)g_cfg->buff_watch_hashes[1]);
+                if (ni > 0) {
+                    if (ni > (int)sizeof(info) - 1) ni = (int)sizeof(info) - 1;
+                    info[ni] = '\0';
+                    emit(info, TRUE);
+                }
+            }
         }
     }
     CloseHandle(map);

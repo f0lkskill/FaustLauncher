@@ -3,6 +3,8 @@ import re
 import json
 import requests
 import time
+import threading
+from urllib.parse import urljoin, urlparse, unquote
 
 class RateLimiter:
     def __init__(self, rate_limit):
@@ -49,6 +51,285 @@ ALLOW_UP_TYPES = [
     'xapk', 'conf', 'deb', 'rp', 'rpm', 'rplib', 'mobileconfig', 'appimage', 'lolgezi',
     'fla', 'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'ico', 'svg', 'psd'
 ]
+
+# ============================================================
+# 蓝奏云直链解析 (分享页 -> 可下载直链)
+# ============================================================
+# 云端数据库里的下载链接历史上写成第三方解析服务的地址:
+#     https://lz.qaiu.top/parser?url=<分享链接>[&pwd=<密码>]
+# 这里在本地把同一件事做掉, 不再依赖第三方解析服务:
+#     1. 取分享页 —— 先过阿里云 WAF 的 acw_sc__v2 JS 挑战;
+#     2. 从页面里读出 ajaxfile.php/ajaxm.php 接口、sign 与 kd;
+#     3. POST downprocess 拿到 dom + url, 拼成 /file/<url> 直链;
+#     4. 再请求该地址 (同样过 WAF), 拿到 302 后的真实文件直链 (时效性 URL)。
+# 所有解析失败都只是退回原链接, 不影响已有下载流程。
+
+def IsLanzouUrl(url):
+    """判断是否蓝奏云分享链接, 或指向蓝奏云的解析服务链接"""
+    if not url:
+        return False
+    inner, _ = ParseShareUrl(url)
+    try:
+        return bool(_lanzou_host_re.search(urlparse(inner).hostname or ""))
+    except ValueError:
+        return False
+
+
+def ParseShareUrl(url, pwd=None):
+    """把解析服务链接 (?url=<分享链接>&pwd=<密码>) 拆回 (分享链接, 密码)
+
+    普通分享链接原样返回。
+    """
+    if not url:
+        return url, pwd
+    match = re.search(r"[?&](?:url|u)=([^&]+)", url)
+    if not match:
+        return url, pwd
+    inner = unquote(match.group(1))
+    if pwd:
+        return inner, pwd
+    pwd_match = re.search(r"[?&](?:pwd|p|password)=([^&]+)", url)
+    return inner, (unquote(pwd_match.group(1)) if pwd_match else pwd)
+
+
+def GetDirectLink(url, pwd=None, session=None, timeout=(10, 30)):
+    """把蓝奏云分享链接 (或指向它的解析服务链接) 解析成可下载直链
+
+    :param url: 分享链接, 或 https://lz.qaiu.top/parser?url=<分享链接>&pwd=<密码>
+    :param pwd: 分享密码 (可选; 解析服务链接里的 pwd 会自动取用)
+    :param session: 可复用的 requests.Session (不传则用线程内默认会话)
+    :return: 直链 (时效性 URL, 建议拿到后立刻下载); 解析失败返回 None
+    """
+    if not url or not IsLanzouUrl(url):
+        return None
+    share_url, pwd = ParseShareUrl(url, pwd)
+    origin = "{0.scheme}://{0.netloc}".format(urlparse(share_url))
+    sess = session or _http_session()
+
+    resp = _RequestWithWaf(sess, share_url, timeout=timeout)
+    if resp.status_code != 200 or "html" not in (resp.headers.get("Content-Type") or "").lower():
+        print("GetDirectLink 失败：分享页不可用(%s)" % resp.status_code)
+        return None
+    info = _ParseSharePage(resp.text, origin)
+    if not info:
+        print("GetDirectLink 失败：分享页结构未匹配(可能是文件夹/新页面格式)")
+        return None
+
+    data = {"action": "downprocess", "sign": info["sign"], "kd": info["kd"]}
+    if pwd:
+        data["p"] = pwd
+    payload = _PostDownProcess(sess, info["api"], data, share_url, timeout)
+    if not isinstance(payload, dict) or str(payload.get("zt")) != "1":
+        # 部分链接不接受 p 字段, 或密码写错; 再试一次不带 p
+        if "p" in data:
+            payload = _PostDownProcess(sess, info["api"],
+                                       {k: v for k, v in data.items() if k != "p"},
+                                       share_url, timeout)
+    if not isinstance(payload, dict) or str(payload.get("zt")) != "1":
+        print("GetDirectLink 失败：%s" % (payload.get("inf") if isinstance(payload, dict) else payload))
+        return None
+
+    dom = str(payload.get("dom") or "").rstrip("/")
+    path = str(payload.get("url") or "")
+    if not dom or not path:
+        print("GetDirectLink 失败：未取到 dom/url")
+        return None
+    file_url = dom + "/file/" + path.lstrip("/")
+    return _FollowToFile(sess, file_url, share_url, timeout)
+
+
+def ResolveDownloadUrl(url, pwd=None, session=None, log=None):
+    """下载前预处理: 蓝奏云链接解析成直链, 其他链接原样返回
+
+    解析失败时返回原链接 (历史数据里的解析服务链接仍然可用), 永不抛异常。
+    注意返回的是时效性直链, 拿到后应立刻下载。
+    """
+    if not url:
+        return url
+    try:
+        if not IsLanzouUrl(url):
+            return url
+        if log:
+            log("正在解析蓝奏云直链...")
+        direct = GetDirectLink(url, pwd=pwd, session=session)
+        if direct:
+            if log:
+                log("蓝奏云直链解析成功")
+            return direct
+        if log:
+            log("蓝奏云直链解析失败, 回退原始链接")
+    except Exception as e:
+        print("ResolveDownloadUrl 异常：%s" % e)
+    return url
+
+
+# --- 内部实现 --------------------------------------------------
+
+# 阿里云 WAF acw_sc__v2 JS 挑战的固定置换表与异或密钥
+_ACW_PERM = [0xf, 0x23, 0x1d, 0x18, 0x21, 0x10, 0x1, 0x26, 0xa, 0x9, 0x13, 0x1f, 0x28,
+             0x1b, 0x16, 0x17, 0x19, 0xd, 0x6, 0xb, 0x27, 0x12, 0x14, 0x8, 0xe, 0x15,
+             0x20, 0x1a, 0x2, 0x1e, 0x7, 0x4, 0x11, 0x5, 0x3, 0x1c, 0x22, 0x25, 0xc, 0x24]
+_ACW_KEY = "3000176000856006061501533003690027800375"
+_ACW_COOKIE_TTL = 1800
+
+_DESKTOP_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+               "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36")
+
+# 蓝奏云域名族 (lanzou/lanzoui/lanzoum/lanzout/lanzoub/lanzouw/lanzoux...)
+_lanzou_host_re = re.compile(r"(^|\.)lanzou[\w-]*\.[a-z]{2,}$", re.I)
+
+_thread_local = threading.local()
+_acw_cache = {}
+_acw_lock = threading.Lock()
+
+
+def _http_session():
+    """线程内复用的 requests.Session (保留 WAF cookie, 少过一次挑战)"""
+    sess = getattr(_thread_local, "session", None)
+    if sess is None:
+        sess = requests.Session()
+        sess.headers.update({"User-Agent": _DESKTOP_UA, "Accept-Language": "zh-CN,zh;q=0.9"})
+        _thread_local.session = sess
+    return sess
+
+
+def _AcwScV2(arg1):
+    """由页面里的 arg1 算出 acw_sc__v2 cookie (置换 + 异或)"""
+    ordered = [""] * len(_ACW_PERM)
+    for index, ch in enumerate(arg1):
+        for pos, value in enumerate(_ACW_PERM):
+            if value == index + 1:
+                ordered[pos] = ch
+    shuffled = "".join(ordered)
+    if len(shuffled) < len(_ACW_KEY):
+        return None
+    return "".join(format(int(shuffled[i:i + 2], 16) ^ int(_ACW_KEY[i:i + 2], 16), "02x")
+                   for i in range(0, len(_ACW_KEY), 2))
+
+
+def _RememberAcw(host, value):
+    with _acw_lock:
+        _acw_cache[host] = (value, time.time() + _ACW_COOKIE_TTL)
+
+
+def _RecallAcw(host):
+    with _acw_lock:
+        item = _acw_cache.get(host)
+    return item[0] if item and item[1] > time.time() else None
+
+
+def _RequestWithWaf(session, url, **kwargs):
+    """GET, 命中阿里云 WAF 的 acw_sc__v2 挑战时自动求解并重试"""
+    host = urlparse(url).hostname or ""
+    cached = _RecallAcw(host)
+    if cached and not session.cookies.get("acw_sc__v2", domain=host):
+        session.cookies.set("acw_sc__v2", cached, domain=host, path="/")
+    resp = session.get(url, **kwargs)
+    for _ in range(3):
+        arg1 = _ChallengeArg1(resp)
+        if not arg1:
+            break
+        value = _AcwScV2(arg1)
+        if not value:
+            break
+        _RememberAcw(host, value)
+        session.cookies.set("acw_sc__v2", value, domain=host, path="/")
+        resp = session.get(url, **kwargs)
+    return resp
+
+
+def _ChallengeArg1(resp):
+    """响应是 WAF 挑战页时返回其中的 arg1, 否则 None"""
+    if "html" not in (resp.headers.get("Content-Type") or "").lower():
+        return None
+    try:
+        text = resp.text
+    except Exception:
+        return None
+    if "acw_sc__v2" not in text:
+        return None
+    match = re.search(r"var\s+arg1\s*=\s*'([0-9A-Fa-f]{8,})'", text)
+    return match.group(1) if match else None
+
+
+def _ParseSharePage(html, origin):
+    """从分享页提取 {接口地址, sign, kd}"""
+    match = (re.search(r"url\s*:\s*['\"]([^'\"]*(?:ajaxfile|ajaxm)\.php[^'\"]*)['\"]", html)
+             or re.search(r"['\"]([^'\"]*(?:ajaxfile|ajaxm)\.php\?file=\d+[^'\"]*)['\"]", html))
+    if not match:
+        return None
+    api = match.group(1)
+    if api.startswith("//"):
+        api = "https:" + api
+    elif api.startswith("/"):
+        api = origin.rstrip("/") + api
+
+    sign = None
+    literal = re.search(r"['\"]sign['\"]\s*:\s*['\"]([^'\"]+)['\"]", html)
+    if literal:
+        sign = literal.group(1)
+    else:
+        var_ref = re.search(r"['\"]sign['\"]\s*:\s*([A-Za-z_$][\w$]*)", html)
+        if var_ref:
+            name = re.escape(var_ref.group(1))
+            var_value = (re.search(r"var\s+%s\s*=\s*'([^']*)'" % name, html)
+                         or re.search(r'var\s+%s\s*=\s*"([^"]*)"' % name, html))
+            if var_value:
+                sign = var_value.group(1)
+    if not sign:
+        return None
+
+    kd = 1
+    kd_ref = re.search(r"['\"]kd['\"]\s*:\s*([A-Za-z_$][\w$]*|\d+)", html)
+    if kd_ref:
+        raw = kd_ref.group(1)
+        if raw.isdigit():
+            kd = int(raw)
+        else:
+            var_value = re.search(r"var\s+%s\s*=\s*(\d+)" % re.escape(raw), html)
+            if var_value:
+                kd = int(var_value.group(1))
+    return {"api": api, "sign": sign, "kd": kd}
+
+
+def _PostDownProcess(session, api, data, referer, timeout):
+    """POST downprocess, 返回解析后的 JSON (失败返回 None)"""
+    try:
+        resp = session.post(api, data=data, timeout=timeout,
+                            headers={"Referer": referer, "X-Requested-With": "XMLHttpRequest"})
+    except requests.RequestException as e:
+        print("_PostDownProcess 请求失败：%s" % e)
+        return None
+    if _ChallengeArg1(resp):
+        resp = _RequestWithWaf(session, api, timeout=timeout, data=data,
+                               headers={"Referer": referer,
+                                        "X-Requested-With": "XMLHttpRequest"})
+    try:
+        return json.loads(resp.text)
+    except (ValueError, TypeError):
+        return None
+
+
+def _FollowToFile(session, file_url, referer, timeout):
+    """请求 /file/ 地址, 取 302 后的真实文件直链 (200 直接返回该地址)"""
+    try:
+        resp = _RequestWithWaf(session, file_url, timeout=timeout, allow_redirects=False,
+                               stream=True, headers={"Referer": referer})
+    except requests.RequestException as e:
+        print("_FollowToFile 请求失败：%s" % e)
+        return None
+    try:
+        if resp.status_code in (301, 302, 303, 307, 308):
+            location = resp.headers.get("Location")
+            return urljoin(file_url, location) if location else None
+        if resp.status_code == 200 and \
+                "html" not in (resp.headers.get("Content-Type") or "").lower():
+            # 直接返回文件本体: 该地址即直链 (但需要本次会话的 WAF cookie)
+            return file_url
+        return None
+    finally:
+        resp.close()
+
 
 def PrepareData(url,pwd,pg=1):
     try:
