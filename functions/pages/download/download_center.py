@@ -33,6 +33,7 @@ class DownloadCenterPage:
         self._mod_page_gen = 0
         self._icon_pending = {}   # url hash -> [(header_frame, card_bg, gen_key), ...]
         self._icon_lock = threading.Lock()
+        self._icon_pruned = False
 
         # 派生颜色常量（卡片底色/描边）
         self._card_bg = lighten_color(self.bg_color, 5)
@@ -243,6 +244,7 @@ class DownloadCenterPage:
                 self.addon_data = self.web_trigger.fetch_all_addon_info()
                 if self.addon_data:
                     self.display_addon_page(1)
+                    self._prune_icon_cache_when_ready()
                 else:
                     self.show_error("未获取到插件数据")
             except Exception as e:
@@ -253,6 +255,7 @@ class DownloadCenterPage:
                 self.mod_data = self.web_trigger.fetch_all_mod_info()
                 if self.mod_data:
                     self.display_mod_page(1)
+                    self._prune_icon_cache_when_ready()
                 else:
                     self.show_error("未获取到Mod数据")
             except Exception as e:
@@ -284,6 +287,7 @@ class DownloadCenterPage:
                 self.addon_data = self.web_trigger.fetch_all_addon_info()
                 if self.addon_data:
                     self.display_addon_page(1)
+                    self._prune_icon_cache_when_ready()
                 else:
                     self.show_error("未获取到插件数据")
             except Exception as e:
@@ -313,6 +317,7 @@ class DownloadCenterPage:
                 self.mod_data = self.web_trigger.fetch_all_mod_info()
                 if self.mod_data:
                     self.display_mod_page(1)
+                    self._prune_icon_cache_when_ready()
                 else:
                     self.show_error("未获取到Mod数据")
             except Exception as e:
@@ -701,12 +706,25 @@ class DownloadCenterPage:
         download_button.pack(side=tk.RIGHT, padx=5)
 
     def _icon_cache_path(self, icon_url:str, item_name:str) -> str:
-        """图标缓存路径; 文件名为 URL 哈希 + 名称, URL 变更后自动失效"""
-        if not icon_url:
-            return ''
-        icon_url_hash = hashlib.md5(icon_url.encode('utf-8')).hexdigest()[:12]
-        icon_filename = f"{item_name.replace(' ', '_')}_{icon_url_hash}_icon.png"
-        return os.path.join(self.icon_cache_dir, icon_filename)
+        """图标缓存路径 (与网页端共用同一套命名规则, 见 base/common/icon_cache)"""
+        from functions.base.common.icon_cache import icon_cache_path
+        return icon_cache_path(icon_url, item_name, self.icon_cache_dir)
+
+    def _prune_icon_cache_when_ready(self):
+        """两类云端列表都到手后清理已经用不到的图标缓存 (每次进入页面只做一次)
+
+        图标文件名带 icon_url 哈希, 条目换图标/重新上传后旧文件就再没人引用,
+        不清会越攒越多。
+        """
+        with self._icon_lock:
+            if self._icon_pruned or not self.addon_data or not self.mod_data:
+                return
+            self._icon_pruned = True
+        try:
+            from functions.base.common.icon_cache import prune_icon_cache
+            prune_icon_cache([self.addon_data, self.mod_data], self.icon_cache_dir)
+        except Exception as e:
+            print(f"图标缓存清理失败: {e}")
 
     def _is_current_gen(self, gen_key):
         """页面代号是否仍是当前页 (翻页后旧回调直接丢弃)"""
@@ -773,29 +791,38 @@ class DownloadCenterPage:
         # 避免旧图标缓存导致界面一直显示过期图标
         icon_path = self._icon_cache_path(icon_url, item_name)
 
-        # 如果图标已存在，直接返回
+        # 如果图标已存在，直接返回 (不再触发任何网络请求)
         if os.path.exists(icon_path):
             return icon_path
+
+        from functions.base.common import icon_cache
+        # 刚失败过的图标先跳过, 页面反复重绘时不必反复请求
+        if icon_cache.icon_failed_recently(icon_url):
+            return None
 
         # 下载图标
         try:
             # print(f"正在下载图标: {icon_url}")
-            # 下载前预处理: 蓝奏云分享/解析链接 -> 直链
-            try:
-                from functions.web_update.lanzou_utils import ResolveDownloadUrl
-                fetch_url = ResolveDownloadUrl(icon_url)
-            except Exception:
-                fetch_url = icon_url
-            response = requests.get(fetch_url, timeout=10, verify=False)
-            if response.status_code == 200:
+            # 解析直链 + 取内容; 直链失效会自动丢缓存重解析一次
+            from functions.web_update.lanzou_utils import GetWithDirectLink
+            response = GetWithDirectLink(
+                icon_url,
+                accept=lambda resp: resp.status_code == 200
+                and icon_cache.looks_like_image(resp.content),
+                timeout=15, verify=False)
+            # 只认真正的图片, 否则会把解析服务的 JSON/HTML 错误页当成图标写进缓存
+            if response is not None and response.status_code == 200 \
+                    and icon_cache.looks_like_image(response.content):
                 with open(icon_path, 'wb') as f:
                     f.write(response.content)
-                # print(f"图标下载成功: {icon_path}")
+                icon_cache.note_icon_success(icon_url)
                 return icon_path
-            else:
-                print(f"图标下载失败，状态码: {response.status_code}")
+            status = response.status_code if response is not None else '无响应'
+            print(f"图标下载失败（返回内容不是图片）: {icon_url[:80]} status={status}")
+            icon_cache.note_icon_failure(icon_url)
         except Exception as e:
             print(f"图标下载异常: {str(e)}")
+            icon_cache.note_icon_failure(icon_url)
 
         return None
 

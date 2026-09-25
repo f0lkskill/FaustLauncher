@@ -1785,28 +1785,32 @@ if %errorlevel% equ 0 (
         """下载并缓存图标, 返回 base64 data URI"""
         if not icon_url:
             return ''
-        import hashlib
+        from functions.base.common import icon_cache
         cache_dir = os.path.join(_PROJECT_ROOT, 'cache', 'icons')
         os.makedirs(cache_dir, exist_ok=True)
-        url_hash = hashlib.md5(icon_url.encode('utf-8')).hexdigest()[:12]
-        icon_filename = f"{item_name.replace(' ', '_')}_{url_hash}_icon.png"
-        icon_path = os.path.join(cache_dir, icon_filename)
+        icon_path = icon_cache.icon_cache_path(icon_url, item_name, cache_dir)
         if not os.path.exists(icon_path):
+            # 刚失败过的图标先跳过, 前端反复重绘时不必反复请求
+            if icon_cache.icon_failed_recently(icon_url):
+                return ''
             try:
-                import requests
-                # 下载前预处理: 蓝奏云分享/解析链接 -> 直链
-                try:
-                    from functions.web_update.lanzou_utils import ResolveDownloadUrl
-                    fetch_url = ResolveDownloadUrl(icon_url)
-                except Exception:
-                    fetch_url = icon_url
-                r = requests.get(fetch_url, timeout=10, verify=False)
-                if r.status_code == 200:
+                # 解析直链 + 取内容; 直链失效会自动丢缓存重解析一次
+                from functions.web_update.lanzou_utils import GetWithDirectLink
+                r = GetWithDirectLink(
+                    icon_url,
+                    accept=lambda resp: resp.status_code == 200
+                    and icon_cache.looks_like_image(resp.content),
+                    timeout=15, verify=False)
+                if r is not None and r.status_code == 200 \
+                        and icon_cache.looks_like_image(r.content):
                     with open(icon_path, 'wb') as f:
                         f.write(r.content)
+                    icon_cache.note_icon_success(icon_url)
                 else:
+                    icon_cache.note_icon_failure(icon_url)
                     return ''
             except Exception:
+                icon_cache.note_icon_failure(icon_url)
                 return ''
         try:
             with open(icon_path, 'rb') as f:

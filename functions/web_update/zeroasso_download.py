@@ -48,6 +48,37 @@ def get_github_release_url() -> tuple[str, str] | None:
         return None, None # type: ignore
 
 
+def _invalidate_direct_link(source_url):
+    """直链失效时丢掉解析缓存 (下次重新解析); 解析缓存默认永久, 靠这个自愈"""
+    try:
+        from functions.web_update.lanzou_utils import InvalidateDirectLink
+        InvalidateDirectLink(source_url)
+    except Exception:
+        pass
+
+
+def _open_stream(url, source_url, **kwargs):
+    """按 url 取响应流; 蓝奏云直链失效(4xx/5xx)时丢缓存重解析一次
+
+    :param source_url: 调用方给的原始链接 (失效时用来清缓存); 与 url 相同表示非蓝奏云
+    """
+    try:
+        resp = requests.get(url, **kwargs)
+        resp.raise_for_status()
+        return resp
+    except requests.exceptions.RequestException:
+        if not source_url or source_url == url:
+            raise
+        print("[下载] 直链可能已失效，重新解析: %s" % source_url[:90])
+        _invalidate_direct_link(source_url)
+        retry_url = resolve_download_url(source_url)
+        if not retry_url or retry_url == url:
+            raise
+        resp = requests.get(retry_url, **kwargs)
+        resp.raise_for_status()
+        return resp
+
+
 # 下载前置处理: 所有下载入口统一走这里 (蓝奏云链接 -> 直链)
 def resolve_download_url(url, gui=None, label=''):
     """下载前预处理: 蓝奏云分享/解析链接 -> 直链 (解析失败退回原链接)
@@ -62,12 +93,19 @@ def resolve_download_url(url, gui=None, label=''):
         from functions.web_update.lanzou_utils import IsLanzouUrl, ResolveDownloadUrl
         if not IsLanzouUrl(url):
             return url
-        if gui is not None and getattr(gui, 'current_file_var', None) is not None:
+
+        prefix = f"{label}: " if label else ""
+
+        def _status(text):
             try:
-                gui.current_file_var.set(f"正在解析 {label or '下载'} 直链...")
+                if gui is not None and getattr(gui, 'current_file_var', None) is not None:
+                    gui.current_file_var.set(prefix + str(text))
             except Exception:
                 pass
-        resolved = ResolveDownloadUrl(url)
+            print(f"[下载] {prefix}{text}")
+
+        # 用户主动点的下载值得等一会儿 (蓝奏云接口偶发限流/超时)
+        resolved = ResolveDownloadUrl(url, log=_status, retries=2)
         print(f"[下载] 直链解析 {label or ''}: {url[:90]} -> {resolved[:90]}")
         return resolved
     except Exception as e:
@@ -78,11 +116,12 @@ def resolve_download_url(url, gui=None, label=''):
 # 保留原有的函数（用于命令行模式）
 def download_file(url, local_filename):
     """下载文件并显示进度"""
+    source_url = url
     try:
-        # 发送请求
         # 下载前预处理: 蓝奏云分享/解析链接 -> 直链 (失败退回原链接)
         url = resolve_download_url(url, label=os.path.basename(local_filename))
-        response = requests.get(url, stream=True)
+        # 发送请求 (直链失效会自动重新解析一次)
+        response = _open_stream(url, source_url, stream=True)
         response.raise_for_status()
         
         # 获取文件大小
@@ -294,11 +333,12 @@ def download_file_with_gui(url, local_filename, gui, file_name):
     try:
         # 更新GUI状态
         # 下载前预处理: 蓝奏云分享/解析链接 -> 直链 (失败退回原链接)
+        source_url = url
         url = resolve_download_url(url, gui, file_name)
         gui.current_file_var.set(f"{file_name}")
         
         # 发送请求
-        response = requests.get(url, stream=True, verify=False)
+        response = _open_stream(url, source_url, stream=True, verify=False)
         response.raise_for_status()
         
         # 获取文件大小
