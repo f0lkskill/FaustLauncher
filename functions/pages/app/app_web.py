@@ -901,6 +901,25 @@ def _terminate_now():
     os._exit(0)
 
 
+def _is_system_shutting_down():
+    """系统是否正在关机 / 重启 / 注销。
+
+    两个来源, 任一成立即算:
+      1. 我们的窗口子类过程收到过 WM_QUERYENDSESSION;
+      2. 直接问系统: GetSystemMetrics(SM_SHUTTINGDOWN)。
+    第 2 条是关键 —— 子类是在 ui_ready 之后延迟安装的, 没装成功时第 1 条
+    永远是 False, 那样就会把系统关机当成"用户点了关闭", 返回 False 阻止关机。
+    """
+    if _system_shutdown_requested:
+        return True
+    try:
+        import ctypes
+        SM_SHUTTINGDOWN = 0x2000
+        return bool(ctypes.windll.user32.GetSystemMetrics(SM_SHUTTINGDOWN))
+    except Exception:
+        return False
+
+
 def _fmt_author_links(authors):
     """作者字段转链接列表 [{name, url}] (dict: 名字->链接; 其它则无链接)"""
     if isinstance(authors, dict):
@@ -3070,8 +3089,10 @@ def run_web_ui(debug: bool = False):
     #       否则等待前端响应会死锁。窗口隐藏放后台线程执行。
     def _on_closing():
         try:
-            if _system_shutdown_requested:
-                # 系统重启/注销时必须真正结束进程，不能按用户关闭处理成托盘驻留。
+            if _is_system_shutting_down():
+                # 系统关机/重启/注销时必须真正结束进程并放行,
+                # 否则会被系统判定为"正在阻止关机"。
+                # (不依赖子类消息, 见 _is_system_shutting_down)
                 threading.Thread(target=_terminate_now, daemon=True).start()
                 return True
             hide_to_tray = True
