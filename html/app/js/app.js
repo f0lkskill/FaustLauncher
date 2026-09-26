@@ -116,7 +116,9 @@ function startupNotifyUiReady() {
 //    并启动主页的两个定时同步 (路径芯片 / 时钟)
 function startupStartPrefetch() {
   if (!api) return;
-  withTimeout(api.get_backgrounds(), 6000, []).then(applyBackgrounds).catch(() => {});
+  // 统一走 refreshBackgrounds: 与"切换皮肤后重载背景"共用同一条链路
+  // (含 15s 超时 + 序号防乱序 + 双层定时器管理)
+  refreshBackgrounds();
   preloadSounds();
   // 定时同步主页路径芯片 (后端首次自动填充游戏路径后, 主页能及时更新)
   setInterval(() => {

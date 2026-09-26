@@ -23,6 +23,22 @@ function applyGlassFactor() {
   document.documentElement.style.setProperty('--glass-factor', String(v));
 }
 
+// 控件透明度: 统一缩放所有面板/卡片半透明底的 alpha (--panel-alpha)。
+// 与 --glass-factor 是两个独立维度 ——
+//   glass_factor   管"糊不糊" (backdrop-filter 模糊半径)
+//   control_opacity 管"透不透" (面板底色 alpha)
+function applyControlOpacity() {
+  let v = 1;
+  try {
+    const s = BOOT && BOOT.settings_schema ? BOOT.settings_schema.control_opacity : null;
+    if (s) {
+      const raw = Number(s.value !== undefined ? s.value : s.default);
+      if (!isNaN(raw)) v = raw;
+    }
+  } catch (e) { v = 1; }
+  document.documentElement.style.setProperty('--panel-alpha', String(v));
+}
+
 // 启用毛玻璃开关: 关闭时给 body 加 no-hw, 禁用 backdrop-filter 等毛玻璃高消耗效果
 function applyHwAccel() {
   let v = true;

@@ -44,10 +44,17 @@ function switchPage(name) {
       initDownloadCenter();
     }
   }
+  if (name === 'skins') {
+    // 玻璃窗: 首次进入才拉取皮肤列表 (之后保持, 切换都在页内完成)
+    enterSkinsPage();
+  }
   if (name === 'about') {
     if (!aboutData) loadAbout();
     else setAboutIndex(aboutIdx);
   }
+  // 修复 WebView2 下切换页面时毛玻璃面板偶发不重绘 (画面残留/撕裂,
+  // 要拖一下窗口才恢复): 让新页面成为独立合成层并立即失效一次。
+  forceRepaint(target);
 }
 
 // 事件绑定助手: 元素不存在时只记一条 console 警告并跳过, 绝不抛异常。
@@ -60,6 +67,16 @@ function on(selector, event, handler, opts) {
   if (!el) { console.warn('[UI] 绑定跳过, 未找到元素:', selector); return null; }
   el.addEventListener(event, handler, opts);
   return el;
+}
+
+// 强制重绘: will-change 会把元素提升为独立合成层并触发一次完整重绘,
+// 且无视觉副作用 (临时设完就清掉)。用于修 WebView2 的"切页不刷新"。
+function forceRepaint(el) {
+  const node = el || document.getElementById('main');
+  if (!node || !node.style) return;
+  node.style.willChange = 'transform';
+  void node.offsetWidth;                 // 触发同步 reflow
+  requestAnimationFrame(() => { node.style.willChange = ''; });
 }
 
 // ---------------- 事件绑定 ----------------
@@ -219,6 +236,8 @@ function bindEvents() {
       }
     });
   }
+  // 玻璃窗 (皮肤): 背景欣赏区的上一张/下一张/自动轮播
+  bindSkinEvents();
   // 背景点击预览用
   window.addEventListener('resize', () => {});
 }

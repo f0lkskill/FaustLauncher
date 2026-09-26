@@ -22,6 +22,7 @@ function render() {
   // 背景色
   applyTheme(b.bg_color);
   applyGlassFactor();
+  applyControlOpacity();
   applyHwAccel();
   applyFrameLimit();
   // 项目图标 (后端 data URI, 供下载中心/推荐卡图标回退)
@@ -47,6 +48,8 @@ function render() {
   renderTools(b.tools);
   // 设置
   renderSettings(b.settings_schema);
+  // 皮肤: 按 settings.json 里的皮肤设置加载覆盖层样式 (之后可在"玻璃窗"里随时切换)
+  if (typeof applyBootSkin === 'function') applyBootSkin(b.active_skin || '');
   // 欢迎音效提示
   if (IS_BROWSER) toast('浏览器预览模式, 部分功能不可用', 'warn', 4000);
 }

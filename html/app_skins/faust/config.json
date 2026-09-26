@@ -1,0 +1,9 @@
+{
+    "name": "浮士德",
+    "id": "faust",
+    "description": "浮士德皮肤，用于显示浮士德的对话和技能。",
+    "authors": {
+        "FolkSkill": "https://space.bilibili.com/599331034"
+    },
+    "theme_color": "#FFFFFF"
+}

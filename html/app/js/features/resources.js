@@ -252,7 +252,7 @@ function buildResCard(item) {
           (ver ? '<span class="res-ver-inline">v' + esc(ver) + '</span>' : '') +
         '</div>' +
         '<div class="res-desc">' + esc(desc) + '</div>' +
-        (authorLinksHtml(item.author_links) ? '<div class="res-desc">' + authorLinksHtml(item.author_links) + '</div>' : '') +
+        (authorLinksHtml(item.author_links) ? '<div class="res-desc res-authors">' + authorLinksHtml(item.author_links) + '</div>' : '') +
       '</div>' +
     '</div>' +
     '<div class="res-card-ops">' +
@@ -306,15 +306,6 @@ function resStateHtml(enabled) {
     (enabled ? '已启用' : '已禁用');
 }
 
-// 启用/禁用电源按钮 (模态设置区用, 带 data-set 以便随表单一起收集)
-function resToggleBtnHtml(key, on) {
-  return '<button type="button" class="res-toggle-btn' + (on ? ' on' : '') + '"' +
-    ' data-set="' + esc(key) + '" data-value="' + (on ? '1' : '0') + '"' +
-    ' aria-pressed="' + (on ? 'true' : 'false') + '"' +
-    ' title="' + (on ? '点击禁用' : '点击启用') + '">' +
-    '<svg class="ico" data-icon="reduce-one.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg>' +
-    '</button>';
-}
 
 // 设置字段渲染 (bool→开关, number→数字框, 其余→文本框); enable 标签译为"启用"
 // 例外: enable 是"启用/禁用这个资源"本身, 统一用与卡片一致的电源按钮, 不再用滑动开关
@@ -325,10 +316,7 @@ function renderSettingsFields(settings) {
   keys.forEach(k => {
     const v = settings[k];
     const label = SETTING_LABELS[k] || k;
-    if (k === 'enable') {
-      html += '<div class="res-set-row"><span class="res-set-name">' + esc(label) + '</span>' +
-        resToggleBtnHtml(k, !!v) + '</div>';
-    } else if (typeof v === 'boolean') {
+    if (typeof v === 'boolean') {
       html += '<label class="res-set-row"><span class="res-set-name">' + esc(label) + '</span>' +
         '<span class="switch"><input type="checkbox" data-set="' + esc(k) + '"' + (v ? ' checked' : '') + '><span class="slider"></span></span></label>';
     } else if (typeof v === 'number') {
@@ -347,8 +335,7 @@ function collectSettingsFields(panel) {
   const s = {};
   panel.querySelectorAll('[data-set]').forEach(el => {
     const k = el.dataset.set;
-    if (el.classList.contains('res-toggle-btn')) s[k] = el.dataset.value === '1';
-    else if (el.type === 'checkbox') s[k] = el.checked;
+    if (el.type === 'checkbox') s[k] = el.checked;
     else if (el.type === 'number') s[k] = Number(el.value);
     else s[k] = el.value;
   });
@@ -440,20 +427,7 @@ function openResModal(kind, item) {
       refreshMods(true);   // 保持当前页, 刷新列表状态标识
     }).catch(err => { toast('保存失败: ' + err, 'error'); });
   };
-  // 启用/禁用电源按钮: 点击即切换并立即保存 (按钮是明确动作, 不等防抖)
-  panel.querySelectorAll('.res-toggle-btn[data-set]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const on = btn.dataset.value !== '1';
-      btn.dataset.value = on ? '1' : '0';
-      btn.classList.toggle('on', on);
-      btn.title = on ? '点击禁用' : '点击启用';
-      btn.setAttribute('aria-pressed', on ? 'true' : 'false');
-      clearTimeout(saveTimer);
-      saveTimer = setTimeout(saveNow, 120);
-    });
-  });
   panel.querySelectorAll('[data-set]').forEach(el => {
-    if (el.classList.contains('res-toggle-btn')) return;   // 电源按钮由上面单独处理
     const ev = el.type === 'text' || el.type === 'number' ? 'input' : 'change';
     el.addEventListener(ev, () => {
       clearTimeout(saveTimer);
