@@ -40,17 +40,23 @@ def _resolve_html_path():
 
 
 def _feature_image_uri(image_name):
-    """读取快捷方式卡片素材为压缩后的 data URI (pywebview http 服务器拒绝相对路径, 需内嵌)"""
+    """读取快捷方式卡片素材为压缩后的 data URI (pywebview http 服务器拒绝相对路径, 需内嵌)
+
+    皮肤 <skin>/assets/launcher/features/<name> 存在时优先使用, 否则回退默认素材。
+    """
     if not image_name:
         return ""
-    for root in (
-        os.path.join(_PROJECT_ROOT, "assets", "images", "features"),
-        os.path.join(_PROJECT_ROOT, "_internal", "assets", "images", "features"),
-    ):
-        p = os.path.join(root, image_name)
-        if os.path.isfile(p):
-            break
-    else:
+    p = _launcher_asset_file(_active_skin_id(), "features", image_name)
+    if not p:
+        for root in (
+            os.path.join(_PROJECT_ROOT, "assets", "images", "features"),
+            os.path.join(_PROJECT_ROOT, "_internal", "assets", "images", "features"),
+        ):
+            cand = os.path.join(root, image_name)
+            if os.path.isfile(cand):
+                p = cand
+                break
+    if not p:
         return ""
     try:
         from PIL import Image
@@ -69,17 +75,23 @@ def _feature_image_uri(image_name):
 
 
 def _tool_image_uri(image_name):
-    """读取工具卡片素材为压缩后的 data URI (从 assets/images/tools 读取)"""
+    """读取工具卡片素材为压缩后的 data URI (从 assets/images/tools 读取)
+
+    皮肤 <skin>/assets/launcher/tools/<name> 存在时优先使用。
+    """
     if not image_name:
         return ""
-    for root in (
-        os.path.join(_PROJECT_ROOT, "assets", "images", "tools"),
-        os.path.join(_PROJECT_ROOT, "_internal", "assets", "images", "tools"),
-    ):
-        p = os.path.join(root, image_name)
-        if os.path.isfile(p):
-            break
-    else:
+    p = _launcher_asset_file(_active_skin_id(), "tools", image_name)
+    if not p:
+        for root in (
+            os.path.join(_PROJECT_ROOT, "assets", "images", "tools"),
+            os.path.join(_PROJECT_ROOT, "_internal", "assets", "images", "tools"),
+        ):
+            cand = os.path.join(root, image_name)
+            if os.path.isfile(cand):
+                p = cand
+                break
+    if not p:
         return ""
     try:
         from PIL import Image
@@ -631,6 +643,167 @@ class HeadlessDownloadGUI:
                     pass
 
 
+# ============================================================
+# 皮肤 (html/app_skins/<id>) —— "玻璃窗"页面
+# ============================================================
+# 目录结构与覆盖规则:
+#   <skin>/config.json         元信息 (name / id / description / authors / theme_color)
+#   <skin>/profile.png         玻璃窗左侧列表的卡片展示图
+#   <skin>/css/style.css       覆盖层样式: **追加**在默认 style.css 之后, 两者合并生效,
+#                              所以皮肤里只写"要改的那部分"(配色等), 不必复制整份默认样式
+#   <skin>/assets/launcher/…   替换启动器基础资源 (对应项目根 assets/images/…)
+#                              例: assets/launcher/background/ 存在 -> 整体接管背景图,
+#                              默认 assets/images/background 立刻弃用
+#   <skin>/assets/web/…        替换 html/app/assets/… (例: icon/icon.png)
+#
+# 皮肤目录不在 pywebview 的 http 根目录下 (root = html/app), 前端无法用相对路径取用,
+# 因此一律由后端读成 data URI / 文本再下发。
+SKIN_SETTING_KEY = "skin"
+_IMAGE_EXTS = (".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp")
+
+
+def _skins_root():
+    """皮肤根目录 (打包后在 _internal/html/app_skins)"""
+    for cand in (
+        os.path.join(_PROJECT_ROOT, "html", "app_skins"),
+        os.path.join(_PROJECT_ROOT, "_internal", "html", "app_skins"),
+    ):
+        if os.path.isdir(cand):
+            return cand
+    return os.path.join(_PROJECT_ROOT, "html", "app_skins")
+
+
+def _skin_dir(skin_id):
+    """皮肤目录; 空 id 表示内置默认皮肤 (返回空串); 拒绝目录穿越"""
+    sid = str(skin_id or "").strip()
+    if not sid or sid in (".", "..") or os.path.basename(sid) != sid:
+        return ""
+    d = os.path.join(_skins_root(), sid)
+    return d if os.path.isdir(d) else ""
+
+
+def _active_skin_id():
+    """当前启用的皮肤 id (空串 = 默认皮肤)"""
+    try:
+        from functions.base.settings_manager import get_settings_manager
+        return str(get_settings_manager().get_setting(SKIN_SETTING_KEY) or "").strip()
+    except Exception:
+        return ""
+
+
+def _file_uri(path, max_side=1600, quality=82):
+    """图片文件 -> data URI; 超出 max_side 的按比例缩小 (省内存与传输量)"""
+    try:
+        from PIL import Image
+        if not path or not os.path.isfile(path):
+            return ""
+        if os.path.splitext(path)[1].lower() == ".gif":
+            with open(path, "rb") as f:
+                return "data:image/gif;base64," + base64.b64encode(f.read()).decode("ascii")
+        img = Image.open(path)
+        if max_side and max(img.size) > max_side:
+            img.thumbnail((max_side, max_side), Image.Resampling.LANCZOS)
+        buf = BytesIO()
+        if img.mode in ("RGBA", "LA", "P"):
+            img.convert("RGBA").save(buf, "PNG")
+            mime = "image/png"
+        else:
+            img.convert("RGB").save(buf, "JPEG", quality=quality)
+            mime = "image/jpeg"
+        return "data:" + mime + ";base64," + base64.b64encode(buf.getvalue()).decode("ascii")
+    except Exception:
+        return ""
+
+
+def _image_files_in(d):
+    if not d or not os.path.isdir(d):
+        return []
+    return [os.path.join(d, n) for n in sorted(os.listdir(d))
+            if n.lower().endswith(_IMAGE_EXTS) and os.path.isfile(os.path.join(d, n))]
+
+
+def _skin_background_dir(skin_id):
+    """皮肤的 background 目录 (兼容 …/launcher/background 与 …/launcher/images/background)"""
+    sd = _skin_dir(skin_id)
+    if not sd:
+        return ""
+    for prefix in (("assets", "launcher"), ("assets", "launcher", "images")):
+        d = os.path.join(sd, *prefix, "background")
+        if os.path.isdir(d) and _image_files_in(d):
+            return d
+    return ""
+
+
+def _default_background_dir():
+    return os.path.join(_PROJECT_ROOT, "assets", "images", "background")
+
+
+def _background_files(skin_id=""):
+    """背景图文件列表。
+
+    皮肤提供了 background 目录时**整体接管** —— 默认 assets/images/background 立刻弃用,
+    这正是"皮肤替换启动器基础资源"的规则。
+    """
+    d = _skin_background_dir(skin_id)
+    if d:
+        return _image_files_in(d)
+    return _image_files_in(_default_background_dir())
+
+
+def _launcher_asset_file(skin_id, *rel):
+    """皮肤 assets/launcher 优先的资源文件 (对应默认 assets/images/<rel>)"""
+    sd = _skin_dir(skin_id)
+    if not sd:
+        return ""
+    for prefix in (("assets", "launcher"), ("assets", "launcher", "images")):
+        p = os.path.join(sd, *prefix, *rel)
+        if os.path.isfile(p):
+            return p
+    return ""
+
+
+def _web_asset_file(skin_id, *rel):
+    """皮肤 assets/web 优先, 否则回退 html/app/assets/<rel>"""
+    sd = _skin_dir(skin_id)
+    if sd:
+        p = os.path.join(sd, "assets", "web", *rel)
+        if os.path.isfile(p):
+            return p
+    for cand in (
+        os.path.join(_PROJECT_ROOT, "html", "app", "assets", *rel),
+        os.path.join(_PROJECT_ROOT, "_internal", "html", "app", "assets", *rel),
+    ):
+        if os.path.isfile(cand):
+            return cand
+    return ""
+
+
+def _skin_meta(skin_id):
+    """读皮肤 config.json (失败返回空 dict)"""
+    sd = _skin_dir(skin_id)
+    if not sd:
+        return {}
+    try:
+        p = os.path.join(sd, "config.json")
+        if os.path.isfile(p):
+            return read_json(p) or {}
+    except Exception:
+        pass
+    return {}
+
+
+def _skin_profile_file(skin_id):
+    """皮肤卡片展示图 (profile.*)"""
+    sd = _skin_dir(skin_id)
+    if not sd:
+        return ""
+    for n in ("profile.png", "profile.jpg", "profile.jpeg", "profile.webp"):
+        p = os.path.join(sd, n)
+        if os.path.isfile(p):
+            return p
+    return ""
+
+
 # js_api 桥接
 def _res_icon_uri(base_dir, name):
     """读取插件/Mod 目录下的 icon.png/jpg 转 data URI"""
@@ -647,7 +820,18 @@ def _res_icon_uri(base_dir, name):
 
 
 def _get_project_icon_uri():
-    """读取项目图标转 data URI (供 get_bootstrap 与 HTML 首载注入复用)"""
+    """项目图标 data URI (供 get_bootstrap 与 HTML 首载注入复用)
+
+    皮肤优先: <skin>/assets/web/icon/icon.png 替换 html/app/assets/icon/icon.png;
+    皮肤没提供时回退默认 assets/images/icon/icon.png。
+    """
+    p = _web_asset_file(_active_skin_id(), "icon", "icon.png")
+    if p:
+        try:
+            with open(p, "rb") as f:
+                return "data:image/png;base64," + base64.b64encode(f.read()).decode("ascii")
+        except Exception:
+            pass
     for cand in (
         os.path.join(_PROJECT_ROOT, "assets", "images", "icon", "icon.png"),
         os.path.join(_PROJECT_ROOT, "_internal", "assets", "images", "icon", "icon.png"),
@@ -874,6 +1058,8 @@ class AppApi:
             "is_frozen": bool(getattr(sys, "frozen", False)),
             "project_root": _PROJECT_ROOT,
             "icon_uri": icon_uri,
+            # 当前皮肤 id (空串 = 默认皮肤); 前端启动时据此加载皮肤覆盖层
+            "active_skin": _active_skin_id(),
         }
 
     def get_backgrounds(self):
@@ -893,28 +1079,128 @@ class AppApi:
                 blur = float(get_settings_manager().get_setting("bg_gaussian_blur") or 0.0)
             except Exception:
                 blur = 0.0
-            bg_dir = os.path.join(_PROJECT_ROOT, "assets", "images", "background")
-            if os.path.isdir(bg_dir):
-                names = [n for n in os.listdir(bg_dir)
-                         if n.lower().endswith((".png", ".jpg", ".jpeg"))]
-                random.shuffle(names)
-                for name in names:
-                    if uris:
-                        break        # 已经拿到一张 (解码失败会顺延到下一张)
-                    try:
-                        img = Image.open(os.path.join(bg_dir, name)).convert("RGB")
-                        img.thumbnail((1600, 1600), Image.Resampling.LANCZOS)
-                        if blur > 0:
-                            img = img.filter(ImageFilter.GaussianBlur(radius=blur))
-                        buf = BytesIO()
-                        img.save(buf, "JPEG", quality=78)
-                        uris.append("data:image/jpeg;base64," + base64.b64encode(
-                            buf.getvalue()).decode("ascii"))
-                    except Exception:
-                        continue
+            # 背景来源跟随当前皮肤: 皮肤提供 background 目录就整体接管, 否则用默认目录
+            paths = _background_files(_active_skin_id())
+            random.shuffle(paths)
+            for path in paths:
+                if uris:
+                    break        # 已经拿到一张 (解码失败会顺延到下一张)
+                try:
+                    img = Image.open(path).convert("RGB")
+                    img.thumbnail((1600, 1600), Image.Resampling.LANCZOS)
+                    if blur > 0:
+                        img = img.filter(ImageFilter.GaussianBlur(radius=blur))
+                    buf = BytesIO()
+                    img.save(buf, "JPEG", quality=78)
+                    uris.append("data:image/jpeg;base64," + base64.b64encode(
+                        buf.getvalue()).decode("ascii"))
+                except Exception:
+                    continue
         except Exception:
             pass
         return uris
+
+    # ---- 皮肤 (玻璃窗) ----
+    def get_skins(self):
+        """玻璃窗左侧列表: 内置"默认皮肤" + html/app_skins 下的全部皮肤。
+
+        每项只带**卡片展示图**(profile) 与背景数量; 背景图数据量大, 选中后再由
+        get_skin_backgrounds 按需拉取, 避免一次把所有皮肤的所有图都塞进前端。
+        """
+        skins = [{
+            "id": "",
+            "name": "默认皮肤",
+            "builtin": True,
+            "description": "不加载任何皮肤, 使用启动器原始外观与资源",
+            "authors": {},
+            "theme_color": "",
+            "profile_uri": _get_project_icon_uri(),
+            "background_count": len(_background_files("")),
+        }]
+        root = _skins_root()
+        try:
+            names = sorted(n for n in os.listdir(root)
+                           if os.path.isdir(os.path.join(root, n)) and _skin_dir(n))
+        except Exception:
+            names = []
+        for sid in names:
+            meta = _skin_meta(sid)
+            skins.append({
+                "id": sid,
+                "name": str(meta.get("name") or sid),
+                "builtin": False,
+                "description": str(meta.get("description") or ""),
+                "authors": meta.get("authors") or {},
+                "theme_color": str(meta.get("theme_color") or ""),
+                "profile_uri": _file_uri(_skin_profile_file(sid), max_side=640, quality=85),
+                "background_count": len(_background_files(sid)),
+            })
+        return {"skins": skins, "active": _active_skin_id()}
+
+    def get_skin_backgrounds(self, skin_id=""):
+        """某个皮肤的背景图 (右侧欣赏区轮播 / 主背景预览), 按需拉取"""
+        sid = str(skin_id or "").strip()
+        if sid and not _skin_dir(sid):
+            return {"error": "皮肤不存在: " + sid, "backgrounds": []}
+        out = []
+        for p in _background_files(sid):
+            u = _file_uri(p, max_side=1600, quality=82)
+            if u:
+                out.append({"name": os.path.basename(p), "uri": u})
+        return {"backgrounds": out}
+
+    def get_skin_css(self, skin_id=""):
+        """皮肤覆盖层 CSS 文本。
+
+        前端把它作为 <style> 追加在默认 style.css **之后** —— 两者合并生效,
+        所以皮肤里只写要覆盖的部分即可。
+        """
+        sd = _skin_dir(str(skin_id or "").strip())
+        if not sd:
+            return ""
+        for rel in (("css", "style.css"), ("css", "skin.css")):
+            p = os.path.join(sd, *rel)
+            if os.path.isfile(p):
+                try:
+                    with open(p, "r", encoding="utf-8") as f:
+                        return f.read()
+                except Exception:
+                    return ""
+        return ""
+
+    def set_active_skin(self, skin_id=""):
+        """切换皮肤: 只写 settings.json 的 skin 键。
+
+        刻意**不**注册进 settings_schema —— 皮肤只能在"玻璃窗"里改, 设置页不出现该配置项。
+        前端拿到 ok 后立即重载样式/背景/图标, 无需重启。
+        """
+        sid = str(skin_id or "").strip()
+        if sid and not _skin_dir(sid):
+            return {"error": "皮肤不存在: " + sid}
+        # print(f"[皮肤] 已切换: {sid or '默认皮肤'}")
+        # ↓↓ 写入逻辑 (曾整段丢失, 导致"切皮肤后只有样式变、背景不跟着变":
+        #    背景是后端按 settings.json 里的 skin 决定的 —— 设置没写进去,
+        #    _active_skin_id() 就一直是旧皮肤, get_backgrounds() 自然永远给旧背景)
+        try:
+            sm = self.core.settings_manager
+            # 老配置里可能还没有 skin 这一项 (SettingsManager.set_setting 对未知键
+            # 直接返回 False 而不创建), 这里现场补一个 schema 项。
+            # 刻意**不给 page 字段** —— 设置页只渲染带 page 的项, 所以它不会出现在
+            # 设置页里, 皮肤只能在"玻璃窗"里改。
+            if SKIN_SETTING_KEY not in sm.settings:
+                sm.settings[SKIN_SETTING_KEY] = {
+                    "name": "启动器皮肤",
+                    "type": "string",
+                    "default": "",
+                    "value": "",
+                    "description": "当前启用的启动器皮肤, 只能在\"玻璃窗\"页面切换",
+                }
+            if not sm.set_setting(SKIN_SETTING_KEY, sid):
+                sm.settings[SKIN_SETTING_KEY]["value"] = sid
+            sm.save_settings()
+        except Exception as e:
+            return {"error": str(e)}
+        return {"ok": True, "active": sid}
 
     def get_characters(self):
         """返回角色小人图列表 (含图片名, 供随机探头摇摆与问候语匹配)"""

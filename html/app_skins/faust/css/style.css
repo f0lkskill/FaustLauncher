@@ -1,0 +1,76 @@
+/* ============================================================
+   Faust 皮肤 — 变量覆盖层
+   ------------------------------------------------------------
+   本文件**只覆盖 CSS 变量, 不写任何选择器规则**。
+   为什么这样做:
+     · 皮肤与默认样式共用同一套布局 / 透明度 / 动画定义 ——
+       两个皮肤之间不会"打架";
+     · 半透明底一律由默认样式的 rgba(var(--panel-rgb), var(--panel-alpha))
+       驱动, 所以"默认皮肤"和"本皮肤"的透明度表现完全一致,
+       且都受设置页「控件透明度」控制。
+
+   想调这个皮肤: 改下面的变量即可。
+
+   ⚠ 注意: --*-rgb 系列必须是 "R, G, B" 分量格式, **不能写 #hex**!
+     它们只被用在 rgba(var(--accent-rgb), .5) 这种位置,
+     写成 #rrggbb 会让整条声明变成无效 CSS (症状: 聚焦/描边背景消失)。
+   ============================================================ */
+.term-line.info { color: #313131; }
+:root {
+  /* ---------- 浅色底 ---------- */
+  --bg: #d8d8d8;
+  --bg-2: #dddddd;
+  --card: #e0e0e0;
+  --card-2: #d7d7d7;
+  --border: #d7d7d7;
+  --border-2: #bfc4cc;
+  --text: #1b1e23;
+  --text-2: #323232;
+  --text-3: #1d1d1d;
+
+  /* 面板底色 (R, G, B): 换成白系 -> 整套面板一起变白。
+     透明度不在这里控制, 统一由 --panel-alpha / 设置项决定。 */
+  --panel-rgb: 255, 255, 255;
+  --panel-rgb-2: 206, 206, 206;
+  --panel-rgb-3: 250, 251, 253;
+  --panel-rgb-4: 255, 255, 255;
+  --term-rgb: 252, 253, 255;   /* 终端: 去掉蓝黑, 换浅色 */
+
+  /* 提亮色反转为压暗色 (浅色主题下白线看不见) */
+  --tint-rgb: 0, 0, 0;
+  --scrim-rgb: 214, 218, 224;
+
+  /* ---------- 标题栏 ---------- */
+  --titlebar-from: rgba(255, 255, 255, 0.91);
+  --titlebar-to: rgba(241, 241, 241, 0.78);
+  --titlebar-border: rgba(229, 229, 229, 0.68);
+  /* 高亮: 与标题栏同色系但更通透 */
+  --focus-from: rgba(255, 255, 255, 0.52);
+  --focus-to: rgba(236, 236, 236, 0.34);
+
+  /* ---------- 主题色 (注意: RGB 分量格式) ----------
+     浅底上纯白强调色看不见, 所以用深灰: 整体是"白 + 灰"无彩色主题,
+     但选中态/描边清晰可见。 */
+  --accent: #989898;
+  --accent-2: #838383;
+  --accent-glow: rgba(52, 56, 63, 0.22);
+  --info: #4b5058;
+  --accent-rgb: 52, 56, 63;
+  --accent-2-rgb: 86, 92, 102;
+  --accent-3-rgb: 52, 56, 63;
+  --info-rgb: 75, 80, 88;
+}
+
+/* 唯一的例外: 标题栏底色变浅后, 标题/按钮文字必须变深,
+   而"文字色反转"没法用变量表达, 所以保留这三条规则。 */
+#titlebar .tb-title { color: #33363d; }
+#titlebar .tb-btn { color: #4a4e57; }
+#titlebar .tb-btn:hover { background: rgba(0, 0, 0, .08); color: #14161a; }
+
+.hero-bg {
+  position: absolute; inset: 0;
+  background:
+    radial-gradient(760px 360px at 18% -10%, rgba(var(--accent-rgb),.20), transparent 62%),
+    linear-gradient(120deg, rgba(var(--panel-rgb), var(--panel-alpha)), rgba(255, 255, 255, 0.55) 50%, transparent 82%),
+    radial-gradient(420px 260px at 92% 24%, rgba(var(--info-rgb),.08), transparent 70%);
+}

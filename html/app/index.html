@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>FaustLauncher 浮士德启动器</title>
-<link rel="stylesheet" href="css/style.css?v=109">
+<link rel="stylesheet" href="css/style.css?v=129">
 </head>
 <body>
 <div id="titlebar">
@@ -22,7 +22,10 @@
     <div class="splash-spinner"></div>
   </div>
 </div>
-<div id="bg-layer"></div>
+<div id="bg-layer">
+  <div class="bg-img" id="bg-img-a"></div>
+  <div class="bg-img" id="bg-img-b"></div>
+</div>
 <div id="app">
   <aside id="sidebar">
     <div class="brand">
@@ -38,6 +41,7 @@
       <button class="nav-item" data-page="download_center"><span class="nav-ico"><svg class="ico" data-icon="download-two.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg></span><span>下载中心</span></button>
       <button class="nav-item" data-page="tools"><span class="nav-ico"><svg class="ico" data-icon="tool.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg></span><span>实用工具</span></button>
       <button class="nav-item" data-page="features"><span class="nav-ico"><svg class="ico" data-icon="bookmark.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg></span><span>快捷方式</span></button>
+      <button class="nav-item" data-page="skins"><span class="nav-ico"><svg class="ico" data-icon="pic.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg></span><span>玻璃窗</span></button>
       <button class="nav-item" data-page="settings"><span class="nav-ico"><svg class="ico" data-icon="setting-two.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg></span><span>设置</span></button>
       <button class="nav-item" data-page="about"><span class="nav-ico"><svg class="ico" data-icon="code.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg></span><span>关于</span></button>
     </nav>
@@ -176,6 +180,33 @@
       </div>
     </section>
 
+    <!-- ==================== 玻璃窗 (皮肤) ==================== -->
+    <section class="page" id="page-skins">
+      <div class="skin-wrap">
+        <!-- 左: 竖排待选皮肤 (含内置"默认皮肤") -->
+        <aside class="skin-side">
+          <div class="skin-side-head">
+            <span>皮肤</span>
+            <span class="skin-side-count" id="skin-side-count"></span>
+          </div>
+          <div class="skin-list" id="skin-list"></div>
+        </aside>
+        <!-- 右: 该皮肤的背景图欣赏区 (可轮换) -->
+        <div class="skin-stage">
+          <div class="skin-preview" id="skin-preview">
+            <div class="skin-empty">选择左侧的皮肤以欣赏其背景图</div>
+          </div>
+          <div class="skin-stage-bar">
+            <button class="btn btn-ghost btn-icon" id="skin-bg-prev" title="上一张">←</button>
+            <span class="skin-bg-info" id="skin-bg-info">0 / 0</span>
+            <button class="btn btn-ghost btn-icon" id="skin-bg-next" title="下一张">→</button>
+            <button class="btn btn-ghost btn-icon" id="skin-bg-auto" title="自动轮播">▶</button>
+            <span class="skin-bg-name" id="skin-bg-name"></span>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <!-- ==================== 设置 ==================== -->
     <section class="page" id="page-settings">
       <div id="settings-groups"></div>
@@ -231,33 +262,35 @@
      各文件职责见文件头注释; 总览见 js/app.js 顶部。
      ============================================================ -->
 <!-- core: 基座层(环境/状态/工具/后端通道/外壳) -->
-<script src="js/core/bootstrap.js?v=109"></script>
-<script src="js/core/state.js?v=109"></script>
-<script src="js/core/utils.js?v=109"></script>
+<script src="js/core/bootstrap.js?v=129"></script>
+<script src="js/core/state.js?v=129"></script>
+<script src="js/core/utils.js?v=129"></script>
 <!-- 图标仓库: 内联 SVG (assets/icon/*.svg), 取代此前的 emoji 图标 -->
-<script src="js/core/icons.js?v=109"></script>
-<script src="js/core/bridge.js?v=109"></script>
-<script src="js/core/events.js?v=109"></script>
+<script src="js/core/icons.js?v=129"></script>
+<script src="js/core/bridge.js?v=129"></script>
+<script src="js/core/events.js?v=129"></script>
 <!-- ui: 通用界面件(外观/反馈/装饰) -->
-<script src="js/ui/theme.js?v=109"></script>
-<script src="js/ui/sound.js?v=109"></script>
-<script src="js/ui/frame_loading.js?v=109"></script>
-<script src="js/ui/terminal.js?v=109"></script>
-<script src="js/ui/tilt.js?v=109"></script>
-<script src="js/ui/background.js?v=109"></script>
-<script src="js/ui/character.js?v=109"></script>
-<script src="js/ui/carousel.js?v=109"></script>
-<script src="js/ui/version_modal.js?v=109"></script>
+<script src="js/ui/theme.js?v=129"></script>
+<script src="js/ui/sound.js?v=129"></script>
+<script src="js/ui/frame_loading.js?v=129"></script>
+<script src="js/ui/terminal.js?v=129"></script>
+<script src="js/ui/tilt.js?v=129"></script>
+<script src="js/ui/background.js?v=129"></script>
+<script src="js/ui/character.js?v=129"></script>
+<script src="js/ui/carousel.js?v=129"></script>
+<script src="js/ui/version_modal.js?v=129"></script>
 <!-- features: 业务功能(流水线/资源/下载/工具/主页/设置/关于) -->
-<script src="js/features/pipeline.js?v=109"></script>
-<script src="js/features/resources.js?v=109"></script>
-<script src="js/features/downloads.js?v=109"></script>
-<script src="js/features/tools.js?v=109"></script>
-<script src="js/features/home.js?v=109"></script>
-<script src="js/features/settings.js?v=109"></script>
-<script src="js/features/about.js?v=109"></script>
+<script src="js/features/pipeline.js?v=129"></script>
+<script src="js/features/resources.js?v=129"></script>
+<script src="js/features/downloads.js?v=129"></script>
+<script src="js/features/tools.js?v=129"></script>
+<script src="js/features/home.js?v=129"></script>
+<script src="js/features/settings.js?v=129"></script>
+<script src="js/features/about.js?v=129"></script>
+<!-- 玻璃窗 (皮肤系统) -->
+<script src="js/features/skins.js?v=129"></script>
 <!-- 入口: 启动流程 + 对外插件 API (必须最后) -->
-<script src="js/app.js?v=109"></script>
+<script src="js/app.js?v=129"></script>
 <script>
 /* 独立兜底: 完全不依赖 app.js。无论 app.js 是否崩溃, 只要内容加载完成或超时,
    就移除主页两张卡片的 loading 圆圈。 */
