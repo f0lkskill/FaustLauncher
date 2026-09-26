@@ -181,7 +181,7 @@ function pcManualCopy(reason, raw, fromSteam) {
     hint = '请选到游戏根目录（' + exe + ' 所在的那个文件夹）。';
   }
   return {
-    body: head + '<div class="pc-path" title="' + esc(raw) + '">' + esc(raw) + '</div>' + tail,
+    body: head + '<div class="pc-path">' + esc(raw) + '</div>' + tail,
     hint: hint, hintKind: 'warn'
   };
 }
@@ -274,7 +274,7 @@ function renderPathConfirmModal(d) {
   if (canConfirm) {
     pcMount('检测到游戏路径', '这是你的游戏路径吗？',
       '<div class="pc-desc">启动器已自动从 <b>Steam VDF</b> 读取到边狱巴士安装路径：</div>' +
-      '<div class="pc-path" title="' + esc(raw) + '">' + esc(raw) + '</div>',
+      '<div class="pc-path">' + esc(raw) + '</div>',
       'ask');
     return;
   }
@@ -579,7 +579,6 @@ function renderSettings(schema) {
           const rb = document.createElement('button');
           rb.className = 'set-reset';
           rb.type = 'button';
-          rb.title = '重置该设置为默认值';
           rb.innerHTML = iconSvg('refresh');
           rb.onclick = () => resetOneSetting(key);
           row.appendChild(rb);

@@ -121,7 +121,6 @@ function renderFeatures(features) {
     list.forEach((_, i) => {
       const dot = document.createElement('button');
       dot.className = 'cdot';
-      dot.title = '跳到第 ' + (i + 1) + ' 个快捷方式';
       dot.addEventListener('click', () => {
         if (typeof window.__featGoTo === 'function') window.__featGoTo(i);
         else { featAngle = i; layoutCarousel(true); }
@@ -389,7 +388,6 @@ function renderTools(tools) {
     list.forEach((_, i) => {
       const dot = document.createElement('button');
       dot.className = 'cdot';
-      dot.title = '跳到第 ' + (i + 1) + ' 个工具';
       dot.addEventListener('click', () => {
         if (typeof window.__toolsGoTo === 'function') window.__toolsGoTo(i);
         else { toolsAngle = i; layoutToolsCarousel(true); }

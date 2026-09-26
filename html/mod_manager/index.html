@@ -390,13 +390,11 @@
             const open = document.createElement("button");
             open.className = "mini-btn";
             open.textContent = "📂";
-            open.title = "在资源管理器中显示";
             open.onclick = () => api.open_file(f.raw_name);
 
             const del = document.createElement("button");
             del.className = "mini-btn del";
             del.textContent = "🗑️";
-            del.title = "删除文件";
             del.onclick = async () => {
                 try {
                     const ok = await api.confirm_delete(f.name);
