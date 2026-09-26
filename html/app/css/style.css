@@ -146,8 +146,6 @@ body.no-hw .carousel-item-inner,
 body.no-hw .box-card,
 body.no-hw .card,
 body.no-hw .link-card,
-body.no-hw .res-card,
-body.no-hw .dc-card,
 body.no-hw .hero {
   box-shadow: none !important;
 }
@@ -461,13 +459,13 @@ body.no-hw .hero {
   backdrop-filter: blur(calc(var(--glass-factor) * 22px)); -webkit-backdrop-filter: blur(calc(var(--glass-factor) * 22px));
 }
 .dc-card:hover {
-  border-color: rgba(var(--accent-rgb), 0.55);
+  border-color: rgba(var(--accent-rgb), 0.38);
   background:
     linear-gradient(180deg, var(--focus-from), var(--focus-to)),
     rgba(var(--panel-rgb), var(--panel-alpha));
   box-shadow:
-    0 16px 40px rgba(var(--accent-rgb), 0.30),
-    0 0 22px rgba(var(--accent-rgb), 0.20);
+    0 10px 24px rgba(var(--accent-rgb), 0.14),
+    0 0 12px rgba(var(--accent-rgb), 0.10);
 }
 .dc-card.disabled { opacity: .45; }
 .dc-card-main { display: flex; gap: 14px; align-items: center; flex: 1; min-width: 0; }
@@ -608,7 +606,7 @@ body.modal-open .res-card {
 }
 .res-card:hover {
   /* 描边: 直接给 border 上主题色 (比 border-box 渐变可靠) */
-  border-color: rgba(var(--accent-rgb), 0.55);
+  border-color: rgba(var(--accent-rgb), 0.38);
   /* 底色: 第一层 focus 只是"薄薄盖一层", 第二层仍是原来的卡片底色 ——
      所以是叠加, 不是把原色替换掉 */
   background:
@@ -617,8 +615,8 @@ body.modal-open .res-card {
                     rgba(var(--panel-rgb-2), var(--panel-alpha))) padding-box;
   /* 泛光: 外层大范围 + 贴身一层 */
   box-shadow:
-    0 16px 40px rgba(var(--accent-rgb), 0.34),
-    0 0 22px rgba(var(--accent-rgb), 0.22);
+    0 10px 24px rgba(var(--accent-rgb), 0.16),
+    0 0 12px rgba(var(--accent-rgb), 0.10);
 }
 /* 不可用项: 变暗 + 描述斜体 */
 .res-card.disabled { opacity: .45; filter: grayscale(.5); }
