@@ -69,9 +69,35 @@ function on(selector, event, handler, opts) {
   return el;
 }
 
+// 自动守护: 任何重动画(卡片入场 / 模态弹出 / 页面切换) 进行期间,
+// 统一给 body 挂 .animating, 临时摘掉毛玻璃, 避免与 backdrop-filter 打架造成撕裂。
+// 用计数是因为同一时刻可能有多个元素在各自播放入场动画。
+function watchHeavyAnimations() {
+  const HEAVY = /^(pageIn|cardPopIn|cardPopInDim|panelIn|verCardIn|verCardOut|setRowIn|toastIn|toastTopIn)$/;
+  let active = 0;
+  const on = (e) => {
+    if (!HEAVY.test((e && e.animationName) || '')) return;
+    active++;
+    document.body.classList.add('animating');
+  };
+  const off = (e) => {
+    if (!HEAVY.test((e && e.animationName) || '')) return;
+    active = Math.max(0, active - 1);
+    if (!active) document.body.classList.remove('animating');
+  };
+  document.addEventListener('animationstart', on, true);
+  document.addEventListener('animationend', off, true);
+  document.addEventListener('animationcancel', off, true);
+}
+
 // 强制重绘: will-change 会把元素提升为独立合成层并触发一次完整重绘,
 // 且无视觉副作用 (临时设完就清掉)。用于修 WebView2 的"切页不刷新"。
 function forceRepaint(el) {
+  // 动画期间临时关闭毛玻璃: 撕裂主要来自"transform 动画 + backdrop-filter"同时进行。
+  // 动画一结束就恢复, 平时不受影响。
+  document.body.classList.add('animating');
+  clearTimeout(forceRepaint._t);
+  forceRepaint._t = setTimeout(() => document.body.classList.remove('animating'), 400);
   const node = el || document.getElementById('main');
   if (!node || !node.style) return;
   node.style.willChange = 'transform';
@@ -238,6 +264,8 @@ function bindEvents() {
   }
   // 玻璃窗 (皮肤): 背景欣赏区的上一张/下一张/自动轮播
   bindSkinEvents();
+  // 重动画期间自动摘掉毛玻璃 (防撕裂)
+  watchHeavyAnimations();
   // 背景点击预览用
   window.addEventListener('resize', () => {});
 }

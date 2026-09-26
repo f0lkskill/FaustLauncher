@@ -135,6 +135,42 @@ body {
   background-repeat: no-repeat;
 }
 
+
+/* ============================================================
+   WebView2 防撕裂
+   ------------------------------------------------------------
+   撕裂的成因是"transform/opacity 动画 + backdrop-filter 同时进行":
+   动画每推进一帧, 所有毛玻璃元素都要重新读取并模糊背景, 合成器跟不上。
+   对策分三层:
+     1) #main 固定为独立合成层 —— 页面切换由这一层整体提交
+     2) 动画期间临时关闭毛玻璃 (body.animating, 由 forceRepaint 控制)
+     3) 会做入场动画的卡片加 will-change, 提前提示合成器
+   ============================================================ */
+#main {
+  transform: translateZ(0);              /* 独立合成层: 避免逐元素重新合成 */
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+/* 会做入场动画的元素: 提前提升, 避免动画第一帧才建层导致抖动 */
+.res-card, .dc-card, .carousel-item-inner, .box-card, .link-card {
+  will-change: transform, opacity;
+}
+/* 动画进行中: 临时摘掉毛玻璃 (由 forceRepaint 加/去 body.animating) */
+body.animating .card,
+body.animating .res-card,
+body.animating .dc-card,
+body.animating .link-card,
+body.animating .box-card,
+body.animating .carousel-item-inner,
+body.animating .skin-side,
+body.animating .skin-stage,
+body.animating .panel-card,
+body.animating .progress-track,
+body.animating #sidebar {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
 /* 硬件加速关闭: 禁用毛玻璃/重阴影/常驻分层, 降低 GPU 填充率 */
 body.no-hw *,
 body.no-hw *::before,
@@ -2064,7 +2100,7 @@ button, a, input, select, textarea,
 .ver-overlay.closing .ver-card { animation: verCardOut .2s ease forwards; }
 /* ── 出现过渡: 卡片上浮 + 轻微缩放 + 去模糊 (层次感来自模糊收敛), 内部各行错峰入场 ── */
 @keyframes verCardIn {
-  0%   { opacity: 0; transform: translateY(26px) scale(.968); filter: blur(9px); }
+  0%   { opacity: 0; transform: translateY(26px) scale(.968); filter: blur(4px); }
   60%  { opacity: 1; }
   100% { opacity: 1; transform: none; filter: none; }
 }
