@@ -1195,6 +1195,18 @@ class AppApi:
                     return ""
         return ""
 
+    def get_active_skin_css(self):
+        """当前皮肤的覆盖层 CSS 文本。
+
+        专门给"启动早期"用: Splash 在 bootstrap/render 之前就显示了,
+        若等到 render() 才注入皮肤, 启动转圈界面会一直是默认样式,
+        注入那一刻还会明显闪一下。前端探测到 api 后立刻调用本接口。
+        """
+        try:
+            return self.get_skin_css(_active_skin_id())
+        except Exception:
+            return ""
+
     def set_active_skin(self, skin_id=""):
         """切换皮肤: 只写 settings.json 的 skin 键。
 

@@ -69,6 +69,9 @@ function startupPrepare() {
   const titlebar = document.getElementById('titlebar');
   const startupRoots = [appRoot, titlebar].filter(Boolean);
   startupRoots.forEach(el => el.classList.add('startup-pending'));
+  // 尽早注入皮肤样式: Splash(转圈界面) 此时马上就要显示了,
+  // 不先注入的话它会用默认皮肤渲染, 之后再闪一下换成皮肤样式。
+  if (typeof loadBootSkinEarly === 'function') loadBootSkinEarly();
   switchPage('home');
   return startupRoots;
 }

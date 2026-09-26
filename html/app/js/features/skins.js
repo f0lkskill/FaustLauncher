@@ -26,12 +26,9 @@ let _skinApplySeq = 0;      // 应用皮肤序号 (只让最后一次点击收�
 // ---------------- 覆盖层样式 ----------------
 // 皮肤 CSS 由后端读成文本下发 (皮肤目录不在 http 根目录下, 前端取不到路径),
 // 这里作为 <style> 追加在默认 style.css **之后** —— 合并生效, 皮肤只需写差异部分。
-async function loadSkinCss(skinId) {
+// 把一段皮肤 CSS 挂上去 (空串 = 摘掉, 回到默认皮肤)
+function applySkinCssText(css) {
   let el = document.getElementById('skin-css');
-  let css = '';
-  if (skinId && api) {
-    css = await withTimeout(api.get_skin_css(skinId), 8000, '').catch(() => '') || '';
-  }
   if (!css) {
     if (el) el.remove();
     return;
@@ -42,6 +39,24 @@ async function loadSkinCss(skinId) {
     document.head.appendChild(el);
   }
   el.textContent = css;
+}
+
+async function loadSkinCss(skinId) {
+  let css = '';
+  if (skinId && api) {
+    css = await withTimeout(api.get_skin_css(skinId), 8000, '').catch(() => '') || '';
+  }
+  applySkinCssText(css);
+}
+
+// 启动早期调用: Splash(转圈界面) 在 bootstrap/render 之前就显示了,
+// 不在这里先注入的话, 启动画面会用默认皮肤, 之后再闪一下换成皮肤样式。
+async function loadBootSkinEarly() {
+  if (!api || typeof api.get_active_skin_css !== 'function') return;
+  try {
+    const css = await withTimeout(api.get_active_skin_css(), 6000, '') || '';
+    if (css) applySkinCssText(css);
+  } catch (e) { /* 拿不到就等 render 阶段正常注入 */ }
 }
 
 // 启动时按 settings.json 里的皮肤设置加载覆盖层 (切换皮肤时复用同一函数)
