@@ -64,6 +64,8 @@
   /* 标题栏 / 侧栏的玻璃渐变。多数聚焦/高亮也复用它, 所以必须在 :root 定义, 
      不能只写在 var() 的 fallback 里 —— 否则其它地方引用时整条声明失效。 */
   --titlebar-from: rgba(38, 58, 99, 0.927);
+  /* 启动转圈界面(Splash)的底色 */
+  --splash-bg: #0b0e14;
   --titlebar-to: rgba(24, 38, 70, 0.867);
   --titlebar-border: rgba(var(--accent-rgb), 0.2);
   /* 高亮/聚焦专用: 与标题栏同色系, 但更通透 —— 直接复用标题栏的
@@ -220,7 +222,8 @@ body.no-hw .hero {
 /* ---------- 启动预加载 Splash (覆盖窗口显示瞬间, 避免白边/闪烁) ---------- */
 #app-splash {
   position: fixed; inset: 0; z-index: 9999;
-  background: #0b0e14;
+  /* 启动转圈界面的底色: 用变量, 否则皮肤换浅色主题时这一层仍是深色 */
+  background: var(--splash-bg, #0b0e14);
   display: flex; align-items: center; justify-content: center;
   transition: opacity .42s ease;
 }
