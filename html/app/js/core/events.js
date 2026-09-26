@@ -124,13 +124,13 @@ function bindEvents() {
     if (!wasOpen && term.classList.contains('open')) retractCharIfBottom();
   });
   on('#btn-copy-term', 'click', e => {
-    e.stopPropagation();
+    stopClick(e);   // 阻止冒泡(别开合终端) 并补一次点击音效
     const text = $$('.term-line', termBody).map(l => l.textContent).join('\n');
     if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(() => toast('已复制到剪贴板', 'success')).catch(() => toast('复制失败', 'error'));
     else toast('复制失败: 当前环境不支持剪贴板', 'error');
   });
   on('#btn-clear-term', 'click', e => {
-    e.stopPropagation();
+    stopClick(e);   // 阻止冒泡(别开合终端) 并补一次点击音效
     termBody.innerHTML = '';
     if (api) api.clear_terminal().catch(() => {});
   });
@@ -163,13 +163,13 @@ function bindEvents() {
   const dcSearchEl = $('#dc-search');
   if (dcSearchEl) dcSearchEl.addEventListener('input', () => { dcSearch = dcSearchEl.value.trim(); dcPage = 1; renderDCList(); });
   // 手动刷新云端列表: 忽略本次启动的已获取内容, 强制重新从云端拉取
+  // 该按钮是纯图标按钮, "刷新中"用图标旋转表达, 不再替换成文字
   const dcRefreshEl = $('#dc-refresh');
   if (dcRefreshEl) dcRefreshEl.addEventListener('click', async () => {
     if (!api) { toast('浏览器预览模式', 'warn'); return; }
     if (dcRefreshEl.disabled) return;
-    const oldText = dcRefreshEl.textContent;
     dcRefreshEl.disabled = true;
-    dcRefreshEl.textContent = '⟳ 刷新中…';
+    dcRefreshEl.classList.add('spinning');
     try {
       const r = await api.refresh_cloud_list('both');
       if (r && r.error) {
@@ -183,7 +183,7 @@ function bindEvents() {
       toast('云端刷新失败: ' + e, 'error');
     } finally {
       dcRefreshEl.disabled = false;
-      dcRefreshEl.textContent = oldText;
+      dcRefreshEl.classList.remove('spinning');
     }
   });
   // 资源管理页: 插件/Mod 切换 (按钮组随之切换)

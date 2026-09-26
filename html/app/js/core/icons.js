@@ -24,15 +24,21 @@ const ICONS = {
   add: 'add.svg',
   addPicture: 'add-picture.svg',
   allApplication: 'all-application.svg',
+  boltOne: 'bolt-one.svg',
   bookmark: 'bookmark.svg',
   bookmarkOne: 'bookmark-one.svg',
   bug: 'bug.svg',
   caution: 'caution.svg',
+  close: 'close.svg',
   code: 'code.svg',
+  downloadTwo: 'download-two.svg',
+  fileAdditionOne: 'file-addition-one.svg',
   fileStaffOne: 'file-staff-one.svg',
   fileSuccess: 'file-success.svg',
+  folderDownload: 'folder-download.svg',
   hamburger: 'hamburger-button.svg',
   harm: 'harm.svg',
+  install: 'install.svg',
   key: 'key.svg',
   keyhole: 'keyhole.svg',
   like: 'like.svg',
@@ -45,6 +51,7 @@ const ICONS = {
   power: 'power.svg',
   previewClose: 'preview-close-one.svg',
   protect: 'protect.svg',
+  reduceOne: 'reduce-one.svg',
   refresh: 'refresh.svg',
   save: 'save-one.svg',
   search: 'search.svg',
@@ -162,8 +169,9 @@ function iconImg(name, opts) {
 
 // 图标 + 文案 的组合标记。调用方传纯文本, 这里负责转义 ——
 // 专供原先用 textContent 拼 "✓ 已完成" 这类位置改用 innerHTML。
+// 图标与文字之间固定留一个空格 (下载小图标和次数之间需要看得清的间隔)。
 function icoText(name, text) {
-  return iconSvg(name) + esc(text == null ? '' : text);
+  return iconSvg(name) + ' ' + esc(text == null ? '' : text);
 }
 
 // ---- 旧 emoji 兼容映射 ----
@@ -171,22 +179,26 @@ function icoText(name, text) {
 // 旧版 Tk UI 仍在使用这些字符, 所以不改后端, 只在前端做一次"emoji -> 图标名"映射,
 // 保证新旧两条渲染路径都能拿到图形图标。
 const LEGACY_ICON_MAP = {
-  '🚀': 'power', '🔍': 'search', '📥': 'save', '🗂️': 'fileStaffOne',
-  '💬': 'paperclip', '📦': 'add', '🧩': 'moreApp', '✅': 'fileSuccess',
-  '❌': 'harm', '🎮': 'allApplication', '⚠': 'caution', '⬇': 'save',
-  '✓': 'fileSuccess', '✗': 'caution', '📁': 'fileStaffOne', '🔄': 'refresh',
+  '🚀': 'power', '🔍': 'search', '📥': 'downloadTwo', '🗂️': 'folderDownload',
+  '💬': 'paperclip', '📦': 'code', '🧩': 'moreApp', '✅': 'fileSuccess',
+  '❌': 'harm', '🎮': 'allApplication', '⚠': 'caution', '⬇': 'downloadTwo',
+  '✓': 'fileSuccess', '✗': 'caution', '📁': 'allApplication', '🔄': 'refresh',
   '📝': 'write', '📖': 'bookmarkOne', '📒': 'paperclip', '🔧': 'settingConfig',
-  '💻': 'code', '📂': 'fileStaffOne', '🎯': 'translate', '📌': 'bookmarkOne',
-  '🕐': 'write', '🎲': 'like', '🔌': 'add', '➕': 'add', '↻': 'refresh',
-  '⟳': 'refresh', '✕': 'previewClose', '●': 'power', '○': 'power',
+  '💻': 'code', '📂': 'folderDownload', '🎯': 'translate', '📌': 'bookmarkOne',
+  '🕐': 'write', '🎲': 'like', '🔌': 'boltOne', '➕': 'fileAdditionOne',
+  '↻': 'refresh', '⟳': 'refresh', '✕': 'reduceOne', '●': 'power', '○': 'power',
   '🔊': 'like', '🖼️': 'pic', '📄': 'fileStaffOne', '❓': 'caution', '🎵': 'like',
+  '📚': 'bookmark', '🧷': 'paperclip', '⚙️': 'settingTwo', '🎨': 'pic',
 };
 
-// 面板右上角关闭按钮 (统一图标), 供各工具面板复用。
+// 面板右上角关闭按钮 (统一图标), 供各工具面板/模态复用。
+// 这里用 close.svg (标准的 X), 不用 reduce-one:
+//   · preview-close-one 是"被划掉的眼睛", 语义是隐藏, 不能当关闭;
+//   · reduce-one 是圆圈减号, 语义是"减少/禁用", 归给启用禁用按钮。
 // cls 默认 panel-close; 需要不同外观时传自己的 class (如版本弹窗的 ver-x)。
 function panelCloseBtn(id, cls, extra) {
   return '<button class="' + (cls || 'panel-close') + '"' + (id ? ' id="' + id + '"' : '') +
-    (extra ? ' ' + extra : '') + ' title="关闭">' + iconSvg('previewClose') + '</button>';
+    (extra ? ' ' + extra : '') + ' title="关闭">' + iconSvg('close') + '</button>';
 }
 
 // emoji -> 图标名。带不带变体选择符 (U+FE0E/U+FE0F) 都要能命中:

@@ -384,6 +384,9 @@ body.no-hw .hero {
 .btn-icon .ico { width: 17px; height: 17px; }
 /* 带 SVG 图标的普通按钮 (刷新/下载/开始等): 图标与文字基线对齐 */
 .btn .ico { width: 15px; height: 15px; vertical-align: -0.16em; margin-right: 2px; }
+/* 纯图标按钮的"进行中"反馈: 让图标转起来, 而不是把按钮文字改成"刷新中…" */
+.spinning .ico { animation: iconSpin .9s linear infinite; transform-origin: 50% 50%; }
+@keyframes iconSpin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 .res-tab .ico { vertical-align: -0.16em; margin-right: 2px; }
 .btn-ico { display: inline-flex; align-items: center; }
 .btn-ico .ico { width: 17px; height: 17px; margin-right: 0; }
@@ -510,45 +513,37 @@ body.modal-open .res-card {
 }
 .res-author-link { color: var(--accent); text-decoration: none; }
 .res-author-link:hover { text-decoration: underline; }
-/* 省略号按钮: 无描边, 与卡片融合 */
-.res-menu-btn {
+/* 卡片右侧操作区 (启用/禁用 + 更多 + 快捷下载) */
+.res-card-ops { display: flex; flex-direction: row; gap: 8px; flex-shrink: 0; align-items: center; }
+
+/* 三个操作按钮外观完全一致: 30×30 透明底 + 灰色线性图标, 仅 hover 提亮。
+   刻意**不用彩色高亮**(原先的绿色/蓝色描边已去掉) ——
+   启用与否由标题旁的状态徽章表达, 按钮保持中性, 不与"更多"抢视觉。 */
+.res-menu-btn, .res-toggle-btn, .dc-dl-btn {
   flex-shrink: 0; width: 30px; height: 30px; border-radius: 8px;
   display: inline-flex; align-items: center; justify-content: center;
   background: transparent; border: none; color: var(--text-3);
-  cursor: pointer; font-size: 16px; line-height: 1; transition: transform .18s ease, border-color .18s ease, color .18s ease, background-color .18s ease, background .18s ease, box-shadow .18s ease, opacity .18s ease;
+  cursor: pointer; font-size: 16px; line-height: 1; padding: 0;
+  transition: transform .18s ease, color .18s ease, background-color .18s ease,
+              box-shadow .18s ease, opacity .18s ease;
 }
-.res-menu-btn:hover { background: rgba(255, 255, 255, 0.08); color: var(--text); }
-/* 卡片右侧操作区 (启用/禁用电源按钮 + 更多) */
-.res-card-ops { display: flex; flex-direction: row; gap: 8px; flex-shrink: 0; align-items: center; }
-
-/* 启用/禁用 电源按钮 (取代原来的滑动开关组)
-   资源管理卡片与详情模态共用同一外观; 下载中心的"快捷下载"按钮沿用同一尺寸框架。 */
-.res-toggle-btn, .dc-dl-btn {
-  flex-shrink: 0; width: 32px; height: 32px; border-radius: 9px;
-  display: inline-flex; align-items: center; justify-content: center;
-  background: rgba(255, 255, 255, .05);
-  border: 1px solid var(--border-2);
-  color: var(--text-3); cursor: pointer; padding: 0;
-  transition: color .18s ease, background-color .18s ease, border-color .18s ease,
-              box-shadow .18s ease, transform .18s ease, opacity .18s ease;
+.res-menu-btn .ico, .res-toggle-btn .ico, .dc-dl-btn .ico { width: 17px; height: 17px; }
+.res-menu-btn:hover, .res-toggle-btn:hover, .dc-dl-btn:hover {
+  background: rgba(255, 255, 255, 0.08); color: var(--text);
 }
-.res-toggle-btn .ico, .dc-dl-btn .ico { width: 17px; height: 17px; }
-.res-toggle-btn:hover, .dc-dl-btn:hover { color: var(--text); border-color: var(--border-2); background: rgba(255, 255, 255, .09); }
 .res-toggle-btn:active, .dc-dl-btn:active { transform: scale(.94); }
 .res-toggle-btn:disabled, .dc-dl-btn:disabled { opacity: .45; cursor: default; transform: none; }
-/* 已启用: 绿色高亮, 一眼看出当前是开着的 */
-.res-toggle-btn.on {
-  color: var(--success);
-  background: rgba(46, 160, 67, .14);
-  border-color: rgba(46, 160, 67, .45);
-  box-shadow: 0 0 0 1px rgba(46, 160, 67, .10) inset;
+/* 已启用: 只让图标亮一档, 仍是灰色 (不用绿色) */
+.res-toggle-btn.on { color: var(--text-2); }
+.res-toggle-btn.on:hover { color: var(--text); }
+/* 已安装: 图标已换成"成功文件", 这里再明显压暗 + 禁止光标 + 取消 hover 提亮,
+   三重强化, 一眼看出这个资源已经装过、不能再下载 */
+.dc-dl-btn.installed {
+  color: var(--text-3);
+  opacity: .35;
+  cursor: not-allowed;
 }
-.res-toggle-btn.on:hover { background: rgba(46, 160, 67, .22); color: #6ee787; }
-/* 快捷下载: 主题蓝, 与"下载"语义一致 */
-.dc-dl-btn { color: var(--accent); border-color: rgba(55,148,255,.35); background: rgba(55,148,255,.10); }
-.dc-dl-btn:hover { color: #9ecbff; background: rgba(55,148,255,.20); border-color: rgba(55,148,255,.55); }
-/* 已安装: 转为中性态 */
-.dc-dl-btn.installed { color: var(--info); border-color: rgba(79,193,255,.35); background: rgba(79,193,255,.10); }
+.dc-dl-btn.installed:hover { background: transparent; color: var(--text-3); }
 
 /* 就地切换启用状态时: 关掉入场动画, 只做平滑的透明度/去色过渡
    (否则 disabled class 变化会重播 cardPopInDim, 看起来像卡片闪了一下) */

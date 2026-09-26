@@ -177,10 +177,10 @@ function renderRecommend(rec) {
         'data-icon-url="' + esc(iconUrl) + '" data-icon-name="' + esc(it.name) + '" ' +
         'onerror="this.src=\'' + PROJECT_ICON + '\'">' +
       '<div class="rec-info">' +
-        '<div class="rec-badge">' + icoText(rec.kind === 'addon' ? 'add' : 'allApplication', rec.kind === 'addon' ? '插件' : 'Mod') + '</div>' +
+        '<div class="rec-badge">' + icoText(rec.kind === 'addon' ? 'boltOne' : 'moreApp', rec.kind === 'addon' ? '插件' : 'Mod') + '</div>' +
         '<div class="rec-title">' + esc(it.name) +
           (it.version ? ' <span class="rec-ver">v' + esc(it.version) + '</span>' : '') + '</div>' +
-        '<div class="rec-count">' + icoText('save', String(it.download_count || 0) + ' 次下载') + '</div>' +
+        '<div class="rec-count">' + icoText('downloadTwo', String(it.download_count || 0) + ' 次下载') + '</div>' +
       '</div>' +
     '</div>' +
     '<div class="rec-desc" title="' + esc(it.desc || '') + '">' + esc(it.desc || '暂无描述') + '</div>' +
@@ -192,13 +192,13 @@ function renderRecommend(rec) {
   });
   const foot = $('#rec-foot');
   foot.innerHTML = it.url
-    ? '<button class="btn btn-primary btn-mini" id="rec-dl"><svg class="ico" data-icon="save-one.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg> 下载</button>'
+    ? '<button class="btn btn-primary btn-mini" id="rec-dl"><svg class="ico" data-icon="download-two.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg> 下载</button>'
     : '';
   _currentRec = rec;
   const dl = $('#rec-dl');
   if (dl) {
     dl.onclick = (e) => {
-      e.stopPropagation();
+      stopClick(e);   // 阻止冒泡(别换推荐) 并补一次点击音效
       if (!api) { toast('浏览器预览模式', 'warn'); return; }
       startDownloadItem(rec.kind, it);
     };
