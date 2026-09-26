@@ -328,7 +328,6 @@ function markCardInstalled(card) {
   if (btn) {
     btn.classList.add('installed');
     btn.disabled = true;
-    btn.title = '已安装';
     btn.innerHTML = iconSvg('fileSuccess');
   }
 }
@@ -362,10 +361,10 @@ function buildDCCard(item, kind) {
       '</div>' +
     '</div>' +
     '<div class="res-card-ops">' +
-      '<button class="res-menu-btn" type="button" title="更多操作">' +
+      '<button class="res-menu-btn" type="button">' +
         '<svg class="ico" data-icon="more-one.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg>' +
       '</button>' +
-      '<button class="dc-dl-btn" type="button" title="快捷下载"' + (disabled ? ' disabled' : '') + '>' +
+      '<button class="dc-dl-btn" type="button"' + (disabled ? ' disabled' : '') + '>' +
         '<svg class="ico" data-icon="download-two.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg>' +
       '</button>' +
     '</div>';
@@ -421,7 +420,7 @@ function openDcModal(kind, item) {
         '<div class="res-detail-main">' +
           '<div class="res-detail-title-row">' +
             '<span class="res-detail-name">' + esc(item.name || '未知') + '</span>' +
-            '<button class="panel-close" id="dc-modal-close" title="关闭"><svg class="ico" data-icon="close.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg></button>' +
+            '<button class="panel-close" id="dc-modal-close"><svg class="ico" data-icon="close.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg></button>' +
           '</div>' +
           '<div class="res-detail-sub">' +
             (item.version ? '<span class="res-ver-inline">v' + esc(item.version) + '</span>' : '') +

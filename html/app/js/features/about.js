@@ -111,7 +111,6 @@ function buildAboutDots() {
   ['程序介绍', '贡献者'].forEach((label, i) => {
     const dot = document.createElement('button');
     dot.className = 'cdot' + (i === aboutIdx ? ' active' : '');
-    dot.title = label;
     dot.onclick = () => setAboutIndex(i);
     wrap.appendChild(dot);
   });

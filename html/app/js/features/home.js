@@ -186,7 +186,7 @@ function renderRecommend(rec) {
         '<div class="rec-count">' + icoText('downloadTwo', String(it.download_count || 0) + ' 次下载') + '</div>' +
       '</div>' +
     '</div>' +
-    '<div class="rec-desc" title="' + esc(it.desc || '') + '">' + esc(it.desc || '暂无描述') + '</div>' +
+    '<div class="rec-desc">' + esc(it.desc || '暂无描述') + '</div>' +
     (authorHtml ? '<div class="rec-authors">' + authorHtml + '</div>' : '');
   // 图标全部加载完成后才移除推荐卡圆圈 (推荐"完整"显示后才消失, 不提前)
   const _recCard = $('#rec-card');

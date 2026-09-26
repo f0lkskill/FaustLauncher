@@ -74,18 +74,17 @@ function ICON_URL(name) {
 
 // 内联 SVG: 允许 CSS 着色 (currentColor) 与尺寸控制, 优于 <img>
 //   name: ICONS 的键或直接给 "xxx.svg"
-//   opts.cls  附加 class; opts.size 字号(px, 同时决定宽高); opts.title 悬浮提示
+//   opts.cls  附加 class; opts.size 字号(px, 同时决定宽高)
 function iconSvg(name, opts) {
   opts = opts || {};
   const file = ICONS[name] || name;
   const url = ICON_BASE + file;
   const cls = 'ico' + (opts.cls ? ' ' + opts.cls : '');
   const size = opts.size ? ' style="width:' + opts.size + 'px;height:' + opts.size + 'px"' : '';
-  const title = opts.title ? '<title>' + esc(opts.title) + '</title>' : '';
   // 用 <use> 引用 sprite 太绕; 直接用 SVG 的 <image> 会丢掉 currentColor,
   // 因此这里按需在运行时拉取并内联(见 hydrateSvgIcons), 该函数只输出占位节点。
   return '<svg class="' + cls + '" data-icon="' + esc(file) + '" viewBox="0 0 48 48"' +
-    ' fill="none" aria-hidden="true"' + size + '>' + title + '</svg>';
+    ' fill="none" aria-hidden="true"' + size + '>' + '</svg>';
 }
 
 // 图标素材缓存: 名称 -> 已剔除 XML 头/宽高属性的 <svg> 内部内容
@@ -198,7 +197,7 @@ const LEGACY_ICON_MAP = {
 // cls 默认 panel-close; 需要不同外观时传自己的 class (如版本弹窗的 ver-x)。
 function panelCloseBtn(id, cls, extra) {
   return '<button class="' + (cls || 'panel-close') + '"' + (id ? ' id="' + id + '"' : '') +
-    (extra ? ' ' + extra : '') + ' title="关闭">' + iconSvg('close') + '</button>';
+    (extra ? ' ' + extra : '') + '>' + iconSvg('close') + '</button>';
 }
 
 // emoji -> 图标名。带不带变体选择符 (U+FE0E/U+FE0F) 都要能命中:

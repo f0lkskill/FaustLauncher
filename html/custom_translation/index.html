@@ -318,7 +318,7 @@
             <div class="panel-title">
                 <span>📁 文件目录</span>
                 <div style="display:flex; gap:6px;">
-                    <button class="icon-btn" id="tree-replace" title="全局值替换 (需先进行值搜索)">🔁 替换全局</button>
+                    <button class="icon-btn" id="tree-replace">🔁 替换全局</button>
                     <button class="icon-btn" id="tree-refresh">↻ 刷新</button>
                 </div>
             </div>
@@ -551,8 +551,6 @@ function buildTree(container, nodes, depth, parentMatch) {
                     const dot = document.createElement("span");
                     dot.className = "cdot";
                     dot.style.background = c;
-                    const lm = layers.find(x => x.color === c);
-                    dot.title = "修改来源: " + (lm ? lm.name : c);
                     row.appendChild(dot);
                 });
             }
@@ -648,7 +646,6 @@ function renderLayers() {
         const eye = document.createElement("span");
         eye.className = "eye" + (hidden ? " off" : "");
         eye.textContent = hidden ? "◌" : "👁";
-        eye.title = hidden ? "已隐藏 (仅隐藏该文件的修改标记显示)，点击显示" : "隐藏 (该文件的修改标记不再显示)";
         eye.addEventListener("click", (e) => {
             e.stopPropagation();
             if (hidden) state.hiddenLayers.delete(l.marker);
@@ -660,7 +657,6 @@ function renderLayers() {
         const dis = document.createElement("span");
         dis.className = "eye" + (l.disabled ? " off" : "");
         dis.textContent = l.disabled ? "⛔" : "🔓";
-        dis.title = l.disabled ? "已禁用 (修改不参与合并视图)，点击启用" : "禁用 (修改不参与合并视图)";
         dis.addEventListener("click", async (e) => {
             e.stopPropagation();
             const r = await api.set_layer_disabled(l.marker, !l.disabled);
@@ -943,17 +939,14 @@ function makeRow(i, e) {
         const v = document.createElement("span");
         v.className = "v" + (m ? " mod" : "") + (e.u ? " uns" : "");
         v.textContent = e.v.length > 120 ? e.v.slice(0, 117) + "..." : e.v;
-        v.title = e.v;
         row.appendChild(v);
         if (e.u) {
             const dot = document.createElement("span");
             dot.className = "dot uns";
-            dot.title = "未保存的修改 (尚未写入修改记录)";
             row.appendChild(dot);
         } else if (m) {
             const dot = document.createElement("span");
             dot.className = "dot";
-            dot.title = "已编辑";
             row.appendChild(dot);
         }
         if (e.i) {
@@ -965,7 +958,6 @@ function makeRow(i, e) {
             const btn = document.createElement("button");
             btn.className = "ebtn" + (m ? " mod" : "") + (e.u ? " uns" : "");
             btn.textContent = "🔧";
-            btn.title = e.u ? "未保存的修改，点击编辑" : (m ? "已修改，点击编辑" : "编辑");
             btn.addEventListener("click", () => openEditDialog(i, e));
             row.appendChild(btn);
         }

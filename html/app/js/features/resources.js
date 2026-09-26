@@ -133,7 +133,7 @@ function confirmReinstall(kind, dirs, label) {
   }
   const panel = document.createElement('div');
   panel.className = 'panel-overlay';
-  panel.innerHTML = '<div class="panel-card"><div class="panel-head"><h3>重装所有' + label + '</h3><button class="panel-close" title="关闭"><svg class="ico" data-icon="close.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg></button></div>' +
+  panel.innerHTML = '<div class="panel-card"><div class="panel-head"><h3>重装所有' + label + '</h3><button class="panel-close"><svg class="ico" data-icon="close.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg></button></div>' +
     '<div class="panel-body"><p>将删除本地资源，并使用启动时缓存的云端信息重新安装。是否继续？</p></div>' +
     '<div class="panel-foot"><button class="btn btn-ghost" data-no>取消</button><button class="btn btn-primary" data-yes>确认重装</button></div></div>';
   document.body.appendChild(panel);
@@ -228,7 +228,6 @@ function applyCardEnabledState(card, item) {
   const btn = card.querySelector('.res-toggle-btn');
   if (btn) {
     btn.classList.toggle('on', enabled);
-    btn.title = enabled ? '点击禁用' : '点击启用';
     btn.setAttribute('aria-pressed', enabled ? 'true' : 'false');
   }
 }
@@ -256,12 +255,12 @@ function buildResCard(item) {
       '</div>' +
     '</div>' +
     '<div class="res-card-ops">' +
-      '<button class="res-menu-btn" type="button" title="更多操作">' +
+      '<button class="res-menu-btn" type="button">' +
         '<svg class="ico" data-icon="more-one.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg>' +
       '</button>' +
       '<button class="res-toggle-btn' + (enabled ? ' on' : '') + '" type="button"' +
         ' aria-pressed="' + (enabled ? 'true' : 'false') + '"' +
-        ' title="' + (enabled ? '点击禁用' : '点击启用') + '">' +
+        '>' +
         '<svg class="ico" data-icon="reduce-one.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg>' +
       '</button>' +
     '</div>';
@@ -363,7 +362,7 @@ function openResModal(kind, item) {
         '<div class="res-detail-main">' +
           '<div class="res-detail-title-row">' +
             '<span class="res-detail-name">' + esc(name) + '</span>' +
-            '<button class="panel-close" id="res-modal-close" title="关闭"><svg class="ico" data-icon="close.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg></button>' +
+            '<button class="panel-close" id="res-modal-close"><svg class="ico" data-icon="close.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg></button>' +
           '</div>' +
           '<div class="res-detail-sub">' +
             (ver ? '<span class="res-ver-inline">v' + esc(ver) + '</span>' : '') +

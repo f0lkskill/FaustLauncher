@@ -146,7 +146,6 @@ function renderSkinList() {
     card.type = 'button';
     card.className = 'skin-card' + (on ? ' active' : '');
     card.dataset.skinId = s.id;
-    card.title = s.description || s.name;
     card.innerHTML =
       // profile 图铺满整张卡片当背景, 上面盖一层文字蒙版
       '<img class="skin-card-bg" src="' + (s.profile_uri || PROJECT_ICON) + '" alt="" ' +
@@ -242,14 +241,14 @@ function skinBgStep(delta) {
 function stopSkinAuto() {
   if (skinBgTimer) { clearInterval(skinBgTimer); skinBgTimer = null; }
   const btn = $('#skin-bg-auto');
-  if (btn) { btn.textContent = '▶'; btn.classList.remove('on'); btn.title = '自动轮播'; }
+  if (btn) { btn.textContent = '▶'; btn.classList.remove('on'); }
 }
 
 function toggleSkinAuto() {
   if (skinBgTimer) { stopSkinAuto(); return; }
   skinBgTimer = setInterval(() => skinBgStep(1), 4000);
   const btn = $('#skin-bg-auto');
-  if (btn) { btn.textContent = '❚❚'; btn.classList.add('on'); btn.title = '暂停轮播'; }
+  if (btn) { btn.textContent = '❚❚'; btn.classList.add('on'); }
 }
 
 function bindSkinEvents() {

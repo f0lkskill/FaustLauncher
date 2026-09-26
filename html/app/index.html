@@ -142,14 +142,14 @@
           </div>
           <div class="res-actions">
             <div class="res-actions-group" id="res-actions-addon">
-              <button class="btn btn-ghost btn-icon" id="btn-open-addon-dir" title="打开插件目录"><svg class="ico" data-icon="all-application.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg></button>
-              <button class="btn btn-ghost btn-icon" id="btn-install-addon" title="安装插件 (zip)"><svg class="ico" data-icon="install.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg></button>
-              <button class="btn btn-ghost btn-icon" id="btn-reinstall-addon" title="重装所有可匹配插件"><svg class="ico" data-icon="refresh.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg></button>
+              <button class="btn btn-ghost btn-icon" id="btn-open-addon-dir"><svg class="ico" data-icon="all-application.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg></button>
+              <button class="btn btn-ghost btn-icon" id="btn-install-addon"><svg class="ico" data-icon="install.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg></button>
+              <button class="btn btn-ghost btn-icon" id="btn-reinstall-addon"><svg class="ico" data-icon="refresh.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg></button>
             </div>
             <div class="res-actions-group" id="res-actions-mod" hidden>
-              <button class="btn btn-ghost btn-icon" id="btn-open-mod-dir" title="打开 Mod 目录"><svg class="ico" data-icon="all-application.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg></button>
-              <button class="btn btn-ghost btn-icon" id="btn-open-mod-window" title="独立管理器（拖拽安装）"><svg class="ico" data-icon="file-addition-one.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg></button>
-              <button class="btn btn-ghost btn-icon" id="btn-reinstall-mod" title="重装所有可匹配 Mod"><svg class="ico" data-icon="refresh.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg></button>
+              <button class="btn btn-ghost btn-icon" id="btn-open-mod-dir"><svg class="ico" data-icon="all-application.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg></button>
+              <button class="btn btn-ghost btn-icon" id="btn-open-mod-window"><svg class="ico" data-icon="file-addition-one.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg></button>
+              <button class="btn btn-ghost btn-icon" id="btn-reinstall-mod"><svg class="ico" data-icon="refresh.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg></button>
             </div>
           </div>
         </div>
@@ -172,7 +172,7 @@
             <svg class="ico res-search-ico" data-icon="search.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg>
             <input class="res-search" id="dc-search" type="text" placeholder="搜索云端插件/Mod...">
           </div>
-          <button class="btn btn-ghost btn-icon" id="dc-refresh" title="忽略本次启动的缓存, 重新从云端获取列表"><svg class="ico" data-icon="refresh.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg></button>
+          <button class="btn btn-ghost btn-icon" id="dc-refresh"><svg class="ico" data-icon="refresh.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg></button>
         </div>
         <div id="dc-list" class="res-list"></div>
         <div id="dc-pagination" class="res-pagination"></div>
@@ -197,10 +197,10 @@
             <div class="skin-empty">选择左侧的皮肤以欣赏其背景图</div>
           </div>
           <div class="skin-stage-bar">
-            <button class="btn btn-ghost btn-icon" id="skin-bg-prev" title="上一张">←</button>
+            <button class="btn btn-ghost btn-icon" id="skin-bg-prev">←</button>
             <span class="skin-bg-info" id="skin-bg-info">0 / 0</span>
-            <button class="btn btn-ghost btn-icon" id="skin-bg-next" title="下一张">→</button>
-            <button class="btn btn-ghost btn-icon" id="skin-bg-auto" title="自动轮播">▶</button>
+            <button class="btn btn-ghost btn-icon" id="skin-bg-next">→</button>
+            <button class="btn btn-ghost btn-icon" id="skin-bg-auto">▶</button>
             <span class="skin-bg-name" id="skin-bg-name"></span>
           </div>
         </div>
@@ -242,14 +242,14 @@
   </div>
 
   <!-- ==================== 下载任务抽屉 ==================== -->
-  <button class="dl-fab" id="dl-fab" title="下载任务">
+  <button class="dl-fab" id="dl-fab">
     <span class="dl-fab-ico"><svg class="ico" data-icon="download-two.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg></span>
   </button>
   <div class="dl-overlay" id="dl-overlay"></div>
   <aside class="dl-drawer" id="dl-drawer">
     <div class="dl-head">
       <span><svg class="ico" data-icon="download-two.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg> 下载任务</span>
-      <button class="dl-close" id="dl-close" title="关闭"><svg class="ico" data-icon="close.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg></button>
+      <button class="dl-close" id="dl-close"><svg class="ico" data-icon="close.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg></button>
     </div>
     <div class="dl-list" id="dl-list">
       <div class="dl-empty">暂无下载任务</div>

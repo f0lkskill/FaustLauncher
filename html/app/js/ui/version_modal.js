@@ -171,8 +171,7 @@ function openVersionModal(d) {
         '<span class="ver-submeta-title">更新说明</span>' +
         (d.date ? '<span class="ver-submeta-date">' + esc(d.date) + '</span>' : '') +
         (d.url
-          ? '<a class="ver-submeta-link" href="' + esc(d.url) + '" target="_blank" rel="noreferrer" title="' +
-            esc(d.url) + '">' + esc(verLinkHost(d.url)) + ' ↗</a>'
+          ? '<a class="ver-submeta-link" href="' + esc(d.url) + '" target="_blank" rel="noreferrer">' + esc(verLinkHost(d.url)) + ' ↗</a>'
           : '') +
       '</div>' +
       '<div class="ver-doc"><div class="ver-doc-inner">' +
