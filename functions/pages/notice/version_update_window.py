@@ -1,5 +1,5 @@
 #! 版本更新提示窗口
-#? 使用 pywebview 展示: html/version_update/index.html (GitHub 文档风格, 与今日指令窗口同一模式)
+#? 使用 pywebview 展示: web/version_update/index.html (GitHub 文档风格, 与今日指令窗口同一模式)
 #? pywebview 6 要求 webview.start() 运行在主线程, 与 tkinter 主循环互斥,
 #? 故以独立子进程方式拉起窗口:
 #? - 源码模式: 用 pythonw 运行本脚本子进程
@@ -16,15 +16,17 @@ import time
 from threading import Thread
 
 if getattr(sys, "frozen", False):
-    # 打包环境下模块在临时解压目录, 以 exe 所在目录为项目根目录 (config/html/assets 在 exe 旁)
+    # 打包环境下模块在临时解压目录, 以 exe 所在目录为项目根目录 (config/assets 在 exe 旁)
     _PROJECT_ROOT = os.path.dirname(os.path.abspath(sys.executable))
 else:
     _PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", ".."))
 if _PROJECT_ROOT not in sys.path:
     sys.path.insert(0, _PROJECT_ROOT)
 
+from functions.base.common.path_utils import get_web_root
+
 RESULT_FILE = os.path.join(_PROJECT_ROOT, "cache", "update_choice.json")
-HTML_PATH = os.path.join(_PROJECT_ROOT, "html", "version_update", "index.html")
+HTML_PATH = get_web_root("version_update", "index.html")
 
 
 # ============================================================

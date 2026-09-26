@@ -1,4 +1,4 @@
-#! 扩展工具 — 后端操作 (GUI 为 html/extension_tools/index.html, 经 extension_tools_window.py 的 js_api 调用)
+#! 扩展工具 — 后端操作 (GUI 为 web/extension_tools/index.html, 经 extension_tools_window.py 的 js_api 调用)
 #? 功能:
 #? - 包装 Mod: 校验原始文件夹(须含 Installer.bat / Assets 文件夹 / Uninstaller.bat),
 #?   复制必需结构到 mods/, 按用户填写的信息生成 icon.png 与 mod_info.json

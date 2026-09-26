@@ -48,7 +48,7 @@ function initCharacter() {
 }
 
 function charFallbackItem() {
-  // 不再用文件路径兜底: pywebview 用本地 http 服务加载页面 (root = html/app/),
+  // 不再用文件路径兜底: pywebview 用本地 http 服务加载页面 (root = web/app/),
   // '../../assets/...' 必然 404 -> 坏图。后端 get_characters 拿不到图时干脆不显示角色小人。
   return { name: '', uri: '' };
 }
