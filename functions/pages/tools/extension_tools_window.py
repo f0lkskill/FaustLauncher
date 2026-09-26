@@ -1,5 +1,5 @@
 #! 扩展工具窗口 (工具页)
-#? 使用 pywebview 展示: html/extension_tools/index.html (与 Mod管理器同一深色 GitHub 风格)
+#? 使用 pywebview 展示: web/extension_tools/index.html (与 Mod管理器同一深色 GitHub 风格)
 #? 三种模式:
 #? - 包装 Mod: 选择原始文件夹(标准: Installer.bat / Assets / Uninstaller.bat; 单文件类型: 仅 .bank/.carra2) -> 填写信息表单 -> 复制到 mods/
 #? - 生成插件模板: 填写插件信息 -> addons/ 下生成 scr.py + icon.png + addon_info.json
@@ -36,7 +36,9 @@ from functions.tools.post_extension_tools import (
     _validate_wrap_source,
 )
 
-HTML_PATH = os.path.join(_PROJECT_ROOT, "html", "extension_tools", "index.html")
+from functions.base.common.path_utils import get_web_root
+
+HTML_PATH = get_web_root("extension_tools", "index.html")
 
 
 # ============================================================

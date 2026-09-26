@@ -65,7 +65,7 @@ function applyBootSkin(skinId) {
   return loadSkinCss(skinActiveId);
 }
 
-// 皮肤可能替换了 html/app/assets (assets/web) 与启动器图标, 切换后重新取一次
+// 皮肤可能替换了 web/app/assets (assets/web) 与启动器图标, 切换后重新取一次
 async function refreshSkinAssets() {
   if (!api) return;
   try {
@@ -137,7 +137,7 @@ function renderSkinList() {
   if (cnt) cnt.textContent = skinList.length ? skinList.length + ' 个' : '';
   if (!skinList.length) {
     list.innerHTML = '<div class="skin-empty">没有找到皮肤<br>' +
-      '<span class="skin-empty-hint">把皮肤目录放进 html/app_skins/ 即可</span></div>';
+      '<span class="skin-empty-hint">把皮肤目录放进 web/app_skins/ 即可</span></div>';
     return;
   }
   skinList.forEach(s => {

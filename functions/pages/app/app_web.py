@@ -4,7 +4,7 @@
 - pywebview 6 要求 webview.start() 运行在主线程, 与 tkinter 主循环互斥,
   故 web 模式完全独立于 tkinter, 不创建任何 Tk 窗口。
 - 业务逻辑全部复用: settings_manager / download_and_launch / AddonManager /
-  ModManager / web_update 等, 仅 UI 层替换为 Web 前端 (html/app/)。
+  ModManager / web_update 等, 仅 UI 层替换为 Web 前端 (web/app/)。
 - 前端通过 window.pywebview.api.* 调用本模块 AppApi;
   后端通过 evaluate_js 推送日志/进度/事件到前端。
 """
@@ -28,15 +28,9 @@ if _PROJECT_ROOT not in sys.path:
     sys.path.insert(0, _PROJECT_ROOT)
 
 def _resolve_html_path():
-    """定位前端页面: onedir 打包时数据位于 _internal/ 下"""
-    if getattr(sys, "frozen", False):
-        for candidate in (
-            os.path.join(_PROJECT_ROOT, "_internal", "html", "app", "index.html"),
-            os.path.join(_PROJECT_ROOT, "html", "app", "index.html"),
-        ):
-            if os.path.exists(candidate):
-                return candidate
-    return os.path.join(_PROJECT_ROOT, "html", "app", "index.html")
+    """定位前端页面: onedir 打包时 web/ 位于 _internal/ 下 (对用户不可见)"""
+    from functions.base.common.path_utils import get_web_root
+    return get_web_root("app", "index.html")
 
 
 def _feature_image_uri(image_name):
@@ -671,7 +665,7 @@ class HeadlessDownloadGUI:
 
 
 # ============================================================
-# 皮肤 (html/app_skins/<id>) —— "玻璃窗"页面
+# 皮肤 (web/app_skins/<id>) —— "玻璃窗"页面
 # ============================================================
 # 目录结构与覆盖规则:
 #   <skin>/config.json         元信息 (name / id / description / authors / theme_color)
@@ -681,23 +675,18 @@ class HeadlessDownloadGUI:
 #   <skin>/assets/launcher/…   替换启动器基础资源 (对应项目根 assets/images/…)
 #                              例: assets/launcher/background/ 存在 -> 整体接管背景图,
 #                              默认 assets/images/background 立刻弃用
-#   <skin>/assets/web/…        替换 html/app/assets/… (例: icon/icon.png)
+#   <skin>/assets/web/…        替换 web/app/assets/… (例: icon/icon.png)
 #
-# 皮肤目录不在 pywebview 的 http 根目录下 (root = html/app), 前端无法用相对路径取用,
+# 皮肤目录不在 pywebview 的 http 根目录下 (root = web/app), 前端无法用相对路径取用,
 # 因此一律由后端读成 data URI / 文本再下发。
 SKIN_SETTING_KEY = "skin"
 _IMAGE_EXTS = (".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp")
 
 
 def _skins_root():
-    """皮肤根目录 (打包后在 _internal/html/app_skins)"""
-    for cand in (
-        os.path.join(_PROJECT_ROOT, "html", "app_skins"),
-        os.path.join(_PROJECT_ROOT, "_internal", "html", "app_skins"),
-    ):
-        if os.path.isdir(cand):
-            return cand
-    return os.path.join(_PROJECT_ROOT, "html", "app_skins")
+    """皮肤根目录 (打包后在 _internal/web/app_skins)"""
+    from functions.base.common.path_utils import get_web_root
+    return get_web_root("app_skins")
 
 
 def _skin_dir(skin_id):
@@ -790,18 +779,16 @@ def _launcher_asset_file(skin_id, *rel):
 
 
 def _web_asset_file(skin_id, *rel):
-    """皮肤 assets/web 优先, 否则回退 html/app/assets/<rel>"""
+    """皮肤 assets/web 优先, 否则回退 web/app/assets/<rel>"""
     sd = _skin_dir(skin_id)
     if sd:
         p = os.path.join(sd, "assets", "web", *rel)
         if os.path.isfile(p):
             return p
-    for cand in (
-        os.path.join(_PROJECT_ROOT, "html", "app", "assets", *rel),
-        os.path.join(_PROJECT_ROOT, "_internal", "html", "app", "assets", *rel),
-    ):
-        if os.path.isfile(cand):
-            return cand
+    from functions.base.common.path_utils import get_web_root
+    cand = get_web_root("app", "assets", *rel)
+    if os.path.isfile(cand):
+        return cand
     return ""
 
 
@@ -849,7 +836,7 @@ def _res_icon_uri(base_dir, name):
 def _get_project_icon_uri():
     """项目图标 data URI (供 get_bootstrap 与 HTML 首载注入复用)
 
-    皮肤优先: <skin>/assets/web/icon/icon.png 替换 html/app/assets/icon/icon.png;
+    皮肤优先: <skin>/assets/web/icon/icon.png 替换 web/app/assets/icon/icon.png;
     皮肤没提供时回退默认 assets/images/icon/icon.png。
     """
     p = _web_asset_file(_active_skin_id(), "icon", "icon.png")
@@ -1148,7 +1135,7 @@ class AppApi:
 
     # ---- 皮肤 (玻璃窗) ----
     def get_skins(self):
-        """玻璃窗左侧列表: 内置"默认皮肤" + html/app_skins 下的全部皮肤。
+        """玻璃窗左侧列表: 内置"默认皮肤" + web/app_skins 下的全部皮肤。
 
         每项只带**卡片展示图**(profile) 与背景数量; 背景图数据量大, 选中后再由
         get_skin_backgrounds 按需拉取, 避免一次把所有皮肤的所有图都塞进前端。

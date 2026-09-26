@@ -1,5 +1,5 @@
 #! 自定义汉化工具窗口 (HTML webview 版)
-#? 使用 pywebview 展示: html/custom_translation/index.html (与扩展工具同一深色 GitHub 风格)
+#? 使用 pywebview 展示: web/custom_translation/index.html (与扩展工具同一深色 GitHub 风格)
 #? 功能:
 #? - 文件树浏览 lang/ 目录, 搜索文件名 (重建式过滤, 无 detach/reattach 索引位移问题)
 #? - 虚拟滚动条目列表 (服务端扁平化+分片拉取, 支持数十万级条目), 编辑叶子值
@@ -26,7 +26,9 @@ else:
 if _PROJECT_ROOT not in sys.path:
     sys.path.insert(0, _PROJECT_ROOT)
 
-HTML_PATH = os.path.join(_PROJECT_ROOT, "html", "custom_translation", "index.html")
+from functions.base.common.path_utils import get_web_root
+
+HTML_PATH = get_web_root("custom_translation", "index.html")
 
 # changes 文件命名: changes.json 或 changes_标记.json (changes_layers.json 是图层状态文件, 不属于 changes)
 CHANGES_PATTERN = re.compile(r"^changes(_[^/\\]+)?\.json$", re.IGNORECASE)

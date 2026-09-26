@@ -10,7 +10,7 @@
         "name": "游戏路径",
         "type": "string",
         "default": "",
-        "value": "D:\\steam\\steamapps\\common\\Limbus Company",
+        "value": "",
         "description": "游戏安装路径, 请确保路径正确\n否则可能导致启动失败和其他错误问题",
         "page": "通用"
     },
@@ -175,7 +175,7 @@
         "name": "启用Mod功能",
         "type": "boolean",
         "default": true,
-        "value": false,
+        "value": true,
         "description": "是否加载 Mod\n注意: 由于游戏切换了新的引擎，导致大部分mod已经完全失效，不建议您启用 Mod 加载。\n我们将会在接下来的版本进行修复。",
         "page": "Mod"
     },
@@ -260,7 +260,7 @@
     "glass_enabled": {
         "name": "启用毛玻璃",
         "type": "boolean",
-        "default": true,
+        "default": false,
         "value": false,
         "description": "是否启用毛玻璃效果 (卡片/面板半透明模糊)\n关闭后禁用 backdrop-filter, 减少 GPU 填充率开销。",
         "page": "其它"
@@ -291,7 +291,7 @@
     "glass_factor": {
         "name": "控件模糊程度",
         "type": "float",
-        "default": 0.4,
+        "default": 0.2,
         "value": 0.2,
         "description": "全局控件模糊程度: 所有面板/卡片背景的模糊强度倍率\n0.5 = 减弱, 1.0 = 默认, 2.0 = 增强, 0 = 完全清晰\n资源管理、下载中心、玻璃窗、快捷方式、工具卡片等全部受此控制",
         "min": 0,
@@ -302,7 +302,7 @@
     "control_opacity": {
         "name": "控件透明度",
         "type": "float",
-        "default": 0.72,
+        "default": 0.9,
         "value": 0.9,
         "description": "统一控制普通面板/卡片/终端的透明度 (直接就是 alpha 值)\n0 = 完全透明, 0.72 = 默认, 1 = 完全不透明\n资源管理、下载中心、玻璃窗、快捷方式、设置、终端 等均受此控制;\n模态窗口 (版本更新 / 路径确认 / 详情弹窗) 保持完全不透明, 不受此项影响",
         "min": 0.0,
@@ -412,8 +412,8 @@
     "version_info": {
         "name": "版本信息",
         "type": "UNABLE_TO_EDIT",
-        "default": "V0.8.9-release.fix.6.h1",
-        "value": "V0.8.9-release.fix.6.h1",
+        "default": "V0.9.0-pre.1",
+        "value": "V0.9.0-pre.1",
         "description": "当前应用程序的版本信息"
     },
     "mems": {
@@ -425,7 +425,7 @@
         },
         "value": {
             "tray_hint": false,
-            "version_notify_flag": true
+            "version_notify_flag": false
         },
         "description": "程序运行时的缓存数据\n不建议修改"
     }

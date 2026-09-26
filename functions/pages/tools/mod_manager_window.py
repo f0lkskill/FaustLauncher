@@ -1,5 +1,5 @@
 #! Mod管理器窗口 (工具页)
-#? 使用 pywebview 展示: html/mod_manager/index.html (与版本更新窗口同一深色 GitHub 风格)
+#? 使用 pywebview 展示: web/mod_manager/index.html (与版本更新窗口同一深色 GitHub 风格)
 #? 管理 %APPDATA%/LimbusCompanyMods 下的单文件 Mod (.bank 音效 / .carra2 贴图)
 #? - 支持从资源管理器拖拽文件到窗口 (pywebview DOM drop 事件, 可批量), 或点击选择文件
 #? - 启用/禁用通过重命名 .disabled 后缀实现 (与旧版 mod_manager 行为一致)
@@ -23,9 +23,9 @@ else:
 if _PROJECT_ROOT not in sys.path:
     sys.path.insert(0, _PROJECT_ROOT)
 
-from functions.base.common.path_utils import get_mod_root_dir
+from functions.base.common.path_utils import get_mod_root_dir, get_web_root
 
-HTML_PATH = os.path.join(_PROJECT_ROOT, "html", "mod_manager", "index.html")
+HTML_PATH = get_web_root("mod_manager", "index.html")
 
 ALLOWED_EXTENSIONS = {'.bank', '.carra2', '.rebank'}
 DISABLED_SUFFIX = '.disabled'

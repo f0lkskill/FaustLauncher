@@ -1,6 +1,6 @@
 #! 今日指令?
 #? 词库来源: config/nyos_prescript.json
-#? 使用 pywebview 展示: html/nyos_prescript/index.html
+#? 使用 pywebview 展示: web/nyos_prescript/index.html
 
 import difflib
 import os
@@ -9,7 +9,7 @@ import subprocess
 import sys
 
 if getattr(sys, "frozen", False):
-    # 打包环境下模块在临时解压目录, 以 exe 所在目录为项目根目录 (config/html/assets 在 exe 旁)
+    # 打包环境下模块在临时解压目录, 以 exe 所在目录为项目根目录 (config/assets 在 exe 旁)
     _PROJECT_ROOT = os.path.dirname(os.path.abspath(sys.executable))
 else:
     _PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", ".."))
@@ -350,7 +350,8 @@ def run_prescript_window(debug: bool = False):
         _msgbox("今日指令", f"未安装 pywebview 依赖:\n{type(e).__name__}: {e}")
         raise SystemExit(1)
 
-    html_path = os.path.join(_PROJECT_ROOT, "html", "nyos_prescript", "index.html")
+    from functions.base.common.path_utils import get_web_root
+    html_path = get_web_root("nyos_prescript", "index.html")
     if not os.path.exists(html_path):
         _msgbox("今日指令", f"找不到页面文件:\n{html_path}")
         raise SystemExit(1)

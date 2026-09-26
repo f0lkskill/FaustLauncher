@@ -376,6 +376,12 @@ class BuildGUI:
             _pr_dll = os.path.join('dist', 'FaustLauncher', '_internal', 'pythonnet', 'runtime', 'Python.Runtime.dll')
             if not os.path.isfile(_pr_dll):
                 raise FileNotFoundError('PyInstaller 未收集 pythonnet runtime (Python.Runtime.dll), Web 界面无法启动')
+            # 9) web/ 前端页面树必须被收进 _internal/web (对用户不可见), 否则所有 Web 窗口白屏
+            _web_index = os.path.join('dist', 'FaustLauncher', '_internal', 'web', 'app', 'index.html')
+            if not os.path.isfile(_web_index):
+                raise FileNotFoundError(
+                    'PyInstaller 未把 web/ 收进 _internal/web (Web 界面无法启动); '
+                    '请确认 FaustLauncher.spec 中的 web/ 收集逻辑与 web/app/index.html 存在')
         except Exception as e:
             self._set_step(3, 'failed')
             self._set_status(f'复制运行环境失败: {e}', DANGER)
@@ -388,8 +394,9 @@ class BuildGUI:
         self._set_step(4, 'running')
         self._set_status('复制资产文件...')
         try:
+            # 只复制 assets/。web/ (前端页面树) 不在此复制: 已由 FaustLauncher.spec
+            # 收进 _internal/web/, 随 _internal 一起进入发布包, 对用户不可见。
             shutil.copytree('assets', f'build_{vi}/assets', dirs_exist_ok=True)
-            shutil.copytree('html', f'build_{vi}/html', dirs_exist_ok=True)
         except Exception as e:
             self._set_step(4, 'failed')
             self._set_status(f'复制 assets 失败: {e}', DANGER)
