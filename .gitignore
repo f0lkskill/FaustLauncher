@@ -5,6 +5,7 @@ __pycache__/
 resource_info.json
 # C extensions
 *.so
+.icon_src/
 *.dll
 test/
 settings.json.bak

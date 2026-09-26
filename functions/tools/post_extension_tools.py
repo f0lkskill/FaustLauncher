@@ -35,7 +35,7 @@ PAGE_SIZE = 5  # 云端 mod 分页: 每页 5 个
 
 # 云端笔记地址一律取自 config/web_config.json (webnote_bases / webnote_update_url):
 # 不再硬编码 textdb.online —— 该域名已弃用 (2026-09-25 起)
-PARSER_BASE = 'https://lz0.qaiu.top/parser?url='  # 蓝奏云直链解析服务 (修复版; 老域名 lz.qaiu.top 已失效)
+PARSER_BASE = 'https://lz.qaiu.top/parser?url='  # 蓝奏云直链解析服务 (修复版; 老域名 lz.qaiu.top 已失效)
 
 
 def _note_read_url(address):

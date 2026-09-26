@@ -31,7 +31,7 @@ function openAutoTranslate() {
   panel.className = 'panel-overlay';
   panel.innerHTML =
     '<div class="panel-card panel-card-wide">' +
-      '<div class="panel-head"><h3>🤖 自动汉化</h3><button class="panel-close" id="at-close">✕</button></div>' +
+      '<div class="panel-head"><h3>' + iconSvg('translate') + ' 自动汉化</h3>' + panelCloseBtn('at-close') + '</div>' +
       '<div class="panel-body">' +
         '<div class="at-row"><label>源文本目录</label><input type="text" id="at-source" placeholder="留空使用默认"></div>' +
         '<div class="at-row"><label>输出目录</label><input type="text" id="at-target" placeholder="留空使用默认"></div>' +
@@ -39,7 +39,7 @@ function openAutoTranslate() {
         '<div class="progress-track"><div class="progress-fill" id="at-progress"></div></div>' +
         '<div id="at-log" class="at-log"></div>' +
       '</div>' +
-      '<div class="panel-foot"><button class="btn btn-ghost" id="at-stop">⏹ 停止</button><button class="btn btn-primary" id="at-start">🚀 开始</button></div>' +
+      '<div class="panel-foot"><button class="btn btn-ghost" id="at-stop">' + iconSvg('caution') + ' 停止</button><button class="btn btn-primary" id="at-start">' + iconSvg('power') + ' 开始</button></div>' +
     '</div>';
   document.body.appendChild(panel);
   panel.addEventListener('click', (e) => { if (e.target === panel) closePanel(panel); });
@@ -63,7 +63,7 @@ function openFontSelector() {
   panel.className = 'panel-overlay';
   panel.innerHTML =
     '<div class="panel-card panel-card-wide">' +
-      '<div class="panel-head"><h3>📝 字体修改</h3><button class="panel-close" id="font-close">✕</button></div>' +
+      '<div class="panel-head"><h3>' + iconSvg('write') + ' 字体修改</h3>' + panelCloseBtn('font-close') + '</div>' +
       '<div class="panel-body">' +
         '<div class="font-tabs"><button class="font-tab active" data-font="context">Context 字体</button><button class="font-tab" data-font="title">Title 字体</button></div>' +
         '<div id="font-info" class="font-info"></div>' +
@@ -107,7 +107,7 @@ function openFontSelector() {
     ]).then(([d]) => {
       const info = d[currentFontTab] || {};
       $('#font-info').innerHTML = info.exists
-        ? '✓ 已使用自定义字体 (' + (info.size / 1024).toFixed(1) + ' KB)'
+        ? icoText('fileSuccess', '已使用自定义字体 (' + (info.size / 1024).toFixed(1) + ' KB)')
         : '使用默认字体';
     }).catch(() => {}).finally(() => hideFrameLoading(card));
   }
@@ -154,10 +154,10 @@ function openGradientTool() {
   panel.className = 'panel-overlay';
   panel.innerHTML =
     '<div class="panel-card panel-card-wide">' +
-      '<div class="panel-head"><h3>💻 渐变文本处理器</h3><button class="panel-close" id="gradient-close">✕</button></div>' +
+      '<div class="panel-head"><h3>' + iconSvg('code') + ' 渐变文本处理器</h3>' + panelCloseBtn('gradient-close') + '</div>' +
       '<div class="panel-body">' +
         '<div class="grad-section">' +
-          '<div class="grad-title">🎨 颜色设置</div>' +
+          '<div class="grad-title">' + iconSvg('pic') + ' 颜色设置</div>' +
           '<div class="grad-color-row">' +
             '<span class="gc-label">起始颜色</span><input type="color" id="gradient-start" value="#00e5ff">' +
             '<span class="gc-sep"></span>' +
@@ -165,7 +165,7 @@ function openGradientTool() {
           '</div>' +
         '</div>' +
         '<div class="grad-section">' +
-          '<div class="grad-title">⚙️ 渐变设置</div>' +
+          '<div class="grad-title">' + iconSvg('settingTwo') + ' 渐变设置</div>' +
           '<div class="grad-rate-row">' +
             '<span class="gc-label">渐变度 <i>(值越大渐变越快)</i></span>' +
             '<input type="range" id="gradient-rate" min="0.1" max="5" step="0.1" value="2">' +
@@ -173,19 +173,19 @@ function openGradientTool() {
           '</div>' +
         '</div>' +
         '<div class="grad-section">' +
-          '<div class="grad-title">✏️ 输入文本</div>' +
+          '<div class="grad-title">' + iconSvg('write') + ' 输入文本</div>' +
           '<textarea id="gradient-input" rows="2" class="at-row-input">你也将安息, 化作哀蝶消散吧...</textarea>' +
         '</div>' +
         '<div class="grad-section">' +
-          '<div class="grad-title">🎯 实时预览</div>' +
+          '<div class="grad-title">' + iconSvg('pic') + ' 实时预览</div>' +
           '<div id="gradient-preview" class="gradient-preview"><span style="opacity:.4">输入文本后实时预览</span></div>' +
         '</div>' +
         '<div class="grad-section">' +
-          '<div class="grad-title">📋 生成的 Unity 富文本</div>' +
+          '<div class="grad-title">' + iconSvg('write') + ' 生成的 Unity 富文本</div>' +
           '<textarea id="gradient-output" rows="3" readonly class="grad-output"></textarea>' +
         '</div>' +
       '</div>' +
-      '<div class="panel-foot"><button class="btn btn-primary" id="gradient-copy">📋 复制 Unity 富文本</button></div>' +
+      '<div class="panel-foot"><button class="btn btn-primary" id="gradient-copy">' + iconSvg('share') + ' 复制 Unity 富文本</button></div>' +
     '</div>';
   document.body.appendChild(panel);
   panel.addEventListener('click', (e) => { if (e.target === panel) closePanel(panel); });
@@ -238,7 +238,7 @@ function openExtensionTools() {
   panel.className = 'panel-overlay';
   panel.innerHTML =
     '<div class="panel-card">' +
-      '<div class="panel-head"><h3>🧩 扩展工具</h3><button class="panel-close" id="ext-close">✕</button></div>' +
+      '<div class="panel-head"><h3>' + iconSvg('moreApp') + ' 扩展工具</h3>' + panelCloseBtn('ext-close') + '</div>' +
       '<div class="panel-body ext-center">' +
         '<div class="at-row"><label style="text-align:center"></label>' +
           '<input type="text" id="ext-key" placeholder="请输入密钥" autocomplete="off" spellcheck="false" style="text-align:center">' +

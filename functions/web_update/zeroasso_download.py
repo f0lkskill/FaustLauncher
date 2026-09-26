@@ -711,7 +711,7 @@ def download_and_extract_gui(gui:DownloadGUI, config_path: str = "", download_fi
             {
                 # OurPlay 汉化包本身不带字体 (转换时跳过 Font), 需同零协会一样单独下载字体
                 'name': 'TTF 字体文件',
-                'url': 'https://lz0.qaiu.top/parser?url=https://folkskill.lanzoum.com/irAGt3iha71c&pwd=3z4n',
+                'url': 'https://lz.qaiu.top/parser?url=https://folkskill.lanzouc.com/irAGt3iha71c',
                 'temp_filename': 'LLCCN-Font.7z'
             }
         ]
@@ -724,7 +724,7 @@ def download_and_extract_gui(gui:DownloadGUI, config_path: str = "", download_fi
             },
             {
                 'name': 'TTF 字体文件',
-                'url': 'https://lz0.qaiu.top/parser?url=https://folkskill.lanzoum.com/irAGt3iha71c&pwd=3z4n',
+                'url': 'https://lz.qaiu.top/parser?url=https://folkskill.lanzouc.com/irAGt3iha71c',
                 'temp_filename': 'LLCCN-Font.7z'
             }
         ]

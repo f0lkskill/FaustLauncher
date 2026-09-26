@@ -21,6 +21,14 @@ def _parse_vdf(text):
     """极简 VDF 解析: "key" "value" 与 "key" { ... } 嵌套 → dict (仅需 libraryfolders/acf 的子集)。
 
     支持 // 行注释与 \\" 转义; 解析失败抛异常, 由调用方兜底。
+
+    **顶层形状 (2026-09-25 修)**: Steam 的 vdf/acf 顶层都是 `"key" { ... }` ——
+    libraryfolders.vdf 是 `"libraryfolders" { "0" { "path" ... } }`, appmanifest 是
+    `"AppState" { "installdir" ... }`。旧实现只认"整份文件就是一个 { ... } 块",
+    碰到真实文件会在读完第一个"键"之后就返回(那个键名当成了结果), 于是:
+      · 库列表恒为空 → 只扫了 Steam 主目录, 装在第二个库(另一块盘)里的游戏永远找不到;
+      · acf 里读不到 installdir → 只能靠猜目录名 "Limbus Company"/"LimbusCompany"。
+    现在两种形状都支持, 返回 {顶层键: 块/值}。
     """
     i = 0
     n = len(text)
@@ -57,32 +65,49 @@ def _parse_vdf(text):
                 i += 1
         return ''.join(out)
 
-    def parse_value():
+    def parse_block():
+        """当前字符是 '{' -> 解析成 dict"""
         nonlocal i
+        i += 1
+        d = {}
+        while True:
+            skip_ws()
+            if i >= n:
+                break
+            if text[i] == '}':
+                i += 1
+                break
+            key = read_string()
+            if key is None:
+                break
+            val = read_string()
+            if val is None:
+                skip_ws()
+                val = parse_block() if (i < n and text[i] == '{') else None
+            d[key] = val
+        return d
+
+    skip_ws()
+    if i < n and text[i] == '{':
+        return parse_block()
+    # 顶层是 "键" { ... } 序列 (Steam 的真实形状)
+    root = {}
+    while True:
         skip_ws()
         if i >= n:
-            return None
-        if text[i] == '{':
-            i += 1
-            d = {}
-            while True:
-                skip_ws()
-                if i >= n:
-                    break
-                if text[i] == '}':
-                    i += 1
-                    break
-                key = read_string()
-                if key is None:
-                    break
-                val = read_string()
-                if val is None:
-                    val = parse_value()
-                d[key] = val
-            return d
-        return read_string()
-
-    return parse_value()
+            break
+        key = read_string()
+        if key is None:
+            break
+        skip_ws()
+        if i < n and text[i] == '{':
+            root[key] = parse_block()
+        else:
+            val = read_string()
+            if val is None:
+                break
+            root[key] = val
+    return root
 
 
 def _steam_install_paths():
@@ -132,45 +157,58 @@ def normalize_game_path(path):
     return p
 
 
-def resolve_game_dir(path) -> str:
-    r"""把给定路径解析成"确实含 LimbusCompany.exe 的游戏目录", 解析不出返回 ""。
+def resolve_game_dir_ex(path):
+    r"""把给定路径解析成"确实含 LimbusCompany.exe 的游戏目录", 并说明失败原因。
 
     规则 (按顺序):
       ① 传进来的就是 exe 文件本身 → 取它的所在目录
       ② 目录本身有 LimbusCompany.exe → 用它
       ③ 目录下**唯一一个**一级子目录有 exe → 用那个子目录
          (用户多半选了上一层, 例如 steamapps\\common 或游戏目录的父级)
-      ④ 其它情况 (没 exe / 多候选分不清) → ""
+      ④ 其它情况 (没 exe / 多候选分不清) → 解析不出来
 
     路径里必须有 LimbusCompany.exe 是硬要求: 拿不到这个文件就说明目录选错了,
     启动器不能把它当成有效游戏路径来用。
+
+    Returns:
+        (游戏目录 或 "", reason):
+          ''          解析成功
+          'empty'     路径为空
+          'not_dir'   路径不存在 / 不是目录
+          'no_exe'    目录本身和它的一级子目录里都没有 LimbusCompany.exe
+          'ambiguous' 父目录下**有多个**含 exe 的子目录, 不能替用户猜
     """
     raw = str(path or "").strip()
     if not raw:
-        return ""
+        return "", "empty"
     try:
         p = normalize_game_path(raw)
     except Exception:
-        return ""
+        return "", "not_dir"
     # ① 直接指到 exe 文件本身
     try:
         if os.path.isfile(p) and os.path.basename(p).lower() == GAME_EXE.lower():
             p = os.path.dirname(p)
     except Exception:
-        return ""
+        return "", "not_dir"
     if not p or not os.path.isdir(p):
-        return ""
+        return "", "not_dir"
     if os.path.isfile(os.path.join(p, GAME_EXE)):
-        return normalize_game_path(p)
-    # ③ 唯一一级子目录带 exe (多个候选一律不猜)
+        return normalize_game_path(p), ""
+    # ③ 唯一一级子目录带 exe (多个候选一律不猜, 但要能告诉用户为什么)
     try:
         hits = [d for d in os.listdir(p)
                 if os.path.isfile(os.path.join(p, d, GAME_EXE))]
     except Exception:
-        return ""
+        return "", "no_exe"
     if len(hits) == 1:
-        return normalize_game_path(os.path.join(p, hits[0]))
-    return ""
+        return normalize_game_path(os.path.join(p, hits[0])), ""
+    return "", ("ambiguous" if len(hits) > 1 else "no_exe")
+
+
+def resolve_game_dir(path) -> str:
+    """resolve_game_dir_ex 的简写: 只要目录 (解析不出返回 "")"""
+    return resolve_game_dir_ex(path)[0]
 
 
 def is_valid_game_path(path) -> bool:
@@ -190,48 +228,96 @@ def has_game_exe(path) -> bool:
         return False
 
 
+def _acf_installdir(data):
+    """从 appmanifest 里取 installdir
+
+    真实 acf 形状是 `"AppState" { "installdir" "Limbus Company" }`, 所以键在
+    AppState 里面; 这里两种都认 (顶层直接给键的老测试数据也兼容)。
+    """
+    if not isinstance(data, dict):
+        return ""
+    node = data.get('AppState')
+    if not isinstance(node, dict):
+        node = data
+    for key in ('installdir', 'Installdir', 'installDir'):
+        v = node.get(key)
+        if v:
+            return str(v)
+    return ""
+
+
+def _lib_paths_from_vdf(steam_dir):
+    """libraryfolders.vdf -> 库目录列表 (解析不出返回 [])"""
+    vdf = os.path.join(steam_dir, 'steamapps', 'libraryfolders.vdf')
+    if not os.path.isfile(vdf):
+        return []
+    try:
+        with open(vdf, 'r', encoding='utf-8', errors='replace') as f:
+            data = _parse_vdf(f.read())
+    except Exception:
+        return []
+    if not isinstance(data, dict):
+        return []
+    node = data.get('libraryfolders')
+    if not isinstance(node, dict):
+        node = data
+    libs = []
+    for v in node.values():
+        if isinstance(v, dict) and v.get('path'):
+            libs.append(str(v['path']))
+    return libs
+
+
+def _find_exe_in_common(lib, exe_name=GAME_EXE):
+    """在 <lib>/steamapps/common 下找带 exe 的游戏目录 (manifest 缺失/目录名被改时兜底)
+
+    先试常见目录名, 再扫一层子目录 (只认唯一命中, 多个不猜)。
+    """
+    common = os.path.join(lib, 'steamapps', 'common')
+    for d in ('Limbus Company', 'LimbusCompany'):
+        p = os.path.join(common, d)
+        if os.path.isfile(os.path.join(p, exe_name)):
+            return p
+    try:
+        hits = [d for d in os.listdir(common)
+                if os.path.isfile(os.path.join(common, d, exe_name))]
+    except Exception:
+        return None
+    if len(hits) == 1:
+        return os.path.join(common, hits[0])
+    return None
+
+
 def find_steam_game_path(app_id=_APP_ID_STR, exe_name=GAME_EXE):
     """定位边狱巴士安装路径。
+
+    流程: 注册表找 Steam 目录 -> 解析 libraryfolders.vdf 拿到**所有**库 ->
+    每个库先按 appmanifest 的 installdir 找, 再按目录名兜底扫一遍。
 
     返回游戏目录 (已规范化: 统一反斜杠 / 大写盘符 / 无尾部分隔符, 见 normalize_game_path);
     找不到返回 None。
     """
     for steam_dir in _steam_install_paths():
-        vdf = os.path.join(steam_dir, 'steamapps', 'libraryfolders.vdf')
-        if not os.path.isfile(vdf):
-            continue
-        try:
-            with open(vdf, 'r', encoding='utf-8', errors='replace') as f:
-                data = _parse_vdf(f.read())
-        except Exception:
-            continue
-        libs = []
-        if isinstance(data, dict):
-            for v in data.values():
-                if isinstance(v, dict) and v.get('path'):
-                    libs.append(str(v['path']))
-        if not libs:
-            libs = [steam_dir]
+        libs = _lib_paths_from_vdf(steam_dir)
+        if steam_dir not in libs:
+            libs.append(steam_dir)          # 主目录永远算一个库 (vdf 读不到时也能用)
         for lib in libs:
-            lib = lib.strip().rstrip('\\')
+            lib = str(lib).strip().rstrip('\\/')
+            if not lib:
+                continue
             installdir = None
             manifest = os.path.join(lib, 'steamapps', f'appmanifest_{app_id}.acf')
             if os.path.isfile(manifest):
                 try:
                     with open(manifest, 'r', encoding='utf-8', errors='replace') as f:
-                        m = _parse_vdf(f.read())
-                    if isinstance(m, dict) and m.get('installdir'):
-                        installdir = str(m['installdir'])
+                        installdir = _acf_installdir(_parse_vdf(f.read())) or None
                 except Exception:
-                    pass
-            if not installdir:
-                # 无 manifest 时按常见目录名探测
-                for d in ('Limbus Company', 'LimbusCompany'):
-                    p = os.path.join(lib, 'steamapps', 'common', d)
-                    if os.path.isfile(os.path.join(p, exe_name)):
-                        return normalize_game_path(p)
-                continue
-            p = os.path.join(lib, 'steamapps', 'common', installdir)
-            if os.path.isfile(os.path.join(p, exe_name)):
+                    installdir = None
+            if installdir:
+                p = os.path.join(lib, 'steamapps', 'common', installdir)
+                if os.path.isfile(os.path.join(p, exe_name)):
+                    return normalize_game_path(p)
+            p = _find_exe_in_common(lib, exe_name)
+            if p:
                 return normalize_game_path(p)
     return None

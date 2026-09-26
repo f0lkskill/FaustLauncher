@@ -133,7 +133,7 @@ function confirmReinstall(kind, dirs, label) {
   }
   const panel = document.createElement('div');
   panel.className = 'panel-overlay';
-  panel.innerHTML = '<div class="panel-card"><div class="panel-head"><h3>重装所有' + label + '</h3><button class="panel-close">✕</button></div>' +
+  panel.innerHTML = '<div class="panel-card"><div class="panel-head"><h3>重装所有' + label + '</h3><button class="panel-close" title="关闭"><svg class="ico" data-icon="preview-close-one.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg></button></div>' +
     '<div class="panel-body"><p>将删除本地资源，并使用启动时缓存的云端信息重新安装。是否继续？</p></div>' +
     '<div class="panel-foot"><button class="btn btn-ghost" data-no>取消</button><button class="btn btn-primary" data-yes>确认重装</button></div></div>';
   document.body.appendChild(panel);
@@ -167,8 +167,9 @@ function renderResList() {
       (it.name || '').toLowerCase().includes(kw) ||
       (it.description || '').toLowerCase().includes(kw));
   }
-  // 显示顺序: 已启用的排前面, 已禁用的一律沉到后面 (组内保持后端给的顺序;
-  // 关掉开关后这张卡会立刻下移, 打开则回到启用区)。排序在分页之前, 所以翻页也一致。
+  // 显示顺序: 已启用的排前面, 已禁用的一律沉到后面 (组内保持后端给的顺序)。
+  // 重排只发生在"整页刷新"时 (切换页面 / 换分区 / 搜索 / 翻页 / 后端通知刷新);
+  // 卡片上的启用/禁用按钮走 applyCardEnabledState 就地更新, 不会当场把卡片挪走。
   items = items.slice().sort((a, b) => Number(!!b.enabled) - Number(!!a.enabled));
   const totalPages = Math.max(1, Math.ceil(items.length / RES_PAGE_SIZE));
   if (resPage > totalPages) resPage = totalPages;
@@ -211,6 +212,27 @@ function authorLinksHtml(links) {
   ).join(' · ');
 }
 
+// 就地刷新一张卡片的启用/禁用外观 (不改列表顺序):
+// 只改这一张卡的 class / 状态徽章 / 按钮态, 因此点击禁用后卡片停在原地。
+function applyCardEnabledState(card, item) {
+  if (!card || !item) return;
+  const enabled = !!item.enabled;
+  // live-toggle: 关掉入场动画, 让 opacity/filter 平滑过渡 (否则切 class 会重播 cardPopIn)
+  card.classList.add('live-toggle');
+  card.classList.toggle('disabled', !enabled);
+  const badge = card.querySelector('.res-state-badge');
+  if (badge) {
+    badge.className = 'res-state-badge ' + (enabled ? 'on' : 'off');
+    badge.textContent = enabled ? '已启用' : '已禁用';
+  }
+  const btn = card.querySelector('.res-toggle-btn');
+  if (btn) {
+    btn.classList.toggle('on', enabled);
+    btn.title = enabled ? '点击禁用' : '点击启用';
+    btn.setAttribute('aria-pressed', enabled ? 'true' : 'false');
+  }
+}
+
 // 资源卡片: 下载中心样式, 图标用目录下图片, 名字旁启用/禁用标识, hover 渐变描边 + 3D 跟随
 function buildResCard(item) {
   const name = item.name || '未知';
@@ -234,23 +256,41 @@ function buildResCard(item) {
       '</div>' +
     '</div>' +
     '<div class="res-card-ops">' +
-      '<button class="res-menu-btn">⋯</button>' +
-      '<label class="res-switch">' +
-        '<input type="checkbox" ' + (enabled ? 'checked' : '') + '><span class="slider"></span>' +
-      '</label>' +
+      '<button class="res-menu-btn" type="button" title="更多操作">' +
+        '<svg class="ico" data-icon="more-one.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg>' +
+      '</button>' +
+      '<button class="res-toggle-btn' + (enabled ? ' on' : '') + '" type="button"' +
+        ' aria-pressed="' + (enabled ? 'true' : 'false') + '"' +
+        ' title="' + (enabled ? '点击禁用' : '点击启用') + '">' +
+        '<svg class="ico" data-icon="power.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg>' +
+      '</button>' +
     '</div>';
-  card.querySelector('.res-switch input').onchange = async (e) => {
+  card.querySelector('.res-toggle-btn').onclick = async (e) => {
     e.stopPropagation();
     if (!api) { toast('浏览器预览模式', 'warn'); return; }
-    const fn = resKind === 'addon' ? api.set_addon_enabled : api.set_mod_enabled;
+    const btn = e.currentTarget;
+    if (btn.disabled) return;
+    btn.disabled = true;
+    const kind = resKind;
+    const fn = kind === 'addon' ? api.set_addon_enabled : api.set_mod_enabled;
+    const next = !item.enabled;
     try {
-      const r = await fn(item.dir || item.name, e.target.checked);
-      if (r && r.error) { toast('操作失败: ' + r.error, 'error'); e.target.checked = !e.target.checked; return; }
-      item.enabled = e.target.checked;
+      const r = await fn(item.dir || item.name, next);
+      if (r && r.error) { toast('操作失败: ' + r.error, 'error'); return; }
+      item.enabled = next;
       // 同步内存 settings.enable, 保证详细界面(设置开关)一致
-      if (item.settings) item.settings.enable = e.target.checked;
-      renderResList();
-    } catch (err) { toast('操作失败: ' + err, 'error'); e.target.checked = !e.target.checked; }
+      if (item.settings) item.settings.enable = next;
+      // 关键: 只就地更新这张卡片, **不** 调用 renderResList()。
+      // renderResList 会把已禁用的条目排到列表末尾, 若在点击瞬间重排, 卡片会当场
+      // 跳到后面去 —— 用户就觉得"点一下东西就飞走了"。
+      // 这里让顺序保持不变, 等下一次整页刷新(切换页面 / 换分区 / 搜索 / 翻页)时
+      // 再统一按启用优先重排。
+      applyCardEnabledState(card, item);
+    } catch (err) {
+      toast('操作失败: ' + err, 'error');
+    } finally {
+      btn.disabled = false;
+    }
   };
   card.querySelector('.res-menu-btn').onclick = () => openResModal(resKind, item);
   addCardTilt(card);
@@ -260,7 +300,24 @@ function buildResCard(item) {
 // 设置项名称翻译 (目前仅 enable)
 const SETTING_LABELS = { enable: '启用' };
 
+// 模态内的启用状态标识 (电源图标 + 文案)
+function resStateHtml(enabled) {
+  return '<svg class="ico" data-icon="power.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg> ' +
+    (enabled ? '已启用' : '已禁用');
+}
+
+// 启用/禁用电源按钮 (模态设置区用, 带 data-set 以便随表单一起收集)
+function resToggleBtnHtml(key, on) {
+  return '<button type="button" class="res-toggle-btn' + (on ? ' on' : '') + '"' +
+    ' data-set="' + esc(key) + '" data-value="' + (on ? '1' : '0') + '"' +
+    ' aria-pressed="' + (on ? 'true' : 'false') + '"' +
+    ' title="' + (on ? '点击禁用' : '点击启用') + '">' +
+    '<svg class="ico" data-icon="power.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg>' +
+    '</button>';
+}
+
 // 设置字段渲染 (bool→开关, number→数字框, 其余→文本框); enable 标签译为"启用"
+// 例外: enable 是"启用/禁用这个资源"本身, 统一用与卡片一致的电源按钮, 不再用滑动开关
 function renderSettingsFields(settings) {
   const keys = settings ? Object.keys(settings) : [];
   if (!keys.length) return '<div class="res-empty">暂无配置项</div>';
@@ -268,7 +325,10 @@ function renderSettingsFields(settings) {
   keys.forEach(k => {
     const v = settings[k];
     const label = SETTING_LABELS[k] || k;
-    if (typeof v === 'boolean') {
+    if (k === 'enable') {
+      html += '<div class="res-set-row"><span class="res-set-name">' + esc(label) + '</span>' +
+        resToggleBtnHtml(k, !!v) + '</div>';
+    } else if (typeof v === 'boolean') {
       html += '<label class="res-set-row"><span class="res-set-name">' + esc(label) + '</span>' +
         '<span class="switch"><input type="checkbox" data-set="' + esc(k) + '"' + (v ? ' checked' : '') + '><span class="slider"></span></span></label>';
     } else if (typeof v === 'number') {
@@ -287,7 +347,8 @@ function collectSettingsFields(panel) {
   const s = {};
   panel.querySelectorAll('[data-set]').forEach(el => {
     const k = el.dataset.set;
-    if (el.type === 'checkbox') s[k] = el.checked;
+    if (el.classList.contains('res-toggle-btn')) s[k] = el.dataset.value === '1';
+    else if (el.type === 'checkbox') s[k] = el.checked;
     else if (el.type === 'number') s[k] = Number(el.value);
     else s[k] = el.value;
   });
@@ -315,13 +376,13 @@ function openResModal(kind, item) {
         '<div class="res-detail-main">' +
           '<div class="res-detail-title-row">' +
             '<span class="res-detail-name">' + esc(name) + '</span>' +
-            '<button class="panel-close" id="res-modal-close">✕</button>' +
+            '<button class="panel-close" id="res-modal-close" title="关闭"><svg class="ico" data-icon="preview-close-one.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg></button>' +
           '</div>' +
           '<div class="res-detail-sub">' +
             (ver ? '<span class="res-ver-inline">v' + esc(ver) + '</span>' : '') +
             (authorLinksHtml(item.author_links) || '') +
           '</div>' +
-          '<div class="res-detail-state ' + (enabled ? 'on' : 'off') + '">' + (enabled ? '● 已启用' : '○ 已禁用') + '</div>' +
+          '<div class="res-detail-state ' + (enabled ? 'on' : 'off') + '">' + resStateHtml(enabled) + '</div>' +
         '</div>' +
       '</div>' +
       '<div class="res-detail-desc">' + esc(item.description || '（无描述）') + '</div>' +
@@ -374,12 +435,25 @@ function openResModal(kind, item) {
       if (st) {
         const en = settings.enable !== undefined ? !!settings.enable : enabled;
         st.className = 'res-detail-state ' + (en ? 'on' : 'off');
-        st.textContent = en ? '● 已启用' : '○ 已禁用';
+        st.innerHTML = resStateHtml(en);
       }
       refreshMods(true);   // 保持当前页, 刷新列表状态标识
     }).catch(err => { toast('保存失败: ' + err, 'error'); });
   };
+  // 启用/禁用电源按钮: 点击即切换并立即保存 (按钮是明确动作, 不等防抖)
+  panel.querySelectorAll('.res-toggle-btn[data-set]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const on = btn.dataset.value !== '1';
+      btn.dataset.value = on ? '1' : '0';
+      btn.classList.toggle('on', on);
+      btn.title = on ? '点击禁用' : '点击启用';
+      btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+      clearTimeout(saveTimer);
+      saveTimer = setTimeout(saveNow, 120);
+    });
+  });
   panel.querySelectorAll('[data-set]').forEach(el => {
+    if (el.classList.contains('res-toggle-btn')) return;   // 电源按钮由上面单独处理
     const ev = el.type === 'text' || el.type === 'number' ? 'input' : 'change';
     el.addEventListener(ev, () => {
       clearTimeout(saveTimer);

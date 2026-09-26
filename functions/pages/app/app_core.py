@@ -232,8 +232,17 @@ class FaustLauncherCore:
         from functions.base.steam_locator import resolve_game_dir, GAME_EXE
         found = str(found or "").strip()
         resolved = resolve_game_dir(found) if found else ""
+        prev = getattr(self, "pending_steam_path", None)
+        same = (prev is not None and str(prev) == found
+                and bool(getattr(self, "_steam_path_ok", False)) == bool(resolved))
         self.pending_steam_path = found          # 展示用原始路径 (可能是无效路径)
+        self._steam_path_ok = bool(resolved)     # 与 pending 配套, 用于"同结果不重复弹窗"
         self._steam_path_checked = True          # 供前端兜底查询: 检测已做完
+        if same and not force:
+            # 同一次启动里两次检测得到同一结果 (ensure_game_path 与 check_settings 都会走到):
+            # 不要再弹一次 —— 否则用户会看到"两个询问"
+            print("[设置] 游戏路径检测结果与上次相同, 不重复弹窗")
+            return
         try:
             from functions.web_update import zeroasso_download as _zd
             push = getattr(_zd, "_web_progress", None)

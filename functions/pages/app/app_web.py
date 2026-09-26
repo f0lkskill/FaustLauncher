@@ -113,21 +113,80 @@ def _msgbox(title, text, is_error=True):
         pass
 
 
-def check_single_instance():
-    """检测是否已有实例在运行 (按主窗口标题识别)"""
+MAIN_WINDOW_TITLE = "Faust Launcher"
+
+
+def _find_main_hwnd():
+    """查找已运行实例的主窗口句柄 (找不到返回 0)"""
+    try:
+        import ctypes
+        return int(ctypes.windll.user32.FindWindowW(None, MAIN_WINDOW_TITLE) or 0)
+    except Exception:
+        return 0
+
+
+def activate_existing_window(hwnd):
+    """把已运行实例的窗口带到用户面前 (重复双击 exe 时调用)。
+
+    不再弹系统警告框, 而是直接让老实例的窗口现身, 按窗口当前状态分三种处理:
+      1. 已隐藏(最小化到托盘 / SW_HIDE) -> ShowWindow(SW_SHOWNORMAL) 恢复显示;
+      2. 已最小化(图标化)              -> ShowWindow(SW_RESTORE) 还原;
+      3. 可见且未最小化                -> 只"置顶一次"(HWND_TOPMOST 后立刻恢复
+         HWND_NOTOPMOST), 不改动尺寸/位置/最大化状态, 让用户能立刻看到它。
+
+    这里只调用 Win32 窗口 API, 天然可跨进程操作别的进程的窗口, 因此第二个实例
+    无需与第一个实例通信即可把它叫出来。
+
+    返回 True 表示找到了窗口并已尝试激活。
+    """
+    if not hwnd:
+        return False
     try:
         import ctypes
         user32 = ctypes.windll.user32
-        hwnd = user32.FindWindowW(None, "Faust Launcher")
-        if hwnd:
-            user32.MessageBoxW(
-                None,
-                "已经有启动器实例在运行！请检查你的系统托盘！",
-                "Faust Launcher",
-                0x40)  # MB_ICONINFORMATION
-            return True
+        SW_SHOWNORMAL, SW_RESTORE = 1, 9
+        HWND_TOPMOST, HWND_NOTOPMOST = -1, -2
+        SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW = 0x0002, 0x0001, 0x0040
+        _no_move_size = SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW
+
+        if not user32.IsWindowVisible(hwnd):
+            # 隐藏(含托盘驻留) -> 显示 (SW_SHOWNORMAL 与托盘"显示窗口"用的是同一种)
+            user32.ShowWindow(hwnd, SW_SHOWNORMAL)
+        elif user32.IsIconic(hwnd):
+            # 已最小化 -> 还原
+            user32.ShowWindow(hwnd, SW_RESTORE)
+        else:
+            # 已经看得见 -> 置顶一次, 让用户不用去任务栏里翻
+            user32.SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, _no_move_size)
+            user32.SetWindowPos(hwnd, HWND_NOTOPMOST, 0, 0, 0, 0, _no_move_size)
+
+        # 拉到前台。Windows 的前台锁可能拒绝跨进程抢焦点, 此时退化为闪动任务栏
+        # 按钮, 保证用户至少能注意到窗口在哪。
+        brought = False
+        try:
+            brought = bool(user32.SetForegroundWindow(hwnd))
+        except Exception:
+            brought = False
+        if not brought:
+            try:
+                user32.FlashWindow(hwnd, True)
+            except Exception:
+                pass
+        return True
     except Exception:
-        pass
+        return False
+
+
+def check_single_instance():
+    """检测是否已有实例在运行。
+
+    有 -> 激活那个实例的窗口(显示/还原/置顶)并返回 True, 由调用方直接退出本进程。
+    这里刻意不弹任何系统消息框: 用户重复双击只为"看到那个窗口", 不是在等一句提示。
+    """
+    hwnd = _find_main_hwnd()
+    if hwnd:
+        activate_existing_window(hwnd)
+        return True
     return False
 
 
@@ -144,7 +203,7 @@ def _win32_hwnd(window):
                 return int(handle.ToInt64())
             except Exception:
                 return int(handle.ToInt32())
-        return int(ctypes.windll.user32.FindWindowW(None, "Faust Launcher"))
+        return int(ctypes.windll.user32.FindWindowW(None, MAIN_WINDOW_TITLE))
     except Exception:
         return 0
 
@@ -966,7 +1025,22 @@ class AppApi:
         if not path:
             # 检测到的是空路径: 不能写, 让用户自己选
             return {"ok": False, "error": "empty", "path": ""}
-        return self.apply_game_path(path)
+        result = self.apply_game_path(path)
+        if result.get("ok"):
+            return result
+        # 用户点了"是"却被拒: 现场重新检测一次再试一遍 —— "看到的路径"与"校验的路径"
+        # 不一致 (Steam 刚改写 VDF / 游戏刚被挪到别的库) 时, 不能拿过期路径下结论
+        from functions.base.steam_locator import find_steam_game_path, normalize_game_path
+        fresh = find_steam_game_path() or ""
+        if fresh and os.path.normcase(normalize_game_path(fresh)) != os.path.normcase(
+                normalize_game_path(path)):
+            print(f"[设置] 确认 {path} 失败({result.get('error')}), 现场检测到 {fresh}, 再试一次")
+            retry = self.apply_game_path(fresh)
+            if retry.get("ok"):
+                return retry
+        print(f"[设置] 确认自动检测到的路径失败: error={result.get('error')} "
+              f"path={result.get('path')!r} reason={result.get('reason')}")
+        return result
 
     def apply_game_path(self, path):
         """写入游戏路径: 非空 -> 目录存在 -> 目录里必须有 LimbusCompany.exe (硬校验)
@@ -977,19 +1051,29 @@ class AppApi:
 
         Returns: {ok, path, has_exe, auto_fixed, error}
         """
-        from functions.base.steam_locator import normalize_game_path, resolve_game_dir, GAME_EXE
+        from functions.base.steam_locator import (
+            GAME_EXE, normalize_game_path, resolve_game_dir_ex,
+        )
         raw = str(path or "").strip()
         if not raw:
             print("[设置] 游戏路径为空, 拒绝写入")
             return {"ok": False, "error": "empty", "path": ""}
         norm = normalize_game_path(raw)
-        picked = resolve_game_dir(norm)
+        picked, reason = resolve_game_dir_ex(norm)
         if not picked:
-            if not os.path.isdir(norm):
+            exe_file = os.path.join(norm, GAME_EXE)
+            # 诊断要足够具体: 用户报"明明有 exe 却不认"时, 这行日志就是结论
+            print(f"[设置] 路径校验失败: path={norm!r} 是目录={os.path.isdir(norm)} "
+                  f"exe存在={os.path.isfile(exe_file)} reason={reason}")
+            if reason == "not_dir":
                 print(f"[设置] 游戏路径不存在: {norm}")
-                return {"ok": False, "error": "not_found", "path": norm}
-            print(f"[设置] 目录下没有 {GAME_EXE}, 拒绝写入: {norm}")
-            return {"ok": False, "error": "no_exe", "path": norm, "game_exe": GAME_EXE}
+                return {"ok": False, "error": "not_found", "path": norm, "reason": reason}
+        # 注意: 这里**不**替用户换成别的目录 —— 用户明确给了这个路径, 就只校验它;
+        # "点『是』却被拒" 的自愈在 confirm_steam_game_path 里做 (那里的路径是我们自己检测的)
+        if not picked:
+            print(f"[设置] 目录下没有 {GAME_EXE}, 拒绝写入: {norm} (reason={reason})")
+            return {"ok": False, "error": reason or "no_exe", "path": norm,
+                    "game_exe": GAME_EXE, "reason": reason}
         auto_fixed = os.path.normcase(picked) != os.path.normcase(norm)
         game_path = picked
         self.core.settings_manager.set_setting("game_path", game_path)
@@ -1066,7 +1150,9 @@ class AppApi:
             return None
         print(f"[设置] 游戏路径无效, 拒绝执行该功能: {cur or '(未设置)'}")
         try:
-            self.core._ask_web_game_path(find_steam_game_path() or "", force=True)
+            fresh = find_steam_game_path() or ""
+            print(f"[设置] 重新检测 Steam 路径: {fresh or '(没找到)'}")
+            self.core._ask_web_game_path(fresh, force=True)
         except Exception as e:
             print(f"[设置] 重新推送游戏路径确认窗口失败: {e}")
         return {"ok": False, "error": "no_game_path", "path": cur}

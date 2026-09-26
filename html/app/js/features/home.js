@@ -85,12 +85,12 @@ async function loadHomeExtras() {
     // 无论超时/成功/出错, 都离开 "加载中" 占位, 保证内容感知兜底移除圆圈
     const body = $('#changelog-body');
     if (md == null) {
-      body.innerHTML = '<span class="changelog-empty">⚠ 更新内容加载超时</span>';
+      body.innerHTML = '<span class="changelog-empty">' + icoText('caution', '更新内容加载超时') + '</span>';
     } else {
       body.innerHTML = mdToHtml(md);
     }
   } catch (e) {
-    $('#changelog-body').innerHTML = '<span class="changelog-empty">⚠ 更新内容错误: ' + esc(String(e)) + '</span>';
+    $('#changelog-body').innerHTML = '<span class="changelog-empty">' + icoText('caution', '更新内容错误: ' + String(e)) + '</span>';
   } finally {
     hideFrameLoading(frame);
   }
@@ -143,10 +143,10 @@ async function loadRecommend() {
     try {
       renderRecommend(recPool[Math.floor(Math.random() * recPool.length)]);
     } catch (e) {
-      setMsg('⚠ 渲染失败: ' + esc(String(e && e.message || e)));
+      setMsg(icoText('caution', '渲染失败: ' + String(e && e.message || e)));
     }
   } else {
-    setMsg('⚠ ' + esc(recErr || '暂无推荐 (网络异常或加载超时)'));
+    setMsg(icoText('caution', recErr || '暂无推荐 (网络异常或加载超时)'));
   }
 }
 
@@ -177,10 +177,10 @@ function renderRecommend(rec) {
         'data-icon-url="' + esc(iconUrl) + '" data-icon-name="' + esc(it.name) + '" ' +
         'onerror="this.src=\'' + PROJECT_ICON + '\'">' +
       '<div class="rec-info">' +
-        '<div class="rec-badge">' + (rec.kind === 'addon' ? '🔌 插件' : '🎮 Mod') + '</div>' +
+        '<div class="rec-badge">' + icoText(rec.kind === 'addon' ? 'add' : 'allApplication', rec.kind === 'addon' ? '插件' : 'Mod') + '</div>' +
         '<div class="rec-title">' + esc(it.name) +
           (it.version ? ' <span class="rec-ver">v' + esc(it.version) + '</span>' : '') + '</div>' +
-        '<div class="rec-count">⬇ ' + (it.download_count || 0) + ' 次下载</div>' +
+        '<div class="rec-count">' + icoText('save', String(it.download_count || 0) + ' 次下载') + '</div>' +
       '</div>' +
     '</div>' +
     '<div class="rec-desc" title="' + esc(it.desc || '') + '">' + esc(it.desc || '暂无描述') + '</div>' +
@@ -192,7 +192,7 @@ function renderRecommend(rec) {
   });
   const foot = $('#rec-foot');
   foot.innerHTML = it.url
-    ? '<button class="btn btn-primary btn-mini" id="rec-dl">📥 下载</button>'
+    ? '<button class="btn btn-primary btn-mini" id="rec-dl"><svg class="ico" data-icon="save-one.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg> 下载</button>'
     : '';
   _currentRec = rec;
   const dl = $('#rec-dl');

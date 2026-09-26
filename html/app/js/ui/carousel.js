@@ -78,10 +78,11 @@ function renderFeatures(features) {
         card.className = 'box-card';
         // 只认后端内嵌的 data URI: 相对路径在 pywebview 的 http 服务下必然 404 (坏图)
         const bg = f.image_uri || '';
+        const nm = splitLegacyIcon(f.name);   // "📁 游戏目录" -> 图标 + 文字
         card.innerHTML =
           '<div class="box-card-bg">' + (bg ? '<img src="' + esc(bg) + '" alt="" draggable="false">' : '') + '</div>' +
           '<div class="box-card-body">' +
-            '<div class="box-card-name">' + esc(f.name) + '</div>' +
+            '<div class="box-card-name">' + iconSvgAuto(nm.icon) + esc(nm.text) + '</div>' +
             '<div class="box-card-desc">' + esc(f.desc || '') + '</div>' +
           '</div>';
         card.onclick = () => {
@@ -102,10 +103,11 @@ function renderFeatures(features) {
     inner.className = 'carousel-item-inner';
     const bg = f.image_uri || '';   // 同上: 不用相对路径, 拿不到就不放图
     const bgHtml = bg ? '<img class="carousel-item-bg" src="' + esc(bg) + '" alt="" draggable="false">' : '';
+    const nm = splitLegacyIcon(f.name);   // name 里的前缀 emoji -> SVG 图标
     inner.innerHTML = bgHtml +
       '<div class="carousel-item-content">' +
-        '<div class="lc-ico">' + esc(f.name.split(' ')[0]) + '</div>' +
-        '<div class="lc-name">' + esc(f.name.split(' ').slice(1).join(' ') || f.name) + '</div>' +
+        '<div class="lc-ico">' + iconSvgAuto(nm.icon) + '</div>' +
+        '<div class="lc-name">' + esc(nm.text) + '</div>' +
         '<div class="lc-desc">' + esc(f.desc || '') + '</div>' +
       '</div>';
     inner.dataset.featureName = f.name;   // 单击打开 (在轮播拖拽判定中触发)
@@ -346,10 +348,11 @@ function renderTools(tools) {
         const card = document.createElement('button');
         card.className = 'box-card';
         const bg = t.image_uri || '';   // 相对路径在 http 服务下 404, 只认内嵌 data URI
+        const nm = splitLegacyIcon(t.name);
         card.innerHTML =
           '<div class="box-card-bg">' + (bg ? '<img src="' + esc(bg) + '" alt="" draggable="false">' : '') + '</div>' +
           '<div class="box-card-body">' +
-            '<div class="box-card-name">' + esc(t.name) + '</div>' +
+            '<div class="box-card-name">' + iconSvgAuto(nm.icon) + esc(nm.text) + '</div>' +
             '<div class="box-card-desc">' + esc(t.desc || '') + '</div>' +
           '</div>';
         card.onclick = () => openToolAction(t);
@@ -368,10 +371,11 @@ function renderTools(tools) {
     // 图片处理逻辑与快捷方式一致: 无图片则留空
     const bg = t.image_uri || '';   // 同上
     const bgHtml = bg ? '<img class="carousel-item-bg" src="' + esc(bg) + '" alt="" draggable="false">' : '';
+    const nm = splitLegacyIcon(t.name);
     inner.innerHTML = bgHtml +
       '<div class="carousel-item-content">' +
-        '<div class="lc-ico">' + esc(t.name.split(' ')[0]) + '</div>' +
-        '<div class="lc-name">' + esc(t.name.split(' ').slice(1).join(' ') || t.name) + '</div>' +
+        '<div class="lc-ico">' + iconSvgAuto(nm.icon) + '</div>' +
+        '<div class="lc-name">' + esc(nm.text) + '</div>' +
         '<div class="lc-desc">' + esc(t.desc || '') + '</div>' +
       '</div>';
     inner.dataset.toolId = t.id;   // 单击打开 (在轮播拖拽判定中触发)

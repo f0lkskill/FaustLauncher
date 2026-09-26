@@ -19,16 +19,17 @@ function esc(s) {
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
-function toast(msg, type = 'info', ms = 3200) {
+// icon: 可选, icons.js 里的图标名 (为兼容原有调用, 放在末尾)
+function toast(msg, type = 'info', ms = 3200, icon = '') {
   const box = $('#toasts');
   const el = document.createElement('div');
   el.className = 'toast ' + type;
-  el.innerHTML = esc(msg);
+  el.innerHTML = (icon ? iconSvg(icon) : '') + esc(msg);
   box.appendChild(el);
   setTimeout(() => { el.classList.add('out'); setTimeout(() => el.remove(), 320); }, ms);
 }
 
-function toastTop(msg, type = 'info', ms = 3200) {
+function toastTop(msg, type = 'info', ms = 3200, icon = '') {
   let box = document.getElementById('toasts-top');
   if (!box) {
     box = document.createElement('div');
@@ -37,7 +38,7 @@ function toastTop(msg, type = 'info', ms = 3200) {
   }
   const el = document.createElement('div');
   el.className = 'toast ' + type;
-  el.innerHTML = esc(msg);
+  el.innerHTML = (icon ? iconSvg(icon) : '') + esc(msg);
   box.appendChild(el);
   setTimeout(() => { el.classList.add('out'); setTimeout(() => el.remove(), 320); }, ms);
 }

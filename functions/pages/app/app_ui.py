@@ -463,16 +463,30 @@ class FaustLauncherUI:
 
 
 def check_single_instance():
-    """检测是否已有实例在运行"""
+    """检测是否已有实例在运行
+
+    有 -> 激活那个实例的窗口(显示/还原/置顶)并返回 True, 由调用方退出本进程。
+    不弹系统消息框: 重复双击的意义是"把那个窗口叫出来", 而不是提示它存在。
+    激活逻辑复用 app_web.activate_existing_window (旧版 Tk 窗口标题同样是
+    "Faust Launcher", 能被同一个 FindWindow 找到)。
+    """
+    try:
+        from functions.pages.app.app_web import (
+            activate_existing_window, _find_main_hwnd,
+        )
+        hwnd = _find_main_hwnd()
+        if not hwnd:
+            # 回退: 老实现用 FindWindowA + utf-8 字节串, 某些环境下能找到 Tk 窗口
+            hwnd = ctypes.windll.user32.FindWindowA(
+                None, "Faust Launcher".encode('utf-8'))
+        if hwnd:
+            activate_existing_window(hwnd)
+            return True
+        return False
+    except Exception:
+        pass
     user32 = ctypes.windll.user32
     hwnd = user32.FindWindowA(None, "Faust Launcher".encode('utf-8'))
-    
-    if hwnd:
-        user32.MessageBoxW(
-            None,
-            "已经有启动器实例在运行！请检查你的系统托盘！",
-            "Faust Launcher",
-            0x40)  # MB_ICONINFORMATION
-        return True
-    
-    return False
+
+    # 兜底路径(连 app_web 都导入失败时): 只判断是否存在, 同样不弹任何系统消息框。
+    return bool(hwnd)

@@ -20,7 +20,7 @@ let _currentRec = null;   // 当前渲染的随机推荐 {kind, item}
 
 function applyDownloadedStyle(btn) {
   btn.className = 'btn btn-downloaded';
-  btn.textContent = '✓ 已下载';
+  btn.innerHTML = icoText('fileSuccess', '已下载');
   btn.disabled = true;
   btn.onclick = null;
 }
@@ -28,12 +28,9 @@ function applyDownloadedStyle(btn) {
 // 下载完成/检测到已安装时: 即时把对应按钮换成绿色"已下载"
 function markItemDownloaded(kind, name) {
   downloadedSeen.add(kind + ':' + name);
-  // 更新下载中心卡片: 标题旁显示"已安装"
-  document.querySelectorAll('#dc-list .res-card').forEach(card => {
-    const title = card.querySelector('.res-title');
-    if (title && title.textContent.trim().indexOf(name) === 0) {
-      markCardInstalled(card);
-    }
+  // 更新下载中心卡片: 标题旁显示"已安装" (按 data-name 精确匹配, 不受徽章文字干扰)
+  document.querySelectorAll('#dc-list .res-card[data-name]').forEach(card => {
+    if (card.dataset.name === name) markCardInstalled(card);
   });
   if (_currentRec && _currentRec.item && _currentRec.item.name === name &&
       (!kind || _currentRec.kind === kind)) {
@@ -92,11 +89,11 @@ function updateDownloadTask(name, data) {
     row.classList.add(t.status);
     row.querySelector('.dl-fill').style.width = pct + '%';
     const meta = row.querySelector('.dl-meta');
-    meta.textContent = t.status === 'done' ? '✓ 已完成'
-      : t.status === 'error' ? '✗ ' + esc(t.error || '下载失败')
-      : t.status === 'waiting' ? '等待中…'
-      : fmtBytes(t.downloaded) + ' / ' + fmtBytes(t.total) +
-        (t.speed ? ' · ' + fmtSpeed(t.speed) : '');
+    if (t.status === 'done') meta.innerHTML = icoText('fileSuccess', '已完成');
+    else if (t.status === 'error') meta.innerHTML = icoText('caution', t.error || '下载失败');
+    else if (t.status === 'waiting') meta.textContent = '等待中…';
+    else meta.textContent = fmtBytes(t.downloaded) + ' / ' + fmtBytes(t.total) +
+      (t.speed ? ' · ' + fmtSpeed(t.speed) : '');
   } else {
     renderDownloadDrawer();
   }
@@ -131,13 +128,8 @@ function removeDownloadTask(name, animate) {
 function updateFabVisibility() {
   const fab = $('#dl-fab');
   const active = downloadTasks.filter(t => t.status === 'downloading' || t.status === 'waiting');
-  if (active.length) {
-    fab.querySelector('.dl-fab-ico').textContent = '📥';
-    fab.classList.add('visible');
-  } else {
-    fab.querySelector('.dl-fab-ico').textContent = '';
-    fab.classList.remove('visible');
-  }
+  // 图标是静态 SVG (save-one), 这里只切换显隐, 不再替换字符图标
+  fab.classList.toggle('visible', active.length > 0);
 }
 
 // 所有下载任务结束后自动关闭抽屉
@@ -168,8 +160,8 @@ function renderDownloadDrawer() {
     row.className = 'dl-task ' + t.status;
     row.dataset.name = t.name;
     const pct = Math.round(t.percent || 0);
-    const info = t.status === 'done' ? '✓ 已完成'
-      : t.status === 'error' ? '✗ ' + esc(t.error || '下载失败')
+    const info = t.status === 'done' ? icoText('fileSuccess', '已完成')
+      : t.status === 'error' ? icoText('caution', t.error || '下载失败')
       : t.status === 'waiting' ? '等待中…'
       : fmtBytes(t.downloaded) + ' / ' + fmtBytes(t.total) +
         (t.speed ? ' · ' + fmtSpeed(t.speed) : '');
@@ -231,12 +223,11 @@ function startDownloadItem(kind, item) {
 }
 
 function updateDownloadCountDisplay(name, count) {
-  document.querySelectorAll('.dc-card').forEach(card => {
-    const title = card.querySelector('.dc-title');
-    if (title && title.textContent.replace(' (暂不可用)', '') === name) {
-      const el = card.querySelector('.dc-count');
-      if (el) el.textContent = '⬇ ' + count;
-    }
+  // 用 data-name 精确定位卡片: 标题里还挂着"已安装/新发布"徽章, 靠 textContent 比对会误判
+  document.querySelectorAll('#dc-list .res-card[data-name]').forEach(card => {
+    if (card.dataset.name !== name) return;
+    const el = card.querySelector('.dc-count');
+    if (el) el.innerHTML = icoText('save', String(count));
   });
 }
 
@@ -276,7 +267,7 @@ function loadDCDisplay() {
     renderDCList();
   }).catch(e => {
     hideFrameLoading(cardEl);
-    if (list) list.innerHTML = '<div class="res-empty">⚠ ' + esc(String(e)) + '</div>';
+    if (list) list.innerHTML = '<div class="res-empty">' + icoText('caution', String(e)) + '</div>';
   });
 }
 
@@ -332,6 +323,13 @@ function markCardInstalled(card) {
   if (title && !title.querySelector('.res-state-badge.installed')) {
     title.insertAdjacentHTML('beforeend', '<span class="res-state-badge installed">已安装</span>');
   }
+  // 快捷下载按钮同步进入"已安装"态, 避免重复下载
+  const btn = card.querySelector('.dc-dl-btn');
+  if (btn) {
+    btn.classList.add('installed');
+    btn.disabled = true;
+    btn.title = '已安装';
+  }
 }
 
 function markCardIsNew(card) {
@@ -341,11 +339,12 @@ function markCardIsNew(card) {
   }
 }
 
-// 下载中心卡片: 资源管理卡片样式, 省略号 → 模态 (下载按钮在模态内), 已安装检测
+// 下载中心卡片: 资源管理卡片样式, 右侧快捷下载按钮 + 省略号模态, 已安装检测
 function buildDCCard(item, kind) {
   const disabled = item.disabled;
   const card = document.createElement('div');
   card.className = 'res-card' + (disabled ? ' disabled' : '');
+  card.dataset.name = item.name || '';   // 供"下载数 +1 / 已安装"精确回写
   card.innerHTML =
     '<div class="res-card-main">' +
       '<img class="res-icon" src="' + PROJECT_ICON + '" alt="" ' +
@@ -357,11 +356,27 @@ function buildDCCard(item, kind) {
           (item.version ? '<span class="res-ver-inline">v' + esc(item.version) + '</span>' : '') +
         '</div>' +
         '<div class="res-desc">' + esc(item.desc || '无描述') + '</div>' +
-        '<div class="res-desc">⬇ ' + (item.download_count || 0) + (authorLinksHtml(dcAuthorLinks(item.authors)) ? ' · ' + authorLinksHtml(dcAuthorLinks(item.authors)) : '') + '</div>' +
+        '<div class="res-desc"><span class="dc-count">' + icoText('save', String(item.download_count || 0)) + '</span>' +
+          (authorLinksHtml(dcAuthorLinks(item.authors)) ? ' · ' + authorLinksHtml(dcAuthorLinks(item.authors)) : '') + '</div>' +
       '</div>' +
     '</div>' +
-    '<button class="res-menu-btn" title="更多操作">⋯</button>';
+    '<div class="res-card-ops">' +
+      '<button class="res-menu-btn" type="button" title="更多操作">' +
+        '<svg class="ico" data-icon="more-one.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg>' +
+      '</button>' +
+      '<button class="dc-dl-btn" type="button" title="快捷下载"' + (disabled ? ' disabled' : '') + '>' +
+        '<svg class="ico" data-icon="save-one.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg>' +
+      '</button>' +
+    '</div>';
   card.querySelector('.res-menu-btn').onclick = () => openDcModal(kind, item);
+  // 快捷下载: 不必进详情模态, 一键直接开始下载 (与资源管理的禁用按钮同一布局)
+  const dlBtn = card.querySelector('.dc-dl-btn');
+  dlBtn.onclick = (e) => {
+    e.stopPropagation();
+    if (disabled) return;
+    if (!api) { toast('浏览器预览模式', 'warn'); return; }
+    startDownloadItem(kind, item);
+  };
   addCardTilt(card);
   // 已安装检测: 实时钩子 (下载完成即时更新) + 每次渲染检测
   if (api && !disabled) {
@@ -405,18 +420,20 @@ function openDcModal(kind, item) {
         '<div class="res-detail-main">' +
           '<div class="res-detail-title-row">' +
             '<span class="res-detail-name">' + esc(item.name || '未知') + '</span>' +
-            '<button class="panel-close" id="dc-modal-close">✕</button>' +
+            '<button class="panel-close" id="dc-modal-close" title="关闭"><svg class="ico" data-icon="preview-close-one.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg></button>' +
           '</div>' +
           '<div class="res-detail-sub">' +
             (item.version ? '<span class="res-ver-inline">v' + esc(item.version) + '</span>' : '') +
             (authorLinksHtml(dcAuthorLinks(item.authors)) || '') +
           '</div>' +
-          '<div class="res-detail-state off">⬇ ' + (item.download_count || 0) + ' 次下载</div>' +
+          '<div class="res-detail-state off">' + icoText('save', String(item.download_count || 0) + ' 次下载') + '</div>' +
         '</div>' +
       '</div>' +
       '<div class="res-detail-desc">' + esc(item.desc || '无描述') + '</div>' +
       '<div class="res-detail-ops">' +
-        '<button class="btn btn-primary" id="dc-modal-dl" ' + (disabled ? 'disabled' : '') + '>📥 下载</button>' +
+        '<button class="btn btn-primary" id="dc-modal-dl" ' + (disabled ? 'disabled' : '') + '>' +
+          '<svg class="ico" data-icon="save-one.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg> 下载' +
+        '</button>' +
       '</div>' +
     '</div>';
   document.body.appendChild(panel);
@@ -431,17 +448,16 @@ function openDcModal(kind, item) {
     };
     // 已安装检测: 已安装则禁止再次下载
     const key = kind + ':' + item.name;
-    if (downloadedSeen.has(key)) {
+    const markDlInstalled = () => {
       dlBtn.disabled = true;
-      dlBtn.textContent = '✓ 已安装';
+      dlBtn.innerHTML = icoText('fileSuccess', '已安装');
+    };
+    if (downloadedSeen.has(key)) {
+      markDlInstalled();
     } else {
       withTimeout(api.check_item_downloaded(kind, item.name), 5000, { downloaded: false })
-        .then(r => {
-          if (r && r.downloaded) {
-            dlBtn.disabled = true;
-            dlBtn.textContent = '✓ 已安装';
-          }
-        }).catch(() => {});
+        .then(r => { if (r && r.downloaded) markDlInstalled(); })
+        .catch(() => {});
     }
   }
 }

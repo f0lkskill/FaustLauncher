@@ -164,7 +164,7 @@ function openVersionModal(d) {
           '<div class="ver-eyebrow">' + esc(d.title || (d.has_update ? '发现新版本' : '已是最新版本')) + '</div>' +
           '<div class="ver-vers">' + verVersionLine(d) + '</div>' +
         '</div>' +
-        (forced ? '' : '<button class="ver-x" id="ver-close" title="关闭" aria-label="关闭">✕</button>') +
+        (forced ? '' : panelCloseBtn('ver-close', 'ver-x', 'aria-label="关闭"')) +
       '</header>' +
       '<div class="ver-rule"></div>' +
       '<div class="ver-submeta">' +

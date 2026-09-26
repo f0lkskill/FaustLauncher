@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>FaustLauncher 浮士德启动器</title>
-<link rel="stylesheet" href="css/style.css?v=106">
+<link rel="stylesheet" href="css/style.css?v=107">
 </head>
 <body>
 <div id="titlebar">
@@ -33,13 +33,13 @@
       </div>
     </div>
     <nav id="nav">
-      <button class="nav-item active" data-page="home"><span class="nav-ico">🏠</span><span>主页</span></button>
-      <button class="nav-item" data-page="mod_addon"><span class="nav-ico">🧩</span><span>资源管理</span></button>
-      <button class="nav-item" data-page="download_center"><span class="nav-ico">📦</span><span>下载中心</span></button>
-      <button class="nav-item" data-page="tools"><span class="nav-ico">🔨</span><span>实用工具</span></button>
-      <button class="nav-item" data-page="features"><span class="nav-ico">📃</span><span>快捷方式</span></button>
-      <button class="nav-item" data-page="settings"><span class="nav-ico">⚙️</span><span>设置</span></button>
-      <button class="nav-item" data-page="about"><span class="nav-ico">💻</span><span>关于</span></button>
+      <button class="nav-item active" data-page="home"><span class="nav-ico"><svg class="ico" data-icon="all-application.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg></span><span>主页</span></button>
+      <button class="nav-item" data-page="mod_addon"><span class="nav-ico"><svg class="ico" data-icon="more-app.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg></span><span>资源管理</span></button>
+      <button class="nav-item" data-page="download_center"><span class="nav-ico"><svg class="ico" data-icon="save-one.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg></span><span>下载中心</span></button>
+      <button class="nav-item" data-page="tools"><span class="nav-ico"><svg class="ico" data-icon="tool.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg></span><span>实用工具</span></button>
+      <button class="nav-item" data-page="features"><span class="nav-ico"><svg class="ico" data-icon="bookmark.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg></span><span>快捷方式</span></button>
+      <button class="nav-item" data-page="settings"><span class="nav-ico"><svg class="ico" data-icon="setting-two.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg></span><span>设置</span></button>
+      <button class="nav-item" data-page="about"><span class="nav-ico"><svg class="ico" data-icon="code.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg></span><span>关于</span></button>
     </nav>
   </aside>
 
@@ -53,9 +53,9 @@
           <p class="hero-sub">让每一个但丁都解放双手，专心坐牢</p>
           <div class="hero-actions">
             <button class="btn btn-primary" id="btn-launch">
-              <span class="btn-ico">🚀</span> 启动游戏
+              <span class="btn-ico"><svg class="ico" data-icon="power.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg></span> 启动游戏
             </button>
-            <button class="btn btn-success" id="btn-translate">🎯 汉化更新</button>
+            <button class="btn btn-success" id="btn-translate"><svg class="ico" data-icon="translate.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg> 汉化更新</button>
           </div>
           <div class="status-chips">
             <div class="chip chip-long" id="chip-gamepath"><span class="dot"></span><span>游戏路径: 未配置</span></div>
@@ -77,7 +77,7 @@
             <div class="pipe-steps" id="pipe-steps"></div>
           </div>
           <div class="pipe-detail">
-            <div class="pipe-detail-ico" id="pipe-detail-ico">🔍</div>
+            <div class="pipe-detail-ico" id="pipe-detail-ico"><svg class="ico" data-icon="search.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg></div>
             <div class="pipe-detail-text" id="pipe-detail-text">准备中...</div>
             <div class="pipe-detail-dl" id="pipe-detail-dl" hidden>
               <div class="progress-track pipe-dl-track"><div class="progress-fill" id="pipe-dl-fill"></div></div>
@@ -89,16 +89,16 @@
 
       <div class="grid-2">
         <div class="card stat-card stat-version-card loading" id="stat-version-card">
-          <div class="stat-label">📌 当前版本</div>
+          <div class="stat-label"><svg class="ico" data-icon="bookmark-one.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg> 当前版本</div>
           <div class="stat-value" id="stat-version">-</div>
           <div class="changelog-box" id="changelog-box">
-            <div class="changelog-head">🕐 更新内容</div>
+            <div class="changelog-head"><svg class="ico" data-icon="write.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg> 更新内容</div>
             <div class="changelog-body" id="changelog-body"><span class="changelog-empty">加载中...</span></div>
           </div>
           <div class="frame-spinner"><span></span></div>
         </div>
         <div class="card stat-card rec-card loading" id="rec-card">
-          <div class="stat-label">🎲 随机推荐</div>
+          <div class="stat-label"><svg class="ico" data-icon="like.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg> 随机推荐</div>
           <div class="rec-body" id="rec-body"></div>
           <div class="rec-foot" id="rec-foot"></div>
           <div class="frame-spinner"><span></span></div>
@@ -129,20 +129,23 @@
       <div class="card">
         <div class="res-toolbar">
           <div class="res-tabs">
-            <button class="res-tab active" data-kind="addon">🔌 插件</button>
-            <button class="res-tab" data-kind="mod">🎮 Mod</button>
+            <button class="res-tab active" data-kind="addon"><svg class="ico" data-icon="add.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg> 插件</button>
+            <button class="res-tab" data-kind="mod"><svg class="ico" data-icon="all-application.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg> Mod</button>
           </div>
-          <input class="res-search" id="res-search" type="text" placeholder="🔍 搜索本地插件/Mod...">
+          <div class="res-search-wrap">
+            <svg class="ico res-search-ico" data-icon="search.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg>
+            <input class="res-search" id="res-search" type="text" placeholder="搜索本地插件/Mod...">
+          </div>
           <div class="res-actions">
             <div class="res-actions-group" id="res-actions-addon">
-              <button class="btn btn-ghost btn-icon" id="btn-open-addon-dir" title="打开插件目录">📂</button>
-              <button class="btn btn-ghost btn-icon" id="btn-install-addon" title="安装插件 (zip)">➕</button>
-              <button class="btn btn-ghost" id="btn-reinstall-addon" title="重装所有可匹配插件">↻</button>
+              <button class="btn btn-ghost btn-icon" id="btn-open-addon-dir" title="打开插件目录"><svg class="ico" data-icon="file-staff-one.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg></button>
+              <button class="btn btn-ghost btn-icon" id="btn-install-addon" title="安装插件 (zip)"><svg class="ico" data-icon="add.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg></button>
+              <button class="btn btn-ghost btn-icon" id="btn-reinstall-addon" title="重装所有可匹配插件"><svg class="ico" data-icon="refresh.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg></button>
             </div>
             <div class="res-actions-group" id="res-actions-mod" hidden>
-              <button class="btn btn-ghost btn-icon" id="btn-open-mod-dir" title="打开 Mod 目录">📂</button>
-              <button class="btn btn-ghost btn-icon" id="btn-open-mod-window" title="独立管理器（拖拽安装）">➕</button>
-              <button class="btn btn-ghost" id="btn-reinstall-mod" title="重装所有可匹配 Mod">↻</button>
+              <button class="btn btn-ghost btn-icon" id="btn-open-mod-dir" title="打开 Mod 目录"><svg class="ico" data-icon="file-staff-one.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg></button>
+              <button class="btn btn-ghost btn-icon" id="btn-open-mod-window" title="独立管理器（拖拽安装）"><svg class="ico" data-icon="more-app.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg></button>
+              <button class="btn btn-ghost btn-icon" id="btn-reinstall-mod" title="重装所有可匹配 Mod"><svg class="ico" data-icon="refresh.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg></button>
             </div>
           </div>
         </div>
@@ -158,11 +161,14 @@
       <div class="card">
         <div class="res-toolbar">
           <div class="res-tabs">
-            <button class="res-tab active" data-dc="addon">🔌 插件</button>
-            <button class="res-tab" data-dc="mod">🎮 Mod</button>
+            <button class="res-tab active" data-dc="addon"><svg class="ico" data-icon="add.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg> 插件</button>
+            <button class="res-tab" data-dc="mod"><svg class="ico" data-icon="all-application.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg> Mod</button>
           </div>
-          <input class="res-search" id="dc-search" type="text" placeholder="🔍 搜索云端插件/Mod...">
-          <button class="btn btn-ghost" id="dc-refresh" title="忽略本次启动的缓存, 重新从云端获取列表">⟳ 刷新</button>
+          <div class="res-search-wrap">
+            <svg class="ico res-search-ico" data-icon="search.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg>
+            <input class="res-search" id="dc-search" type="text" placeholder="搜索云端插件/Mod...">
+          </div>
+          <button class="btn btn-ghost" id="dc-refresh" title="忽略本次启动的缓存, 重新从云端获取列表"><svg class="ico" data-icon="refresh.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg> 刷新</button>
         </div>
         <div id="dc-list" class="res-list"></div>
         <div id="dc-pagination" class="res-pagination"></div>
@@ -206,13 +212,13 @@
 
   <!-- ==================== 下载任务抽屉 ==================== -->
   <button class="dl-fab" id="dl-fab" title="下载任务">
-    <span class="dl-fab-ico">📥</span>
+    <span class="dl-fab-ico"><svg class="ico" data-icon="save-one.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg></span>
   </button>
   <div class="dl-overlay" id="dl-overlay"></div>
   <aside class="dl-drawer" id="dl-drawer">
     <div class="dl-head">
-      <span>📦 下载任务</span>
-      <button class="dl-close" id="dl-close" title="关闭">✕</button>
+      <span><svg class="ico" data-icon="save-one.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg> 下载任务</span>
+      <button class="dl-close" id="dl-close" title="关闭"><svg class="ico" data-icon="preview-close-one.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg></button>
     </div>
     <div class="dl-list" id="dl-list">
       <div class="dl-empty">暂无下载任务</div>
@@ -225,31 +231,33 @@
      各文件职责见文件头注释; 总览见 js/app.js 顶部。
      ============================================================ -->
 <!-- core: 基座层(环境/状态/工具/后端通道/外壳) -->
-<script src="js/core/bootstrap.js?v=106"></script>
-<script src="js/core/state.js?v=106"></script>
-<script src="js/core/utils.js?v=106"></script>
-<script src="js/core/bridge.js?v=106"></script>
-<script src="js/core/events.js?v=106"></script>
+<script src="js/core/bootstrap.js?v=107"></script>
+<script src="js/core/state.js?v=107"></script>
+<script src="js/core/utils.js?v=107"></script>
+<!-- 图标仓库: 内联 SVG (assets/icon/*.svg), 取代此前的 emoji 图标 -->
+<script src="js/core/icons.js?v=107"></script>
+<script src="js/core/bridge.js?v=107"></script>
+<script src="js/core/events.js?v=107"></script>
 <!-- ui: 通用界面件(外观/反馈/装饰) -->
-<script src="js/ui/theme.js?v=106"></script>
-<script src="js/ui/sound.js?v=106"></script>
-<script src="js/ui/frame_loading.js?v=106"></script>
-<script src="js/ui/terminal.js?v=106"></script>
-<script src="js/ui/tilt.js?v=106"></script>
-<script src="js/ui/background.js?v=106"></script>
-<script src="js/ui/character.js?v=106"></script>
-<script src="js/ui/carousel.js?v=106"></script>
-<script src="js/ui/version_modal.js?v=106"></script>
+<script src="js/ui/theme.js?v=107"></script>
+<script src="js/ui/sound.js?v=107"></script>
+<script src="js/ui/frame_loading.js?v=107"></script>
+<script src="js/ui/terminal.js?v=107"></script>
+<script src="js/ui/tilt.js?v=107"></script>
+<script src="js/ui/background.js?v=107"></script>
+<script src="js/ui/character.js?v=107"></script>
+<script src="js/ui/carousel.js?v=107"></script>
+<script src="js/ui/version_modal.js?v=107"></script>
 <!-- features: 业务功能(流水线/资源/下载/工具/主页/设置/关于) -->
-<script src="js/features/pipeline.js?v=106"></script>
-<script src="js/features/resources.js?v=106"></script>
-<script src="js/features/downloads.js?v=106"></script>
-<script src="js/features/tools.js?v=106"></script>
-<script src="js/features/home.js?v=106"></script>
-<script src="js/features/settings.js?v=106"></script>
-<script src="js/features/about.js?v=106"></script>
+<script src="js/features/pipeline.js?v=107"></script>
+<script src="js/features/resources.js?v=107"></script>
+<script src="js/features/downloads.js?v=107"></script>
+<script src="js/features/tools.js?v=107"></script>
+<script src="js/features/home.js?v=107"></script>
+<script src="js/features/settings.js?v=107"></script>
+<script src="js/features/about.js?v=107"></script>
 <!-- 入口: 启动流程 + 对外插件 API (必须最后) -->
-<script src="js/app.js?v=106"></script>
+<script src="js/app.js?v=107"></script>
 <script>
 /* 独立兜底: 完全不依赖 app.js。无论 app.js 是否崩溃, 只要内容加载完成或超时,
    就移除主页两张卡片的 loading 圆圈。 */
