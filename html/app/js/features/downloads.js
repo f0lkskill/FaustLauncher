@@ -227,7 +227,7 @@ function updateDownloadCountDisplay(name, count) {
   document.querySelectorAll('#dc-list .res-card[data-name]').forEach(card => {
     if (card.dataset.name !== name) return;
     const el = card.querySelector('.dc-count');
-    if (el) el.innerHTML = icoText('save', String(count));
+    if (el) el.innerHTML = icoText('downloadTwo', String(count));
   });
 }
 
@@ -323,12 +323,13 @@ function markCardInstalled(card) {
   if (title && !title.querySelector('.res-state-badge.installed')) {
     title.insertAdjacentHTML('beforeend', '<span class="res-state-badge installed">已安装</span>');
   }
-  // 快捷下载按钮同步进入"已安装"态, 避免重复下载
+  // 快捷下载按钮同步进入"已安装"态: 换成对勾图标 + 压暗, 一眼看出不能再下
   const btn = card.querySelector('.dc-dl-btn');
   if (btn) {
     btn.classList.add('installed');
     btn.disabled = true;
     btn.title = '已安装';
+    btn.innerHTML = iconSvg('fileSuccess');
   }
 }
 
@@ -356,7 +357,7 @@ function buildDCCard(item, kind) {
           (item.version ? '<span class="res-ver-inline">v' + esc(item.version) + '</span>' : '') +
         '</div>' +
         '<div class="res-desc">' + esc(item.desc || '无描述') + '</div>' +
-        '<div class="res-desc"><span class="dc-count">' + icoText('save', String(item.download_count || 0)) + '</span>' +
+        '<div class="res-desc"><span class="dc-count">' + icoText('downloadTwo', String(item.download_count || 0)) + '</span>' +
           (authorLinksHtml(dcAuthorLinks(item.authors)) ? ' · ' + authorLinksHtml(dcAuthorLinks(item.authors)) : '') + '</div>' +
       '</div>' +
     '</div>' +
@@ -365,14 +366,14 @@ function buildDCCard(item, kind) {
         '<svg class="ico" data-icon="more-one.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg>' +
       '</button>' +
       '<button class="dc-dl-btn" type="button" title="快捷下载"' + (disabled ? ' disabled' : '') + '>' +
-        '<svg class="ico" data-icon="save-one.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg>' +
+        '<svg class="ico" data-icon="download-two.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg>' +
       '</button>' +
     '</div>';
   card.querySelector('.res-menu-btn').onclick = () => openDcModal(kind, item);
   // 快捷下载: 不必进详情模态, 一键直接开始下载 (与资源管理的禁用按钮同一布局)
   const dlBtn = card.querySelector('.dc-dl-btn');
   dlBtn.onclick = (e) => {
-    e.stopPropagation();
+    stopClick(e);   // 阻止冒泡(别打开详情模态) 并补一次点击音效
     if (disabled) return;
     if (!api) { toast('浏览器预览模式', 'warn'); return; }
     startDownloadItem(kind, item);
@@ -420,19 +421,19 @@ function openDcModal(kind, item) {
         '<div class="res-detail-main">' +
           '<div class="res-detail-title-row">' +
             '<span class="res-detail-name">' + esc(item.name || '未知') + '</span>' +
-            '<button class="panel-close" id="dc-modal-close" title="关闭"><svg class="ico" data-icon="preview-close-one.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg></button>' +
+            '<button class="panel-close" id="dc-modal-close" title="关闭"><svg class="ico" data-icon="reduce-one.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg></button>' +
           '</div>' +
           '<div class="res-detail-sub">' +
             (item.version ? '<span class="res-ver-inline">v' + esc(item.version) + '</span>' : '') +
             (authorLinksHtml(dcAuthorLinks(item.authors)) || '') +
           '</div>' +
-          '<div class="res-detail-state off">' + icoText('save', String(item.download_count || 0) + ' 次下载') + '</div>' +
+          '<div class="res-detail-state off">' + icoText('downloadTwo', String(item.download_count || 0) + ' 次下载') + '</div>' +
         '</div>' +
       '</div>' +
       '<div class="res-detail-desc">' + esc(item.desc || '无描述') + '</div>' +
       '<div class="res-detail-ops">' +
         '<button class="btn btn-primary" id="dc-modal-dl" ' + (disabled ? 'disabled' : '') + '>' +
-          '<svg class="ico" data-icon="save-one.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg> 下载' +
+          '<svg class="ico" data-icon="download-two.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg> 下载' +
         '</button>' +
       '</div>' +
     '</div>';

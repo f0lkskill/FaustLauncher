@@ -74,3 +74,12 @@ function bindClickSound() {
     playUISound('click');
   });
 }
+
+// 卡片上的操作按钮 (启用/禁用、快捷下载) 需要 e.stopPropagation() 来避免触发
+// 卡片自身的点击 (打开详情 / 推荐卡换一张)。但冒泡被掐断后, 上面挂在 document 上的
+// 全局点击音效就收不到这次点击 —— 表现就是"点这些图标没有声音"。
+// 凡是需要阻止冒泡的点击处理器, 一律改用它: 阻止冒泡 + 手动补一次点击音效。
+function stopClick(e) {
+  if (e && typeof e.stopPropagation === 'function') e.stopPropagation();
+  playUISound('click');
+}

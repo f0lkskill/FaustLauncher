@@ -68,13 +68,16 @@ let pipeline = {
 // 完整流水线 (启动游戏) / 汉化更新流水线 (不含启动游戏)
 // 左侧列表保留各步骤专属图标; 右侧详情大图标由 updatePipeDetail 按步骤切换。
 // icon 是 icons.js 里的图标名 (不再是 emoji 字符)。
+//
+// 刻意与"下载流程"的图标区分开: 下载按钮/下载中心/下载任务统一用 downloadTwo(云下载),
+// 所以这里"下载汉化包"改用 folderDownload(下载进文件夹), 避免两处看起来是同一件事。
 const STEPS_FULL = [
   { key: 'prepare', label: '准备检查', icon: 'search' },
-  { key: 'download', label: '下载汉化包', icon: 'save' },
-  { key: 'resource', label: '检查资源', icon: 'fileStaffOne' },
+  { key: 'download', label: '下载汉化包', icon: 'folderDownload' },
+  { key: 'resource', label: '检查资源', icon: 'allApplication' },
   { key: 'bubble', label: '下载气泡', icon: 'paperclip' },
-  { key: 'install', label: '安装汉化', icon: 'add' },
-  { key: 'mods', label: '更新插件/Mod', icon: 'moreApp' },
+  { key: 'install', label: '安装汉化', icon: 'install' },
+  { key: 'mods', label: '更新插件/Mod', icon: 'boltOne' },
   { key: 'launch', label: '启动游戏', icon: 'power' },
 ];
 // 汉化更新流水线: 不含"更新插件/Mod"和"启动游戏" (汉化更新不重载插件、不启动游戏)

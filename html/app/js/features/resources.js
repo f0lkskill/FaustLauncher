@@ -133,7 +133,7 @@ function confirmReinstall(kind, dirs, label) {
   }
   const panel = document.createElement('div');
   panel.className = 'panel-overlay';
-  panel.innerHTML = '<div class="panel-card"><div class="panel-head"><h3>重装所有' + label + '</h3><button class="panel-close" title="关闭"><svg class="ico" data-icon="preview-close-one.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg></button></div>' +
+  panel.innerHTML = '<div class="panel-card"><div class="panel-head"><h3>重装所有' + label + '</h3><button class="panel-close" title="关闭"><svg class="ico" data-icon="close.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg></button></div>' +
     '<div class="panel-body"><p>将删除本地资源，并使用启动时缓存的云端信息重新安装。是否继续？</p></div>' +
     '<div class="panel-foot"><button class="btn btn-ghost" data-no>取消</button><button class="btn btn-primary" data-yes>确认重装</button></div></div>';
   document.body.appendChild(panel);
@@ -208,7 +208,7 @@ function renderResPagination(pagination, totalItems, totalPages) {
 function authorLinksHtml(links) {
   if (!links || !links.length) return '';
   return links.map(l =>
-    '<a class="res-author-link" href="' + esc(l.url || '#') + '" target="_blank" onclick="event.stopPropagation()">' + esc(l.name) + '</a>'
+    '<a class="res-author-link" href="' + esc(l.url || '#') + '" target="_blank" onclick="stopClick(event)">' + esc(l.name) + '</a>'
   ).join(' · ');
 }
 
@@ -262,11 +262,11 @@ function buildResCard(item) {
       '<button class="res-toggle-btn' + (enabled ? ' on' : '') + '" type="button"' +
         ' aria-pressed="' + (enabled ? 'true' : 'false') + '"' +
         ' title="' + (enabled ? '点击禁用' : '点击启用') + '">' +
-        '<svg class="ico" data-icon="power.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg>' +
+        '<svg class="ico" data-icon="reduce-one.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg>' +
       '</button>' +
     '</div>';
   card.querySelector('.res-toggle-btn').onclick = async (e) => {
-    e.stopPropagation();
+    stopClick(e);   // 阻止冒泡(别触发卡片自身) 并补一次点击音效
     if (!api) { toast('浏览器预览模式', 'warn'); return; }
     const btn = e.currentTarget;
     if (btn.disabled) return;
@@ -302,7 +302,7 @@ const SETTING_LABELS = { enable: '启用' };
 
 // 模态内的启用状态标识 (电源图标 + 文案)
 function resStateHtml(enabled) {
-  return '<svg class="ico" data-icon="power.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg> ' +
+  return '<svg class="ico" data-icon="reduce-one.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg> ' +
     (enabled ? '已启用' : '已禁用');
 }
 
@@ -312,7 +312,7 @@ function resToggleBtnHtml(key, on) {
     ' data-set="' + esc(key) + '" data-value="' + (on ? '1' : '0') + '"' +
     ' aria-pressed="' + (on ? 'true' : 'false') + '"' +
     ' title="' + (on ? '点击禁用' : '点击启用') + '">' +
-    '<svg class="ico" data-icon="power.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg>' +
+    '<svg class="ico" data-icon="reduce-one.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg>' +
     '</button>';
 }
 
@@ -376,7 +376,7 @@ function openResModal(kind, item) {
         '<div class="res-detail-main">' +
           '<div class="res-detail-title-row">' +
             '<span class="res-detail-name">' + esc(name) + '</span>' +
-            '<button class="panel-close" id="res-modal-close" title="关闭"><svg class="ico" data-icon="preview-close-one.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg></button>' +
+            '<button class="panel-close" id="res-modal-close" title="关闭"><svg class="ico" data-icon="close.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg></button>' +
           '</div>' +
           '<div class="res-detail-sub">' +
             (ver ? '<span class="res-ver-inline">v' + esc(ver) + '</span>' : '') +
