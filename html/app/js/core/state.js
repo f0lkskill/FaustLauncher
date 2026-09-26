@@ -66,15 +66,16 @@ let pipeline = {
 };
 
 // 完整流水线 (启动游戏) / 汉化更新流水线 (不含启动游戏)
-// 左侧列表保留各步骤专属图标; 右侧详情大图标统一为火箭
+// 左侧列表保留各步骤专属图标; 右侧详情大图标由 updatePipeDetail 按步骤切换。
+// icon 是 icons.js 里的图标名 (不再是 emoji 字符)。
 const STEPS_FULL = [
-  { key: 'prepare', label: '准备检查', icon: '🔍' },
-  { key: 'download', label: '下载汉化包', icon: '📥' },
-  { key: 'resource', label: '检查资源', icon: '🗂️' },
-  { key: 'bubble', label: '下载气泡', icon: '💬' },
-  { key: 'install', label: '安装汉化', icon: '📦' },
-  { key: 'mods', label: '更新插件/Mod', icon: '🧩' },
-  { key: 'launch', label: '启动游戏', icon: '🚀' },
+  { key: 'prepare', label: '准备检查', icon: 'search' },
+  { key: 'download', label: '下载汉化包', icon: 'save' },
+  { key: 'resource', label: '检查资源', icon: 'fileStaffOne' },
+  { key: 'bubble', label: '下载气泡', icon: 'paperclip' },
+  { key: 'install', label: '安装汉化', icon: 'add' },
+  { key: 'mods', label: '更新插件/Mod', icon: 'moreApp' },
+  { key: 'launch', label: '启动游戏', icon: 'power' },
 ];
 // 汉化更新流水线: 不含"更新插件/Mod"和"启动游戏" (汉化更新不重载插件、不启动游戏)
 const STEPS_TRANSLATE = STEPS_FULL.filter(s => s.key !== 'launch' && s.key !== 'mods');
@@ -103,7 +104,7 @@ function updatePipeDetail(stepKey) {
   const txtEl = $('#pipe-detail-text');
   if (!icoEl || !txtEl) return;
   const step = pipeline.steps.find(s => s.key === stepKey);
-  icoEl.innerHTML = step ? esc(step.icon) : '';
+  icoEl.innerHTML = step ? iconSvg(step.icon) : '';
   const fn = STEP_DETAILS[stepKey];
   txtEl.textContent = fn ? fn() : (step ? step.label : '');
 }

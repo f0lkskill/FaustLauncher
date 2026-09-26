@@ -45,7 +45,7 @@ function pipelineReset(withLaunch) {
     const el = document.createElement('div');
     el.className = 'pipe-step';
     el.id = 'pstep-' + i;
-    el.innerHTML = '<span class="st-ico">' + s.icon + '</span><span>' + esc(s.label) + '</span>';
+    el.innerHTML = '<span class="st-ico">' + iconSvg(s.icon) + '</span><span>' + esc(s.label) + '</span>';
     wrap.appendChild(el);
   });
   // 第一步立即高亮 (修复: 此前 prepare 永远不会被点亮, 看起来第一/二步顺序反了)
@@ -78,7 +78,7 @@ function pipelineAdvance() {
 function pipelineError() {
   // 状态统一由右侧详情面板显示
   const icoEl = $('#pipe-detail-ico'), txtEl = $('#pipe-detail-text');
-  if (icoEl) { icoEl.innerHTML = esc('❌'); icoEl.dataset.task = ''; }
+  if (icoEl) { icoEl.innerHTML = iconSvg('harm'); icoEl.dataset.task = ''; }
   if (txtEl) txtEl.textContent = '启动过程中出现错误, 详见终端';
   hidePipeDownloadProgress();
   const i = pipeline.currentIdx;
@@ -90,7 +90,7 @@ function pipelineDone() {
   pipeline.running = false;
   pipeline.steps.forEach((_, i) => setStep(i, 'done'));
   const icoEl = $('#pipe-detail-ico'), txtEl = $('#pipe-detail-text');
-  if (icoEl) { icoEl.innerHTML = esc('✅'); icoEl.dataset.task = ''; }
+  if (icoEl) { icoEl.innerHTML = iconSvg('fileSuccess'); icoEl.dataset.task = ''; }
   // 区分流程: 含"启动游戏"步骤的是完整启动流程, 否则是汉化更新流程
   const isLaunchFlow = pipeline.steps.some(s => s.key === 'launch');
   if (txtEl) txtEl.textContent = isLaunchFlow ? '启动流程全部完成' : '汉化更新完成';

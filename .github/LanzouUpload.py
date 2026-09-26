@@ -10,7 +10,7 @@ from functions.web_update.lanzou_utils import LoginByCookie, UploadFile
 # 蓝奏云 LLC_lang 文件夹 id
 LLC_LANG_FOLDER_ID = 13813177
 # lz0.qaiu.top 直链解析服务 (老域名 lz.qaiu.top 已失效, 2026-09-25 起改用修复版)
-PARSER_BASE = "https://lz0.qaiu.top/parser?url="
+PARSER_BASE = "https://lz.qaiu.top/parser?url="
 
 
 class LanzouUploader:

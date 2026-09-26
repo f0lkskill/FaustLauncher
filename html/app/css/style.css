@@ -198,6 +198,27 @@ body.no-hw .hero {
 }
 .nav-ico { width: 22px; text-align: center; font-size: 16px; }
 
+/* ---------- 统一 SVG 图标 (assets/icon/*.svg, 由 js/core/icons.js 注入) ---------- */
+/* 图标以 currentColor 描绘, 颜色/大小全部继承所在元素, 因此 hover / active /
+   disabled 态无需单独维护图标副本。 */
+.ico {
+  width: 1em; height: 1em; flex-shrink: 0;
+  vertical-align: -0.14em;
+  color: inherit;
+  pointer-events: none;   /* 图标不吞点击, 事件始终落在按钮上 */
+}
+.ico-img { width: 1em; height: 1em; vertical-align: -0.14em; }
+/* 侧栏导航图标略大, 与文字对齐 */
+.nav-ico .ico { width: 18px; height: 18px; vertical-align: middle; }
+/* 原先靠 emoji 字号决定大小的地方, 换成 SVG 后给出明确尺寸 */
+.pipe-detail-ico .ico { width: 48px; height: 48px; }
+.panel-close .ico { width: 15px; height: 15px; }
+.dl-close .ico { width: 15px; height: 15px; }
+.dl-head .ico { width: 15px; height: 15px; vertical-align: -0.16em; }
+.res-menu-btn .ico { width: 17px; height: 17px; }
+/* toast 里的图标跟随文字 */
+.toast .ico { width: 1em; height: 1em; vertical-align: -0.14em; margin-right: 2px; }
+
 .sidebar-footer { padding-top: 12px; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 8px; }
 .version-chip {
   font-size: 11px; color: var(--text-3);
@@ -338,19 +359,34 @@ body.no-hw .hero {
 .res-actions-group { display: flex; gap: 8px; flex-wrap: wrap; }
 /* hidden 属性优先于 display:flex, 保证按钮组按分区正确切换 */
 .res-actions-group[hidden] { display: none !important; }
-/* 搜索框 */
-.res-search {
+/* 搜索框 (图标 + 输入框; 图标是内联 SVG, 不能塞进 placeholder) */
+.res-search-wrap {
+  position: relative; display: flex; align-items: center;
   flex: 1; min-width: 160px; max-width: 260px;
+}
+.res-search-ico {
+  position: absolute; left: 10px; width: 15px; height: 15px;
+  color: var(--text-3); pointer-events: none;
+}
+.res-search {
+  width: 100%;
   background: rgba(10, 12, 18, .55);
   border: 1px solid var(--border);
-  border-radius: 8px; padding: 7px 12px;
+  border-radius: 8px; padding: 7px 12px 7px 32px;
   color: var(--text); font-family: var(--font); font-size: 13px;
   transition: border-color .18s ease;
 }
 .res-search:focus { outline: none; border-color: var(--accent); }
 .res-search::placeholder { color: var(--text-3); }
+.res-search-wrap:focus-within .res-search-ico { color: var(--accent); }
 /* 图标按钮 */
-.btn-icon { padding: 7px 10px; font-size: 15px; line-height: 1; }
+.btn-icon { padding: 7px 10px; font-size: 15px; line-height: 1; display: inline-flex; align-items: center; justify-content: center; }
+.btn-icon .ico { width: 17px; height: 17px; }
+/* 带 SVG 图标的普通按钮 (刷新/下载/开始等): 图标与文字基线对齐 */
+.btn .ico { width: 15px; height: 15px; vertical-align: -0.16em; margin-right: 2px; }
+.res-tab .ico { vertical-align: -0.16em; margin-right: 2px; }
+.btn-ico { display: inline-flex; align-items: center; }
+.btn-ico .ico { width: 17px; height: 17px; margin-right: 0; }
 /* 压缩外层卡片内边距, 减小分区按钮距顶部的巨大间距 */
 #page-mod_addon .card,
 #page-download_center .card { padding: 6px 8px 10px; }
@@ -482,8 +518,45 @@ body.modal-open .res-card {
   cursor: pointer; font-size: 16px; line-height: 1; transition: transform .18s ease, border-color .18s ease, color .18s ease, background-color .18s ease, background .18s ease, box-shadow .18s ease, opacity .18s ease;
 }
 .res-menu-btn:hover { background: rgba(255, 255, 255, 0.08); color: var(--text); }
-/* 卡片右侧操作区 (启用/禁用 switch + 更多) */
+/* 卡片右侧操作区 (启用/禁用电源按钮 + 更多) */
 .res-card-ops { display: flex; flex-direction: row; gap: 8px; flex-shrink: 0; align-items: center; }
+
+/* 启用/禁用 电源按钮 (取代原来的滑动开关组)
+   资源管理卡片与详情模态共用同一外观; 下载中心的"快捷下载"按钮沿用同一尺寸框架。 */
+.res-toggle-btn, .dc-dl-btn {
+  flex-shrink: 0; width: 32px; height: 32px; border-radius: 9px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: rgba(255, 255, 255, .05);
+  border: 1px solid var(--border-2);
+  color: var(--text-3); cursor: pointer; padding: 0;
+  transition: color .18s ease, background-color .18s ease, border-color .18s ease,
+              box-shadow .18s ease, transform .18s ease, opacity .18s ease;
+}
+.res-toggle-btn .ico, .dc-dl-btn .ico { width: 17px; height: 17px; }
+.res-toggle-btn:hover, .dc-dl-btn:hover { color: var(--text); border-color: var(--border-2); background: rgba(255, 255, 255, .09); }
+.res-toggle-btn:active, .dc-dl-btn:active { transform: scale(.94); }
+.res-toggle-btn:disabled, .dc-dl-btn:disabled { opacity: .45; cursor: default; transform: none; }
+/* 已启用: 绿色高亮, 一眼看出当前是开着的 */
+.res-toggle-btn.on {
+  color: var(--success);
+  background: rgba(46, 160, 67, .14);
+  border-color: rgba(46, 160, 67, .45);
+  box-shadow: 0 0 0 1px rgba(46, 160, 67, .10) inset;
+}
+.res-toggle-btn.on:hover { background: rgba(46, 160, 67, .22); color: #6ee787; }
+/* 快捷下载: 主题蓝, 与"下载"语义一致 */
+.dc-dl-btn { color: var(--accent); border-color: rgba(55,148,255,.35); background: rgba(55,148,255,.10); }
+.dc-dl-btn:hover { color: #9ecbff; background: rgba(55,148,255,.20); border-color: rgba(55,148,255,.55); }
+/* 已安装: 转为中性态 */
+.dc-dl-btn.installed { color: var(--info); border-color: rgba(79,193,255,.35); background: rgba(79,193,255,.10); }
+
+/* 就地切换启用状态时: 关掉入场动画, 只做平滑的透明度/去色过渡
+   (否则 disabled class 变化会重播 cardPopInDim, 看起来像卡片闪了一下) */
+.res-card.live-toggle {
+  animation: none !important;
+  transition: opacity .25s ease, filter .25s ease, box-shadow .25s ease;
+}
+/* 旧的滑动开关样式保留: 模态里非 enable 的布尔设置项仍在用 .switch */
 .res-switch { position: relative; width: 36px; height: 20px; display: inline-block; flex-shrink: 0; cursor: pointer; }
 .res-switch input { opacity: 0; width: 0; height: 0; }
 .res-switch .slider { background: var(--border-2); }

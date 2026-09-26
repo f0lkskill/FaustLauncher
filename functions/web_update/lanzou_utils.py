@@ -56,7 +56,7 @@ ALLOW_UP_TYPES = [
 # 蓝奏云直链解析 (分享页 -> 可下载直链)
 # ============================================================
 # 云端数据库里的下载链接历史上写成第三方解析服务的地址:
-#     https://lz0.qaiu.top/parser?url=<分享链接>[&pwd=<密码>]
+#     https://lz.qaiu.top/parser?url=<分享链接>[&pwd=<密码>]
 # 这里在本地把同一件事做掉, 不再依赖第三方解析服务:
 #     1. 取分享页 —— 先过阿里云 WAF 的 acw_sc__v2 JS 挑战;
 #     2. 从页面里读出 ajaxfile.php/ajaxm.php 接口、sign 与 kd;
@@ -137,7 +137,7 @@ def _ResolveOnce(session, share_url, pwd, timeout):
 def GetDirectLink(url, pwd=None, session=None, timeout=(10, 30)):
     """把蓝奏云分享链接 (或指向它的解析服务链接) 解析成可下载直链
 
-    :param url: 分享链接, 或 https://lz0.qaiu.top/parser?url=<分享链接>&pwd=<密码>
+    :param url: 分享链接, 或 https://lz.qaiu.top/parser?url=<分享链接>&pwd=<密码>
     :param pwd: 分享密码 (可选; 解析服务链接里的 pwd 会自动取用)
     :param session: 可复用的 requests.Session (不传则用线程内默认会话)
     :return: 直链 (时效性 URL, 建议拿到后立刻下载); 解析失败返回 None
@@ -1379,7 +1379,7 @@ if __name__ == "__main__":
     print('\n\n')
 
     # 直链解析示例 (不依赖第三方解析服务):
-    # link = "https://lz0.qaiu.top/parser?url=https://folkskill.lanzoum.com/irAGt3iha71c&pwd=3z4n"
+    # link = "https://lz.qaiu.top/parser?url=https://folkskill.lanzoum.com/irAGt3iha71c&pwd=3z4n"
     # print(GetDirectLink(link))
     # print(ResolveDownloadUrl(link))
 
@@ -1392,3 +1392,5 @@ if __name__ == "__main__":
     #     os._exit(1)
     # result = UploadFile(session, r"D:\path\to\file.zip", folder_id=-1)
     # print(result)
+
+    print(ResolveDownloadUrl("https://folkskill.lanzouc.com/iApEl49wry0h"))

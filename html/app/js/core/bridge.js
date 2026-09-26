@@ -48,7 +48,7 @@ if (api) {
 }
 };
 // 卸载/删除失败 (如文件被占用) 时由后端通知
-window.__onResError = function (msg) { toast('⚠ ' + msg, 'error', 6000); };
+window.__onResError = function (msg) { toast(msg, 'error', 6000, 'caution'); };
 
 window.__onEvent = function (event, data) {
   if (event === 'progress') {
@@ -88,7 +88,7 @@ window.__onEvent = function (event, data) {
       const txtEl = $('#pipe-detail-text');
       if (txtEl) txtEl.textContent = String(text);
       const icoEl = $('#pipe-detail-ico');
-      if (icoEl && icon) { icoEl.innerHTML = esc(icon); icoEl.dataset.task = ''; }
+      if (icoEl && icon) { icoEl.innerHTML = iconSvgAuto(icon); icoEl.dataset.task = ''; }
     }
   } else if (event === 'step') {
     // 若流水线未启动 (如启动时自动汉化更新), 自动显示并启动流水线
@@ -120,18 +120,18 @@ window.__onEvent = function (event, data) {
     // 状态统一由右侧详情面板显示
     hidePipeDownloadProgress();
     const icoEl = $('#pipe-detail-ico'), txtEl = $('#pipe-detail-text');
-    if (icoEl) { icoEl.innerHTML = esc('🎮'); icoEl.dataset.task = ''; }
+    if (icoEl) { icoEl.innerHTML = iconSvg('allApplication'); icoEl.dataset.task = ''; }
     if (txtEl) txtEl.textContent = '游戏已启动';
     // 游戏运行中保持按钮互斥 (退出后由 pipelineDone 恢复)
   } else if (event === 'game_exited') {
     pipelineDone();
     const icoEl = $('#pipe-detail-ico'), txtEl = $('#pipe-detail-text');
-    if (icoEl) icoEl.innerHTML = esc('🎮');
+    if (icoEl) icoEl.innerHTML = iconSvg('allApplication');
     if (txtEl) txtEl.textContent = '游戏已退出';
   } else if (event === 'game_timeout') {
     pipelineError();
     const icoEl = $('#pipe-detail-ico'), txtEl = $('#pipe-detail-text');
-    if (icoEl) icoEl.innerHTML = esc('❌');
+    if (icoEl) icoEl.innerHTML = iconSvg('harm');
     if (txtEl) txtEl.textContent = '等待游戏启动超时, 请检查游戏是否正常安装';
     toast('等待游戏启动超时', 'error', 6000);
     setTimeout(() => { pipelineIdle(); }, 4000);

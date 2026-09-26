@@ -38,8 +38,8 @@ function renderAbout() {
         (p.version ? '<div class="ap-ver">' + esc(p.version) + '</div>' : '') +
         '<div class="ap-desc">' + esc(p.description || '') + '</div>' +
         '<div class="ap-links">' +
-          '<button class="btn btn-ghost" data-link="https://github.com/f0lkskill/FaustLauncher">📦 GitHub</button>' +
-          '<button class="btn btn-ghost" data-link="https://space.bilibili.com/599331034">🎬 反馈渠道</button>' +
+          '<button class="btn btn-ghost" data-link="https://github.com/f0lkskill/FaustLauncher">' + iconSvg('code') + ' GitHub</button>' +
+          '<button class="btn btn-ghost" data-link="https://space.bilibili.com/599331034">' + iconSvg('share') + ' 反馈渠道</button>' +
         '</div>' +
       '</div>';
     // 外链绑定
@@ -80,10 +80,18 @@ function renderAbout() {
 function renderContributorDetail(c) {
   const d = $('#ac-detail');
   if (!d) return;
-  const linkIcons = { github: '🐙 GitHub', blbl: '📺 B站', website: '🌐 网站', 官网: '🌐 官网' };
-  const linkHtml = Object.entries(c.links || {}).map(([k, u]) =>
-    '<button class="btn btn-ghost" style="font-size:12px;padding:6px 12px" onclick="window.__openUrl(\'' + esc(u) + '\')">' + (linkIcons[k] || '🔗 ' + k) + '</button>'
-  ).join('') || '';
+  // 贡献者外链按钮: 左侧图标按链接类型区分 (统一走 assets/icon 的 SVG)
+  const linkIcons = {
+    github: { icon: 'code', label: 'GitHub' },
+    blbl: { icon: 'share', label: 'B站' },
+    website: { icon: 'share', label: '网站' },
+    '官网': { icon: 'share', label: '官网' },
+  };
+  const linkHtml = Object.entries(c.links || {}).map(([k, u]) => {
+    const meta = linkIcons[k] || { icon: 'share', label: k };
+    return '<button class="btn btn-ghost" style="font-size:12px;padding:6px 12px" onclick="window.__openUrl(\'' + esc(u) + '\')">' +
+      iconSvg(meta.icon) + ' ' + esc(meta.label) + '</button>';
+  }).join('') || '';
   d.innerHTML =
     '<div class="ac-detail-head">' +
       '<img class="ac-detail-avatar" src="' + (c.icon_uri || PROJECT_ICON) + '" alt="">' +

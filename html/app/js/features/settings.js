@@ -149,9 +149,41 @@ function pcHint(text, kind) {
 function pcErrorText(err) {
   if (err === 'empty') return '路径不能为空';
   if (err === 'not_found') return '目录不存在';
-  if (err === 'no_exe') return '这个目录下没有 ' + pcExeName;
+  if (err === 'no_exe') return '这个目录里没有 ' + pcExeName;
+  if (err === 'ambiguous') return '这个目录下有多个含 ' + pcExeName + ' 的子目录，请选到游戏根目录';
   if (err === 'no_game_path') return '还没有设置有效的游戏路径';
   return err || '未知错误';
+}
+
+// 手选窗口的文案: 按后端给的**真实原因**说话
+// (以前不管什么原因都写"Steam 读到的路径里没有 exe", 用户看到"明明有 exe"当然炸)
+function pcManualCopy(reason, raw, fromSteam) {
+  const exe = pcExeName;
+  const label = fromSteam ? '启动器从 <b>Steam VDF</b> 读到的路径' : '这个目录';
+  const tail = '<div class="pc-desc">请手动选择游戏根目录（目录里必须有 <code>' + esc(exe) +
+               '</code>），否则启动器将无法继续使用。</div>';
+  if (!raw) {
+    return {
+      body: '<div class="pc-desc">启动器没能从 <b>Steam VDF</b> 自动找到边狱巴士。' + tail + '</div>',
+      hint: '', hintKind: ''
+    };
+  }
+  let head, hint;
+  if (reason === 'not_found') {
+    head = '<div class="pc-desc">' + label + '已经不存在了：</div>';
+    hint = '这个目录已经不在了，请重新选一个游戏目录。';
+  } else if (reason === 'ambiguous') {
+    head = '<div class="pc-desc">' + label + '下<b>有多个含 ' + esc(exe) +
+           ' 的子目录</b>，启动器不替你猜：</div>';
+    hint = '请直接选到游戏根目录（' + exe + ' 所在的那一层）。';
+  } else {
+    head = '<div class="pc-desc">' + label + '里<b>没有 ' + esc(exe) + '</b>：</div>';
+    hint = '请选到游戏根目录（' + exe + ' 所在的那个文件夹）。';
+  }
+  return {
+    body: head + '<div class="pc-path" title="' + esc(raw) + '">' + esc(raw) + '</div>' + tail,
+    hint: hint, hintKind: 'warn'
+  };
 }
 
 // 结束一次交互: 把期间收到的后端推送补上 (同状态不重建, 所以不会顶掉按钮)
@@ -246,15 +278,8 @@ function renderPathConfirmModal(d) {
       'ask');
     return;
   }
-  const body = raw
-    ? '<div class="pc-desc">启动器从 <b>Steam VDF</b> 读到的路径里<b>没有 ' + esc(exe) + '</b>，按无效路径处理：</div>' +
-      '<div class="pc-path" title="' + esc(raw) + '">' + esc(raw) + '</div>' +
-      '<div class="pc-desc">请手动选择游戏根目录（目录里必须有 <code>' + esc(exe) + '</code>），否则启动器将无法继续使用。</div>'
-    : '<div class="pc-desc">启动器没能从 <b>Steam VDF</b> 自动找到边狱巴士。' +
-      '请手动选择游戏根目录（目录里必须有 <code>' + esc(exe) + '</code>），否则启动器将无法继续使用。</div>';
-  pcMount('需要设置游戏路径', '请选择游戏目录', body, 'manual',
-    raw ? 'Steam 里读到的是上面这个路径，但里面没有 ' + exe + '，请自己选一个游戏目录。' : '',
-    raw ? 'warn' : '');
+  const copy = pcManualCopy(d.reason, raw, !!d.from_steam);
+  pcMount('需要设置游戏路径', '请选择游戏目录', copy.body, 'manual', copy.hint, copy.hintKind);
 }
 
 function openPathConfirmModal(d) {
@@ -295,8 +320,11 @@ async function pcAcceptDetected() {
   // 后端否掉了自动检测到的路径 (没 exe / 目录没了) -> 直接换成手选窗口
   const code = (r && r.error) || '';
   pcBusy = false;
-  renderPathConfirmModal({ path: code === 'no_exe' ? pcLastRaw : '', path_ok: false,
-                           game_exe: pcExeName });
+  // 用后端回传的"真正被校验的路径 + 原因"渲染 —— 以前一律拿 pcLastRaw 说"没有 exe",
+  // 会把"目录不存在 / 多个候选 / 写入异常"都误报成"没有 exe", 用户当然不服
+  renderPathConfirmModal({ path: String((r && r.path) || ''), path_ok: false,
+                           game_exe: pcExeName, reason: (r && r.reason) || code,
+                           from_steam: true });
   pcHint('自动检测到的路径不可用（' + pcErrorText(code) + '），请自己选一个游戏目录。', 'error');
   pcEndBusy();
 }
@@ -457,12 +485,12 @@ async function resetOneSetting(key) {
 }
 
 // 恢复所有设置项为默认值
-// (设置页顶部右侧那个"↺ 恢复默认"按钮的逻辑; 按钮由 renderSettings 创建并绑定, 见那里)
+// (设置页顶部右侧那个"恢复默认"按钮的逻辑; 按钮由 renderSettings 创建并绑定, 见那里)
 async function resetAllSettings() {
   if (!api) { toast('浏览器预览模式', 'warn'); return; }
   const btn = $('#btn-reset-settings');
   if (btn && btn.disabled) return;                 // 防连点
-  if (btn) { btn.disabled = true; btn.textContent = '↺ 重置中…'; }
+  if (btn) { btn.disabled = true; btn.innerHTML = iconSvg('refresh') + ' 重置中…'; }
   try {
     const schema = BOOT.settings_schema;
     for (const key of Object.keys(schema)) {
@@ -480,7 +508,7 @@ async function resetAllSettings() {
   } catch (e) {
     toast('重置失败: ' + e, 'error');
     const b = $('#btn-reset-settings');             // 失败时恢复按钮可用
-    if (b) { b.disabled = false; b.textContent = '↺ 恢复默认'; }
+    if (b) { b.disabled = false; b.innerHTML = iconSvg('refresh') + ' 恢复默认'; }
   }
 }
 
@@ -522,7 +550,7 @@ function renderSettings(schema) {
   const resetBtn = document.createElement('button');
   resetBtn.className = 'btn btn-ghost';
   resetBtn.id = 'btn-reset-settings';
-  resetBtn.textContent = '↺ 恢复默认';
+  resetBtn.innerHTML = iconSvg('refresh') + ' 恢复默认';
   resetBtn.onclick = resetAllSettings;
   tabsBox.appendChild(resetBtn);
 
@@ -551,7 +579,7 @@ function renderSettings(schema) {
           rb.className = 'set-reset';
           rb.type = 'button';
           rb.title = '重置该设置为默认值';
-          rb.innerHTML = '↺';
+          rb.innerHTML = iconSvg('refresh');
           rb.onclick = () => resetOneSetting(key);
           row.appendChild(rb);
         }
