@@ -75,8 +75,11 @@ function on(selector, event, handler, opts) {
 function watchHeavyAnimations() {
   const HEAVY = /^(pageIn|cardPopIn|cardPopInDim|panelIn|verCardIn|verCardOut|setRowIn|toastIn|toastTopIn)$/;
   let active = 0;
+  // 只在开启毛玻璃时才需要这套保护; 没开毛玻璃时做了也是纯开销
+  const needGuard = () => !document.body.classList.contains('no-hw');
   const on = (e) => {
     if (!HEAVY.test((e && e.animationName) || '')) return;
+    if (!needGuard()) return;
     active++;
     document.body.classList.add('animating');
   };
@@ -95,7 +98,9 @@ function watchHeavyAnimations() {
 function forceRepaint(el) {
   // 动画期间临时关闭毛玻璃: 撕裂主要来自"transform 动画 + backdrop-filter"同时进行。
   // 动画一结束就恢复, 平时不受影响。
-  document.body.classList.add('animating');
+  if (!document.body.classList.contains('no-hw')) {
+    document.body.classList.add('animating');
+  }
   clearTimeout(forceRepaint._t);
   forceRepaint._t = setTimeout(() => document.body.classList.remove('animating'), 400);
   const node = el || document.getElementById('main');

@@ -340,6 +340,33 @@ def _ensure_layered(hwnd):
         return False
 
 
+def _clear_layered(hwnd):
+    """移除 WS_EX_LAYERED 样式。
+
+    分层窗口 (WS_EX_LAYERED + SetLayeredWindowAttributes) 会让整个窗口走
+    DWM 的软件合成路径 —— 内容是逐帧拷贝上去的, 于是切页/动画时极易撕裂、
+    残留旧画面。启动渐入到 alpha=255 之后这个样式就不再需要了, 必须摘掉,
+    让窗口回到正常的 GPU 合成路径。
+    (再次需要淡入淡出时, _ensure_layered 会重新加上。)
+    """
+    try:
+        import ctypes
+        GWL_EXSTYLE = -20
+        WS_EX_LAYERED = 0x80000
+        style = ctypes.windll.user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
+        if style & WS_EX_LAYERED:
+            ctypes.windll.user32.SetWindowLongW(
+                hwnd, GWL_EXSTYLE, style & ~WS_EX_LAYERED)
+            _layered_ready.discard(hwnd)
+            # 强制 DWM 重算窗口帧, 否则样式变更可能延迟生效
+            SWP_FRAMECHANGED, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER = 0x20, 2, 1, 4
+            ctypes.windll.user32.SetWindowPos(
+                hwnd, None, 0, 0, 0, 0,
+                SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER)
+    except Exception:
+        pass
+
+
 def _set_window_alpha(hwnd, alpha):
     """设置窗口透明度 (0~255). 需先调用 _ensure_layered 添加 WS_EX_LAYERED."""
     try:
@@ -2750,6 +2777,7 @@ def _start_tray(core, window, win32_show):
                     win32_show(True)
                     if hwnd:
                         _fade_window(hwnd, 0, 255)    # 渐变出现
+                        _clear_layered(hwnd)   # 渐入完成 -> 摘掉分层, 回到 GPU 合成
                 else:
                     if hwnd:
                         _ensure_layered(hwnd)
@@ -2982,10 +3010,14 @@ def run_web_ui(debug: bool = False):
         # 窗口从隐藏变为可见后，先给 WebView 一次提交 Splash 首帧的机会；
         # 立即开始渐入会在低性能机器上先露出未绘制完成的纯色底。
         time.sleep(0.05)
-        threading.Thread(
-            target=lambda: _fade_window(hwnd, 0, 255, step=15, delay=0.01),
-            daemon=True,
-        ).start()
+        def _fade_in_then_unlayer():
+            # 渐入到完全不透明后, 立刻摘掉 WS_EX_LAYERED:
+            # 分层窗口会让整个窗口走 DWM 软件合成, 切页/动画时必然撕裂。
+            # 摘掉后窗口回到正常 GPU 合成路径 (托盘淡出时会再临时加上)。
+            _fade_window(hwnd, 0, 255, step=15, delay=0.01)
+            _clear_layered(hwnd)
+
+        threading.Thread(target=_fade_in_then_unlayer, daemon=True).start()
 
     try:
         api.ready_callback = _show_after_load # type: ignore

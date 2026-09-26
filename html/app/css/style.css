@@ -151,10 +151,6 @@ body {
   backface-visibility: hidden;
   -webkit-backface-visibility: hidden;
 }
-/* 会做入场动画的元素: 提前提升, 避免动画第一帧才建层导致抖动 */
-.res-card, .dc-card, .carousel-item-inner, .box-card, .link-card {
-  will-change: transform, opacity;
-}
 /* 动画进行中: 临时摘掉毛玻璃 (由 forceRepaint 加/去 body.animating) */
 body.animating .card,
 body.animating .res-card,
