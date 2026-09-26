@@ -3,7 +3,7 @@
         "name": "启动器皮肤",
         "type": "string",
         "default": "",
-        "value": "faust",
+        "value": "",
         "description": "当前启用的启动器皮肤, 只能在“玻璃窗”页面切换"
     },
     "game_path": {
