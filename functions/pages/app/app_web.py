@@ -938,6 +938,8 @@ class AppApi:
         self.core = core
         self.window_ref = window_ref
         self.ready_callback = None
+        # 当前流水线类型: 'launch' / 'translate' / None (决定按钮文案用"中止启动"还是"中止更新")
+        self._pipeline_kind = None
         self._window_drag_lock = threading.Lock()
         self._window_drag_origin = None
 
@@ -1488,10 +1490,32 @@ class AppApi:
             print(f"[设置] 重新推送游戏路径确认窗口失败: {e}")
         return {"ok": False, "error": "no_game_path", "path": cur}
 
-    def launch_game(self):
+    def _prepare_pipeline(self):
+        """流程发起前的公共校验。返回 None 表示可以开始, 否则返回给前端的错误对象。
+
+        两件事必须在**用户点击的这一刻同步完成**:
+          · clear_cancel(): 清掉上一次残留的中止标志。绝不能放到流程内部去清 ——
+            用户点了启动后很快再点中止时, 标志会先被设置、再被流程开头抹掉,
+            表现为"点了中止却毫无反应"(中止请求直接丢失, 流程照常跑完);
+          · 忙检查: 已有流程在跑时明确拒绝。否则前端以为新流程已经开始并把按钮
+            切成"中止", 但后端什么都没做, 按钮会一直等不到收尾事件。
+        """
         blocked = self._require_game_path()
         if blocked:
             return blocked
+        from functions.pages.app import page_loader as _pl
+        if getattr(_pl, "downloading", False):
+            print("[启动流程] 已有流程在进行, 拒绝新的流程请求")
+            return {"ok": False, "error": "busy",
+                    "message": "已有更新流程正在进行, 请稍候或先中止它"}
+        _pl.clear_cancel()
+        return None
+
+    def launch_game(self):
+        blocked = self._prepare_pipeline()
+        if blocked:
+            return blocked
+        self._pipeline_kind = 'launch'
         def _run():
             from functions.pages.app.page_loader import download_and_launch
             obj = type("WebAppShim", (), {"root": None, "core": self.core})()
@@ -1501,12 +1525,13 @@ class AppApi:
             except Exception as e:
                 print(f"启动游戏失败: {e}")
         threading.Thread(target=_run, daemon=True).start()
-        return True
+        return {"ok": True}
 
     def update_translation(self):
-        blocked = self._require_game_path()
+        blocked = self._prepare_pipeline()
         if blocked:
             return blocked
+        self._pipeline_kind = 'translate'
         # 必须阻塞等待下载线程真正完成, 否则前端 await 立即返回,
         # 800ms 后 pipelineDone 会在后端仍在下载时就显示"流水线完成"
         from threading import Event as _Event
@@ -1522,7 +1547,85 @@ class AppApi:
                 done.set()
         threading.Thread(target=_run, daemon=True).start()
         done.wait()
-        return True
+        return {"ok": True}
+
+    # ---- 流水线中止 / 游戏关闭 ----
+
+    def abort_pipeline(self):
+        """中止当前启动/汉化更新流程 (协作式取消)。
+
+        置位中止标志后, page_loader 的下载/资源轮询会在 1 秒内发现并回退,
+        随后由 page_loader 推送 pipeline_aborted 事件, 前端据此恢复按钮。
+        返回值额外带上 running: 若后端此刻已经没有流程在跑, 说明流程其实早已结束
+        (只是前端还停在中止态), 前端可以据此立即收尾, 不必干等事件。
+        """
+        try:
+            from functions.pages.app import page_loader as _pl
+            _pl.request_cancel()
+            running = bool(getattr(_pl, "downloading", False))
+            print(f"[启动流程] 收到中止请求 (后端流程运行中={running})")
+            return {"ok": True, "running": running}
+        except Exception as e:
+            print(f"[启动流程] 中止请求失败: {e}")
+            return {"ok": False, "error": str(e)}
+
+    def kill_game(self):
+        """关闭正在运行的 LimbusCompany.exe。
+
+        此前用 taskkill /F /IM 存在"有时能关有时不能关", 原因:
+          · 游戏由 Steam 以管理员身份启动时, 普通权限的 taskkill 会 Access denied;
+          · 返回码 0 只代表"杀到了", 不代表进程已经消失, 也没有任何确认。
+        现在:
+          1) 先枚举出真实 PID, 按 PID 精确终止 (必要时连同子进程树);
+          2) 每条 PID 先 TerminateProcess, 失败再 taskkill /F /T 兜底;
+          3) 终止后轮询确认进程真的消失, 把**真实**的 game_alive 回报前端 ——
+             前端据此决定按钮回到"启动游戏"还是保持"关闭游戏", 不再盲目乐观。
+        """
+        try:
+            pids = _find_process_pids("LimbusCompany.exe")
+            if not pids:
+                return {"ok": True, "game_alive": False, "already_exited": True}
+
+            print(f"[游戏] 正在关闭 LimbusCompany.exe (PID: {pids})")
+            for pid in pids:
+                _terminate_pid(pid)
+
+            # 轮询确认 (最多 5s): 终止是异步生效的, 立刻回读可能仍枚举到进程
+            deadline = time.time() + 5.0
+            while time.time() < deadline:
+                if not _find_process_pids("LimbusCompany.exe"):
+                    break
+                time.sleep(0.25)
+
+            if _find_process_pids("LimbusCompany.exe"):
+                print("[游戏] 关闭失败: LimbusCompany.exe 仍在运行 (可能以管理员权限启动)")
+                return {"ok": False, "game_alive": True,
+                        "error": "无法关闭游戏 (进程可能以管理员权限运行, 请手动关闭)"}
+
+            print("[游戏] 已关闭 LimbusCompany.exe")
+            return {"ok": True, "game_alive": False}
+        except Exception as e:
+            print(f"[游戏] 关闭游戏失败: {e}")
+            return {"ok": False, "game_alive": _game_process_running(), "error": str(e)}
+
+    def get_launch_state(self):
+        """启动器按钮所需的实时状态。
+
+        running   : 是否正有启动/汉化流程在跑 (按钮显示"中止...")
+        game_alive: LimbusCompany.exe 是否在运行 (按钮显示"关闭游戏")
+        kind      : 当前流程类型 'launch' / 'translate'
+        """
+        try:
+            from functions.pages.app import page_loader as _pl
+            return {
+                "running": bool(getattr(_pl, "downloading", False)),
+                "cancelling": bool(_pl.is_cancel_requested()),
+                "game_alive": _game_process_running(),
+                "kind": getattr(self, "_pipeline_kind", None),
+            }
+        except Exception as e:
+            return {"running": False, "cancelling": False,
+                    "game_alive": False, "kind": None, "error": str(e)}
 
     # ---- 入口 ----
     def verify_extension_key(self, key):
@@ -2698,20 +2801,110 @@ if %errorlevel% equ 0 (
 # 游戏进程监视: 启动成功/退出 -> 推送前端流水线事件
 # ============================================================
 
-def _game_process_running():
-    """检测 LimbusCompany.exe 是否在运行 (tasklist, 不依赖 psutil)"""
+# ---- 进程枚举 / 终止 (ctypes, 不依赖 psutil 与 tasklist 的文本输出) ----
+# 改用 CreateToolhelp32Snapshot 的原因: tasklist 的输出受系统语言/编码影响,
+# 只能判断"有没有", 拿不到 PID, 因此没法做精确终止与终止后的确认。
+_k32 = None
+_PROCESSENTRY32W = None
+
+
+def _init_win32_proc():
+    """惰性初始化 kernel32 绑定 (避免导入期副作用)"""
+    global _k32, _PROCESSENTRY32W
+    if _k32 is not None:
+        return _k32
+    import ctypes
+    from ctypes import wintypes
+
+    class PROCESSENTRY32W(ctypes.Structure):
+        _fields_ = [
+            ("dwSize", wintypes.DWORD),
+            ("cntUsage", wintypes.DWORD),
+            ("th32ProcessID", wintypes.DWORD),
+            ("th32DefaultHeapID", ctypes.POINTER(ctypes.c_ulong)),
+            ("th32ModuleID", wintypes.DWORD),
+            ("cntThreads", wintypes.DWORD),
+            ("th32ParentProcessID", wintypes.DWORD),
+            ("pcPriClassBase", ctypes.c_long),
+            ("dwFlags", wintypes.DWORD),
+            ("szExeFile", ctypes.c_wchar * 260),
+        ]
+
+    k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    k32.CreateToolhelp32Snapshot.restype = ctypes.c_void_p
+    k32.CreateToolhelp32Snapshot.argtypes = [wintypes.DWORD, wintypes.DWORD]
+    k32.Process32FirstW.argtypes = [ctypes.c_void_p, ctypes.POINTER(PROCESSENTRY32W)]
+    k32.Process32NextW.argtypes = [ctypes.c_void_p, ctypes.POINTER(PROCESSENTRY32W)]
+    k32.CloseHandle.argtypes = [ctypes.c_void_p]
+    k32.OpenProcess.restype = wintypes.HANDLE
+    k32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+    k32.TerminateProcess.argtypes = [wintypes.HANDLE, wintypes.UINT]
+    _PROCESSENTRY32W = PROCESSENTRY32W
+    _k32 = k32
+    return k32
+
+
+def _find_process_pids(image_name):
+    """按映像名枚举进程 PID (大小写不敏感)。无匹配或失败返回空列表。"""
+    try:
+        k32 = _init_win32_proc()
+        import ctypes
+        snap = k32.CreateToolhelp32Snapshot(0x00000002, 0)  # TH32CS_SNAPPROCESS
+        if not snap:
+            return []
+        pids = []
+        try:
+            entry = _PROCESSENTRY32W()
+            entry.dwSize = ctypes.sizeof(_PROCESSENTRY32W)
+            ok = k32.Process32FirstW(snap, ctypes.byref(entry))
+            target = str(image_name).lower()
+            while ok:
+                if entry.szExeFile.lower() == target:
+                    pids.append(int(entry.th32ProcessID))
+                ok = k32.Process32NextW(snap, ctypes.byref(entry))
+        finally:
+            k32.CloseHandle(snap)
+        return pids
+    except Exception:
+        return []
+
+
+def _terminate_pid(pid):
+    """终止指定 PID: 先 TerminateProcess, 失败再用 taskkill /F /T 兜底。
+
+    两步都要试: 游戏由 Steam 以管理员身份启动时, 普通权限的两种方式都可能
+    Access denied, 此时如实返回 False, 由调用方确认后回报失败 (而不是谎报成功)。
+    返回是否成功**发起**终止 (真正结果由调用方轮询确认)。
+    """
+    try:
+        k32 = _init_win32_proc()
+        h = k32.OpenProcess(0x0001, False, int(pid))  # PROCESS_TERMINATE
+        if h:
+            ok = bool(k32.TerminateProcess(h, 1))
+            k32.CloseHandle(h)
+            if ok:
+                return True
+    except Exception:
+        pass
     try:
         import subprocess
-        out = subprocess.check_output(
-            'tasklist /FI "IMAGENAME eq LimbusCompany.exe" /FO CSV /NH',
-            shell=True, creationflags=0x08000000)  # CREATE_NO_WINDOW
-        return b"LimbusCompany.exe" in out
+        r = subprocess.run(['taskkill', '/F', '/T', '/PID', str(int(pid))],
+                           capture_output=True, creationflags=0x08000000)
+        return r.returncode == 0
     except Exception:
         return False
 
 
+def _game_process_running():
+    """检测 LimbusCompany.exe 是否在运行"""
+    return bool(_find_process_pids("LimbusCompany.exe"))
+
+
 def _monitor_game_process(window_ref):
-    """后台监听游戏进程: 出现推送 game_started, 退出推送 game_exited 后结束"""
+    """后台监听游戏进程: 出现推送 game_started, 退出推送 game_exited 后结束
+
+    同时推送 game_state (game_alive), 供主页按钮在"关闭游戏"和普通状态间切换。
+    """
     def _push(event, data=None):
         try:
             win = window_ref.get("win")
@@ -2733,19 +2926,61 @@ def _monitor_game_process(window_ref):
                 exited_at = None
                 print("检测到游戏进程已启动")
                 _push("game_started")
+                _push("game_state", {"game_alive": True})
             elif not running and started:
                 if exited_at is None:
                     exited_at = time.time()
                 elif time.time() - exited_at > 2:
                     print("游戏进程已退出")
+                    _push("game_state", {"game_alive": False})
                     _push("game_exited")
                     return
             elif not running and not started:
                 waited += 2
                 if waited > 480:
                     print("等待游戏启动超时 (8 分钟)")
+                    _push("game_state", {"game_alive": False})
                     _push("game_timeout")
                     return
+            time.sleep(2)
+
+    threading.Thread(target=_run, daemon=True).start()
+
+
+def _start_game_state_watcher(window_ref):
+    """常驻监视游戏进程存活状态, 变化时推 game_state (驱动主页按钮形态)。
+
+    与 _monitor_game_process 的分工: 后者只在"点过启动游戏"之后短暂存在, 负责
+    game_started / game_exited / game_timeout 这些**流水线**事件; 本函数常驻,
+    只负责**按钮形态**, 覆盖两种它管不到的情况:
+      · 用户自己打开/关闭游戏 (没有走过启动流程, 根本没人监视);
+      · 关闭游戏之后 —— 前端必须能把按钮从"关闭游戏"收敛回"启动游戏"。
+    之前只在状态跳变时推一次, 一旦前端错过该事件 (或本地判断错), 按钮就再也
+    回不到正确形态, 正是"关闭后仍显示关闭进程"的直接原因。
+    """
+    def _push(win, alive):
+        """推送并返回是否成功 (失败则下轮重试, 不记入已知状态)"""
+        try:
+            win.evaluate_js("window.__onEvent('game_state', %s)"
+                            % json.dumps({"game_alive": bool(alive)}))
+            return True
+        except Exception:
+            return False
+
+    def _run():
+        last = None
+        gone = 0
+        while True:
+            win = window_ref.get("win") if window_ref else None
+            if win is None:
+                gone += 1
+                if gone > 5:      # 窗口已销毁 (连续 ~10s), 结束线程
+                    return
+            else:
+                gone = 0
+                alive = _game_process_running()
+                if alive != last and _push(win, alive):
+                    last = alive   # 只有推送成功才记为已知, 否则下轮重试
             time.sleep(2)
 
     threading.Thread(target=_run, daemon=True).start()
@@ -3008,6 +3243,8 @@ def run_web_ui(debug: bool = False):
     window_holder["win"] = window
     startup_state = {"shown": False}
     startup_lock = threading.Lock()
+    # 常驻监视游戏进程存活: 让"启动游戏 / 关闭游戏"按钮无论在何种启动方式下都能收敛
+    _start_game_state_watcher(window_holder)
 
     def _show_after_load():
         """先以透明度显示已加载的 Splash，再渐入窗口，避免纯色窗口闪现。"""
