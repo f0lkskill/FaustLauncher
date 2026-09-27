@@ -290,7 +290,12 @@ class ModManager:
                             new_pkg_names.append(rebank_name)
                             new_pkg_names.append(rebank_name + STAMP_SUFFIX)
                             src_md5 = self._file_md5(source_file)
-                            if _read_stamp(stamp_path) == src_md5:
+                            # 除了比对版本标记, 还必须确认目标 bank 真的还在。
+                            # 只信 stamp 是不够的: 用户手动清理过 LimbusCompanyMods、
+                            # 杀软删除了 .bank、或上次复制中途失败, 都会留下"标记还在、
+                            # bank 没了"的状态 —— 那时若直接跳过, bank 就永远补不回来,
+                            # 加载器没有源 bank 也就生成不了差分, mod 静默失效。
+                            if os.path.isfile(target_file) and _read_stamp(stamp_path) == src_md5:
                                 print(f"跳过 {file_name}: 差分已是最新 (源 bank 未变化)")
                                 continue
                             if os.path.isfile(rebank_path):
