@@ -96,6 +96,19 @@ def _remove_quietly(path: str, label: str = "文件") -> None:
         print(f"删除{label} {path} 失败: {e}", flush=True)
 
 
+def _listdir_safe(path: str) -> List[str]:
+    """列出目录内容; 目录不存在或不可读时返回空列表。
+
+    以前三处都直接写 os.listdir('mods'): 只要 mods/ 不存在 (用户删了、或首次运行
+    还没创建), 就会抛 FileNotFoundError, 而且在 load_all_mods 里这句在 try 之外,
+    会一路冒到"启动游戏"流程, 让整个 mod 加载中断 (而不是正常地"没有 mod")。
+    """
+    try:
+        return os.listdir(path)
+    except OSError:
+        return []
+
+
 def _move_orphans(target_dir: str, stale_names: List[str]) -> None:
     """把"上一轮清单登记过、这一轮不再管理"的附属文件移到 _orphan/ (不删除, 可拖回)
 
@@ -194,8 +207,8 @@ class ModManager:
         mods_dir = 'mods'
         mod_paths = []
         
-        # 遍历所有mod目录
-        for mod_name in os.listdir(mods_dir):
+        # 遍历所有mod目录 (mods/ 不存在时按"没有 mod"处理, 不抛异常)
+        for mod_name in _listdir_safe(mods_dir):
             mod_path = os.path.join(mods_dir, mod_name)
             
             # 检查是否是目录且存在mod_info.json
@@ -479,8 +492,8 @@ class ModManager:
         unloaded_mods = []
         mods_dir = self.mod_dir
         
-        # 遍历所有mod目录
-        for mod_name in os.listdir(mods_dir):
+        # 遍历所有mod目录 (mods/ 不存在时按"没有 mod"处理, 不抛异常)
+        for mod_name in _listdir_safe(mods_dir):
             result = self.unload_mod(mod_name)
             if result:
                 unloaded_mods.append(result)
@@ -585,8 +598,8 @@ class ModManager:
         mods = []
         mods_dir = 'mods'
         
-        # 遍历所有mod目录
-        for mod_name in os.listdir(mods_dir):
+        # 遍历所有mod目录 (mods/ 不存在时返回空列表, 不抛异常)
+        for mod_name in _listdir_safe(mods_dir):
             mod_path = os.path.join(mods_dir, mod_name)
             
             # 检查是否是目录且存在mod_info.json
