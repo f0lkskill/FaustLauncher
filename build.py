@@ -1,6 +1,5 @@
 """FaustLauncher 可视化构建工具"""
 import subprocess, shutil, os, sys, threading, time, queue
-import requests
 import json
 from datetime import datetime
 from functions.base.web_config import get_webnote
@@ -49,7 +48,7 @@ def upload_version_info(address, version, download_url='', log=None): # type: ig
     - download_url 传入时一并登记 (蓝奏云直链解析 URL)
     - 不切换 latest_release_version 标签 (缺失时预置空值键, 由服务器侧填写)
 
-    address: webnote 笔记名 (如 FaustLauncher.version_info)
+    address: webnote 笔记名
     version: 要登记的版本号 (如 V0.6.0-pre.7.fix.2)
     download_url: 下载直链 (可为空)
     log: 可选日志回调(text), 默认 print
