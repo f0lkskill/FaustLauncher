@@ -335,12 +335,14 @@ class ModManager:
                             new_pkg_names.append(rebank_name)
                             new_pkg_names.append(rebank_name + STAMP_SUFFIX)
                             src_md5 = self._file_md5(source_file)
-                            # 除了比对版本标记, 还必须确认目标 bank 真的还在。
-                            # 只信 stamp 是不够的: 用户手动清理过 LimbusCompanyMods、
-                            # 杀软删除了 .bank、或上次复制中途失败, 都会留下"标记还在、
-                            # bank 没了"的状态 —— 那时若直接跳过, bank 就永远补不回来,
-                            # 加载器没有源 bank 也就生成不了差分, mod 静默失效。
-                            if os.path.isfile(target_file) and _read_stamp(stamp_path) == src_md5:
+                            # 判定能否跳过, 关键看**差分还在不在**, 而不是源 bank 在不在:
+                            # sound.py 生成差分成功后会主动删掉源 bank
+                            # (write_source_stamp(...) + os.remove(mod_bank)), 所以
+                            # "bank 没了、差分在、标记在"是正常稳态, 加载器直接应用已有差分
+                            # 即可 —— 若按 bank 判定, 这里会每次启动都白复制一遍 bank。
+                            # 反过来, 差分不在(用户清理/生成失败)而标记仍匹配时, 必须重新
+                            # 复制 bank, 否则加载器既无差分也无源 bank, mod 会静默失效。
+                            if os.path.isfile(rebank_path) and _read_stamp(stamp_path) == src_md5:
                                 print(f"跳过 {file_name}: 差分已是最新 (源 bank 未变化)")
                                 continue
                             if os.path.isfile(rebank_path):
