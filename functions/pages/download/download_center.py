@@ -13,6 +13,23 @@ from functions.base.custom_notebook import CustomNotebook
 from functions.base.style_utils import apply_scrollbar_style, RoundedFrame, RoundedButton
 
 
+def _safe_mod_dir_name(name) -> str:
+    """把云端给出的名字转成可安全用于 mods/ 下的目录名; 不合法时返回空串。
+
+    云端 mod['name'] 是远端数据, 直接拼进路径有目录穿越风险:
+    name = '../x' 时 os.path.join('mods', name) 会指到 mods/ 之外,
+    紧接着的 rmtree 就会删掉不该删的目录。这里只接受纯文件名。
+    """
+    n = str(name or '').strip()
+    if not n or n in ('.', '..'):
+        return ''
+    if os.path.basename(n) != n:
+        return ''
+    if os.sep in n or (os.altsep and os.altsep in n):
+        return ''
+    return n
+
+
 class DownloadCenterPage:
     def __init__(self, parent, root, bg_color, lighten_bg_color):
         self.parent = parent
@@ -896,17 +913,24 @@ class DownloadCenterPage:
             'temp_filename': f"{mod.get('name', 'unknown')}.7z"
         }]
 
-        try:
-            # 先卸载旧版本: 运行 Uninstaller.bat + 清理已复制的附属文件, 避免残留
-            from functions.extension.mod.mod_utils import ModManager
-            ModManager().unload_mod(mod.get('name', 'unknown'))
-        except Exception:
-            pass
+        # 本地目录名来自云端 mod['name'], 必须先过 _safe_mod_dir_name 校验,
+        # 否则 ".." / 路径分隔符会让下面的 rmtree 删到 mods/ 之外 (目录穿越)。
+        local_name = _safe_mod_dir_name(mod.get('name'))
 
-        try:
-            shutil.rmtree('mods/' + mod.get('name', 'unknown'))
-        except:
-            pass
+        if not local_name:
+            print(f"[下载] 跳过卸载/删除本地旧目录: 名称不合法 ({mod.get('name')!r})", flush=True)
+        else:
+            try:
+                # 先卸载旧版本: 运行 Uninstaller.bat + 清理已复制的附属文件, 避免残留
+                ModManager().unload_mod(local_name)
+            except Exception:
+                pass
+
+            try:
+                shutil.rmtree(os.path.join('mods', local_name))
+            except OSError:
+                # 原本这里是裸 except:, 会把 KeyboardInterrupt / SystemExit 也一起吞掉
+                pass
 
         # 导入下载模块并执行下载
         try:
