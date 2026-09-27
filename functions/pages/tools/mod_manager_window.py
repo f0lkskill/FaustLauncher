@@ -100,9 +100,14 @@ def _safe_raw_name(raw_name):
 
 def _split_disabled(filename):
     """返回 (原始文件名, 是否被禁用)"""
-    if filename.endswith(DISABLED_SUFFIX):
-        return filename[:-len(DISABLED_SUFFIX)], True
-    return filename, False
+    # 大小写不敏感: Windows 文件名不区分大小写, 用户或其它工具可能留下
+    # .DISABLED / .Disabled。只认小写会让这类文件被当成"启用中", 而
+    # mod_utils._move_orphans 里用的是 name.lower().endswith((".orig", ".disabled")),
+    # 即那边认为它是禁用 —— 同一个文件在两处会得到相反的状态。
+    s = str(filename)
+    if s.lower().endswith(DISABLED_SUFFIX):
+        return s[:-len(DISABLED_SUFFIX)], True
+    return s, False
 
 
 def _is_mod_file(filename):
