@@ -109,6 +109,26 @@ def _listdir_safe(path: str) -> List[str]:
         return []
 
 
+def _target_belongs_to(target_name: str, prefix: str) -> bool:
+    """判断目标目录里的文件名是否属于某个 mod 的某个源文件 (卸载时据此删除)。
+
+    必须覆盖三种形态, 否则会留下删不掉的残留:
+      <prefix>.<ext>          普通复制的文件
+      <prefix><数字>.<ext>    同名文件的历史编号产物 (旧 _unique_bank_name 留下的)
+      <prefix>.rebank.src     bank 差分的版本标记 (双扩展名)
+    额外部分只认"纯数字", 免得把 modA_Xtra 误判成属于 modA_X。
+    """
+    name = target_name
+    if name.lower().endswith(STAMP_SUFFIX):
+        name = name[:-len(STAMP_SUFFIX)]
+    stem = os.path.splitext(name)[0]
+    if stem == prefix:
+        return True
+    if stem.startswith(prefix):
+        return stem[len(prefix):].isdigit()
+    return False
+
+
 def _move_orphans(target_dir: str, stale_names: List[str]) -> None:
     """把"上一轮清单登记过、这一轮不再管理"的附属文件移到 _orphan/ (不删除, 可拖回)
 
@@ -562,8 +582,7 @@ class ModManager:
                         print(f"无法读取目标目录: {target_dir}")
                         continue
                     for target_name in targets:
-                        t_stem, _ = os.path.splitext(target_name)
-                        if not t_stem == prefix:
+                        if not _target_belongs_to(target_name, prefix):
                             # print(f"跳过删除非目标文件: {target_name}")
                             continue
                         chosen_file = os.path.join(target_dir, target_name)
@@ -575,7 +594,8 @@ class ModManager:
                             print(f"删除附属文件 {chosen_file} 失败: {e}", flush=True)
                         # bank 转换遗留的差分缓存 + 版本标记一并清理 (转换命名 = bank 同名)
                         if os.path.splitext(target_name)[1].lower() == ".bank":
-                            cache = os.path.join(target_dir, t_stem + ".rebank")
+                            cache = os.path.join(
+                                target_dir, os.path.splitext(target_name)[0] + ".rebank")
                             if os.path.isfile(cache):
                                 try:
                                     os.remove(cache)
