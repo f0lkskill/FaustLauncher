@@ -241,7 +241,10 @@ class ModManager:
                 if mod_info.get('settings', {}).get('enable', False) and has_installer:
                     # 启用mod，载入文件
                     # 执行安装脚本 (cwd=mod_path: bat 内相对路径基于 mod 目录), 输出 echo 内容
-                    _run_mod_bat(mod_path, 'Installer.bat', mod_name)
+                    # timeout 必传: 少了它, Installer.bat 一旦卡住 (等输入/网络/文件被占用)
+                    # 就会永久阻塞整个启动流程。超时由 _run_mod_bat 捕获并结束子进程, 流程继续。
+                    # 取值宽松些, 避免误杀正常的大体积贴图安装。
+                    _run_mod_bat(mod_path, 'Installer.bat', mod_name, timeout=300)
                     print(f"成功加载Mod贴图资源: {mod_name}")
                 elif mod_info.get('settings', {}).get('enable', False) and has_uninstaller:
                     # 禁用mod
