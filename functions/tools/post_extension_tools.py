@@ -489,6 +489,11 @@ def upload_extension_to_lanzou(kind, folder, log=None, progress=None):
         if ret_icon.get('status') != 1:
             _fail(f'图标上传失败: {ret_icon.get("msg")}')
         icon_share = ret_icon.get('share_url') or ''
+        # share_url 为空时必须在这里报错, 不能拼出 'PARSER_BASE + ""' 这种垃圾链接:
+        # 拼接结果是非空字符串, 于是发布时 keep_old_urls 的"链接缺失才沿用云端旧值"
+        # 判断不会生效, 结果把云端原有的可用链接覆盖成一个打不开的地址。
+        if not icon_share:
+            _fail('图标上传返回成功但缺少 share_url, 无法生成直链')
         partial = {
             'icon_url': PARSER_BASE + icon_share,
             'icon_share_url': icon_share,
@@ -507,6 +512,9 @@ def upload_extension_to_lanzou(kind, folder, log=None, progress=None):
         if ret_pack.get('status') != 1:
             _fail(f'压缩包上传失败: {ret_pack.get("msg")}')
         pack_share = ret_pack.get('share_url') or ''
+        # 同上: 缺 share_url 时不能拼出垃圾直链, 否则会覆盖云端旧值
+        if not pack_share:
+            _fail('压缩包上传返回成功但缺少 share_url, 无法生成直链')
 
         return {
             'icon_url': PARSER_BASE + icon_share,
