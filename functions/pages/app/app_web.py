@@ -1531,6 +1531,14 @@ class AppApi:
         blocked = self._prepare_pipeline()
         if blocked:
             return blocked
+        # 游戏运行中禁止更新汉化: 游戏正占用 LimbusCompany_Data/Lang 下的文件,
+        # 此时写入会失败, 或者只合并进去一半 —— 直接把汉化弄坏。
+        # 前端也会把按钮置灰, 这里是后端兜底: 启动时的自动汉化更新等其它调用路径
+        # 同样必须被挡住。
+        if _game_process_running():
+            print("[汉化更新] 游戏正在运行, 拒绝更新汉化")
+            return {"ok": False, "error": "game_running",
+                    "message": "游戏正在运行, 请先退出游戏再更新汉化"}
         self._pipeline_kind = 'translate'
         # 必须阻塞等待下载线程真正完成, 否则前端 await 立即返回,
         # 800ms 后 pipelineDone 会在后端仍在下载时就显示"流水线完成"
