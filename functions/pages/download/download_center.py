@@ -962,15 +962,22 @@ class DownloadCenterPage:
             if mod_info.get('disabled', False):
                 continue
             version = mod_info.get('version', 'unknown')
+            # 本地与云端字段都可能缺失: mod_info.json 是手写的, 云端数据来自远端。
+            # 用硬下标一旦缺 name/version 就抛 KeyError, 会把整个检测循环打断,
+            # 排在后面的 mod 全部不再检查。本地名字回退到目录名 (与资源列表一致)。
+            local_name = str(mod_info.get('name') or mod_name)
 
             for page in self.mod_data:
                 for web_mod_data in page:
-                    if web_mod_data['name'] == mod_info['name']:
-                        if web_mod_data['version'] != version:
-                            print(f"检测到模组: {mod_info['name']}，当前版本: {version}，网络版本: {web_mod_data['version']}, 准备下载更新...")
-                            self.download_mod(web_mod_data)
-                        else:
-                            print(f"模组: {mod_info['name']} 已是最新版本: {version}")
+                    web_name = str(web_mod_data.get('name') or '')
+                    if not web_name or web_name != local_name:
+                        continue
+                    web_version = str(web_mod_data.get('version') or '')
+                    if web_version != version:
+                        print(f"检测到模组: {local_name}，当前版本: {version}，网络版本: {web_version}, 准备下载更新...")
+                        self.download_mod(web_mod_data)
+                    else:
+                        print(f"模组: {local_name} 已是最新版本: {version}")
 
     def detect_addon_update(self):
         am = AddonManager([])
@@ -979,17 +986,23 @@ class DownloadCenterPage:
         for addon_name in addon_names:
             addon_info: dict = am.get_addon_info(addon_name)  # type: ignore
             version = addon_info.get('version', 'unknown')
+            # 同 detect_mod_update: 一律用 .get, 缺字段时回退到目录名,
+            # 不要让一个残缺条目打断整轮检测。
+            local_name = str(addon_info.get('name') or addon_name)
             for page in self.addon_data:
                 for web_addon_data in page:
                     if web_addon_data.get('disabled', False):
                         # 云端插件已禁用，跳过
                         continue
-                    if web_addon_data['name'] == addon_info['name']:
-                        if web_addon_data['version'] != version:
-                            print(f"检测到插件: {addon_info['name']}，当前版本: {version}，网络版本: {web_addon_data['version']}, 准备下载更新...")
-                            self.download_addon(web_addon_data)
-                        else:
-                            print(f"插件: {addon_info['name']} 已是最新版本: {version}")
+                    web_name = str(web_addon_data.get('name') or '')
+                    if not web_name or web_name != local_name:
+                        continue
+                    web_version = str(web_addon_data.get('version') or '')
+                    if web_version != version:
+                        print(f"检测到插件: {local_name}，当前版本: {version}，网络版本: {web_version}, 准备下载更新...")
+                        self.download_addon(web_addon_data)
+                    else:
+                        print(f"插件: {local_name} 已是最新版本: {version}")
 
     def total_detect_update(self):
         self.detect_addon_update()
