@@ -69,11 +69,20 @@ def main():
     note_ = Note(id_name="FaustLauncher", address=ADDRESS, pwd="AutoTranslate")
     note_.fetch_note_info()
 
-    # 云端笔记读取失败 (网络异常/响应为空) 时直接跳过:
-    # 若当成"首次运行"继续, 会把全部版本状态重置, 导致每轮都误判"有新版本"并重复上传
+    # 云端笔记读不出内容时分两种情况, 必须区别对待:
+    #   · 笔记存在但没有内容 (HTTP 200 但内容为空) —— 笔记被清空就是这种:
+    #     旧代码把它当成"获取失败"直接 return, 于是 Action 一直是绿的,
+    #     汉化源笔记也一直是空的, 新版本永远更新不到;
+    #   · 线路/HTTP 故障 —— 这时若也按"首次运行"继续, 会把全部版本状态重置,
+    #     导致每轮都误判"有新版本"并重复下载/上传, 所以直接报错退出让 Action 变红。
     if not getattr(note_, "has_get", False):
-        print("云端笔记获取失败，跳过本次检查 (避免误判为首次运行而重复上传)")
-        return
+        if getattr(note_, "empty_note", False):
+            print("云端笔记内容为空 (笔记存在但没有内容) —— 按首次运行初始化, 稍后会写回版本状态")
+        else:
+            reason = getattr(note_, "last_fetch_error", "") or "未知原因"
+            print(f"错误: 云端笔记获取失败 ({reason})，本次检查中止")
+            print("提示: 属于线路/HTTP 故障, 不能按首次运行继续 (否则每轮都会重复下载上传)")
+            exit(1)
 
     raw_content = (note_.note_content or "").strip()
     if raw_content:
