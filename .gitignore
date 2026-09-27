@@ -163,3 +163,13 @@ backup_resources/*
 
 resources/*
 build_*/
+
+# 例外: 版本更新器必须入库。
+# updater.vbs 是升级链路的核心 —— 启动器下载新版本后以 wscript 运行它, 由它把
+# 新版本文件覆盖到安装目录。但 build_temp/ 一直被上面的 build_*/ 忽略, 于是它
+# 只存在于开发者本机: 换机器或重新 clone 后 build.py 会直接报
+# "未找到 build_temp/updater.vbs", 而且它的改动无法被 review 或追踪。
+# (注意: 父目录被忽略时无法用 ! 取消忽略其中文件, 所以要先放行 build_temp/ 目录)
+!build_temp/
+build_temp/*
+!build_temp/updater.vbs
