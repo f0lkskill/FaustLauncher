@@ -15,17 +15,18 @@ jobs:
     permissions:
       contents: read
 
-    steps:
-      - name: Set timezone to Beijing
-        uses: szenius/set-timezone@v1.2
-        with:
-          timezoneLinux: "Asia/Shanghai"
+    # runner 默认是 UTC, 而笔记里的时间戳按北京时间写入/比较, 所以固定时区。
+    # 原来用第三方 szenius/set-timezone, 它依赖已废弃的 Node20, 换成 TZ 环境变量
+    # 更稳 (Python 的 datetime.now() 会读取 TZ), 少一个第三方依赖。
+    env:
+      TZ: Asia/Shanghai
 
+    steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.9'
           cache: 'pip'
@@ -36,15 +37,15 @@ jobs:
           pip install requests python-dotenv
 
       # 版本判断统一交给 UpdatePackage.py —— 它是唯一持有持久状态的一方:
-      #   · 云端笔记 (textdb.online) 是唯一能跨次运行保存的版本状态;
-      #   · 脚本比对 "OurPlay 版本 / LLC 版本 / LLC 镜像是否需要刷新",
-      #     三者都无需更新时会直接 return, 既不更新笔记也不重新上传文件。
+      #   · 云端笔记是唯一能跨次运行保存的版本状态;
+      #   · 脚本比对 "LLC 版本 / LLC 镜像是否需要刷新",
+      #     两者都无需更新时会直接 return, 既不更新笔记也不重新上传文件。
       #
-      # 为什么删掉了原先的 .last_release_tag 门槛:
+      # 为什么删掉了原先 .last_release_tag 那层门槛:
       #   1) CI 每次都是全新 checkout, 该缓存文件从未提交或回写仓库 (permissions 也是只读),
       #      所以每次读取到的 last 都是空串, `latest != last` 恒成立 —— 门槛形同虚设,
       #      每次运行都会执行上传流程;
-      #   2) 它只比对 LLC 的 release, 会漏掉 OurPlay 更新与 LLC 镜像刷新,
+      #   2) 它只比对 LLC 的 release, 会漏掉 LLC 镜像刷新,
       #      即使修好持久化也会在不该跳过的时候跳过。
       - name: Run update package (版本无变化时不会更新笔记/上传文件)
         env:
