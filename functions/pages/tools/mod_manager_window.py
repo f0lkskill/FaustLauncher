@@ -81,6 +81,23 @@ def _sync_manifest(add=(), remove=()):
         print(f"[Mod管理器] 同步 mod 清单失败: {e}")
 
 
+def _safe_raw_name(raw_name):
+    """校验来自前端的文件名, 只接受 Mod 目录下的纯文件名; 不合法返回空串。
+
+    raw_name 由前端传入, 直接 os.path.join(mod_dir, raw_name) 会因 '..' 或
+    路径分隔符指向 Mod 目录之外, 随后的 os.rename / os.remove 就会作用到任意
+    文件上 (路径穿越)。这里只放行纯文件名。
+    """
+    n = str(raw_name or '').strip()
+    if not n or n in ('.', '..'):
+        return ''
+    if os.path.basename(n) != n:
+        return ''
+    if os.sep in n or (os.altsep and os.altsep in n):
+        return ''
+    return n
+
+
 def _split_disabled(filename):
     """返回 (原始文件名, 是否被禁用)"""
     if filename.endswith(DISABLED_SUFFIX):
@@ -162,11 +179,14 @@ def _add_files(paths):
 def _toggle_file(raw_name):
     """启用/禁用 (重命名 .disabled 后缀)"""
     mod_dir = _get_mod_dir()
-    src = os.path.join(mod_dir, raw_name)
+    safe = _safe_raw_name(raw_name)
+    if not safe:
+        return {'error': f"文件名不合法: {raw_name!r}"}
+    src = os.path.join(mod_dir, safe)
     if not os.path.exists(src):
-        return {'error': f"文件不存在: {raw_name}"}
-    original, disabled = _split_disabled(raw_name)
-    dst = os.path.join(mod_dir, original if disabled else raw_name + DISABLED_SUFFIX)
+        return {'error': f"文件不存在: {safe}"}
+    original, disabled = _split_disabled(safe)
+    dst = os.path.join(mod_dir, original if disabled else safe + DISABLED_SUFFIX)
     try:
         os.rename(src, dst)
         return {'error': None}
@@ -177,14 +197,17 @@ def _toggle_file(raw_name):
 def _delete_file(raw_name):
     """删除文件 (bank 连带清掉转换产生的差分与版本标记)"""
     mod_dir = _get_mod_dir()
-    path = os.path.join(mod_dir, raw_name)
+    safe = _safe_raw_name(raw_name)
+    if not safe:
+        return {'error': f"文件名不合法: {raw_name!r}"}
+    path = os.path.join(mod_dir, safe)
     if not os.path.exists(path):
-        return {'error': f"文件不存在: {raw_name}"}
+        return {'error': f"文件不存在: {safe}"}
     try:
         os.remove(path)
     except Exception as e:
         return {'error': f"删除失败: {e}"}
-    original, _ = _split_disabled(raw_name)
+    original, _ = _split_disabled(safe)
     removed = [original]
     ext = os.path.splitext(original)[1].lower()
     if ext in ('.bank', '.rebank'):
@@ -203,9 +226,12 @@ def _delete_file(raw_name):
 
 def _rebank_info(raw_name):
     """查看 .rebank 差分内容 (调用 rebank info)"""
-    path = os.path.join(_get_mod_dir(), raw_name)
+    safe = _safe_raw_name(raw_name)
+    if not safe:
+        return {'error': f"文件名不合法: {raw_name!r}"}
+    path = os.path.join(_get_mod_dir(), safe)
     if not os.path.exists(path):
-        return {'error': f"文件不存在: {raw_name}"}
+        return {'error': f"文件不存在: {safe}"}
     script = os.path.join(_PROJECT_ROOT, "resources", "mod_loader", "_internal", "rebank.py")
     py = os.path.join(_PROJECT_ROOT, "resources", "mod_loader", "_internal",
                       "venv", "Bins", "python.exe")
