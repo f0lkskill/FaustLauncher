@@ -9,7 +9,7 @@ from functions.base.settings_manager import SettingsManager
 from functions.base.common.path_utils import get_mod_root_dir
 from functions.web_update.translation_source import get_translation_dir_name as _translation_dir_name
 from subprocess import run, CREATE_NO_WINDOW
-from functions.base.common.json_io import read_json, write_json
+from functions.base.common.json_io import read_json
 
 
 def _strip_suffix_number(name: str) -> str:

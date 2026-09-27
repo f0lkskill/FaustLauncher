@@ -3,7 +3,6 @@
 import os
 import sys
 import hashlib
-import json
 import shutil
 import time
 import ctypes
@@ -806,7 +805,7 @@ class GameLauncher:
                         child_log.close()
                     except OSError:
                         pass
-            # ⚠ 这里**不要**写 hook.pid！``proc.pid`` 是 **launcher（py.exe）的 PID**，
+            # 这里**不要**写 hook.pid！``proc.pid`` 是 **launcher（py.exe）的 PID**，
             # 不是跑 main.py 的那个进程 —— 本机 venv 的 ``python.exe`` 其实是
             # py.exe launcher（InternalName = Python Launcher），真解释器是它拉起的**子进程**。
             # 以前就把 ``proc.pid`` 写了进去，后果是：子进程启动时拿 hook.pid 里的 PID

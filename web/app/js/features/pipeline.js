@@ -6,7 +6,7 @@
  *   · 关键字兜底解析(日志关键字 → 步骤推进)
  *   · 流水线卡显隐的 FLIP 布局过渡
  * 本文件提供:
- *  函数: flipGridBelow / pipelineReset / setStep / setPipelineStepDone / pipelineAdvance / pipelineError / pipelineDone / pipelineIdle / applyPipeTextHints / handlePipelineLog
+ *  函数: flipGridBelow / pipelineReset / setStep / setPipelineStepDone / pipelineAdvance / pipelineError / pipelineDone / pipelineAborted / finishPipelineUI / pipelineIdle / applyPipeTextHints / handlePipelineLog
  *  状态/常量: KEYWORD_MAP / PIPE_TEXT_HINTS
  * 依赖: 依赖 bootstrap/state/utils/ui.terminal
  * 加载顺序: 15/22    (拆分自原 app.js 行 576-723)
@@ -83,7 +83,25 @@ function pipelineError() {
   hidePipeDownloadProgress();
   const i = pipeline.currentIdx;
   if (i >= 0) setStep(i, 'active'); // 保留高亮
-  setPipelineButtonsDisabled(false);
+  finishPipelineUI();
+}
+
+// 流程收尾统一入口: 复位运行标志 + 恢复按钮形态。
+// 用 syncLaunchButtons 而不是直接置 disabled=false, 这样"游戏仍在运行"时
+// 启动按钮会正确回到"关闭游戏"而不是"启动游戏"。
+function finishPipelineUI() {
+  pipeline.running = false;
+  // 已收尾: 停掉状态收敛轮询, 避免定时器空转
+  if (typeof stopPipelineWatch === 'function') stopPipelineWatch();
+  if (typeof launchBtnState !== 'undefined') {
+    launchBtnState.pipeline = false;
+    launchBtnState.pipelineKind = null;
+  }
+  // 先用当前状态立即渲染一次: 按钮马上恢复, 不必等 syncLaunchButtons 那次异步回读
+  // (回读要等一个后端往返, 期间按钮会一直停在中止态)
+  if (typeof renderLaunchButtons === 'function') renderLaunchButtons();
+  if (typeof syncLaunchButtons === 'function') syncLaunchButtons();
+  else setPipelineButtonsDisabled(false);
 }
 
 function pipelineDone() {
@@ -95,7 +113,19 @@ function pipelineDone() {
   const isLaunchFlow = pipeline.steps.some(s => s.key === 'launch');
   if (txtEl) txtEl.textContent = isLaunchFlow ? '启动流程全部完成' : '汉化更新完成';
   hidePipeDownloadProgress();
-  setPipelineButtonsDisabled(false);
+  finishPipelineUI();
+  clearTimeout(pipeline._hideTimer);
+  pipeline._hideTimer = setTimeout(() => pipelineIdle(), 1500);
+}
+
+// 流程被用户中止: 不显示"完成", 也不显示"错误", 只标明已中止
+function pipelineAborted() {
+  pipeline.running = false;
+  const icoEl = $('#pipe-detail-ico'), txtEl = $('#pipe-detail-text');
+  if (icoEl) { icoEl.innerHTML = iconSvg('close'); icoEl.dataset.task = ''; }
+  if (txtEl) txtEl.textContent = '流程已中止';
+  hidePipeDownloadProgress();
+  finishPipelineUI();
   clearTimeout(pipeline._hideTimer);
   pipeline._hideTimer = setTimeout(() => pipelineIdle(), 1500);
 }

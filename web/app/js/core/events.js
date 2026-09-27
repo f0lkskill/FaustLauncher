@@ -23,6 +23,10 @@ function switchPage(name) {
   if (target) target.classList.add('active');
   $$('.nav-item').forEach(b => b.classList.toggle('active', b.dataset.page === name));
   $('#main').scrollTop = 0;
+  if (name === 'home') {
+    // 回到主页: 重新问一次后端状态 (用户可能在这期间自己开关了游戏 / 流程已结束)
+    if (typeof syncLaunchButtons === 'function') syncLaunchButtons();
+  }
   if (name === 'mod_addon') {
     // 首次进入: 强制插件模式并加载对应按钮组 (之后保持用户选择)
     if (!resInited) {

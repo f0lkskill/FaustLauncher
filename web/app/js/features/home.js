@@ -50,6 +50,8 @@ function render() {
   renderSettings(b.settings_schema);
   // 皮肤: 按 settings.json 里的皮肤设置加载覆盖层样式 (之后可在"玻璃窗"里随时切换)
   if (typeof applyBootSkin === 'function') applyBootSkin(b.active_skin || '');
+  // 启动/汉化按钮: 按后端真实状态初始化 (游戏可能已经在运行 -> 显示"关闭游戏")
+  if (typeof syncLaunchButtons === 'function') syncLaunchButtons();
   // 欢迎音效提示
   if (IS_BROWSER) toast('浏览器预览模式, 部分功能不可用', 'warn', 4000);
 }

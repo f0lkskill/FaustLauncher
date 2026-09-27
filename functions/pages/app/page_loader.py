@@ -11,6 +11,34 @@ from functions.base.style_utils import RoundedFrame, RoundedButton
 
 downloading = False
 
+# 中止标志: 用户在流水线运行中点"中止启动/中止更新"时置位。
+# 采用协作式取消 (而非强杀线程): 下载/解压/合并各阶段在自己的循环与阶段边界
+# 检查该标志, 发现置位就尽快回退并清理。强杀线程无法安全释放文件句柄与临时目录,
+# 会让游戏目录里的汉化文件处于半写入状态。
+_cancel_requested = False
+
+
+def request_cancel():
+    """请求中止当前启动/汉化更新流程 (幂等)"""
+    global _cancel_requested
+    _cancel_requested = True
+
+
+def clear_cancel():
+    """清除中止标志 (每次流程开始前调用)"""
+    global _cancel_requested
+    _cancel_requested = False
+
+
+def is_cancel_requested():
+    """当前是否已被请求中止"""
+    return _cancel_requested
+
+
+class _PipelineAborted(Exception):
+    """流程被用户主动中止 (用于从深层调用栈里快速跳出)"""
+
+
 # 云端插件/Mod 列表缓存 (每次启动只获取一次, 同步/下载中心共用内存缓存)
 _cloud_sync_cache = {'addon': None, 'mod': None, 'ts': 0}
 
@@ -946,6 +974,11 @@ def download_and_launch(obj=None, need_run_game=False, manual=False):
     if downloading:
         return
     downloading = True
+    aborted = False   # 本次流程是否因用户中止而结束 (finally 据此通知前端)
+    # 注意: 这里**不要**清中止标志。清理动作放在用户发起流程的 API 入口
+    # (app_web 的 launch_game / update_translation) 里同步完成。
+    # 若在这里清, 用户点了启动后很快再点中止时, 标志会先被设置、再被这行抹掉,
+    # 表现为"点了中止却毫无反应"——中止请求全部丢失, 流程照常一路跑完。
     
     try:
         from functions.web_update.translation_source import (
@@ -1113,6 +1146,13 @@ def download_and_launch(obj=None, need_run_game=False, manual=False):
             gui = download_translation(main_root, download_path)
 
             while gui.is_downloading:
+                if is_cancel_requested():
+                    # 停掉下载 GUI 自身的循环, 让下载线程尽快收尾
+                    try:
+                        gui.is_downloading = False
+                    except Exception:
+                        pass
+                    raise _PipelineAborted()
                 sleep(1)
         
             print("汉化包下载完成")
@@ -1199,6 +1239,12 @@ def download_and_launch(obj=None, need_run_game=False, manual=False):
         dt = Thread(target=check_resource_update, args=(gui_res,)).start()
 
         while gui_res.is_downloading:
+            if is_cancel_requested():
+                try:
+                    gui_res.is_downloading = False
+                except Exception:
+                    pass
+                raise _PipelineAborted()
             sleep(1)
         
         del dt
@@ -1206,9 +1252,16 @@ def download_and_launch(obj=None, need_run_game=False, manual=False):
         gui_res.root.destroy()
 
         _push_step('install')
+
+        # 合并/安装汉化之前再查一次: 上面资源轮询可能刚结束, 不想在做破坏性写入前才开始处理中止
+        if is_cancel_requested():
+            raise _PipelineAborted()
+
         if need_run_game or obj is not None:
             _push_step('mods')
             _sync_cloud_items()
+            if is_cancel_requested():
+                raise _PipelineAborted()
 
         _push_step('launch')
 
@@ -1239,17 +1292,45 @@ def download_and_launch(obj=None, need_run_game=False, manual=False):
             except Exception:
                 pass
 
+        # 启动游戏前最后一道关: 本阶段耗时较长 (重载插件 / 复制 Mod / 跑 Installer),
+        # 之后就没有任何检查点了, 必须在这里再确认一次, 否则会出现
+        # "明明点了中止, 游戏还是被拉起来了"
+        if is_cancel_requested():
+            raise _PipelineAborted()
+
         if obj is not None:
             print('正在进行启动游戏前进行重载插件事件中...')
             obj.core._on_reload_addons()
             launcher = GameLauncher(obj.core.addon_manager, progress=_launch_progress)
         else:
             launcher = GameLauncher()
+        if is_cancel_requested():
+            raise _PipelineAborted()
         launcher.launch()
         
+    except _PipelineAborted:
+        # 用户主动中止: 不是错误, 不计入异常日志。
+        # 通知前端推迟到 finally 里做 (原因见 finally 的说明), 这里只记标记。
+        print("[启动流程] 已被用户中止")
+        aborted = True
+        return
     except Exception as e:
         print(f"下载过程中出错: {e}")
         traceback.print_exception(*sys.exc_info())
         return
     finally:
         downloading = False
+        # 中止通知必须放在这里 (downloading 已置 False 之后), 不能放在 except 分支:
+        # 前端收到 pipeline_aborted 会立刻回读 get_launch_state 确认状态, 若此时
+        # downloading 还是 True, 它会把刚清掉的流程标记又设回去, 按钮于是卡在
+        # "中止启动" —— 表现为"再点一次(那时流程早结束了)才瞬间恢复"。
+        if aborted:
+            try:
+                from functions.web_update import zeroasso_download as _zd
+                _push = getattr(_zd, '_web_progress', None)
+                if _push:
+                    _push('pipeline_aborted', {})
+            except Exception:
+                pass
+        # 流程结束(无论正常/中止/出错)一律清掉中止标志, 避免影响下一次操作
+        clear_cancel()

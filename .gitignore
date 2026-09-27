@@ -41,6 +41,10 @@ MANIFEST
 #  before PyInstaller builds the exe, so as to inject date/other infos into it.
 *.manifest
 *.spec
+# 例外: 构建脚本本体必须入库。
+# web/ 前端页面树「收进 _internal」的逻辑写在 FaustLauncher.spec 里,
+# 若该文件不入库, 打包流程改动会在下次提交后静默丢失 (发布包又会多出顶层 web/ 目录)。
+!FaustLauncher.spec
 
 # Installer logs
 pip-log.txt

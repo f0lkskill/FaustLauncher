@@ -105,8 +105,17 @@ window.__onEvent = function (event, data) {
     }
   } else if (event === 'pipeline_done') {
     // 自动流程 (启动时汉化更新) 完成后恢复按钮与流水线状态
-    try { setPipelineButtonsDisabled(false); } catch (e) {}
-    pipelineDone();
+    try { pipelineDone(); } catch (e) {}
+  } else if (event === 'pipeline_aborted') {
+    // 用户点了"中止启动/中止更新": 后端已停止流程
+    try { pipelineAborted(); } catch (e) {}
+    toast('流程已中止', 'warn', 3000);
+  } else if (event === 'game_state') {
+    // 游戏进程存活状态变化: 主页按钮在"启动游戏"与"关闭游戏"间切换
+    if (typeof launchBtnState !== 'undefined' && data) {
+      launchBtnState.gameAlive = !!data.game_alive;
+      if (typeof renderLaunchButtons === 'function') renderLaunchButtons();
+    }
   } else if (event === 'dialog') {
     const d = data || {};
     const kind = d.kind || 'showinfo';
@@ -122,13 +131,22 @@ window.__onEvent = function (event, data) {
     const icoEl = $('#pipe-detail-ico'), txtEl = $('#pipe-detail-text');
     if (icoEl) { icoEl.innerHTML = iconSvg('allApplication'); icoEl.dataset.task = ''; }
     if (txtEl) txtEl.textContent = '游戏已启动';
-    // 游戏运行中保持按钮互斥 (退出后由 pipelineDone 恢复)
+    // "游戏已启动"就是启动流程的终点, 必须在这里清掉流程标记:
+    //   · 否则按钮会一直停在"中止启动" —— renderLaunchButtons 里流程态的优先级
+    //     高于 gameAlive, 结果 gameAlive=true 被忽略, 显示不出"关闭游戏";
+    //   · 而且此时流程已走完所有中止检查点, 用户再点中止也等不到
+    //     pipeline_aborted, 按钮会永久卡死。
+    if (typeof launchBtnState !== 'undefined') launchBtnState.gameAlive = true;
+    if (typeof finishPipelineUI === 'function') finishPipelineUI();
+    else if (typeof renderLaunchButtons === 'function') renderLaunchButtons();
   } else if (event === 'game_exited') {
+    if (typeof launchBtnState !== 'undefined') launchBtnState.gameAlive = false;
     pipelineDone();
     const icoEl = $('#pipe-detail-ico'), txtEl = $('#pipe-detail-text');
     if (icoEl) icoEl.innerHTML = iconSvg('allApplication');
     if (txtEl) txtEl.textContent = '游戏已退出';
   } else if (event === 'game_timeout') {
+    if (typeof launchBtnState !== 'undefined') launchBtnState.gameAlive = false;
     pipelineError();
     const icoEl = $('#pipe-detail-ico'), txtEl = $('#pipe-detail-text');
     if (icoEl) icoEl.innerHTML = iconSvg('harm');

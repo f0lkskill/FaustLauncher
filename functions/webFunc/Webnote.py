@@ -435,7 +435,15 @@ def write_note(key, value, update_url=None):
             t0 = time.time()
             try:
                 if method == "POST":
-                    r = requests.post(url, params={"key": key}, data={"value": value},
+                    # 用 multipart 而不是 urlencoded 表单 (data={"value": ...}):
+                    # value 是 JSON 文本, 里面的中文在 urlencoded 下会被 percent-encode
+                    # 成 9 字节/字 (如 %E4%BD%A0%E5%A5%BD), 引号/括号也要转义, 请求体会
+                    # 膨胀 2.5 倍以上 —— 版本信息这类含大量中文的笔记很容易因此撞上
+                    # 服务端的请求体上限, 返回 413 Content Too Large。
+                    # multipart 不做 percent-encoding, 体积基本等于原始 UTF-8 字节数。
+                    # (_HEADERS 不含 Content-Type, requests 会自动补上带 boundary 的)
+                    r = requests.post(url, params={"key": key},
+                                      files={"value": (None, value.encode("utf-8"))},
                                       headers=_HEADERS, verify=False,
                                       timeout=(CONNECT_TIMEOUT, 60))
                 else:
@@ -469,12 +477,20 @@ class Note:
 
     Args:
         id_name: 笔记标识 (如 'addon_info'), 缺省时用 address
-        address: 云端笔记地址/键名 (如 'FaustLauncher.mod.info.v2')
+        address: 云端笔记地址/键名 (如 'FaustLauncher.mod')
         pwd: 密码 (保留字段)
         read_only: 只读标记 (保留字段)
     """
 
     def __init__(self, id_name=None, address="", pwd="", read_only=False):
+        """初始化云端笔记
+
+        Args:
+            id_name (str, optional): 笔记标识 (如 'addon_info'), Defaults to None.
+            address (str, optional): 云端笔记地址/键名 (如 'FaustLauncher.mod'), Defaults to "".
+            pwd (str, optional): 密码 (保留字段), Defaults to "".
+            read_only (bool, optional): 只读标记 (保留字段), Defaults to False.
+        """
         self.note_id = id_name if id_name else address
         self._requested = str(address or "")     # 配置里写的笔记名 (可能已过期)
         self.note_name = self._requested          # 实际使用的笔记名 (成功后会被自动纠正)
@@ -491,10 +507,6 @@ class Note:
         顺序 (只有这两条, 不加也不减任何后缀):
           1. 当前配置里的名字 (config/web_config.json)
           2. 构建时内嵌配置里的同名笔记 (仅当与上面不同: exe 旁边残留旧配置时的兜底)
-
-        以前这里还会自动增删 `.v2` 变体, 并把"纠正后"的名字记进 cache/webnote/_keymap.json ——
-        结果 FaustLauncher.version_info 明明没有 .v2 后缀, 打包版的日志里也会凭空冒出
-        "FaustLauncher.version_info.v2" 白跑一趟请求 (2026-09-25 用户要求彻底去掉)。
         """
         keys = []
 
