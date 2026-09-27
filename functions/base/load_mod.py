@@ -7,8 +7,11 @@ STEAM_APP_ID = "1973530"
 GAME_EXE = "LimbusCompany.exe"
 
 _settings = get_settings_manager()
-_extra_mod_loader: str = _settings.get_setting('extra_mod_loader')  # type: ignore
-_game_path: str = _settings.get_setting('game_path')  # type: ignore
+# 注意: 不要把 game_path / extra_mod_loader 缓存在模块级变量里。
+# 模块只在首次 import 时求值一次, 而用户随时可能在设置页改游戏路径 ——
+# 缓存的旧路径会被原样交给 mod loader, 结果 mods 装到已废弃的目录 (或根本找不到
+# 游戏 exe), 表现为"改了路径但 mod 还是不生效"。这两个值一律在用时实时读取。
+# (_settings 是单例, get_setting 每次读的都是当前值, 可以放心持有。)
 
 _MOD_FOLDER = os.path.join(os.getenv("APPDATA", ""), "LimbusCompanyMods")
 _MOD_SUFFIXES = (".zip", ".carra", ".carra2", ".bank", ".rebank", ".bank.orig")
@@ -63,15 +66,18 @@ def _start_with_mod_loader():
     启动器只负责把它拉起来, 不做任何进程间耦合, 进度窗口仅通过文件轮询观察。
     hide_mod_load 设置只控制加载器自身的控制台窗口, 进度 GUI 窗口始终显示。
     """
-    game_exe = os.path.join(_game_path, GAME_EXE)
+    # 实时读取, 不能用模块级快照 (用户改过游戏路径后快照就是旧值)
+    game_path = _settings.get_setting('game_path') or ''
+    extra_mod_loader = _settings.get_setting('extra_mod_loader') or ''
+    game_exe = os.path.join(game_path, GAME_EXE)
 
     # 读取线程数配置，默认 5
-    thread_count = _settings.get_setting('mod_loader_threads')
+    thread_count = _settings.get_setting('mod_loader_threads') or 5
 
-    if os.path.exists(_extra_mod_loader):
-        print(f"使用外部 mod loader 启动: {_extra_mod_loader}, 线程数: {thread_count}")
+    if extra_mod_loader and os.path.exists(extra_mod_loader):
+        print(f"使用外部 mod loader 启动: {extra_mod_loader}, 线程数: {thread_count}")
         flags = subprocess.CREATE_NO_WINDOW if _settings.get_setting("hide_mod_load") else 0
-        subprocess.Popen([_extra_mod_loader, game_exe, f"--threads={thread_count}"], creationflags=flags)
+        subprocess.Popen([extra_mod_loader, game_exe, f"--threads={thread_count}"], creationflags=flags)
         return
 
     builtin_exe = os.path.join("resources", "mod_loader", "yisangModLoader.exe")
