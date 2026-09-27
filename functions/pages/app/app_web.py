@@ -3131,7 +3131,15 @@ def run_web_ui(debug: bool = False):
         raise SystemExit(1)
 
     if not os.path.exists(HTML_PATH):
-        _msgbox("FaustLauncher", f"找不到页面文件:\n{HTML_PATH}")
+        # 这句以前只报一个路径, 用户看不懂也没法自救。实际原因几乎都是"安装不完整":
+        # 本版本把前端页面收进了 _internal/ (已不在顶层), 而升级更新是"合并覆盖"——
+        # 只要 _internal/ 里的 web/ 没被复制过来 (更新包不全 / 复制中途失败 /
+        # 手动只替换了 exe), 就会走到这里。所以直接把处置办法写清楚。
+        _msgbox("FaustLauncher",
+                f"找不到页面文件:\n{HTML_PATH}\n\n"
+                "这通常说明安装不完整 —— 升级时前端文件没有复制全。\n"
+                "请重新下载完整的安装包, 解压到一个新目录后运行;\n"
+                "不要只替换 FaustLauncher.exe(前端在 _internal 目录里, 必须一起更新)。")
         raise SystemExit(1)
 
     from functions.base.log_manager import init_logger
