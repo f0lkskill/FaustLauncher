@@ -232,7 +232,12 @@ def wrap_mod(source_folder, info=None, icon_path=None, extra_files=None, single_
         for fn in file_names:
             src_file = os.path.join(source, fn)
             dst_file = os.path.join(target, fn)
-            if os.path.isfile(src_file) and (same_dir or os.path.abspath(src_file) != os.path.abspath(dst_file)):
+            # same_dir 表示源就是 mods/<name> 本身 (用户在重新包装一个已有 mod),
+            # 此时 src_file 与 dst_file 是同一个文件: 文件本来就在目标位置,
+            # 再 shutil.copy2 会抛 SameFileError 让整个包装失败。
+            # 原来的条件是 (same_dir or 路径不同) —— 恰好把这种情况判成"需要复制",
+            # 逻辑写反了, 必须改成 not same_dir。
+            if os.path.isfile(src_file) and not same_dir:
                 shutil.copy2(src_file, dst_file)
         # 图标: 用户选择的自定义图标, 否则生成默认
         target_icon = os.path.join(target, 'icon.png')
