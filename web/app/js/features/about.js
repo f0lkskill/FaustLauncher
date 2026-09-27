@@ -207,7 +207,10 @@ function renderLaunchButtons() {
     transBtn.disabled = false;    // 唯一可点的按钮: 中止
   } else {
     _setBtnContent(transBtn, null, tTxtEl, null, '汉化更新', 'btn btn-success');
-    transBtn.disabled = busy;
+    // 游戏运行中必须禁用汉化更新: 游戏正占用 LimbusCompany_Data/Lang 下的文件,
+    // 这时写入会失败, 或者只合并进去一半 —— 直接把汉化弄坏。
+    // 要更新汉化得先在游戏里退出 (那时启动按钮会变成"关闭游戏")。
+    transBtn.disabled = busy || launchBtnState.gameAlive;
   }
 }
 
@@ -340,6 +343,12 @@ async function onTranslate() {
     return;   // 启动流程进行中: 本按钮已禁用
   }
   if (pipeline.running) return;   // 兜底
+  // 游戏运行中不允许更新汉化: 按钮这时已经被置灰, 这里再兜一道,
+  // 并把原因说清楚 (否则用户只会看到一个点不动的按钮, 不知道要退出游戏)
+  if (launchBtnState.gameAlive) {
+    toast('游戏正在运行, 请先退出游戏再更新汉化', 'warn', 5000);
+    return;
+  }
   if ($('#btn-translate').disabled) return;
   launchBtnState.pipeline = true;
   launchBtnState.pipelineKind = 'translate';
