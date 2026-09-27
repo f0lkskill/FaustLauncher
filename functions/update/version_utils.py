@@ -29,6 +29,29 @@ def download_new_version(dow_root, download_files:list):
         download_gui.current_file_var.set("更新失败，请稍后重试")
         download_gui.root.after(3000, download_gui.root.destroy)
         return
+
+    # 应用更新之前先校验更新包是否完整 —— 关键是前端页面。
+    # 本版本把页面收进了 _internal/web/ (顶层不再有 web/), 而升级是"合并覆盖":
+    # 只要 _internal 里的 web/ 没被复制过来, 用户下次启动就会直接报
+    # "找不到页面文件", 且自己无法判断是升级失败。在这里提前拦住, 坏包不落地。
+    # (同时兼容顶层 web/ 的旧结构, 避免误判好包)
+    new_root = os.path.abspath("cache/new_version/FaustLauncher")
+    _web_candidates = (
+        os.path.join(new_root, "_internal", "web", "app", "index.html"),
+        os.path.join(new_root, "web", "app", "index.html"),
+    )
+    if not any(os.path.isfile(p) for p in _web_candidates):
+        print("更新包不完整, 未找到前端页面:\n  " + "\n  ".join(_web_candidates))
+        download_gui.current_file_var.set("更新包不完整，已取消更新")
+        try:
+            messagebox.showerror(
+                "更新失败",
+                "下载到的更新包不完整（缺少前端页面），已取消本次更新。\n\n"
+                "当前版本仍可正常使用。请稍后重试，或到发布页手动下载完整安装包。")
+        except Exception:
+            pass
+        download_gui.root.after(3000, download_gui.root.destroy)
+        return
     
     print("新版本下载完成，正在准备安装...")
     
