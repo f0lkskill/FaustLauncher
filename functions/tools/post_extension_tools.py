@@ -197,6 +197,7 @@ def wrap_mod(source_folder, info=None, icon_path=None, extra_files=None, single_
         return False, '无法确定 Mod 名称'
     entries = {e.lower(): e for e in os.listdir(source)}
     target = os.path.join(MODS_DIR, name)
+    created_target = False   # target 是否本次新建 (失败时据此回滚)
     try:
         if not os.path.isdir(MODS_DIR):
             os.makedirs(MODS_DIR)
@@ -206,6 +207,7 @@ def wrap_mod(source_folder, info=None, icon_path=None, extra_files=None, single_
             if os.path.exists(target):
                 return False, f'mods 下已存在同名 Mod: {target}'
             os.makedirs(target, exist_ok=True)
+            created_target = True
             if not single_file:
                 for entry in ('installer.bat', 'uninstaller.bat', 'assets', 'changes.json'):
                     real = entries.get(entry)
@@ -258,6 +260,13 @@ def wrap_mod(source_folder, info=None, icon_path=None, extra_files=None, single_
         write_json(os.path.join(target, 'mod_info.json'), info_json, indent=4)
         return True, f'Mod 包装完成: {target}'
     except Exception as e:
+        # 中途失败必须回滚刚创建的目录: 复制 Assets 这类大目录时容易因磁盘空间、
+        # 文件被占用、路径过长而失败, 留下一个只有半个 mod 的目录。而下次包装同一个
+        # mod 时, 上面那句"已存在同名 Mod"会直接拦下来 —— 用户只能手动进 mods/
+        # 删掉残留才能重试。
+        if created_target:
+            shutil.rmtree(target, ignore_errors=True)
+            print(f"包装失败, 已回滚残留目录: {target}", flush=True)
         return False, f'包装 Mod 失败: {e}'
 
 
