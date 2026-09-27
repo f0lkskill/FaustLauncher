@@ -6,27 +6,27 @@ Dim exePath, exeDir
 Set fso = CreateObject("Scripting.FileSystemObject")
 Set WshShell = CreateObject("WScript.Shell")
 
-' è„šæœ¬è‡ªèº«åå­—
+' ½Å±¾×ÔÉíÃû×Ö
 scriptName = WScript.ScriptName
 
-' å½“å‰ç›®å½•
+' µ±Ç°Ä¿Â¼
 currentDir = fso.GetAbsolutePathName(".")
 
-' è®¡ç®— ä¸Šä¸Šä¸Šçº§ç›®å½•
+' ¼ÆËã ÉÏÉÏÉÏ¼¶Ä¿Â¼
 up1Dir = fso.GetParentFolderName(currentDir)
 up2Dir = fso.GetParentFolderName(up1Dir)
 up3Dir = fso.GetParentFolderName(up2Dir)
 
-' EXE è·¯å¾„
+' EXE Â·¾¶
 exeDir = up3Dir
 exePath = fso.BuildPath(exeDir, "FaustLauncher.exe")
 
-' ========== ç­‰å¾…æ—§è¿›ç¨‹é€€å‡º (5 ç§’) ==========
-' æ—§å¯åŠ¨å™¨é€€å‡ºæ—¶ä¼šå…ˆéšè—çª—å£å†åå°æ…¢æ…¢å…³é—­ (WebView2 é”€æ¯), éœ€ç­‰å¾…å…¶å®Œå…¨é€€å‡º,
-' å¦åˆ™è¦†ç›– exe æ—¶æ–‡ä»¶è¢«å ç”¨è€Œå¤±è´¥
+' ========== µÈ´ı¾É½ø³ÌÍË³ö (5 Ãë) ==========
+' ¾ÉÆô¶¯Æ÷ÍË³öÊ±»áÏÈÒş²Ø´°¿ÚÔÙºóÌ¨ÂıÂı¹Ø±Õ (WebView2 Ïú»Ù), ĞèµÈ´ıÆäÍêÈ«ÍË³ö,
+' ·ñÔò¸²¸Ç exe Ê±ÎÄ¼ş±»Õ¼ÓÃ¶øÊ§°Ü
 WScript.Sleep 5000
 
-' ========== å¤åˆ¶æ‰€æœ‰æ–‡ä»¶ï¼ˆæ’é™¤VBSè‡ªå·±ï¼‰ï¼Œæ”¯æŒè¦†ç›– ==========
+' ========== ¸´ÖÆËùÓĞÎÄ¼ş£¨ÅÅ³ıVBS×Ô¼º£©£¬Ö§³Ö¸²¸Ç ==========
 Dim file
 For Each file In fso.GetFolder(currentDir).Files
     If LCase(file.Name) <> LCase(scriptName) Then
@@ -39,7 +39,7 @@ For Each file In fso.GetFolder(currentDir).Files
     End If
 Next
 
-' ========== å¤åˆ¶æ‰€æœ‰å­æ–‡ä»¶å¤¹ï¼Œæ”¯æŒè¦†ç›– ==========
+' ========== ¸´ÖÆËùÓĞ×ÓÎÄ¼ş¼Ğ£¬Ö§³Ö¸²¸Ç ==========
 Dim fd
 For Each fd In fso.GetFolder(currentDir).SubFolders
     On Error Resume Next
@@ -50,14 +50,44 @@ For Each fd In fso.GetFolder(currentDir).SubFolders
     On Error GoTo 0
 Next
 
-' åˆ é™¤ç©ºç›®å½•
+' É¾³ı¿ÕÄ¿Â¼
 On Error Resume Next
 fso.DeleteFolder currentDir, True
 On Error GoTo 0
 
-' ========== æ­£ç¡®å¯åŠ¨EXEï¼ˆä¿®å¤å·¥ä½œç›®å½•ï¼ï¼‰ ==========
+' ========== ¸´ÖÆ½á¹û×Ô¼ì ==========
+' ÉÏÃæµÄ¸´ÖÆÓÃÁË On Error Resume Next: Ä³Ò»ÏîÊ§°ÜÊ±Ö»ÊÇ±£ÁôÔ´Ä¿Â¼, ¼È²»±¨´íÒ²²»ÌáÊ¾,
+' ÓÃ»§¿´µ½µÄÈÔÈ»ÊÇ"¸üĞÂÍê³É"¡£¶ø±¾°æ±¾µÄÆô¶¯Æ÷½çÃæÊÕÔÚ _internal\web\ ÏÂ, ËüÒ»µ©Ã»±»
+' ¸´ÖÆ¹ıÀ´, ÏÂ´ÎÆô¶¯Ö»»áµ¯Ò»¾ä"ÕÒ²»µ½Ò³ÃæÎÄ¼ş", ÓÃ»§¸ù±¾²»ÖªµÀÊÇÕâ´Î¸üĞÂÃ»¸´ÖÆÈ«¡£
+' ËùÒÔÔÚÆô¶¯Ö®Ç°ÏÈ°Ñ×î¹Ø¼üµÄÇ°¶ËÒ³ÃæÈ·ÈÏÒ»±é (¼æÈİ¶¥²ã web\ µÄ¾É½á¹¹)¡£
+Dim webOk, missing
+missing = ""
+If Not fso.FileExists(fso.BuildPath(up3Dir, "_internal\web\app\index.html")) Then
+    If Not fso.FileExists(fso.BuildPath(up3Dir, "web\app\index.html")) Then
+        missing = missing & "  _internal\web\app\index.html" & vbCrLf
+    End If
+End If
+If Not fso.FileExists(exePath) Then
+    missing = missing & "  FaustLauncher.exe" & vbCrLf
+End If
+
+If missing <> "" Then
+    MsgBox "FaustLauncher ¸üĞÂÎ´Íê³É£º" & vbCrLf & vbCrLf & _
+           "ÒÔÏÂ¹Ø¼üÎÄ¼şÃ»ÓĞ¸´ÖÆµ½°²×°Ä¿Â¼£º" & vbCrLf & missing & vbCrLf & _
+           "³£¼ûÔ­Òò£º°²×°Ä¿Â¼ÀïµÄÎÄ¼şÕı±»Õ¼ÓÃ£¨Æô¶¯Æ÷/ÓÎÏ·/×ÊÔ´¹ÜÀíÆ÷Ã»¹Ø¸É¾»£©¡¢" & _
+           "´ÅÅÌ¿Õ¼ä²»×ã£¬»ò¸üĞÂ°ü±¾Éí²»ÍêÕû¡£" & vbCrLf & vbCrLf & _
+           "Çë¹Ø±Õ FaustLauncher ºóÖØÊÔ£»ÈôÈÔÊ§°Ü£¬Çëµ½·¢²¼Ò³ÖØĞÂÏÂÔØÍêÕû°²×°°ü£¬" & _
+           "½âÑ¹µ½Ò»¸öĞÂÄ¿Â¼ºóÖ±½ÓÔËĞĞ¡£" & vbCrLf & vbCrLf & _
+           "£¨Îª±ÜÃâÆô¶¯ºóÖ»¿´µ½´íÎóÌáÊ¾£¬±¾´Î²»ÔÙ×Ô¶¯Æô¶¯£©", _
+           48, "FaustLauncher ¸üĞÂÎ´Íê³É"
+    Set fso = Nothing
+    Set WshShell = Nothing
+    WScript.Quit 1
+End If
+
+' ========== ÕıÈ·Æô¶¯EXE£¨ĞŞ¸´¹¤×÷Ä¿Â¼£¡£© ==========
 If fso.FileExists(exePath) Then
-    ' å…³é”®ï¼šå…ˆåˆ‡æ¢å·¥ä½œç›®å½•ï¼Œå†è¿è¡Œï¼
+    ' ¹Ø¼ü£ºÏÈÇĞ»»¹¤×÷Ä¿Â¼£¬ÔÙÔËĞĞ£¡
     WshShell.CurrentDirectory = exeDir
     WshShell.Run """" & exePath & """", 1, False
 End If
