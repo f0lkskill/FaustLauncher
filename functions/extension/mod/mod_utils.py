@@ -261,7 +261,10 @@ class ModManager:
                 file_names = mod_info.get('file_names', [])
                     
                 # 检查settings键值
-                if mod_info["settings"].get("enable", False):
+                # 必须用 .get 取 settings: mod_info.json 缺这个键时硬下标会抛 KeyError,
+                # 被外层 except 吞成一句"处理Mod失败", 结果是这个 mod 既不复制文件、
+                # 也不加载语言文件, 等于完全失效 (手工编写的 mod_info.json 很容易少写它)。
+                if mod_info.get("settings", {}).get("enable", False):
                     # 获取目标目录
                     target_dir = self.get_mod_directory()
 
