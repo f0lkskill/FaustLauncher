@@ -224,31 +224,17 @@ class ModManager:
             mod_name = os.path.basename(mod_path)
             
             try:
-                has_installer = False
-                has_uninstaller = False
-                try:
-                    # 删除 安装/卸载 脚本的 pause 命令, 可读可写模式
-                    # 用 r+ 模式打开文件（可读可写）
-                    for file_name in ['Installer.bat', 'Uninstaller.bat']:
-                        if not os.path.exists(os.path.join(mod_path, file_name)):
-                            # 这个Mod没有安装/卸载脚本，跳过删除pause命令
-                            continue
-                        
-                        # 检查文件名，设置标志
-                        if file_name == 'Installer.bat':
-                            has_installer = True
-                        elif file_name == 'Uninstaller.bat':
-                            has_uninstaller = True
-                            
-                        with open(os.path.join(mod_path, file_name), 'r+', encoding='utf-8') as f:
-                            content = f.read()  # 读取全部内容
-                            content = content.replace('pause', '')
-                            f.seek(0)          # 回到文件开头
-                            f.write(content)   # 写入新内容
-                            f.truncate()       # 截断多余内容（如果新内容比旧内容短）
-                            
-                except Exception as e:
-                    print(f"删除脚本pause命令时出错: {e}")
+                # 只探测安装/卸载脚本是否存在, 不改写它们。
+                # 这里以前会原地改写 mod 目录里的 Installer.bat / Uninstaller.bat 来去掉
+                # pause, 属于重复且破坏性的做法:
+                #   · 去掉 pause 的职责已由 _run_mod_bat 承担 —— 它生成临时副本再运行,
+                #     跑完即删, 只影响本次执行、绝不碰源文件, 且所有 bat 执行路径都走它;
+                #   · 原地改写的是用户的 mod 文件本身, 不可逆 (校验失败、无法还原);
+                #   · content.replace('pause','') 会误伤名字里含 pause 的合法内容
+                #     (如 pause_flag、含 pause 的路径);
+                #   · 用 utf-8 打开 GBK 编码的 bat 会解码失败, 可能留下半个文件。
+                has_installer = os.path.exists(os.path.join(mod_path, 'Installer.bat'))
+                has_uninstaller = os.path.exists(os.path.join(mod_path, 'Uninstaller.bat'))
                     
                 # 获取mod信息
                 mod_info = self.get_mod_info(mod_name)
