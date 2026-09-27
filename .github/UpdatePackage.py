@@ -152,20 +152,17 @@ def should_check_ourplay(last_update_time):
         return True
 
 def should_check_llc(last_update_time):
+    """判断 LLC 是否需要检查更新 —— 总是检查。
+
+    原规则是"本周已更新过则只在中午 12 点请求一次", 但 workflow 的 cron 用的是
+    UTC (0 12 * * * = 北京时间 20:00), 定时触发时 now.hour 永远不等于 12:
+    于是本周只要更新过一次, 之后所有运行都会跳过 LLC 检查, 新版本再也更新不到
+    (表现为"汉化明明更新了, action 却直接跳过")。
+
+    检查本身只是一次 GitHub API 调用; 真正要不要下载/上传由
+    new_llc_version != current_llc_version 把关, 不需要再用时间窗省这一步。
     """
-    判断LLC是否需要检查更新
-    规则：以每周四凌晨五点为界，如果这周已经有更新，则仅在12点请求一次
-    """
-    now = datetime.now()
-    week_boundary = get_current_week_boundary()
-    
-    # 如果上次更新是在本周四5点之后，说明本周已经有更新
-    if last_update_time >= week_boundary:
-        # 只有在中午12点才检查
-        return now.hour == 12
-    else:
-        # 本周还没有更新，可以检查
-        return True
+    return True
 
 def should_check_mirror(last_update_time):
     """
