@@ -234,7 +234,6 @@ class ModManager:
                 #     (如 pause_flag、含 pause 的路径);
                 #   · 用 utf-8 打开 GBK 编码的 bat 会解码失败, 可能留下半个文件。
                 has_installer = os.path.exists(os.path.join(mod_path, 'Installer.bat'))
-                has_uninstaller = os.path.exists(os.path.join(mod_path, 'Uninstaller.bat'))
                     
                 # 获取mod信息
                 mod_info = self.get_mod_info(mod_name)
@@ -246,10 +245,14 @@ class ModManager:
                     # 取值宽松些, 避免误杀正常的大体积贴图安装。
                     _run_mod_bat(mod_path, 'Installer.bat', mod_name, timeout=300)
                     print(f"成功加载Mod贴图资源: {mod_name}")
-                elif mod_info.get('settings', {}).get('enable', False) and has_uninstaller:
-                    # 禁用mod
-                    _run_mod_bat(mod_path, 'Uninstaller.bat', mod_name)
-                    print(f"成功卸载Mod贴图资源: {mod_name}")
+                # 这里原本还有一个 elif 分支: "enable=True 且只有 Uninstaller.bat" 时
+                # 运行 Uninstaller.bat —— 那是错的, 已删除:
+                #   · 条件用的是 enable=True (启用中), 执行的却是卸载脚本, 与它自己的
+                #     注释 "# 禁用mod" 正好相反;
+                #   · 后果: 一个"有 Uninstaller.bat 但没有 Installer.bat"的 mod, 一旦启用
+                #     就会被当场卸载 —— 表现为 mod 明明是开着的却完全不生效;
+                #   · 而且禁用 mod 的卸载根本不依赖这里: 走下面 else 分支的 unload_mod,
+                #     它自己会执行 Uninstaller.bat + 清理附属文件。
             
                 # 获取mod信息
                 mod_info = self.get_mod_info(mod_name)
