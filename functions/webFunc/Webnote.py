@@ -500,6 +500,10 @@ class Note:
         self.note_content = ""
         self.req_id = None
         self.has_get = False
+        # 读取失败的归因 (供调用方区分"笔记确实没有内容"和"线路/HTTP 故障"):
+        # 前者可以按首次运行自愈, 后者必须报错, 不能被静默当成空数据跳过
+        self.last_fetch_error = ""
+        self.empty_note = False
 
     def _candidate_keys(self):
         """候选笔记名 —— **配置里写什么就用什么, 不做任何后缀猜测**
@@ -559,6 +563,10 @@ class Note:
         if self.has_get and not self.note_content:
             print(f"[云端] 尝试重新获取 {self.note_id} 内容…")
 
+        # 每次真正发起请求前清掉上一次的归因 (只反映"最近一次请求的结果")
+        self.last_fetch_error = ""
+        self.empty_note = False
+
         text, source, used, err = _fetch_note(keys)
         if text:
             self._use_key(used)
@@ -585,6 +593,10 @@ class Note:
 
         print(f"[云端] {self.note_id} 获取失败, 无可用缓存 | 尝试过: {', '.join(keys)} | 原因: {err}")
         self.note_content = ""
+        # "HTTP 200 但内容为空" 代表笔记存在但没有内容 (被清空 / 从未写入),
+        # 与超时、HTTP 5xx 这类故障区分开, 调用方才能决定是"按首次运行自愈"还是"报错"
+        self.last_fetch_error = err or ""
+        self.empty_note = "内容为空" in self.last_fetch_error
         return {"note_content": "", "note_id": self.note_name}
 
     def update_note_content(self, new_content):
