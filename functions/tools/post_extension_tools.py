@@ -52,19 +52,6 @@ def _note_read_url(address):
             else base.rstrip('/') + '/' + str(address))
 
 
-def _note_update_url(address):
-    """云端笔记写回地址 (webnote_update_url; key 走 query, value 走表单体)"""
-    try:
-        from functions.webFunc.Webnote import get_update_url
-        base = str(get_update_url() or '').strip()
-    except Exception:
-        base = ''
-    if not base:
-        return ''
-    sep = '&' if '?' in base else '?'
-    return f'{base}{sep}key={address}'
-
-
 # ============================================================
 # 图标生成
 # ============================================================
@@ -682,13 +669,19 @@ def upload_extension_info(kind, folder, address=None, log=None, urls=None, keep_
 
         new_content = json.dumps(new_data, ensure_ascii=False, indent=4)
         log(f'上传{label}信息: {name}\n')
-        ur = requests.post(_note_update_url(address),
-                           data={'value': new_content},
-                           verify=False, timeout=30)
-        result = ur.json()
-        if result.get('status') == 1:
+        # 统一走 Webnote.write_note, 不要在这里自己 requests.post:
+        #   · write_note 用 multipart 发送; 而 data={'value': ...} 是 urlencoded 表单,
+        #     中文会被 percent-encode 成 9 字节/字, 请求体膨胀 2.5 倍以上 ——
+        #     笔记一大就撞上服务端请求体上限, 返回 413 Content Too Large
+        #     (version_info 已经踩过一次, 见之前的笔记上传修复);
+        #   · write_note 还带连接类错误重试、小内容 GET 兜底、严格响应解析,
+        #     这些在这个裸实现里全都没有。
+        # (write_note 内部会把 key 作为 query 参数拼上, 无需手工构造 URL)
+        from functions.webFunc.Webnote import write_note
+        res = write_note(address, new_content)
+        if res.get('status') == 1:
             return True, f'发布成功: {name} → {address}'
-        return False, f'发布失败: {result}'
+        return False, f'发布失败: {res.get("error") or res}'
     except Exception as e:
         return False, f'发布失败: {e}'
 
