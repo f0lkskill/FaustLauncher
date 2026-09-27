@@ -232,7 +232,19 @@ class ModManager:
         new_pkg_names: List[str] = []
 
         # 遍历所有mod目录
-        for mod_path in self.get_mod_path():
+        all_mod_paths = self.get_mod_path()
+        if not all_mod_paths:
+            # mods/ 为空或读取不到时, 绝不能继续做残留清理:
+            # 下面的 stale 是按"清单里有、本轮没人再登记"算的, 此时清单里所有文件
+            # 都会被判定成残留, 于是一整批正在使用的 mod 文件被搬进 _orphan/,
+            # 用户看到的就是"所有 mod 突然全部失效"(且 _orphan 只能手动拖回)。
+            print("mods 目录下没有可处理的 mod, 跳过本轮残留清理")
+            return loaded_mods
+        # 本轮仍然存在的 mod 名前缀 (无论最终是否启用), 供末尾区分
+        # "已删除 mod 的残留" 与 "仍在用但本轮没登记的文件"
+        alive_prefixes = {os.path.basename(p) + '_' for p in all_mod_paths}
+
+        for mod_path in all_mod_paths:
             
             mod_name = os.path.basename(mod_path)
             
@@ -340,10 +352,16 @@ class ModManager:
             except Exception as e:
                 print(f"处理Mod {mod_name} 失败: {e}")
         
-        # 清理: 上一轮清单登记过、这一轮不再管理的附属文件 -> 移到 _orphan/
+        # 清理: 只有"对应 mod 目录已经不存在"的残留附属文件才移到 _orphan/
         try:
             target_root = self.get_mod_directory()
-            stale = [n for n in (old_manifest.get("package") or []) if n not in set(new_pkg_names)]
+            # 不能简单按"本轮没登记"来算残留: 一个 mod 本轮处理失败 (异常)、或它处于
+            # 禁用状态时, 它的文件不会进 new_pkg_names, 但 mod 目录还在、文件也可能
+            # 仍在使用 —— 把它们移进 _orphan 等于直接弄坏正在生效的 mod。
+            # 因此只清理 mod 目录确实已经消失的那些 (alive_prefixes 之外的)。
+            stale = [n for n in (old_manifest.get("package") or [])
+                     if n not in set(new_pkg_names)
+                     and not any(n.startswith(p) for p in alive_prefixes)]
             if stale:
                 _move_orphans(target_root, stale)
             _write_manifest(target_root, {"package": new_pkg_names,
