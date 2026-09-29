@@ -3,7 +3,7 @@
         "name": "启动器皮肤",
         "type": "string",
         "default": "",
-        "value": "faust",
+        "value": "",
         "description": "当前启用的启动器皮肤, 只能在“玻璃窗”页面切换"
     },
     "game_path": {
@@ -175,7 +175,7 @@
         "name": "启用Mod功能",
         "type": "boolean",
         "default": true,
-        "value": true,
+        "value": false,
         "description": "是否加载 Mod\n注意: 由于游戏切换了新的引擎，导致大部分mod已经完全失效，不建议您启用 Mod 加载。\n我们将会在接下来的版本进行修复。",
         "page": "Mod"
     },

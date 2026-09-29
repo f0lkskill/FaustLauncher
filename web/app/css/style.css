@@ -685,7 +685,7 @@ body.modal-open .res-card {
   box-shadow: 0 0 0 1px rgba(0,0,0,.10), 0 1px 4px rgba(0,0,0,.35);
   pointer-events: none;
 }
-.res-off-badge .ico { width: 12px; height: 12px; }
+.res-off-badge .ico { width: 20px; height: 20px; }
 .res-card.disabled .res-off-badge { display: flex; }
 .res-info { min-width: 0; flex: 1; }
 .res-title-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
