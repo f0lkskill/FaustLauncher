@@ -2291,3 +2291,137 @@ body.no-hw .ver-card { animation: verCardInLite .38s cubic-bezier(.22, .9, .24, 
 
 /* 主页版本卡可点击查看版本信息 */
 #stat-version-card.clickable { cursor: pointer; }
+
+/* ============================================================
+   用户信息页 + 皮肤解锁
+   ------------------------------------------------------------
+   · .user-page  : 左侧导航同级页面 (用户名 / 用户 ID / 云端同步 / 登录)
+   · .unlock-*   : 未解锁皮肤的二级模态 (解锁条件 + 验证按钮)
+   · .skin-card.locked : 玻璃窗里"待解锁"的皮肤卡片
+   颜色全部走主题变量, 因此跟随皮肤 (含浅色浮士德皮肤) 自动适配。
+   ============================================================ */
+/* 两张卡片之间只留 gap 的间距: .card 自带的 margin-bottom 会叠加成双倍空隙 */
+.user-page { display: flex; flex-direction: column; gap: 16px; }
+.user-page .card { margin-bottom: 0; }
+
+/* ---------- 身份卡 ---------- */
+.user-card { position: relative; overflow: hidden; padding: 22px 24px; }
+.user-card::after {
+  content: ''; position: absolute; inset: 0; z-index: 0; pointer-events: none;
+  background: radial-gradient(520px 200px at 88% -30%, rgba(var(--accent-rgb), .18), transparent 70%);
+}
+.user-card-head { position: relative; z-index: 1; display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.user-head-main { min-width: 0; }
+/* 名字 + 已登录标识同一行 (窄窗口换行) */
+.user-name-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.user-card-head h2 { font-size: 26px; font-weight: 800; letter-spacing: .4px; }
+.user-login-chip { flex-shrink: 0; padding: 4px 11px; }
+.user-subtitle { font-size: 12.5px; color: var(--text-3); margin-top: 8px; }
+.user-avatar {
+  width: 54px; height: 54px; flex-shrink: 0; border-radius: 16px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 24px; color: var(--accent);
+  background: rgba(var(--accent-rgb), .12);
+  border: 1px solid rgba(var(--accent-rgb), .28);
+  box-shadow: inset 0 1px 0 rgba(var(--tint-rgb), .08);
+}
+
+/* ---------- 用户 ID ---------- */
+.user-id-row {
+  position: relative; z-index: 1; display: flex; align-items: center; gap: 10px;
+  margin-top: 14px; padding: 12px 14px;
+  background: var(--card-2); border: 1px solid var(--border); border-radius: 12px;
+  flex-wrap: wrap;
+}
+.user-label { font-size: 12.5px; color: var(--text-3); flex-shrink: 0; }
+.user-id-row code {
+  flex: 1; min-width: 140px;
+  font-family: var(--mono); font-size: 13.5px; letter-spacing: .5px;
+  color: var(--text); user-select: text; word-break: break-all;
+}
+/* 默认打码: 点号拉开一点, 视觉上更像"被隐藏的凭据" */
+.user-id-row code.user-id-masked { color: var(--text-3); letter-spacing: 1.5px; }
+.user-id-toggle { flex-shrink: 0; }   /* 图标按钮: 尺寸沿用 .btn-icon */
+.user-actions { position: relative; z-index: 1; display: flex; gap: 10px; flex-wrap: wrap; margin-top: 14px; }
+
+/* ---------- 操作冷却提示 ---------- */
+.user-limit-note {
+  position: relative; z-index: 1;
+  display: flex; flex-direction: column; gap: 6px; margin-top: 12px;
+}
+.user-limit-item {
+  font-size: 12px; line-height: 1.6; color: var(--warn);
+  padding: 7px 11px; border-radius: 9px;
+  background: rgba(245, 158, 11, .11);
+  border: 1px solid rgba(245, 158, 11, .30);
+}
+/* 冷却期内按钮明确表现为不可用 */
+.user-actions .btn:disabled { opacity: .45; cursor: not-allowed; transform: none; }
+
+/* ---------- 已解锁皮肤 ---------- */
+.user-skin-count { font-size: 12px; color: var(--text-3); }
+.user-skin-list { display: flex; flex-direction: column; gap: 8px; }
+.user-skin-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 13px; border-radius: 10px;
+  background: rgba(var(--tint-rgb), .03); border: 1px solid var(--border);
+  font-size: 13.5px;
+}
+.user-skin-item code {
+  margin-left: auto; font-family: var(--mono); font-size: 11.5px; color: var(--text-3);
+}
+.user-skin-dot {
+  width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0;
+  background: var(--accent); box-shadow: 0 0 8px rgba(var(--accent-rgb), .6);
+}
+.user-empty { font-size: 13px; color: var(--text-3); padding: 16px 4px; text-align: center; }
+
+/* ---------- 登录 / 名称 / 解锁 模态 ---------- */
+.user-modal-card { width: 460px; }
+.user-modal-tip { font-size: 12.5px; line-height: 1.7; color: var(--text-2); }
+.user-modal-input {
+  width: 100%; margin-top: 12px; box-sizing: border-box;
+  font-family: var(--mono); font-size: 13.5px; color: var(--text);
+  background: var(--bg-2); border: 1px solid var(--border-2); border-radius: 9px;
+  padding: 10px 12px; outline: none; transition: border-color .18s ease, box-shadow .18s ease;
+}
+/* 昵称等自然语言输入用正文字体 (等宽只适合 ID / 路径) */
+.user-modal-input.is-text { font-family: var(--font); font-size: 14px; letter-spacing: normal; }
+
+/* 账号切换确认: 当前账号 -> 目标账号 */
+.login-switch {
+  padding: 12px 14px; margin-top: 2px;
+  background: var(--card-2); border: 1px solid var(--border); border-radius: 12px;
+}
+.login-switch-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.login-switch-row code {
+  flex: 1; min-width: 120px; font-family: var(--mono); font-size: 13px;
+  color: var(--text); word-break: break-all;
+}
+.login-switch-arrow { color: var(--text-3); font-size: 12px; margin: 7px 0; text-align: center; }
+.user-modal-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(var(--accent-rgb), .15); }
+.user-modal-input::placeholder { color: var(--text-3); }
+
+.unlock-state {
+  display: inline-flex; align-items: center; gap: 7px;
+  font-size: 12px; font-weight: 600; padding: 4px 11px; border-radius: 999px;
+  color: var(--warn); background: rgba(245, 158, 11, .13);
+  border: 1px solid rgba(245, 158, 11, .34);
+}
+.unlock-state-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.unlock-condition { font-size: 13.5px; line-height: 1.75; color: var(--text); margin-top: 13px; }
+.unlock-hint { font-size: 12px; line-height: 1.7; color: var(--text-3); margin-top: 9px; }
+
+/* ---------- 玻璃窗: 待解锁皮肤卡片 ---------- */
+.skin-card.locked .skin-card-bg { filter: grayscale(.55) brightness(.82); }
+.skin-card.locked:hover .skin-card-bg { transform: scale(1); filter: grayscale(.4) brightness(.9); }
+.skin-card-badge.locked-badge { background: rgba(245, 158, 11, .72); }
+.skin-card.locked .skin-card-meta { color: #f0c05a; }
+
+@media (max-width: 760px) {
+  .user-card { padding: 18px; }
+  .user-card-head h2 { font-size: 21px; }
+  .user-avatar { width: 44px; height: 44px; font-size: 20px; border-radius: 13px; }
+  .user-modal-card { width: auto; }
+}
+

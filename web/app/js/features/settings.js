@@ -476,7 +476,9 @@ async function resetOneSetting(key) {
   if (s.type === 'UNABLE_TO_EDIT' || s.type === 'unable_to_edit') return;
   if (s.default === undefined) { toast('该设置项没有默认值', 'warn'); return; }
   try {
-    await api.set_setting(key, s.default);
+    const r = await api.set_setting(key, s.default);
+    // 后端可能因冷却等原因拒绝 (如用户名 1 小时内只能改一次)
+    if (r && r.error) { toast(r.error, 'warn', 5000); return; }
     delete SETTING_CHANGES[key];
     if (BOOT.settings_schema) BOOT.settings_schema[key].value = s.default;
     applySettingSideEffect(key, s.default);
@@ -494,18 +496,26 @@ async function resetAllSettings() {
   if (btn) { btn.disabled = true; btn.innerHTML = iconSvg('refresh') + ' 重置中…'; }
   try {
     const schema = BOOT.settings_schema;
+    const blocked = [];
     for (const key of Object.keys(schema)) {
       const s = schema[key];
       // 跳过无法编辑的项
       if (s.type === 'UNABLE_TO_EDIT' || s.type === 'unable_to_edit') continue;
-      if (s.default !== undefined) await api.set_setting(key, s.default);
+      if (s.default === undefined) continue;
+      // 单项被后端拒绝(如处于冷却中)时跳过并记账, 不能让整轮重置中断
+      const r = await api.set_setting(key, s.default).catch(err => ({ error: String(err) }));
+      if (r && r.error) blocked.push(s.name || key);
     }
     await api.save_settings({});
     SETTING_CHANGES = {};
     const fresh = await api.get_bootstrap();
     BOOT.settings_schema = fresh.settings_schema;
     renderSettings(BOOT.settings_schema);           // 重渲染(会重建按钮), 各分区重播进入动画
-    toast('已恢复默认设置', 'success');
+    if (blocked.length) {
+      toast('已恢复默认设置，但以下项受限未重置：' + blocked.join('、'), 'warn', 6000);
+    } else {
+      toast('已恢复默认设置', 'success');
+    }
   } catch (e) {
     toast('重置失败: ' + e, 'error');
     const b = $('#btn-reset-settings');             // 失败时恢复按钮可用
@@ -750,9 +760,25 @@ function buildControl(key, s) {
   inp.oninput = () => {   // 主页称呼随输入即时同步
     if (key === 'user_name') { updateBootSetting(key, inp.value); updateHeroUser(); }
   };
-  inp.onchange = () => {
+  inp.onchange = async () => {
     markChanged(key, inp.value);
-    if (api) api.set_setting(key, inp.value).catch(err => toast(String(err), 'error'));
+    if (api) {
+      const r = await api.set_setting(key, inp.value).catch(err => ({ error: String(err) }));
+      if (r && r.error) {
+        // 后端拒绝(如用户名处于 1 小时冷却): 提示原因并把输入框回滚到已保存的值,
+        // 否则界面会显示成"已经改了", 而其实没保存。
+        toast(r.error, 'warn', 5000);
+        delete SETTING_CHANGES[key];
+        const s = BOOT.settings_schema[key];
+        if (s && s.key_el) delete s.key_el.dataset.changed;   // 清掉"已改动"标记
+        const real = await api.get_setting(key).catch(() => null);
+        if (real !== null && real !== undefined) {
+          inp.value = String(real);
+          if (key === 'user_name') { updateBootSetting(key, String(real)); updateHeroUser(); }
+        }
+        return;
+      }
+    }
     if (key === 'game_path') updatePathChip();   // 主页游戏路径实时同步
     if (key === 'user_name') { updateBootSetting(key, inp.value); updateHeroUser(); }   // 主页称呼立即同步
   };

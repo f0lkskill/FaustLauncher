@@ -32,6 +32,7 @@ const ICONS = {
   close: 'close.svg',
   code: 'code.svg',
   downloadTwo: 'download-two.svg',
+  eye: 'eye.svg',
   fileAdditionOne: 'file-addition-one.svg',
   fileStaffOne: 'file-staff-one.svg',
   fileSuccess: 'file-success.svg',

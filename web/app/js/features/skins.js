@@ -144,7 +144,7 @@ function renderSkinList() {
     const on = s.id === skinActiveId;
     const card = document.createElement('button');
     card.type = 'button';
-    card.className = 'skin-card' + (on ? ' active' : '');
+    card.className = 'skin-card' + (on ? ' active' : '') + (s.unlocked === false ? ' locked' : '');
     card.dataset.skinId = s.id;
     card.innerHTML =
       // profile 图铺满整张卡片当背景, 上面盖一层文字蒙版
@@ -153,7 +153,7 @@ function renderSkinList() {
       '<div class="skin-card-mask"></div>' +
       '<div class="skin-card-info">' +
         '<div class="skin-card-name">' + esc(s.name) +
-          (on ? '<span class="skin-card-badge">使用中</span>' : '') + '</div>' +
+          (on ? '<span class="skin-card-badge">使用中</span>' : (s.unlocked === false ? '<span class="skin-card-badge locked-badge">待解锁</span>' : '')) + '</div>' +
         '<div class="skin-card-desc">' + esc(s.description || '') + '</div>' +
         '<div class="skin-card-meta">' +
           (s.background_count ? s.background_count + ' 张背景' : '无背景图') +
@@ -171,6 +171,10 @@ function renderSkinList() {
 // 点左侧卡片: 右侧先切到它的背景, 然后**立刻**应用皮肤 (重载样式 + 资源 + 主背景)
 async function pickSkin(skin) {
   showSkinBackgrounds(skin);
+  if (skin.unlocked === false) {
+    if (typeof openSkinUnlockModal === 'function') openSkinUnlockModal(skin);
+    return;
+  }
   await applySkin(skin);
 }
 

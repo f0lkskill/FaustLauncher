@@ -699,12 +699,31 @@ def _skin_dir(skin_id):
 
 
 def _active_skin_id():
-    """当前启用的皮肤 id (空串 = 默认皮肤)"""
+    """当前启用的皮肤 id (空串 = 默认皮肤)
+
+    这里**必须**一并校验解锁状态: settings.json 里可能残留/预置一个尚未解锁的皮肤
+    (例如随包分发的配置里就写着 deepseek), 若直接生效, 解锁系统等于形同虚设。
+    未解锁时回退到默认皮肤 (不改写用户的设置, 解锁后它会自动恢复生效)。
+    """
     try:
         from functions.base.settings_manager import get_settings_manager
-        return str(get_settings_manager().get_setting(SKIN_SETTING_KEY) or "").strip()
+        sid = str(get_settings_manager().get_setting(SKIN_SETTING_KEY) or "").strip()
     except Exception:
         return ""
+    if not sid:
+        return ""
+    try:
+        from functions.base.user_system import load_user, _value as _user_value
+        meta = _skin_meta(sid)
+        unlock = meta.get("unlock") if isinstance(meta.get("unlock"), dict) else {"type": "free"}
+        if str(unlock.get("type") or "free").lower() == "free":
+            return sid
+        if sid in set(_user_value(load_user(), "unlocked_skins", [])):
+            return sid
+        print(f"[皮肤] {sid} 尚未解锁, 本次回退默认皮肤")
+        return ""
+    except Exception:
+        return sid
 
 
 def _file_uri(path, max_side=1600, quality=82):
@@ -942,6 +961,22 @@ class AppApi:
         self._pipeline_kind = None
         self._window_drag_lock = threading.Lock()
         self._window_drag_origin = None
+        self._user_sync_started = False
+        self._start_user_sync()
+
+    def _start_user_sync(self):
+        if self._user_sync_started:
+            return
+        self._user_sync_started = True
+        def worker():
+            try:
+                from functions.base.user_system import sync_user
+                result = sync_user(self.core.settings_manager)
+                if not result.get("ok"):
+                    print(f"[用户] 启动同步未完成: {result.get('error', '云端不可用')}")
+            except Exception as exc:
+                print(f"[用户] 启动同步失败: {exc}")
+        threading.Thread(target=worker, name="faust-user-sync", daemon=True).start()
 
     def set_window_opacity(self, alpha):
         """设置窗口透明度 (0~255), 供前端/渐变控制"""
@@ -1097,6 +1132,27 @@ class AppApi:
             "active_skin": _active_skin_id(),
         }
 
+    # ---- 用户系统 ----
+    def get_user_info(self):
+        from functions.base.user_system import get_user_info
+        return get_user_info(self.core.settings_manager)
+
+    def sync_user(self):
+        from functions.base.user_system import sync_user
+        return sync_user(self.core.settings_manager)
+
+    def login_user(self, user_id):
+        from functions.base.user_system import login_user
+        return login_user(user_id, self.core.settings_manager)
+
+    def verify_skin_unlock(self, skin_id):
+        from functions.base.user_system import verify_skin
+        return verify_skin(skin_id)
+
+    def unlock_skin(self, skin_id):
+        from functions.base.user_system import unlock_skin
+        return unlock_skin(skin_id, self.core.settings_manager)
+
     def get_backgrounds(self):
         """返回**一张随机背景图**的 data URI 列表, 应用 bg_gaussian_blur 模糊设置
 
@@ -1142,6 +1198,9 @@ class AppApi:
         每项只带**卡片展示图**(profile) 与背景数量; 背景图数据量大, 选中后再由
         get_skin_backgrounds 按需拉取, 避免一次把所有皮肤的所有图都塞进前端。
         """
+        from functions.base.user_system import load_user, _value as _user_value
+        user_data = load_user()
+        unlocked = set(_user_value(user_data, "unlocked_skins", []))
         skins = [{
             "id": "",
             "name": "默认皮肤",
@@ -1149,6 +1208,8 @@ class AppApi:
             "description": "不加载任何皮肤, 使用启动器原始外观与资源",
             "authors": {},
             "theme_color": "",
+            "unlock": {"type": "free", "description": "默认皮肤永久可用"},
+            "unlocked": True,
             "profile_uri": _get_project_icon_uri(),
             "background_count": len(_background_files("")),
         }]
@@ -1160,6 +1221,8 @@ class AppApi:
             names = []
         for sid in names:
             meta = _skin_meta(sid)
+            unlock = meta.get("unlock") if isinstance(meta.get("unlock"), dict) else {"type": "free", "description": "免费皮肤"}
+            is_free = str(unlock.get("type") or "free").lower() == "free"
             skins.append({
                 "id": sid,
                 "name": str(meta.get("name") or sid),
@@ -1167,6 +1230,8 @@ class AppApi:
                 "description": str(meta.get("description") or ""),
                 "authors": meta.get("authors") or {},
                 "theme_color": str(meta.get("theme_color") or ""),
+                "unlock": unlock,
+                "unlocked": bool(is_free or sid in unlocked),
                 "profile_uri": _file_uri(_skin_profile_file(sid), max_side=640, quality=85),
                 "background_count": len(_background_files(sid)),
             })
@@ -1224,6 +1289,13 @@ class AppApi:
         sid = str(skin_id or "").strip()
         if sid and not _skin_dir(sid):
             return {"error": "皮肤不存在: " + sid}
+        if sid:
+            from functions.base.user_system import load_user, _value as _user_value
+            meta = _skin_meta(sid)
+            unlock = meta.get("unlock") if isinstance(meta.get("unlock"), dict) else {"type": "free"}
+            unlocked = sid in set(_user_value(load_user(), "unlocked_skins", []))
+            if str(unlock.get("type") or "free").lower() != "free" and not unlocked:
+                return {"error": "该皮肤尚未解锁", "locked": True, "skin_id": sid}
         # print(f"[皮肤] 已切换: {sid or '默认皮肤'}")
         # ↓↓ 写入逻辑 (曾整段丢失, 导致"切皮肤后只有样式变、背景不跟着变":
         #    背景是后端按 settings.json 里的 skin 决定的 —— 设置没写进去,
@@ -1433,16 +1505,84 @@ class AppApi:
             print(f"读取汉化源名称失败: {e}")
             return ""
 
+    def _guard_user_name(self, key, value):
+        """user_name 受 1 小时冷却限制 (设置页与用户页共用这一道闸)。
+
+        值没有变化不算"修改", 直接放行 —— 否则仅点一下输入框就会开始计时。
+        返回非空字符串表示被拒绝, 字符串就是要给用户看的原因。
+        """
+        if str(key) != "user_name":
+            return ""
+        try:
+            cur = str(self.core.settings_manager.get_setting("user_name") or "")
+        except Exception:
+            cur = ""
+        if str(value) == cur:
+            return ""
+        try:
+            from functions.base.user_system import check_rename_allowed
+            return check_rename_allowed()
+        except Exception as exc:
+            print(f"[用户] 检查改名限制失败(按放行处理): {exc}")
+            return ""
+
+    def _mark_user_name_changed(self):
+        try:
+            from functions.base.user_system import mark_renamed
+            mark_renamed()
+        except Exception as exc:
+            print(f"[用户] 记录改名时间失败: {exc}")
+
     def set_setting(self, key, value):
+        blocked = self._guard_user_name(key, value)
+        if blocked:
+            print(f"[用户] 改名被冷却限制拒绝: {blocked}")
+            return {"ok": False, "limited": True, "error": blocked}
         self.core.settings_manager.set_setting(key, value)
         self.core.settings_manager.save_settings()
+        if str(key) == "user_name":
+            self._mark_user_name_changed()
+            self._push_user_name()
         return True
 
     def save_settings(self, changes: dict):
-        for key, value in (changes or {}).items():
+        changes = changes or {}
+        blocked = ""
+        renamed = False
+        for key, value in changes.items():
+            reason = self._guard_user_name(key, value)
+            if reason:
+                # 单项被拒不影响其余设置项的保存
+                blocked = reason
+                continue
             self.core.settings_manager.set_setting(key, value)
+            if str(key) == "user_name":
+                renamed = True
         self.core.settings_manager.save_settings()
+        if renamed:
+            self._mark_user_name_changed()
+            self._push_user_name()
+        if blocked:
+            print(f"[用户] 改名被冷却限制拒绝: {blocked}")
+            return {"ok": False, "limited": True, "error": blocked}
         return True
+
+    def get_restrictions(self):
+        """当前改名/登录冷却的剩余时间 (给用户页显示与按钮禁用)"""
+        from functions.base.user_system import get_restrictions
+        return get_restrictions()
+
+    def _push_user_name(self):
+        """本地改了昵称: 后台推回云端, 避免下次启动同步时被云端旧名字覆盖。"""
+        def worker():
+            try:
+                from functions.base.user_system import push_user
+                result = push_user(self.core.settings_manager)
+                if not result.get("ok"):
+                    print(f"[用户] 昵称上传未完成: {result.get('error', '云端不可用')}")
+            except Exception as exc:
+                print(f"[用户] 昵称上传失败: {exc}")
+        threading.Thread(target=worker, name="faust-user-name", daemon=True).start()
 
     def pick_folder(self):
         """原生文件夹选择对话框 (临时 Tk, 独立于 webview 主循环)"""

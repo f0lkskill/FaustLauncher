@@ -1,0 +1,14 @@
+{
+    "name": "DeepSeek",
+    "id": "deepseek",
+    "description": "DeepSeek 风格启动器皮肤（V2026.9.29）。\n深海蓝玻璃主题，取自 DeepSeek 鲸鱼娘：官方蓝 #4D6BFE + 深海藏青 #0C1122。\n角色素材署名与许可见皮肤目录 CREDITS.md（CC BY-NC-SA 4.0）。",
+    "authors": {
+        "FolkSkill": "https://space.bilibili.com/599331034"
+    },
+    "theme_color": "#4D6BFE",
+    "unlock": {
+        "type": "edge_window_title",
+        "title_keyword": "DeepSeek",
+        "description": "在 Microsoft Edge 中打开 DeepSeek 网站后验证。"
+    }
+}
