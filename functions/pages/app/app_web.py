@@ -1535,8 +1535,11 @@ class AppApi:
         # 此时写入会失败, 或者只合并进去一半 —— 直接把汉化弄坏。
         # 前端也会把按钮置灰, 这里是后端兜底: 启动时的自动汉化更新等其它调用路径
         # 同样必须被挡住。
-        if _game_process_running():
-            print("[汉化更新] 游戏正在运行, 拒绝更新汉化")
+        # 这里用宽松判断 (_any_game_process_running): 只要有同名进程在跑就拦,
+        # 不要求身份校验通过 —— 另一个 Windows 账户可能在玩同一份安装, 一样会占用
+        # Lang 目录。宁可多拦一次, 也不能把汉化写坏。
+        if _any_game_process_running():
+            print("[汉化更新] 检测到 LimbusCompany.exe 正在运行, 拒绝更新汉化")
             return {"ok": False, "error": "game_running",
                     "message": "游戏正在运行, 请先退出游戏再更新汉化"}
         self._pipeline_kind = 'translate'
@@ -1590,7 +1593,9 @@ class AppApi:
              前端据此决定按钮回到"启动游戏"还是保持"关闭游戏", 不再盲目乐观。
         """
         try:
-            pids = _find_process_pids("LimbusCompany.exe")
+            # 用身份校验过的 PID: 同名残留进程 / 别的 Windows 会话里的进程不该被我们
+            # "关闭" —— 既关不掉, 又会把按钮卡在"关闭游戏"
+            pids = _game_process_pids()
             if not pids:
                 return {"ok": True, "game_alive": False, "already_exited": True}
 
@@ -1601,11 +1606,11 @@ class AppApi:
             # 轮询确认 (最多 5s): 终止是异步生效的, 立刻回读可能仍枚举到进程
             deadline = time.time() + 5.0
             while time.time() < deadline:
-                if not _find_process_pids("LimbusCompany.exe"):
+                if not _game_process_pids():
                     break
                 time.sleep(0.25)
 
-            if _find_process_pids("LimbusCompany.exe"):
+            if _game_process_pids():
                 print("[游戏] 关闭失败: LimbusCompany.exe 仍在运行 (可能以管理员权限启动)")
                 return {"ok": False, "game_alive": True,
                         "error": "无法关闭游戏 (进程可能以管理员权限运行, 请手动关闭)"}
@@ -1620,20 +1625,27 @@ class AppApi:
         """启动器按钮所需的实时状态。
 
         running   : 是否正有启动/汉化流程在跑 (按钮显示"中止...")
-        game_alive: LimbusCompany.exe 是否在运行 (按钮显示"关闭游戏")
+        game_alive: 身份校验过的游戏进程是否在运行 (按钮显示"关闭游戏")
+        game_busy : 是否存在任何同名进程 (汉化更新按钮据此置灰, 与后端拦截口径一致)
         kind      : 当前流程类型 'launch' / 'translate'
         """
         try:
             from functions.pages.app import page_loader as _pl
+            verified = _game_process_pids()
             return {
                 "running": bool(getattr(_pl, "downloading", False)),
                 "cancelling": bool(_pl.is_cancel_requested()),
-                "game_alive": _game_process_running(),
+                # game_alive 只认"本机配置的那台游戏" —— 同名残留进程/别的会话里的进程
+                # 不再把启动按钮顶成"关闭游戏"(那会让用户既关不掉也启动不了)
+                "game_alive": bool(verified),
+                # game_busy 只要有任何同名进程就为真, 专门用来禁掉汉化更新
+                "game_busy": _any_game_process_running(),
                 "kind": getattr(self, "_pipeline_kind", None),
             }
         except Exception as e:
             return {"running": False, "cancelling": False,
-                    "game_alive": False, "kind": None, "error": str(e)}
+                    "game_alive": False, "game_busy": False,
+                    "kind": None, "error": str(e)}
 
     # ---- 入口 ----
     def verify_extension_key(self, key):
@@ -2847,6 +2859,13 @@ def _init_win32_proc():
     k32.OpenProcess.restype = wintypes.HANDLE
     k32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
     k32.TerminateProcess.argtypes = [wintypes.HANDLE, wintypes.UINT]
+    # 进程身份校验用: 映像完整路径 + 所在 Windows 会话
+    k32.QueryFullProcessImageNameW.argtypes = [wintypes.HANDLE, wintypes.DWORD,
+                                               wintypes.LPWSTR,
+                                               ctypes.POINTER(wintypes.DWORD)]
+    k32.QueryFullProcessImageNameW.restype = wintypes.BOOL
+    k32.ProcessIdToSessionId.argtypes = [wintypes.DWORD, ctypes.POINTER(wintypes.DWORD)]
+    k32.ProcessIdToSessionId.restype = wintypes.BOOL
     _PROCESSENTRY32W = PROCESSENTRY32W
     _k32 = k32
     return k32
@@ -2862,6 +2881,7 @@ def _find_process_pids(image_name):
             return []
         pids = []
         try:
+            assert _PROCESSENTRY32W is not None
             entry = _PROCESSENTRY32W()
             entry.dwSize = ctypes.sizeof(_PROCESSENTRY32W)
             ok = k32.Process32FirstW(snap, ctypes.byref(entry))
@@ -2903,9 +2923,154 @@ def _terminate_pid(pid):
         return False
 
 
+_PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+
+
+def _process_image_path(pid):
+    """进程映像的完整路径 (拿不到返回空串)。
+
+    拿不到通常是因为权限不足或进程刚好退出, 调用方必须把空串当成"无法判定"而不是
+    "不匹配", 否则会把正在运行的游戏误判成没开。
+    """
+    try:
+        k32 = _init_win32_proc()
+        import ctypes
+        h = k32.OpenProcess(_PROCESS_QUERY_LIMITED_INFORMATION, False, int(pid))
+        if not h:
+            return ""
+        try:
+            size = ctypes.c_ulong(1024)
+            buf = ctypes.create_unicode_buffer(1024)
+            if k32.QueryFullProcessImageNameW(h, 0, buf, ctypes.byref(size)):
+                return buf.value or ""
+        finally:
+            k32.CloseHandle(h)
+    except Exception:
+        pass
+    return ""
+
+
+def _process_session_id(pid):
+    """进程所在的 Windows 会话 ID (拿不到返回 None)。"""
+    try:
+        k32 = _init_win32_proc()
+        import ctypes
+        sid = ctypes.c_ulong(0)
+        if k32.ProcessIdToSessionId(int(pid), ctypes.byref(sid)):
+            return int(sid.value)
+    except Exception:
+        pass
+    return None
+
+
+def _same_path(a, b):
+    """两个路径是否指向同一个文件。
+
+    先比规范化后的字符串; 字符串不同时再比文件身份 (st_dev/st_ino) —— 这样
+    8.3 短名 (FOlKSK~1)、大小写、目录联接 (junction) 造成的写法差异都不会把
+    正在运行的游戏误判成"不是本机游戏"。
+    """
+    if not a or not b:
+        return False
+    try:
+        if os.path.normcase(os.path.abspath(a)) == os.path.normcase(os.path.abspath(b)):
+            return True
+    except Exception:
+        pass
+    try:
+        sa, sb = os.stat(a), os.stat(b)
+        return (sa.st_dev, sa.st_ino) == (sb.st_dev, sb.st_ino)
+    except Exception:
+        return False
+
+
+def _expected_game_exe():
+    """配置里那台游戏的可执行文件完整路径 (解析不到返回空串)。
+
+    走 functions.hook.paths.get_game_path: 设置里的 game_path -> Steam 自动定位,
+    与战绩注入模块用的是同一条解析链, 保证两边对"哪个进程才算游戏"的判断一致。
+    """
+    try:
+        from functions.hook.paths import get_game_path
+        root = str(get_game_path() or "")
+        if root:
+            return os.path.join(root, "LimbusCompany.exe")
+    except Exception:
+        pass
+    return ""
+
+
+# 进程判定的日志去重: 监视线程每 2 秒调用一次, 只有结论变化时才打印
+_game_pid_log = {"kept": None, "rejected": None}
+
+
+def _game_process_pids():
+    """真正属于"本机配置的那台游戏"的 LimbusCompany.exe PID 列表。
+
+    只按映像名匹配是不够的 —— 这正是"游戏明明没开, 按钮却一直显示关闭游戏"的来源:
+      · 同名残留进程: 游戏崩溃/被强杀后残留的挂起进程, 或另一份安装 (别的 Steam 库);
+      · 其它 Windows 会话 (另一个用户账户) 里开着的游戏 —— 快照能枚举到, 但本会话
+        既用不上也关不掉 (kill_game 会 Access denied), 于是按钮永久卡在"关闭游戏";
+      · 同名却根本不是游戏进程 (例如用户把启动器改名成 LimbusCompany.exe)。
+    所以这里按 battle_watch 注入时同一套标准做身份校验: 映像路径必须等于配置的
+    <game_path>\\LimbusCompany.exe, 并排除启动器自身 PID 与其它会话的进程。
+
+    拿不到映像路径 (权限不足/进程正在退出) 时**保留**该 PID: 宁可多认一次, 也不能
+    把正在运行的游戏误判成没开 —— 那会让汉化更新去写游戏正占用的 Lang 目录。
+    """
+    pids = _find_process_pids("LimbusCompany.exe")
+    if not pids:
+        if _game_pid_log["kept"]:
+            print("[游戏] LimbusCompany.exe 已不在运行")
+        _game_pid_log.update(kept=[], rejected=[])
+        return []
+
+    own_pid = os.getpid()
+    expected = _expected_game_exe()
+    own_session = _process_session_id(own_pid)
+    kept, detail, rejected = [], [], []
+    for pid in pids:
+        if pid == own_pid:
+            rejected.append(f"[游戏] 跳过 PID {pid}: 这是启动器自己, 不是游戏")
+            continue
+        sid = _process_session_id(pid)
+        if own_session is not None and sid is not None and sid != own_session:
+            rejected.append(f"[游戏] 跳过 PID {pid}: 位于其它 Windows 会话 "
+                            f"(会话 {sid}, 本会话 {own_session}) —— 本会话关不掉它")
+            continue
+        image = _process_image_path(pid)
+        if expected and image and not _same_path(image, expected):
+            rejected.append(f"[游戏] 跳过 PID {pid}: 映像是 {image}, 与配置的游戏 "
+                            f"({expected}) 不一致 —— 同名残留进程/别的副本")
+            continue
+        kept.append(pid)
+        detail.append(f"{pid} ({image or '路径未知'})")
+
+    if kept != _game_pid_log["kept"] or rejected != _game_pid_log["rejected"]:
+        for line in rejected:
+            print(line)
+        if kept:
+            print(f"[游戏] 认定本机游戏正在运行: PID {', '.join(detail)}")
+        elif _game_pid_log["kept"]:
+            print("[游戏] 本机游戏已退出 (可能只剩同名残留进程)")
+        _game_pid_log.update(kept=kept, rejected=rejected)
+    return kept
+
+
+def _any_game_process_running():
+    """只按映像名判断有没有 LimbusCompany.exe (排除启动器自身)。
+
+    写保护专用, 故意比 _game_process_running 宽松: 只要有任何同名进程在跑, 就认为
+    Lang 目录可能正被占用 (同名进程可能就是另一个 Windows 账户在玩同一份安装)。
+    宁可多拦一次汉化更新, 也不能在游戏运行时写坏汉化。
+    """
+    own_pid = os.getpid()
+    return any(pid != own_pid for pid in _find_process_pids("LimbusCompany.exe"))
+
+
 def _game_process_running():
-    """检测 LimbusCompany.exe 是否在运行"""
-    return bool(_find_process_pids("LimbusCompany.exe"))
+    """检测"本机配置的那台游戏"是否在运行 —— 驱动主页按钮形态与"关闭游戏"""
+    return bool(_game_process_pids())
 
 
 def _monitor_game_process(window_ref):
@@ -2966,17 +3131,19 @@ def _start_game_state_watcher(window_ref):
     之前只在状态跳变时推一次, 一旦前端错过该事件 (或本地判断错), 按钮就再也
     回不到正确形态, 正是"关闭后仍显示关闭进程"的直接原因。
     """
-    def _push(win, alive):
+    def _push(win, alive, busy):
         """推送并返回是否成功 (失败则下轮重试, 不记入已知状态)"""
         try:
             win.evaluate_js("window.__onEvent('game_state', %s)"
-                            % json.dumps({"game_alive": bool(alive)}))
+                            % json.dumps({"game_alive": bool(alive),
+                                          "game_busy": bool(busy)}))
             return True
         except Exception:
             return False
 
     def _run():
         last = None
+        last_busy = None
         gone = 0
         while True:
             win = window_ref.get("win") if window_ref else None
@@ -2987,8 +3154,10 @@ def _start_game_state_watcher(window_ref):
             else:
                 gone = 0
                 alive = _game_process_running()
-                if alive != last and _push(win, alive):
+                busy = _any_game_process_running()
+                if (alive != last or busy != last_busy) and _push(win, alive, busy):
                     last = alive   # 只有推送成功才记为已知, 否则下轮重试
+                    last_busy = busy
             time.sleep(2)
 
     threading.Thread(target=_run, daemon=True).start()

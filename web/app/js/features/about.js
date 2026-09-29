@@ -168,7 +168,11 @@ function setPipelineButtonsDisabled(disabled) {
 //
 // gameAlive 由后端 get_launch_state / game_state 事件驱动, 因此用户自己先开游戏
 // 再回来点按钮时, 也会正确显示"关闭游戏"。
-let launchBtnState = { pipeline: false, pipelineKind: null, gameAlive: false };
+//   gameAlive: 身份校验过的游戏进程 (是不是"本机配置的那台游戏") -> 启动按钮形态
+//   gameBusy : 只要有任何同名进程在跑就为真 -> 汉化更新按钮据此置灰
+// 两者分开的原因: 同名残留进程/别的 Windows 会话里的游戏不该把启动按钮顶成
+// "关闭游戏"(关不掉也启动不了), 但它一样可能占用 Lang 目录, 所以汉化更新必须拦住。
+let launchBtnState = { pipeline: false, pipelineKind: null, gameAlive: false, gameBusy: false };
 
 function _setBtnContent(btn, iconEl, textEl, iconName, text, cls) {
   if (iconEl && iconName) iconEl.innerHTML = iconSvg(iconName);
@@ -210,7 +214,9 @@ function renderLaunchButtons() {
     // 游戏运行中必须禁用汉化更新: 游戏正占用 LimbusCompany_Data/Lang 下的文件,
     // 这时写入会失败, 或者只合并进去一半 —— 直接把汉化弄坏。
     // 要更新汉化得先在游戏里退出 (那时启动按钮会变成"关闭游戏")。
-    transBtn.disabled = busy || launchBtnState.gameAlive;
+    // gameBusy 含"没能确认身份的同名进程", 与后端 update_translation 的拦截口径一致,
+    // 避免出现"按钮能点但后端拒绝"的错配。
+    transBtn.disabled = busy || launchBtnState.gameAlive || launchBtnState.gameBusy;
   }
 }
 
@@ -223,6 +229,7 @@ async function syncLaunchButtons() {
       launchBtnState.pipeline = !!st.running;
       launchBtnState.pipelineKind = st.kind || null;
       launchBtnState.gameAlive = !!st.game_alive;
+      launchBtnState.gameBusy = !!st.game_busy;
     }
   } catch (e) { /* 拿不到就按当前本地状态渲染 */ }
   renderLaunchButtons();
@@ -345,7 +352,7 @@ async function onTranslate() {
   if (pipeline.running) return;   // 兜底
   // 游戏运行中不允许更新汉化: 按钮这时已经被置灰, 这里再兜一道,
   // 并把原因说清楚 (否则用户只会看到一个点不动的按钮, 不知道要退出游戏)
-  if (launchBtnState.gameAlive) {
+  if (launchBtnState.gameAlive || launchBtnState.gameBusy) {
     toast('游戏正在运行, 请先退出游戏再更新汉化', 'warn', 5000);
     return;
   }
