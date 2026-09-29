@@ -212,6 +212,11 @@ function authorLinksHtml(links) {
   ).join(' · ');
 }
 
+// 卡片启用开关的图标: 已禁用 -> 对勾 (点击即启用); 已启用 -> 圆圈减号 (点击即禁用)
+function resToggleIcon(enabled) {
+  return iconSvg(enabled ? 'reduceOne' : 'checkOne');
+}
+
 // 就地刷新一张卡片的启用/禁用外观 (不改列表顺序):
 // 只改这一张卡的 class / 状态徽章 / 按钮态, 因此点击禁用后卡片停在原地。
 function applyCardEnabledState(card, item) {
@@ -229,6 +234,9 @@ function applyCardEnabledState(card, item) {
   if (btn) {
     btn.classList.toggle('on', enabled);
     btn.setAttribute('aria-pressed', enabled ? 'true' : 'false');
+    // 图标跟着状态走 (禁用态换成对勾, 提示"点击启用");
+    // 换进去的是 data-icon 占位, 由 icons.js 的自动水合补全
+    btn.innerHTML = resToggleIcon(enabled);
   }
 }
 
@@ -261,7 +269,7 @@ function buildResCard(item) {
       '<button class="res-toggle-btn' + (enabled ? ' on' : '') + '" type="button"' +
         ' aria-pressed="' + (enabled ? 'true' : 'false') + '"' +
         '>' +
-        '<svg class="ico" data-icon="reduce-one.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg>' +
+        resToggleIcon(enabled) +
       '</button>' +
     '</div>';
   card.querySelector('.res-toggle-btn').onclick = async (e) => {
