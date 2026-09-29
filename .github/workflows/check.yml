@@ -1,13 +1,12 @@
 name: Check Newest Package
 
-# 正确配置：无 branches，无跨仓库错误
 on:
-  # 手动触发（保留）
+  # 手动触发
   workflow_dispatch:
-  # 每天 2 次检查（极低频率，绝对安全，不会触发限流）
+  # 每天 2 次 (UTC 00:00 / 12:00 = 北京时间 08:00 / 20:00)
   schedule:
-    - cron: '0 0 * * *'   # UTC 00:00 = 北京时间 08:00
-    - cron: '0 12 * * *'  # UTC 12:00 = 北京时间 20:00
+    - cron: '0 0 * * *'
+    - cron: '0 12 * * *'
 
 jobs:
   check-and-run:
@@ -16,8 +15,7 @@ jobs:
       contents: read
 
     # runner 默认是 UTC, 而笔记里的时间戳按北京时间写入/比较, 所以固定时区。
-    # 原来用第三方 szenius/set-timezone, 它依赖已废弃的 Node20, 换成 TZ 环境变量
-    # 更稳 (Python 的 datetime.now() 会读取 TZ), 少一个第三方依赖。
+    # 用 TZ 环境变量而不是第三方 action (Python 的 datetime.now() 会读 TZ)。
     env:
       TZ: Asia/Shanghai
 
@@ -34,23 +32,15 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install requests python-dotenv
+          pip install requests
 
-      # 版本判断统一交给 UpdatePackage.py —— 它是唯一持有持久状态的一方:
-      #   · 云端笔记是唯一能跨次运行保存的版本状态;
-      #   · 脚本比对 "LLC 版本 / LLC 镜像是否需要刷新",
-      #     两者都无需更新时会直接 return, 既不更新笔记也不重新上传文件。
-      #
-      # 为什么删掉了原先 .last_release_tag 那层门槛:
-      #   1) CI 每次都是全新 checkout, 该缓存文件从未提交或回写仓库 (permissions 也是只读),
-      #      所以每次读取到的 last 都是空串, `latest != last` 恒成立 —— 门槛形同虚设,
-      #      每次运行都会执行上传流程;
-      #   2) 它只比对 LLC 的 release, 会漏掉 LLC 镜像刷新,
-      #      即使修好持久化也会在不该跳过的时候跳过。
-      - name: Run update package (版本无变化时不会更新笔记/上传文件)
+      # 版本判断统一交给 UpdatePackage.py (唯一持有持久状态的一方):
+      # 它比对零协会最新 release 与笔记里的 llc_version, 需要更新或镜像该刷新时才
+      # 下载 / 上传 / 写笔记, 都没有变化时直接返回。
+      - name: Run update check
         env:
           ADDRESS: ${{ secrets.WEBNOTE_ADDRESS }}
-          # 蓝奏云上传凭据（浏览器登录 pan.lanzou.com 后 F12 复制 cookie，过期需更新）
+          # 蓝奏云上传凭据 (浏览器登录 pan.lanzou.com 后 F12 复制 cookie, 过期需更新)
           LANZOU_YLOGIN: ${{ secrets.LANZOU_YLOGIN }}
           LANZOU_YLOGINS: ${{ secrets.LANZOU_YLOGINS }}
           LANZOU_PHPDISK_INFO: ${{ secrets.LANZOU_PHPDISK_INFO }}
