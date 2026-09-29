@@ -28,13 +28,14 @@ function switchPage(name) {
     if (typeof syncLaunchButtons === 'function') syncLaunchButtons();
   }
   if (name === 'mod_addon') {
-    // 首次进入: 强制插件模式并加载对应按钮组 (之后保持用户选择)
+    // 首次进入: 强制插件模式 (之后保持用户选择)
     if (!resInited) {
       resInited = true;
       resKind = 'addon';
-      $$('.res-tab').forEach(x => x.classList.toggle('active', x.dataset.kind === 'addon'));
-      syncResActions();
     }
+    // 每次进入都按当前分区校正 tab 高亮与右上角按钮组 ——
+    // 只在首次校正的话, 状态一旦被写脏就再也回不来了 (表现为右上角没有按钮组)
+    syncResTabs();
     // 进入即清空旧列表 + 转圈, 等本次刷新结束再整屏渲染
     // (避免"旧列表先显示 -> 拉回数据又重画一遍"看起来像刷新两次)
     enterResourcePage();
@@ -239,16 +240,18 @@ function bindEvents() {
     }
   });
   // 资源管理页: 插件/Mod 切换 (按钮组随之切换)
-  $$('.res-tab').forEach(t => t.addEventListener('click', () => {
-    $$('.res-tab').forEach(x => x.classList.remove('active'));
-    t.classList.add('active');
-    resKind = t.dataset.kind;
+  // 选择器必须限定 [data-kind]: 下载中心的 tab 用的是 [data-dc], 之前混在一起,
+  // 点下载中心的 tab 会把 resKind 写成 undefined, 于是资源页右上角两组按钮全隐藏。
+  $$('.res-tab[data-kind]').forEach(t => t.addEventListener('click', () => {
+    const kind = t.dataset.kind;
+    if (kind !== 'addon' && kind !== 'mod') return;
+    resKind = kind;
     resPage = 1;
-    syncResActions();
+    syncResTabs();
     renderResList();
   }));
   // 初始化按钮组状态 (默认插件分区)
-  syncResActions();
+  syncResTabs();
   on(termBody, 'scroll', () => {
     termAutoScroll = (termBody.scrollTop + termBody.clientHeight >= termBody.scrollHeight - 4);
   });
