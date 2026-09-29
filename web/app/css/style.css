@@ -674,6 +674,19 @@ body.modal-open .res-card {
   background: transparent; border: none;
   filter: drop-shadow(0 4px 10px rgba(0,0,0,.4));
 }
+/* 图标容器: 给右下角的"已禁用"角标做定位参照 (尺寸与 .res-icon 一致) */
+.res-icon-wrap { position: relative; display: block; width: 58px; height: 58px; flex-shrink: 0; }
+/* 已禁用角标: 白色圆圈蒙版 + 禁用图标; 默认不显示, 只看 .res-card.disabled */
+.res-off-badge {
+  position: absolute; right: -3px; bottom: -3px;
+  width: 20px; height: 20px; border-radius: 50%;
+  background: #fff; color: #1f1f1f;
+  display: none; align-items: center; justify-content: center;
+  box-shadow: 0 0 0 1px rgba(0,0,0,.10), 0 1px 4px rgba(0,0,0,.35);
+  pointer-events: none;
+}
+.res-off-badge .ico { width: 12px; height: 12px; }
+.res-card.disabled .res-off-badge { display: flex; }
 .res-info { min-width: 0; flex: 1; }
 .res-title-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .res-title { font-size: 15px; font-weight: 600; color: var(--text); }
