@@ -66,6 +66,7 @@ const ICONS = {
   write: 'write.svg',
   zoomIn: 'zoom-in.svg',
   zoomOut: 'zoom-out.svg',
+  checkOne: 'check-one.svg',
 };
 
 function ICON_URL(name) {
