@@ -250,7 +250,12 @@ function buildResCard(item) {
   card.className = 'res-card' + (enabled ? '' : ' disabled');
   card.innerHTML =
     '<div class="res-card-main">' +
-      '<img class="res-icon" src="' + (item.icon || PROJECT_ICON) + '" alt="" onerror="this.src=\'' + PROJECT_ICON + '\'">' +
+      '<span class="res-icon-wrap">' +
+        '<img class="res-icon" src="' + (item.icon || PROJECT_ICON) + '" alt="" onerror="this.src=\'' + PROJECT_ICON + '\'">' +
+        // 右下角"已禁用"角标 (白色圆圈蒙版 + 禁用图标): 显隐交给 CSS 的
+        // .res-card.disabled 控制, 就地切换时不必再动 DOM
+        '<span class="res-off-badge" title="已禁用">' + iconSvg('close') + '</span>' +
+      '</span>' +
       '<div class="res-info">' +
         '<div class="res-title-row">' +
           '<span class="res-title">' + esc(name) +
