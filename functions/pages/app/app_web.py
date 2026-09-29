@@ -3130,6 +3130,8 @@ def _start_game_state_watcher(window_ref):
       · 关闭游戏之后 —— 前端必须能把按钮从"关闭游戏"收敛回"启动游戏"。
     之前只在状态跳变时推一次, 一旦前端错过该事件 (或本地判断错), 按钮就再也
     回不到正确形态, 正是"关闭后仍显示关闭进程"的直接原因。
+    现在再加一道保险: 状态没变也每 10 秒补推一次, 让按钮最多 10 秒就能自己收敛,
+    不需要用户重启启动器 (重启解决不了的那种"卡死"就是这么来的)。
     """
     def _push(win, alive, busy):
         """推送并返回是否成功 (失败则下轮重试, 不记入已知状态)"""
@@ -3144,6 +3146,7 @@ def _start_game_state_watcher(window_ref):
     def _run():
         last = None
         last_busy = None
+        last_push = 0.0
         gone = 0
         while True:
             win = window_ref.get("win") if window_ref else None
@@ -3155,9 +3158,13 @@ def _start_game_state_watcher(window_ref):
                 gone = 0
                 alive = _game_process_running()
                 busy = _any_game_process_running()
-                if (alive != last or busy != last_busy) and _push(win, alive, busy):
+                # 状态变化时立刻推; 没变化也每 10 秒补推一次 —— 前端漏掉/忽略了某次
+                # 事件 (或它自己的本地判断被写脏) 时, 按钮还能自己收敛回正确形态
+                if (alive != last or busy != last_busy
+                        or time.time() - last_push > 10) and _push(win, alive, busy):
                     last = alive   # 只有推送成功才记为已知, 否则下轮重试
                     last_busy = busy
+                    last_push = time.time()
             time.sleep(2)
 
     threading.Thread(target=_run, daemon=True).start()

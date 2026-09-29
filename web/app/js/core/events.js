@@ -277,4 +277,10 @@ function bindEvents() {
   watchHeavyAnimations();
   // 背景点击预览用
   window.addEventListener('resize', () => {});
+
+  // 从游戏切回启动器时立刻回读一次真实状态: 用户基本都是在游戏里退出后再切回来,
+  // 这时按钮应当马上从"关闭游戏"变回"启动游戏" (后端每 10 秒还有一次补推兜底)
+  window.addEventListener('focus', () => {
+    if (typeof syncLaunchButtons === 'function') syncLaunchButtons();
+  });
 }
