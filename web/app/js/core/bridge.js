@@ -112,8 +112,10 @@ window.__onEvent = function (event, data) {
     toast('流程已中止', 'warn', 3000);
   } else if (event === 'game_state') {
     // 游戏进程存活状态变化: 主页按钮在"启动游戏"与"关闭游戏"间切换
+    // game_alive = 身份校验过的本机游戏; game_busy = 存在任何同名进程 (禁汉化更新用)
     if (typeof launchBtnState !== 'undefined' && data) {
       launchBtnState.gameAlive = !!data.game_alive;
+      if (typeof data.game_busy === 'boolean') launchBtnState.gameBusy = data.game_busy;
       if (typeof renderLaunchButtons === 'function') renderLaunchButtons();
     }
   } else if (event === 'dialog') {
@@ -136,7 +138,10 @@ window.__onEvent = function (event, data) {
     //     高于 gameAlive, 结果 gameAlive=true 被忽略, 显示不出"关闭游戏";
     //   · 而且此时流程已走完所有中止检查点, 用户再点中止也等不到
     //     pipeline_aborted, 按钮会永久卡死。
-    if (typeof launchBtnState !== 'undefined') launchBtnState.gameAlive = true;
+    if (typeof launchBtnState !== 'undefined') {
+      launchBtnState.gameAlive = true;
+      launchBtnState.gameBusy = true;   // 游戏刚起来, 同名进程必然在
+    }
     if (typeof finishPipelineUI === 'function') finishPipelineUI();
     else if (typeof renderLaunchButtons === 'function') renderLaunchButtons();
   } else if (event === 'game_exited') {
