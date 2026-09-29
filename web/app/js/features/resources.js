@@ -270,7 +270,7 @@ function buildResCard(item) {
         '<img class="res-icon" src="' + (item.icon || PROJECT_ICON) + '" alt="" onerror="this.src=\'' + PROJECT_ICON + '\'">' +
         // 右下角"已禁用"角标 (白色圆圈蒙版 + 禁用图标): 显隐交给 CSS 的
         // .res-card.disabled 控制, 就地切换时不必再动 DOM
-        '<span class="res-off-badge" title="已禁用">' + iconSvg('close') + '</span>' +
+        '<span class="res-off-badge" title="已禁用">' + iconSvg('reduceOne') + '</span>' +
       '</span>' +
       '<div class="res-info">' +
         '<div class="res-title-row">' +

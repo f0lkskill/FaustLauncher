@@ -3022,7 +3022,7 @@ def _game_process_pids():
     if not pids:
         if _game_pid_log["kept"]:
             print("[游戏] LimbusCompany.exe 已不在运行")
-        _game_pid_log.update(kept=[], rejected=[])
+        _game_pid_log.update(kept=None, rejected=None) # type: ignore
         return []
 
     own_pid = os.getpid()
@@ -3053,7 +3053,7 @@ def _game_process_pids():
             print(f"[游戏] 认定本机游戏正在运行: PID {', '.join(detail)}")
         elif _game_pid_log["kept"]:
             print("[游戏] 本机游戏已退出 (可能只剩同名残留进程)")
-        _game_pid_log.update(kept=kept, rejected=rejected)
+        _game_pid_log.update(kept=kept, rejected=rejected) # type: ignore
     return kept
 
 

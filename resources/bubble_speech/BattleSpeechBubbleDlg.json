@@ -7771,6 +7771,131 @@
       "dlg": "<color=#ee342b>把你们统统解体咯。</color>"
     },
     {
+      "id": "battle_select_10917_1",
+      "desc": "############ 高级定制::改衣室 罗佳 17 ############",
+      "dlg": "<color=#f5f53d>……那个要和怎样的布片缝合呢。</color>"
+    },
+    {
+      "id": "battle_endcommand_10917_1",
+      "desc": "",
+      "dlg": "<color=#f5f53d>以线穿针。</color>"
+    },
+    {
+      "id": "battle_enemy_break_10917_1",
+      "desc": "",
+      "dlg": "<color=#f5f53d>沿着布纹……</color>"
+    },
+    {
+      "id": "battle_kill_10917_1",
+      "desc": "",
+      "dlg": "<color=#f5f53d>……收尾吧。</color>"
+    },
+    {
+      "id": "battle_break_10917_1",
+      "desc": "",
+      "dlg": "<color=#f5f53d>……悬于细线的生命。</color>"
+    },
+    {
+      "id": "battle_dead_10917_1",
+      "desc": "",
+      "dlg": "<color=#f5f53d>断了呢……连这条线都……</color>"
+    },
+    {
+      "id": "battle_s2_10917_1_1",
+      "desc": "교전 뷰 상태에서 합 승리하여 2번 스킬 사용 시",
+      "dlg": "<color=#f5f53d>刺(Pique)。</color>"
+    },
+    {
+      "id": "battle_s2_10917_1_2",
+      "desc": "교전 뷰 상태에서 합 승리하여 2번 스킬 사용 시",
+      "dlg": "<color=#f5f53d>收线(Reprends)！</color>"
+    },
+    {
+      "id": "battle_s3_10917_1_a_1",
+      "desc": "교전 뷰 상태에서 합 승리하여 3번 스킬 사용 시",
+      "dlg": "<color=#f5f53d>跑吧，纺锤(courez, fuseaux)！</color>"
+    },
+    {
+      "id": "battle_s3_10917_1_b_1",
+      "desc": "교전 뷰 상태에서 합 승리하여 3번 스킬 사용 시",
+      "dlg": "<color=#f5f53d>不论是相互纠缠的。</color>"
+    },
+    {
+      "id": "battle_s3_10917_1_b_1-01",
+      "desc": "교전 뷰 상태에서 합 승리하여 3번 스킬 사용 시",
+      "dlg": "<color=#f5f53d>不论是相互纠缠的。</color>"
+    },
+    {
+      "id": "battle_s3_10917_1_b_2",
+      "desc": "교전 뷰 상태에서 합 승리하여 3번 스킬 사용 시",
+      "dlg": "<color=#f5f53d>还是厚重的。</color>"
+    },
+    {
+      "id": "battle_s3_10917_1_b_2-01",
+      "desc": "교전 뷰 상태에서 합 승리하여 3번 스킬 사용 시",
+      "dlg": "<color=#f5f53d>还是厚重的。</color>"
+    },
+    {
+      "id": "battle_s3_10917_1_b_3",
+      "desc": "교전 뷰 상태에서 합 승리하여 3번 스킬 사용 시",
+      "dlg": "<color=#f5f53d>全部贯穿。</color>"
+    },
+    {
+      "id": "battle_s3_10917_1_b_3-01",
+      "desc": "교전 뷰 상태에서 합 승리하여 3번 스킬 사용 시",
+      "dlg": "<color=#f5f53d>全部贯穿。</color>"
+    },
+    {
+      "id": "battle_special_10917_1",
+      "desc": "아군을 대상으로 1번 스킬 사용",
+      "dlg": "<color=#f5f53d>修衣(Retouche)。</color>"
+    },
+    {
+      "id": "battle_special_10917_2",
+      "desc": "1-1스킬 사용시 (적이 보유한 가위날 0 -> 1)",
+      "dlg": "<color=#f5f53d>衣架(Cintre)。</color>"
+    },
+    {
+      "id": "battle_special_10917_3_a",
+      "desc": "1-1스킬 사용시 (적이 보유한 가위날 1 -> 2)",
+      "dlg": "<color=#f5f53d>衣架(Cintre)。刺(Pique)！</color>"
+    },
+    {
+      "id": "battle_special_10917_3_a-01",
+      "desc": "1-1스킬 사용시 (적이 보유한 가위날 1 -> 2)",
+      "dlg": "<color=#f5f53d>衣架(Cintre)。刺(Pique)！</color>"
+    },
+    {
+      "id": "battle_special_10917_3_b",
+      "desc": "1-1스킬 사용시 (적이 보유한 가위날 1 -> 2)",
+      "dlg": "<color=#f5f53d>沿着裁线。</color>"
+    },
+    {
+      "id": "battle_special_10917_3_b-01",
+      "desc": "1-1스킬 사용시 (적이 보유한 가위날 1 -> 2)",
+      "dlg": "<color=#f5f53d>缝合吧！</color>"
+    },
+    {
+      "id": "battle_special_10917_4_a",
+      "desc": "2-1스킬 사용시",
+      "dlg": "<color=#f5f53d>组合吧(Rassemble)。链式锁边(surfiler à la main)。</color>"
+    },
+    {
+      "id": "battle_special_10917_4_b",
+      "desc": "2-1스킬 사용시",
+      "dlg": "<color=#f5f53d>将那充满热切期望的眼神，为你剪去吧。</color>"
+    },
+    {
+      "id": "battle_special_10917_4_c",
+      "desc": "2-1스킬 사용시",
+      "dlg": "<color=#f5f53d>再一次(Une de plus)！</color>"
+    },
+    {
+      "id": "battle_special_10917_4_c-01",
+      "desc": "2-1스킬 사용시",
+      "dlg": "<color=#f5f53d>再一次(Une de plus)！</color>"
+    },
+    {
       "id": "battle_select_11001_1",
       "desc": "############ LCB 罪人 辛克莱 1 ############",
       "dlg": "<color=#8b9c15>我做错了什么吗……？</color>"
