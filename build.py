@@ -655,8 +655,8 @@ class BuildGUI:
 
 if __name__ == '__main__':
 
-    upload_version_info("FaustLauncher.version_info", "unknown", 'test')
-    exit(0)
+    # upload_version_info("FaustLauncher.version_info", "unknown", 'test')
+    # exit(0)
 
     os.chdir(os.path.dirname(os.path.abspath(__file__)))
     try:
