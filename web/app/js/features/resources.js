@@ -7,7 +7,7 @@
  *   · 资源详情模态窗口(设置表单自动保存 + 卸载等操作)
  *   · 进入本页的加载态: 立刻清空旧列表 + 转圈, 直到本次刷新结束再渲染
  * 本文件提供:
- *  函数: syncResActions / bindResReinstallButtons / refreshMods / renderResFromCache / resNeedsFetch /
+ *  函数: normalizeResKind / syncResTabs / syncResActions / bindResReinstallButtons / refreshMods / renderResFromCache / resNeedsFetch /
  *        setResLoading / enterResourcePage / confirmReinstall / renderResList / renderResPagination /
  *        authorLinksHtml / buildResCard / renderSettingsFields / collectSettingsFields / openResModal
  *  状态/常量: resKind / resPage / RES_PAGE_SIZE / resSearch / resAddons / resMods / resRefreshing / resRefreshedAt / RES_REFRESH_GAP / SETTING_LABELS
@@ -24,11 +24,27 @@ let resSearch = '';             // 资源管理搜索词
 let resAddons = [];             // 插件列表
 let resMods = [];               // Mod 列表
 
-// 按当前分区同步按钮组显示
+// 分区取值兜底: 只认 addon / mod, 其余 (undefined / 未知值) 一律当插件分区。
+// 否则 syncResActions 会把两组按钮同时隐藏 —— 资源页右上角直接变成空白。
+function normalizeResKind() {
+  if (resKind !== 'addon' && resKind !== 'mod') resKind = 'addon';
+  return resKind;
+}
+
+// 按当前分区同步 tab 高亮与右上角按钮组 (限定 [data-kind], 不碰下载中心的 [data-dc])
+function syncResTabs() {
+  const kind = normalizeResKind();
+  $$('.res-tab[data-kind]').forEach(x => x.classList.toggle('active', x.dataset.kind === kind));
+  // tab 与按钮组必须一起动: 只切 tab 的话会出现"tab 亮着 Mod、右上角还是插件按钮组"
+  syncResActions();
+}
+
+// 按当前分区同步右上角按钮组显示
 function syncResActions() {
+  const kind = normalizeResKind();
   const a = $('#res-actions-addon'), m = $('#res-actions-mod');
-  if (a) a.hidden = resKind !== 'addon';
-  if (m) m.hidden = resKind !== 'mod';
+  if (a) a.hidden = kind !== 'addon';
+  if (m) m.hidden = kind !== 'mod';
 }
 
 function bindResReinstallButtons() {
