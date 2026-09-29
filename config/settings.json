@@ -3,7 +3,7 @@
         "name": "启动器皮肤",
         "type": "string",
         "default": "",
-        "value": "",
+        "value": "faust",
         "description": "当前启用的启动器皮肤, 只能在“玻璃窗”页面切换"
     },
     "game_path": {
@@ -73,7 +73,7 @@
         "name": "用户名",
         "type": "string",
         "default": "Player",
-        "value": "Player",
+        "value": "folkskill",
         "description": "你的用户名，将显示在边狱巴士的个人车票上。",
         "page": "美化"
     },
@@ -412,8 +412,8 @@
     "version_info": {
         "name": "版本信息",
         "type": "UNABLE_TO_EDIT",
-        "default": "V0.9.0-pre.1.fix.1",
-        "value": "V0.9.0-pre.1.fix.1",
+        "default": "V0.9.0-pre.2",
+        "value": "V0.9.0-pre.2",
         "description": "当前应用程序的版本信息"
     },
     "mems": {

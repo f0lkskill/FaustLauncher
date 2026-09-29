@@ -1,0 +1,168 @@
+/* ============================================================
+   DeepSeek 皮肤 — 变量覆盖层
+   ------------------------------------------------------------
+   与浮士德皮肤同一范式: **只覆盖 CSS 变量** (+ 少量必须用选择器表达的规则)。
+   布局 / 动画 / 透明度全部沿用默认 style.css, 所以两个皮肤不会互相打架,
+   半透明底依旧由 rgba(var(--panel-rgb), var(--panel-alpha)) 驱动,
+   也照旧受设置页「控件透明度」控制。
+
+   配色取自 DeepSeek 鲸鱼娘立绘本身 + DeepSeek 官方品牌蓝:
+     官方蓝 #4D6BFE   深海藏青 #0C1122 / #1A2340
+     主蓝紫 #54609C   亮蓝 #789CCC   冰白 #FCF0F0
+
+   ⚠ --*-rgb 系列必须是 "R, G, B" 分量格式, **不能写 #hex** ——
+     它们只被用在 rgba(var(--accent-rgb), .5) 这类位置,
+     写成 #rrggbb 会让整条声明失效 (症状: 聚焦/描边背景消失)。
+   ============================================================ */
+:root {
+  /* ---------- 深海底 ---------- */
+  --bg: #0c1122;
+  --bg-2: #111832;
+  --card: #161e38;
+  --card-2: #1c2646;
+  --border: #1b2440;
+  --border-2: #3a4670;
+  --text: #e8eefc;
+  --text-2: #a9b6d4;
+  --text-3: #6e7c9e;
+
+  /* 面板底色 (R, G, B): 换成深海藏青 -> 整套面板一起变。
+     透明度不在这里控制, 统一由 --panel-alpha / 设置项决定。 */
+  --panel-rgb: 22, 30, 56;
+  --panel-rgb-2: 28, 38, 70;
+  --panel-rgb-3: 12, 17, 34;
+  --panel-rgb-4: 255, 255, 255;
+  --term-rgb: 8, 12, 26;      /* 终端: 更深的深海黑蓝 */
+  --splash-bg: #0a0f1e;       /* 启动转圈界面底色: 跟随深海主题 */
+
+  /* 深海主题是暗色: 边框 / hover / 分隔线仍用提亮色 */
+  --tint-rgb: 255, 255, 255;
+  --scrim-rgb: 6, 9, 20;
+
+  /* ---------- 标题栏 ---------- */
+  --titlebar-from: rgba(22, 30, 56, 0.93);
+  --titlebar-to: rgba(12, 17, 34, 0.87);
+  --titlebar-border: rgba(var(--accent-rgb), 0.22);
+  /* 高亮: 与标题栏同色系但更通透 */
+  --focus-from: rgba(30, 40, 76, 0.90);
+  --focus-to: rgba(14, 20, 40, 0.38);
+
+  /* ---------- 主题色: DeepSeek 官方蓝 ---------- */
+  --accent: #4d6bfe;
+  --accent-2: #3a55e0;
+  --accent-glow: rgba(77, 107, 254, 0.34);
+  --info: #789ccc;
+  --accent-rgb: 77, 107, 254;
+  --accent-2-rgb: 58, 85, 224;
+  --accent-3-rgb: 120, 156, 204;
+  --info-rgb: 120, 156, 204;
+}
+
+/* ---- DeepSeek 视觉层 ---- */
+
+/* 标题栏: 深海底上文字要亮一些, 并带一点冰蓝 */
+#titlebar .tb-title { color: #dce6ff; }
+#titlebar .tb-btn { color: #a9b6d4; }
+#titlebar .tb-btn:hover { background: rgba(77, 107, 254, .18); color: #f2f6ff; }
+
+/* 让背景图成为环境光, 而不是把所有文字和控件冲成一片蓝。 */
+#bg-layer {
+  background:
+    radial-gradient(900px 620px at 78% -12%, rgba(77, 107, 254, .18), transparent 68%),
+    radial-gradient(700px 560px at 8% 110%, rgba(120, 156, 204, .10), transparent 68%),
+    var(--bg);
+}
+#bg-layer .bg-img.on {
+  opacity: .48;
+  filter: saturate(.88) contrast(1.06);
+}
+
+/* 侧栏增加一条很克制的品牌指示线, 活动项不再只是浅色大块。 */
+#sidebar {
+  background: linear-gradient(180deg, rgba(11, 18, 40, .90), rgba(8, 13, 29, .84));
+  border-right-color: rgba(120, 156, 204, .18);
+}
+.nav-item { position: relative; }
+.nav-item.active {
+  background: linear-gradient(100deg, rgba(77, 107, 254, .25), rgba(77, 107, 254, .07));
+  border-color: rgba(120, 156, 204, .25);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.06), 0 6px 18px rgba(4, 9, 25, .18);
+}
+.nav-item.active::before {
+  content: '';
+  position: absolute; left: -1px; top: 8px; bottom: 8px; width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: linear-gradient(180deg, #789ccc, #4d6bfe);
+  box-shadow: 0 0 12px rgba(77, 107, 254, .55);
+}
+.nav-item:hover { background: rgba(120, 156, 204, .09); }
+
+/* 卡片统一为“深色底 + 细冰蓝描边”, 避免半透明叠加后边界消失。 */
+.card, .skin-side, .skin-stage {
+  border-color: rgba(120, 156, 204, .18);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .035), 0 14px 34px rgba(3, 8, 22, .14);
+}
+.card:hover, .hero:hover, .skin-side:hover, .skin-stage:hover {
+  border-color: rgba(120, 156, 204, .42);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.05), 0 12px 30px rgba(4, 11, 30, .28), 0 0 0 1px rgba(77, 107, 254, .12);
+}
+
+/* 终端信息行 */
+.term-line.info { color: #9fb8f4; }
+
+/* 主页 hero: 左侧保持安静, 右侧让鲸鱼图标与时钟成为焦点。 */
+.hero-bg {
+  position: absolute; inset: 0;
+  background:
+    radial-gradient(620px 330px at 12% 8%, rgba(77, 107, 254, .22), transparent 68%),
+    linear-gradient(112deg, rgba(19, 29, 61, .94) 0%, rgba(12, 18, 39, .78) 55%, rgba(12, 17, 34, .34) 100%),
+    radial-gradient(420px 310px at 88% 42%, rgba(120, 156, 204, .20), transparent 70%);
+}
+.hero-aside .hero-bg-icon {
+  right: -56px; bottom: -74px; width: 320px; height: 320px;
+  opacity: .34;
+  filter: drop-shadow(0 10px 28px rgba(77, 107, 254, .38));
+}
+.hero-clock .hc-date { color: #b8c9ee; }
+.hero-clock .hc-time {
+  color: #f4f7ff;
+  text-shadow: 0 2px 18px rgba(77, 107, 254, .42);
+}
+
+/* 按钮与状态芯片: 主操作使用品牌蓝, 次要操作保持轻量。 */
+.btn-primary {
+  background: linear-gradient(135deg, #5c78ff, #3e59e6);
+  box-shadow: 0 8px 24px rgba(77, 107, 254, .30), inset 0 1px 0 rgba(255,255,255,.18);
+}
+.btn-ghost { background: rgba(120, 156, 204, .07); border-color: rgba(120, 156, 204, .20); }
+.btn-ghost:hover { background: rgba(77, 107, 254, .14); border-color: rgba(120, 156, 204, .48); }
+.chip { background: rgba(10, 16, 34, .48); border-color: rgba(120, 156, 204, .22); }
+
+/* 标签、搜索框和进度条共用同一套聚焦反馈。 */
+.res-tab, .dc-tab { background: rgba(22, 30, 56, .72); border-color: rgba(120, 156, 204, .22); }
+.res-tab.active, .dc-tab.active { background: rgba(77, 107, 254, .16); border-color: rgba(120, 156, 204, .52); }
+.res-search:focus, .res-set-row input:focus { box-shadow: 0 0 0 3px rgba(77, 107, 254, .14); }
+.progress-fill, .dc-progress-fill, .dl-fill { background: linear-gradient(90deg, #4d6bfe, #789ccc); }
+
+/* 皮肤预览区: 让背景图完整展示并保留控制栏的层次。 */
+.skin-side, .skin-stage { background: rgba(14, 22, 46, .74); }
+.skin-card { border-color: rgba(120, 156, 204, .18); }
+.skin-card.active { border-color: #789ccc; box-shadow: 0 6px 22px rgba(77, 107, 254, .28), inset 0 0 0 1px rgba(255,255,255,.08); }
+.skin-stage-bar { background: rgba(8, 13, 29, .58); }
+
+/* 滚动条也纳入主题, 避免系统灰色滚动条破坏整体观感。 */
+#main, #nav, .skin-list, .res-list, #term-body { scrollbar-color: rgba(120, 156, 204, .42) transparent; }
+
+@media (max-width: 760px) {
+  #sidebar { width: 76px; min-width: 76px; padding-left: 9px; padding-right: 9px; }
+  .brand { justify-content: center; padding-left: 0; padding-right: 0; }
+  .brand-text, .nav-item > span:last-child, .sidebar-footer { display: none; }
+  .nav-item { justify-content: center; padding-left: 10px; padding-right: 10px; }
+  .nav-ico { width: auto; }
+  #main { padding-left: 16px; padding-right: 16px; }
+  .hero-aside { width: 170px; }
+  .hero-aside .hero-bg-icon { right: -86px; opacity: .24; }
+  .hero-clock .hc-time { font-size: 42px; }
+  .skin-wrap { gap: 10px; }
+  .skin-side { width: 158px; }
+}

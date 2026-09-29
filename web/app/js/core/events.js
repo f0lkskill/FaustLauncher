@@ -53,6 +53,9 @@ function switchPage(name) {
     // 玻璃窗: 首次进入才拉取皮肤列表 (之后保持, 切换都在页内完成)
     enterSkinsPage();
   }
+  if (name === 'user') {
+    enterUserPage();
+  }
   if (name === 'about') {
     if (!aboutData) loadAbout();
     else setAboutIndex(aboutIdx);
@@ -157,6 +160,7 @@ function bindEvents() {
   }
   // 导航
   $$('.nav-item').forEach(b => b.addEventListener('click', () => switchPage(b.dataset.page)));
+  if (typeof bindUserEvents === 'function') bindUserEvents();
   // 主页按钮
   on('#btn-launch', 'click', onLaunch);
   on('#btn-translate', 'click', onTranslate);

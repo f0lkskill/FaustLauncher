@@ -1,9 +1,13 @@
 {
     "name": "浮士德",
     "id": "faust",
-    "description": "浮士德皮肤，用于显示浮士德的对话和技能。",
+    "description": "浮士德风格启动器皮肤（V2026.9.27），一个默认的，启动器自带的浅色皮肤。\n主要是简约风，适合追求简洁的用户。",
     "authors": {
         "FolkSkill": "https://space.bilibili.com/599331034"
     },
-    "theme_color": "#FFFFFF"
+    "theme_color": "#FFFFFF",
+    "unlock": {
+        "type": "free",
+        "description": "启动器自带的免费皮肤"
+    }
 }
