@@ -68,6 +68,32 @@ def api_base() -> str:
 
 
 # ============================================================
+# 日志脱敏
+# ------------------------------------------------------------
+# 日志会进启动器的终端面板, 可能被截图或贴出来, 所以完整用户 ID 一律打码;
+# Cookie / 签名 / 令牌这类凭据只报"存没存", 绝不打印内容。
+# ============================================================
+def mask_uid(uid) -> str:
+    """日志用的打码用户 ID: 保留 `FL-` 前缀与末 2 位, 中间全部遮掉"""
+    text = str(uid or "").strip()
+    if not text:
+        return "(空)"
+    head = (text.split("-", 1)[0] + "-") if "-" in text else ""
+    rest = len(text) - len(head)
+    if rest <= 4:
+        return head + "•" * rest
+    return head + "•" * (rest - 2) + text[-2:]
+
+
+def _safe_path(path: str) -> str:
+    """日志里的请求路径: 路径上带的用户 ID 同样要打码"""
+    marker = "/api/user/"
+    if path.startswith(marker):
+        return marker + mask_uid(path[len(marker):])
+    return path
+
+
+# ============================================================
 # 会话 (requests.Session + 登录 Cookie 持久化)
 # ============================================================
 def _restore_cookies(session, base: str) -> None:
@@ -79,13 +105,17 @@ def _restore_cookies(session, base: str) -> None:
     if not isinstance(cookies, dict):
         return
     host = urlsplit(base).hostname or ""
+    restored = 0
     for name in _LOGIN_COOKIES:
         value = cookies.get(name)
         if isinstance(value, str) and value:
             try:
                 session.cookies.set(name, value, domain=host, path="/")
+                restored += 1
             except Exception:
                 pass
+    if restored:
+        print(f"[用户API] 已载入本地登录态 ({host})")
 
 
 def _save_cookies(session) -> None:
@@ -103,21 +133,26 @@ def _save_cookies(session) -> None:
     try:
         os.makedirs(os.path.dirname(path), exist_ok=True)
         write_json(path, {"cookies": cookies, "saved_at": time.time()}, indent=4, fsync=True)
+        print("[用户API] 已保存登录态 (login_user / login_sig, 内容不打印)")
     except Exception as exc:
-        print(f"[用户] 保存登录态失败: {exc}")
+        print(f"[用户API] 保存登录态失败: {exc}")
 
 
 def clear_session() -> None:
     """清掉本地登录态 (Cookie 文件 + 内存会话)"""
     global _session, _session_base
     with _lock:
+        removed = False
         try:
             if os.path.isfile(session_file()):
                 os.remove(session_file())
+                removed = True
         except Exception as exc:
-            print(f"[用户] 清除登录态失败: {exc}")
+            print(f"[用户API] 清除登录态失败: {exc}")
         _session = None
         _session_base = ""
+        if removed:
+            print("[用户API] 已清除本地登录态")
 
 
 def has_session() -> bool:
@@ -147,22 +182,29 @@ def _get_session():
 # 统一请求
 # ============================================================
 def _request(method: str, path: str, payload: dict | None = None,
-             keep_cookies: bool = False) -> dict:
+             keep_cookies: bool = False, note: str = "") -> dict:
     """发一次请求, 统一返回:
 
         {"ok": bool, "data": dict, "error": str, "status": int, "offline": bool}
 
     · offline=True 表示压根没连上服务端 (断网/超时), 与"服务端明确拒绝"区分开;
-    · 失败原因优先用服务端给的 `msg` (它的文案已经足够给用户看)。
+    · 失败原因优先用服务端给的 `msg` (它的文案已经足够给用户看);
+    · 每次调用都会打印一行 `[用户API] ...` 日志 (方法/路径/状态码/耗时),
+      `note` 用来补充业务上下文 (例如打码后的用户 ID), 路径上的 ID 也会自动打码。
     """
     url = api_base() + path
+    label = f"{method} {_safe_path(path)}" + (f" [{note}]" if note else "")
+    started = time.time()
     try:
         session = _get_session()
         resp = session.request(method, url, json=payload,
                                timeout=(CONNECT_TIMEOUT, READ_TIMEOUT))
     except Exception as exc:
+        cost = time.time() - started
+        print(f"[用户API] {label} 连接失败: {type(exc).__name__} ({cost:.2f}s)")
         return {"ok": False, "data": {}, "status": 0, "offline": True,
                 "error": f"无法连接服务端（{type(exc).__name__}），请检查网络后重试"}
+    cost = time.time() - started
 
     status = int(getattr(resp, "status_code", 0) or 0)
     data = {}
@@ -174,6 +216,7 @@ def _request(method: str, path: str, payload: dict | None = None,
         data = {}
 
     if status == 200 and data.get("ok"):
+        print(f"[用户API] {label} -> {status} 成功 ({cost:.2f}s)")
         if keep_cookies:
             _save_cookies(session)
         return {"ok": True, "data": data, "error": "", "status": status, "offline": False}
@@ -193,6 +236,7 @@ def _request(method: str, path: str, payload: dict | None = None,
                    404: "该用户不存在", 405: "服务端不支持这个请求",
                    413: "请求内容过大", 500: "服务端内部错误"}.get(
                        status, f"服务端返回 {status or '未知状态'}")
+    print(f"[用户API] {label} -> {status} 失败: {msg} ({cost:.2f}s)")
     return {"ok": False, "data": data, "error": msg, "status": status, "offline": False}
 
 
@@ -217,12 +261,14 @@ def register(uid: str, user_name: str | None = None, skins=None) -> dict:
         payload["user_name"] = str(user_name).strip()
     if skins is not None:
         payload["skins"] = [str(s) for s in (skins or [])]
-    return _request("POST", "/api/register", payload, keep_cookies=True)
+    return _request("POST", "/api/register", payload, keep_cookies=True,
+                    note=f"id={mask_uid(uid)}")
 
 
 def login(uid: str) -> dict:
     """用用户 ID 登录 (要求该 ID **已存在**; 新环境请先用 register)"""
-    return _request("POST", "/api/login", {"id": str(uid or "").strip()}, keep_cookies=True)
+    return _request("POST", "/api/login", {"id": str(uid or "").strip()}, keep_cookies=True,
+                    note=f"id={mask_uid(uid)}")
 
 
 def logout() -> dict:
@@ -239,14 +285,17 @@ def me() -> dict:
 
 def push_skins(skins) -> dict:
     """整体替换**自己**的皮肤列表 (调用方负责先与云端取并集)"""
-    return _request("POST", "/api/me/skins", {"skins": [str(s) for s in (skins or [])]})
+    items = [str(s) for s in (skins or [])]
+    return _request("POST", "/api/me/skins", {"skins": items}, note=f"{len(items)} 项")
 
 
 def push_name(name: str) -> dict:
     """设置**自己**的昵称"""
-    return _request("POST", "/api/me/name", {"user_name": str(name or "").strip()})
+    clean = str(name or "").strip()
+    return _request("POST", "/api/me/name", {"user_name": clean}, note=f"昵称={clean}")
 
 
 def public_user(uid: str) -> dict:
     """按用户 ID 读公开资料 (无需登录)"""
-    return _request("GET", "/api/user/" + quote(str(uid or "").strip(), safe=""))
+    return _request("GET", "/api/user/" + quote(str(uid or "").strip(), safe=""),
+                    note=f"id={mask_uid(uid)}")

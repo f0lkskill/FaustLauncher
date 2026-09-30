@@ -25,7 +25,7 @@ from ctypes import wintypes
 
 from functions.base import user_api
 from functions.base.common.json_io import read_json, write_json
-from functions.base.user_api import user_data_dir
+from functions.base.user_api import mask_uid, user_data_dir
 
 _USER_LOCK = threading.RLock()
 _USER_FILE_NAME = "settings.json"
@@ -324,6 +324,7 @@ def _apply_user_name(settings_manager, name: str) -> str:
         if str(settings_manager.get_setting("user_name") or "") != name:
             settings_manager.set_setting("user_name", name)
             settings_manager.save_settings()
+            print(f"[用户] 服务端昵称已写回设置项: {name}")
     except Exception as exc:
         print(f"[用户] 同步昵称到设置项失败: {exc}")
     return name
@@ -366,16 +367,22 @@ def _server_identity(uid: str, defaults: dict | None = None) -> tuple[dict | Non
         if remote_id == uid:
             return result["data"], None
         # 会话里是另一个账号 (例如本地身份被改过): 下面重新登记成本地这个 ID
+        print(f"[用户] 本地登录态属于另一个账号, 重新登记 (账号 {mask_uid(uid)})")
 
     reg = user_api.register(uid, **dict(defaults or {}))
     if reg.get("ok"):
+        created = (reg.get("data") or {}).get("created")
+        print(f"[用户] 注册接口确认账号 (账号 {mask_uid(uid)}, "
+              f"{'新建' if created else '已存在, 未改动任何数据'})")
         return reg["data"], None
     if reg.get("offline"):
         return None, reg
 
     # 注册被拒 (格式不合规 / 需要令牌): 已存在的账号仍可登录
+    print(f"[用户] 注册被拒 (HTTP {reg.get('status')}: {reg.get('error')}), 退回登录接口")
     login_result = user_api.login(uid)
     if login_result.get("ok"):
+        print(f"[用户] 登录接口成功 (账号 {mask_uid(uid)})")
         return login_result["data"], None
     return None, (login_result if login_result.get("error") else reg)
 
@@ -396,19 +403,26 @@ def sync_user(settings_manager=None) -> dict:
         local_name = ""
         if settings_manager is not None:
             local_name = str(settings_manager.get_setting("user_name") or "").strip()
+        local_skins = list(_value(local, "unlocked_skins", []))
+        print(f"[用户] 开始同步: 账号 {mask_uid(uid)}, 本地皮肤 {len(local_skins)} 项")
+
         # 建档初值用本地现状: 新环境第一次运行就能把自己的昵称/皮肤一次带上去
         # (ID 已存在时 register 是幂等的, 这些初值不会覆盖服务端数据)
         data, err = _server_identity(uid, {
             "user_name": local_name,
-            "skins": list(_value(local, "unlocked_skins", [])),
+            "skins": local_skins,
         })
         if data is None:
             err = err or {}
+            message = err.get("error") or "云端读取失败"
+            print(f"[用户] 同步失败: {message}")
             return {"ok": False, "offline": bool(err.get("offline")), "user": local,
-                    "error": err.get("error") or "云端读取失败"}
+                    "error": message}
 
         remote_skins = [str(s).strip() for s in (data.get("skins") or []) if str(s).strip()]
-        merged = _merge_skins(_value(local, "unlocked_skins", []), remote_skins)
+        merged = _merge_skins(local_skins, remote_skins)
+        print(f"[用户] 皮肤对比: 本地 {len(local_skins)} 项 / 服务端 {len(remote_skins)} 项 "
+              f"-> 并集 {len(merged)} 项")
 
         # 服务端缺的补上去 (并集策略: 只增不减)
         pushed, push_error = True, ""
@@ -417,6 +431,11 @@ def sync_user(settings_manager=None) -> dict:
             pushed = bool(push.get("ok"))
             if not pushed:
                 push_error = push.get("error") or "云端写入失败"
+                print(f"[用户] 补写服务端皮肤失败: {push_error}")
+            else:
+                print(f"[用户] 已把本地多出的皮肤补写到服务端 (共 {len(merged)} 项)")
+        else:
+            print("[用户] 皮肤两边一致, 无需写回")
 
         local["unlocked_skins"]["value"] = merged
         local = _normalize(local)
@@ -426,6 +445,8 @@ def sync_user(settings_manager=None) -> dict:
         if remote_name:
             _apply_user_name(settings_manager, remote_name)
 
+        print(f"[用户] 同步完成: 账号 {mask_uid(uid)}, 本地皮肤 {len(merged)} 项"
+              + (f"（服务端写入未完成: {push_error}）" if push_error else ""))
         return {"ok": True, "user": local, "cloud": data,
                 "pushed": pushed, "push_error": push_error}
 
@@ -442,25 +463,33 @@ def push_skins(settings_manager=None) -> dict:
         if not uid:
             return {"ok": False, "user": local, "error": "本地没有用户 ID"}
 
-        data, err = _server_identity(uid, {"skins": list(_value(local, "unlocked_skins", []))})
+        local_skins = list(_value(local, "unlocked_skins", []))
+        data, err = _server_identity(uid, {"skins": local_skins})
         if data is None:
             err = err or {}
+            message = err.get("error") or "云端读取失败"
+            print(f"[用户] 上报皮肤前读取服务端失败: {message}")
             return {"ok": False, "offline": bool(err.get("offline")), "user": local,
-                    "error": err.get("error") or "云端读取失败"}
+                    "error": message}
 
         remote = [str(s).strip() for s in (data.get("skins") or []) if str(s).strip()]
-        merged = _merge_skins(_value(local, "unlocked_skins", []), remote)
+        merged = _merge_skins(local_skins, remote)
         local["unlocked_skins"]["value"] = merged
         save_user(local)
 
         # 两边已经一致就不必再写一次 (少一次请求, 也少一次并发写入的机会)
         if sorted(merged) == sorted(remote):
+            print(f"[用户] 上报皮肤: 服务端已是最新 ({len(merged)} 项), 跳过写入")
             return {"ok": True, "user": load_user(), "cloud": data, "skipped": True}
 
+        print(f"[用户] 上报皮肤: 本地 {len(local_skins)} 项 / 服务端 {len(remote)} 项 "
+              f"-> 写入并集 {len(merged)} 项")
         result = user_api.push_skins(merged)
         if not result.get("ok"):
+            print(f"[用户] 上报皮肤失败: {result.get('error')}")
             return {"ok": False, "offline": bool(result.get("offline")),
                     "user": load_user(), "error": result.get("error") or "云端写入失败"}
+        print(f"[用户] 上报皮肤成功 ({len(merged)} 项)")
         return {"ok": True, "user": load_user(), "cloud": result.get("data") or {}}
 
 
@@ -477,13 +506,17 @@ def push_name(name: str, settings_manager=None) -> dict:
         data, err = _server_identity(uid, {"user_name": clean})
         if data is None:
             err = err or {}
-            return {"ok": False, "offline": bool(err.get("offline")),
-                    "error": err.get("error") or "云端读取失败"}
+            message = err.get("error") or "云端读取失败"
+            print(f"[用户] 上报昵称前读取服务端失败: {message}")
+            return {"ok": False, "offline": bool(err.get("offline")), "error": message}
 
+        print(f"[用户] 上报昵称: {clean}")
         result = user_api.push_name(clean)
         if not result.get("ok"):
+            print(f"[用户] 上报昵称失败: {result.get('error')}")
             return {"ok": False, "offline": bool(result.get("offline")),
                     "error": result.get("error") or "云端写入失败"}
+        print("[用户] 上报昵称成功")
         return {"ok": True, "cloud": result.get("data") or {}}
 
 
@@ -499,16 +532,19 @@ def login_user(user_id: str, settings_manager=None) -> dict:
         return {"ok": False, "error": "用户 ID 不能为空"}
     blocked = check_login_allowed()
     if blocked:
+        print(f"[用户] 登录被冷却限制拒绝: {blocked}")
         return {"ok": False, "limited": True, "error": blocked}
     with _USER_LOCK:
         old_id = str(_value(load_user(), "user_id", "")).strip()
         if old_id and old_id == uid:
             return {"ok": False, "error": "当前已经是该账号"}
 
+        print(f"[用户] 开始登录 (目标账号 {mask_uid(uid)})")
         result = user_api.login(uid)
         if not result.get("ok"):
-            return {"ok": False, "offline": bool(result.get("offline")),
-                    "error": result.get("error") or "登录失败"}
+            message = result.get("error") or "登录失败"
+            print(f"[用户] 登录失败: {message}")
+            return {"ok": False, "offline": bool(result.get("offline")), "error": message}
 
         data = result.get("data") or {}
         local = _new_user(uid)
@@ -521,7 +557,9 @@ def login_user(user_id: str, settings_manager=None) -> dict:
         if remote_name:
             _apply_user_name(settings_manager, remote_name)
 
-        print(f"[用户] 已登录账号 {uid}" + ("（管理员）" if data.get("is_admin") else ""))
+        print(f"[用户] 已登录账号 {mask_uid(uid)}"
+              + ("（管理员）" if data.get("is_admin") else "")
+              + f", 服务端皮肤 {len(_value(local, 'unlocked_skins', []))} 项")
         mark_logged_in()          # 登录成功才计入 12 小时冷却
         return {"ok": True, "user": local, "cloud": data}
 
@@ -549,8 +587,11 @@ def unlock_skin(skin_id: str, settings_manager=None) -> dict:
             skins.append(sid)
         data["unlocked_skins"]["value"] = skins
         save_user(data)
+        print(f"[用户] 皮肤 {sid} 已写入本地 (共 {len(skins)} 项), 准备上报服务端")
         # 本地刚解锁: 与云端取并集后上报。反过来用云端覆盖本地会把这个皮肤抹掉。
         pushed = push_skins(settings_manager)
+        if not pushed.get("ok"):
+            print(f"[用户] 皮肤上报未完成(本地已保留): {pushed.get('error')}")
     return {"ok": True, "user": load_user(), "sync": pushed}
 
 

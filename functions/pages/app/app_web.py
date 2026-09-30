@@ -968,6 +968,7 @@ class AppApi:
         if self._user_sync_started:
             return
         self._user_sync_started = True
+        print("[用户] 启动后台同步 (注册/确认账号 + 皮肤并集)")
         def worker():
             try:
                 from functions.base.user_system import sync_user
@@ -1578,6 +1579,7 @@ class AppApi:
         只改自己那一行, 不会像以前的整表写回那样牵连别人。
         """
         name = str(self.core.settings_manager.get_setting("user_name") or "").strip()
+        print(f"[用户] 设置项昵称已更新, 后台同步到服务端: {name}")
         def worker():
             try:
                 from functions.base.user_system import push_name
