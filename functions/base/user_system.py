@@ -206,7 +206,9 @@ def _new_user(user_id: str | None = None) -> dict:
     return {
         "user_id": _setting("用户ID", "string", uid, "", "用于跨设备同步用户解锁信息。"),
         "unlocked_skins": _setting("已解锁皮肤", "list", [], [], "已解锁的皮肤 ID 列表。"),
-        "server_profile": _setting("服务端资料", "dict", {},
+        # 注意 _setting 的签名是 (name, type_name, value, default, description) ——
+        # value 与 default 都要给, 少一个后面的参数就会错位 (曾经因此启动即崩)
+        "server_profile": _setting("服务端资料", "dict", {}, {},
                                    "服务端返回的完整用户资料快照 (原样镜像, 不挑选字段)。"),
     }
 
