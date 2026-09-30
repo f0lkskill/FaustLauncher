@@ -195,11 +195,19 @@ def _setting(name, type_name, value, default, description):
 
 
 def _new_user(user_id: str | None = None) -> dict:
-    """用户信息骨架 (结构对齐 config/settings.json)。"""
+    """用户信息骨架 (结构对齐 config/settings.json)。
+
+    `server_profile` 是服务端返回的**完整用户对象**的本地快照。
+    用户数据不会只有皮肤 (服务端还有 role / is_admin / profile_token, 以后还会有别的),
+    所以这里不逐个字段建模, 而是把服务端那一份原样镜像 —— 服务端加字段, 本地自动就有,
+    不需要在客户端逐字段改代码。
+    """
     uid = user_id or _make_user_id()
     return {
         "user_id": _setting("用户ID", "string", uid, "", "用于跨设备同步用户解锁信息。"),
         "unlocked_skins": _setting("已解锁皮肤", "list", [], [], "已解锁的皮肤 ID 列表。"),
+        "server_profile": _setting("服务端资料", "dict", {},
+                                   "服务端返回的完整用户资料快照 (原样镜像, 不挑选字段)。"),
     }
 
 
@@ -272,9 +280,52 @@ def _normalize(data: dict) -> dict:
     # 注意: 这里不再产出 auto_created 之类的账号来源标记 ——
     # 本地无法可靠区分"自动生成的号"和"用户自己的号", 误判会造成困扰。
     # 因此归一化结果里多余的旧字段会在下次保存时被自然剔除。
+    profile = _value(data, "server_profile", {})
+    if not isinstance(profile, dict):
+        profile = {}
     normalized = _new_user(uid)
     normalized["unlocked_skins"]["value"] = skins
+    # 服务端资料整份带着走 (原样镜像, 不挑字段)
+    normalized["server_profile"]["value"] = profile
     return normalized
+
+
+def _store_server_profile(data: dict, payload: dict) -> dict:
+    """把服务端返回的用户对象整份存进本地快照。
+
+    只剔除 `ok` 这个传输用的状态位, 其余字段**一个不留地**存下来 ——
+    用户数据以后不只是皮肤, 逐个字段挑选必然漏; 原样镜像才跟得上服务端。
+    """
+    if isinstance(payload, dict) and payload:
+        snapshot = {k: v for k, v in payload.items() if k != "ok"}
+        data["server_profile"]["value"] = snapshot
+    return data
+
+
+def server_profile() -> dict:
+    """本地保存的服务端资料快照 (可能为空: 还没成功同步过)"""
+    profile = _value(load_user(), "server_profile", {})
+    return profile if isinstance(profile, dict) else {}
+
+
+def _profile_keys(payload: dict) -> str:
+    """日志用: 服务端这次返回了哪些字段 (只列字段名, 不打印任何值)"""
+    if not isinstance(payload, dict):
+        return "(无)"
+    keys = sorted(k for k in payload.keys() if k != "ok")
+    return ", ".join(keys) if keys else "(空)"
+
+
+def _refresh_profile_from(payload: dict) -> dict:
+    """把服务端返回的用户对象存进本地快照并落盘, 返回更新后的本地数据。
+
+    每个写接口 (/api/me/skins、/api/me/name …) 的回包都是一份完整的用户对象,
+    顺手拿它刷新快照, 本地就始终跟服务端保持一致。
+    """
+    if not isinstance(payload, dict) or not payload:
+        return load_user()
+    save_user(_store_server_profile(load_user(), payload))
+    return load_user()
 
 
 def load_user() -> dict:
@@ -421,8 +472,11 @@ def sync_user(settings_manager=None) -> dict:
 
         remote_skins = [str(s).strip() for s in (data.get("skins") or []) if str(s).strip()]
         merged = _merge_skins(local_skins, remote_skins)
+        print(f"[用户] 服务端资料字段: {_profile_keys(data)}")
         print(f"[用户] 皮肤对比: 本地 {len(local_skins)} 项 / 服务端 {len(remote_skins)} 项 "
               f"-> 并集 {len(merged)} 项")
+        # 服务端返回的整份用户对象都存进本地快照 (皮肤只是其中一个字段)
+        local = _store_server_profile(local, data)
 
         # 服务端缺的补上去 (并集策略: 只增不减)
         pushed, push_error = True, ""
@@ -490,6 +544,7 @@ def push_skins(settings_manager=None) -> dict:
             return {"ok": False, "offline": bool(result.get("offline")),
                     "user": load_user(), "error": result.get("error") or "云端写入失败"}
         print(f"[用户] 上报皮肤成功 ({len(merged)} 项)")
+        _refresh_profile_from(result.get("data") or {})
         return {"ok": True, "user": load_user(), "cloud": result.get("data") or {}}
 
 
@@ -517,6 +572,7 @@ def push_name(name: str, settings_manager=None) -> dict:
             return {"ok": False, "offline": bool(result.get("offline")),
                     "error": result.get("error") or "云端写入失败"}
         print("[用户] 上报昵称成功")
+        _refresh_profile_from(result.get("data") or {})
         return {"ok": True, "cloud": result.get("data") or {}}
 
 
@@ -547,7 +603,9 @@ def login_user(user_id: str, settings_manager=None) -> dict:
             return {"ok": False, "offline": bool(result.get("offline")), "error": message}
 
         data = result.get("data") or {}
+        print(f"[用户] 服务端资料字段: {_profile_keys(data)}")
         local = _new_user(uid)
+        _store_server_profile(local, data)
         local["unlocked_skins"]["value"] = [str(s) for s in (data.get("skins") or []) if str(s).strip()]
         local = _normalize(local)
         if not save_user(local):
@@ -569,9 +627,13 @@ def get_user_info(settings_manager=None) -> dict:
     user_name = "Player"
     if settings_manager is not None:
         user_name = str(settings_manager.get_setting("user_name") or "Player")
+    profile = _value(data, "server_profile", {})
     return {"user": data, "user_name": user_name, "user_path": user_file(),
             "restrictions": get_restrictions(),
-            "logged_in": user_api.has_session()}
+            "logged_in": user_api.has_session(),
+            # 服务端资料的完整副本: 前端据此做"本地 <-> 服务端"的字段级对照
+            # (服务端以后新增字段, 这里不用改代码就会带出来)
+            "profile": profile if isinstance(profile, dict) else {}}
 
 
 def unlock_skin(skin_id: str, settings_manager=None) -> dict:
