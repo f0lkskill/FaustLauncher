@@ -1,40 +1,79 @@
-"""FaustLauncher 用户身份、皮肤解锁与云端同步。"""
+"""FaustLauncher 用户身份、皮肤解锁与云端同步。
+
+云端数据**一律通过服务端 API 读写** (`functions/base/user_api.py`):
+
+  · 不再读 `/note/FaustLauncher.users`, 也不再 `POST /update/` 整表覆盖
+    —— 那种写法是最后写入者胜, 客户端本地表旧一点就会成批丢用户;
+  · 服务端的 `/api/me/*` 从登录会话里取 uid, 锁内只改自己那一行,
+    结构上不可能牵连别人;
+  · 本模块**不缓存任何用户数据**, 每次同步都发真实请求。
+
+本地用户文件 (`%APPDATA%\\FaustLauncher\\user\\settings.json`) 只保存两件事:
+本机当前使用的用户 ID、以及本地已解锁的皮肤。
+"""
 
 from __future__ import annotations
 
 import ctypes
-import json
 import os
 import secrets
 import string
+import sys
 import threading
 import time
 from ctypes import wintypes
 
+from functions.base import user_api
 from functions.base.common.json_io import read_json, write_json
-from functions.base.web_config import get_webnote
+from functions.base.user_api import user_data_dir
 
 _USER_LOCK = threading.RLock()
-_USER_DIR_NAME = "FaustLauncher"
 _USER_FILE_NAME = "settings.json"
-_CLOUD_NOTE_ID = "users"
+_legacy_cache_checked = False
 
 
 def user_dir() -> str:
-    roaming = os.getenv("APPDATA")
-    if not roaming:
-        roaming = os.path.join(os.path.expanduser("~"), "AppData", "Roaming")
-    return os.path.join(roaming, _USER_DIR_NAME, "user")
+    """用户数据目录 (唯一定义在 user_api, 与登录态文件放在同一处)"""
+    return user_data_dir()
 
 
 def user_file() -> str:
     return os.path.join(user_dir(), _USER_FILE_NAME)
 
 
+def _project_root() -> str:
+    if getattr(sys, "frozen", False):
+        return os.path.dirname(os.path.abspath(sys.executable))
+    return os.path.abspath(os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), "..", ".."))
+
+
+def drop_legacy_user_cache() -> None:
+    """清理旧实现留下的用户表缓存 (启动时执行一次)。
+
+    老版本用 Webnote 读整张用户表, 会在 `cache/webnote/` 下留一份
+    `FaustLauncher.users.txt`。现在不再整表读写, 这份缓存既没有用处,
+    又可能被误当成"云端数据", 所以直接删掉。
+    """
+    global _legacy_cache_checked
+    if _legacy_cache_checked:
+        return
+    _legacy_cache_checked = True
+    try:
+        cache_dir = os.path.join(_project_root(), "cache", "webnote")
+        for name in ("FaustLauncher.users.txt", "FaustLauncher_users.txt"):
+            path = os.path.join(cache_dir, name)
+            if os.path.isfile(path):
+                os.remove(path)
+                print(f"[用户] 已清理旧版用户表缓存: {path}")
+    except Exception as exc:
+        print(f"[用户] 清理旧缓存失败(忽略): {exc}")
+
+
 # ============================================================
 # 操作冷却限制
 # ------------------------------------------------------------
-# 用户触发的更新 (改昵称 / 切换账号) 都会写云端, 需要限流:
+# 用户触发的更新 (改昵称 / 切换账号) 都会写服务端, 需要限流:
 #   · 改名: 1 小时内只能改一次
 #   · 登录: 12 小时内只能登录一次
 # 两项**独立计时** (改完名不影响登录冷却, 反之亦然)。
@@ -142,6 +181,9 @@ def mark_logged_in() -> None:
     _mark_time("login")
 
 
+# ============================================================
+# 本地用户文件
+# ============================================================
 def _setting(name, type_name, value, default, description):
     return {
         "name": name,
@@ -260,16 +302,8 @@ def save_user(data: dict) -> bool:
         return False
 
 
-def user_snapshot(data: dict | None = None, user_name: str = "") -> dict:
-    data = data or load_user()
-    return {
-        "user_name": str(user_name or "Player"),
-        "skins": list(_value(data, "unlocked_skins", [])),
-    }
-
-
 def _apply_user_name(settings_manager, name: str) -> str:
-    """把云端记录的昵称同步回设置项 (settings.json → user_name)。
+    """把服务端的昵称同步回设置项 (settings.json → user_name)。
 
     老配置里可能没有 user_name 这一项, 这时现场补一个 schema 项 ——
     SettingsManager.set_setting 对未知键直接返回 False, 不会创建。
@@ -295,108 +329,170 @@ def _apply_user_name(settings_manager, name: str) -> str:
     return name
 
 
-def _cloud_note():
-    from functions.webFunc.Webnote import Note
-    address, pwd = get_webnote(_CLOUD_NOTE_ID)
-    if not address:
-        return None
-    return Note(_CLOUD_NOTE_ID, address, pwd)
+# ============================================================
+# 服务端同步
+# ============================================================
+def _merge_skins(*lists) -> list[str]:
+    """皮肤并集 (保持先后顺序, 去空去重)"""
+    out: list[str] = []
+    for seq in lists:
+        for sid in (seq or []):
+            sid = str(sid or "").strip()
+            if sid and sid not in out:
+                out.append(sid)
+    return out
 
 
-def _read_cloud(note) -> tuple[dict, bool, str]:
-    """读取用户云笔记。
+def _server_identity(uid: str, defaults: dict | None = None) -> tuple[dict | None, dict | None]:
+    """取服务端上 `uid` 这个账号的记录, 并确保拿到可用的登录态。
 
-    Returns:
-        (数据, 是否读取成功, 失败原因)
-        —— 失败原因必须与"该 ID 不存在"区分开: 断网/线路故障时若统一报
-           "不存在该用户 ID", 用户会误以为自己的账号丢了。
+    走 `/api/register` 而不是 `/api/login` —— 服务端要求的顺序就是"先 register":
+      · ID 已存在: 幂等返回, **一个字段都不改** (不会冲掉昵称/皮肤/角色);
+      · ID 不存在: 直接建档 (新环境第一次运行走的就是这条路);
+      · 两种情况都下发登录 Cookie, 紧接着就能调 /api/me/*。
+    只有注册被拒时才退回 login (已存在的账号仍然登录得上):
+      · 服务端配了 REGISTER_TOKEN 而客户端没有令牌;
+      · 本地 ID 不是 `FL-` + 16 位的新格式 (更老版本留下的)。
+
+    Args:
+        defaults: 建档时用的初值 {"user_name": ..., "skins": [...]};
+                  对**已存在**的账号完全无影响。
+
+    Returns: (记录, 错误) —— 记录为 None 时看错误里的 error/offline/status。
     """
-    result = note.fetch_note_info(allow_refresh=True)
-    text = str((result or {}).get("note_content") or "").strip()
-    if not text:
-        if getattr(note, "last_fetch_error", "") and not getattr(note, "empty_note", False):
-            return {}, False, "云端暂时无法访问，请检查网络后重试"
-        return {"users": {}}, True, ""
-    try:
-        data = json.loads(text)
-    except Exception:
-        return {}, False, "云端用户数据格式异常，已停止本次操作"
-    if not isinstance(data, dict):
-        return {}, False, "云端用户数据格式异常，已停止本次操作"
-    return data, True, ""
+    result = user_api.me()
+    if result.get("ok"):
+        remote_id = str((result.get("data") or {}).get("id") or "")
+        if remote_id == uid:
+            return result["data"], None
+        # 会话里是另一个账号 (例如本地身份被改过): 下面重新登记成本地这个 ID
 
+    reg = user_api.register(uid, **dict(defaults or {}))
+    if reg.get("ok"):
+        return reg["data"], None
+    if reg.get("offline"):
+        return None, reg
 
-def _write_cloud(note, cloud: dict) -> bool:
-    result = note.update_note_content(json.dumps(cloud, ensure_ascii=False, indent=2))
-    return bool(result and result.get("status") == 1)
+    # 注册被拒 (格式不合规 / 需要令牌): 已存在的账号仍可登录
+    login_result = user_api.login(uid)
+    if login_result.get("ok"):
+        return login_result["data"], None
+    return None, (login_result if login_result.get("error") else reg)
 
 
 def sync_user(settings_manager=None) -> dict:
-    """启动时同步：云端同 ID 覆盖本地；没有该 ID 则上传初始化记录。"""
+    """启动 / 窗口聚焦时同步: 皮肤取**并集**, 昵称以服务端为准。
+
+    为什么是并集而不是"云端覆盖本地": 玩家自己解锁的皮肤, 或服务端某次写失败的
+    记录, 都会在下次同步时被云端旧列表抹掉。并集保证两边只增不减。
+    """
+    drop_legacy_user_cache()
     with _USER_LOCK:
         local = load_user()
-        uid = str(_value(local, "user_id", ""))
-        user_name = "Player"
+        uid = str(_value(local, "user_id", "")).strip()
+        if not uid:
+            return {"ok": False, "user": local, "error": "本地没有用户 ID"}
+
+        local_name = ""
         if settings_manager is not None:
-            user_name = str(settings_manager.get_setting("user_name") or "Player")
-        note = _cloud_note()
-        if note is None:
-            return {"ok": False, "offline": True, "user": local, "error": "未配置用户云笔记"}
-        cloud, readable, reason = _read_cloud(note)
-        if not readable:
-            return {"ok": False, "offline": True, "user": local, "error": reason}
-        users = cloud.setdefault("users", {})
-        record = users.get(uid)
-        if isinstance(record, dict):
-            # 昵称: 云端有记录就同步回设置项 (与皮肤列表同样是"云端覆盖本地")
-            remote_name = str(record.get("user_name") or "").strip()
-            if remote_name:
-                user_name = _apply_user_name(settings_manager, remote_name) or user_name
-            remote_skins = record.get("skins")
-            if isinstance(remote_skins, list):
-                local["unlocked_skins"]["value"] = list(dict.fromkeys(str(x).strip() for x in remote_skins if str(x).strip()))
-                local = _normalize(local)
-                save_user(local)
-            record["user_name"] = user_name
-            record["skins"] = list(_value(local, "unlocked_skins", []))
-        else:
-            users[uid] = user_snapshot(local, user_name)
-        if not _write_cloud(note, cloud):
-            return {"ok": False, "offline": True, "user": local, "error": "用户信息上传失败"}
-        return {"ok": True, "user": local, "cloud": users.get(uid)}
+            local_name = str(settings_manager.get_setting("user_name") or "").strip()
+        # 建档初值用本地现状: 新环境第一次运行就能把自己的昵称/皮肤一次带上去
+        # (ID 已存在时 register 是幂等的, 这些初值不会覆盖服务端数据)
+        data, err = _server_identity(uid, {
+            "user_name": local_name,
+            "skins": list(_value(local, "unlocked_skins", [])),
+        })
+        if data is None:
+            err = err or {}
+            return {"ok": False, "offline": bool(err.get("offline")), "user": local,
+                    "error": err.get("error") or "云端读取失败"}
+
+        remote_skins = [str(s).strip() for s in (data.get("skins") or []) if str(s).strip()]
+        merged = _merge_skins(_value(local, "unlocked_skins", []), remote_skins)
+
+        # 服务端缺的补上去 (并集策略: 只增不减)
+        pushed, push_error = True, ""
+        if sorted(merged) != sorted(remote_skins):
+            push = user_api.push_skins(merged)
+            pushed = bool(push.get("ok"))
+            if not pushed:
+                push_error = push.get("error") or "云端写入失败"
+
+        local["unlocked_skins"]["value"] = merged
+        local = _normalize(local)
+        save_user(local)
+
+        remote_name = str(data.get("user_name") or "").strip()
+        if remote_name:
+            _apply_user_name(settings_manager, remote_name)
+
+        return {"ok": True, "user": local, "cloud": data,
+                "pushed": pushed, "push_error": push_error}
 
 
-def push_user(settings_manager=None) -> dict:
-    """把**当前本地**用户信息 (昵称 + 已解锁皮肤) 覆盖上传到云端。
+def push_skins(settings_manager=None) -> dict:
+    """把本地皮肤列表同步到服务端。
 
-    与 sync_user 的方向相反, 专供"本地刚刚发生了变化"的场景 (解锁皮肤 / 改名):
-    这时绝不能走 sync_user —— 它会用云端旧列表覆盖本地, 刚解锁的皮肤会被抹掉。
+    先与云端取并集再整体写回 —— 服务端的 `/api/me/skins` 是"整体替换自己那一行",
+    不比一次云端就会覆盖掉别的设备刚解锁的皮肤。
     """
     with _USER_LOCK:
         local = load_user()
-        uid = str(_value(local, "user_id", ""))
-        user_name = "Player"
-        if settings_manager is not None:
-            user_name = str(settings_manager.get_setting("user_name") or "Player")
-        note = _cloud_note()
-        if note is None:
-            return {"ok": False, "offline": True, "user": local, "error": "未配置用户云笔记"}
-        cloud, readable, reason = _read_cloud(note)
-        if not readable:
-            return {"ok": False, "offline": True, "user": local, "error": reason}
-        users = cloud.setdefault("users", {})
-        users[uid] = user_snapshot(local, user_name)
-        if not _write_cloud(note, cloud):
-            return {"ok": False, "offline": True, "user": local, "error": "用户信息上传失败"}
-        return {"ok": True, "user": local, "cloud": users.get(uid)}
+        uid = str(_value(local, "user_id", "")).strip()
+        if not uid:
+            return {"ok": False, "user": local, "error": "本地没有用户 ID"}
+
+        data, err = _server_identity(uid, {"skins": list(_value(local, "unlocked_skins", []))})
+        if data is None:
+            err = err or {}
+            return {"ok": False, "offline": bool(err.get("offline")), "user": local,
+                    "error": err.get("error") or "云端读取失败"}
+
+        remote = [str(s).strip() for s in (data.get("skins") or []) if str(s).strip()]
+        merged = _merge_skins(_value(local, "unlocked_skins", []), remote)
+        local["unlocked_skins"]["value"] = merged
+        save_user(local)
+
+        # 两边已经一致就不必再写一次 (少一次请求, 也少一次并发写入的机会)
+        if sorted(merged) == sorted(remote):
+            return {"ok": True, "user": load_user(), "cloud": data, "skipped": True}
+
+        result = user_api.push_skins(merged)
+        if not result.get("ok"):
+            return {"ok": False, "offline": bool(result.get("offline")),
+                    "user": load_user(), "error": result.get("error") or "云端写入失败"}
+        return {"ok": True, "user": load_user(), "cloud": result.get("data") or {}}
+
+
+def push_name(name: str, settings_manager=None) -> dict:
+    """把昵称写到服务端**自己**的记录 (`POST /api/me/name`)"""
+    clean = str(name or "").strip()
+    if not clean:
+        return {"ok": False, "error": "昵称不能为空"}
+    with _USER_LOCK:
+        uid = str(_value(load_user(), "user_id", "")).strip()
+        if not uid:
+            return {"ok": False, "error": "本地没有用户 ID"}
+
+        data, err = _server_identity(uid, {"user_name": clean})
+        if data is None:
+            err = err or {}
+            return {"ok": False, "offline": bool(err.get("offline")),
+                    "error": err.get("error") or "云端读取失败"}
+
+        result = user_api.push_name(clean)
+        if not result.get("ok"):
+            return {"ok": False, "offline": bool(result.get("offline")),
+                    "error": result.get("error") or "云端写入失败"}
+        return {"ok": True, "cloud": result.get("data") or {}}
 
 
 def login_user(user_id: str, settings_manager=None) -> dict:
-    """按用户 ID 登录: 本地身份切换为该账号, 昵称/已解锁皮肤取云端记录。
+    """按用户 ID 登录: 本地身份切换为该账号, 昵称/皮肤取服务端记录。
 
-    刻意**不**处理被替换掉的旧账号: 旧账号的云端记录原样保留,
-    用户随时可以用它自己的 ID 登录回来 (本地也无法判断哪个号"值得留",
-    任何自动清理都可能删掉用户真实的账号)。
+    服务端会和它自己的用户表核对 (不存在直接回"用户 ID「x」不存在"), 并下发登录 Cookie。
+    切换账号时**以服务端记录为准** —— 不能把上一个账号的皮肤并过来;
+    旧账号的记录原样保留, 随时可以用它的 ID 登录回来。
     """
     uid = str(user_id or "").strip()
     if not uid:
@@ -408,29 +504,26 @@ def login_user(user_id: str, settings_manager=None) -> dict:
         old_id = str(_value(load_user(), "user_id", "")).strip()
         if old_id and old_id == uid:
             return {"ok": False, "error": "当前已经是该账号"}
-        note = _cloud_note()
-        if note is None:
-            return {"ok": False, "error": "未配置用户云笔记"}
-        cloud, readable, reason = _read_cloud(note)
-        if not readable:
-            # 读取失败绝不能报成"账号不存在", 否则用户会以为号丢了
-            return {"ok": False, "offline": True, "error": reason}
-        record = cloud.get("users", {}).get(uid)
-        if not isinstance(record, dict):
-            return {"ok": False, "error": "云端不存在该用户 ID"}
 
+        result = user_api.login(uid)
+        if not result.get("ok"):
+            return {"ok": False, "offline": bool(result.get("offline")),
+                    "error": result.get("error") or "登录失败"}
+
+        data = result.get("data") or {}
         local = _new_user(uid)
-        local["unlocked_skins"]["value"] = record.get("skins") if isinstance(record.get("skins"), list) else []
+        local["unlocked_skins"]["value"] = [str(s) for s in (data.get("skins") or []) if str(s).strip()]
         local = _normalize(local)
         if not save_user(local):
             return {"ok": False, "error": "本地用户信息保存失败"}
-        # 昵称跟随该账号的云端记录写回设置项
-        remote_name = str(record.get("user_name") or "").strip()
+
+        remote_name = str(data.get("user_name") or "").strip()
         if remote_name:
             _apply_user_name(settings_manager, remote_name)
-        print(f"[用户] 已登录账号 {uid}")
+
+        print(f"[用户] 已登录账号 {uid}" + ("（管理员）" if data.get("is_admin") else ""))
         mark_logged_in()          # 登录成功才计入 12 小时冷却
-        return {"ok": True, "user": local, "cloud": record}
+        return {"ok": True, "user": local, "cloud": data}
 
 
 def get_user_info(settings_manager=None) -> dict:
@@ -439,27 +532,31 @@ def get_user_info(settings_manager=None) -> dict:
     if settings_manager is not None:
         user_name = str(settings_manager.get_setting("user_name") or "Player")
     return {"user": data, "user_name": user_name, "user_path": user_file(),
-            "restrictions": get_restrictions()}
+            "restrictions": get_restrictions(),
+            "logged_in": user_api.has_session()}
 
 
 def unlock_skin(skin_id: str, settings_manager=None) -> dict:
     sid = str(skin_id or "").strip()
     if not sid:
         return {"ok": False, "error": "默认皮肤无需解锁"}
-    meta = skin_metadata().get(sid)
-    if not meta:
+    if not skin_metadata().get(sid):
         return {"ok": False, "error": "皮肤不存在"}
-    data = load_user()
-    skins = list(_value(data, "unlocked_skins", []))
-    if sid not in skins:
-        skins.append(sid)
+    with _USER_LOCK:
+        data = load_user()
+        skins = list(_value(data, "unlocked_skins", []))
+        if sid not in skins:
+            skins.append(sid)
         data["unlocked_skins"]["value"] = skins
         save_user(data)
-    # 本地刚解锁: 用 push 上传, 不能用 sync (否则会被云端旧列表覆盖回未解锁)
-    pushed = push_user(settings_manager)
+        # 本地刚解锁: 与云端取并集后上报。反过来用云端覆盖本地会把这个皮肤抹掉。
+        pushed = push_skins(settings_manager)
     return {"ok": True, "user": load_user(), "sync": pushed}
 
 
+# ============================================================
+# 皮肤解锁条件验证
+# ============================================================
 def _edge_title_contains(keyword: str) -> tuple[bool, str]:
     keyword = str(keyword or "DeepSeek").lower()
     found = []

@@ -140,6 +140,35 @@ def get_webnote(key: str) -> tuple[str, str]:
     return ('', '')
 
 
+def get_api_base() -> str:
+    """服务端站点根地址 (config/web_config.json → api_base)。
+
+    用于启动器的用户系统 API (`/api/login`、`/api/me/*`)。
+    没显式配 api_base 时, 从 webnote_bases 的第一个模板推导
+    (例如 `https://host/note/{key}` → `https://host`), 保证老配置也能用。
+    """
+    data = get_web_config()
+    base = data.get('api_base')
+    if isinstance(base, str) and base.strip():
+        return base.strip().rstrip('/')
+    bases = data.get('webnote_bases')
+    if isinstance(bases, str):
+        bases = [bases]
+    if isinstance(bases, (list, tuple)):
+        from urllib.parse import urlsplit
+        for item in bases:
+            text = str(item or '').strip()
+            if not text:
+                continue
+            try:
+                parts = urlsplit(text)
+            except Exception:
+                continue
+            if parts.scheme and parts.netloc:
+                return f"{parts.scheme}://{parts.netloc}"
+    return ''
+
+
 def get_lanzou_config() -> dict:
     """获取蓝奏云上传配置 (phpdisk_info/ylogin/文件夹名)，未配置时返回空 dict。"""
     data = get_web_config().get('lanzou', {})
