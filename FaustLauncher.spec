@@ -99,6 +99,9 @@ a = Analysis(
     'functions.hook.metadata_recovery.universal.extract_disasm',
     'functions.hook.metadata_recovery.universal.init_locator',
     'functions.hook.metadata_recovery.universal.layouts',
+    # 用户系统：app_web 在函数内 import 它们（走服务端 API，不再读写用户笔记），显式列一下更稳
+    'functions.base.user_system',
+    'functions.base.user_api',
     'capstone',
 ],
     hookspath=[],

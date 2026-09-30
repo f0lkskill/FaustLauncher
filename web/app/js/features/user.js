@@ -244,6 +244,8 @@ async function syncUserFromPage() {
     await refreshRestrictions();
     if (typeof loadSkins === 'function') await loadSkins();
     toast('用户信息已同步', 'success');
+    // 本地已并集成功、但写回服务端失败: 皮肤会一直留在本地, 下次同步再补传
+    if (result.push_error) toast('云端写入未完成：' + result.push_error, 'warn', 6000);
   }
 }
 

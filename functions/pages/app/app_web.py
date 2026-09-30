@@ -1573,11 +1573,15 @@ class AppApi:
         return get_restrictions()
 
     def _push_user_name(self):
-        """本地改了昵称: 后台推回云端, 避免下次启动同步时被云端旧名字覆盖。"""
+        """本地改了昵称: 后台写到服务端**自己**的记录 (POST /api/me/name)。
+
+        只改自己那一行, 不会像以前的整表写回那样牵连别人。
+        """
+        name = str(self.core.settings_manager.get_setting("user_name") or "").strip()
         def worker():
             try:
-                from functions.base.user_system import push_user
-                result = push_user(self.core.settings_manager)
+                from functions.base.user_system import push_name
+                result = push_name(name, self.core.settings_manager)
                 if not result.get("ok"):
                     print(f"[用户] 昵称上传未完成: {result.get('error', '云端不可用')}")
             except Exception as exc:
