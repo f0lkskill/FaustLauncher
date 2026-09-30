@@ -27,6 +27,8 @@ function userDataValues(data) {
     id: String(get('user_id', '')),
     skins: Array.isArray(get('unlocked_skins', [])) ? get('unlocked_skins', []) : [],
     name: String((data && data.user_name) || userNameFallback()),
+    // 服务端返回的完整资料 (原样镜像): 用户数据不只是皮肤, 这里不挑字段
+    profile: (data && data.profile && typeof data.profile === 'object') ? data.profile : {},
   };
 }
 
@@ -141,12 +143,43 @@ function renderUserId() {
   }
 }
 
+// ---------------- 服务端资料对照 ----------------
+// 用户数据不只是皮肤: 服务端返回什么字段, 这里就照原样列什么, 不在代码里写死清单。
+// 服务端以后加字段 (成就 / 收藏 / 角色…), 这张表会自动多出一行。
+function formatProfileValue(key, value) {
+  if (value === null || value === undefined) return '(空)';
+  if (Array.isArray(value)) return value.length ? value.join(', ') : '(空列表)';
+  if (typeof value === 'boolean') return value ? '是' : '否';
+  if (typeof value === 'object') return JSON.stringify(value);
+  const text = String(value);
+  // id / user 就是本机用户 ID: 跟随"显示 / 隐藏"开关, 不额外泄露
+  if (key === 'id' || key === 'user') return maskUserId(text);
+  return text.length > 80 ? text.slice(0, 77) + '…' : (text || '(空)');
+}
+
+function renderServerProfile(profile) {
+  const box = $('#user-profile-list');
+  const count = $('#user-profile-count');
+  if (!box) return;
+  const keys = Object.keys(profile || {}).sort();
+  if (count) count.textContent = keys.length ? keys.length + ' 个字段' : '';
+  if (!keys.length) {
+    box.innerHTML = '<div class="user-empty">尚未同步到服务端资料</div>';
+    return;
+  }
+  box.innerHTML = keys.map(k =>
+    '<div class="user-profile-item"><code>' + esc(k) + '</code>' +
+    '<span>' + esc(formatProfileValue(k, profile[k])) + '</span></div>'
+  ).join('');
+}
+
 function renderUserPage() {
   const values = userDataValues(userPageData);
   const name = $('#user-page-name');
   const count = $('#user-skin-count');
   if (name) name.textContent = values.name;
   renderUserId();
+  renderServerProfile(values.profile);
   if (count) count.textContent = values.skins.length + ' 个';
   const list = $('#user-skin-list');
   if (!list) return;
