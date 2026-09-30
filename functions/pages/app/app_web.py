@@ -968,7 +968,7 @@ class AppApi:
         if self._user_sync_started:
             return
         self._user_sync_started = True
-        print("[用户] 启动后台同步 (注册/确认账号 + 皮肤并集)")
+        print("[用户] 启动后台同步")
         def worker():
             try:
                 from functions.base.user_system import sync_user
@@ -976,7 +976,8 @@ class AppApi:
                 if not result.get("ok"):
                     print(f"[用户] 启动同步未完成: {result.get('error', '云端不可用')}")
             except Exception as exc:
-                print(f"[用户] 启动同步失败: {exc}")
+                # 带上异常类型: 光看消息有时分不清是参数写错还是网络问题
+                print(f"[用户] 启动同步失败: {type(exc).__name__}: {exc}")
         threading.Thread(target=worker, name="faust-user-sync", daemon=True).start()
 
     def set_window_opacity(self, alpha):
