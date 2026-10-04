@@ -148,6 +148,14 @@ def _report_unlocks(log_callback, unlocked, header: str = "") -> list:
                 fresh.append(ach)
     if not fresh:
         return []
+    # 本地落盘: 完成的成就 id 追加进用户文件 (与皮肤同一份, 见 user_system)。
+    # 成就页据此判定完成 —— 只有这里记下来, 启动器才知道"这条已经完成"。
+    # 任何异常都不许影响播报（写不进去最多是成就页少显示一条）。
+    try:
+        from functions.base.user_system import record_achievements
+        record_achievements([getattr(a, "id", "") or "" for a in fresh])
+    except Exception as exc:  # noqa: BLE001
+        log_callback(f"  [成就] 本地记录写入失败（不影响解锁）: {type(exc).__name__}: {exc}")
     if header:
         log_callback(header)
     for ach in fresh:
