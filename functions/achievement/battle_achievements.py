@@ -170,6 +170,47 @@ class StageClearTurnAchievement(BaseAchievement):
         return False
 
 
+class RailwayTotalTurnAchievement(BaseAchievement):
+    """「折射铁路某条线在 N 回合内通关」—— 数据来自 ``RWT`` 事件（**整条线**的总回合）。
+
+    与 :class:`StageClearTurnAchievement` 的区别：那个读**单关**结算统计，
+    这个读**整条线**的记录 —— ``RailwayDungeonHistoryDataByCollection::GetTotalClearTurn()``，
+    也就是进线路之前游戏显示的那个"你的最好回合数"。
+
+    ⚠ ``line_ids`` 是线路号（宿主对象上的 ``_collectionId``）。实测值会打进日志：
+        ``[战斗观测] ★ 铁路记录: 线路=N 总回合=N``
+    """
+
+    battle_driven = True
+
+    def __init__(self, ach_id: str, name: str, description: str,
+                 line_ids=(), max_turn: int = 0, rarity: str = "epic"):
+        super().__init__(ach_id, name, description, rarity)
+        self.line_ids = tuple(int(x) for x in line_ids)
+        self.max_turn = int(max_turn)
+        self.detail = ""
+
+    def check(self) -> bool:
+        if self.unlocked:
+            return True
+        try:
+            totals = battle_watch.railway_totals()
+        except Exception:  # noqa: BLE001
+            return False
+        for line, total in totals.items():
+            if self.line_ids and int(line) not in self.line_ids:
+                continue
+            if int(total) < 0:
+                continue
+            if self.max_turn and int(total) > self.max_turn:
+                continue
+            limit = f"≤{self.max_turn}T" if self.max_turn else "不限回合"
+            self.detail = f"{self.name}：线路 {line} 总回合={total}（阈值 {limit}）"
+            self.mark_unlocked()
+            return True
+        return False
+
+
 class SkillUseAchievement(BattleRuleAchievement):
     """「某个身份使用了某个技能」—— 回合边界结算（与李箱三技能成就同逻辑）。
 

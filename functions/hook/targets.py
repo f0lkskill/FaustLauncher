@@ -234,6 +234,16 @@ OBSERVE_TARGETS: tuple[ObserveTarget, ...] = (
         description="关卡结算统计（通关回合数 + 关卡 uid；铁路成就靠它）",
         resolve_stub=False,
     ),
+    # ---- 折射铁路整条线的最好回合数 ---------------------------------------
+    # 进线路前显示的那个"你的最好回合数"：无参返回 int，宿主对象上的 _collectionId
+    # 是线路号。结算事件只给单关回合，**整条线的总回合只有这里**。
+    ObserveTarget(
+        key="railway_total",
+        symbol="RailwayDungeonHistoryDataByCollection::GetTotalClearTurn",
+        kind="railway_total", fallback_rva=0x1A83AF0,
+        description="折射铁路整条线总回合（进线路前显示的最好回合数）",
+        resolve_stub=False,
+    ),
 )
 
 
@@ -290,6 +300,9 @@ BATTLE_FIELDS: dict[str, tuple[str, str, int]] = {
     "slot_clear_turn": ("StageStatisticPopupSlotData", "_clearTurn", 0x18),
     "slot_dead_count": ("StageStatisticPopupSlotData", "_deadUnitCount", 0x1C),
     "slot_ex_cleared": ("StageStatisticPopupSlotData", "_exCleared", 0x20),
+    # ---- 折射铁路整条线的总回合 ----
+    # RailwayDungeonHistoryDataByCollection._collectionId（线路号）
+    "railway_collection_id": ("RailwayDungeonHistoryDataByCollection", "_collectionId", 0x10),
 }
 
 
@@ -310,6 +323,7 @@ FOCUS_PATTERNS: tuple[str, ...] = (
     "Enkephalin",
     "Achievement",
     "StageStatisticPopup",
+    "RailwayDungeonHistoryData",
     "SaveManager",
     "PlayerData",
     "UserData",

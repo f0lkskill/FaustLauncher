@@ -112,11 +112,13 @@ KIND_ACTION_INT = 4     # void (self, int timing, mi)                     → AC
 KIND_DAMAGE_ACTION = 5  # float(self, action, coin, attacker, bool, mi)    → ACT
 KIND_SKV = 6            # void (self, mi)：表现层动画 → RND + iid（self->_attackerInstanceID）
 KIND_STAGE_STAT = 7     # void (self, a1, a2, mi)：关卡结算统计 → STG uid=/turn=/dead=/ex=
+KIND_RAILWAY_TOTAL = 8  # int  (self, mi)：折射铁路整条线的总回合 → RWT line=/total=
                         #   动画 tick 带身份，判定才能“按行动”对齐（否则只能一股脑延后）
 KIND_NUMBERS = {"plain": KIND_PLAIN, "unit": KIND_UNIT,
                 "unit_int_bool": KIND_UNIT_INT_BOOL, "unit_get_int": KIND_UNIT_GET_INT,
                 "action_int": KIND_ACTION_INT, "damage_action": KIND_DAMAGE_ACTION,
-                "skv": KIND_SKV, "stage_stat": KIND_STAGE_STAT}
+                "skv": KIND_SKV, "stage_stat": KIND_STAGE_STAT,
+                "railway_total": KIND_RAILWAY_TOTAL}
 
 # --------------------------------------------------------------------------- 字段语义
 
@@ -513,6 +515,11 @@ FALLBACK_HOOKS: dict[str, tuple[str, int, str]] = {
     # Player.log 完全没有。挂钩结算统计对象的构造函数，读每个 slot 的 _clearTurn。
     # （RVA/字段来自 dump.cs，索引里也有同一条，这里只是回退值。）
     "stage_statistic": ("StageStatisticPopupData::.ctor", 0x13C8DE0, "stage_stat"),
+    # ---- 折射铁路整条线的最好回合数 ---------------------------------------
+    # 进线路前游戏显示的那个"你的最好回合数"就是它：GetTotalClearTurn() 无参返回 int，
+    # 宿主对象上的 _collectionId(0x10) 是线路号。结算事件只能给单关回合，总回合只在这儿。
+    "railway_total": ("RailwayDungeonHistoryDataByCollection::GetTotalClearTurn",
+                      0x1A83AF0, "railway_total"),
 }
 FALLBACK_FIELDS: dict[str, int] = {
     "unit_instance_id": 0x60,
@@ -547,6 +554,8 @@ FALLBACK_FIELDS: dict[str, int] = {
     "slot_clear_turn": 0x18,
     "slot_dead_count": 0x1C,
     "slot_ex_cleared": 0x20,
+    # 折射铁路总回合：RailwayDungeonHistoryDataByCollection._collectionId（线路号）
+    "railway_collection_id": 0x10,
 }
 # 该候选不做桩解引用（本身就是真实实现/已验证可用）
 NO_STUB_RESOLVE = {"take_attack_dmg_multiplier"}
@@ -613,6 +622,8 @@ class BWConfig(ctypes.Structure):
         ("off_slot_clear_turn", ctypes.c_int32),
         ("off_slot_dead_count", ctypes.c_int32),
         ("off_slot_ex_cleared", ctypes.c_int32),
+        # 折射铁路整条线的总回合（BWK_RAILWAY_TOTAL）：线路号字段偏移
+        ("off_railway_collection_id", ctypes.c_int32),
     ]
 
 
@@ -1268,6 +1279,9 @@ class BattleState:
     stage_clears: dict = field(default_factory=dict)
     stage_last: dict = field(default_factory=dict)
     stage_total: int = 0
+    # 折射铁路整条线的最好回合数：线路号 → 总回合（DLL 的 RWT 事件）
+    railway_totals: dict = field(default_factory=dict)
+    railway_last: dict = field(default_factory=dict)
     rnd_total: int = 0
     settled_by: str = ""
     flag_counter: int = 0
@@ -2227,6 +2241,8 @@ class BattleWatch:
             self._apply_act(event)
         elif kind == "STG":
             self._apply_stage_stat(event)
+        elif kind == "RWT":
+            self._apply_railway_total(event)
         return event
 
     def _apply_anim_tick(self, tag: str, iid: int = -1) -> None:
@@ -2657,6 +2673,20 @@ class BattleWatch:
         self._log(f"[战斗观测] ★ 关卡结算: uid={uid or '?'} 通关回合={turn} "
                   f"阵亡={dead} EX={1 if ex else 0}")
 
+    def _apply_railway_total(self, event: BattleEvent) -> None:
+        """折射铁路总回合（DLL 的 ``RWT`` 事件）。
+
+        数据来自 ``RailwayDungeonHistoryDataByCollection::GetTotalClearTurn()``
+        —— 就是进线路前显示的那个"你的最好回合数"；``line`` 是线路号（_collectionId）。
+        """
+        line = event.get("line", -1)
+        total = event.get("total", -1)
+        with self._lock:
+            if line >= 0:
+                self.state.railway_totals[int(line)] = int(total)
+            self.state.railway_last = {"line": int(line), "total": int(total)}
+        self._log(f"[战斗观测] ★ 铁路记录: 线路={line} 总回合={total}")
+
     def _apply_buffs(self, event: BattleEvent) -> None:
         """buff 事件：位掩码 → 关注表里的 buff 名集合 → 交给规则表（立刻置位）。"""
         iid = event.get("iid", -1)
@@ -3028,6 +3058,20 @@ def stage_last() -> dict:
         return {}
     with watch._lock:
         return dict(watch.state.stage_last)
+
+
+def railway_totals() -> dict:
+    """折射铁路**整条线**的最好回合数（线路号 → 总回合）。
+
+    来源是 ``RailwayDungeonHistoryDataByCollection::GetTotalClearTurn()``——
+    进线路前游戏显示的那个"你的最好回合数"。
+    """
+    with _watch_lock:
+        watch = _watch
+    if watch is None:
+        return {}
+    with watch._lock:
+        return {int(k): int(v) for k, v in watch.state.railway_totals.items()}
 
 
 def state_snapshot() -> dict:
