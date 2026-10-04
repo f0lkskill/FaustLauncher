@@ -157,6 +157,14 @@
                                 * 为什么要它：存档结构里的 id（10438）**不编码"第几关"**，界面上的
                                 * "10-4" 是游戏用章号+节点序号拼的；只有这条钩子能给出正确对应。
                                 * 拿到对应后，遍历存档树（BWK_CACHE_ARG1）就能按 stageId 精确匹配。*/
+#define BWK_RAILWAY_UI_TEXT 15 /* void (self, a1, mi)：铁路地图上"总回合"**显示出来的文本**
+                                *   挂钩 RailwayDungeonMapUpperUILine1002::UpdateUI
+                                *   self[0x28] = TextMeshProUGUI(tmp_totalTurn)
+                                *   → +0xE0 = TMP_Text.m_text（string，dump 实测）
+                                *   → RUT text=<界面上显示的值>
+                                *
+                                * 为什么读界面文本：之前从存档结构里求和得 33，界面显示 86 ——
+                                * 聚合口径未知。游戏已经把答案写进 UI 了，直接读它就是读事实。*/
 #define BWK_NODE_STATE    10   /* int (self, int main, int sub, int node, mi)：关卡通关状态查询
                                 *   挂钩 UserStageNodeStateData::IsNodeCleared /
                                 *   GetClearNodeState —— 关卡列表每次渲染都会问，
@@ -272,6 +280,9 @@ typedef struct _BW_CONFIG {
     /* 折射铁路每节点记录（BWK_RAILWAY_NODE 读 self 上的字段）*/
     volatile LONG off_railway_node_id;
     volatile LONG off_railway_node_turn;
+    /* 铁路 UI 显示文本（BWK_RAILWAY_UI_TEXT 读）*/
+    volatile LONG off_railway_ui_text;    /* RailwayDungeonMapUpperUILine1002.tmp_totalTurn (0x28) */
+    volatile LONG off_tmp_text;           /* TMP_Text.m_text (0xE0) */
 } BW_CONFIG;
 
 /* 布局自检：v6/FBW6 → 钩子槽 16，ring 偏移 1352，总大小 1352 + 512*256 + 4(+4对齐)
@@ -280,7 +291,7 @@ typedef struct _BW_CONFIG {
  * ring_offset/struct_size，不一致就报错，所以这里只卡对齐与总大小。*/
 _Static_assert(offsetof(BW_CONFIG, log_ring) % 4 == 0, "log_ring 偏移未对齐");
 _Static_assert(offsetof(BW_CONFIG, buff_watch_hashes) % 8 == 0, "关注表未对齐");
-_Static_assert(sizeof(BW_CONFIG) == 133848, "BW_CONFIG 大小不一致（改了字段就同步改 Python）");
+_Static_assert(sizeof(BW_CONFIG) == 133856, "BW_CONFIG 大小不一致（改了字段就同步改 Python）");
 
 static BW_CONFIG *g_cfg = NULL;
 static HANDLE      g_stop_event = NULL;
@@ -1450,6 +1461,41 @@ static void call_and_emit_stage_node_id(void *self, int part, int chapter, int n
                                     g_original[N]);                              \
     }
 
+/* ---- 铁路 UI 显示文本（BWK_RAILWAY_UI_TEXT）--------------------------------
+ * 先调原函数（让游戏把文本写好），再把 self 上那个 TextMeshProUGUI 里的字符串读出来。*/
+static void call_and_emit_railway_ui_text(void *self, void *a1, const void *method,
+                                          void *original)
+{
+    uint64_t tmp = 0, text_ptr = 0;
+    char text[64];
+    char line[128];
+
+    if (original)
+        ((fn_plain_arg1)original)(self, a1, method);
+    if (!self || !g_cfg || !g_cfg->observing)
+        return;
+    if (g_cfg->off_railway_ui_text <= 0 || g_cfg->off_tmp_text <= 0)
+        return;
+    tmp = read_ptr(self, g_cfg->off_railway_ui_text);
+    if (!tmp)
+        return;
+    text_ptr = read_ptr((void *)(uintptr_t)tmp, g_cfg->off_tmp_text);
+    if (!text_ptr)
+        return;
+    if (read_il2cpp_string(text_ptr, text, (int)sizeof(text)) <= 0 || !text[0])
+        return;
+    _snprintf(line, sizeof(line) - 1, "RUT text=%s", text);
+    line[sizeof(line) - 1] = '\0';
+    emit(line, TRUE);
+}
+
+#define DEF_RAILWAYUITEXT_THUNK(N)                                               \
+    static void __fastcall hk_railui_##N(void *self, void *a1, const void *method) \
+    {                                                                            \
+        bump_hit(N);                                                             \
+        call_and_emit_railway_ui_text(self, a1, method, g_original[N]);          \
+    }
+
 DEF_PLAIN_THUNK(0)  DEF_PLAIN_THUNK(1)  DEF_PLAIN_THUNK(2)  DEF_PLAIN_THUNK(3)
 DEF_PLAIN_THUNK(4)  DEF_PLAIN_THUNK(5)  DEF_PLAIN_THUNK(6)  DEF_PLAIN_THUNK(7)
 DEF_PLAIN_THUNK(8)  DEF_PLAIN_THUNK(9)  DEF_PLAIN_THUNK(10) DEF_PLAIN_THUNK(11)
@@ -1527,6 +1573,15 @@ DEF_STAGENODEID_THUNK(12) DEF_STAGENODEID_THUNK(13) DEF_STAGENODEID_THUNK(14)
 DEF_STAGENODEID_THUNK(15) DEF_STAGENODEID_THUNK(16) DEF_STAGENODEID_THUNK(17)
 DEF_STAGENODEID_THUNK(18) DEF_STAGENODEID_THUNK(19) DEF_STAGENODEID_THUNK(20)
 DEF_STAGENODEID_THUNK(21) DEF_STAGENODEID_THUNK(22) DEF_STAGENODEID_THUNK(23)
+
+DEF_RAILWAYUITEXT_THUNK(0)  DEF_RAILWAYUITEXT_THUNK(1)  DEF_RAILWAYUITEXT_THUNK(2)
+DEF_RAILWAYUITEXT_THUNK(3)  DEF_RAILWAYUITEXT_THUNK(4)  DEF_RAILWAYUITEXT_THUNK(5)
+DEF_RAILWAYUITEXT_THUNK(6)  DEF_RAILWAYUITEXT_THUNK(7)  DEF_RAILWAYUITEXT_THUNK(8)
+DEF_RAILWAYUITEXT_THUNK(9)  DEF_RAILWAYUITEXT_THUNK(10) DEF_RAILWAYUITEXT_THUNK(11)
+DEF_RAILWAYUITEXT_THUNK(12) DEF_RAILWAYUITEXT_THUNK(13) DEF_RAILWAYUITEXT_THUNK(14)
+DEF_RAILWAYUITEXT_THUNK(15) DEF_RAILWAYUITEXT_THUNK(16) DEF_RAILWAYUITEXT_THUNK(17)
+DEF_RAILWAYUITEXT_THUNK(18) DEF_RAILWAYUITEXT_THUNK(19) DEF_RAILWAYUITEXT_THUNK(20)
+DEF_RAILWAYUITEXT_THUNK(21) DEF_RAILWAYUITEXT_THUNK(22) DEF_RAILWAYUITEXT_THUNK(23)
 
 static detour_fn pick_detour(int index, LONG kind)
 {
@@ -1697,6 +1752,21 @@ static detour_fn pick_detour(int index, LONG kind)
         case 18: return (detour_fn)hk_sni_18; case 19: return (detour_fn)hk_sni_19;
         case 20: return (detour_fn)hk_sni_20; case 21: return (detour_fn)hk_sni_21;
         case 22: return (detour_fn)hk_sni_22; default: return (detour_fn)hk_sni_23;
+        }
+    case BWK_RAILWAY_UI_TEXT:
+        switch (index) {
+        case 0: return (detour_fn)hk_railui_0;   case 1: return (detour_fn)hk_railui_1;
+        case 2: return (detour_fn)hk_railui_2;   case 3: return (detour_fn)hk_railui_3;
+        case 4: return (detour_fn)hk_railui_4;   case 5: return (detour_fn)hk_railui_5;
+        case 6: return (detour_fn)hk_railui_6;   case 7: return (detour_fn)hk_railui_7;
+        case 8: return (detour_fn)hk_railui_8;   case 9: return (detour_fn)hk_railui_9;
+        case 10: return (detour_fn)hk_railui_10; case 11: return (detour_fn)hk_railui_11;
+        case 12: return (detour_fn)hk_railui_12; case 13: return (detour_fn)hk_railui_13;
+        case 14: return (detour_fn)hk_railui_14; case 15: return (detour_fn)hk_railui_15;
+        case 16: return (detour_fn)hk_railui_16; case 17: return (detour_fn)hk_railui_17;
+        case 18: return (detour_fn)hk_railui_18; case 19: return (detour_fn)hk_railui_19;
+        case 20: return (detour_fn)hk_railui_20; case 21: return (detour_fn)hk_railui_21;
+        case 22: return (detour_fn)hk_railui_22; default: return (detour_fn)hk_railui_23;
         }
     default:
         return (detour_fn)hk_plain_0;

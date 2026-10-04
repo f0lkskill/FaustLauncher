@@ -121,6 +121,7 @@ KIND_CACHE_ARG1 = 11    # void (self, a1, mi)：缓存第一个参数（抓全�
 KIND_RAILWAY_NODE = 12  # void (self, a1, mi)：铁路每节点通关回合 → RWT node=/turn=
 KIND_RAILWAY_HIST = 13  # void (self, cid, ..7 args.., mi)：铁路历史记录 → RWT line=/total=
 KIND_STAGE_NODE_ID = 14  # void (self, part, chapter, node, stage, state, mi)：关卡身份 → SNI
+KIND_RAILWAY_UI_TEXT = 15  # void (self, a1, mi)：铁路 UI 显示文本 → RUT text=
                         #   动画 tick 带身份，判定才能“按行动”对齐（否则只能一股脑延后）
 KIND_NUMBERS = {"plain": KIND_PLAIN, "unit": KIND_UNIT,
                 "unit_int_bool": KIND_UNIT_INT_BOOL, "unit_get_int": KIND_UNIT_GET_INT,
@@ -129,7 +130,8 @@ KIND_NUMBERS = {"plain": KIND_PLAIN, "unit": KIND_UNIT,
                 "railway_total": KIND_RAILWAY_TOTAL, "cache_self": KIND_CACHE_SELF,
                 "node_state": KIND_NODE_STATE, "cache_arg1": KIND_CACHE_ARG1,
                 "railway_node": KIND_RAILWAY_NODE, "railway_hist": KIND_RAILWAY_HIST,
-                "stage_node_id": KIND_STAGE_NODE_ID}
+                "stage_node_id": KIND_STAGE_NODE_ID,
+                "railway_ui_text": KIND_RAILWAY_UI_TEXT}
 
 # --------------------------------------------------------------------------- 字段语义
 
@@ -564,6 +566,10 @@ FALLBACK_HOOKS: dict[str, tuple[str, int, str]] = {
     # 关卡地图渲染时逐个节点调。存档里的 id（10438）不编码"第几关"，只有这里给的
     # chapter + node 才是界面上的 "10-4"。
     "stage_node_id": ("StageNodeIdInfo::SetData", 0x12636F0, "stage_node_id"),
+    # ---- 铁路"总回合"**界面显示值**（读事实，不猜聚合）------------------------
+    # 之前从存档结构求和得 33、界面显示 86 → 聚合口径未知。游戏已经算好写进 UI 了，直接读。
+    "railway_ui_text": ("RailwayDungeonMapUpperUILine1002::UpdateUI", 0x1A4E500,
+                        "railway_ui_text"),
 }
 FALLBACK_FIELDS: dict[str, int] = {
     "unit_instance_id": 0x60,
@@ -614,6 +620,9 @@ FALLBACK_FIELDS: dict[str, int] = {
     # 折射铁路每节点记录：nodeId 0x10 / clearTurn 0x14
     "railway_node_id": 0x10,
     "railway_node_turn": 0x14,
+    # 铁路 UI 显示文本：RailwayDungeonMapUpperUILine1002.tmp_totalTurn(0x28) → TMP_Text.m_text(0xE0)
+    "railway_ui_text": 0x28,
+    "tmp_text": 0xE0,
 }
 # 该候选不做桩解引用（本身就是真实实现/已验证可用）
 NO_STUB_RESOLVE = {"take_attack_dmg_multiplier"}
@@ -706,6 +715,9 @@ class BWConfig(ctypes.Structure):
         # 折射铁路每节点记录（BWK_RAILWAY_NODE 读 self 上的字段）
         ("off_railway_node_id", ctypes.c_int32),
         ("off_railway_node_turn", ctypes.c_int32),
+        # 铁路 UI 显示文本（BWK_RAILWAY_UI_TEXT 读）
+        ("off_railway_ui_text", ctypes.c_int32),
+        ("off_tmp_text", ctypes.c_int32),
     ]
 
 
@@ -1367,6 +1379,7 @@ class BattleState:
     railway_last: dict = field(default_factory=dict)
     railway_nodes: dict = field(default_factory=dict)   # 节点 id → 通关回合（存档重建时上报）
     stage_labels: dict = field(default_factory=dict)    # "10-4" → {stage, chapter, node}（游戏官方口径）
+    railway_ui_text: dict = field(default_factory=dict)  # 铁路 UI 显示文本（总回合的显示值）
     rnd_total: int = 0
     settled_by: str = ""
     flag_counter: int = 0
@@ -2365,6 +2378,8 @@ class BattleWatch:
             self._apply_node_state(event)
         elif kind == "SNI":
             self._apply_stage_node_id(event)
+        elif kind == "RUT":
+            self._apply_railway_ui_text(event)
         return event
 
     def _apply_anim_tick(self, tag: str, iid: int = -1) -> None:
@@ -2881,6 +2896,29 @@ class BattleWatch:
         self._log(f"[战斗观测] ★ 关卡身份: {key} 关卡id={stage} 状态={state}"
                   + ("（已通关）" if state else ""))
 
+    def _apply_railway_ui_text(self, event: BattleEvent) -> None:
+        """铁路地图上显示的"总回合"文本（DLL 的 ``RUT`` 事件）—— **读事实**。
+
+        游戏自己算好并写进 UI 的那个值（实测：存档结构求和得 33，界面显示 86）。
+        线路号取最近一次 ``RWT line=`` 看到的线路（打开线路界面时两者紧挨着发生）。
+        """
+        raw = event.text("text", "").strip()
+        if not raw:
+            return
+        digits = "".join(ch for ch in raw if ch.isdigit())
+        if not digits:
+            return
+        value = int(digits)
+        now = time.time()
+        with self._lock:
+            line = int(self.state.railway_last.get("line", -1) or -1)
+            seen_at = float(self.state.railway_last.get("ts", 0) or 0)
+            if line >= 0 and (now - seen_at) < 60.0:
+                self.state.railway_totals[line] = value      # 用界面显示值覆盖求和值
+            self.state.railway_ui_text = {"text": raw, "value": value, "line": line}
+        line_text = f"{line}" if line >= 0 else "?"
+        self._log(f"[战斗观测] ★ 铁路界面显示: 「{raw}」→ {value}（线路={line_text}）")
+
     def _apply_railway_total(self, event: BattleEvent) -> None:
         """折射铁路记录（DLL 的 ``RWT`` 事件）。两种形态：
 
@@ -2900,7 +2938,7 @@ class BattleWatch:
         with self._lock:
             if line >= 0:
                 self.state.railway_totals[int(line)] = int(total)
-            self.state.railway_last = {"line": int(line), "total": int(total)}
+            self.state.railway_last = {"line": int(line), "total": int(total), "ts": time.time()}
         vals = event.text("vals", "")
         extra = f" 各节点原始值={vals}" if vals else ""
         self._log(f"[战斗观测] ★ 铁路记录: 线路={line} 总回合={total} "
