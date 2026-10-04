@@ -1,6 +1,7 @@
 """FaustLauncher 可视化构建工具（pywebview 版）。
 
-界面在 ``build_ui/``（HTML/CSS/JS），本文件只做两件事：
+界面在 ``web/build_ui/``（HTML/CSS/JS，与 web/version_update、web/mod_manager 同层），
+本文件只做两件事：
 
 1. **搬运构建步骤**（与旧 Tk 版逐条一致：PyInstaller → 清理 → 目录 → 运行环境 → 资产 →
    字体 → 配置 → 资源 → 文档 → exe → 压缩 zip），每步的状态/日志/进度推给前端；
@@ -496,7 +497,7 @@ class BuildApi:
                     last["pct"] = percent
                     self._upload(4 + percent * 0.9, f"上传中 {percent}%")   # 留 6% 给版本信息
 
-            ret = UploadFile(session, zip_path, folder_id=fid, max_size_mb=max_mb,
+            ret = UploadFile(session, zip_path, folder_id=fid, max_size_mb=max_mb, # type: ignore
                              progress_callback=_on_progress) or {}
             if ret.get("status") != 1:
                 raise RuntimeError(f"上传失败：{ret.get('msg')}")
@@ -511,6 +512,7 @@ class BuildApi:
         except Exception as exc:  # noqa: BLE001
             self._upload(0, f"发布失败：{exc}")
             self._log(f"\n✕ 发布失败：{exc}\n", LEVEL_BAD)
+    _window = None
 
 
 # --------------------------------------------------------------------------- 入口
@@ -531,16 +533,16 @@ def main() -> int:
         print(f"[构建工具] 需要 pywebview：{exc}", file=sys.stderr)
         return 1
 
-    api = BuildApi(version)
+    api = BuildApi(version) # type: ignore
     index_html = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                              "build_ui", "index.html")
+                              "web", "build_ui", "index.html")
     win = webview.create_window(
         f"FaustLauncher 构建工具 — v{version}",
-        index_html, js_api=api,
+        index_html, js_api=api, # type: ignore
         width=780, height=800, min_size=(680, 620),
         background_color="#14161c",
     )
-    api._window = win
+    api._window = win # type: ignore
     webview.start()
     return 0
 

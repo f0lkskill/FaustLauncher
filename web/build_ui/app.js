@@ -3,16 +3,20 @@
  *
  * 与后端（build.py 的 BuildApi）约定：
  *   · 所有方法返回 Promise；长任务（构建/上传）在**后台线程**跑，
- *     通过 get_state() / poll() 返回事件队列，前端每 150ms 轮询一次。
+ *     通过 poll() 返回事件队列，前端每 150ms 轮询一次。
  *   · 事件格式：{type:'log', text, level} | {type:'step', index, state}
- *              | {type:'progress', value} | {type:'status', text, level}
+ *              | {type:'progress', value, cls} | {type:'status', text, level}
  *              | {type:'upload', percent, text} | {type:'done', ok}
  */
 'use strict';
 
 const $ = (sel) => document.querySelector(sel);
-const api = (window.pywebview && window.pywebview.api) || null;
 
+// ⚠ pywebview 的 api 是**注入的**，注入时机可能早于也可能晚于本脚本 ——
+// 所以不能在这里抓成常量（那样永远是 null，界面就会报"pywebview 未就绪"）。
+// 与 web/version_update、web/extension_tools 同一套写法：在事件里**重新取**，
+// 并且立刻也试一次；再补一个短轮询兜底（个别环境不发 pywebviewready）。
+let api = null;
 let steps = [];
 let pollTimer = null;
 
@@ -22,8 +26,7 @@ function esc(s) {
 }
 
 function renderSteps() {
-  const box = $('#steps');
-  box.innerHTML = steps.map((s, i) =>
+  $('#steps').innerHTML = steps.map((s, i) =>
     '<li id="step-' + i + '" class="pending"><i>○</i><span>' + esc(s.name) + '</span></li>'
   ).join('');
 }
@@ -62,7 +65,7 @@ function handleEvent(ev) {
     case 'progress': setProgress(ev.value, ev.cls); break;
     case 'status':
       $('#status').textContent = ev.text || '';
-      $('#phase').textContent = ev.text || $('#phase').textContent;
+      if (ev.text) $('#phase').textContent = ev.text;
       break;
     case 'upload': {
       $('#upload').hidden = false;
@@ -83,36 +86,37 @@ function onDone(ok) {
   setProgress(ok ? 100 : 0, ok ? 'ok' : 'bad');
   $('#btn-open').disabled = !ok;
   $('#btn-publish').disabled = !ok;
-  $('#btn-close').textContent = ok ? '关闭' : '关闭';
 }
 
 async function poll() {
   if (!api) return;
   try {
     const res = await api.poll();
-    // 首次拿到步骤表
     if (res && res.steps && !steps.length) { steps = res.steps; renderSteps(); }
     (res && res.events || []).forEach(handleEvent);
-  } catch (e) { /* 窗口关闭途中会抛错，忽略 */ }
-}
-
-function startPolling() {
-  if (pollTimer) clearInterval(pollTimer);
-  pollTimer = setInterval(poll, 150);
+  } catch (e) { /* 关闭窗口途中会抛错，忽略 */ }
 }
 
 async function boot() {
-  if (!api) {
-    appendLog('pywebview 未就绪：请用 build.py 启动本工具。\n', 'bad');
-    return;
-  }
   const st = await api.get_state();
   steps = (st && st.steps) || [];
   renderSteps();
   $('#ver').textContent = (st && st.version) || '—';
   $('#phase').textContent = '构建中…';
-  startPolling();
+  clearInterval(pollTimer);
+  pollTimer = setInterval(poll, 150);
   await api.start_build();          // 与原 Tk 版一致：打开即自动开始构建
+}
+
+function tryInitApi() {
+  if (api) return true;
+  const wv = window.pywebview;
+  if (wv && wv.api && typeof wv.api.get_state === 'function') {
+    api = wv.api;
+    boot().catch((e) => appendLog('初始化失败：' + e + '\n', 'bad'));
+    return true;
+  }
+  return false;
 }
 
 $('#btn-publish').addEventListener('click', async () => {
@@ -126,5 +130,10 @@ $('#btn-open').addEventListener('click', () => api && api.open_build_dir());
 $('#btn-close').addEventListener('click', () => api && api.close());
 $('#btn-clear').addEventListener('click', () => { $('#log').textContent = ''; });
 
-if (window.pywebview && window.pywebview.api) boot();
-else window.addEventListener('pywebviewready', boot);
+window.addEventListener('pywebviewready', tryInitApi);
+if (!tryInitApi()) {
+  let tries = 0;                       // 兜底：个别环境不发 pywebviewready
+  const timer = setInterval(() => {
+    if (tryInitApi() || ++tries > 50) clearInterval(timer);
+  }, 100);
+}
