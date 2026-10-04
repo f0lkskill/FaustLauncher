@@ -79,6 +79,7 @@
 #define BW_STAGE_SLOT_MAX 8      /* 结算统计最多看几个 slot（防脏数据卡死）*/
 #define BW_STAGE_WATCH_MAX 32    /* 关注关卡上限（已通关列表的轮询上报用；位图按 32 位算）*/
 #define BW_CLEAR_LIST_MAX  512   /* 已通关列表最多扫多少条（防脏数据卡死）*/
+#define BW_NCL_SEEN_MAX    96    /* NCL 已上报去重表（按 章*1e6+小节*1e3+节点 打包）*/
 
 /* ACTk ObscuredInt 内部布局（dump.cs 实测） */
 #define OBI_KEY    0
@@ -123,6 +124,14 @@
                                 * 为什么不用静态字段链：那条路要靠静态块基址解析，而现有 enkephalin
                                 * 链的运行时重定位本来就是失败的，不能把成就压在它上面。
                                 * 这也是"不打那关也能判定"的关键：存档一直在内存里，进游戏即可回溯。*/
+#define BWK_NODE_STATE    10   /* int (self, int main, int sub, int node, mi)：关卡通关状态查询
+                                *   挂钩 UserStageNodeStateData::IsNodeCleared /
+                                *   GetClearNodeState —— 关卡列表每次渲染都会问，
+                                *   而且**章节号/节点号就是入参**，返回值 = 通没通。
+                                *   → NCL main=<主线章> sub=<小节> node=<节点> cleared=<0|1>
+                                *
+                                * 为什么不用 UserStageClearInfoData：实测那个类当前 UI 根本不用，
+                                * 三条挂点（含 UI 查询）全程 0 命中。这个是游戏自己在用的。*/
 
 /* 错误码 */
 #define BW_ERR_OK         0
@@ -213,6 +222,10 @@ typedef struct _BW_CONFIG {
     volatile long long stage_clear_data;  /* 抓到的 UserStageClearInfoData*（DLL 自己写）*/
     volatile LONG stage_seen_mask;        /* 已上报过的关注槽位图（DLL 自己写，只报一次）*/
     volatile LONG stage_diag_done;        /* 一次性诊断是否已发（见 poll_stage_clears）*/
+
+    /* NCL（关卡通关状态查询）去重表：打包值 章*1e6+小节*1e3+节点，只报没报过的 */
+    volatile LONG ncl_seen[BW_NCL_SEEN_MAX];
+    volatile LONG ncl_seen_count;
 } BW_CONFIG;
 
 /* 布局自检：v6/FBW6 → 钩子槽 16，ring 偏移 1352，总大小 1352 + 512*256 + 4(+4对齐)
@@ -221,7 +234,7 @@ typedef struct _BW_CONFIG {
  * ring_offset/struct_size，不一致就报错，所以这里只卡对齐与总大小。*/
 _Static_assert(offsetof(BW_CONFIG, log_ring) % 4 == 0, "log_ring 偏移未对齐");
 _Static_assert(offsetof(BW_CONFIG, buff_watch_hashes) % 8 == 0, "关注表未对齐");
-_Static_assert(sizeof(BW_CONFIG) == 133144, "BW_CONFIG 大小不一致（改了字段就同步改 Python）");
+_Static_assert(sizeof(BW_CONFIG) == 133536, "BW_CONFIG 大小不一致（改了字段就同步改 Python）");
 
 static BW_CONFIG *g_cfg = NULL;
 static HANDLE      g_stop_event = NULL;
@@ -239,6 +252,8 @@ typedef float (__fastcall *fn_damage)(void *self, void *action, void *coin, void
 typedef void  (__fastcall *fn_stage_stat)(void *self, void *external_data, void *format,
                                           const void *method);
 typedef void  (__fastcall *fn_plain_arg1)(void *self, void *a1, const void *method);
+typedef int   (__fastcall *fn_unit_int3)(void *self, int a1, int a2, int a3,
+                                         const void *method);
 
 static void  *g_target[BW_MAX_HOOKS];
 static void  *g_original[BW_MAX_HOOKS];
@@ -1081,6 +1096,49 @@ static int __fastcall call_and_emit_railway_total(void *self, const void *method
             ((fn_plain_arg1)g_original[N])(self, a1, method);                    \
     }
 
+/* ---- 关卡通关状态查询（BWK_NODE_STATE）-------------------------------------
+ * int (self, int main, int sub, int node, mi)；返回值 = 通没通（bool / CLEARNODE_STATE）。
+ * 章节号与节点号是入参，所以不需要去解析存档结构 —— 游戏自己问什么我们就记什么。
+ * 只报"已通关"的，且按 (章,小节,节点) 去重（NCL 会被 UI 反复调用）。*/
+static int __fastcall call_and_emit_node_state(void *self, int a1, int a2, int a3,
+                                               const void *method, void *original)
+{
+    int ret = 0;
+    int packed;
+    int i;
+
+    if (original)
+        ret = ((fn_unit_int3)original)(self, a1, a2, a3, method);
+    (void)self;
+    if (!g_cfg || !g_cfg->observing || ret == 0)
+        return ret;                       /* 没通关就不报（成就只关心"通了"）*/
+    packed = (a1 % 1000) * 1000000 + (a2 % 1000) * 1000 + (a3 % 1000);
+    for (i = 0; i < g_cfg->ncl_seen_count && i < BW_NCL_SEEN_MAX; i++) {
+        if (g_cfg->ncl_seen[i] == packed)
+            return ret;                   /* 报过了 */
+    }
+    if (g_cfg->ncl_seen_count < BW_NCL_SEEN_MAX) {
+        g_cfg->ncl_seen[g_cfg->ncl_seen_count] = packed;
+        g_cfg->ncl_seen_count += 1;
+    }
+    {
+        char line[112];
+        _snprintf(line, sizeof(line) - 1, "NCL main=%d sub=%d node=%d cleared=1",
+                  a1, a2, a3);
+        line[sizeof(line) - 1] = '\0';
+        emit(line, TRUE);
+    }
+    return ret;
+}
+
+#define DEF_NODE_THUNK(N)                                                        \
+    static int __fastcall hk_node_##N(void *self, int a1, int a2, int a3,        \
+                                      const void *method)                        \
+    {                                                                            \
+        bump_hit(N);                                                             \
+        return call_and_emit_node_state(self, a1, a2, a3, method, g_original[N]);\
+    }
+
 DEF_PLAIN_THUNK(0)  DEF_PLAIN_THUNK(1)  DEF_PLAIN_THUNK(2)  DEF_PLAIN_THUNK(3)
 DEF_PLAIN_THUNK(4)  DEF_PLAIN_THUNK(5)  DEF_PLAIN_THUNK(6)  DEF_PLAIN_THUNK(7)
 DEF_PLAIN_THUNK(8)  DEF_PLAIN_THUNK(9)  DEF_PLAIN_THUNK(10) DEF_PLAIN_THUNK(11)
@@ -1118,6 +1176,12 @@ DEF_CACHE_THUNK(0)   DEF_CACHE_THUNK(1)   DEF_CACHE_THUNK(2)   DEF_CACHE_THUNK(3
 DEF_CACHE_THUNK(4)   DEF_CACHE_THUNK(5)   DEF_CACHE_THUNK(6)   DEF_CACHE_THUNK(7)
 DEF_CACHE_THUNK(8)   DEF_CACHE_THUNK(9)   DEF_CACHE_THUNK(10)  DEF_CACHE_THUNK(11)
 DEF_CACHE_THUNK(12)  DEF_CACHE_THUNK(13)  DEF_CACHE_THUNK(14)  DEF_CACHE_THUNK(15)
+
+DEF_NODE_THUNK(0)    DEF_NODE_THUNK(1)    DEF_NODE_THUNK(2)    DEF_NODE_THUNK(3)
+DEF_NODE_THUNK(4)    DEF_NODE_THUNK(5)    DEF_NODE_THUNK(6)    DEF_NODE_THUNK(7)
+DEF_NODE_THUNK(8)    DEF_NODE_THUNK(9)    DEF_NODE_THUNK(10)   DEF_NODE_THUNK(11)
+DEF_NODE_THUNK(12)   DEF_NODE_THUNK(13)   DEF_NODE_THUNK(14)   DEF_NODE_THUNK(15)
+DEF_NODE_THUNK(16)   DEF_NODE_THUNK(17)   DEF_NODE_THUNK(18)   DEF_NODE_THUNK(19)
 
 static detour_fn pick_detour(int index, LONG kind)
 {
@@ -1215,6 +1279,19 @@ static detour_fn pick_detour(int index, LONG kind)
         case 10: return (detour_fn)hk_cache_10; case 11: return (detour_fn)hk_cache_11;
         case 12: return (detour_fn)hk_cache_12; case 13: return (detour_fn)hk_cache_13;
         case 14: return (detour_fn)hk_cache_14; default: return (detour_fn)hk_cache_15;
+        }
+    case BWK_NODE_STATE:
+        switch (index) {
+        case 0: return (detour_fn)hk_node_0;   case 1: return (detour_fn)hk_node_1;
+        case 2: return (detour_fn)hk_node_2;   case 3: return (detour_fn)hk_node_3;
+        case 4: return (detour_fn)hk_node_4;   case 5: return (detour_fn)hk_node_5;
+        case 6: return (detour_fn)hk_node_6;   case 7: return (detour_fn)hk_node_7;
+        case 8: return (detour_fn)hk_node_8;   case 9: return (detour_fn)hk_node_9;
+        case 10: return (detour_fn)hk_node_10; case 11: return (detour_fn)hk_node_11;
+        case 12: return (detour_fn)hk_node_12; case 13: return (detour_fn)hk_node_13;
+        case 14: return (detour_fn)hk_node_14; case 15: return (detour_fn)hk_node_15;
+        case 16: return (detour_fn)hk_node_16; case 17: return (detour_fn)hk_node_17;
+        case 18: return (detour_fn)hk_node_18; default: return (detour_fn)hk_node_19;
         }
     default:
         return (detour_fn)hk_plain_0;
