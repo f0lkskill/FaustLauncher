@@ -64,6 +64,33 @@ def _already_published(index: index_mod.HookIndex) -> bool:
     return index_mod.already_published(index)
 
 
+def _cloud_same_as(index: index_mod.HookIndex, log=None) -> tuple[bool, str]:
+    """云端**现有**那份索引是否与本份等价（指纹一致 + 发布载荷哈希一致）。
+
+    用来避免"没变化也上传"：真重建出来的索引若与云端完全一样，传上去没有任何信息增量，
+    只白等一次 POST（实测 44,637 字节 / 1.38 秒）。读云端只是几十 KB 的 GET，比 POST 便宜。
+
+    ⚠ 读不到（首次使用 / 网络失败）一律返回 False —— 该传还是要传，
+    不能因为"比对不了"就把新索引憋在本地。
+    """
+    try:
+        cloud = index_mod.pull_cloud(on_log=log)
+        if cloud is None:
+            return False, ""
+        size, sha256 = index.fingerprint()
+        csize, csha256 = cloud.fingerprint()
+        if (int(csize), str(csha256).upper()) != (int(size), str(sha256).upper()):
+            return False, ""
+        if (index_mod.payload_hash(index.to_publish_json())
+                != index_mod.payload_hash(cloud.to_publish_json())):
+            return False, ""
+        return True, "指纹与发布载荷哈希一致"
+    except Exception as exc:  # noqa: BLE001
+        if log:
+            log(f"[hook_index] 云端等价性比对失败（按需上传处理）: {type(exc).__name__}: {exc}")
+        return False, ""
+
+
 # --------------------------------------------------------------------------- 状态
 
 
@@ -360,12 +387,23 @@ def update_hook_index(game_path: str = "", force: bool = False, push: bool = Tru
         note("试运行模式：不上传云端")
         return UpdateResult("dry-run", index, False, messages, time.time() - started)
     if push:
-        result = index_mod.push_cloud(index, on_log=log)
-        pushed = bool(result.get("ok"))
-        if not pushed:
-            warnings.append(f"云端写回失败: {result.get('error')}")
-            index.warnings = warnings
-            index_mod.save_local(index)
+        # 只上传**真正有变化**的索引。以前这里是无条件 push，实测出现过：
+        # 本地重建出来的东西和云端那份完全等价（同指纹、同发布载荷），照样 POST 了
+        # 44,637 字节回云端（1.38 秒纯浪费）。两次比对任一成立就跳过：
+        #   · 云端现有那份与本份等价（指纹 + 发布载荷哈希都一致）→ 传上去没有任何信息增量；
+        #   · 本机自己发布过同一份（本地发布标记命中）→ 更没必要再传。
+        same_as_cloud, why = _cloud_same_as(index, log)
+        if same_as_cloud:
+            note(f"云端已有等价索引（{why}）→ 跳过上传")
+        elif _already_published(index):
+            note("本机已发布过同一份索引 → 跳过上传")
+        else:
+            result = index_mod.push_cloud(index, on_log=log)
+            pushed = bool(result.get("ok"))
+            if not pushed:
+                warnings.append(f"云端写回失败: {result.get('error')}")
+                index.warnings = warnings
+                index_mod.save_local(index)
     status_ = "updated" if not warnings else "partial"
     return UpdateResult(status_, index, pushed, messages, time.time() - started)
 
