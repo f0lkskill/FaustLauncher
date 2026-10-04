@@ -813,10 +813,13 @@ def get_user_info(settings_manager=None) -> dict:
             # 官网入口（空串 = 拿不到，前端应禁用按钮而不是打开坏链接）
             "profile_url": f"{base}/user/{token}" if base and token else "",
             "leaderboard_url": f"{base}/leaderboard" if base else "",
-            # 当前游玩时长（本机 Steam 记录）
+            # 当前游玩时长（本机 Steam 记录）。
+            # 面板统一按**小时**显示（产品要求），详细写法（X 天 X 小时）放 detail 供 hover。
             "playtime": {"ok": bool(play.get("ok")), "seconds": seconds,
                          "hours": float(play.get("hours") or 0),
-                         "text": playtime_text(seconds) if play.get("ok") else "",
+                         "text": f"{float(play.get('hours') or 0):.1f} 小时"
+                                 if play.get("ok") else "",
+                         "detail": playtime_text(seconds) if play.get("ok") else "",
                          "error": str(play.get("error") or "")}}
 
 
