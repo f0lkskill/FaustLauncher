@@ -42,6 +42,15 @@ class BaseAchievement(ABC):
         """
         pass
 
+    def with_rarity(self, rarity: str):
+        """设置稀有度并返回自身（链式调用，方便一行注册）。
+
+        与函数式 ``Achievement.with_rarity`` 同名同语义 —— 类式成就以前没有这个，
+        注册时想指定稀有度只能手改字段。
+        """
+        self.rarity = str(rarity or "common")
+        return self
+
     def mark_unlocked(self):
         """将此成就标记为已解锁并记录时间。"""
         if not self.unlocked:

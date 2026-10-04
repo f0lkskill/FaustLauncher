@@ -1,25 +1,32 @@
-"""从 huijiwiki 抓成就徽标素材（**独立目录，不占用 build_temp**）。
+"""从 huijiwiki 抓成就徽标素材并处理成启动器用的 PNG（**独立目录，不占用 build_temp**）。
 
-用法（首次会自己建虚拟环境并装 selenium）：
+用法：
 
+    # 搜文件（看有哪些素材）
     python tools/wiki_fetch/fetch_achievement_icons.py --search 战斗
-    python tools/wiki_fetch/fetch_achievement_icons.py --fetch "战斗.png" --out ach_battle_01
 
-为什么必须用真实浏览器：huijiwiki 有 Cloudflare 挑战（直接 HTTP 请求返回 403「请稍候…」），
-无头浏览器也过不去；只有 **有头 Edge + 持久化 profile**（首次过挑战后 cookie 会留着）可行。
+    # 抓一张并做成成就徽标（<成就id>.png 落到 web/app/assets/achievement/）
+    python tools/wiki_fetch/fetch_achievement_icons.py --make "地牢-普通战斗.png:ach_battle_01"
 
-脚本做的事：
-  1. 建/复用 tools/wiki_fetch/.venv（selenium）与 .edge_profile（Cloudflare 通行 cookie）；
-  2. 打开 wiki，走 MediaWiki API：``list=search`` 搜文件 / ``prop=imageinfo`` 取原图 URL；
-  3. 下载到 tools/wiki_fetch/downloads/，再用 Pillow 处理成
-     ``web/app/assets/achievement/<成就id>.png``（128×128、透明底、**不带边框**）。
+    # 一次做多张（可重复 --make）
+    python tools/wiki_fetch/fetch_achievement_icons.py \
+        --make "地牢-普通战斗.png:ach_battle_01" \
+        --make "地牢-精英战斗.png:ach_battle_02"
 
-注意：徽标边框由前端按稀有度自动着色，图片本身**不要**画边框。
+为什么必须用真实浏览器：huijiwiki 有 Cloudflare 挑战（直接 HTTP 请求 403「请稍候…」，
+无头浏览器也过不去），只有 **有头 Edge + 持久化 profile** 可行。图片字节也在浏览器里
+用 fetch 取（同源、带 cookie），不另外发 HTTP 请求，避免再撞一次挑战。
+
+徽标处理规则（与现有素材一致）：
+  · 输出 128×128 PNG、透明底、**不带边框**（边框由前端按稀有度自动着色）；
+  · 等比缩放留边，不裁剪（保留原图完整内容）。
 """
 
 from __future__ import annotations
 
 import argparse
+import base64
+import json
 import os
 import subprocess
 import sys
@@ -32,7 +39,18 @@ PROFILE = os.path.join(HERE, ".edge_profile")
 DOWNLOADS = os.path.join(HERE, "downloads")
 ASSET_DIR = os.path.join(ROOT, "web", "app", "assets", "achievement")
 API = "https://limbuscompany.huijiwiki.com/api.php"
+WIKI = "https://limbuscompany.huijiwiki.com/wiki/"
 EDGE = r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"
+
+# 浏览器里用 fetch 取图片字节，回传 dataURL（同源 + 带 Cloudflare cookie）
+_JS_FETCH_IMAGE = """
+const url = arguments[0], done = arguments[arguments.length - 1];
+fetch(url).then(r => r.blob()).then(b => {
+    const fr = new FileReader();
+    fr.onload = () => done(fr.result);
+    fr.readAsDataURL(b);
+}).catch(e => done("ERR:" + e));
+"""
 
 
 def _venv_python() -> str:
@@ -44,19 +62,72 @@ def ensure_env() -> str:
     py = _venv_python()
     if os.path.isfile(py):
         return py
-    print("[环境] 首次运行：创建虚拟环境并安装 selenium …")
+    print("[环境] 首次运行：创建虚拟环境并安装 selenium + Pillow …")
     subprocess.check_call([sys.executable, "-m", "venv", VENV])
     subprocess.check_call([py, "-m", "pip", "install", "-q", "--upgrade", "pip"])
     subprocess.check_call([py, "-m", "pip", "install", "-q", "selenium", "Pillow",
                            "-i", "https://mirrors.aliyun.com/pypi/simple/"])
-    os.makedirs(DOWNLOADS, exist_ok=True)
     return py
 
 
-def run(py: str, args) -> int:
-    """在有头 Edge 里跑一次抓取（Cloudflare 过了之后 profile 会记住）。"""
-    from selenium import webdriver                       # noqa: PLC0415
-    from selenium.webdriver.edge.options import Options   # noqa: PLC0415
+def _api_json(driver, url: str) -> dict:
+    driver.get(url)
+    time.sleep(0.8)
+    try:
+        return json.loads(driver.find_element("tag name", "pre").text)
+    except Exception:
+        return {}
+
+
+def _image_url(driver, filename: str) -> str:
+    """取 wiki 文件的原始 URL。"""
+    from urllib.parse import quote
+    data = _api_json(driver, API + "?action=query&titles=File:" + quote(filename) +
+                     "&prop=imageinfo&iiprop=url&format=json")
+    pages = (data.get("query") or {}).get("pages") or {}
+    for page in pages.values():
+        info = (page.get("imageinfo") or [{}])[0]
+        if info.get("url"):
+            return str(info["url"])
+    return ""
+
+
+def _download(driver, url: str, dest: str) -> bool:
+    """在浏览器里 fetch 图片字节（绕开 Cloudflare），落盘到 dest。"""
+    data_url = driver.execute_async_script(_JS_FETCH_IMAGE, url)
+    if not isinstance(data_url, str) or not data_url.startswith("data:"):
+        print(f"[下载] 失败: {data_url}")
+        return False
+    raw = base64.b64decode(data_url.split(",", 1)[1])
+    os.makedirs(os.path.dirname(dest), exist_ok=True)
+    with open(dest, "wb") as fh:
+        fh.write(raw)
+    print(f"[下载] {os.path.basename(dest)}  {len(raw):,} B")
+    return True
+
+
+def _to_badge(src: str, dest: str, size: int = 128) -> bool:
+    """处理成徽标：等比缩放居中贴到 size×size 透明画布（不裁剪、不描边）。"""
+    from PIL import Image
+    with Image.open(src) as im:
+        im = im.convert("RGBA")
+        w, h = im.size
+        if not w or not h:
+            return False
+        scale = min(size / w, size / h)
+        new = (max(1, int(round(w * scale))), max(1, int(round(h * scale))))
+        im = im.resize(new, Image.LANCZOS)
+        canvas = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+        canvas.paste(im, ((size - new[0]) // 2, (size - new[1]) // 2), im)
+        os.makedirs(os.path.dirname(dest), exist_ok=True)
+        canvas.save(dest)
+    print(f"[徽标] {os.path.basename(dest)}  {size}×{size} 透明底（无边框）")
+    return True
+
+
+def run(args) -> int:
+    from selenium import webdriver                        # noqa: PLC0415
+    from selenium.webdriver.edge.options import Options    # noqa: PLC0415
 
     os.makedirs(PROFILE, exist_ok=True)
     os.makedirs(DOWNLOADS, exist_ok=True)
@@ -67,41 +138,48 @@ def run(py: str, args) -> int:
     opts.add_argument("--start-maximized")
     opts.add_experimental_option("excludeSwitches", ["enable-automation"])
     driver = webdriver.Edge(options=opts)
+    made = 0
     try:
-        driver.get("https://limbuscompany.huijiwiki.com/wiki/%E9%A6%96%E9%A1%B5")
+        driver.get(WIKI)                     # 先过 Cloudflare 挑战
         time.sleep(3)
         if args.search:
-            query = (API + "?action=query&list=search&srsearch=" +
-                     __import__("urllib.parse", fromlist=["quote"]).quote(args.search) +
-                     "&srnamespace=6&srlimit=30&format=json")
-            driver.get(query)
-            time.sleep(1)
-            print(driver.find_element("tag name", "pre").text)
-        elif args.fetch:
-            from urllib.parse import quote           # noqa: PLC0415
-            q = (API + "?action=query&titles=File:" + quote(args.fetch) +
-                 "&prop=imageinfo&iiprop=url&format=json")
-            driver.get(q)
-            time.sleep(1)
-            print(driver.find_element("tag name", "pre").text)
-        else:
-            print("[提示] 用 --search <关键词> 搜文件，或 --fetch <文件名> --out <成就id> 下载")
+            from urllib.parse import quote
+            data = _api_json(driver, API + "?action=query&list=search&srsearch=" +
+                             quote(args.search) + "&srnamespace=6&srlimit=30&format=json")
+            for hit in ((data.get("query") or {}).get("search") or []):
+                print("  " + str(hit.get("title", "")).replace("文件:", ""))
+        for spec in (args.make or []):
+            if ":" not in spec:
+                print(f"[跳过] --make 需要 <wiki文件名>:<成就id>，收到 {spec!r}")
+                continue
+            filename, ach_id = spec.split(":", 1)
+            url = _image_url(driver, filename)
+            if not url:
+                print(f"[跳过] wiki 上找不到文件: {filename}")
+                continue
+            raw_path = os.path.join(DOWNLOADS, filename)
+            if _download(driver, url, raw_path):
+                if _to_badge(raw_path, os.path.join(ASSET_DIR, ach_id.strip() + ".png")):
+                    made += 1
     finally:
         driver.quit()
-    return 0
+    print(f"[完成] 生成 {made} 张徽标")
+    return 0 if made or args.search else 1
 
 
 def main() -> int:
     ap = argparse.ArgumentParser(description="抓 huijiwiki 素材做成就徽标")
     ap.add_argument("--search", default="", help="在文件命名空间里搜关键词")
-    ap.add_argument("--fetch", default="", help="要下载的 wiki 文件名（含扩展名）")
-    ap.add_argument("--out", default="", help="成就 id（下载后处理成 <out>.png）")
+    ap.add_argument("--make", action="append",
+                    help="抓取并处理：<wiki文件名>:<成就id>（可重复）")
     args = ap.parse_args()
+    if not args.search and not args.make:
+        ap.print_help()
+        return 0
     py = ensure_env()
     if os.path.abspath(sys.executable) != os.path.abspath(py):
-        # 用带 selenium 的解释器重跑自己
         return subprocess.call([py, os.path.abspath(__file__)] + sys.argv[1:])
-    return run(py, args)
+    return run(args)
 
 
 if __name__ == "__main__":
