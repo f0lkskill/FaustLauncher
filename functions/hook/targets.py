@@ -244,6 +244,16 @@ OBSERVE_TARGETS: tuple[ObserveTarget, ...] = (
         description="折射铁路整条线总回合（进线路前显示的最好回合数）",
         resolve_stub=False,
     ),
+    # ---- 存档：已通关关卡记录（回溯判定用）--------------------------------
+    # 挂钩 UpdateData（存档载入时必调），只缓存对象指针；采样线程随后轮询它里面的
+    # "已通关关卡列表"，于是**以前打过的关卡也能判定**，不需要用户再打一遍。
+    # 不用静态字段链：那条路靠静态块基址解析，而现有 enkephalin 链重定位本来就是失败的。
+    ObserveTarget(
+        key="stage_clear_info", symbol="UserStageClearInfoData::UpdateData",
+        kind="cache_self", fallback_rva=0x18E62D0,
+        description="存档已通关关卡记录（挂 UpdateData 抓对象，供采样线程轮询）",
+        resolve_stub=False,
+    ),
 )
 
 
@@ -303,6 +313,12 @@ BATTLE_FIELDS: dict[str, tuple[str, str, int]] = {
     # ---- 折射铁路整条线的总回合 ----
     # RailwayDungeonHistoryDataByCollection._collectionId（线路号）
     "railway_collection_id": ("RailwayDungeonHistoryDataByCollection", "_collectionId", 0x10),
+    # ---- 存档：已通关关卡记录 ----
+    # UserStageClearInfoData[0x18] → StageClearInfoList[0x10] → List<StageClearInfo>
+    #   → 每项 [0x10] = 关卡 id
+    "stage_clear_list": ("UserStageClearInfoData", "_stageClearInfoList", 0x18),
+    "clear_info_list": ("StageClearInfoList", "_list", 0x10),
+    "clear_info_id": ("StageClearInfo", "_id", 0x10),
 }
 
 
@@ -324,6 +340,7 @@ FOCUS_PATTERNS: tuple[str, ...] = (
     "Achievement",
     "StageStatisticPopup",
     "RailwayDungeonHistoryData",
+    "StageClearInfo",
     "SaveManager",
     "PlayerData",
     "UserData",

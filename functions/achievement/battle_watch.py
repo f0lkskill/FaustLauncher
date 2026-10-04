@@ -83,6 +83,7 @@ MAP_NAME = "Local\\FaustLauncher_BattleWatch"
 LOG_RING_CAP = 512
 LOG_LINE_MAX = 255
 MAX_HOOKS = 16
+STAGE_WATCH_MAX = 32             # 关注关卡上限（与 DLL 的 BW_STAGE_WATCH_MAX 一致）
 HOOK_NAME_LEN = 40
 TARGET_PROCESS = "LimbusCompany.exe"
 
@@ -113,12 +114,13 @@ KIND_DAMAGE_ACTION = 5  # float(self, action, coin, attacker, bool, mi)    → A
 KIND_SKV = 6            # void (self, mi)：表现层动画 → RND + iid（self->_attackerInstanceID）
 KIND_STAGE_STAT = 7     # void (self, a1, a2, mi)：关卡结算统计 → STG uid=/turn=/dead=/ex=
 KIND_RAILWAY_TOTAL = 8  # int  (self, mi)：折射铁路整条线的总回合 → RWT line=/total=
+KIND_CACHE_SELF = 9     # void (self, a1, mi)：只缓存 self（抓存档对象给采样线程轮询）
                         #   动画 tick 带身份，判定才能“按行动”对齐（否则只能一股脑延后）
 KIND_NUMBERS = {"plain": KIND_PLAIN, "unit": KIND_UNIT,
                 "unit_int_bool": KIND_UNIT_INT_BOOL, "unit_get_int": KIND_UNIT_GET_INT,
                 "action_int": KIND_ACTION_INT, "damage_action": KIND_DAMAGE_ACTION,
                 "skv": KIND_SKV, "stage_stat": KIND_STAGE_STAT,
-                "railway_total": KIND_RAILWAY_TOTAL}
+                "railway_total": KIND_RAILWAY_TOTAL, "cache_self": KIND_CACHE_SELF}
 
 # --------------------------------------------------------------------------- 字段语义
 
@@ -520,6 +522,10 @@ FALLBACK_HOOKS: dict[str, tuple[str, int, str]] = {
     # 宿主对象上的 _collectionId(0x10) 是线路号。结算事件只能给单关回合，总回合只在这儿。
     "railway_total": ("RailwayDungeonHistoryDataByCollection::GetTotalClearTurn",
                       0x1A83AF0, "railway_total"),
+    # ---- 存档：已通关关卡记录 ---------------------------------------------
+    # 挂钩 UpdateData —— 存档载入时必调；它只把对象指针缓存下来（cache_self），
+    # 之后由采样线程轮询里面的"已通关关卡列表"，于是**以前打过的关卡也能判定**。
+    "stage_clear_info": ("UserStageClearInfoData::UpdateData", 0x18E62D0, "cache_self"),
 }
 FALLBACK_FIELDS: dict[str, int] = {
     "unit_instance_id": 0x60,
@@ -556,6 +562,10 @@ FALLBACK_FIELDS: dict[str, int] = {
     "slot_ex_cleared": 0x20,
     # 折射铁路总回合：RailwayDungeonHistoryDataByCollection._collectionId（线路号）
     "railway_collection_id": 0x10,
+    # 已通关关卡记录链（UserStageClearInfoData → 列表 → 关卡 id）
+    "stage_clear_list": 0x18,
+    "clear_info_list": 0x10,
+    "clear_info_id": 0x10,
 }
 # 该候选不做桩解引用（本身就是真实实现/已验证可用）
 NO_STUB_RESOLVE = {"take_attack_dmg_multiplier"}
@@ -624,6 +634,16 @@ class BWConfig(ctypes.Structure):
         ("off_slot_ex_cleared", ctypes.c_int32),
         # 折射铁路整条线的总回合（BWK_RAILWAY_TOTAL）：线路号字段偏移
         ("off_railway_collection_id", ctypes.c_int32),
+        # 存档：已通关关卡记录（BWK_CACHE_SELF 抓对象 + 采样线程轮询）
+        # UserStageClearInfoData[0x18] → StageClearInfoList[0x10] → List<StageClearInfo>
+        #   → 每项 [0x10] = 关卡 id
+        ("off_stage_clear_list", ctypes.c_int32),
+        ("off_clear_info_list", ctypes.c_int32),
+        ("off_clear_info_id", ctypes.c_int32),
+        ("stage_watch_count", ctypes.c_int32),
+        ("stage_watch_ids", ctypes.c_int32 * STAGE_WATCH_MAX),
+        ("stage_clear_data", ctypes.c_int64),   # DLL 自己写：抓到的对象指针
+        ("stage_seen_mask", ctypes.c_int32),    # DLL 自己写：已上报槽位图
     ]
 
 
@@ -2058,6 +2078,11 @@ class BattleWatch:
         names = _sync_buff_watch()
         if names:
             log(f"[战斗观测] 注入前关注 buff 表已写入 {len(names)} 个: {'/'.join(names)}")
+        # 同理：关注关卡表（已通关记录轮询）也要在注入前落好，否则采样线程读到 0 条就跳过。
+        watch = get_watch()
+        stage_ids = observe_stage_ids()
+        if stage_ids and watch is not None:
+            watch.sync_stage_watch(stage_ids)
         return True
 
     def _verify_gameassembly(self) -> None:
@@ -2160,6 +2185,27 @@ class BattleWatch:
                     int(cfg.buff_watch_hashes[1]))
         return readback # type: ignore
 
+    def sync_stage_watch(self, stage_ids=()) -> int:
+        """写"关注关卡"表（已通关记录轮询用），返回写入条数。
+
+        和关注 buff 表同一套路：DLL 只在命中关注表时上报，避免轮询刷爆事件环。
+        成就通过 ``stage_watch_ids()`` 声明自己要哪些关卡。
+        """
+        cfg = self._config()
+        if cfg is None:
+            self._log("[战斗观测] ⚠ 关注关卡表没写进去：共享内存配置不可用（magic 不对？）")
+            return 0
+        ids = [int(v) for v in stage_ids][:STAGE_WATCH_MAX]
+        for i in range(STAGE_WATCH_MAX):
+            cfg.stage_watch_ids[i] = ids[i] if i < len(ids) else 0
+        cfg.stage_watch_count = len(ids)
+        cfg.stage_seen_mask = 0          # 新一轮：允许重新上报
+        if ids:
+            self._log(f"[战斗观测] 关注关卡 {len(ids)} 个: "
+                      f"{'/'.join(str(v) for v in ids[:8])}"
+                      f"{'…' if len(ids) > 8 else ''}")
+        return int(cfg.stage_watch_count)
+
     # ---------------------------------------------------------- 事件处理
     def handle_line(self, line: str) -> BattleEvent | None:
         """解析并应用一行事件（测试可直接调用）。"""
@@ -2243,6 +2289,8 @@ class BattleWatch:
             self._apply_stage_stat(event)
         elif kind == "RWT":
             self._apply_railway_total(event)
+        elif kind == "CLR":
+            self._apply_stage_clear(event)
         return event
 
     def _apply_anim_tick(self, tag: str, iid: int = -1) -> None:
@@ -2673,6 +2721,25 @@ class BattleWatch:
         self._log(f"[战斗观测] ★ 关卡结算: uid={uid or '?'} 通关回合={turn} "
                   f"阵亡={dead} EX={1 if ex else 0}")
 
+    def _apply_stage_clear(self, event: BattleEvent) -> None:
+        """已通关关卡记录（DLL 轮询存档得到的 ``CLR`` 事件）。
+
+        与 ``STG`` 的区别：``STG`` 是"刚刚结算了这一关"，``CLR`` 是"**存档里这关早就通关了**"
+        —— 所以它能回溯：以前打过的 10-4，一进游戏就会被报上来（不需要你再打一遍）。
+        回合数未知（存档那条记录里没有），用 -1 表示。
+        """
+        stage = event.get("stage", 0)
+        cleared = event.get("cleared", 0)
+        if not stage or not cleared:
+            return
+        uid = str(stage)
+        with self._lock:
+            self.state.stage_clears[uid] = {
+                "uid": uid, "turn": -1, "dead": -1, "ex": 0,
+                "cleared": True, "ts": time.time(),
+            }
+        self._log(f"[战斗观测] ★ 存档记录: 关卡 {stage} 已通关（回溯判定）")
+
     def _apply_railway_total(self, event: BattleEvent) -> None:
         """折射铁路总回合（DLL 的 ``RWT`` 事件）。
 
@@ -3058,6 +3125,31 @@ def stage_last() -> dict:
         return {}
     with watch._lock:
         return dict(watch.state.stage_last)
+
+
+def observe_stage_ids() -> tuple[int, ...]:
+    """所有成就声明要关注的关卡 id（已通关记录轮询用）。
+
+    成就通过 ``stage_watch_ids()`` 声明；这里惰性导入成就模块——battle_watch 本身
+    是被成就模块导入的，模块级导入会成环。
+    """
+    ids: list[int] = []
+    try:
+        from functions.achievement.achievements import achievements
+    except Exception:  # noqa: BLE001
+        return ()
+    for ach in achievements:
+        getter = getattr(ach, "stage_watch_ids", None)
+        if not callable(getter):
+            continue
+        try:
+            for value in getter() or ():
+                number = int(value)
+                if number and number not in ids:
+                    ids.append(number)
+        except Exception:  # noqa: BLE001
+            continue
+    return tuple(ids[:STAGE_WATCH_MAX])
 
 
 def railway_totals() -> dict:

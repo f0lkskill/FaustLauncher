@@ -141,6 +141,15 @@ class StageClearTurnAchievement(BaseAchievement):
             return True
         return any(uid.startswith(p) for p in self.uid_prefixes)
 
+    def stage_watch_ids(self) -> tuple:
+        """声明要关注的**关卡 id**（整数）。
+
+        驱动把这些 id 写进 DLL 的关注表，采样线程轮询存档里的"已通关关卡列表"，
+        命中就发 ``CLR`` —— 于是**以前打过的关也能解锁**（回溯判定）。
+        子类按需覆盖；默认不关注（例如只认单关结算回合的成就）。
+        """
+        return ()
+
     def check(self) -> bool:
         """只读观测端结果；没结算过/读不到就保持未解锁。"""
         if self.unlocked:
@@ -153,7 +162,9 @@ class StageClearTurnAchievement(BaseAchievement):
             if not self._uid_matches(str(uid)):
                 continue
             turn = int(info.get("turn", -1))
-            if turn < 0:
+            cleared = bool(info.get("cleared"))
+            # turn < 0 = 来自存档记录（"打过但不知道几回合"）→ 只有不限回合的成就算数
+            if turn < 0 and not (cleared and not self.max_turn):
                 continue
             if self.max_turn and turn > self.max_turn:
                 continue
@@ -163,7 +174,8 @@ class StageClearTurnAchievement(BaseAchievement):
             if self.max_dead >= 0 and dead > self.max_dead:
                 continue
             limit = f"≤{self.max_turn}T" if self.max_turn else "不限回合"
-            self.detail = (f"{self.name}：关卡 uid={uid} 通关回合={turn}"
+            turn_text = f"{turn}T" if turn >= 0 else "已通关（存档记录）"
+            self.detail = (f"{self.name}：关卡 uid={uid} {turn_text}"
                            f"（阈值 {limit}，阵亡={dead}）")
             self.mark_unlocked()
             return True
