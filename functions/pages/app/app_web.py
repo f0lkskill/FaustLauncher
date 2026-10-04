@@ -1167,8 +1167,14 @@ class AppApi:
         插件成就不参与（它们只存本地独立文件，永不上云）。
         """
         try:
-            from functions.base.user_system import sync_achievements
+            from functions.base.user_system import sync_achievements, sync_playtime
             result = sync_achievements(pull=True)
+            # 排行榜用的游玩时长也一起报（读本机 Steam 记录，覆盖语义）
+            play = {}
+            try:
+                play = sync_playtime(overwrite=True)
+            except Exception as exc:  # noqa: BLE001
+                play = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
             pull = result.get("pull") or {}
             push = result.get("push") or {}
             return {
@@ -1181,6 +1187,8 @@ class AppApi:
                 "push_method": str(push.get("method") or ""),
                 "push_count": int(push.get("count") or 0),
                 "local_count": int(result.get("local_count") or 0),
+                "playtime_ok": bool(play.get("ok")),
+                "playtime_hours": float(play.get("hours") or 0),
                 "error": str(push.get("error") or pull.get("error") or ""),
             }
         except Exception as exc:  # noqa: BLE001
