@@ -264,11 +264,11 @@ def _define_achievements():
     # 6 阶段: 1 / 10 / 100 / 1000 / 10000 / 100000 次按 P
     _p_stages = [
         (1, "首脑的智慧", "使用 P 键进行首次自动战斗"),
-        (10, "战术家", "累计按 P 键 10 次"),
-        (100, "自动战斗大师", "累计按 P 键 100 次"),
-        (1000, "全自动指挥官", "累计按 P 键 1000 次"),
-        (10000, "战场自动化之神", "累计按 P 键 10000 次"),
-        (100000, "不需要双手之人", "累计按 P 键 100000 次"),
+        (10, "越用越上瘾。", "累计按 P 键自动战斗 10 次"),
+        (100, "IQ -100", "累计按 P 键自动战斗 100 次"),
+        (1000, "放弃大脑。", "累计按 P 键自动战斗 1000 次"),
+        (10000, "思考已经和呼吸一样简单。", "累计按 P 键自动战斗 10000 次"),
+        (100000, "超级无敌霹雳屌炸天的懈怠罪种", "累计按 P 键自动战斗 100000 次"),
     ]
     for idx, (threshold, nm, ds) in enumerate(_p_stages):
         achievements.append(Achievement(
@@ -279,12 +279,12 @@ def _define_achievements():
 
     # === 点击系列成就 ===
     _click_stages = [
-        (1, "初次点击", "点击 1 次"),
-        (10, "点击新手", "累计点击 10 次"),
-        (100, "双击狂魔", "累计点击 100 次"),
-        (1000, "鼠标艺术家", "累计点击 1000 次"),
-        (10000, "连点传说", "累计点击 10000 次"),
-        (100000, "天选之手", "累计点击 100000 次"),
+        (1, "哇，你点击了一次！", "点击 1 次"),
+        (10, "已经点了十次喽。", "累计点击 10 次"),
+        (100, "点了一百次！好厉害！", "累计点击 100 次"),
+        (1000, "闲的没事..?", "累计点击 1000 次"),
+        (10000, "我去，一万次点击？", "累计点击 10000 次"),
+        (100000, "哇，你点击了 100000 次鼠标！", "累计点击 100000 次"),
     ]
     for idx, (threshold, nm, ds) in enumerate(_click_stages):
         achievements.append(Achievement(
@@ -304,7 +304,7 @@ def _define_achievements():
                           (AchBattle02, RARITY_RARE),
                           (AchBattle03, RARITY_EPIC)):
         try:
-            achievements.append(_cls().with_rarity(_rarity))
+            achievements.append(_cls().with_rarity(_rarity)) # type: ignore
         except Exception as _exc:  # noqa: BLE001
             print(f"[成就] {_cls.__name__} 注册失败: {_exc}")
 
@@ -445,7 +445,7 @@ def register_achievement(instance) -> bool:
         return False
     if any(str(getattr(a, "id", "") or "") == aid for a in achievements):
         return False
-    achievements.append(instance)
+    achievements.append(instance) # type: ignore
     return True
 
 
@@ -643,7 +643,7 @@ def check_achievements(log_callback) -> list[Achievement]:
                     # （它们的内部计数器不会自己涨，全局计数在状态里）。
                     if isinstance(ach, BattleAchievement):
                         matched = ach.check(
-                            battle_count=int(get_state().battle_count or 0), deaths=False)
+                            battle_count=int(get_state().battle_count or 0), deaths=False) # type: ignore
                     else:
                         matched = ach.check()
                 if matched:

@@ -412,8 +412,8 @@
     "version_info": {
         "name": "版本信息",
         "type": "UNABLE_TO_EDIT",
-        "default": "V0.9.0-pre.2.fix.1",
-        "value": "V0.9.0-pre.2.fix.1",
+        "default": "V0.9.1-release",
+        "value": "V0.9.1-release",
         "description": "当前应用程序的版本信息"
     },
     "mems": {
