@@ -1212,6 +1212,8 @@ class BattleState:
     group_binding: int = -1                             # 当前正在播的动画绑定的组号（-1 = 无）
     bound_iid: int = -1                                 # 绑定时动画 tick 带的 iid
     group_flushes: int = 0                              # 因“动画结束”而放行的组数（诊断用）
+    anim_open: bool = False                             # 是否有一手动画已开播（skv_start/complete 置位，skv_end 复位）
+    stray_anim_ends: int = 0                            # 被忽略的游离/重复 skv_end 数（诊断用）
     anim_ticks_total: int = 0                          # 收到的动画 tick 数（skv_*）
     anim_ticks_with_iid: int = 0                        # 其中带了可用 iid 的（说明新 DLL 生效）
     anim_last_tag: str = ""                            # 最近一次 tick 的钩子名
@@ -1257,6 +1259,8 @@ class BattleState:
             "group_binding": self.group_binding,
             "bound_iid": self.bound_iid,
             "group_flushes": self.group_flushes,
+            "anim_open": self.anim_open,
+            "stray_anim_ends": self.stray_anim_ends,
             "anim_ticks": self.anim_ticks_total,
             "anim_ticks_with_iid": self.anim_ticks_with_iid,
             "anim_last_tag": self.anim_last_tag,
@@ -1764,6 +1768,15 @@ class BattleWatch:
             attr = "off_" + key
             if hasattr(cfg, attr):
                 setattr(cfg, attr, int(field_off))
+        # ⚠ 关注 buff 表由 sync_buff_watch 维护，这里必须**原样保留**：
+        #    本函数是「拿一个全新的零值结构体整体覆盖共享内存」，不保留就会把关注表清零 ——
+        #    DLL 读到 buffwatch=0 会直接跳过整条 buff 链，表现就是「buff 钩子一个都抓不到」。
+        #    （实测踩过：注入前重写一次配置 → 关注表归零 → 整局没有任何 BUF 事件）
+        prev = self._config()
+        if prev is not None:
+            cfg.buff_watch_count = int(prev.buff_watch_count)
+            for i in range(BUFF_WATCH_MAX):
+                cfg.buff_watch_hashes[i] = int(prev.buff_watch_hashes[i])
         ctypes.memmove(self._map_view, ctypes.byref(cfg), CONFIG_SIZE)
         return True
 
@@ -1960,6 +1973,11 @@ class BattleWatch:
         if not self._write_config(table):
             log("[战斗观测] 注入前写入钩子配置失败，本次注入跳过")
             return False
+        # 重写配置是整块覆盖共享内存 → 关注 buff 表跟着重新落一遍，
+        # 保证 DLL 一挂上就读到它（buffwatch=0 会让 DLL 完全跳过整条 buff 链）。
+        names = _sync_buff_watch()
+        if names:
+            log(f"[战斗观测] 注入前关注 buff 表已写入 {len(names)} 个: {'/'.join(names)}")
         return True
 
     def _verify_gameassembly(self) -> None:
@@ -2145,14 +2163,23 @@ class BattleWatch:
                 self.state.anim_ticks_with_iid += 1
             if tag not in ANIM_RELEASE_TAGS:
                 # 动画开播/播完：把这一段绑到对应的行动组（skv_end 时才放行）
+                self.state.anim_open = True
                 if iid >= 0:
                     self._bind_group_locked(iid)
                 detail = None
+            elif not self.state.anim_open:
+                # 游离/重复的 skv_end：没有「已开播的动画」就什么都不放行。
+                # ⚠ 这里以前会在 skv_end 上**现绑一个组**再放行 —— 同一手动画的 skv_end 实测
+                #   会来两条（同毫秒、同 iid），第二条于是把**下一个行动组**立刻放行，
+                #   表现就是技能 / 血量 / 理智判定「提前发放」。放行只认开播时绑好的那一个组。
+                self.state.stray_anim_ends += 1
+                detail = None
             elif iid >= 0:
                 self._last_anim_release_ts = now
-                gid = self._bind_group_locked(iid)
+                self.state.anim_open = False
+                gid = self.state.group_binding
                 if gid < 0:
-                    detail = None            # 没有挂起项，只计数
+                    detail = None            # 这一手动画没绑到组（开播时还没有挂起项），只计数
                 else:
                     oid = self.state.groups.get(gid, {}).get("oid", -1)
                     reason = f"动画结束(oid={oid})" if oid > 0 else "动画结束"
@@ -2161,6 +2188,7 @@ class BattleWatch:
                     detail = "；".join(out) if out else None
             else:
                 self._last_anim_release_ts = now
+                self.state.anim_open = False
                 detail = self._flush_one_pending_locked("动画结束")
         if not detail:
             return
@@ -2328,6 +2356,7 @@ class BattleWatch:
             st.next_group = 1
             st.group_binding = -1
             st.bound_iid = -1
+            st.anim_open = False
             st.pending_group.clear()
 
     def _open_group_locked(self) -> int:
