@@ -140,6 +140,14 @@
                                 * 为什么不用 GetTotalClearTurn：那个只在打开线路界面时被调，
                                 * 实测玩家看过六号线依然 0 命中。这个是存档重建时逐个节点构造的，
                                 * 不依赖界面。*/
+#define BWK_RAILWAY_HIST  13   /* void (self, int cid, ..7 more.., mi)：铁路**历史记录**（最好回合）
+                                *   挂钩 RailwayDungeonHistoryDataByCollection::.ctor
+                                *   （签名已从 dump 确认 = 9 个参数，RVA 0x1A83860）
+                                *   arg1 = 线路号(_collectionId)，arg4 = IList<int> clearTurns
+                                *   → RWT line=<线路号> total=<各节点回合求和>
+                                *
+                                * 与 BWK_RAILWAY_NODE 的区别：那个是【本次行程】的存档（没打就是 0），
+                                * 这个才是界面上显示的"你最好的回合数"，也就是成就该用的。*/
 #define BWK_NODE_STATE    10   /* int (self, int main, int sub, int node, mi)：关卡通关状态查询
                                 *   挂钩 UserStageNodeStateData::IsNodeCleared /
                                 *   GetClearNodeState —— 关卡列表每次渲染都会问，
@@ -1343,6 +1351,59 @@ static void call_and_emit_railway_node(void *self, void *a1, const void *method,
         call_and_emit_railway_node(self, a1, method, g_original[N]);             \
     }
 
+/* ---- 折射铁路历史记录（BWK_RAILWAY_HIST）-----------------------------------
+ * 9 个参数的构造函数（签名已从 dump.cs 确认）。arg4 = IList<int> clearTurns
+ * 就是各节点的通关回合 —— 直接求和不依赖任何字段偏移，最稳。*/
+typedef void (__fastcall *fn_railway_hist)(void *self, int collection_id, void *unit_infos,
+                                           void *statistics, void *clear_turns,
+                                           void *ally_buffs, void *enemy_buffs,
+                                           void *line6_duel_logs, void *line6_choice_logs,
+                                           void *override_types, const void *method);
+
+static void call_and_emit_railway_hist(
+    void *self, int collection_id, void *unit_infos, void *statistics, void *clear_turns,
+    void *ally_buffs, void *enemy_buffs, void *line6_duel_logs, void *line6_choice_logs,
+    void *override_types, const void *method, void *original)
+{
+    uint64_t items = 0;
+    int32_t count = 0, i, total = 0;
+    char line[112];
+
+    if (original)
+        ((fn_railway_hist)original)(self, collection_id, unit_infos, statistics, clear_turns,
+                                    ally_buffs, enemy_buffs, line6_duel_logs,
+                                    line6_choice_logs, override_types, method);
+    if (!g_cfg || !g_cfg->observing || !clear_turns)
+        return;
+    if (!safe_read((char *)(uintptr_t)((uint64_t)clear_turns + 0x10), &items, 8) || !items)
+        return;
+    if (!safe_read((char *)(uintptr_t)((uint64_t)clear_turns + 0x18), &count, 4))
+        return;
+    if (count <= 0 || count > 256)
+        return;
+    for (i = 0; i < count; i++) {
+        int32_t v = 0;
+        if (!safe_read((char *)(uintptr_t)(items + 0x20 + 4 * i), &v, 4))
+            break;
+        if (v > 0)
+            total += v;
+    }
+    _snprintf(line, sizeof(line) - 1, "RWT line=%d total=%d nodes=%d",
+              collection_id, total, (int)count);
+    line[sizeof(line) - 1] = '\0';
+    emit(line, TRUE);
+}
+
+#define DEF_RAILWAYHIST_THUNK(N)                                                 \
+    static void __fastcall hk_railhist_##N(                                      \
+        void *self, int a1, void *a2, void *a3, void *a4, void *a5, void *a6,    \
+        void *a7, void *a8, void *a9, const void *method)                        \
+    {                                                                            \
+        bump_hit(N);                                                             \
+        call_and_emit_railway_hist(self, a1, a2, a3, a4, a5, a6, a7, a8, a9,     \
+                                   method, g_original[N]);                       \
+    }
+
 DEF_PLAIN_THUNK(0)  DEF_PLAIN_THUNK(1)  DEF_PLAIN_THUNK(2)  DEF_PLAIN_THUNK(3)
 DEF_PLAIN_THUNK(4)  DEF_PLAIN_THUNK(5)  DEF_PLAIN_THUNK(6)  DEF_PLAIN_THUNK(7)
 DEF_PLAIN_THUNK(8)  DEF_PLAIN_THUNK(9)  DEF_PLAIN_THUNK(10) DEF_PLAIN_THUNK(11)
@@ -1402,6 +1463,15 @@ DEF_RAILWAYNODE_THUNK(12) DEF_RAILWAYNODE_THUNK(13) DEF_RAILWAYNODE_THUNK(14)
 DEF_RAILWAYNODE_THUNK(15) DEF_RAILWAYNODE_THUNK(16) DEF_RAILWAYNODE_THUNK(17)
 DEF_RAILWAYNODE_THUNK(18) DEF_RAILWAYNODE_THUNK(19) DEF_RAILWAYNODE_THUNK(20)
 DEF_RAILWAYNODE_THUNK(21) DEF_RAILWAYNODE_THUNK(22) DEF_RAILWAYNODE_THUNK(23)
+
+DEF_RAILWAYHIST_THUNK(0)  DEF_RAILWAYHIST_THUNK(1)  DEF_RAILWAYHIST_THUNK(2)
+DEF_RAILWAYHIST_THUNK(3)  DEF_RAILWAYHIST_THUNK(4)  DEF_RAILWAYHIST_THUNK(5)
+DEF_RAILWAYHIST_THUNK(6)  DEF_RAILWAYHIST_THUNK(7)  DEF_RAILWAYHIST_THUNK(8)
+DEF_RAILWAYHIST_THUNK(9)  DEF_RAILWAYHIST_THUNK(10) DEF_RAILWAYHIST_THUNK(11)
+DEF_RAILWAYHIST_THUNK(12) DEF_RAILWAYHIST_THUNK(13) DEF_RAILWAYHIST_THUNK(14)
+DEF_RAILWAYHIST_THUNK(15) DEF_RAILWAYHIST_THUNK(16) DEF_RAILWAYHIST_THUNK(17)
+DEF_RAILWAYHIST_THUNK(18) DEF_RAILWAYHIST_THUNK(19) DEF_RAILWAYHIST_THUNK(20)
+DEF_RAILWAYHIST_THUNK(21) DEF_RAILWAYHIST_THUNK(22) DEF_RAILWAYHIST_THUNK(23)
 
 static detour_fn pick_detour(int index, LONG kind)
 {
@@ -1542,6 +1612,21 @@ static detour_fn pick_detour(int index, LONG kind)
         case 18: return (detour_fn)hk_railn_18; case 19: return (detour_fn)hk_railn_19;
         case 20: return (detour_fn)hk_railn_20; case 21: return (detour_fn)hk_railn_21;
         case 22: return (detour_fn)hk_railn_22; default: return (detour_fn)hk_railn_23;
+        }
+    case BWK_RAILWAY_HIST:
+        switch (index) {
+        case 0: return (detour_fn)hk_railhist_0;   case 1: return (detour_fn)hk_railhist_1;
+        case 2: return (detour_fn)hk_railhist_2;   case 3: return (detour_fn)hk_railhist_3;
+        case 4: return (detour_fn)hk_railhist_4;   case 5: return (detour_fn)hk_railhist_5;
+        case 6: return (detour_fn)hk_railhist_6;   case 7: return (detour_fn)hk_railhist_7;
+        case 8: return (detour_fn)hk_railhist_8;   case 9: return (detour_fn)hk_railhist_9;
+        case 10: return (detour_fn)hk_railhist_10; case 11: return (detour_fn)hk_railhist_11;
+        case 12: return (detour_fn)hk_railhist_12; case 13: return (detour_fn)hk_railhist_13;
+        case 14: return (detour_fn)hk_railhist_14; case 15: return (detour_fn)hk_railhist_15;
+        case 16: return (detour_fn)hk_railhist_16; case 17: return (detour_fn)hk_railhist_17;
+        case 18: return (detour_fn)hk_railhist_18; case 19: return (detour_fn)hk_railhist_19;
+        case 20: return (detour_fn)hk_railhist_20; case 21: return (detour_fn)hk_railhist_21;
+        case 22: return (detour_fn)hk_railhist_22; default: return (detour_fn)hk_railhist_23;
         }
     default:
         return (detour_fn)hk_plain_0;
