@@ -527,16 +527,19 @@ body.no-hw .hero {
 .dc-actions { flex-shrink: 0; }
 
 /* ---------- 资源管理 (插件/Mod) ---------- */
-/* 资源管理/下载中心: 外层容器禁 3D/透视/位移 (卡片自身保留 3D 聚焦效果) */
+/* 资源管理/下载中心/成就页: 外层容器禁 3D/透视/位移 (卡片自身保留 3D 聚焦效果)。
+   外层面板跟着鼠标转既难看、又会把指针"甩出"卡片, 所以这三页统一压平。 */
 #page-mod_addon, #page-mod_addon .card, #page-mod_addon .res-list,
-#page-download_center, #page-download_center .card, #page-download_center .res-list {
+#page-download_center, #page-download_center .card, #page-download_center .res-list,
+#page-achievement, #page-achievement .card, #page-achievement .res-list {
   transform-style: flat !important;
   perspective: none !important;
   backface-visibility: visible !important;
   transition: none !important;
 }
 #page-mod_addon .card:hover,
-#page-download_center .card:hover {
+#page-download_center .card:hover,
+#page-achievement .card:hover {
   border-color: var(--border) !important;
   box-shadow: none !important;
   transform: none !important;
@@ -597,7 +600,8 @@ body.no-hw .hero {
 .btn-ico .ico { width: 17px; height: 17px; margin-right: 0; }
 /* 压缩外层卡片内边距, 减小分区按钮距顶部的巨大间距 */
 #page-mod_addon .card,
-#page-download_center .card { padding: 6px 8px 10px; }
+#page-download_center .card,
+#page-achievement .card { padding: 6px 8px 10px; }
 .res-list {
   display: flex; flex-direction: column; gap: 6px;
   padding: 8px 10px;
@@ -849,6 +853,32 @@ body.modal-open .res-card {
 .ach-rarity-epic { color: #b46eff; }
 .ach-rarity-legendary { color: #ffc83c; }
 .ach-rarity-mythic { color: #ff5046; }
+
+/* 稀有度筛选: 图标按钮 + 贴着它展开的小菜单 (点别处/Esc 关闭) */
+.ach-filter-wrap { position: relative; display: inline-flex; }
+.ach-filter-btn.active {
+  color: var(--accent); border-color: rgba(var(--accent-rgb), .45);
+  background: rgba(var(--accent-rgb), .10);
+}
+.ach-filter-menu {
+  position: absolute; right: 0; top: calc(100% + 6px); z-index: 30;
+  min-width: 148px; padding: 6px;
+  background: rgba(var(--panel-rgb), .97); border: 1px solid var(--border-2);
+  border-radius: 10px; box-shadow: 0 14px 30px rgba(0, 0, 0, .38);
+  animation: fadeIn .15s ease;
+}
+.ach-filter-menu[hidden] { display: none; }
+.ach-filter-item {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  width: 100%; padding: 7px 10px; border: none; border-radius: 7px;
+  background: transparent; color: var(--text-2); cursor: pointer; text-align: left;
+  font-family: var(--font); font-size: 12.5px;
+  transition: background-color .15s ease, color .15s ease;
+}
+.ach-filter-item:hover { background: rgba(var(--tint-rgb), .07); color: var(--text); }
+.ach-filter-item.active { color: var(--accent); font-weight: 600; }
+.ach-filter-item .ach-filter-n { color: var(--text-3); font-size: 11.5px; }
+.ach-filter-item.active .ach-filter-n { color: inherit; }
 /* 资源模态详情 (插件/Mod 统一) */
 .res-detail-head { display: flex; gap: 14px; align-items: center; margin: 18px 20px 12px; }
 .res-detail-icon {
