@@ -102,6 +102,23 @@ a = Analysis(
     # 用户系统：app_web 在函数内 import 它们（走服务端 API，不再读写用户笔记），显式列一下更稳
     'functions.base.user_system',
     'functions.base.user_api',
+    # 成就模块：都是**动态/函数内导入**的，PyInstaller 静态分析看不到 —— 漏了就是打包后
+    # "[成就] 模块 data.ach_xxx 导入失败: No module named ..."（实测踩过）。
+    # 注：achievements.py 里现在也改成静态 import 了一遍（双保险），这里列全是为了
+    # 以后新增模块时即使在函数内导入也不会漏。
+    'functions.achievement.data',
+    'functions.achievement.data.ach_yisang_lcb_s3',
+    'functions.achievement.data.ach_faust_kui_speed9',
+    'functions.achievement.data.ach_index_furioso',
+    'functions.achievement.data.ach_magical_girl_tragedy',
+    'functions.achievement.data.ach_heathcliff_sunshower_hurt',
+    'functions.achievement.data.ach_custom_examples',
+    'functions.achievement.data.ach_railway6_100t',
+    'functions.achievement.data.ach_story_10_4',
+    'functions.achievement.data.ach_battle_01',
+    'functions.achievement.data.ach_battle_02',
+    'functions.achievement.data.ach_battle_03',
+    'functions.achievement.data.ach_enkephalin_100',
     'capstone',
 ],
     hookspath=[],

@@ -329,13 +329,32 @@ def _define_achievements():
         "data.ach_railway6_100t",
         "data.ach_story_10_4",
     )
-    import importlib as _importlib
-    for _module in _battle_achievement_modules:
-        try:
-            _mod = _importlib.import_module(f"functions.achievement.{_module}")
-        except Exception as exc:  # noqa: BLE001
-            print(f"[成就] 模块 {_module} 导入失败: {exc}")
-            continue
+    # ⚠ 打包（PyInstaller）**只收集静态可见的导入**：动态 ``import_module`` 的模块不会进包，
+    # 冻结后就是 "[成就] 模块 data.ach_xxx 导入失败: No module named ..."（实测踩过）。
+    # 所以这里显式 import 一遍，下面的遍历只处理这些已经导入进来的模块对象 —— 与打包配置无关，
+    # 以后新增成就模块时**只要加到这个 import 列表里**（别再只往字符串元组里加）。
+    from functions.achievement.data import (            # noqa: F401
+        ach_custom_examples,
+        ach_faust_kui_speed9,
+        ach_heathcliff_sunshower_hurt,
+        ach_index_furioso,
+        ach_magical_girl_tragedy,
+        ach_railway6_100t,
+        ach_story_10_4,
+        ach_yisang_lcb_s3,
+    )
+    _battle_achievement_mods = (
+        ach_yisang_lcb_s3,
+        ach_faust_kui_speed9,
+        ach_index_furioso,
+        ach_magical_girl_tragedy,
+        ach_heathcliff_sunshower_hurt,
+        ach_custom_examples,
+        ach_railway6_100t,
+        ach_story_10_4,
+    )
+    for _mod in _battle_achievement_mods:
+        _name = getattr(_mod, "__name__", "?")
         explicit = getattr(_mod, "ACHIEVEMENTS", None)
         if explicit:
             for _inst in explicit:
@@ -345,7 +364,7 @@ def _define_achievements():
             try:
                 achievements.append(_cls())
             except Exception as exc:  # noqa: BLE001
-                print(f"[成就] {_module}.{_cls.__name__} 注册失败（抽象基类可忽略）: {exc}")
+                print(f"[成就] {_name}.{_cls.__name__} 注册失败（抽象基类可忽略）: {exc}")
 
     # === 插件（addon）自定义成就 ===
     # 扫描 addons/*/ 里插件声明的成就模块，登记到同一张表 —— 与内置成就完全同权。
