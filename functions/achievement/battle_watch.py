@@ -2770,8 +2770,13 @@ class BattleWatch:
         """关卡通关状态查询（DLL 的 ``NCL`` 事件）——游戏自己在问"这关通了没"。
 
         章节号 / 节点号是钩子的**入参**，返回值是通没通；所以这些记录不依赖任何
-        id 格式猜测。同时记两个键（``章-小节`` 与 ``章-节点``），因为"10-4"到底对应
-        小节还是节点在不同章节里不一样，两个都留，成就用前缀匹配即可命中。
+        id 格式猜测。
+
+        ⚠ 入参是**内部 id**，不是界面上的"第几关"（实测：章1 的节点报的是
+        sub=101 / node=10101，即 ``sub = 章*100+小节``、``node = 章*10000+小节*100+节点``）。
+        所以这里存**原始 id 字符串**（`sub` / `node`），成就用前缀匹配即可命中 ——
+        第 10 章第 4 节 = ``1004``，其节点 = ``1004xx``。
+        另外附一个 ``章:小节:节点`` 组合键，方便排查。
         """
         if not event.get("cleared", 0):
             return
@@ -2779,14 +2784,15 @@ class BattleWatch:
         sub = event.get("sub", 0)
         node = event.get("node", 0)
         ts = time.time()
-        keys = (f"{main}-{sub}", f"{main}-{node}")
+        # 原始 id 才是能和"章节-节"对上的东西（组合键只做诊断用）
+        keys = (str(sub), str(node), f"{main}:{sub}:{node}")
         with self._lock:
             for key in keys:
                 self.state.stage_clears[key] = {
                     "uid": key, "turn": -1, "dead": -1, "ex": 0,
                     "cleared": True, "ts": ts,
                 }
-        self._log(f"[战斗观测] ★ 关卡已通关（游戏查询）: 章{main} 小节{sub} 节点{node}")
+        self._log(f"[战斗观测] ★ 关卡已通关（游戏查询）: 章{main} 小节id={sub} 节点id={node}")
 
     def _apply_railway_total(self, event: BattleEvent) -> None:
         """折射铁路总回合（DLL 的 ``RWT`` 事件）。
