@@ -220,7 +220,19 @@ function renderLaunchButtons() {
   }
 }
 
-// 向后端要一次真实状态并刷新按钮 (启动时 / 流程结束后 / 页面切回主页时调用)
+// 初始化专用: 首屏**不查游戏进程**, 直接按"可以启动"渲染。
+// 进程检测在多次启动游戏之后会误报"仍在运行" —— 首屏一旦被画成"关闭游戏",
+// 用户就既关不掉也启动不了。真实状态由后端 game_state 事件在运行期更新
+// (后端同样改成了变化驱动: 初始化只建立基线, 不把检测结论交给界面)。
+function syncLaunchButtonsOnBoot() {
+  launchBtnState.pipeline = false;
+  launchBtnState.pipelineKind = null;
+  launchBtnState.gameAlive = false;
+  launchBtnState.gameBusy = false;
+  renderLaunchButtons();
+}
+
+// 向后端要一次状态并刷新按钮 (流程结束后 / 页面切回主页时调用)
 async function syncLaunchButtons() {
   if (!api || !api.get_launch_state) { renderLaunchButtons(); return; }
   try {
