@@ -96,6 +96,8 @@ _PATH_ACTIONS = {
     "/api/me/name": "上报昵称",
     "/api/me/achievements": "上报成就(方式①)",
     "/api/achievements/overwrite": "上报成就(方式②)",
+    "/api/me/playtime": "上报游玩时长",
+    "/api/leaderboard": "读排行榜",
     "/api/download": "上报下载",
 }
 _PATH_ACTION_PREFIXES = (
@@ -360,3 +362,39 @@ def report_download(name: str, kind: str) -> dict:
     return _request("POST", "/api/download",
                     {"name": str(name or "").strip(), "type": str(kind or "").strip()},
                     note=f"{kind}:{name}")
+
+
+# --------------------------------------------------------------------------- 游玩时长
+# 服务端把时长单独存一篇统计笔记（心跳式高频上报，不塞进用户表）。两种写法：
+#   {"add": N}        —— 累加 N 秒（客户端只知道"这一段玩了多久"时用）
+#   {"playtime": N}   —— 覆盖为 N 秒（**本地就是权威总量**时用，我们读 Steam 记录属于这种）
+
+
+def report_playtime(seconds: int, overwrite: bool = True) -> dict:
+    """上报自己的累计游玩时长（单位秒）。
+
+    ``overwrite=True`` 走覆盖语义（``{"playtime": N}``）—— Steam 的 ``Playtime`` 本身就是
+    累计总量，覆盖最准确；``overwrite=False`` 时走累加语义（``{"add": N}``）。
+    """
+    try:
+        value = max(0, int(seconds))
+    except (TypeError, ValueError):
+        value = 0
+    payload = {"playtime": value} if overwrite else {"add": value}
+    return _request("POST", "/api/me/playtime", payload,
+                    note=f"{'覆盖' if overwrite else '累加'} {value} 秒")
+
+
+def leaderboard(kind: str = "playtime", limit: int = 20) -> dict:
+    """读排行榜（公开只读，不需要登录也能拿；登录了会额外带自己的名次）。
+
+    ``kind`` 取 ``"playtime"``（游玩时长）或 ``"achievements"``（已解锁成就数）。
+    榜单是 **GET + 查询串**（``?type=&limit=``），所以这里把参数拼进路径。
+    """
+    try:
+        size = max(1, min(200, int(limit)))
+    except (TypeError, ValueError):
+        size = 20
+    kind = str(kind or "playtime").strip() or "playtime"
+    path = f"/api/leaderboard?type={quote(kind, safe='')}&limit={size}"
+    return _request("GET", path, note=f"{kind} 前 {size} 名")

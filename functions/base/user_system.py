@@ -531,6 +531,33 @@ def sync_achievements(pull: bool = True, mode: str = "union") -> dict:
             "local_count": len(completed_achievements())}
 
 
+def sync_playtime(overwrite: bool = True) -> dict:
+    """读本机 Steam 记录的游玩时长并上报（排行榜用）。
+
+    数据源是 ``<Steam>/userdata/<id>/config/localconfig.vdf`` 里的 ``Playtime``（分钟）——
+    **那个文件只存在于已登录 Steam 客户端的本机**，远程拿不到，所以必须在用户自己的
+    电脑上读。启动器初始化 / 云端同步时各跑一次即可。
+
+    Steam 的 ``Playtime`` 本身就是**累计总量**，所以用**覆盖**语义上报
+    （``{"playtime": 秒}``），不需要自己维护增量、也不会因重复上报而翻倍。
+    """
+    try:
+        from functions.base import steam_playtime
+        info = steam_playtime.read_playtime()
+    except Exception as exc:  # noqa: BLE001
+        print(f"[用户] 读取 Steam 游玩时长失败: {type(exc).__name__}: {exc}")
+        return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+    if not info.get("ok"):
+        print(f"[用户] 游玩时长未上报: {info.get('error')}")
+        return {"ok": False, "skipped": True, "error": str(info.get("error") or "")}
+    result = user_api.report_playtime(int(info["seconds"]), overwrite=overwrite)
+    ok = bool(result.get("ok"))
+    print(f"[用户] 游玩时长上报: 本机 {info['hours']} 小时（{info['minutes']} 分钟）→ "
+          f"{'成功' if ok else '失败(' + str(result.get('error')) + ')'}")
+    return {"ok": ok, "seconds": int(info["seconds"]), "hours": info["hours"],
+            "minutes": int(info["minutes"]), "error": str(result.get("error") or "")}
+
+
 def sync_user(settings_manager=None) -> dict:
     """启动 / 窗口聚焦时同步: 皮肤取**并集**, 昵称以服务端为准。
 
@@ -600,6 +627,13 @@ def sync_user(settings_manager=None) -> dict:
                   f"{'成功' if ach.get('ok') else '失败(' + str(ach['push'].get('error')) + ')'}")
         except Exception as exc:  # noqa: BLE001
             print(f"[用户] 成就同步异常（不影响皮肤同步）: {type(exc).__name__}: {exc}")
+
+        # 游玩时长也顺手报一次（排行榜）：读本机 Steam 的 localconfig.vdf。
+        # Steam 的 Playtime 是累计总量 → 覆盖语义，重复上报不会翻倍。
+        try:
+            sync_playtime(overwrite=True)
+        except Exception as exc:  # noqa: BLE001
+            print(f"[用户] 游玩时长同步异常（不影响其它同步）: {type(exc).__name__}: {exc}")
 
         remote_name = str(data.get("user_name") or "").strip()
         if remote_name:
