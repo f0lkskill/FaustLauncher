@@ -459,14 +459,29 @@ def _replace_chain(chain: targets_mod.ChainTarget, **kwargs) -> targets_mod.Chai
 
 
 def _build_symbols(symbols: dump_cs_mod.SymbolIndex) -> dict:
-    """裁剪符号表（方法只留 rva，字段只留偏移），控制笔记体积。"""
+    """裁剪符号表（方法只留 rva，字段只留偏移），控制笔记体积。
+
+    **钩子/观测符号优先入表**：它们必须永远在索引里，否则游戏更新后钩子拿不到新 RVA，
+    只能靠代码里的回退值（而且回退值会过期）。以前是按 dump 顺序直接截断到上限，
+    排在 dump 后面的类会被**静默丢掉** —— 实测：``RailwayDungeonHistoryDataByCollection``
+    就这样被截掉（40000/60000 上限都一样，因为它排在 65 万行附近）。
+    """
+    def _slim(item: dict) -> dict:
+        return {"rva": int(item.get("rva") or 0),
+                "va": int(item.get("va") or 0),
+                "slot": item.get("slot")}
+
+    required = set(targets_mod.required_symbols())
     methods = {}
-    for key, item in symbols.methods.items():
-        methods[key] = {"rva": int(item.get("rva") or 0),
-                        "va": int(item.get("va") or 0),
-                        "slot": item.get("slot")}
+    for key, item in symbols.methods.items():          # 1) 钩子符号，不占上限
+        if key in required:
+            methods[key] = _slim(item)
+    for key, item in symbols.methods.items():          # 2) 其余按 dump 顺序填到上限
+        if key in methods:
+            continue
         if len(methods) >= targets_mod.MAX_METHODS:
             break
+        methods[key] = _slim(item)
     fields = {}
     for key, item in symbols.fields.items():
         fields[key] = int(item.get("offset") or 0)
