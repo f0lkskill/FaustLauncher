@@ -591,6 +591,7 @@ def sync_user(settings_manager=None) -> dict:
         # 成就也跟着同步一次：**先与云端取并集写回本地（只增不减），再把并集全量推回去**。
         # 插件成就不参与（它们只存本地独立文件，永远不上云）。
         try:
+            print("[用户] 成就云端同步: 开始（拉取 → 与本地取并集 → 回推全量）")
             ach = sync_achievements(pull=True)
             pull = ach.get("pull") or {}
             print(f"[用户] 成就同步: 云端 {pull.get('count', '?')} 条 / 本地原有 "
