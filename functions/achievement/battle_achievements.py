@@ -107,6 +107,69 @@ class BattleRuleAchievement(BaseAchievement):
         return self.unlocked
 
 
+class StageClearTurnAchievement(BaseAchievement):
+    """「某个关卡在 N 回合内通关」—— 数据来自 battle_watch 的 ``STG`` 事件。
+
+    **为什么单独一个基类**：折射铁路（玩家口中的一号线/二号线/六号线…）的通关回合数
+    **只在内存里**，Player.log 完全没有（Railway/Turn 一个都搜不到）。所以它不走
+    ``BattleRule`` 那一套（那是"事件流 → 规则命中"），而是直接读关卡结算统计里的
+    ``_clearTurn``（见 dump.cs: StageStatisticPopupSlotData）。
+
+    判定：关卡 uid 命中 ``uid_prefixes`` 且 ``turn <= max_turn``。
+
+    参数：
+        uid_prefixes  关卡 uid 前缀（铁路关卡形如 ``1095x`` → 六号线）；空 = 不限
+        max_turn      通关回合数上限（0 = 不限）
+        require_ex    是否要求 EX（全清）
+        max_dead      允许的阵亡数（-1 = 不限）
+    """
+
+    battle_driven = True
+
+    def __init__(self, ach_id: str, name: str, description: str,
+                 uid_prefixes=(), max_turn: int = 0, require_ex: bool = False,
+                 max_dead: int = -1, rarity: str = "epic"):
+        super().__init__(ach_id, name, description, rarity)
+        self.uid_prefixes = tuple(str(p) for p in uid_prefixes)
+        self.max_turn = int(max_turn)
+        self.require_ex = bool(require_ex)
+        self.max_dead = int(max_dead)
+        self.detail = ""                      # 命中详情（日志/界面用）
+
+    def _uid_matches(self, uid: str) -> bool:
+        if not self.uid_prefixes:
+            return True
+        return any(uid.startswith(p) for p in self.uid_prefixes)
+
+    def check(self) -> bool:
+        """只读观测端结果；没结算过/读不到就保持未解锁。"""
+        if self.unlocked:
+            return True
+        try:
+            clears = battle_watch.stage_clears()
+        except Exception:  # noqa: BLE001
+            return False
+        for uid, info in clears.items():
+            if not self._uid_matches(str(uid)):
+                continue
+            turn = int(info.get("turn", -1))
+            if turn < 0:
+                continue
+            if self.max_turn and turn > self.max_turn:
+                continue
+            if self.require_ex and not int(info.get("ex", 0)):
+                continue
+            dead = int(info.get("dead", -1))
+            if self.max_dead >= 0 and dead > self.max_dead:
+                continue
+            limit = f"≤{self.max_turn}T" if self.max_turn else "不限回合"
+            self.detail = (f"{self.name}：关卡 uid={uid} 通关回合={turn}"
+                           f"（阈值 {limit}，阵亡={dead}）")
+            self.mark_unlocked()
+            return True
+        return False
+
+
 class SkillUseAchievement(BattleRuleAchievement):
     """「某个身份使用了某个技能」—— 回合边界结算（与李箱三技能成就同逻辑）。
 
