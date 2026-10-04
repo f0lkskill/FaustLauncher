@@ -15,10 +15,11 @@
  * ============================================================================== */
 'use strict';
 
-let achTab = 'done';            // 当前分区: done | todo
+let achTab = 'all';             // 当前分区: all | done | todo (默认全部)
 let achPage = 1;                // 当前页
 const ACH_PAGE_SIZE = 5;        // 每页条数 (与资源管理/下载中心一致)
 let achSearch = '';             // 搜索词
+let achRarity = '';             // 稀有度筛选: '' = 不筛
 let achItems = [];              // 后端返回的完整列表 (未过滤)
 let achLoaded = false;          // 是否已经拿到过一次数据
 let achRefreshing = null;       // 正在进行的刷新 Promise (合并重复请求)
@@ -32,24 +33,42 @@ const ACH_RARITY_ZH = {
   common: '普通', uncommon: '优秀', rare: '稀有',
   epic: '史诗', legendary: '传说', mythic: '神话',
 };
+// 排列/筛选顺序: **稀有的靠前** (神话 → 普通), 同类保持后端给的顺序
+const ACH_RARITY_ORDER = ['mythic', 'legendary', 'epic', 'rare', 'uncommon', 'common'];
+
+function achRarityKey(item) {
+  return String((item && item.rarity) || '').toLowerCase();
+}
+
+function achRarityRank(item) {
+  const i = ACH_RARITY_ORDER.indexOf(achRarityKey(item));
+  return i < 0 ? ACH_RARITY_ORDER.length : i;   // 没标稀有度的排最后
+}
 
 // ---------------- 分区 / 计数 ----------------
 
+function achTabItems(tab) {
+  if (tab === 'all' || !tab) return achItems.slice();
+  return achItems.filter(it => (tab === 'done' ? !!it.completed : !it.completed));
+}
+
 function achCount(tab) {
-  return achItems.filter(it => (tab === 'done' ? !!it.completed : !it.completed)).length;
+  return achTabItems(tab).length;
 }
 
 // 计数直接写在分区按钮上, 不再单占一行
 function renderAchCounts() {
-  const d = $('#ach-count-done');
-  const t = $('#ach-count-todo');
-  if (d) d.textContent = String(achCount('done'));
-  if (t) t.textContent = String(achCount('todo'));
+  [['all', '#ach-count-all'], ['done', '#ach-count-done'], ['todo', '#ach-count-todo']]
+    .forEach(([tab, sel]) => {
+      const el = $(sel);
+      if (el) el.textContent = String(achCount(tab));
+    });
 }
 
 function syncAchTabs() {
   $$('#page-achievement .res-tab').forEach(b => {
-    b.classList.toggle('active', (b.dataset.ach === 'todo' ? 'todo' : 'done') === achTab);
+    const t = b.dataset.ach || 'all';
+    b.classList.toggle('active', t === achTab);
   });
 }
 
@@ -98,11 +117,10 @@ function renderAchAll() {
   renderAchList();
 }
 
-function renderAchList() {
-  const list = $('#ach-list');
-  if (!list) return;
-  list.innerHTML = '';
-  let items = achItems.filter(it => (achTab === 'done' ? !!it.completed : !it.completed));
+// 当前分区 → 稀有度筛选 → 搜索 → 按稀有度排列
+function achVisibleItems() {
+  let items = achTabItems(achTab);
+  if (achRarity) items = items.filter(it => achRarityKey(it) === achRarity);
   if (achSearch) {
     const kw = achSearch.toLowerCase();
     items = items.filter(it =>
@@ -110,12 +128,26 @@ function renderAchList() {
       (it.description || '').toLowerCase().includes(kw) ||
       (it.id || '').toLowerCase().includes(kw));
   }
+  // 稀有度排列 (神话 → 普通); 同稀有度保持后端给的顺序 → 带下标做稳定排序
+  return items.map((it, i) => ({ it, i }))
+    .sort((a, b) => (achRarityRank(a.it) - achRarityRank(b.it)) || (a.i - b.i))
+    .map(p => p.it);
+}
+
+function renderAchList() {
+  const list = $('#ach-list');
+  if (!list) return;
+  list.innerHTML = '';
+  const items = achVisibleItems();
   const totalPages = Math.max(1, Math.ceil(items.length / ACH_PAGE_SIZE));
   if (achPage > totalPages) achPage = totalPages;
   const pageItems = items.slice((achPage - 1) * ACH_PAGE_SIZE, achPage * ACH_PAGE_SIZE);
   if (!pageItems.length) {
-    let empty = achTab === 'done' ? '还没有已完成的成就' : '全部成就都已完成';
-    if (achSearch) empty = '没有匹配的成就（' + (achTab === 'done' ? '已完成' : '未完成') + '）';
+    let empty;
+    if (achSearch || achRarity) empty = '没有匹配的成就';
+    else if (achTab === 'done') empty = '还没有已完成的成就';
+    else if (achTab === 'todo') empty = '全部成就都已完成';
+    else empty = '还没有成就数据';
     list.innerHTML = '<div class="res-empty">' + esc(empty) + '</div>';
   } else {
     pageItems.forEach((item, i) => {
@@ -125,6 +157,7 @@ function renderAchList() {
     });
   }
   renderAchPagination($('#ach-pagination'), items.length, totalPages);
+  syncAchFilterButton();
 }
 
 function renderAchPagination(pagination, totalItems, totalPages) {
@@ -229,12 +262,70 @@ async function cloudSyncAchievements() {
   }
 }
 
+// ---------------- 稀有度筛选 ----------------
+
+// 菜单里只列当前分区里真的有的稀有度, 数量按**当前分区**统计 (与搜索无关)
+function renderAchFilterMenu() {
+  const menu = $('#ach-filter-menu');
+  if (!menu) return;
+  const tabItems = achTabItems(achTab);
+  const row = (value, label, count) =>
+    '<button class="ach-filter-item' + (achRarity === value ? ' active' : '') +
+    '" type="button" data-rarity="' + esc(value) + '">' +
+      '<span class="ach-filter-name">' + esc(label) + '</span>' +
+      '<span class="ach-filter-n">' + count + '</span>' +
+    '</button>';
+  let html = row('', '全部稀有度', tabItems.length);
+  ACH_RARITY_ORDER.forEach(r => {
+    const n = tabItems.filter(it => achRarityKey(it) === r).length;
+    if (n) html += row(r, ACH_RARITY_ZH[r] || r, n);
+  });
+  menu.innerHTML = html;
+  menu.querySelectorAll('.ach-filter-item').forEach(btn => {
+    btn.addEventListener('click', () => {
+      achRarity = btn.dataset.rarity || '';
+      achPage = 1;
+      closeAchFilterMenu();
+      renderAchAll();
+    });
+  });
+}
+
+function syncAchFilterButton() {
+  const btn = $('#ach-filter');
+  if (!btn) return;
+  btn.classList.toggle('active', !!achRarity);
+  btn.title = achRarity
+    ? ('稀有度筛选：' + (ACH_RARITY_ZH[achRarity] || achRarity) + '（点击更换）')
+    : '按稀有度筛选';
+}
+
+function openAchFilterMenu() {
+  const menu = $('#ach-filter-menu');
+  if (!menu) return;
+  renderAchFilterMenu();
+  menu.hidden = false;
+}
+
+function closeAchFilterMenu() {
+  const menu = $('#ach-filter-menu');
+  if (menu) menu.hidden = true;
+}
+
+function toggleAchFilterMenu() {
+  const menu = $('#ach-filter-menu');
+  if (!menu) return;
+  if (menu.hidden) openAchFilterMenu();
+  else closeAchFilterMenu();
+}
+
 // ---------------- 事件绑定 ----------------
 
 function bindAchievementEvents() {
   $$('#page-achievement .res-tab').forEach(btn => {
     btn.addEventListener('click', () => {
-      const next = btn.dataset.ach === 'todo' ? 'todo' : 'done';
+      const next = btn.dataset.ach || 'all';
+      closeAchFilterMenu();
       if (next === achTab) return;
       achTab = next;
       achPage = 1;
@@ -252,6 +343,22 @@ function bindAchievementEvents() {
     });
   }
 
+  // 稀有度筛选: 点按钮开合菜单, 点别处/Esc 关掉
+  const filterBtn = $('#ach-filter');
+  if (filterBtn) {
+    filterBtn.addEventListener('click', (e) => {
+      if (e && e.stopPropagation) e.stopPropagation();
+      toggleAchFilterMenu();
+    });
+  }
+  document.addEventListener('click', (e) => {
+    const wrap = $('#ach-filter-wrap');
+    if (wrap && e.target && !wrap.contains(e.target)) closeAchFilterMenu();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeAchFilterMenu();
+  });
+
   const cloud = $('#ach-cloud-sync');
   if (cloud) cloud.addEventListener('click', cloudSyncAchievements);
 
@@ -262,4 +369,5 @@ function bindAchievementEvents() {
   });
 
   renderAchCounts();
+  syncAchFilterButton();
 }

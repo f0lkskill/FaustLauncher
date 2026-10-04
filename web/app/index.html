@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>FaustLauncher 浮士德启动器</title>
-<link rel="stylesheet" href="css/style.css?v=158">
+<link rel="stylesheet" href="css/style.css?v=159">
 </head>
 <body>
 <div id="titlebar">
@@ -217,7 +217,8 @@
       <div class="card">
         <div class="res-toolbar">
           <div class="res-tabs">
-            <button class="res-tab active" data-ach="done">已完成<span class="res-tab-count" id="ach-count-done"></span></button>
+            <button class="res-tab active" data-ach="all">全部<span class="res-tab-count" id="ach-count-all"></span></button>
+            <button class="res-tab" data-ach="done">已完成<span class="res-tab-count" id="ach-count-done"></span></button>
             <button class="res-tab" data-ach="todo">未完成<span class="res-tab-count" id="ach-count-todo"></span></button>
           </div>
           <div class="res-search-wrap">
@@ -225,6 +226,11 @@
             <input class="res-search" id="ach-search" type="text" placeholder="搜索成就...">
           </div>
           <div class="res-actions">
+            <!-- 稀有度筛选: 点开一个小菜单按稀有度分类 (与分区/搜索叠加生效) -->
+            <div class="ach-filter-wrap" id="ach-filter-wrap">
+              <button class="btn btn-ghost btn-icon ach-filter-btn" id="ach-filter" title="按稀有度筛选"><svg class="ico" data-icon="hamburger-button.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg></button>
+              <div class="ach-filter-menu" id="ach-filter-menu" hidden></div>
+            </div>
             <button class="btn btn-ghost btn-icon" id="ach-cloud-sync" title="云端同步刷新"><svg class="ico" data-icon="refresh.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg></button>
           </div>
         </div>
@@ -333,38 +339,38 @@
      各文件职责见文件头注释; 总览见 js/app.js 顶部。
      ============================================================ -->
 <!-- core: 基座层(环境/状态/工具/后端通道/外壳) -->
-<script src="js/core/bootstrap.js?v=158"></script>
-<script src="js/core/state.js?v=158"></script>
-<script src="js/core/utils.js?v=158"></script>
+<script src="js/core/bootstrap.js?v=159"></script>
+<script src="js/core/state.js?v=159"></script>
+<script src="js/core/utils.js?v=159"></script>
 <!-- 图标仓库: 内联 SVG (assets/icon/*.svg), 取代此前的 emoji 图标 -->
-<script src="js/core/icons.js?v=158"></script>
-<script src="js/core/bridge.js?v=158"></script>
-<script src="js/core/events.js?v=158"></script>
+<script src="js/core/icons.js?v=159"></script>
+<script src="js/core/bridge.js?v=159"></script>
+<script src="js/core/events.js?v=159"></script>
 <!-- ui: 通用界面件(外观/反馈/装饰) -->
-<script src="js/ui/theme.js?v=158"></script>
-<script src="js/ui/sound.js?v=158"></script>
-<script src="js/ui/frame_loading.js?v=158"></script>
-<script src="js/ui/terminal.js?v=158"></script>
-<script src="js/ui/tilt.js?v=158"></script>
-<script src="js/ui/background.js?v=158"></script>
-<script src="js/ui/character.js?v=158"></script>
-<script src="js/ui/carousel.js?v=158"></script>
-<script src="js/ui/version_modal.js?v=158"></script>
+<script src="js/ui/theme.js?v=159"></script>
+<script src="js/ui/sound.js?v=159"></script>
+<script src="js/ui/frame_loading.js?v=159"></script>
+<script src="js/ui/terminal.js?v=159"></script>
+<script src="js/ui/tilt.js?v=159"></script>
+<script src="js/ui/background.js?v=159"></script>
+<script src="js/ui/character.js?v=159"></script>
+<script src="js/ui/carousel.js?v=159"></script>
+<script src="js/ui/version_modal.js?v=159"></script>
 <!-- features: 业务功能(流水线/资源/下载/工具/主页/设置/关于) -->
-<script src="js/features/pipeline.js?v=158"></script>
-<script src="js/features/resources.js?v=158"></script>
-<script src="js/features/downloads.js?v=158"></script>
-<script src="js/features/tools.js?v=158"></script>
-<script src="js/features/home.js?v=158"></script>
-<script src="js/features/settings.js?v=158"></script>
-<script src="js/features/about.js?v=158"></script>
+<script src="js/features/pipeline.js?v=159"></script>
+<script src="js/features/resources.js?v=159"></script>
+<script src="js/features/downloads.js?v=159"></script>
+<script src="js/features/tools.js?v=159"></script>
+<script src="js/features/home.js?v=159"></script>
+<script src="js/features/settings.js?v=159"></script>
+<script src="js/features/about.js?v=159"></script>
 <!-- 玻璃窗 (皮肤系统) -->
-<script src="js/features/skins.js?v=158"></script>
-<script src="js/features/user.js?v=158"></script>
+<script src="js/features/skins.js?v=159"></script>
+<script src="js/features/user.js?v=159"></script>
 <!-- 成就页 (本地完成记录, 云端后续接入) -->
-<script src="js/features/achievements.js?v=158"></script>
+<script src="js/features/achievements.js?v=159"></script>
 <!-- 入口: 启动流程 + 对外插件 API (必须最后) -->
-<script src="js/app.js?v=158"></script>
+<script src="js/app.js?v=159"></script>
 <script>
 /* 独立兜底: 完全不依赖 app.js。无论 app.js 是否崩溃, 只要内容加载完成或超时,
    就移除主页两张卡片的 loading 圆圈。 */
