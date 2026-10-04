@@ -1744,6 +1744,7 @@ class AppApi:
             # "关闭" —— 既关不掉, 又会把按钮卡在"关闭游戏"
             pids = _game_process_pids()
             if not pids:
+                _update_game_state(False, _any_game_process_running())
                 return {"ok": True, "game_alive": False, "already_exited": True}
 
             print(f"[游戏] 正在关闭 LimbusCompany.exe (PID: {pids})")
@@ -1759,39 +1760,46 @@ class AppApi:
 
             if _game_process_pids():
                 print("[游戏] 关闭失败: LimbusCompany.exe 仍在运行 (可能以管理员权限启动)")
+                _update_game_state(True, True)      # 关不掉: 对外状态同步为"在运行"
                 return {"ok": False, "game_alive": True,
                         "error": "无法关闭游戏 (进程可能以管理员权限运行, 请手动关闭)"}
 
             print("[游戏] 已关闭 LimbusCompany.exe")
+            _update_game_state(False, _any_game_process_running())
             return {"ok": True, "game_alive": False}
         except Exception as e:
             print(f"[游戏] 关闭游戏失败: {e}")
-            return {"ok": False, "game_alive": _game_process_running(), "error": str(e)}
+            alive = _game_process_running()
+            _update_game_state(alive, _any_game_process_running())
+            return {"ok": False, "game_alive": alive, "error": str(e)}
 
     def get_launch_state(self):
         """启动器按钮所需的实时状态。
 
         running   : 是否正有启动/汉化流程在跑 (按钮显示"中止...")
-        game_alive: 身份校验过的游戏进程是否在运行 (按钮显示"关闭游戏")
+        game_alive: 游戏是否在运行 (按钮显示"关闭游戏")
         game_busy : 是否存在任何同名进程 (汉化更新按钮据此置灰, 与后端拦截口径一致)
         kind      : 当前流程类型 'launch' / 'translate'
+
+        ★ game_alive / game_busy 取自**变化驱动**的对外状态 (见 _game_state),
+          这里**不再现查进程**: 初始化阶段恒为"未运行"(主页直接显示可启动),
+          之后只随检测结论跳变 —— 于是检测误报也不会在切页/窗口聚焦回读时
+          把按钮顶成"关闭游戏"。真正需要实时判断的地方 (汉化更新的写保护)
+          仍在后端用宽松检测硬拦, 不受这里影响。
         """
         try:
             from functions.pages.app import page_loader as _pl
-            verified = _game_process_pids()
             return {
                 "running": bool(getattr(_pl, "downloading", False)),
                 "cancelling": bool(_pl.is_cancel_requested()),
-                # game_alive 只认"本机配置的那台游戏" —— 同名残留进程/别的会话里的进程
-                # 不再把启动按钮顶成"关闭游戏"(那会让用户既关不掉也启动不了)
-                "game_alive": bool(verified),
-                # game_busy 只要有任何同名进程就为真, 专门用来禁掉汉化更新
-                "game_busy": _any_game_process_running(),
+                "game_alive": bool(_game_state["alive"]),
+                "game_busy": bool(_game_state["busy"]),
                 "kind": getattr(self, "_pipeline_kind", None),
             }
         except Exception as e:
             return {"running": False, "cancelling": False,
-                    "game_alive": False, "game_busy": False,
+                    "game_alive": bool(_game_state["alive"]),
+                    "game_busy": bool(_game_state["busy"]),
                     "kind": None, "error": str(e)}
 
     # ---- 入口 ----
