@@ -13,9 +13,9 @@ from functions.achievement.battle_achievements import StageClearTurnAchievement
 
 # 10-4 关卡 uid 的候选写法（前缀匹配，覆盖 "1004xx" / "10-4" 这类）
 STAGE_10_4_UID_PREFIXES = ("1004", "10-4", "S10-4")
-# 关注表用的**数字前缀**：DLL 按十进制前缀匹配（1004 命中 1004 / 100401 / 1004012…），
-# 所以先给粗粒度目标即可 —— 存档里以前打过的 10-4 一进游戏就会被 CLR 报上来。
-STAGE_10_4_WATCH_IDS = (1004, 104)
+# 关注表用的**章号**（DLL 按章号精确匹配；小节/节点才是前缀匹配）。
+# ⚠ 不要写 "1004"/"104" 这类：前缀匹配会把第 1 章的 104 小节/10401 节点全命中（实测踩过）。
+STAGE_10_4_WATCH_IDS = (10,)
 
 
 class Story10_4Achievement(StageClearTurnAchievement):
