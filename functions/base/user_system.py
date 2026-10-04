@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import ctypes
+import json
 import os
 import secrets
 import string
@@ -652,9 +653,90 @@ def get_user_info(settings_manager=None) -> dict:
 
 
 def completed_achievements() -> list[str]:
-    """本地记录的已完成成就 ID 列表（与皮肤同处一份用户文件）。"""
+    """本地记录的已完成成就 ID 列表（**内置成就**；与皮肤同处一份用户文件）。"""
     done = _value(load_user(), "completed_achievements", [])
     return [str(x) for x in done] if isinstance(done, list) else []
+
+
+# --------------------------------------------------------------------------- 插件成就
+# 插件自定义成就的完成记录**单独一个文件**存放，理由：
+#   1. 与内置内容彻底分开（内置那份可能参与云端同步，插件这份永远不参与）；
+#   2. 插件被删掉时，内置记录不受影响，插件那份也能一眼看出是谁留下的。
+_PLUGIN_ACH_FILE_NAME = "plugin_achievements.json"
+
+
+def plugin_achievements_file() -> str:
+    """插件成就的独立存档路径（用户目录下，与内置的 settings.json 分开）。"""
+    return os.path.join(user_dir(), _PLUGIN_ACH_FILE_NAME)
+
+
+def _load_plugin_achievements() -> dict:
+    path = plugin_achievements_file()
+    if not os.path.isfile(path):
+        return {"version": 1, "completed": [], "by_addon": {}}
+    try:
+        with open(path, encoding="utf-8") as fh:
+            data = json.load(fh)
+    except Exception:  # noqa: BLE001
+        return {"version": 1, "completed": [], "by_addon": {}}
+    if not isinstance(data, dict):
+        return {"version": 1, "completed": [], "by_addon": {}}
+    data.setdefault("version", 1)
+    data.setdefault("completed", [])
+    data.setdefault("by_addon", {})
+    return data
+
+
+def completed_plugin_achievements() -> list[str]:
+    """插件自定义成就的完成 ID 列表（**只从插件那份独立文件读**）。"""
+    done = _load_plugin_achievements().get("completed", [])
+    return [str(x).strip() for x in done if str(x).strip()] if isinstance(done, list) else []
+
+
+def record_plugin_achievements(achievement_ids, addon: str = "") -> list[str]:
+    """记录插件成就的完成（幂等），返回合并后的列表。
+
+    ``addon`` 是插件目录名，用来在插件那份文件里按插件归类（便于插件被删后清理）。
+    """
+    wanted: list[str] = []
+    for aid in achievement_ids or ():
+        aid = str(aid or "").strip()
+        if aid and aid not in wanted:
+            wanted.append(aid)
+    if not wanted:
+        return []
+    with _USER_LOCK:
+        data = _load_plugin_achievements()
+        current = data.get("completed", [])
+        merged = [str(x).strip() for x in current if str(x).strip()] \
+            if isinstance(current, list) else []
+        added = [aid for aid in wanted if aid not in merged]
+        if not added:
+            return merged
+        merged.extend(added)
+        data["completed"] = merged
+        by_addon = data.get("by_addon")
+        if not isinstance(by_addon, dict):
+            by_addon = {}
+        if addon:
+            bucket = by_addon.get(addon)
+            bucket = [str(x) for x in bucket] if isinstance(bucket, list) else []
+            for aid in added:
+                if aid not in bucket:
+                    bucket.append(aid)
+            by_addon[addon] = bucket
+        data["by_addon"] = by_addon
+        try:
+            os.makedirs(user_dir(), exist_ok=True)
+            tmp = plugin_achievements_file() + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as fh:
+                json.dump(data, fh, ensure_ascii=False, indent=2)
+            os.replace(tmp, plugin_achievements_file())
+        except Exception as exc:  # noqa: BLE001
+            print(f"[用户] 插件成就记录写入失败: {type(exc).__name__}: {exc}")
+            return merged
+        print(f"[用户] 记录插件成就 {len(added)} 条（插件档共 {len(merged)} 条）")
+        return merged
 
 
 def record_achievements(achievement_ids) -> list[str]:

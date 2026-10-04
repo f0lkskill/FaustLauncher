@@ -868,6 +868,13 @@ body.modal-open .res-card {
 .ach-rarity-legendary { color: #ffc83c; }
 .ach-rarity-mythic { color: #ff5046; }
 
+/* 插件成就角标: 明确标出来源, 并提示这类成就只存本地、不上传云端 */
+.ach-plugin-badge {
+  font-size: 10.5px; padding: 1px 8px; border-radius: 999px; font-weight: 600;
+  color: #8fd0ff; background: rgba(70, 150, 235, .14);
+  border: 1px solid rgba(90, 170, 255, .5);
+}
+
 /* 稀有度筛选: 图标按钮 + 贴着它展开的小菜单 (点别处/Esc 关闭) */
 .ach-filter-wrap { position: relative; display: inline-flex; }
 .ach-filter-btn.active {

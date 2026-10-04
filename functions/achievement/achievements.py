@@ -342,6 +342,58 @@ def _define_achievements():
     except Exception as _exc:  # noqa: BLE001
         print(f"[成就] 插件成就加载失败: {_exc}")
 
+    # 把本地**已完成**的成就直接标记成已解锁（见函数注释：不同步这一步，重启后会重复获取）
+    try:
+        _marked = load_completed_state()
+        if _marked:
+            print(f"[成就] 本地已完成 {_marked} 条，直接标记为已解锁（不再重复获取）")
+    except Exception as _exc:  # noqa: BLE001
+        print(f"[成就] 读取本地完成记录失败: {_exc}")
+
+
+# ============ 已完成状态（防止重复获取）============
+
+_completed_state_loaded = False
+
+
+def load_completed_state(force: bool = False) -> int:
+    """把本地**已完成**的成就标记为 ``unlocked``，返回标记条数（幂等）。
+
+    为什么必须有这一步：完成记录是**落盘**的（内置在 ``settings.json``，插件在
+    ``plugin_achievements.json``），而 ``unlocked`` 只是**内存态**。不补这一步的话，
+    每次重启后同一条成就还会再“解锁”一次 —— 重复弹窗、重复写日志、成就页看起来
+    像刚拿到。这里读盘一次直接置位，判定循环会跳过已解锁的成就。
+
+    ``force=True`` 可强制重读（比如刚写完记录想立刻对齐）。
+    """
+    global _completed_state_loaded
+    if _completed_state_loaded and not force:
+        return 0
+    _completed_state_loaded = True
+    done: set[str] = set()
+    try:
+        from functions.base.user_system import (completed_achievements,
+                                                completed_plugin_achievements)
+        done |= {str(x) for x in completed_achievements()}
+        done |= {str(x) for x in completed_plugin_achievements()}
+    except Exception:  # noqa: BLE001
+        return 0
+    if not done:
+        return 0
+    marked = 0
+    for ach in achievements:
+        aid = str(getattr(ach, "id", "") or "")
+        if not aid or aid not in done:
+            continue
+        if getattr(ach, "unlocked", False):
+            continue
+        try:
+            ach.unlocked = True
+            marked += 1
+        except Exception:  # noqa: BLE001
+            continue
+    return marked
+
 
 # ============ 插件（addon）自定义成就 API ============
 
@@ -496,6 +548,7 @@ def load_addon_achievements() -> list[str]:
         explicit = getattr(module, "ACHIEVEMENTS", None)
         if explicit:
             for inst in explicit:
+                _tag_plugin_achievement(inst, name)
                 if register_achievement(inst):
                     added.append(str(getattr(inst, "id", "")))
             continue
@@ -504,9 +557,22 @@ def load_addon_achievements() -> list[str]:
                 inst = cls()
             except Exception:  # noqa: BLE001
                 continue          # 抽象/中间基类实例化失败属正常
+            _tag_plugin_achievement(inst, name)
             if register_achievement(inst):
                 added.append(str(getattr(inst, "id", "")))
     return added
+
+
+def _tag_plugin_achievement(instance, addon_name: str) -> None:
+    """给插件成就打标记：``plugin=True`` + ``addon=<插件目录名>``。
+
+    成就页据此显示「插件」角标；判定/落盘据此走**插件独立存档**、不进云端。
+    """
+    try:
+        instance.plugin = True
+        instance.addon = addon_name
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def _classes_in_module(mod) -> list:

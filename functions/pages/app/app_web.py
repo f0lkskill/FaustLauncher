@@ -1166,11 +1166,13 @@ class AppApi:
         """
         try:
             from functions.achievement.achievements import achievements
-            from functions.base.user_system import completed_achievements
+            from functions.base.user_system import (completed_achievements,
+                                                    completed_plugin_achievements)
             from functions.base.common.path_utils import get_web_root
             # 成就徽标: web/app/assets/achievement/<id>.svg, 没有就交给前端用占位图标
             art_dir = get_web_root("app", "assets", "achievement")
-            done = set(completed_achievements())
+            # 完成态 = 内置那份（settings.json）+ 插件那份（plugin_achievements.json）
+            done = set(completed_achievements()) | set(completed_plugin_achievements())
             items = []
             for ach in achievements:
                 aid = str(getattr(ach, "id", "") or "").strip()
@@ -1193,6 +1195,11 @@ class AppApi:
                     "hidden": bool(getattr(ach, "hidden", False)),
                     "completed": aid in done,
                     "icon": icon,
+                    # 插件自定义成就：成就页显示「插件」角标，来源插件名也带出去；
+                    # cloud=False 表示**不参与云端同步**（记录存在插件专属文件里）
+                    "plugin": bool(getattr(ach, "plugin", False)),
+                    "addon": str(getattr(ach, "addon", "") or ""),
+                    "cloud": not bool(getattr(ach, "plugin", False)),
                 })
             n_done = sum(1 for it in items if it["completed"])
             # print(f"[成就页] 本地刷新: {n_done}/{len(items)} 已完成（记录 {len(done)} 条）")
