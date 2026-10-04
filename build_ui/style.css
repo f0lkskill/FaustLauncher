@@ -1,0 +1,93 @@
+/* FaustLauncher 构建工具 —— 与启动器 web 端同一套设计语言（深色玻璃卡片 + 主题色） */
+:root {
+  --bg: #14161c;
+  --card: rgba(255, 255, 255, .035);
+  --card-line: rgba(255, 255, 255, .08);
+  --text: #f8fafc;
+  --muted: #94a3b8;
+  --accent: #6366f1;
+  --success: #10b981;
+  --danger: #ef4444;
+  --log-bg: #0d0d11;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body {
+  background: radial-gradient(1200px 600px at 20% -10%, #1d2233 0%, var(--bg) 55%) fixed;
+  color: var(--text);
+  font: 13px/1.55 "Microsoft YaHei UI", "Segoe UI", system-ui, sans-serif;
+  user-select: none;
+}
+.app { display: flex; flex-direction: column; gap: 12px; padding: 16px; height: 100%; }
+
+.head { display: flex; align-items: center; justify-content: space-between; padding: 2px 4px; }
+.head h1 { margin: 0; font-size: 19px; font-weight: 700; letter-spacing: .2px; }
+.sub { margin: 2px 0 0; color: var(--muted); font-size: 12px; }
+.sub b { color: var(--text); font-weight: 600; }
+
+.chip {
+  padding: 4px 12px; border-radius: 999px; font-size: 12px; font-weight: 600;
+  color: #c7d2fe; background: rgba(99, 102, 241, .14);
+  border: 1px solid rgba(99, 102, 241, .4);
+}
+.chip.ok { color: #a7f3d0; background: rgba(16, 185, 129, .14); border-color: rgba(16, 185, 129, .45); }
+.chip.bad { color: #fecaca; background: rgba(239, 68, 68, .14); border-color: rgba(239, 68, 68, .45); }
+
+.card {
+  background: var(--card); border: 1px solid var(--card-line); border-radius: 12px;
+  padding: 12px 14px; backdrop-filter: blur(10px);
+}
+.card-title {
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: 12px; font-weight: 600; color: var(--muted); margin-bottom: 8px;
+}
+.pct { color: var(--text); font-variant-numeric: tabular-nums; }
+
+.steps-card { flex: 0 0 auto; }
+.steps { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 3px 18px; }
+.steps li { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12.5px; }
+.steps li i { width: 15px; text-align: center; font-style: normal; color: var(--muted); }
+.steps li.running { color: var(--text); }
+.steps li.running i { color: var(--accent); }
+.steps li.done { color: var(--text); }
+.steps li.done i { color: var(--success); }
+.steps li.failed { color: #fecaca; }
+.steps li.failed i { color: var(--danger); }
+
+.bar { height: 8px; border-radius: 999px; background: rgba(255, 255, 255, .07); overflow: hidden; }
+.bar > i { display: block; height: 100%; width: 0; border-radius: 999px;
+  background: linear-gradient(90deg, var(--accent), #8b5cf6); transition: width .25s ease; }
+.bar > i.ok { background: linear-gradient(90deg, var(--success), #34d399); }
+.bar > i.bad { background: linear-gradient(90deg, var(--danger), #f87171); }
+.hint { margin-top: 6px; color: var(--muted); font-size: 12px; }
+
+.upload { margin-top: 12px; padding-top: 10px; border-top: 1px dashed var(--card-line); }
+.upload-bar > i { background: linear-gradient(90deg, var(--success), #22d3ee); }
+
+.log-card { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 150px; }
+.log {
+  flex: 1 1 auto; margin: 0; padding: 10px; overflow: auto; white-space: pre-wrap;
+  word-break: break-all; background: var(--log-bg); border-radius: 8px;
+  font: 12px/1.5 Consolas, "Cascadia Mono", monospace; color: #cbd5e1;
+  user-select: text; min-height: 120px;
+}
+.log .ok { color: #6ee7b7; }
+.log .bad { color: #fca5a5; }
+.log .warn { color: #fcd34d; }
+
+.foot { display: flex; gap: 8px; justify-content: center; }
+.btn {
+  padding: 8px 20px; border-radius: 9px; font: 600 13px/1 "Microsoft YaHei UI", sans-serif;
+  color: var(--text); background: rgba(255, 255, 255, .07);
+  border: 1px solid var(--card-line); cursor: pointer; transition: .15s;
+}
+.btn:hover:not(:disabled) { background: rgba(255, 255, 255, .12); }
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+.btn.primary { background: linear-gradient(135deg, var(--success), #059669); border: none; color: #04110b; }
+.btn.primary:hover:not(:disabled) { filter: brightness(1.08); }
+.btn.ghost { background: transparent; }
+.mini {
+  padding: 2px 9px; border-radius: 6px; font-size: 11px; color: var(--muted);
+  background: rgba(255, 255, 255, .05); border: 1px solid var(--card-line); cursor: pointer;
+}
+.mini:hover { color: var(--text); }

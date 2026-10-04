@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>FaustLauncher 构建工具</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="app">
+  <header class="head">
+    <div>
+      <h1>构建 FaustLauncher</h1>
+      <p class="sub">目标版本 <b id="ver">—</b></p>
+    </div>
+    <span class="chip" id="phase">准备中…</span>
+  </header>
+
+  <section class="card steps-card">
+    <div class="card-title">构建步骤</div>
+    <ol class="steps" id="steps"></ol>
+  </section>
+
+  <section class="card">
+    <div class="card-title">
+      进度
+      <span class="pct" id="pct">0%</span>
+    </div>
+    <div class="bar"><i id="bar"></i></div>
+    <div class="hint" id="status">准备中…</div>
+    <!-- 上传阶段：蓝奏云上传回调给的是**真实百分比** -->
+    <div class="upload" id="upload" hidden>
+      <div class="card-title">上传发布 <span class="pct" id="up-pct">0%</span></div>
+      <div class="bar upload-bar"><i id="up-bar"></i></div>
+      <div class="hint" id="up-status">等待开始</div>
+    </div>
+  </section>
+
+  <section class="card log-card">
+    <div class="card-title">
+      构建日志
+      <button class="mini" id="btn-clear">清空</button>
+    </div>
+    <pre class="log" id="log"></pre>
+  </section>
+
+  <footer class="foot">
+    <button class="btn primary" id="btn-publish" disabled>上传发布</button>
+    <button class="btn" id="btn-open" disabled>打开测试目录</button>
+    <button class="btn ghost" id="btn-close">关闭</button>
+  </footer>
+</div>
+<script src="app.js"></script>
+</body>
+</html>
