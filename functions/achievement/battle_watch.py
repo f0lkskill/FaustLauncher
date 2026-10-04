@@ -1234,8 +1234,17 @@ class SuspendWindow:
 
 
 def _project_root() -> str:
-    here = os.path.dirname(os.path.abspath(__file__))
-    return os.path.abspath(os.path.join(here, "..", ".."))
+    """**可写**的应用根（logs/、cache/ 落在这里）。
+
+    不能用 ``__file__`` 上溯：打包后它在 PyInstaller 的临时目录 ``_MEIPASS`` 里，
+    日志写进去等于丢（实测"打包版 hook 日志不在 logs 下"）。见 path_utils.get_app_root。
+    """
+    try:
+        from functions.base.common.path_utils import get_app_root
+        return get_app_root()
+    except Exception:  # noqa: BLE001
+        here = os.path.dirname(os.path.abspath(__file__))
+        return os.path.abspath(os.path.join(here, "..", ".."))
 
 
 def _pick_newest_dll(candidates: list[str]) -> tuple[str, str]:

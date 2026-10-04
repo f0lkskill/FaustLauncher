@@ -45,6 +45,33 @@ def get_web_root(*parts) -> str:
     return candidates[0]
 
 
+def get_app_root(create: bool = True) -> str:
+    """**可写的**应用根目录（``logs/``、``cache/``、``addons/`` 这些都该落在这里）。
+
+    ⚠ 打包后 ``__file__`` 位于 PyInstaller 的临时目录 ``_MEIPASS`` —— 那里**只读、进程退出即删**。
+    把日志/缓存写进去的后果实测有两条：
+      · "打包版 hook 日志不出现在 logs 下"（其实写进了临时目录，退出就没了）；
+      · 偏移索引/缓存每启动一次都要重建（临时目录里找不到上次那份），启动明显变卡。
+
+    所以打包模式一律以 **exe 所在目录**为根（onedir 布局下 exe 与 _internal 同级，可写）；
+    源码模式仍按文件位置上溯三级到项目根。
+
+    注意：**只读的随包资源**（web/、hook_dll/ 等）不要用这个函数 —— 那些就在 ``_MEIPASS`` 里，
+    用 ``get_web_root`` 那套探测逻辑才找得到。
+    """
+    if getattr(sys, 'frozen', False):
+        root = os.path.dirname(os.path.abspath(sys.executable))
+    else:
+        root = os.path.abspath(os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), '..', '..', '..'))
+    if create:
+        try:
+            os.makedirs(root, exist_ok=True)
+        except OSError:
+            pass
+    return root
+
+
 def get_mod_root_dir(create: bool = True) -> str:
     """获取Mod目录路径 (APPDATA/LimbusCompanyMods)
 

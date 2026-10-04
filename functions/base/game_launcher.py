@@ -742,9 +742,15 @@ class GameLauncher:
                                    "ProjectMoon", "LimbusCompany")
             game_log_path = os.path.join(log_dir, _player_log_name)
 
-            project_root = os.path.dirname(os.path.dirname(os.path.dirname(
-                os.path.abspath(__file__)
-            )))
+            # ⚠ 必须用**可写根**：打包后 __file__ 在 PyInstaller 的临时目录 _MEIPASS 里
+            # （只读、退出即删），日志写进去就是"打包版看不到 logs/"的来源。
+            try:
+                from functions.base.common.path_utils import get_app_root
+                project_root = get_app_root()
+            except Exception:  # noqa: BLE001
+                project_root = os.path.dirname(os.path.dirname(os.path.dirname(
+                    os.path.abspath(__file__)
+                )))
             main_script = os.path.join(project_root, "main.py")
             logs_dir = os.path.join(project_root, "logs")
             hook_log_path = os.path.join(logs_dir, "achievement_hook.log")
