@@ -293,6 +293,18 @@ def _define_achievements():
             hidden=False,
         ).with_rarity(RARITY_ORDER[idx]))
 
+    # === 战斗次数系列 ===
+    # 这三个模块一直存在（data/ach_battle_01|02|03.py），但**从没进过任何注册列表** ——
+    # 结果就是：成就页看不到、没有徽标、也从来不判定。这里显式收进来。
+    from functions.achievement.data.ach_battle_01 import AchBattle01
+    from functions.achievement.data.ach_battle_02 import AchBattle02
+    from functions.achievement.data.ach_battle_03 import AchBattle03
+    for _cls in (AchBattle01, AchBattle02, AchBattle03):
+        try:
+            achievements.append(_cls())
+        except Exception as _exc:  # noqa: BLE001
+            print(f"[成就] {_cls.__name__} 注册失败: {_exc}")
+
     # === 内存成就 ===
     # 该成就自身维护内存读取器，不使用成就状态缓存。
     from functions.achievement.data.ach_enkephalin_100 import FullEnkephalinAchievement
@@ -611,6 +623,7 @@ def check_achievements(log_callback) -> list[Achievement]:
         新解锁的成就列表
     """
     unlocked = []
+    from functions.achievement.base_achievement import BattleAchievement
     for ach in achievements:
         if not ach.unlocked:
             matched = False          # 必须初始化：check() 抛异常时才不会沿用上一轮的值
@@ -623,7 +636,13 @@ def check_achievements(log_callback) -> list[Achievement]:
                         ach.unlock_time = datetime.now()
                         ach.progress = ach.max_progress
                 else:
-                    matched = ach.check()
+                    # 战斗次数类成就的 check 需要"当前完成场次"这个入参
+                    # （它们的内部计数器不会自己涨，全局计数在状态里）。
+                    if isinstance(ach, BattleAchievement):
+                        matched = ach.check(
+                            battle_count=int(get_state().battle_count or 0), deaths=False)
+                    else:
+                        matched = ach.check()
                 if matched:
                     unlocked.append(ach)
             except Exception:
