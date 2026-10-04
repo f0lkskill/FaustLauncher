@@ -120,6 +120,7 @@ KIND_NODE_STATE = 10    # int  (self, main, sub, node, mi)：关卡通关状态�
 KIND_CACHE_ARG1 = 11    # void (self, a1, mi)：缓存第一个参数（抓全量进度树）
 KIND_RAILWAY_NODE = 12  # void (self, a1, mi)：铁路每节点通关回合 → RWT node=/turn=
 KIND_RAILWAY_HIST = 13  # void (self, cid, ..7 args.., mi)：铁路历史记录 → RWT line=/total=
+KIND_STAGE_NODE_ID = 14  # void (self, part, chapter, node, stage, state, mi)：关卡身份 → SNI
                         #   动画 tick 带身份，判定才能“按行动”对齐（否则只能一股脑延后）
 KIND_NUMBERS = {"plain": KIND_PLAIN, "unit": KIND_UNIT,
                 "unit_int_bool": KIND_UNIT_INT_BOOL, "unit_get_int": KIND_UNIT_GET_INT,
@@ -127,7 +128,8 @@ KIND_NUMBERS = {"plain": KIND_PLAIN, "unit": KIND_UNIT,
                 "skv": KIND_SKV, "stage_stat": KIND_STAGE_STAT,
                 "railway_total": KIND_RAILWAY_TOTAL, "cache_self": KIND_CACHE_SELF,
                 "node_state": KIND_NODE_STATE, "cache_arg1": KIND_CACHE_ARG1,
-                "railway_node": KIND_RAILWAY_NODE, "railway_hist": KIND_RAILWAY_HIST}
+                "railway_node": KIND_RAILWAY_NODE, "railway_hist": KIND_RAILWAY_HIST,
+                "stage_node_id": KIND_STAGE_NODE_ID}
 
 # --------------------------------------------------------------------------- 字段语义
 
@@ -557,6 +559,11 @@ FALLBACK_HOOKS: dict[str, tuple[str, int, str]] = {
     # 9 个参数的构造函数（签名已从 dump.cs 确认）：arg1 = 线路号，arg4 = IList<int> 各节点回合。
     # 求和直接得到整条线的总回合 —— 这才是六号线成就该用的数据（前者只是本次行程，没打就是 0）。
     "railway_hist": ("RailwayDungeonHistoryDataByCollection::.ctor", 0x1A83860, "railway_hist"),
+    # ---- 关卡身份（"10-4"的官方口径）----------------------------------------
+    # StageNodeIdInfo::SetData(partId, chapterId, nodeId, stageId, clearState) ——
+    # 关卡地图渲染时逐个节点调。存档里的 id（10438）不编码"第几关"，只有这里给的
+    # chapter + node 才是界面上的 "10-4"。
+    "stage_node_id": ("StageNodeIdInfo::SetData", 0x12636F0, "stage_node_id"),
 }
 FALLBACK_FIELDS: dict[str, int] = {
     "unit_instance_id": 0x60,
@@ -1359,6 +1366,7 @@ class BattleState:
     railway_totals: dict = field(default_factory=dict)
     railway_last: dict = field(default_factory=dict)
     railway_nodes: dict = field(default_factory=dict)   # 节点 id → 通关回合（存档重建时上报）
+    stage_labels: dict = field(default_factory=dict)    # "10-4" → {stage, chapter, node}（游戏官方口径）
     rnd_total: int = 0
     settled_by: str = ""
     flag_counter: int = 0
@@ -2355,6 +2363,8 @@ class BattleWatch:
             self._log(f"[战斗观测] ★ 存档里的关卡 id 样本（关注表未命中，n={count}）: {ids}")
         elif kind == "NCL":
             self._apply_node_state(event)
+        elif kind == "SNI":
+            self._apply_stage_node_id(event)
         return event
 
     def _apply_anim_tick(self, tag: str, iid: int = -1) -> None:
@@ -2830,6 +2840,12 @@ class BattleWatch:
         if sidx and idx:
             keys.append(f"{main}-{sidx}-{idx}")
         keys += [str(sub), str(node), f"{main}:{sub}:{node}"]   # 原始 id（诊断/精确匹配用）
+        # 如果这个节点 id 已经在 SNI 里学到了"章-第几关"，顺带把官方口径的键也记上 ——
+        # 这样"看过一次地图"之后，纯存档遍历（不点界面）也能按 "10-4" 判定。
+        with self._lock:
+            for label, info in self.state.stage_labels.items():
+                if int(info.get("stage", 0)) == int(node):
+                    keys.append(label)
         with self._lock:
             for key in keys:
                 self.state.stage_clears[key] = {
@@ -2838,6 +2854,32 @@ class BattleWatch:
                 }
         self._log(f"[战斗观测] ★ 关卡已通关（游戏查询）: 章{main} 第{idx}关 "
                   f"(小节id={sub} 节点id={node})")
+
+    def _apply_stage_node_id(self, event: BattleEvent) -> None:
+        """关卡身份（DLL 的 ``SNI`` 事件）—— **"10-4"的官方口径**。
+
+        入参来自 ``StageNodeIdInfo::SetData(partId, chapterId, nodeId, stageId, state)``：
+        章 + 第几关 + 关卡 id + 通关状态。存档结构里的 id（10438）不编码"第几关"，
+        界面上的号只有在这里才能拿到，所以这条是主线关卡成就的唯一可靠来源。
+        """
+        chapter = event.get("chapter", 0)
+        node = event.get("node", 0)
+        stage = event.get("stage", 0)
+        state = event.get("state", 0)
+        part = event.get("part", 0)
+        if chapter <= 0 or node <= 0:
+            return
+        key = f"{chapter}-{node}"
+        with self._lock:
+            self.state.stage_labels[key] = {"chapter": chapter, "node": node,
+                                            "stage": stage, "part": part}
+            if state:
+                self.state.stage_clears[key] = {
+                    "uid": key, "turn": -1, "dead": -1, "ex": 0,
+                    "cleared": True, "ts": time.time(),
+                }
+        self._log(f"[战斗观测] ★ 关卡身份: {key} 关卡id={stage} 状态={state}"
+                  + ("（已通关）" if state else ""))
 
     def _apply_railway_total(self, event: BattleEvent) -> None:
         """折射铁路记录（DLL 的 ``RWT`` 事件）。两种形态：

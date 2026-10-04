@@ -148,6 +148,15 @@
                                 *
                                 * 与 BWK_RAILWAY_NODE 的区别：那个是【本次行程】的存档（没打就是 0），
                                 * 这个才是界面上显示的"你最好的回合数"，也就是成就该用的。*/
+#define BWK_STAGE_NODE_ID 14   /* void (self, part, chapter, node, stage, clearState, mi)
+                                *   挂钩 StageNodeIdInfo::SetData —— **关卡地图渲染时**逐个节点调，
+                                *   入参就是官方口径：章(_currentChapterID) + 关(_currentNodeID)
+                                *   + 关卡id(_currentStageID) + 通关状态。
+                                *   → SNI chapter=10 node=4 stage=10438 state=2
+                                *
+                                * 为什么要它：存档结构里的 id（10438）**不编码"第几关"**，界面上的
+                                * "10-4" 是游戏用章号+节点序号拼的；只有这条钩子能给出正确对应。
+                                * 拿到对应后，遍历存档树（BWK_CACHE_ARG1）就能按 stageId 精确匹配。*/
 #define BWK_NODE_STATE    10   /* int (self, int main, int sub, int node, mi)：关卡通关状态查询
                                 *   挂钩 UserStageNodeStateData::IsNodeCleared /
                                 *   GetClearNodeState —— 关卡列表每次渲染都会问，
@@ -1408,6 +1417,39 @@ static void call_and_emit_railway_hist(
                                    method, g_original[N]);                       \
     }
 
+/* ---- 关卡身份信息（BWK_STAGE_NODE_ID）--------------------------------------
+ * StageNodeIdInfo::SetData(partId, chapterId, nodeId, stageId, clearState)
+ * —— 关卡地图渲染时逐个节点调用，入参就是"章 / 第几关 / 关卡 id / 通关状态"。
+ * 先调原函数（保证游戏逻辑不变），再把五个入参原样发出来。*/
+typedef void (__fastcall *fn_stage_node_id)(void *self, int part, int chapter, int node,
+                                            int stage, int clear_state, const void *method);
+
+static void call_and_emit_stage_node_id(void *self, int part, int chapter, int node,
+                                        int stage, int clear_state, const void *method,
+                                        void *original)
+{
+    char line[128];
+
+    if (original)
+        ((fn_stage_node_id)original)(self, part, chapter, node, stage, clear_state, method);
+    if (!g_cfg || !g_cfg->observing)
+        return;
+    _snprintf(line, sizeof(line) - 1,
+              "SNI chapter=%d node=%d stage=%d state=%d part=%d",
+              chapter, node, stage, clear_state, part);
+    line[sizeof(line) - 1] = '\0';
+    emit(line, TRUE);
+}
+
+#define DEF_STAGENODEID_THUNK(N)                                                 \
+    static void __fastcall hk_sni_##N(void *self, int a1, int a2, int a3, int a4, \
+                                      int a5, const void *method)                \
+    {                                                                            \
+        bump_hit(N);                                                             \
+        call_and_emit_stage_node_id(self, a1, a2, a3, a4, a5, method,            \
+                                    g_original[N]);                              \
+    }
+
 DEF_PLAIN_THUNK(0)  DEF_PLAIN_THUNK(1)  DEF_PLAIN_THUNK(2)  DEF_PLAIN_THUNK(3)
 DEF_PLAIN_THUNK(4)  DEF_PLAIN_THUNK(5)  DEF_PLAIN_THUNK(6)  DEF_PLAIN_THUNK(7)
 DEF_PLAIN_THUNK(8)  DEF_PLAIN_THUNK(9)  DEF_PLAIN_THUNK(10) DEF_PLAIN_THUNK(11)
@@ -1476,6 +1518,15 @@ DEF_RAILWAYHIST_THUNK(12) DEF_RAILWAYHIST_THUNK(13) DEF_RAILWAYHIST_THUNK(14)
 DEF_RAILWAYHIST_THUNK(15) DEF_RAILWAYHIST_THUNK(16) DEF_RAILWAYHIST_THUNK(17)
 DEF_RAILWAYHIST_THUNK(18) DEF_RAILWAYHIST_THUNK(19) DEF_RAILWAYHIST_THUNK(20)
 DEF_RAILWAYHIST_THUNK(21) DEF_RAILWAYHIST_THUNK(22) DEF_RAILWAYHIST_THUNK(23)
+
+DEF_STAGENODEID_THUNK(0)  DEF_STAGENODEID_THUNK(1)  DEF_STAGENODEID_THUNK(2)
+DEF_STAGENODEID_THUNK(3)  DEF_STAGENODEID_THUNK(4)  DEF_STAGENODEID_THUNK(5)
+DEF_STAGENODEID_THUNK(6)  DEF_STAGENODEID_THUNK(7)  DEF_STAGENODEID_THUNK(8)
+DEF_STAGENODEID_THUNK(9)  DEF_STAGENODEID_THUNK(10) DEF_STAGENODEID_THUNK(11)
+DEF_STAGENODEID_THUNK(12) DEF_STAGENODEID_THUNK(13) DEF_STAGENODEID_THUNK(14)
+DEF_STAGENODEID_THUNK(15) DEF_STAGENODEID_THUNK(16) DEF_STAGENODEID_THUNK(17)
+DEF_STAGENODEID_THUNK(18) DEF_STAGENODEID_THUNK(19) DEF_STAGENODEID_THUNK(20)
+DEF_STAGENODEID_THUNK(21) DEF_STAGENODEID_THUNK(22) DEF_STAGENODEID_THUNK(23)
 
 static detour_fn pick_detour(int index, LONG kind)
 {
@@ -1631,6 +1682,21 @@ static detour_fn pick_detour(int index, LONG kind)
         case 18: return (detour_fn)hk_railhist_18; case 19: return (detour_fn)hk_railhist_19;
         case 20: return (detour_fn)hk_railhist_20; case 21: return (detour_fn)hk_railhist_21;
         case 22: return (detour_fn)hk_railhist_22; default: return (detour_fn)hk_railhist_23;
+        }
+    case BWK_STAGE_NODE_ID:
+        switch (index) {
+        case 0: return (detour_fn)hk_sni_0;   case 1: return (detour_fn)hk_sni_1;
+        case 2: return (detour_fn)hk_sni_2;   case 3: return (detour_fn)hk_sni_3;
+        case 4: return (detour_fn)hk_sni_4;   case 5: return (detour_fn)hk_sni_5;
+        case 6: return (detour_fn)hk_sni_6;   case 7: return (detour_fn)hk_sni_7;
+        case 8: return (detour_fn)hk_sni_8;   case 9: return (detour_fn)hk_sni_9;
+        case 10: return (detour_fn)hk_sni_10; case 11: return (detour_fn)hk_sni_11;
+        case 12: return (detour_fn)hk_sni_12; case 13: return (detour_fn)hk_sni_13;
+        case 14: return (detour_fn)hk_sni_14; case 15: return (detour_fn)hk_sni_15;
+        case 16: return (detour_fn)hk_sni_16; case 17: return (detour_fn)hk_sni_17;
+        case 18: return (detour_fn)hk_sni_18; case 19: return (detour_fn)hk_sni_19;
+        case 20: return (detour_fn)hk_sni_20; case 21: return (detour_fn)hk_sni_21;
+        case 22: return (detour_fn)hk_sni_22; default: return (detour_fn)hk_sni_23;
         }
     default:
         return (detour_fn)hk_plain_0;
