@@ -720,6 +720,8 @@ class AchievementHook:
         for ach in achievements:
             if ach.unlocked or not getattr(ach, "battle_driven", False):
                 continue
+            if getattr(ach, "wip", False):
+                continue      # 开发中（数据源还没定位成功）：不判定、不刷日志
             try:
                 if ach.check():  # type: ignore[attr-defined]
                     unlocked.append(ach)

@@ -21,6 +21,9 @@ STAGE_10_4_WATCH_IDS = (10,)
 class Story10_4Achievement(StageClearTurnAchievement):
     """通关主线 10-4。"""
 
+    #: 开发中：等"关卡身份"数据源定位成功后放开（详见文件头）。
+    wip = True
+
     def __init__(self):
         super().__init__(
             "ach_story_10_4",

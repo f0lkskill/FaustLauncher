@@ -3215,6 +3215,12 @@ class BattleWatch:
                           "重建偏移索引后再启动游戏")
 
     def _log(self, message: str) -> None:
+        # 开发中成就（10-4 / 六号线）的数据源还没定位成功，这几类事件先静音，
+        # 免得每局都往日志里刷一堆用不上的行；等数据源确认后再放开。
+        for _mark in ("★ 关卡已通关", "★ 关卡身份", "★ 铁路界面显示",
+                      "★ 铁路节点记录", "★ 铁路记录"):
+            if _mark in message:
+                return
         try:
             self.log_callback(message)
         except Exception:
