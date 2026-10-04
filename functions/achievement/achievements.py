@@ -332,6 +332,182 @@ def _define_achievements():
             except Exception as exc:  # noqa: BLE001
                 print(f"[成就] {_module}.{_cls.__name__} 注册失败（抽象基类可忽略）: {exc}")
 
+    # === 插件（addon）自定义成就 ===
+    # 扫描 addons/*/ 里插件声明的成就模块，登记到同一张表 —— 与内置成就完全同权。
+    # 详见 addons/成就插件模板/README.md。
+    try:
+        _plugins = load_addon_achievements()
+        if _plugins:
+            print(f"[成就] 插件自定义成就: {len(_plugins)} 个（{', '.join(_plugins)}）")
+    except Exception as _exc:  # noqa: BLE001
+        print(f"[成就] 插件成就加载失败: {_exc}")
+
+
+# ============ 插件（addon）自定义成就 API ============
+
+ADDON_ROOT_DIR = "addons"                  # 插件根目录（相对项目根）
+ADDON_ENTRY_DEFAULT = "achievements.py"    # 插件成就模块的默认文件名
+ADDON_MANIFEST = "addon_info.json"         # 插件清单（可在里面用 achievements 字段改名）
+
+
+def _project_root() -> str:
+    """项目根目录（``addons/`` 就在它下面）。
+
+    优先复用项目里已有的实现（打包后也能定位），拿不到再按文件位置往上推两级。
+    """
+    try:
+        from functions.hook.paths import project_root as _pr  # type: ignore
+        return _pr()
+    except Exception:  # noqa: BLE001
+        return os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir, os.pardir))
+
+
+def register_achievement(instance) -> bool:
+    """把一个成就实例登记进全局表（**插件专用公开接口**）。返回是否登记成功。
+
+    规则（故意严格，避免插件把内置成就顶掉）：
+      - 只接受 :class:`BaseAchievement` 子类**实例**；
+      - ``id`` 必须是非空字符串，且**不能与已有成就重复**（重复直接拒绝）；
+      - 登记后与内置成就完全同权：进成就页、参与判定、解锁弹 toast。
+    """
+    from functions.achievement.base_achievement import BaseAchievement
+    if not isinstance(instance, BaseAchievement):
+        return False
+    aid = str(getattr(instance, "id", "") or "").strip()
+    if not aid:
+        return False
+    if any(str(getattr(a, "id", "") or "") == aid for a in achievements):
+        return False
+    achievements.append(instance)
+    return True
+
+
+def register_achievements(items) -> int:
+    """批量登记，返回成功条数。"""
+    return sum(1 for item in (items or ()) if register_achievement(item))
+
+
+def _addon_dirs() -> list[str]:
+    root = os.path.join(_project_root(), ADDON_ROOT_DIR)
+    if not os.path.isdir(root):
+        return []
+    return sorted(
+        os.path.join(root, name) for name in os.listdir(root)
+        if os.path.isdir(os.path.join(root, name))
+    )
+
+
+def _addon_entry_file(addon_dir: str) -> str:
+    """插件里成就模块的路径：清单里有 achievements 字段就用它，否则用默认文件名。"""
+    entry = ADDON_ENTRY_DEFAULT
+    manifest = os.path.join(addon_dir, ADDON_MANIFEST)
+    if os.path.isfile(manifest):
+        try:
+            with open(manifest, encoding="utf-8") as fh:
+                data = json.load(fh)
+            if isinstance(data, dict) and str(data.get("achievements") or "").strip():
+                entry = str(data["achievements"]).strip()
+            # 清单里 settings.enable 为 false 的插件直接跳过
+            settings = data.get("settings") if isinstance(data, dict) else None
+            if isinstance(settings, dict) and settings.get("enable") is False:
+                return ""
+        except Exception:  # noqa: BLE001
+            pass
+    path = os.path.join(addon_dir, entry)
+    return path if os.path.isfile(path) else ""
+
+
+def sync_addon_icons(addon_dir: str) -> int:
+    """把插件自带的成就图标同步到前端素材目录，返回拷贝数量。
+
+    插件放 ``addons/<插件名>/assets/achievement/<成就id>.png``（也支持 webp/jpg/svg），
+    启动时拷到 ``web/app/assets/achievement/`` —— 前端本来按成就 id 找图，**不用改前端**。
+    已存在的同名文件不会被覆盖（内置成就素材优先）。
+    """
+    import shutil
+
+    src_dir = os.path.join(addon_dir, "assets", "achievement")
+    if not os.path.isdir(src_dir):
+        return 0
+    try:
+        from functions.base.common.path_utils import get_web_root
+        dst_dir = get_web_root("app", "assets", "achievement")
+    except Exception:  # noqa: BLE001
+        return 0
+    if not dst_dir:
+        return 0
+    try:
+        os.makedirs(dst_dir, exist_ok=True)
+    except Exception:  # noqa: BLE001
+        return 0
+    copied = 0
+    for fname in sorted(os.listdir(src_dir)):
+        if os.path.splitext(fname)[1].lower() not in (".png", ".webp", ".jpg", ".svg"):
+            continue
+        dst = os.path.join(dst_dir, fname)
+        if os.path.isfile(dst):
+            continue
+        try:
+            shutil.copyfile(os.path.join(src_dir, fname), dst)
+            copied += 1
+        except Exception:  # noqa: BLE001
+            continue
+    return copied
+
+
+def load_addon_achievements() -> list[str]:
+    """扫描 ``addons/*/``，把插件声明的自定义成就登记进来，返回新登记的 id 列表。
+
+    插件约定（只认这一种，简单可预期）：
+
+    - 目录：``addons/<插件名>/``
+    - 清单：``addon_info.json``（与现有插件一致；``settings.enable=false`` 会被跳过）
+    - 成就模块：``achievements.py``（或在清单里写 ``"achievements": "别的名字.py"``）
+
+    成就模块里可以：
+      1. 导出 ``ACHIEVEMENTS = (实例, ...)`` —— 推荐，顺序明确；或
+      2. 只定义 :class:`BaseAchievement` 子类，按**定义顺序**自动实例化。
+
+    模块里可以直接 ``from functions.achievement.battle_achievements import ...``
+    使用内置的各类成就基类（技能 / 速度 / 理智 / 受伤 / buff / 在场 / 复合）。
+    """
+    import importlib.util
+
+    added: list[str] = []
+    for addon_dir in _addon_dirs():
+        try:
+            sync_addon_icons(addon_dir)       # 插件自带图标先同步过去
+        except Exception:  # noqa: BLE001
+            pass
+        entry = _addon_entry_file(addon_dir)
+        if not entry:
+            continue
+        name = os.path.basename(addon_dir) or "addon"
+        mod_name = f"faustlauncher_addon_{abs(hash(entry)):x}"
+        try:
+            spec = importlib.util.spec_from_file_location(mod_name, entry)
+            if spec is None or spec.loader is None:
+                continue
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+        except Exception as exc:  # noqa: BLE001
+            print(f"[成就] 插件 {name} 的成就模块导入失败: {exc}")
+            continue
+        explicit = getattr(module, "ACHIEVEMENTS", None)
+        if explicit:
+            for inst in explicit:
+                if register_achievement(inst):
+                    added.append(str(getattr(inst, "id", "")))
+            continue
+        for cls in _classes_in_module(module):
+            try:
+                inst = cls()
+            except Exception:  # noqa: BLE001
+                continue          # 抽象/中间基类实例化失败属正常
+            if register_achievement(inst):
+                added.append(str(getattr(inst, "id", "")))
+    return added
+
 
 def _classes_in_module(mod) -> list:
     """列出某模块里**自己定义**的成就派生类（按定义顺序）。
