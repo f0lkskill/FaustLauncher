@@ -119,6 +119,7 @@ KIND_CACHE_SELF = 9     # void (self, a1, mi)：只缓存 self（抓存档对象
 KIND_NODE_STATE = 10    # int  (self, main, sub, node, mi)：关卡通关状态查询 → NCL
 KIND_CACHE_ARG1 = 11    # void (self, a1, mi)：缓存第一个参数（抓全量进度树）
 KIND_RAILWAY_NODE = 12  # void (self, a1, mi)：铁路每节点通关回合 → RWT node=/turn=
+KIND_RAILWAY_HIST = 13  # void (self, cid, ..7 args.., mi)：铁路历史记录 → RWT line=/total=
                         #   动画 tick 带身份，判定才能“按行动”对齐（否则只能一股脑延后）
 KIND_NUMBERS = {"plain": KIND_PLAIN, "unit": KIND_UNIT,
                 "unit_int_bool": KIND_UNIT_INT_BOOL, "unit_get_int": KIND_UNIT_GET_INT,
@@ -126,7 +127,7 @@ KIND_NUMBERS = {"plain": KIND_PLAIN, "unit": KIND_UNIT,
                 "skv": KIND_SKV, "stage_stat": KIND_STAGE_STAT,
                 "railway_total": KIND_RAILWAY_TOTAL, "cache_self": KIND_CACHE_SELF,
                 "node_state": KIND_NODE_STATE, "cache_arg1": KIND_CACHE_ARG1,
-                "railway_node": KIND_RAILWAY_NODE}
+                "railway_node": KIND_RAILWAY_NODE, "railway_hist": KIND_RAILWAY_HIST}
 
 # --------------------------------------------------------------------------- 字段语义
 
@@ -552,6 +553,10 @@ FALLBACK_HOOKS: dict[str, tuple[str, int, str]] = {
     # 挂钩 RailwayDungeonFormerSaveData::.ctor(RailwayNodeDataFormat) —— 它填
     # nodeId(0x10)/clearTurn(0x14)。之前挂的 GetTotalClearTurn 实测 0 命中（只在线路界面调）。
     "railway_node": ("RailwayDungeonFormerSaveData::.ctor", 0x18B38D0, "railway_node"),
+    # ---- 折射铁路：历史记录（界面上的"你最好的回合数"）------------------------
+    # 9 个参数的构造函数（签名已从 dump.cs 确认）：arg1 = 线路号，arg4 = IList<int> 各节点回合。
+    # 求和直接得到整条线的总回合 —— 这才是六号线成就该用的数据（前者只是本次行程，没打就是 0）。
+    "railway_hist": ("RailwayDungeonHistoryDataByCollection::.ctor", 0x1A83860, "railway_hist"),
 }
 FALLBACK_FIELDS: dict[str, int] = {
     "unit_instance_id": 0x60,
