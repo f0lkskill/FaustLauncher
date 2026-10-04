@@ -84,6 +84,7 @@ LOG_RING_CAP = 512
 LOG_LINE_MAX = 255
 MAX_HOOKS = 20
 STAGE_WATCH_MAX = 32             # 关注关卡上限（与 DLL 的 BW_STAGE_WATCH_MAX 一致）
+NCL_SEEN_MAX = 96                # NCL 去重表（与 DLL 的 BW_NCL_SEEN_MAX 一致）
 HOOK_NAME_LEN = 40
 TARGET_PROCESS = "LimbusCompany.exe"
 
@@ -115,12 +116,14 @@ KIND_SKV = 6            # void (self, mi)：表现层动画 → RND + iid（self
 KIND_STAGE_STAT = 7     # void (self, a1, a2, mi)：关卡结算统计 → STG uid=/turn=/dead=/ex=
 KIND_RAILWAY_TOTAL = 8  # int  (self, mi)：折射铁路整条线的总回合 → RWT line=/total=
 KIND_CACHE_SELF = 9     # void (self, a1, mi)：只缓存 self（抓存档对象给采样线程轮询）
+KIND_NODE_STATE = 10    # int  (self, main, sub, node, mi)：关卡通关状态查询 → NCL
                         #   动画 tick 带身份，判定才能“按行动”对齐（否则只能一股脑延后）
 KIND_NUMBERS = {"plain": KIND_PLAIN, "unit": KIND_UNIT,
                 "unit_int_bool": KIND_UNIT_INT_BOOL, "unit_get_int": KIND_UNIT_GET_INT,
                 "action_int": KIND_ACTION_INT, "damage_action": KIND_DAMAGE_ACTION,
                 "skv": KIND_SKV, "stage_stat": KIND_STAGE_STAT,
-                "railway_total": KIND_RAILWAY_TOTAL, "cache_self": KIND_CACHE_SELF}
+                "railway_total": KIND_RAILWAY_TOTAL, "cache_self": KIND_CACHE_SELF,
+                "node_state": KIND_NODE_STATE}
 
 # --------------------------------------------------------------------------- 字段语义
 
@@ -531,6 +534,13 @@ FALLBACK_HOOKS: dict[str, tuple[str, int, str]] = {
     # 一样能把对象指针抓下来（多头挂点，谁先命中算谁）。
     "stage_clear_query": ("UserStageClearInfoData::GetData", 0x18E6300, "cache_self"),
     "stage_clear_last": ("UserStageClearInfoData::GetLastClearData", 0x18E63E0, "cache_self"),
+    # ---- 关卡通关状态查询（当前 UI 真正在用的那条路）------------------------
+    # 关卡列表每次渲染都会问 UserStageNodeStateData"这关通了没"，而且**章节号/节点号是入参**
+    # ——所以不需要猜关卡 id 格式，也不需要解析存档结构。实测旧类 UserStageClearInfoData
+    # 三条挂点全程 0 命中，所以必须挂这个。
+    "node_cleared": ("UserStageNodeStateData::IsNodeCleared", 0x18B0A30, "node_state"),
+    "node_clear_state": ("UserStageNodeStateData::GetClearNodeState", 0x18B0630, "node_state"),
+    "node_cleared_short": ("UserStageNodeStateData::IsNodeCleared", 0x18B0AB0, "cache_self"),
 }
 FALLBACK_FIELDS: dict[str, int] = {
     "unit_instance_id": 0x60,
@@ -650,6 +660,9 @@ class BWConfig(ctypes.Structure):
         ("stage_clear_data", ctypes.c_int64),   # DLL 自己写：抓到的对象指针
         ("stage_seen_mask", ctypes.c_int32),    # DLL 自己写：已上报槽位图
         ("stage_diag_done", ctypes.c_int32),    # DLL 自己写：一次性诊断是否已发
+        # NCL 去重表（DLL 自己写）
+        ("ncl_seen", ctypes.c_int32 * NCL_SEEN_MAX),
+        ("ncl_seen_count", ctypes.c_int32),
     ]
 
 
@@ -2302,6 +2315,8 @@ class BattleWatch:
             ids = event.text("ids", "")
             count = event.get("n", 0)
             self._log(f"[战斗观测] ★ 存档里的关卡 id 样本（关注表未命中，n={count}）: {ids}")
+        elif kind == "NCL":
+            self._apply_node_state(event)
         return event
 
     def _apply_anim_tick(self, tag: str, iid: int = -1) -> None:
@@ -2750,6 +2765,28 @@ class BattleWatch:
                 "cleared": True, "ts": time.time(),
             }
         self._log(f"[战斗观测] ★ 存档记录: 关卡 {stage} 已通关（回溯判定）")
+
+    def _apply_node_state(self, event: BattleEvent) -> None:
+        """关卡通关状态查询（DLL 的 ``NCL`` 事件）——游戏自己在问"这关通了没"。
+
+        章节号 / 节点号是钩子的**入参**，返回值是通没通；所以这些记录不依赖任何
+        id 格式猜测。同时记两个键（``章-小节`` 与 ``章-节点``），因为"10-4"到底对应
+        小节还是节点在不同章节里不一样，两个都留，成就用前缀匹配即可命中。
+        """
+        if not event.get("cleared", 0):
+            return
+        main = event.get("main", 0)
+        sub = event.get("sub", 0)
+        node = event.get("node", 0)
+        ts = time.time()
+        keys = (f"{main}-{sub}", f"{main}-{node}")
+        with self._lock:
+            for key in keys:
+                self.state.stage_clears[key] = {
+                    "uid": key, "turn": -1, "dead": -1, "ex": 0,
+                    "cleared": True, "ts": ts,
+                }
+        self._log(f"[战斗观测] ★ 关卡已通关（游戏查询）: 章{main} 小节{sub} 节点{node}")
 
     def _apply_railway_total(self, event: BattleEvent) -> None:
         """折射铁路总回合（DLL 的 ``RWT`` 事件）。
