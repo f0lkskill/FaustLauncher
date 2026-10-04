@@ -77,6 +77,8 @@
 #define BW_BUFF_WATCH_MAX 32     /* 关注 buff 上限（Python 端同值）*/
 #define BW_BUFF_LIST_MAX  96     /* 单个单位最多看多少个 buff（防脏数据卡死）*/
 #define BW_STAGE_SLOT_MAX 8      /* 结算统计最多看几个 slot（防脏数据卡死）*/
+#define BW_STAGE_WATCH_MAX 32    /* 关注关卡上限（已通关列表的轮询上报用；位图按 32 位算）*/
+#define BW_CLEAR_LIST_MAX  512   /* 已通关列表最多扫多少条（防脏数据卡死）*/
 
 /* ACTk ObscuredInt 内部布局（dump.cs 实测） */
 #define OBI_KEY    0
@@ -114,6 +116,13 @@
                                 * 为什么要它：进线路之前游戏会显示"你最好的回合数"，那就是
                                 * self->_collectionId(0x10) + GetTotalClearTurn()。结算事件
                                 * （BWK_STAGE_STAT）只能拿到单关回合，整条线的总回合只在这里。*/
+#define BWK_CACHE_SELF     9   /* void (self, a1, mi)：**只把 self 指针缓存下来**，不发事件
+                                *
+                                * 用途：抓住 UserStageClearInfoData（挂钩它的 UpdateData ——
+                                * 存档载入时必调），之后交给采样线程轮询它里面的"已通关关卡列表"。
+                                * 为什么不用静态字段链：那条路要靠静态块基址解析，而现有 enkephalin
+                                * 链的运行时重定位本来就是失败的，不能把成就压在它上面。
+                                * 这也是"不打那关也能判定"的关键：存档一直在内存里，进游戏即可回溯。*/
 
 /* 错误码 */
 #define BW_ERR_OK         0
@@ -193,6 +202,16 @@ typedef struct _BW_CONFIG {
 
     /* 折射铁路整条线的总回合（BWK_RAILWAY_TOTAL）—— 同样放末尾 */
     volatile LONG off_railway_collection_id;  /* RailwayDungeonHistoryDataByCollection._collectionId (0x10) */
+
+    /* 存档：已通关关卡记录（BWK_CACHE_SELF 抓对象 → 采样线程轮询）——
+     * 这条链让"以前打过的关"也能判定：存档在内存里一直存在，进游戏就能回溯。*/
+    volatile LONG off_stage_clear_list;   /* UserStageClearInfoData._stageClearInfoList (0x18) */
+    volatile LONG off_clear_info_list;    /* StageClearInfoList._list : List<StageClearInfo> (0x10) */
+    volatile LONG off_clear_info_id;      /* StageClearInfo._id（关卡 id）(0x10) */
+    volatile LONG stage_watch_count;      /* 关注关卡条数（Python 端填）*/
+    volatile LONG stage_watch_ids[BW_STAGE_WATCH_MAX];
+    volatile long long stage_clear_data;  /* 抓到的 UserStageClearInfoData*（DLL 自己写）*/
+    volatile LONG stage_seen_mask;        /* 已上报过的关注槽位图（DLL 自己写，只报一次）*/
 } BW_CONFIG;
 
 /* 布局自检：v6/FBW6 → 钩子槽 16，ring 偏移 1352，总大小 1352 + 512*256 + 4(+4对齐)
@@ -201,7 +220,7 @@ typedef struct _BW_CONFIG {
  * ring_offset/struct_size，不一致就报错，所以这里只卡对齐与总大小。*/
 _Static_assert(offsetof(BW_CONFIG, log_ring) % 4 == 0, "log_ring 偏移未对齐");
 _Static_assert(offsetof(BW_CONFIG, buff_watch_hashes) % 8 == 0, "关注表未对齐");
-_Static_assert(sizeof(BW_CONFIG) == 132712, "BW_CONFIG 大小不一致（改了字段就同步改 Python）");
+_Static_assert(sizeof(BW_CONFIG) == 132872, "BW_CONFIG 大小不一致（改了字段就同步改 Python）");
 
 static BW_CONFIG *g_cfg = NULL;
 static HANDLE      g_stop_event = NULL;
@@ -218,6 +237,7 @@ typedef float (__fastcall *fn_damage)(void *self, void *action, void *coin, void
                                       int8_t is_critical, const void *method);
 typedef void  (__fastcall *fn_stage_stat)(void *self, void *external_data, void *format,
                                           const void *method);
+typedef void  (__fastcall *fn_plain_arg1)(void *self, void *a1, const void *method);
 
 static void  *g_target[BW_MAX_HOOKS];
 static void  *g_original[BW_MAX_HOOKS];
@@ -638,6 +658,82 @@ static void emit_unit_vitals(void *unit, const char *tag)
 }
 
 /* 读 action 的 actor/cmd/技能，发 ACT；fallback_actor_oid 用不到时传 -1 */
+/* 轮询"已通关关卡列表"（采样线程调用）。
+ *
+ * 数据链：缓存的 UserStageClearInfoData* →[off_stage_clear_list] StageClearInfoList
+ *         →[off_clear_info_list] List<StageClearInfo> → 每项 [off_clear_info_id] = 关卡 id
+ *
+ * 只在**命中关注表**时发 CLR，且每个关注槽**只报一次**（stage_seen_mask）——
+ * 否则 250ms 一轮 × 几百条记录会把 512 行环形缓冲刷爆。
+ * 这正是"不打那些关卡也能判定"的实现：存档里的旧记录一样会被报上来。
+ */
+/* 关注表命中判定：允许"十进制前缀"匹配（watch=1004 命中 1004、100401、1004012…）。
+ * 关卡 id 的确切格式各模式不一（主线/迷宫/铁路都不同），用前缀能让 Python 端
+ * 先写"章节-节"的粗粒度目标，实测后再收紧，不必先猜准完整 id。*/
+static BOOL id_matches_watch(int id, int watch)
+{
+    int v = id;
+    int i;
+    if (watch <= 0 || id <= 0)
+        return FALSE;
+    for (i = 0; i < 4; i++) {
+        if (v == watch)
+            return TRUE;
+        v /= 10;
+        if (v < watch)
+            return FALSE;
+    }
+    return FALSE;
+}
+
+static void poll_stage_clears(void)
+{
+    uint64_t data, list, items = 0;
+    int32_t count = 0, i, j;
+
+    if (!g_cfg || g_cfg->stage_watch_count <= 0)
+        return;
+    if (g_cfg->off_stage_clear_list <= 0 || g_cfg->off_clear_info_list <= 0 ||
+        g_cfg->off_clear_info_id <= 0)
+        return;
+    data = (uint64_t)g_cfg->stage_clear_data;
+    if (!data)
+        return;                                   /* 还没抓到对象（存档没载入过）*/
+    list = read_ptr((void *)(uintptr_t)data, g_cfg->off_stage_clear_list);
+    if (!list)
+        return;
+    list = read_ptr((void *)(uintptr_t)list, g_cfg->off_clear_info_list);
+    if (!list)
+        return;
+    if (!safe_read((char *)(uintptr_t)(list + 0x20), &items, 8) || !items)
+        return;
+    if (!safe_read((char *)(uintptr_t)(list + 0x18), &count, 4))
+        return;
+    if (count <= 0 || count > BW_CLEAR_LIST_MAX)
+        return;                                   /* 脏数据就不碰 */
+
+    for (i = 0; i < count; i++) {
+        uint64_t elem = 0;
+        int32_t id = 0;
+        if (!safe_read((char *)(uintptr_t)(items + 8 * i), &elem, 8) || !elem)
+            continue;
+        if (!read_i32((void *)(uintptr_t)elem, g_cfg->off_clear_info_id, &id))
+            continue;
+        for (j = 0; j < g_cfg->stage_watch_count && j < BW_STAGE_WATCH_MAX; j++) {
+            char line[96];
+            if (!id_matches_watch((int)id, (int)g_cfg->stage_watch_ids[j]))
+                continue;
+            if (g_cfg->stage_seen_mask & (1L << j))
+                break;                            /* 这个槽已经报过了 */
+            g_cfg->stage_seen_mask |= (1L << j);
+            _snprintf(line, sizeof(line) - 1, "CLR stage=%d cleared=1", (int)id);
+            line[sizeof(line) - 1] = '\0';
+            emit(line, TRUE);
+            break;
+        }
+    }
+}
+
 /* 采样线程：把已经见过的单位每 BW_SAMPLE_MS 重读一次 hp / sp / buff。
  *
  * 为什么必须有它：我们只能在自己挂上的函数被调用时读值，而受击钩子
@@ -658,6 +754,7 @@ static DWORD WINAPI sampler_thread(LPVOID unused)
             break;
         if (!g_cfg || !g_cfg->observing || !g_cfg->installed)
             continue;
+        poll_stage_clears();      /* 已通关关卡列表（存档回溯判定，见该函数注释）*/
         for (i = 0; i < BW_VITAL_SLOTS; i++) {
             void *unit;
             int iid = -1, oid = -1;
@@ -944,6 +1041,18 @@ static int __fastcall call_and_emit_railway_total(void *self, const void *method
         return call_and_emit_railway_total(self, method, g_original[N]);          \
     }
 
+/* ---- 抓存档对象（BWK_CACHE_SELF）-------------------------------------------
+ * 只把 self 存进配置（给采样线程轮询用），不发事件；原函数照常调用。*/
+#define DEF_CACHE_THUNK(N)                                                       \
+    static void __fastcall hk_cache_##N(void *self, void *a1, const void *method) \
+    {                                                                            \
+        bump_hit(N);                                                             \
+        if (self && g_cfg)                                                       \
+            g_cfg->stage_clear_data = (long long)(uintptr_t)self;                \
+        if (g_original[N])                                                       \
+            ((fn_plain_arg1)g_original[N])(self, a1, method);                    \
+    }
+
 DEF_PLAIN_THUNK(0)  DEF_PLAIN_THUNK(1)  DEF_PLAIN_THUNK(2)  DEF_PLAIN_THUNK(3)
 DEF_PLAIN_THUNK(4)  DEF_PLAIN_THUNK(5)  DEF_PLAIN_THUNK(6)  DEF_PLAIN_THUNK(7)
 DEF_PLAIN_THUNK(8)  DEF_PLAIN_THUNK(9)  DEF_PLAIN_THUNK(10) DEF_PLAIN_THUNK(11)
@@ -976,6 +1085,11 @@ DEF_RAILWAY_THUNK(0) DEF_RAILWAY_THUNK(1) DEF_RAILWAY_THUNK(2) DEF_RAILWAY_THUNK
 DEF_RAILWAY_THUNK(4) DEF_RAILWAY_THUNK(5) DEF_RAILWAY_THUNK(6) DEF_RAILWAY_THUNK(7)
 DEF_RAILWAY_THUNK(8) DEF_RAILWAY_THUNK(9) DEF_RAILWAY_THUNK(10) DEF_RAILWAY_THUNK(11)
 DEF_RAILWAY_THUNK(12) DEF_RAILWAY_THUNK(13) DEF_RAILWAY_THUNK(14) DEF_RAILWAY_THUNK(15)
+
+DEF_CACHE_THUNK(0)   DEF_CACHE_THUNK(1)   DEF_CACHE_THUNK(2)   DEF_CACHE_THUNK(3)
+DEF_CACHE_THUNK(4)   DEF_CACHE_THUNK(5)   DEF_CACHE_THUNK(6)   DEF_CACHE_THUNK(7)
+DEF_CACHE_THUNK(8)   DEF_CACHE_THUNK(9)   DEF_CACHE_THUNK(10)  DEF_CACHE_THUNK(11)
+DEF_CACHE_THUNK(12)  DEF_CACHE_THUNK(13)  DEF_CACHE_THUNK(14)  DEF_CACHE_THUNK(15)
 
 static detour_fn pick_detour(int index, LONG kind)
 {
@@ -1062,6 +1176,17 @@ static detour_fn pick_detour(int index, LONG kind)
         case 10: return (detour_fn)hk_railway_10; case 11: return (detour_fn)hk_railway_11;
         case 12: return (detour_fn)hk_railway_12; case 13: return (detour_fn)hk_railway_13;
         case 14: return (detour_fn)hk_railway_14; default: return (detour_fn)hk_railway_15;
+        }
+    case BWK_CACHE_SELF:
+        switch (index) {
+        case 0: return (detour_fn)hk_cache_0;  case 1: return (detour_fn)hk_cache_1;
+        case 2: return (detour_fn)hk_cache_2;  case 3: return (detour_fn)hk_cache_3;
+        case 4: return (detour_fn)hk_cache_4;  case 5: return (detour_fn)hk_cache_5;
+        case 6: return (detour_fn)hk_cache_6;  case 7: return (detour_fn)hk_cache_7;
+        case 8: return (detour_fn)hk_cache_8;  case 9: return (detour_fn)hk_cache_9;
+        case 10: return (detour_fn)hk_cache_10; case 11: return (detour_fn)hk_cache_11;
+        case 12: return (detour_fn)hk_cache_12; case 13: return (detour_fn)hk_cache_13;
+        case 14: return (detour_fn)hk_cache_14; default: return (detour_fn)hk_cache_15;
         }
     default:
         return (detour_fn)hk_plain_0;
