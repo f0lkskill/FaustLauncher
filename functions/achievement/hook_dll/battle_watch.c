@@ -68,7 +68,10 @@
 #define BW_GA_TIMEOUT_MS 60000
 #define BW_LOG_RING_CAP 512
 #define BW_LOG_LINE_MAX 255
-#define BW_MAX_HOOKS    24     /* 钩子槽上限（候选已 20 个；满槽时排最后的 stage_progress 会被截断）*/
+#define BW_MAX_HOOKS    40     /* 钩子槽上限。
+                                * 12 → 当初会截断 skv_end；16/20 也太紧；24 已经被占满（实测
+                                * 正好 24/24，排最后的钩子随时可能被静默丢掉）。抬到 40 留足余量，
+                                * 也支持"一次挂一批候选、让游戏告诉哪条在活路上"的做法。*/
 #define BW_NAME_LEN     40
 #define BW_SPEED_SCALE  1000   /* 速度字段的定点比例：_CORRECTION_FOR_SPEED */
 #define BW_VITAL_UNREAD (-1000)  /* HP/理智读不出来时的哨兵（HP 不可能为负、理智只有 ±45）*/
@@ -291,7 +294,7 @@ typedef struct _BW_CONFIG {
  * ring_offset/struct_size，不一致就报错，所以这里只卡对齐与总大小。*/
 _Static_assert(offsetof(BW_CONFIG, log_ring) % 4 == 0, "log_ring 偏移未对齐");
 _Static_assert(offsetof(BW_CONFIG, buff_watch_hashes) % 8 == 0, "关注表未对齐");
-_Static_assert(sizeof(BW_CONFIG) == 133856, "BW_CONFIG 大小不一致（改了字段就同步改 Python）");
+_Static_assert(sizeof(BW_CONFIG) == 134944, "BW_CONFIG 大小不一致（改了字段就同步改 Python）");
 
 static BW_CONFIG *g_cfg = NULL;
 static HANDLE      g_stop_event = NULL;
