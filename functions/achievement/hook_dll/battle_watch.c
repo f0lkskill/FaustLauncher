@@ -1365,7 +1365,9 @@ static void call_and_emit_railway_hist(
 {
     uint64_t items = 0;
     int32_t count = 0, i, total = 0;
-    char line[112];
+    char line[224];
+    char vals[128];
+    int used = 0;
 
     if (original)
         ((fn_railway_hist)original)(self, collection_id, unit_infos, statistics, clear_turns,
@@ -1379,15 +1381,19 @@ static void call_and_emit_railway_hist(
         return;
     if (count <= 0 || count > 256)
         return;
+    vals[0] = '\0';
     for (i = 0; i < count; i++) {
         int32_t v = 0;
         if (!safe_read((char *)(uintptr_t)(items + 0x20 + 4 * i), &v, 4))
             break;
         if (v > 0)
             total += v;
+        if (used < (int)sizeof(vals) - 10)
+            used += _snprintf(vals + used, sizeof(vals) - 1 - (size_t)used, "%d|", (int)v);
     }
-    _snprintf(line, sizeof(line) - 1, "RWT line=%d total=%d nodes=%d",
-              collection_id, total, (int)count);
+    /* 把原始列表一起带出去：求和口径对不对要拿它跟游戏里显示的总回合对（实测 33 ≠ 86）。*/
+    _snprintf(line, sizeof(line) - 1, "RWT line=%d total=%d nodes=%d vals=%s",
+              collection_id, total, (int)count, vals);
     line[sizeof(line) - 1] = '\0';
     emit(line, TRUE);
 }
