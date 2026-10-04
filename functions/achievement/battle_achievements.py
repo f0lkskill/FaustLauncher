@@ -196,28 +196,57 @@ class RailwayTotalTurnAchievement(BaseAchievement):
     battle_driven = True
 
     def __init__(self, ach_id: str, name: str, description: str,
-                 line_ids=(), max_turn: int = 0, rarity: str = "epic"):
+                 line_ids=(), max_turn: int = 0, node_prefixes=(),
+                 rarity: str = "epic"):
         super().__init__(ach_id, name, description, rarity)
         self.line_ids = tuple(int(x) for x in line_ids)
         self.max_turn = int(max_turn)
+        self.node_prefixes = tuple(str(p) for p in node_prefixes)
         self.detail = ""
+
+    def _node_total(self) -> tuple:
+        """按节点记录求和（不依赖界面）。
+
+        返回 ``(总回合, 参与节点数)``；没有节点记录时返回 ``(-1, 0)``。
+        ``node_prefixes`` 非空时只累加 id 前缀命中的节点（等实测确认线路的节点 id 段后再收紧）。
+        """
+        try:
+            nodes = battle_watch.railway_nodes()
+        except Exception:  # noqa: BLE001
+            return -1, 0
+        if not nodes:
+            return -1, 0
+        total = 0
+        used = 0
+        for node_id, turn in nodes.items():
+            if self.node_prefixes and not str(node_id).startswith(self.node_prefixes):
+                continue
+            total += max(0, int(turn))
+            used += 1
+        return (total, used) if used else (-1, 0)
 
     def check(self) -> bool:
         if self.unlocked:
             return True
+        limit = f"≤{self.max_turn}T" if self.max_turn else "不限回合"
+        # 1) 整条线总回合（GetTotalClearTurn，需开线路界面）
         try:
             totals = battle_watch.railway_totals()
         except Exception:  # noqa: BLE001
-            return False
+            totals = {}
         for line, total in totals.items():
             if self.line_ids and int(line) not in self.line_ids:
                 continue
-            if int(total) < 0:
+            if int(total) < 0 or (self.max_turn and int(total) > self.max_turn):
                 continue
-            if self.max_turn and int(total) > self.max_turn:
-                continue
-            limit = f"≤{self.max_turn}T" if self.max_turn else "不限回合"
             self.detail = f"{self.name}：线路 {line} 总回合={total}（阈值 {limit}）"
+            self.mark_unlocked()
+            return True
+        # 2) 节点记录求和（RailwayDungeonFormerSaveData..ctor，不依赖界面）
+        total, used = self._node_total()
+        if total >= 0 and not (self.max_turn and total > self.max_turn):
+            self.detail = (f"{self.name}：{used} 个节点的通关回合合计={total}"
+                           f"（阈值 {limit}，来自存档节点记录）")
             self.mark_unlocked()
             return True
         return False

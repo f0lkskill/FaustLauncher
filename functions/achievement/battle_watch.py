@@ -118,13 +118,15 @@ KIND_RAILWAY_TOTAL = 8  # int  (self, mi)：折射铁路整条线的总回合 �
 KIND_CACHE_SELF = 9     # void (self, a1, mi)：只缓存 self（抓存档对象给采样线程轮询）
 KIND_NODE_STATE = 10    # int  (self, main, sub, node, mi)：关卡通关状态查询 → NCL
 KIND_CACHE_ARG1 = 11    # void (self, a1, mi)：缓存第一个参数（抓全量进度树）
+KIND_RAILWAY_NODE = 12  # void (self, a1, mi)：铁路每节点通关回合 → RWT node=/turn=
                         #   动画 tick 带身份，判定才能“按行动”对齐（否则只能一股脑延后）
 KIND_NUMBERS = {"plain": KIND_PLAIN, "unit": KIND_UNIT,
                 "unit_int_bool": KIND_UNIT_INT_BOOL, "unit_get_int": KIND_UNIT_GET_INT,
                 "action_int": KIND_ACTION_INT, "damage_action": KIND_DAMAGE_ACTION,
                 "skv": KIND_SKV, "stage_stat": KIND_STAGE_STAT,
                 "railway_total": KIND_RAILWAY_TOTAL, "cache_self": KIND_CACHE_SELF,
-                "node_state": KIND_NODE_STATE, "cache_arg1": KIND_CACHE_ARG1}
+                "node_state": KIND_NODE_STATE, "cache_arg1": KIND_CACHE_ARG1,
+                "railway_node": KIND_RAILWAY_NODE}
 
 # --------------------------------------------------------------------------- 字段语义
 
@@ -546,6 +548,10 @@ FALLBACK_HOOKS: dict[str, tuple[str, int, str]] = {
     # 登录时服务端把整棵 章→小节→节点 树下发到这里；a1 就是列表根。
     # 采样线程遍历它即可全量判定（界面查询那条路实测连第十章都没查过）。
     "stage_progress": ("UserStageNodeStateData::UpdateData", 0x18AFFE0, "cache_arg1"),
+    # ---- 折射铁路：每节点通关回合（存档重建时逐个构造，不依赖界面）------------
+    # 挂钩 RailwayDungeonFormerSaveData::.ctor(RailwayNodeDataFormat) —— 它填
+    # nodeId(0x10)/clearTurn(0x14)。之前挂的 GetTotalClearTurn 实测 0 命中（只在线路界面调）。
+    "railway_node": ("RailwayDungeonFormerSaveData::.ctor", 0x18B38D0, "railway_node"),
 }
 FALLBACK_FIELDS: dict[str, int] = {
     "unit_instance_id": 0x60,
@@ -593,6 +599,9 @@ FALLBACK_FIELDS: dict[str, int] = {
     "node_id": 0x10,
     "node_clear_type": 0x14,
     "node_clear_number": 0x18,
+    # 折射铁路每节点记录：nodeId 0x10 / clearTurn 0x14
+    "railway_node_id": 0x10,
+    "railway_node_turn": 0x14,
 }
 # 该候选不做桩解引用（本身就是真实实现/已验证可用）
 NO_STUB_RESOLVE = {"take_attack_dmg_multiplier"}
@@ -682,6 +691,9 @@ class BWConfig(ctypes.Structure):
         ("off_node_id", ctypes.c_int32),
         ("off_node_clear_type", ctypes.c_int32),
         ("off_node_clear_number", ctypes.c_int32),
+        # 折射铁路每节点记录（BWK_RAILWAY_NODE 读 self 上的字段）
+        ("off_railway_node_id", ctypes.c_int32),
+        ("off_railway_node_turn", ctypes.c_int32),
     ]
 
 
@@ -1340,6 +1352,7 @@ class BattleState:
     # 折射铁路整条线的最好回合数：线路号 → 总回合（DLL 的 RWT 事件）
     railway_totals: dict = field(default_factory=dict)
     railway_last: dict = field(default_factory=dict)
+    railway_nodes: dict = field(default_factory=dict)   # 节点 id → 通关回合（存档重建时上报）
     rnd_total: int = 0
     settled_by: str = ""
     flag_counter: int = 0
@@ -2814,11 +2827,19 @@ class BattleWatch:
         self._log(f"[战斗观测] ★ 关卡已通关（游戏查询）: 章{main} 小节id={sub} 节点id={node}")
 
     def _apply_railway_total(self, event: BattleEvent) -> None:
-        """折射铁路总回合（DLL 的 ``RWT`` 事件）。
+        """折射铁路记录（DLL 的 ``RWT`` 事件）。两种形态：
 
-        数据来自 ``RailwayDungeonHistoryDataByCollection::GetTotalClearTurn()``
-        —— 就是进线路前显示的那个"你的最好回合数"；``line`` 是线路号（_collectionId）。
+        - ``line=<线路号> total=<总回合>``：``GetTotalClearTurn()``（只在开线路界面时才被调）
+        - ``node=<节点id> turn=<回合>``：``RailwayDungeonFormerSaveData..ctor``（存档重建时
+          逐个节点报，**不依赖任何界面**）—— 这是六号线那条成就该用的数据。
         """
+        node = event.opt("node")
+        if node is not None:
+            turn = event.get("turn", -1)
+            with self._lock:
+                self.state.railway_nodes[int(node)] = int(turn)
+            self._log(f"[战斗观测] ★ 铁路节点记录: node={node} 通关回合={turn}")
+            return
         line = event.get("line", -1)
         total = event.get("total", -1)
         with self._lock:
@@ -3198,6 +3219,20 @@ def stage_last() -> dict:
         return {}
     with watch._lock:
         return dict(watch.state.stage_last)
+
+
+def railway_nodes() -> dict:
+    """折射铁路**每节点**的通关回合（节点 id → 回合数）。
+
+    来源：``RailwayDungeonFormerSaveData..ctor``（存档重建时逐个节点构造）——
+    不依赖玩家点开任何界面；整条线的总回合可由这些值求和得到。
+    """
+    with _watch_lock:
+        watch = _watch
+    if watch is None:
+        return {}
+    with watch._lock:
+        return {int(k): int(v) for k, v in watch.state.railway_nodes.items()}
 
 
 def observe_stage_ids() -> tuple[int, ...]:
