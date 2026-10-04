@@ -167,6 +167,22 @@ def _report_unlocks(log_callback, unlocked, header: str = "") -> list:
                                        addon=str(getattr(ach, "addon", "") or ""))
     except Exception as exc:  # noqa: BLE001
         log_callback(f"  [成就] 本地记录写入失败（不影响解锁）: {type(exc).__name__}: {exc}")
+
+    # 解锁后**立刻**把成就推回云端（不等下一次启动/手动同步）。
+    # 放后台线程：网络请求不能拖住播报与日志；失败了下次同步会再补（云端是整体替换语义）。
+    try:
+        import threading as _threading
+        from functions.base import user_system as _us
+
+        def _push() -> None:
+            try:
+                _us.push_achievements_to_cloud()
+            except Exception:  # noqa: BLE001
+                pass
+
+        _threading.Thread(target=_push, name="faust-ach-push", daemon=True).start()
+    except Exception:  # noqa: BLE001
+        pass
     if header:
         log_callback(header)
     for ach in fresh:
