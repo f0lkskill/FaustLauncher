@@ -43,6 +43,12 @@ MAX_DESC_LINES = 4         # 超过就用省略号收尾
 COL_KEY = "#ff00fe"
 BG_MID = (32, 36, 46)          # 卡片/文字区统一底色
 
+# 弹窗图标: 边长与圆角。圆角取边长的 ~23%，与网页端成就徽标框的圆角比例一致 ——
+# 以前是 10/70（~14%），配上整块立绘背景几乎看不出圆角。
+ICON_SIZE = 70
+ICON_RADIUS = 16
+ICON_X = 12                    # 图标左边距
+
 # tk 字体 (微软雅黑 UI, 由 tkinter 按字体族名解析)
 FONT_FAMILY = "Microsoft YaHei UI"
 
@@ -195,8 +201,8 @@ def render_toast_bg(rarity: str = "common", height: int = CARD_MIN_H,
     # 图标 (圆角, 无边框, 垂直居中): **成就自己的徽标素材优先**, 没有才用启动器项目图标
     icon_path = _resolve_achievement_icon(ach_id) or _resolve_icon_path()
     if icon_path:
-        icon = _rounded_icon(icon_path, size=70, radius=10)
-        ic_x, ic_y = 12, max(2, (h - 70) // 2)
+        icon = _rounded_icon(icon_path, size=ICON_SIZE, radius=ICON_RADIUS)
+        ic_x, ic_y = ICON_X, max(2, (h - ICON_SIZE) // 2)
         im.paste(icon, (ic_x, ic_y), icon)
 
     # key 色抠圆角外：用 Image.composite 一步完成（mask=255 → 卡片，0 → key 色）。
