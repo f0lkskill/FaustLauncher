@@ -37,7 +37,7 @@ class FaustKuiSpeedNineAchievement(SpeedValueAchievement):
         super().__init__(
             ach_id="ach_faust_kui_speed9",
             name="呃啊，我脚崴了",
-            description="浮士德-魁首速度为 9。\n我缺的重投谁给我补啊！",
+            description="浮士德-魁首速度卡在 9 速。\n我缺的重投谁给我补啊！",
             identity_ids=(IDENTITY_FAUST_KUISHOU,),
             value=SPEED_TARGET,
             fields=("os", "ow", "its", "eff"),

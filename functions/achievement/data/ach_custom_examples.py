@@ -43,7 +43,7 @@ class DeadHandAchievement(BuffPresentAchievement):
         super().__init__(
             ach_id="ach_dead_hand",
             name="这他妈的烂牌！",
-            description="定事务所代表-以实玛利 在首个回合身上带有「组札-芒上月」。",
+            description="定事务所代表-以实玛利 在战斗的首个回合抽到「组札-芒上月」。",
             identity_ids=(IDENTITY_ISHMAEL_TING_REP,),
             buffs=(BUFF_HANAFUDA_TWO,),
             max_round=1,                     # 只在首个回合（及之前）出现才算
@@ -89,7 +89,7 @@ class HeartHeartAchievement(CompositeAchievement):
         super().__init__(
             ach_id="ach_heart_heart",
             name="心脏，心脏！",
-            description="拇指父辈罗佳 使用技能且带上预知眼时，若场上存在拇指子辈希斯克里夫，则触发。",
+            description="让 拇指子辈，希斯克里夫 触发一次追击。",
             conditions=(skill, eyebuff, ally),
             # ⚠ 顺序必须是「先有预知眼，再出手」：预知眼是她开局就带着的常驻 buff，
             # 第一次被采样必然早于她出手 —— 写成 ("skill", "eyebuff") 的话
