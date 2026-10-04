@@ -173,6 +173,37 @@ function renderServerProfile(profile) {
   ).join('');
 }
 
+// 当前游玩时长: 后端读的是本机 Steam 的 localconfig.vdf —— 也就是上报给排行榜的那个值。
+// 读不到就照实说（未安装/未登录 Steam），不编数字。
+function renderPlaytime() {
+  const el = $('#user-playtime');
+  const hint = $('#user-playtime-hint');
+  if (!el) return;
+  const p = (userPageData && userPageData.playtime) || null;
+  if (p && p.ok && p.seconds > 0) {
+    el.textContent = p.text || (Math.round((p.hours || 0) * 10) / 10 + ' 小时');
+    el.classList.remove('is-empty');
+    if (hint) hint.textContent = '来自本机 Steam 记录';
+  } else {
+    el.textContent = '读不到';
+    el.classList.add('is-empty');
+    if (hint) hint.textContent = (p && p.error) || '未安装 / 未登录 Steam';
+  }
+}
+
+// 打开官网页面: 主页必须用服务端给的 profile_token 拼（拿用户 ID 拼会 404）。
+// 拿不到链接时只提示，不打开坏链接。
+function openSitePage(field, label) {
+  const url = String((userPageData && userPageData[field]) || '').trim();
+  if (!url) {
+    toast('拿不到' + label + '链接：请先登录并同步一次云端', 'warn');
+    return;
+  }
+  if (typeof window.__openUrl === 'function') { window.__openUrl(url); return; }
+  if (api && api.open_url) { api.open_url(url).catch(e => toast(String(e), 'error')); return; }
+  toast('浏览器预览模式：' + url, 'info', 4000);
+}
+
 function renderUserPage() {
   const values = userDataValues(userPageData);
   const name = $('#user-page-name');
@@ -180,6 +211,7 @@ function renderUserPage() {
   if (name) name.textContent = values.name;
   renderUserId();
   renderServerProfile(values.profile);
+  renderPlaytime();
   if (count) count.textContent = values.skins.length + ' 个';
   const list = $('#user-skin-list');
   if (!list) return;
@@ -371,6 +403,8 @@ function bindUserEvents() {
   on('#user-id-toggle', 'click', () => { userIdVisible = !userIdVisible; renderUserId(); });
   on('#user-name-open', 'click', openUserNameModal);
   on('#user-sync', 'click', syncUserFromPage);
+  on('#user-open-profile', 'click', () => openSitePage('profile_url', '我的主页'));
+  on('#user-open-leaderboard', 'click', () => openSitePage('leaderboard_url', '排行榜'));
   on('#user-login-open', 'click', openUserLoginModal);
   bindRestrictionsRefresh();
 }

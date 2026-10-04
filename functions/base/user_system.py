@@ -762,18 +762,62 @@ def login_user(user_id: str, settings_manager=None) -> dict:
         return {"ok": True, "user": local, "cloud": data}
 
 
+def playtime_text(seconds: int) -> str:
+    """把秒数说成人话（与官网排行榜的文案口径一致：X 天 X 小时 / X 小时 X 分）。"""
+    total = max(0, int(seconds or 0))
+    days, rest = divmod(total, 86400)
+    hours, rest = divmod(rest, 3600)
+    minutes = rest // 60
+    if days:
+        return f"{days} 天 {hours} 小时"
+    if hours:
+        return f"{hours} 小时 {minutes} 分"
+    if minutes:
+        return f"{minutes} 分 {rest % 60} 秒"
+    return f"{total} 秒"
+
+
 def get_user_info(settings_manager=None) -> dict:
     data = load_user()
     user_name = "Player"
     if settings_manager is not None:
         user_name = str(settings_manager.get_setting("user_name") or "Player")
     profile = _value(data, "server_profile", {})
+    profile = profile if isinstance(profile, dict) else {}
+
+    # 官网链接：主页要**用服务端给的 profile_token** 拼（不能拿用户 ID 拼，那样 404）；
+    # 排行榜是公开页，直接给站点根 + /leaderboard。
+    base = ""
+    try:
+        base = str(user_api.api_base() or "").rstrip("/")
+    except Exception:  # noqa: BLE001
+        base = ""
+    token = str(profile.get("profile_token") or "").strip()
+
+    # 当前游玩时长：直接读**本机 Steam 记录**（实时，而且就是上报给排行榜的那个值）。
+    # 读不到（没装/没登录 Steam）时给 ok=False，前端照实说明，不编数字。
+    play: dict = {}
+    try:
+        from functions.base import steam_playtime
+        play = steam_playtime.read_playtime()
+    except Exception as exc:  # noqa: BLE001
+        play = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+    seconds = int(play.get("seconds") or 0)
+
     return {"user": data, "user_name": user_name, "user_path": user_file(),
             "restrictions": get_restrictions(),
             "logged_in": user_api.has_session(),
             # 服务端资料的完整副本: 前端据此做"本地 <-> 服务端"的字段级对照
             # (服务端以后新增字段, 这里不用改代码就会带出来)
-            "profile": profile if isinstance(profile, dict) else {}}
+            "profile": profile,
+            # 官网入口（空串 = 拿不到，前端应禁用按钮而不是打开坏链接）
+            "profile_url": f"{base}/user/{token}" if base and token else "",
+            "leaderboard_url": f"{base}/leaderboard" if base else "",
+            # 当前游玩时长（本机 Steam 记录）
+            "playtime": {"ok": bool(play.get("ok")), "seconds": seconds,
+                         "hours": float(play.get("hours") or 0),
+                         "text": playtime_text(seconds) if play.get("ok") else "",
+                         "error": str(play.get("error") or "")}}
 
 
 def completed_achievements() -> list[str]:

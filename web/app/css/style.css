@@ -875,6 +875,16 @@ body.modal-open .res-card {
   border: 1px solid rgba(90, 170, 255, .5);
 }
 
+/* 账户面板: 当前游玩时长（读本机 Steam 记录） */
+.user-playtime {
+  font-size: 13px; font-weight: 600; color: #8fd0ff;
+  background: rgba(70, 150, 235, .12);
+  border: 1px solid rgba(90, 170, 255, .35);
+  border-radius: 6px; padding: 2px 10px;
+}
+.user-playtime.is-empty { color: var(--text-dim, #8b95a3); background: transparent; border-color: transparent; }
+.user-playtime-hint { font-size: 11.5px; color: var(--text-dim, #8b95a3); margin-left: 8px; }
+
 /* 稀有度筛选: 图标按钮 + 贴着它展开的小菜单 (点别处/Esc 关闭) */
 .ach-filter-wrap { position: relative; display: inline-flex; }
 .ach-filter-btn.active {
