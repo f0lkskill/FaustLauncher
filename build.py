@@ -1,670 +1,549 @@
-"""FaustLauncher 可视化构建工具"""
-import subprocess, shutil, os, sys, threading, time, queue
+"""FaustLauncher 可视化构建工具（pywebview 版）。
+
+界面在 ``build_ui/``（HTML/CSS/JS），本文件只做两件事：
+
+1. **搬运构建步骤**（与旧 Tk 版逐条一致：PyInstaller → 清理 → 目录 → 运行环境 → 资产 →
+   字体 → 配置 → 资源 → 文档 → exe → 压缩 zip），每步的状态/日志/进度推给前端；
+2. **暴露 JS API**（``BuildApi``）：前端每 150ms 轮询 ``poll()`` 取事件队列。
+
+与原 Tk 版的差异（按需求）：
+  · **取消"版本信息地址"配置** —— 上传统一用 ``functions.base.web_config.get_webnote()``
+    里的配置（与 mod/addon/hook 索引同一套），界面上不再有输入框；
+  · 上传发布有**真实进度条**：蓝奏云 ``UploadFile`` 自带 ``progress_callback``（真百分比），
+    版本信息上传则是阶段式进度（笔记接口是单次 POST，拿不到字节级进度）。
+"""
+
+from __future__ import annotations
+
 import json
+import os
+import queue
+import shutil
+import subprocess
+import sys
+import threading
+import time
 from datetime import datetime
+
 from functions.base.web_config import get_webnote
 
-ACCENT = '#6366f1'
-SUCCESS = '#10b981'
-DANGER = '#ef4444'
-BG = '#181818'
-CARD_BG = '#1f1f23'
-TEXT = '#f8fafc'
-MUTED = '#94a3b8'
-LOG_BG = '#0d0d11'
+# 与 build_ui/style.css 里的配色保持一致的语义（前端按 level 着色）
+LEVEL_OK, LEVEL_BAD, LEVEL_WARN = "ok", "bad", "warn"
 
-import tkinter as tk
-from tkinter import ttk
-
-_BUILD_STEPS = [
-    ('pyinstaller', 'PyInstaller 打包'),
-    ('cleanup',    '清理旧构建'),
-    ('mkdir',      '创建版本目录'),
-    ('build_temp', '复制运行环境'),
-    ('assets',     '复制资产文件'),
-    ('font',       '重置字体目录'),
-    ('config',     '复制配置文件'),
-    ('resources',  '复制资源文件'),
-    ('docs',       '复制文档文件'),
-    ('exe',        '复制可执行文件'),
-    ('compress',   '压缩打包 zip'),
+BUILD_STEPS = [
+    ("pyinstaller", "PyInstaller 打包"),
+    ("cleanup", "清理旧构建"),
+    ("mkdir", "创建版本目录"),
+    ("runtime", "复制运行环境"),
+    ("assets", "复制资产文件"),
+    ("font", "重置字体目录"),
+    ("config", "复制配置文件"),
+    ("resources", "复制资源文件"),
+    ("docs", "复制文档文件"),
+    ("exe", "复制可执行文件"),
+    ("compress", "压缩打包 zip"),
 ]
 
 
-def upload_version_info(address, version, download_url='', log=None): # type: ignore
+# --------------------------------------------------------------------------- 上传版本信息
+def upload_version_info(version, download_url: str = "", log=None) -> bool:
     """上传版本信息到 webnote —— 与其它笔记 (mod/addon/hook 索引) **完全同一套读写构造**。
 
-    构造 (别再自己 requests, 见 functions/webFunc/Webnote.py):
-      · 读: Webnote.read_note_live() —— 多源 + IPv4 优先 + DoH 直连兜底, 但只走网络;
-        **200 + 0 字节 / HTML 错误页一律算读取失败**, 绝不当作"笔记是空的"
-        (以前自己 requests 读空响应 -> 当成全新笔记 -> 上传后抹掉云端几十个版本历史)
-      · 写: Webnote.write_note() —— POST(/update/) + 小内容 GET 兜底 + 连接类错误重试
-        + 严格响应解析 (HTML/414/非 JSON/status!=1 都算失败)
+    ⚠ 地址**不再由界面传入**：统一取 ``get_webnote('version_info')`` 的配置。
 
-    规则:
-    - **读不到云端内容 -> 直接跳过上传** (宁可不上传, 也不能覆盖云端已有版本)
-    - 版本号已存在 → 跳过上传
-    - 只登记版本号与上传时间; 描述预置空值键, 由开发者到服务器(textdb)上填写
-    - download_url 传入时一并登记 (蓝奏云直链解析 URL)
-    - 不切换 latest_release_version 标签 (缺失时预置空值键, 由服务器侧填写)
+    构造（别再自己 requests，见 ``functions/webFunc/Webnote.py``）：
+      · 读: ``read_note_live()`` —— 多源 + IPv4 优先 + DoH 直连兜底；
+        **200 + 0 字节 / HTML 错误页一律算读取失败**，绝不当作"笔记是空的"
+        （以前自己 requests 读到空响应 → 当成全新笔记 → 上传后抹掉云端几十个版本历史）；
+      · 写: ``write_note()`` —— POST(/update/) + 小内容 GET 兜底 + 连接类错误重试
+        + 严格响应解析（HTML/414/非 JSON/status!=1 都算失败）。
 
-    address: webnote 笔记名
-    version: 要登记的版本号 (如 V0.6.0-pre.7.fix.2)
-    download_url: 下载直链 (可为空)
-    log: 可选日志回调(text), 默认 print
+    规则：读不到云端内容 → **跳过上传**；版本号已存在 → 跳过；只登记版本号与上传时间。
     """
-    if log is None:
-        def log(msg):
-            try:
-                print(msg, end='')
-            except UnicodeEncodeError:
-                print(msg.encode(sys.stdout.encoding or 'utf-8', 'replace')
-                          .decode(sys.stdout.encoding or 'utf-8'), end='')
+    log = log or (lambda text, level="": None)
     try:
         from functions.webFunc.Webnote import read_note_live, write_note
 
-        address = str(address or get_webnote('version_info')[0] or '').strip()
+        address = str(get_webnote("version_info")[0] or "").strip()
         if not address:
-            log('⚠ 未配置版本信息笔记名, 跳过上传\n')
-            return
+            log("⚠ 未配置版本信息笔记名（config/web_config.json），跳过上传\n", LEVEL_WARN)
+            return False
 
-        print(f'获取云端版本信息: {address}')
-        text, used_key, err = read_note_live('version_info', address)
-        if not str(text or '').strip():
-            log(f'⚠ 读不到云端版本信息内容, 为避免覆盖已有版本历史已跳过上传'
-                f'{f" ({err})" if err else ""}\n')
-            return
+        log(f"· 读取云端版本信息（{address}）…\n")
+        text, used_key, err = read_note_live("version_info", address)
+        if not str(text or "").strip():
+            log("⚠ 读不到云端版本信息内容，为避免覆盖已有版本历史已跳过上传"
+                f"{f' ({err})' if err else ''}\n", LEVEL_WARN)
+            return False
 
         try:
             data = json.loads(text)
-        except Exception as e:
-            log(f'⚠ 云端版本信息不是合法 JSON ({e}), 已跳过上传\n')
-            return
+        except Exception as exc:  # noqa: BLE001
+            log(f"⚠ 云端版本信息不是合法 JSON ({exc})，已跳过上传\n", LEVEL_WARN)
+            return False
         if not isinstance(data, dict):
-            log('⚠ 云端版本信息结构异常 (顶层不是对象), 已跳过上传\n')
-            return
-        versions = data.get('versions')
-        if not isinstance(versions, dict):
-            versions = {}
+            log("⚠ 云端版本信息结构异常（顶层不是对象），已跳过上传\n", LEVEL_WARN)
+            return False
 
+        versions = data.get("versions")
+        versions = versions if isinstance(versions, dict) else {}
         if version in versions:
-            log(f'⏭ 版本 {version} 已存在于云端版本信息, 跳过上传\n')
-            return
+            log(f"⏭ 版本 {version} 已存在于云端，跳过上传\n")
+            return True
 
-        # 新版本插入 dict 最前 (dict 顺序即 JSON 顺序, 保证最新版本在列表顶部)
         new_versions = {version: {
-            'data': datetime.now().strftime('%Y-%m-%d-%H:%M:%S'),
-            'description': '',
-            'url': download_url or '',
+            "data": datetime.now().strftime("%Y-%m-%d-%H:%M:%S"),
+            "description": "",
+            "url": download_url or "",
         }}
-        new_versions.update(versions)
-        data['versions'] = new_versions
-        # 最新版本标记: 不自动切换, 仅预置空值键供服务器侧填写
-        if not data.get('latest_release_version'):
-            data['latest_release_version'] = '' # type: ignore
-        new_content = json.dumps(data, ensure_ascii=False, indent=4)
+        new_versions.update(versions)          # 新版本插到最前（dict 顺序 = JSON 顺序）
+        data["versions"] = new_versions
+        if not data.get("latest_release_version"):
+            data["latest_release_version"] = ""   # 预置空值键，由服务器侧填写
 
-        print(f'上传版本信息: {version}')
-        result = write_note(used_key, new_content) or {}
-        if result.get('status') == 1:
-            log(f'✔ 版本信息上传成功: {version}\n')
-        else:
-            log(f'✕ 版本信息上传失败: {result.get("error") or result}\n')
-    except Exception as e:
-        log(f'⚠ 上传版本信息失败(不影响构建结果): {e}\n')
+        log(f"· 上传版本信息 {version} …\n")
+        result = write_note(used_key, json.dumps(data, ensure_ascii=False, indent=4)) or {}
+        if result.get("status") == 1:
+            log(f"✔ 版本信息上传成功：{version}\n", LEVEL_OK)
+            return True
+        log(f"✕ 版本信息上传失败：{result.get('error') or result}\n", LEVEL_BAD)
+        return False
+    except Exception as exc:  # noqa: BLE001
+        log(f"⚠ 上传版本信息失败（不影响构建结果）：{exc}\n", LEVEL_BAD)
+        return False
 
 
-class BuildGUI:
-    def __init__(self, version_info):
-        """构建 FaustLauncher 可视化构建工具 GUI
+# --------------------------------------------------------------------------- JS API
+class BuildApi:
+    """暴露给前端（``pywebview`` 的 js_api）。所有耗时活儿都在后台线程里跑。"""
 
-        Args:
-            version_info (str): 目标版本号(如 V0.6.0-pre.7.fix.2)
+    def __init__(self, version_info: str):
+        self.version_info = str(version_info or "unknown")
+        self._events: "queue.Queue[dict]" = queue.Queue()
+        self._window = None
+        self._zip_path = ""
+        self._building = False
+        self._published = False
+
+    # ---- 事件推给前端用的内部工具 ----
+    def _emit(self, **event) -> None:
+        self._events.put(event)
+
+    def _log(self, text: str, level: str = "", color: str | None = None) -> None:
+        """记一行日志。
+
+        ``level`` 是给前端着色的语义（ok/bad/warn）；``color`` 是为了兼容旧调用方
+        （蓝奏那套助手是按 ``log(text, color='#ef4444')`` 调的）—— 传了颜色就按颜色归类。
         """
-        
-        self.version_info = version_info
-        self.root = tk.Tk()
-        self.root.title(f'FaustLauncher 构建工具 — v{version_info}')
-        self.root.geometry('600x680')
-        self.root.resizable(False, False)
-        self.root.configure(bg=BG)
+        if not level and color:
+            low = str(color).lower().strip()
+            if low.startswith("#") and len(low) >= 7:
+                try:
+                    r = int(low[1:3], 16)
+                    g = int(low[3:5], 16)
+                    b = int(low[5:7], 16)
+                    # 偏红=错误 / 偏绿=成功 / 其它=提示（不猜具体色号，按通道算）
+                    level = (LEVEL_BAD if (r > g + 40 and r > b + 40)
+                             else LEVEL_OK if (g > r + 40 and g > b + 40)
+                             else LEVEL_WARN)
+                except ValueError:
+                    level = LEVEL_WARN
+            else:
+                level = (LEVEL_BAD if "red" in low
+                         else LEVEL_OK if "green" in low else LEVEL_WARN)
+        self._emit(type="log", text=str(text), level=level)
+
+    def _step(self, index: int, state: str) -> None:
+        self._emit(type="step", index=index, state=state)
+
+    def _progress(self, value: float, cls: str = "") -> None:
+        self._emit(type="progress", value=value, cls=cls)
+
+    def _status(self, text: str, level: str = "") -> None:
+        self._emit(type="status", text=str(text), level=level)
+
+    def _upload(self, percent: float, text: str = "") -> None:
+        self._emit(type="upload", percent=percent, text=text)
+
+    # ---- 前端调用 ----
+    def get_state(self) -> dict:
+        return {
+            "version": self.version_info,
+            "steps": [{"key": k, "name": n} for k, n in BUILD_STEPS],
+            "building": self._building,
+            "zip": self._zip_path,
+        }
+
+    def poll(self) -> dict:
+        """取走事件队列（前端每 150ms 调一次）。"""
+        events: list[dict] = []
+        while True:
+            try:
+                events.append(self._events.get_nowait())
+            except queue.Empty:
+                break
+        return {"ok": True, "events": events}
+
+    def start_build(self) -> dict:
+        if self._building:
+            return {"ok": False, "error": "构建已在进行中"}
+        self._building = True
+        threading.Thread(target=self._run_all_steps, name="faust-build", daemon=True).start()
+        return {"ok": True}
+
+    def publish(self) -> dict:
+        if self._published:
+            return {"ok": False, "error": "已发起过发布"}
+        self._published = True
+        threading.Thread(target=self._publish_release, name="faust-publish", daemon=True).start()
+        return {"ok": True}
+
+    def open_build_dir(self) -> dict:
+        target = f"build_{self.version_info}"
         try:
-            self.root.iconbitmap('assets/images/icon/icon.ico')
-        except Exception:
+            os.startfile(target)               # noqa: S606（Windows 专用）
+            return {"ok": True}
+        except Exception as exc:  # noqa: BLE001
+            self._log(f"打开目录失败：{exc}\n", LEVEL_BAD)
+            return {"ok": False, "error": str(exc)}
+
+    def close(self) -> dict:
+        try:
+            if self._window is not None:
+                self._window.destroy()
+        except Exception:  # noqa: BLE001
             pass
+        return {"ok": True}
 
-        self._log_queue = queue.Queue()
-        self._pyi_ok = False
-        self._setup_ui()
-        self._center_window()
-        self.root.after(100, self._poll_log)
-        self.root.after(300, self._start_build)
-
-    def _center_window(self):
-        self.root.update_idletasks()
-        w, h = 600, 740
-        sw = self.root.winfo_screenwidth()
-        sh = self.root.winfo_screenheight()
-        self.root.geometry(f'{w}x{h}+{(sw-w)//2}+{(sh-h)//2}')
-
-    def _setup_ui(self):
-        header = tk.Frame(self.root, bg=BG, height=56)
-        header.pack(fill=tk.X, padx=20, pady=(14, 0))
-        header.pack_propagate(False)
-        tk.Label(header, text='构建 FaustLauncher',
-                bg=BG, fg=TEXT, font=('Microsoft YaHei UI', 16, 'bold')).pack(anchor='w')
-        tk.Label(header, text=f'目标版本: v{self.version_info}',
-                bg=BG, fg=MUTED, font=('Microsoft YaHei UI', 9)).pack(anchor='w')
-
-        # 版本信息地址输入框: 填了就用, 留空则回退到 config/web_config.json
-        default_addr = get_webnote('version_info')[0]
-        addr_row = tk.Frame(self.root, bg=BG)
-        addr_row.pack(fill=tk.X, padx=20, pady=(8, 0))
-        tk.Label(addr_row, text='版本信息地址:', bg=BG, fg=TEXT,
-                font=('Microsoft YaHei UI', 9)).pack(side=tk.LEFT)
-        self._version_addr_var = tk.StringVar()
-        tk.Entry(addr_row, textvariable=self._version_addr_var, bg=LOG_BG, fg=TEXT,
-                insertbackground=TEXT, relief='flat', highlightthickness=1,
-                highlightbackground=self._lighter(CARD_BG, 12),
-                font=('Consolas', 9)).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(10, 0))
-        if default_addr:
-            tk.Label(self.root, text=f'留空则使用配置文件地址: {default_addr}',
-                    bg=BG, fg=MUTED, font=('Microsoft YaHei UI', 8)).pack(anchor='w', padx=22)
-        else:
-            tk.Label(self.root, text='未配置版本信息地址, 留空则跳过上传',
-                    bg=BG, fg=MUTED, font=('Microsoft YaHei UI', 8)).pack(anchor='w', padx=22)
-
-        card = tk.Frame(self.root, bg=CARD_BG, highlightthickness=1,
-                       highlightbackground=self._lighter(CARD_BG, 12))
-        card.pack(fill=tk.BOTH, expand=True, padx=20, pady=(10, 2))
-
-        self._step_icons: list[tk.Label] = []
-        self._step_labels: list[tk.Label] = []
-        for i, (_, name) in enumerate(_BUILD_STEPS):
-            row = tk.Frame(card, bg=CARD_BG)
-            row.pack(fill=tk.X, padx=14, pady=1)
-            icon = tk.Label(row, text='○', bg=CARD_BG, fg=MUTED, font=('Microsoft YaHei UI', 10))
-            icon.pack(side=tk.LEFT, padx=(0, 8))
-            self._step_icons.append(icon)
-            label = tk.Label(row, text=name, bg=CARD_BG, fg=MUTED,
-                           font=('Microsoft YaHei UI', 10))
-            label.pack(side=tk.LEFT)
-            self._step_labels.append(label)
-
-        self._progress = ttk.Progressbar(self.root, mode='determinate', length=560)
-        self._progress.pack(padx=20, pady=(4, 0))
-
-        self._status = tk.Label(self.root, text='准备中...', bg=BG, fg=MUTED,
-                               font=('Microsoft YaHei UI', 9))
-        self._status.pack(pady=(2, 4))
-
-        log_frame = tk.Frame(self.root, bg=BG, height=160)
-        log_frame.pack(fill=tk.X, padx=20, pady=(0, 6))
-        log_frame.pack_propagate(False)
-
-        log_header = tk.Frame(log_frame, bg=LOG_BG)
-        log_header.pack(fill=tk.X)
-        tk.Label(log_header, text='构建日志', bg=LOG_BG, fg=MUTED,
-                font=('Microsoft YaHei UI', 8)).pack(anchor='w', padx=8, pady=2)
-        
-        text_frame = tk.Frame(log_frame, bg=LOG_BG)
-        text_frame.pack(fill=tk.BOTH, expand=True)
-
-        self._log_text = tk.Text(text_frame, bg=LOG_BG, fg='#cbd5e1',
-                                font=('Consolas', 9), wrap=tk.WORD,
-                                relief='flat', bd=0)
-        self._log_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(6, 0), pady=(0, 4))
-
-        log_scroll = ttk.Scrollbar(text_frame, orient='vertical', command=self._log_text.yview)
-        log_scroll.pack(side=tk.RIGHT, fill=tk.Y, pady=(0, 4))
-        self._log_text.configure(yscrollcommand=log_scroll.set)
-
-        btn_frame = tk.Frame(self.root, bg=BG)
-        btn_frame.pack(pady=(0, 12))
-        self._publish_btn = tk.Button(btn_frame, text='上传发布', state=tk.DISABLED,
-                                     bg=SUCCESS, fg='#04110b', relief='flat',
-                                     font=('Microsoft YaHei UI', 10),
-                                     padx=20, pady=6, cursor='hand2',
-                                     activebackground='#0d9668', activeforeground='#04110b')
-        self._publish_btn.pack(side=tk.LEFT, padx=(0, 8))
-        self._close_btn = tk.Button(btn_frame, text='关闭', command=self.root.destroy,
-                                   bg='#334155', fg=TEXT, relief='flat',
-                                   font=('Microsoft YaHei UI', 10),
-                                   padx=20, pady=6, cursor='hand2',
-                                   activebackground='#475569', activeforeground=TEXT)
-        self._close_btn.pack()
-
-    def _log(self, text, color=None):
-        self._log_queue.put((text, color))
-
-    def _poll_log(self):
-        while not self._log_queue.empty():
-            text, color = self._log_queue.get_nowait()
-            self._log_text.insert(tk.END, text)
-            if color:
-                start = f'{self._log_text.index(tk.END)}-{len(text)}c'
-                end = tk.END
-                self._log_text.tag_add(str(id(text)), f'{start} linestart', end)
-                self._log_text.tag_config(str(id(text)), foreground=color)
-            self._log_text.see(tk.END)
-        self.root.after(50, self._poll_log)
-
-    def _start_build(self):
-        self._close_btn.configure(text='构建中...', state=tk.DISABLED)
-        threading.Thread(target=self._run_all_steps, daemon=True).start()
-
-    def _set_step(self, idx, state):
-        m = {'pending': ('○', MUTED), 'running': ('◉', ACCENT),
-             'done': ('●', SUCCESS), 'failed': ('✕', DANGER)}
-        icon_text, color = m.get(state, ('○', MUTED))
-        self.root.after(0, lambda: self._step_icons[idx].configure(text=icon_text, fg=color))
-        self.root.after(0, lambda: self._step_labels[idx].configure(
-            fg=TEXT if state in ('running', 'done') else
-            DANGER if state == 'failed' else MUTED))
-
-    def _set_status(self, text, color=MUTED):
-        self.root.after(0, lambda: self._status.configure(text=text, fg=color))
-
-    def _set_progress(self, val):
-        self.root.after(0, lambda: self._progress.configure(value=val))
-
-    def _run_pyinstaller(self):
-        # 优先用项目 venv 运行 PyInstaller: 系统 python 可能缺 pystray 等依赖,
-        # 导致产物 _internal 缺模块 (旧 build_temp 模板掩盖了该问题, 现已废弃模板)
+    # ---- 构建步骤（与旧 Tk 版逐条一致） ----
+    def _run_pyinstaller(self) -> int:
         py = sys.executable
         venv_py = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                               'venv', 'Scripts', 'python.exe')
+                               "venv", "Scripts", "python.exe")
         if os.path.isfile(venv_py):
             py = venv_py
-            self._log(f'· 使用项目 venv 解释器打包: {venv_py}\n')
+            self._log(f"· 使用项目 venv 解释器打包：{venv_py}\n")
         else:
-            self._log(f'· 未找到项目 venv, 使用当前解释器: {sys.executable}\n')
-        p = subprocess.Popen(
-            [py, '-m', 'PyInstaller', '--noconfirm', 'FaustLauncher.spec'],
+            self._log(f"· 未找到项目 venv，使用当前解释器：{sys.executable}\n", LEVEL_WARN)
+        proc = subprocess.Popen(
+            [py, "-m", "PyInstaller", "--noconfirm", "FaustLauncher.spec"],
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-            text=True, encoding='utf-8', errors='replace'
+            text=True, encoding="utf-8", errors="replace",
         )
-        for line in p.stdout: # type: ignore
+        for line in proc.stdout:  # type: ignore[union-attr]
             self._log(line)
-        p.wait()
-        return p.returncode
+        proc.wait()
+        return int(proc.returncode)
 
-    def _run_all_steps(self):
+    def _fail(self, index: int, message: str) -> None:
+        self._step(index, "failed")
+        self._status(message, LEVEL_BAD)
+        self._log(f"\n✕ {message}\n", LEVEL_BAD)
+        self._emit(type="done", ok=False)
+
+    def _run_all_steps(self) -> None:
         vi = self.version_info
-        
-        self._set_step(0, 'running')
-        self._set_status('正在运行 PyInstaller...')
-        self._set_progress(3)
+
+        # ---- 0. PyInstaller ----
+        self._step(0, "running")
+        self._status("正在运行 PyInstaller…")
+        self._progress(3)
         try:
             rc = self._run_pyinstaller()
-        except Exception as e:
-            self._log(f'[PYINSTALLER ERROR] {e}\n', DANGER)
-            self._set_step(0, 'failed')
-            self._set_status(f'PyInstaller 异常: {e}', DANGER)
-            self._on_done(False)
+        except Exception as exc:  # noqa: BLE001
+            self._fail(0, f"PyInstaller 异常：{exc}")
+            self._building = False
             return
-        
         if rc != 0:
-            self._set_step(0, 'failed')
-            self._set_status(f'PyInstaller 失败 (code {rc})', DANGER)
-            self._on_done(False)
+            self._fail(0, f"PyInstaller 失败（code {rc}）")
+            self._building = False
             return
-        self._set_step(0, 'done')
-        self._set_progress(12)
+        self._step(0, "done")
+        self._progress(12)
 
-        # ---- 清理旧构建 ----
-        self._set_step(1, 'running')
-        self._set_status('清理旧版本文件夹...')
+        # ---- 1. 清理旧构建 ----
+        self._step(1, "running")
+        self._status("清理旧版本文件夹…")
+        shutil.rmtree(f"build_{vi}", ignore_errors=True)
+        self._step(1, "done")
+        self._progress(20)
+
+        # ---- 2. 创建版本目录 ----
+        self._step(2, "running")
+        self._status("创建版本目录…")
+        os.makedirs(f"build_{vi}", exist_ok=True)
+        self._step(2, "done")
+        self._progress(30)
+
+        # ---- 3. 复制运行环境（取自 PyInstaller 产物） ----
+        self._step(3, "running")
+        self._status("复制运行环境（来自 dist）…")
         try:
-            shutil.rmtree(f'build_{vi}', ignore_errors=True)
-        except Exception:
-            pass
-        self._set_step(1, 'done')
-        self._set_progress(20)
-
-        # ---- 创建版本目录 ----
-        self._set_step(2, 'running')
-        self._set_status('创建版本目录...')
-        os.makedirs(f'build_{vi}', exist_ok=True)
-        self._set_step(2, 'done')
-        self._set_progress(30)
-
-        # ---- 复制运行环境 (直接取自 PyInstaller 产物, build_temp 模板机制已废弃) ----
-        self._set_step(3, 'running')
-        self._set_status('复制运行环境 (来自 dist)...')
-        try:
-            if not os.path.isdir('dist/FaustLauncher/_internal'):
-                raise FileNotFoundError('未找到 dist/FaustLauncher/_internal')
-            # 1) PyInstaller 产物 _internal: 与本次 exe 同源的全新环境
-            shutil.copytree('dist/FaustLauncher/_internal', f'build_{vi}/_internal',
+            if not os.path.isdir("dist/FaustLauncher/_internal"):
+                raise FileNotFoundError("未找到 dist/FaustLauncher/_internal")
+            shutil.copytree("dist/FaustLauncher/_internal", f"build_{vi}/_internal",
                             dirs_exist_ok=True)
-            # 2) addons/mods 必须为空目录 (插件/模组由用户自行添加, 不随构建分发)
-            for d in ('addons', 'mods'):
-                os.makedirs(f'build_{vi}/{d}', exist_ok=True)
-            # 3) lang: 只创建空汉化目录 (默认零协会 LLC_zh-CN; 翻译数据由云端下载,
-            #    changes.json/nav_config.json 等由工具在运行时生成, 均不随构建分发)
+            for d in ("addons", "mods"):
+                os.makedirs(f"build_{vi}/{d}", exist_ok=True)
             from functions.web_update.translation_source import get_translation_dir
-            os.makedirs(f'build_{vi}/{get_translation_dir()}', exist_ok=True)
-            # 4) updater.vbs: 版本更新器必备 (由 wscript 运行, 把新版本文件覆盖到安装目录),
-            #    仅存于 build_temp 目录, 缺失则构建失败
-            if not os.path.isfile('build_temp/updater.vbs'):
-                raise FileNotFoundError('未找到 build_temp/updater.vbs (版本更新器必备)')
-            shutil.copy('build_temp/updater.vbs', f'build_{vi}/updater.vbs')
-            # 5) webFunc: 运行时代码以裸导入 (from webFunc import ...) 使用,
-            #    PyInstaller 不会收集为顶层模块, 必须放进 _internal 供 sys.path 解析
-            if os.path.isdir('functions/webFunc'):
-                shutil.copytree('functions/webFunc', f'build_{vi}/_internal/webFunc',
+            os.makedirs(f"build_{vi}/{get_translation_dir()}", exist_ok=True)
+            if not os.path.isfile("build_temp/updater.vbs"):
+                raise FileNotFoundError("未找到 build_temp/updater.vbs（版本更新器必备）")
+            shutil.copy("build_temp/updater.vbs", f"build_{vi}/updater.vbs")
+            if os.path.isdir("functions/webFunc"):
+                shutil.copytree("functions/webFunc", f"build_{vi}/_internal/webFunc",
                                 dirs_exist_ok=True)
-            # 6) pystray: app_ui 顶层导入, 缺失会导致启动崩溃。纯 Python 模块编入 PYZ,
-            #    通过 PYZ-00.toc 校验是否被收集 (旧 build_temp 模板曾掩盖此问题)
-            _pyz_toc = os.path.join('build', 'FaustLauncher', 'PYZ-00.toc')
-            _pyz_txt = ''
+            pyz_toc = os.path.join("build", "FaustLauncher", "PYZ-00.toc")
+            pyz_txt = ""
             try:
-                with open(_pyz_toc, 'r', encoding='utf-8', errors='replace') as _f:
-                    _pyz_txt = _f.read()
-            except Exception:
+                with open(pyz_toc, encoding="utf-8", errors="replace") as fh:
+                    pyz_txt = fh.read()
+            except Exception:  # noqa: BLE001
                 pass
-            if "'pystray'" not in _pyz_txt:
-                raise FileNotFoundError('PyInstaller 未收集 pystray (系统托盘不可用), 请用项目 venv 运行本构建工具')
-            # 7) webui: pywebview 及平台后端必须被收集 (默认新版 Web 界面启动)
-            if "'webview'" not in _pyz_txt:
-                raise FileNotFoundError('PyInstaller 未收集 webview (新版 Web 界面无法启动), 请用项目 venv 运行本构建工具')
-            if "'cffi'" not in _pyz_txt:
-                raise FileNotFoundError('PyInstaller 未收集 cffi (pywebview 依赖缺失), 请用项目 venv 运行本构建工具')
-            # 8) pythonnet runtime: Python.Runtime.dll 必须存在于 _internal, 否则 clr_loader 加载失败
-            _pr_dll = os.path.join('dist', 'FaustLauncher', '_internal', 'pythonnet', 'runtime', 'Python.Runtime.dll')
-            if not os.path.isfile(_pr_dll):
-                raise FileNotFoundError('PyInstaller 未收集 pythonnet runtime (Python.Runtime.dll), Web 界面无法启动')
-            # 9) web/ 前端页面树必须被收进 _internal/web (对用户不可见), 否则所有 Web 窗口白屏
-            _web_index = os.path.join('dist', 'FaustLauncher', '_internal', 'web', 'app', 'index.html')
-            if not os.path.isfile(_web_index):
+            for module, tip in (("pystray", "系统托盘不可用"),
+                                ("webview", "新版 Web 界面无法启动"),
+                                ("cffi", "pywebview 依赖缺失")):
+                if f"'{module}'" not in pyz_txt:
+                    raise FileNotFoundError(
+                        f"PyInstaller 未收集 {module}（{tip}），请用项目 venv 运行本构建工具")
+            pr_dll = os.path.join("dist", "FaustLauncher", "_internal", "pythonnet",
+                                  "runtime", "Python.Runtime.dll")
+            if not os.path.isfile(pr_dll):
                 raise FileNotFoundError(
-                    'PyInstaller 未把 web/ 收进 _internal/web (Web 界面无法启动); '
-                    '请确认 FaustLauncher.spec 中的 web/ 收集逻辑与 web/app/index.html 存在')
-        except Exception as e:
-            self._set_step(3, 'failed')
-            self._set_status(f'复制运行环境失败: {e}', DANGER)
-            self._on_done(False)
+                    "PyInstaller 未收集 pythonnet runtime（Python.Runtime.dll），Web 界面无法启动")
+            web_index = os.path.join("dist", "FaustLauncher", "_internal", "web", "app",
+                                     "index.html")
+            if not os.path.isfile(web_index):
+                raise FileNotFoundError(
+                    "PyInstaller 未把 web/ 收进 _internal/web（Web 界面无法启动）；"
+                    "请确认 FaustLauncher.spec 的 web/ 收集逻辑与 web/app/index.html 存在")
+        except Exception as exc:  # noqa: BLE001
+            self._fail(3, f"复制运行环境失败：{exc}")
+            self._building = False
             return
-        self._set_step(3, 'done')
-        self._set_progress(38)
+        self._step(3, "done")
+        self._progress(38)
 
-        # ---- 复制资产 ----
-        self._set_step(4, 'running')
-        self._set_status('复制资产文件...')
+        # ---- 4. 复制资产（web/ 已由 spec 收进 _internal） ----
+        self._step(4, "running")
+        self._status("复制资产文件…")
         try:
-            # 只复制 assets/。web/ (前端页面树) 不在此复制: 已由 FaustLauncher.spec
-            # 收进 _internal/web/, 随 _internal 一起进入发布包, 对用户不可见。
-            shutil.copytree('assets', f'build_{vi}/assets', dirs_exist_ok=True)
-        except Exception as e:
-            self._set_step(4, 'failed')
-            self._set_status(f'复制 assets 失败: {e}', DANGER)
-            self._on_done(False)
+            shutil.copytree("assets", f"build_{vi}/assets", dirs_exist_ok=True)
+        except Exception as exc:  # noqa: BLE001
+            self._fail(4, f"复制 assets 失败：{exc}")
+            self._building = False
             return
-        self._set_step(4, 'done')
-        self._set_progress(46)
+        self._step(4, "done")
+        self._progress(46)
 
-        # ---- 重置字体 ----
-        self._set_step(5, 'running')
-        self._set_status('重置字体目录...')
-        try:
-            shutil.rmtree(f'build_{vi}/assets/Font', ignore_errors=True)
-            os.makedirs(f'build_{vi}/assets/Font', exist_ok=True)
-        except Exception:
-            pass
-        self._set_step(5, 'done')
-        self._set_progress(54)
+        # ---- 5. 重置字体 ----
+        self._step(5, "running")
+        self._status("重置字体目录…")
+        shutil.rmtree(f"build_{vi}/assets/Font", ignore_errors=True)
+        os.makedirs(f"build_{vi}/assets/Font", exist_ok=True)
+        self._step(5, "done")
+        self._progress(54)
 
-        # ---- 复制配置 ----
-        self._set_step(6, 'running')
-        self._set_status('复制配置文件...')
+        # ---- 6. 复制配置（排除内嵌的 web_config.json） ----
+        self._step(6, "running")
+        self._status("复制配置文件…")
         try:
-            sys.path.insert(0, '.')
+            sys.path.insert(0, ".")
             from functions.base.settings_manager import get_settings_manager
-            sm = get_settings_manager()
-            sm.reset_all_settings()
-        except Exception:
+            get_settings_manager().reset_all_settings()
+        except Exception:  # noqa: BLE001
             pass
         try:
-            # 排除 web_config.json: 云端配置由 spec 构建时内嵌进 exe (PYZ), 不以独立文件分发
-            shutil.copytree('config', f'build_{vi}/config', dirs_exist_ok=True,
-                            ignore=shutil.ignore_patterns('web_config.json'))
-        except Exception as e:
-            self._set_step(6, 'failed')
-            self._set_status(f'复制 config 失败: {e}', DANGER)
-            self._on_done(False)
+            shutil.copytree("config", f"build_{vi}/config", dirs_exist_ok=True,
+                            ignore=shutil.ignore_patterns("web_config.json"))
+        except Exception as exc:  # noqa: BLE001
+            self._fail(6, f"复制 config 失败：{exc}")
+            self._building = False
             return
-        # webnote 云端配置: 由 FaustLauncher.spec 内嵌进 exe (PYZ), 不随构建产物分发独立文件
-        if os.path.exists('config/web_config.json'):
-            self._log('✔ web_config.json 已内嵌进 exe (PYZ)，不随构建产物分发\n', SUCCESS)
+        if os.path.exists("config/web_config.json"):
+            self._log("✔ web_config.json 已内嵌进 exe（PYZ），不随构建产物分发\n", LEVEL_OK)
         else:
-            self._log('⚠ 未发现 config/web_config.json, 云端功能将静默降级\n', DANGER)
-        self._set_step(6, 'done')
-        self._set_progress(62)
-        # ---- 复制资源 (仅 7-zip; mod_loader/bubble_speech/llc_babel 等由云端按需下载) ----
-        self._set_step(7, 'running')
-        self._set_status('复制资源文件...')
+            self._log("⚠ 未发现 config/web_config.json，云端功能将静默降级\n", LEVEL_WARN)
+        self._step(6, "done")
+        self._progress(62)
+
+        # ---- 7. 复制资源（仅 7-zip + 战斗观测 DLL） ----
+        self._step(7, "running")
+        self._status("复制资源文件…")
         try:
-            os.makedirs(f'build_{vi}/resources/7-zip', exist_ok=True)
-            if os.path.isdir('resources/7-zip'):
-                shutil.copytree('resources/7-zip', f'build_{vi}/resources/7-zip', dirs_exist_ok=True)
-            # 成就监测的战斗观测 DLL（进程注入需要真实文件路径）
-            # 发布包里**只带编译好的 DLL**：运行时不编译、不读 .c/.ps1，源码不进分发产物；
-            # 注入时也会按 mtime 挑最新的一份（battle_watch.dll 优先于包里那份）。
-            hook_dll = 'functions/achievement/hook_dll'
-            src_dll = os.path.join(hook_dll, 'battle_watch.dll')
-            src_c = os.path.join(hook_dll, 'battle_watch.c')
+            os.makedirs(f"build_{vi}/resources/7-zip", exist_ok=True)
+            if os.path.isdir("resources/7-zip"):
+                shutil.copytree("resources/7-zip", f"build_{vi}/resources/7-zip",
+                                dirs_exist_ok=True)
+            hook_dll = "functions/achievement/hook_dll"
+            src_dll = os.path.join(hook_dll, "battle_watch.dll")
+            src_c = os.path.join(hook_dll, "battle_watch.c")
             if os.path.isfile(src_dll):
-                dst_dir = f'build_{vi}/_internal/hook_dll'
+                dst_dir = f"build_{vi}/_internal/hook_dll"
                 os.makedirs(dst_dir, exist_ok=True)
-                shutil.copy2(src_dll, os.path.join(dst_dir, 'battle_watch.dll'))
-                _dll_size = os.path.getsize(src_dll)
-                _dll_mtime = time.strftime('%Y-%m-%d %H:%M:%S',
-                                           time.localtime(os.path.getmtime(src_dll)))
-                self._log(f'\u2714 battle_watch.dll \u5df2\u968f\u6784\u5efa\u4ea7\u7269\u53d1\u5e03'
-                          f'\uff08{_dll_size} \u5b57\u8282\uff0c{_dll_mtime}\uff09\n', SUCCESS)
+                shutil.copy2(src_dll, os.path.join(dst_dir, "battle_watch.dll"))
+                self._log("✔ battle_watch.dll 已随构建产物发布（{} 字节，{}）\n".format(
+                    os.path.getsize(src_dll),
+                    time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(os.path.getmtime(src_dll)))),
+                    LEVEL_OK)
                 if os.path.isfile(src_c) and os.path.getmtime(src_c) > os.path.getmtime(src_dll):
-                    self._log('\u26a0 battle_watch.c \u6bd4 DLL \u65b0\uff1a\u53d1\u5e03\u5305\u91cc\u7684\u662f\u65e7\u6784\u5efa\uff0c\u8bf7\u5148\u8dd1 '
-                              'functions/achievement/hook_dll/build.ps1\n', DANGER)
-        except Exception as e:
-            self._set_step(7, 'failed')
-            self._set_status(f'复制 resources 失败: {e}', DANGER)
-            self._on_done(False)
+                    self._log("⚠ battle_watch.c 比 DLL 新：发布包里是旧构建，"
+                              "请先跑 functions/achievement/hook_dll/build.ps1\n", LEVEL_WARN)
+        except Exception as exc:  # noqa: BLE001
+            self._fail(7, f"复制 resources 失败：{exc}")
+            self._building = False
             return
-        self._set_step(7, 'done')
-        self._set_progress(74)
+        self._step(7, "done")
+        self._progress(74)
 
-        # ---- 复制文档 ----
-        self._set_step(8, 'running')
-        self._set_status('复制文档...')
-        for f in ('LICENSE', 'README.md'):
+        # ---- 8. 复制文档 ----
+        self._step(8, "running")
+        self._status("复制文档…")
+        for name in ("LICENSE", "README.md"):
             try:
-                shutil.copy(f, f'build_{vi}/{f}')
-            except Exception:
+                shutil.copy(name, f"build_{vi}/{name}")
+            except Exception:  # noqa: BLE001
                 pass
-        self._set_step(8, 'done')
-        self._set_progress(86)
+        self._step(8, "done")
+        self._progress(86)
 
-        # ---- 复制 exe ----
-        self._set_step(9, 'running')
-        self._set_status('复制可执行文件...')
-        src = 'dist/FaustLauncher/FaustLauncher.exe'
-        dst = f'build_{vi}/FaustLauncher.exe'
+        # ---- 9. 复制 exe ----
+        self._step(9, "running")
+        self._status("复制可执行文件…")
+        src = "dist/FaustLauncher/FaustLauncher.exe"
         if not os.path.exists(src):
-            self._set_step(9, 'failed')
-            self._set_status(f'未找到 {src}', DANGER)
-            self._on_done(False)
+            self._fail(9, f"未找到 {src}")
+            self._building = False
             return
         try:
-            shutil.copy(src, dst)
-        except Exception as e:
-            self._set_step(9, 'failed')
-            self._set_status(f'复制 exe 失败: {e}', DANGER)
-            self._on_done(False)
+            shutil.copy(src, f"build_{vi}/FaustLauncher.exe")
+        except Exception as exc:  # noqa: BLE001
+            self._fail(9, f"复制 exe 失败：{exc}")
+            self._building = False
             return
-        self._set_step(9, 'done')
-        self._set_progress(92)
+        self._step(9, "done")
+        self._progress(92)
 
-        # ---- 压缩打包 zip (顶层 FaustLauncher/, 文件名 FaustLauncher-<版本>.zip) ----
-        self._set_step(10, 'running')
-        self._set_status('压缩打包 zip...')
+        # ---- 10. 压缩打包 zip ----
+        self._step(10, "running")
+        self._status("压缩打包 zip…")
         try:
             import zipfile
-            folder = f'build_{self.version_info}'
-            zip_name = 'FaustLauncher-' + str(self.version_info).lstrip('V')
-            zip_path = f'{zip_name}.zip'
+            folder = f"build_{vi}"
+            zip_path = "FaustLauncher-" + str(vi).lstrip("V") + ".zip"
             if os.path.exists(zip_path):
                 os.remove(zip_path)
-            files = []
-            dirs = []
+            files: list[str] = []
+            dirs: list[str] = []
             for root, _dirs, fs in os.walk(folder):
-                for f in fs:
-                    files.append(os.path.join(root, f))
-                for d in _dirs:
-                    dirs.append(os.path.join(root, d))
+                files.extend(os.path.join(root, f) for f in fs)
+                dirs.extend(os.path.join(root, d) for d in _dirs)
             if not files and not dirs:
-                raise FileNotFoundError(f'{folder} 为空, 无法打包')
-            with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
-                # 先写目录条目 (含空目录 addons/mods/lang 等, 解压后结构完整)
-                for d in sorted(dirs):
-                    arc = os.path.join('FaustLauncher', os.path.relpath(d, folder)).replace('\\', '/') + '/'
-                    zf.writestr(arc, '')
+                raise FileNotFoundError(f"{folder} 为空，无法打包")
+            with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+                for d in sorted(dirs):     # 目录条目（含空目录）保证解压后结构完整
+                    arc = os.path.join("FaustLauncher",
+                                       os.path.relpath(d, folder)).replace("\\", "/") + "/"
+                    zf.writestr(arc, "")
                 for i, full in enumerate(files):
-                    arc = os.path.join('FaustLauncher', os.path.relpath(full, folder)).replace('\\', '/')
+                    arc = os.path.join("FaustLauncher",
+                                       os.path.relpath(full, folder)).replace("\\", "/")
                     zf.write(full, arc)
                     if (i + 1) % 200 == 0:
-                        self._set_progress(92 + int((i + 1) / len(files) * 8))
+                        self._progress(92 + int((i + 1) / len(files) * 8))
             size_mb = os.path.getsize(zip_path) / 1024.0 / 1024.0
-            self._log(f'✔ 压缩完成: {zip_path} ({size_mb:.1f} MB)\n', SUCCESS)
+            self._log(f"✔ 压缩完成：{zip_path}（{size_mb:.1f} MB）\n", LEVEL_OK)
             self._zip_path = zip_path
-        except Exception as e:
-            self._set_step(10, 'failed')
-            self._set_status(f'压缩打包失败: {e}', DANGER)
-            self._on_done(False)
+        except Exception as exc:  # noqa: BLE001
+            self._fail(10, f"压缩打包失败：{exc}")
+            self._building = False
             return
-        self._set_step(10, 'done')
-        self._set_progress(100)
-        self._on_done(True)
+        self._step(10, "done")
+        self._progress(100, "ok")
+        self._status(f"构建完成！v{vi}", LEVEL_OK)
+        self._log(f"\n✔ 构建完成：build_{vi}\n", LEVEL_OK)
+        self._log(f"已生成压缩包：{self._zip_path}\n", LEVEL_OK)
+        self._emit(type="done", ok=True)
+        self._building = False
 
-    def _open_build_dir(self):
-        """打开压缩为 zip 的原始目录, 供用户自行测试 (窗口与进程不退出)"""
+    # ---- 上传发布（**真实进度**来自蓝奏云 UploadFile 的 progress_callback） ----
+    def _publish_release(self) -> None:
+        zip_path = self._zip_path or ("FaustLauncher-" + str(self.version_info).lstrip("V") + ".zip")
+        if not os.path.isfile(zip_path):
+            self._upload(0, "未找到压缩包")
+            self._log(f"✕ 未找到压缩包：{zip_path}\n", LEVEL_BAD)
+            return
         try:
-            os.startfile(f'build_{self.version_info}')
-        except Exception as e:
-            self._log(f'打开目录失败: {e}\n', DANGER)
+            from functions.tools.post_extension_tools import _lanzou_session, PARSER_BASE
+            from functions.web_update.lanzou_utils import GetOrCreateFolder, UploadFile
+            from functions.base.web_config import get_lanzou_config
 
-    def _publish_release(self):
-        """蓝奏云上传 zip 到 FaustLauncher 文件夹 → 直链 → 上传版本信息(附下载链接)"""
-        def _run():
-            zip_path = getattr(self, '_zip_path', '') or ('FaustLauncher-' + str(self.version_info).lstrip('V') + '.zip')
-            if not os.path.isfile(zip_path):
-                self._log(f'✕ 未找到压缩包: {zip_path}\n', DANGER)
-                return
-            try:
-                from functions.tools.post_extension_tools import _lanzou_session, PARSER_BASE
-                from functions.web_update.lanzou_utils import GetOrCreateFolder, UploadFile
-                from functions.base.web_config import get_lanzou_config
-                self._log(f'开始发布 {self.version_info} ...\n')
-                session = _lanzou_session(self._log)
-                self._log('定位蓝奏云文件夹: FaustLauncher\n')
-                fid = GetOrCreateFolder(session, 'FaustLauncher')
-                if not fid:
-                    raise RuntimeError('无法创建/定位蓝奏云文件夹: FaustLauncher')
-                max_mb = int(get_lanzou_config().get('max_size_mb') or 66)
-                self._log('上传压缩包到蓝奏云...\n')
-                last_progress = {'percent': -1}
+            self._upload(0, "登录蓝奏云…")
+            self._log(f"开始发布 {self.version_info} …\n")
+            session = _lanzou_session(self._log)
+            self._upload(2, "定位文件夹 FaustLauncher…")
+            fid = GetOrCreateFolder(session, "FaustLauncher")
+            if not fid:
+                raise RuntimeError("无法创建/定位蓝奏云文件夹：FaustLauncher")
 
-                def _upload_progress(progress):
-                    percent = min(100, max(0, int(progress * 100)))
-                    if percent != last_progress['percent']:
-                        last_progress['percent'] = percent
-                        self._log(f'  上传 {percent}%\n')
+            max_mb = int(get_lanzou_config().get("max_size_mb") or 66)
+            self._upload(4, "上传压缩包…")
+            last = {"pct": -1}
 
-                ret = UploadFile(session, zip_path, folder_id=fid, max_size_mb=max_mb, # type: ignore
-                                 progress_callback=_upload_progress)
-                if ret.get('status') != 1:
-                    raise RuntimeError(f'上传失败: {ret.get("msg")}')
-                share = ret.get('share_url') or ''
-                url = PARSER_BASE + share
-                self._log(f'✔ 上传成功, 直链: {url}\n', SUCCESS)
-                # 上传版本信息 (附下载链接)
-                address = self._read_version_addr() or get_webnote('version_info')[0]
-                if not address:
-                    self._log('· 未填写版本信息地址, 跳过版本信息上传\n', MUTED)
-                else:
-                    upload_version_info(address, self.version_info, download_url=url, log=self._log)
-                self._log(f'\n✔ 发布完成! 下载链接: {url}\n', SUCCESS)
-            except Exception as e:
-                self._log(f'\n✕ 发布失败: {e}\n', DANGER)
-        threading.Thread(target=_run, daemon=True).start()
+            def _on_progress(progress: float) -> None:
+                percent = min(100, max(0, int(progress * 100)))
+                if percent != last["pct"]:
+                    last["pct"] = percent
+                    self._upload(4 + percent * 0.9, f"上传中 {percent}%")   # 留 6% 给版本信息
 
-    def _read_version_addr(self):
-        """从主线程安全读取版本信息地址输入框的值"""
-        event = threading.Event()
-        result = {}
+            ret = UploadFile(session, zip_path, folder_id=fid, max_size_mb=max_mb,
+                             progress_callback=_on_progress) or {}
+            if ret.get("status") != 1:
+                raise RuntimeError(f"上传失败：{ret.get('msg')}")
 
-        def _get():
-            try:
-                result['v'] = self._version_addr_var.get().strip()
-            except Exception:
-                result['v'] = ''
-            event.set()
-
-        self.root.after(0, _get)
-        event.wait(timeout=2)
-        return result.get('v', '')
-
-    def _upload_version_info(self):
-        """上传当前版本信息到 webnote, 详见 upload_version_info()。"""
-        address = self._read_version_addr() or get_webnote('version_info')[0]
-        if not address:
-            self._log('· 未填写版本信息地址, 跳过上传\n', MUTED)
-            return
-        upload_version_info(address, self.version_info, log=self._log)
-
-    def _on_done(self, success):
-        if success:
-            self._set_status(f'构建完成! v{self.version_info}', SUCCESS)
-            self._set_progress(100)
-            self._log(f'\n✔ 构建完成: build_{self.version_info}\n', SUCCESS)
-            self._log(f'已生成压缩包: {getattr(self, "_zip_path", "")}\n', SUCCESS)
-            # 窗口与进程不退出: 打开原始目录供用户自行测试, 并提供"上传发布"按钮
-            self._close_btn.configure(text='打开测试目录', state=tk.NORMAL,
-                                      command=self._open_build_dir,
-                                      bg=ACCENT, activebackground='#4f46e5')
-            self._publish_btn.configure(state=tk.NORMAL, command=self._publish_release)
-            try:
-                os.startfile(f'build_{self.version_info}')
-            except Exception:
-                pass
-        else:
-            self._log('\n✕ 构建失败\n', DANGER)
-            self._close_btn.configure(text='关闭', state=tk.NORMAL,
-                                     command=self.root.destroy,
-                                     bg=DANGER, activebackground='#dc2626')
-        self.root.after(200, lambda: self.root.attributes('-topmost', True))
-
-    def _lighter(self, hex_color, percent):
-        rgb = tuple(int(hex_color[i:i+2], 16) for i in (1, 3, 5))
-        l = [min(255, c + int((255 - c) * percent / 100)) for c in rgb]
-        return f'#{l[0]:02x}{l[1]:02x}{l[2]:02x}'
-
-    def run(self):
-        self.root.mainloop()
+            share = ret.get("share_url") or ""
+            url = PARSER_BASE + share
+            self._upload(94, "写入版本信息…")
+            self._log(f"✔ 上传成功，直链：{url}\n", LEVEL_OK)
+            upload_version_info(self.version_info, download_url=url, log=self._log)
+            self._upload(100, "发布完成")
+            self._log(f"\n✔ 发布完成！下载链接：{url}\n", LEVEL_OK)
+        except Exception as exc:  # noqa: BLE001
+            self._upload(0, f"发布失败：{exc}")
+            self._log(f"\n✕ 发布失败：{exc}\n", LEVEL_BAD)
 
 
-if __name__ == '__main__':
-
-    # upload_version_info("FaustLauncher.version_info", "unknown", 'test')
-    # exit(0)
-
+# --------------------------------------------------------------------------- 入口
+def main() -> int:
     os.chdir(os.path.dirname(os.path.abspath(__file__)))
     try:
         from functions.base.settings_manager import get_settings_manager
-        st = get_settings_manager()
-        st.reset_all_settings()
-        st.save_settings()
-        vi = st.get_setting('version_info')
-    except Exception:
-        vi = 'unknown'
-    BuildGUI(vi).run()
+        sm = get_settings_manager()
+        sm.reset_all_settings()
+        sm.save_settings()
+        version = sm.get_setting("version_info")
+    except Exception:  # noqa: BLE001
+        version = "unknown"
+
+    try:
+        import webview
+    except Exception as exc:  # noqa: BLE001
+        print(f"[构建工具] 需要 pywebview：{exc}", file=sys.stderr)
+        return 1
+
+    api = BuildApi(version)
+    index_html = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                              "build_ui", "index.html")
+    win = webview.create_window(
+        f"FaustLauncher 构建工具 — v{version}",
+        index_html, js_api=api,
+        width=780, height=800, min_size=(680, 620),
+        background_color="#14161c",
+    )
+    api._window = win
+    webview.start()
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
