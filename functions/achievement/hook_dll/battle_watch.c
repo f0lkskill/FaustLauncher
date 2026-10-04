@@ -739,7 +739,7 @@ static void poll_stage_clears(void)
     list = read_ptr((void *)(uintptr_t)list, g_cfg->off_clear_info_list);
     if (!list)
         return;
-    if (!safe_read((char *)(uintptr_t)(list + 0x20), &items, 8) || !items)
+    if (!safe_read((char *)(uintptr_t)(list + 0x10), &items, 8) || !items)
         return;
     if (!safe_read((char *)(uintptr_t)(list + 0x18), &count, 4))
         return;
@@ -749,7 +749,7 @@ static void poll_stage_clears(void)
     for (i = 0; i < count; i++) {
         uint64_t elem = 0;
         int32_t id = 0;
-        if (!safe_read((char *)(uintptr_t)(items + 8 * i), &elem, 8) || !elem)
+        if (!safe_read((char *)(uintptr_t)(items + 0x20 + 8 * i), &elem, 8) || !elem)
             continue;
         if (!read_i32((void *)(uintptr_t)elem, g_cfg->off_clear_info_id, &id))
             continue;
@@ -840,7 +840,7 @@ static void poll_stage_progress(void)
     if (!root || g_cfg->off_chapter_subs <= 0 || g_cfg->off_sub_nodes <= 0 ||
         g_cfg->off_node_id <= 0)
         return;
-    if (!safe_read((char *)(uintptr_t)(root + 0x20), &ch_items, 8) || !ch_items)
+    if (!safe_read((char *)(uintptr_t)(root + 0x10), &ch_items, 8) || !ch_items)
         return;
     if (!safe_read((char *)(uintptr_t)(root + 0x18), &n_ch, 4))
         return;
@@ -850,7 +850,7 @@ static void poll_stage_progress(void)
     for (i = 0; i < n_ch; i++) {
         uint64_t chapter = 0;
         int32_t chapter_id = 0;
-        if (!safe_read((char *)(uintptr_t)(ch_items + 8 * i), &chapter, 8) || !chapter)
+        if (!safe_read((char *)(uintptr_t)(ch_items + 0x20 + 8 * i), &chapter, 8) || !chapter)
             continue;
         (void)read_i32((void *)(uintptr_t)chapter, 0x10, &chapter_id);
         sub_list = read_ptr((void *)(uintptr_t)chapter, g_cfg->off_chapter_subs);
@@ -858,7 +858,7 @@ static void poll_stage_progress(void)
             continue;
         sub_items = 0;
         n_sub = 0;
-        if (!safe_read((char *)(uintptr_t)(sub_list + 0x20), &sub_items, 8) || !sub_items)
+        if (!safe_read((char *)(uintptr_t)(sub_list + 0x10), &sub_items, 8) || !sub_items)
             continue;
         if (!safe_read((char *)(uintptr_t)(sub_list + 0x18), &n_sub, 4))
             continue;
@@ -868,7 +868,7 @@ static void poll_stage_progress(void)
         for (j = 0; j < n_sub; j++) {
             uint64_t sub = 0;
             int32_t sub_id = 0;
-            if (!safe_read((char *)(uintptr_t)(sub_items + 8 * j), &sub, 8) || !sub)
+            if (!safe_read((char *)(uintptr_t)(sub_items + 0x20 + 8 * j), &sub, 8) || !sub)
                 continue;
             (void)read_i32((void *)(uintptr_t)sub, 0x10, &sub_id);
             node_list = read_ptr((void *)(uintptr_t)sub, g_cfg->off_sub_nodes);
@@ -876,7 +876,7 @@ static void poll_stage_progress(void)
                 continue;
             node_items = 0;
             n_node = 0;
-            if (!safe_read((char *)(uintptr_t)(node_list + 0x20), &node_items, 8) || !node_items)
+            if (!safe_read((char *)(uintptr_t)(node_list + 0x10), &node_items, 8) || !node_items)
                 continue;
             if (!safe_read((char *)(uintptr_t)(node_list + 0x18), &n_node, 4))
                 continue;
@@ -886,7 +886,7 @@ static void poll_stage_progress(void)
             for (k = 0; k < n_node; k++) {
                 uint64_t node = 0;
                 int32_t node_id = 0, ct = 0, cn = 0;
-                if (!safe_read((char *)(uintptr_t)(node_items + 8 * k), &node, 8) || !node)
+                if (!safe_read((char *)(uintptr_t)(node_items + 0x20 + 8 * k), &node, 8) || !node)
                     continue;
                 if (!read_i32((void *)(uintptr_t)node, g_cfg->off_node_id, &node_id))
                     continue;
@@ -896,6 +896,23 @@ static void poll_stage_progress(void)
                     (void)read_i32((void *)(uintptr_t)node, g_cfg->off_node_clear_number, &cn);
                 if (ct <= 0 && cn <= 0)
                     continue;                        /* 没通关的不报 */
+                /* 只报关注表里的（章/小节/节点任一命中前缀即可）——
+                 * 全量已通关节点有几百个，全报会刷爆事件环、也会顶满去重表。*/
+                if (g_cfg->stage_watch_count > 0) {
+                    int watched = 0;
+                    int wi;
+                    for (wi = 0; wi < g_cfg->stage_watch_count && wi < BW_STAGE_WATCH_MAX; wi++) {
+                        int w = (int)g_cfg->stage_watch_ids[wi];
+                        if (id_matches_watch((int)chapter_id, w) ||
+                            id_matches_watch((int)sub_id, w) ||
+                            id_matches_watch((int)node_id, w)) {
+                            watched = 1;
+                            break;
+                        }
+                    }
+                    if (!watched)
+                        continue;
+                }
                 emit_ncl((int)chapter_id, (int)sub_id, (int)node_id, (int)ct, (int)cn);
             }
         }
