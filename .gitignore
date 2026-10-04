@@ -3,6 +3,7 @@ __pycache__/
 *.py[cod]
 *$py.class
 resource_info.json
+addon_info.json
 # C extensions
 *.so
 .icon_src/
