@@ -528,6 +528,31 @@ def auto_update_async(on_log=None, game_path: str = "", force: bool = False,
     def worker() -> None:
         global _auto_updating
         try:
+            # ⚡ 先做一次**便宜的预检**（本地索引 → 云端索引，都只是读文件 / 下几十 KB），
+            #    只要其中一份对得上本机 DLL 就**不重建**。
+            #
+            # 为什么必须这样：``update_hook_index`` 在"本地没有索引"时会走 metadata
+            # **静态解密（约 40 秒）**。游戏启动那一刻它和启动器/游戏抢 CPU 与磁盘，
+            # 玩家感受到的就是"首次打开游戏卡好一阵子"——而这份索引往往**根本用不上**：
+            # 预检随后从云端拿到一份对得上的索引就直接采用了（实测日志 18:45:36 开始重建，
+            # 18:45:38 云端索引已 19/19 命中，重建纯属白烧）。
+            # 这里传 allow_rebuild=False：预检只做判断，绝不在这里触发重建，
+            # 免得两边同时解密。
+            if not force:
+                try:
+                    from . import preflight as _preflight
+                    verdict = _preflight.ensure_offsets_ready(
+                        on_log=on_log, game_path=game_path, push=push,
+                        allow_rebuild=False)
+                    if verdict.get("source") in ("local", "cloud"):
+                        if on_log:
+                            on_log("[hook_index] 索引已可用"
+                                   f"（{verdict.get('verdict', '')}，来源={verdict.get('source')}）"
+                                   "→ 跳过本地重建（省掉约 40 秒静态解密）")
+                        return
+                except Exception as exc:  # noqa: BLE001
+                    if on_log:
+                        on_log(f"[hook_index] 预检失败（继续原流程）: {type(exc).__name__}: {exc}")
             result = update_hook_index(game_path=game_path, force=force, push=push,
                                        on_log=on_log)
             if on_log:
