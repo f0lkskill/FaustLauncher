@@ -3,7 +3,7 @@
         "name": "启动器皮肤",
         "type": "string",
         "default": "",
-        "value": "",
+        "value": "deepseek",
         "description": "当前启用的启动器皮肤, 只能在“玻璃窗”页面切换"
     },
     "game_path": {
@@ -424,7 +424,7 @@
             "version_notify_flag": false
         },
         "value": {
-            "tray_hint": false,
+            "tray_hint": true,
             "version_notify_flag": true
         },
         "description": "程序运行时的缓存数据\n不建议修改"
