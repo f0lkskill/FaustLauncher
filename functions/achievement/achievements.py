@@ -296,12 +296,15 @@ def _define_achievements():
     # === 战斗次数系列 ===
     # 这三个模块一直存在（data/ach_battle_01|02|03.py），但**从没进过任何注册列表** ——
     # 结果就是：成就页看不到、没有徽标、也从来不判定。这里显式收进来。
+    # 稀有度按目标场次往上走：1 场=普通 / 10 场=稀有 / 100 场=史诗。
     from functions.achievement.data.ach_battle_01 import AchBattle01
     from functions.achievement.data.ach_battle_02 import AchBattle02
     from functions.achievement.data.ach_battle_03 import AchBattle03
-    for _cls in (AchBattle01, AchBattle02, AchBattle03):
+    for _cls, _rarity in ((AchBattle01, RARITY_COMMON),
+                          (AchBattle02, RARITY_RARE),
+                          (AchBattle03, RARITY_EPIC)):
         try:
-            achievements.append(_cls())
+            achievements.append(_cls().with_rarity(_rarity))
         except Exception as _exc:  # noqa: BLE001
             print(f"[成就] {_cls.__name__} 注册失败: {_exc}")
 
