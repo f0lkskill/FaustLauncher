@@ -97,6 +97,7 @@ _PATH_ACTIONS = {
     "/api/me/achievements": "上报成就(方式①)",
     "/api/achievements/overwrite": "上报成就(方式②)",
     "/api/me/playtime": "上报游玩时长",
+    "/api/achievements/add": "上报成就(单条)",
     "/api/leaderboard": "读排行榜",
     "/api/download": "上报下载",
 }
@@ -351,6 +352,25 @@ def overwrite_achievements(achievements, uid: str = "") -> dict:
         payload["id"] = str(uid).strip()
     return _request("POST", "/api/achievements/overwrite", payload,
                     note=f"{len(items)} 条" + (f" -> {mask_uid(uid)}" if uid else ""))
+
+
+def add_achievement(achievement_id: str, uid: str = "") -> dict:
+    """给**自己**加一条成就（服务端 ``POST /api/achievements/add``）。
+
+    为什么不整份覆盖：这个接口只改服务端那一条记录，语义是"加一条"且**幂等**
+    （已经有了就返回 ``added: false``，不报错）。整表覆盖在多机轮流上线的场景下
+    会互相覆盖，而这里天然是并集。
+
+    返回体里 ``known`` 表示服务端 ``achievements.json`` 是否认识这个 ID（它**不做强制
+    校验**，所以客户端可以先上新成就，服务端稍后再补定义）。
+    """
+    aid = str(achievement_id or "").strip()
+    if not aid:
+        return {"ok": False, "error": "成就 ID 为空", "status": 0, "data": {}, "offline": False}
+    payload = {"achievement": aid}
+    if uid:
+        payload["id"] = str(uid)
+    return _request("POST", "/api/achievements/add", payload, note=f"单条 {aid}")
 
 
 def report_download(name: str, kind: str) -> dict:
