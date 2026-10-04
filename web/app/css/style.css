@@ -2427,10 +2427,12 @@ body.no-hw .ver-card { animation: verCardInLite .38s cubic-bezier(.22, .9, .24, 
 .user-id-toggle { flex-shrink: 0; }   /* 图标按钮: 尺寸沿用 .btn-icon */
 .user-actions { position: relative; z-index: 1; display: flex; gap: 10px; flex-wrap: wrap; margin-top: 14px; }
 
-/* 账户面板的按钮行: 五颗按钮**强制挤在一行**。
+/* 账户面板的按钮行: 五颗按钮**强制挤在一行并整体居中**。
    做法是同时收紧四样东西 —— 不换行、按钮内边距、字号、图标尺寸与间距；
    窗口真的窄到放不下时(@media)才退回换行，免得文字被压烂。 */
-#page-user .user-actions { flex-wrap: nowrap; gap: 6px; }
+#page-user .user-actions {
+  flex-wrap: nowrap; gap: 6px; justify-content: center;
+}
 #page-user .user-actions .btn {
   padding: 7px 9px; font-size: 12.5px; white-space: nowrap; flex: 0 0 auto;
 }
