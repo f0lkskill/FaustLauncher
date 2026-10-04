@@ -107,6 +107,13 @@
                                 * "六号线 <100T 通关"这类成就必须拿到每关的清关回合数。
                                 * 数据在 StageStatisticPopupSlotData._clearTurn（见 dump.cs）；
                                 * 由于列表是构造函数里填的，thunk 必须**先调原函数再读**。*/
+#define BWK_RAILWAY_TOTAL  8   /* int (self, mi)：折射铁路**整条线的最好回合数**
+                                *   self = RailwayDungeonHistoryDataByCollection
+                                *   → RWT line=<线路号> total=<总回合数>
+                                *
+                                * 为什么要它：进线路之前游戏会显示"你最好的回合数"，那就是
+                                * self->_collectionId(0x10) + GetTotalClearTurn()。结算事件
+                                * （BWK_STAGE_STAT）只能拿到单关回合，整条线的总回合只在这里。*/
 
 /* 错误码 */
 #define BW_ERR_OK         0
@@ -183,6 +190,9 @@ typedef struct _BW_CONFIG {
     volatile LONG off_slot_clear_turn;   /* StageStatisticPopupSlotData._clearTurn  (0x18) */
     volatile LONG off_slot_dead_count;   /* StageStatisticPopupSlotData._deadUnitCount (0x1C) */
     volatile LONG off_slot_ex_cleared;   /* StageStatisticPopupSlotData._exCleared  (0x20) */
+
+    /* 折射铁路整条线的总回合（BWK_RAILWAY_TOTAL）—— 同样放末尾 */
+    volatile LONG off_railway_collection_id;  /* RailwayDungeonHistoryDataByCollection._collectionId (0x10) */
 } BW_CONFIG;
 
 /* 布局自检：v6/FBW6 → 钩子槽 16，ring 偏移 1352，总大小 1352 + 512*256 + 4(+4对齐)
@@ -904,6 +914,36 @@ static void emit_stage_stat(void *self, const void *method, void *a1, void *a2,
         emit_stage_stat(self, method, a1, a2, g_original[N]);                    \
     }
 
+/* ---- 折射铁路总回合（BWK_RAILWAY_TOTAL）-------------------------------------
+ * 挂钩 RailwayDungeonHistoryDataByCollection::GetTotalClearTurn()（无参、返回 int）。
+ * 先把原函数的结果拿到手（**不能吞掉返回值**，UI 还等着它显示），再把
+ * 线路号 + 总回合发出来。*/
+static int __fastcall call_and_emit_railway_total(void *self, const void *method,
+                                                  void *original)
+{
+    int total = 0;
+    int line = -1;
+    char line_buf[96];
+
+    if (original)
+        total = ((fn_unit_get_int)original)(self, method);
+    if (g_cfg && g_cfg->observing && self) {
+        if (g_cfg->off_railway_collection_id > 0)
+            read_i32(self, g_cfg->off_railway_collection_id, &line);
+        _snprintf(line_buf, sizeof(line_buf) - 1, "RWT line=%d total=%d", line, total);
+        line_buf[sizeof(line_buf) - 1] = '\0';
+        emit(line_buf, TRUE);
+    }
+    return total;
+}
+
+#define DEF_RAILWAY_THUNK(N)                                                     \
+    static int __fastcall hk_railway_##N(void *self, const void *method)         \
+    {                                                                            \
+        bump_hit(N);                                                             \
+        return call_and_emit_railway_total(self, method, g_original[N]);          \
+    }
+
 DEF_PLAIN_THUNK(0)  DEF_PLAIN_THUNK(1)  DEF_PLAIN_THUNK(2)  DEF_PLAIN_THUNK(3)
 DEF_PLAIN_THUNK(4)  DEF_PLAIN_THUNK(5)  DEF_PLAIN_THUNK(6)  DEF_PLAIN_THUNK(7)
 DEF_PLAIN_THUNK(8)  DEF_PLAIN_THUNK(9)  DEF_PLAIN_THUNK(10) DEF_PLAIN_THUNK(11)
@@ -931,6 +971,11 @@ DEF_DAMAGE_THUNK(8)  DEF_DAMAGE_THUNK(9)  DEF_DAMAGE_THUNK(10) DEF_DAMAGE_THUNK(
 DEF_STAGE_THUNK(0)   DEF_STAGE_THUNK(1)   DEF_STAGE_THUNK(2)   DEF_STAGE_THUNK(3)
 DEF_STAGE_THUNK(4)   DEF_STAGE_THUNK(5)   DEF_STAGE_THUNK(6)   DEF_STAGE_THUNK(7)
 DEF_STAGE_THUNK(8)   DEF_STAGE_THUNK(9)   DEF_STAGE_THUNK(10)  DEF_STAGE_THUNK(11)
+
+DEF_RAILWAY_THUNK(0) DEF_RAILWAY_THUNK(1) DEF_RAILWAY_THUNK(2) DEF_RAILWAY_THUNK(3)
+DEF_RAILWAY_THUNK(4) DEF_RAILWAY_THUNK(5) DEF_RAILWAY_THUNK(6) DEF_RAILWAY_THUNK(7)
+DEF_RAILWAY_THUNK(8) DEF_RAILWAY_THUNK(9) DEF_RAILWAY_THUNK(10) DEF_RAILWAY_THUNK(11)
+DEF_RAILWAY_THUNK(12) DEF_RAILWAY_THUNK(13) DEF_RAILWAY_THUNK(14) DEF_RAILWAY_THUNK(15)
 
 static detour_fn pick_detour(int index, LONG kind)
 {
@@ -1006,6 +1051,17 @@ static detour_fn pick_detour(int index, LONG kind)
         case 6: return (detour_fn)hk_stage_6;  case 7: return (detour_fn)hk_stage_7;
         case 8: return (detour_fn)hk_stage_8;  case 9: return (detour_fn)hk_stage_9;
         case 10: return (detour_fn)hk_stage_10; default: return (detour_fn)hk_stage_11;
+        }
+    case BWK_RAILWAY_TOTAL:
+        switch (index) {
+        case 0: return (detour_fn)hk_railway_0;  case 1: return (detour_fn)hk_railway_1;
+        case 2: return (detour_fn)hk_railway_2;  case 3: return (detour_fn)hk_railway_3;
+        case 4: return (detour_fn)hk_railway_4;  case 5: return (detour_fn)hk_railway_5;
+        case 6: return (detour_fn)hk_railway_6;  case 7: return (detour_fn)hk_railway_7;
+        case 8: return (detour_fn)hk_railway_8;  case 9: return (detour_fn)hk_railway_9;
+        case 10: return (detour_fn)hk_railway_10; case 11: return (detour_fn)hk_railway_11;
+        case 12: return (detour_fn)hk_railway_12; case 13: return (detour_fn)hk_railway_13;
+        case 14: return (detour_fn)hk_railway_14; default: return (detour_fn)hk_railway_15;
         }
     default:
         return (detour_fn)hk_plain_0;

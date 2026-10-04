@@ -1,28 +1,27 @@
-"""折射铁路 六号线：100 回合以内通关。
+"""折射铁路 六号线：整条线 100 回合以内通关。
 
-**数据来源**：只有内存里有。铁路（玩家口中的一号线/二号线/六号线…）的通关回合数
-在 ``Player.log`` 里完全不存在（Railway/Turn 一个都搜不到），所以走 battle_watch 的
-``STG`` 事件 —— 它挂钩 ``StageStatisticPopupData`` 的构造函数，读每个 slot 的
-``_clearTurn``（见 dump.cs: StageStatisticPopupSlotData）。
+**数据来源**：``RailwayDungeonHistoryDataByCollection::GetTotalClearTurn()`` ——
+就是进线路之前游戏显示的那个"你的最好回合数"（整条线的总回合）。
+Player.log 里没有这个数，只能靠 battle_watch 的 ``RWT`` 事件。
 
-**关卡 uid**：六号线关卡形如 ``1095x``（dump.cs 里有 ``StageScript_10950Railway6``），
-所以用前缀 ``1095`` 判定"这一关属于六号线"。等实测到真实 uid 后按需要收紧。
+⚠ 线路号（宿主对象上的 ``_collectionId``）待实测确认：日志里会打
+``[战斗观测] ★ 铁路记录: 线路=N 总回合=N``，如果不是 6 就改下面一行。
 """
-from functions.achievement.battle_achievements import StageClearTurnAchievement
+from functions.achievement.battle_achievements import RailwayTotalTurnAchievement
 
-# 六号线关卡 uid 前缀（铁路关卡 id 形如 1095x）
-RAILWAY6_UID_PREFIXES = ("1095",)
+# 六号线的线路号（_collectionId）
+RAILWAY6_LINE_IDS = (6,)
 
 
-class Railway6Under100TurnAchievement(StageClearTurnAchievement):
-    """六号线：100 回合以内通关任意一关。"""
+class Railway6Under100TurnAchievement(RailwayTotalTurnAchievement):
+    """六号线：整条线 100 回合以内通关。"""
 
     def __init__(self):
         super().__init__(
             "ach_railway6_100t",
             "六号线·百回合",
-            "在折射铁路 六号线中，用 100 回合以内通关。",
-            uid_prefixes=RAILWAY6_UID_PREFIXES,
+            "在折射铁路 六号线中，以 100 回合以内的总回合数通关。",
+            line_ids=RAILWAY6_LINE_IDS,
             max_turn=100,
             rarity="epic",
         )
