@@ -85,12 +85,34 @@ def mask_uid(uid) -> str:
     return head + "•" * (rest - 2) + text[-2:]
 
 
+# 日志里**不打印真实 API 路由**：服务端路由结构算内部信息，而且路径里可能带
+# 用户 ID / 主页令牌。日志只留一个人看得懂的动作名，认不出来的一律折叠。
+_PATH_ACTIONS = {
+    "/api/register": "注册",
+    "/api/login": "登录",
+    "/api/logout": "退出",
+    "/api/me": "读我的资料",
+    "/api/me/skins": "上报皮肤",
+    "/api/me/name": "上报昵称",
+    "/api/me/achievements": "上报成就(方式①)",
+    "/api/achievements/overwrite": "上报成就(方式②)",
+    "/api/download": "上报下载",
+}
+_PATH_ACTION_PREFIXES = (
+    ("/api/user/", "读用户资料"),
+    ("/api/profile/", "读用户主页"),
+)
+
+
 def _safe_path(path: str) -> str:
-    """日志里的请求路径: 路径上带的用户 ID 同样要打码"""
-    marker = "/api/user/"
-    if path.startswith(marker):
-        return marker + mask_uid(path[len(marker):])
-    return path
+    """给日志用的**动作名** —— 绝不原样输出路由（含路径里的用户 ID / 令牌）。"""
+    clean = str(path or "").split("?", 1)[0]
+    if clean in _PATH_ACTIONS:
+        return _PATH_ACTIONS[clean]
+    for prefix, label in _PATH_ACTION_PREFIXES:
+        if clean.startswith(prefix):
+            return label
+    return "[已隐藏]"
 
 
 # ============================================================
