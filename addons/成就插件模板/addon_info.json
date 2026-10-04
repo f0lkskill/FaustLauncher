@@ -1,0 +1,12 @@
+{
+    "name": "成就插件模板",
+    "desc": "自定义成就插件的模板。把这个目录复制成你自己的插件目录（名字随意），改 addon_info.json 里的 name/desc、\n写好 achievements.py 里的成就，再把 settings.enable 改成 true，重启启动器即可在「成就」页看到。\n\n成就模块只能在启动器读取插件时加载，所以改完要重启启动器（或托盘菜单「重载插件」）。\n用法与全部可用基类见同目录 README.md。",
+    "authors": {
+        "你的名字": "https://example.com"
+    },
+    "achievements": "achievements.py",
+    "settings": {
+        "enable": false
+    },
+    "version": "0.1.0"
+}
