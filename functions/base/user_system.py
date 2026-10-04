@@ -454,6 +454,63 @@ def _server_identity(uid: str, defaults: dict | None = None) -> tuple[dict | Non
     return None, (login_result if login_result.get("error") else reg)
 
 
+# --------------------------------------------------------------------------- 成就云端同步
+# 与服务端约定（见 FaustLauncherWeb/API.md §4.2 / §4.10）：
+#   · 云端只存**内置成就**的 id 列表（用户记录的 achievements 字段）；**插件成就永远不上云**，
+#     它们只存在本地那份 plugin_achievements.json 里；
+#   · 上传是**整体替换**语义：客户端报全量列表，服务端在锁内只改自己那一行（不会牵连别人）；
+#   · 启动初始化时**以云端为准覆盖本地** —— 换机器/重装后本地立刻对齐。
+
+
+def pull_achievements_from_cloud() -> dict:
+    """读云端成就列表并**覆盖本地**内置成就档。
+
+    返回 ``{"ok": True, "count": n, "achievements": [...]}``；失败给 ``{"ok": False, "error": ...}``。
+    """
+    data = user_api.me()
+    if not data.get("ok"):
+        return {"ok": False, "error": data.get("error") or "云端读取失败"}
+    remote = [str(x).strip() for x in (data.get("achievements") or []) if str(x).strip()]
+    with _USER_LOCK:
+        local = load_user()
+        local["completed_achievements"]["value"] = remote
+        local = _normalize(local)
+        save_user(local)
+    print(f"[用户] 云端成就已覆盖本地: {len(remote)} 条")
+    return {"ok": True, "count": len(remote), "achievements": remote}
+
+
+def push_achievements_to_cloud() -> dict:
+    """把本地**内置**成就全量上报（云端整体替换）。插件成就排除在外。
+
+    先用方式① ``/api/me/achievements``（uid 取自登录会话，普通用户即可）；
+    失败再退回方式② ``/api/achievements/overwrite``（uid 写在请求体）。
+    """
+    ids = completed_achievements()
+    result = user_api.push_achievements(ids)
+    if result.get("ok"):
+        return {**result, "method": "me", "count": len(ids)}
+    uid = str(_value(load_user(), "user_id", "")).strip()
+    fallback = user_api.overwrite_achievements(ids, uid)
+    print(f"[用户] 方式①上报失败({result.get('error')})，改用方式②覆盖上传")
+    return {**fallback, "method": "overwrite", "count": len(ids),
+            "first_error": result.get("error")}
+
+
+def sync_achievements(pull: bool = True) -> dict:
+    """成就云端同步的统一入口（**启动初始化**与成就页「云端同步」按钮都走它）。
+
+    ``pull=True``（默认）：先拉云端**覆盖本地**，再把本地全量推回云端 —— 这就是
+    "初始化时获取用户独立数据并覆盖本地"。``pull=False`` 只推不拉。
+    """
+    pulled: dict = {"ok": False, "skipped": True}
+    if pull:
+        pulled = pull_achievements_from_cloud()
+    pushed = push_achievements_to_cloud()
+    return {"ok": bool(pushed.get("ok")), "pull": pulled, "push": pushed,
+            "local_count": len(completed_achievements())}
+
+
 def sync_user(settings_manager=None) -> dict:
     """启动 / 窗口聚焦时同步: 皮肤取**并集**, 昵称以服务端为准。
 
@@ -510,6 +567,17 @@ def sync_user(settings_manager=None) -> dict:
         local["unlocked_skins"]["value"] = merged
         local = _normalize(local)
         save_user(local)
+
+        # 成就也跟着同步一次：**先拉云端覆盖本地**（初始化对齐），再把本地全量推回去。
+        # 插件成就不参与（它们只存本地独立文件，永远不上云）。
+        try:
+            ach = sync_achievements(pull=True)
+            print(f"[用户] 成就同步: 云端 {ach['pull'].get('count', '?')} 条 / "
+                  f"本地 {ach.get('local_count', '?')} 条 / "
+                  f"上传方式={ach['push'].get('method', '-')} "
+                  f"{'成功' if ach.get('ok') else '失败(' + str(ach['push'].get('error')) + ')'}")
+        except Exception as exc:  # noqa: BLE001
+            print(f"[用户] 成就同步异常（不影响皮肤同步）: {type(exc).__name__}: {exc}")
 
         remote_name = str(data.get("user_name") or "").strip()
         if remote_name:
