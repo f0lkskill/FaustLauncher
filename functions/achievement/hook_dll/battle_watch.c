@@ -131,6 +131,15 @@
                                 * —— 登录时全量下发主线进度，a1 就是整棵 章→小节→节点 树的根。
                                 * 采样线程遍历它即可**全量判定、不需要点开任何界面**。
                                 * （IsNodeCleared 那类查询只在界面渲染时调，实测连第十章都没查过。）*/
+#define BWK_RAILWAY_NODE  12   /* void (self, a1, mi)：折射铁路**每节点的通关回合数**
+                                *   挂钩 RailwayDungeonFormerSaveData::.ctor(RailwayNodeDataFormat)
+                                *   → 先调原构造函数（字段在里面填），再读
+                                *     self[nodeId 0x10] / self[clearTurn 0x14]
+                                *   → RWT node=<节点id> turn=<通关回合数>
+                                *
+                                * 为什么不用 GetTotalClearTurn：那个只在打开线路界面时被调，
+                                * 实测玩家看过六号线依然 0 命中。这个是存档重建时逐个节点构造的，
+                                * 不依赖界面。*/
 #define BWK_NODE_STATE    10   /* int (self, int main, int sub, int node, mi)：关卡通关状态查询
                                 *   挂钩 UserStageNodeStateData::IsNodeCleared /
                                 *   GetClearNodeState —— 关卡列表每次渲染都会问，
@@ -243,6 +252,9 @@ typedef struct _BW_CONFIG {
     volatile LONG off_node_id;
     volatile LONG off_node_clear_type;
     volatile LONG off_node_clear_number;
+    /* 折射铁路每节点记录（BWK_RAILWAY_NODE 读 self 上的字段）*/
+    volatile LONG off_railway_node_id;
+    volatile LONG off_railway_node_turn;
 } BW_CONFIG;
 
 /* 布局自检：v6/FBW6 → 钩子槽 16，ring 偏移 1352，总大小 1352 + 512*256 + 4(+4对齐)
@@ -251,7 +263,7 @@ typedef struct _BW_CONFIG {
  * ring_offset/struct_size，不一致就报错，所以这里只卡对齐与总大小。*/
 _Static_assert(offsetof(BW_CONFIG, log_ring) % 4 == 0, "log_ring 偏移未对齐");
 _Static_assert(offsetof(BW_CONFIG, buff_watch_hashes) % 8 == 0, "关注表未对齐");
-_Static_assert(sizeof(BW_CONFIG) == 133840, "BW_CONFIG 大小不一致（改了字段就同步改 Python）");
+_Static_assert(sizeof(BW_CONFIG) == 133848, "BW_CONFIG 大小不一致（改了字段就同步改 Python）");
 
 static BW_CONFIG *g_cfg = NULL;
 static HANDLE      g_stop_event = NULL;
@@ -1294,6 +1306,37 @@ static int __fastcall call_and_emit_node_state(void *self, int a1, int a2, int a
             ((fn_plain_arg1)g_original[N])(self, a1, method);                    \
     }
 
+/* ---- 折射铁路每节点回合（BWK_RAILWAY_NODE）---------------------------------
+ * 挂钩 RailwayDungeonFormerSaveData::.ctor：**必须先调原构造函数**（nodeId/clearTurn
+ * 是里面填的），再把两个字段读出来发 RWT。Python 侧按节点 id 记录，可求和成整条线总回合。*/
+static void call_and_emit_railway_node(void *self, void *a1, const void *method,
+                                       void *original)
+{
+    int node_id = -1, turn = -1;
+    char line[96];
+
+    if (original)
+        ((fn_plain_arg1)original)(self, a1, method);   /* 先让构造函数填好字段 */
+    if (!self || !g_cfg || !g_cfg->observing)
+        return;
+    if (g_cfg->off_railway_node_id > 0)
+        (void)read_i32(self, g_cfg->off_railway_node_id, &node_id);
+    if (g_cfg->off_railway_node_turn > 0)
+        (void)read_i32(self, g_cfg->off_railway_node_turn, &turn);
+    if (node_id <= 0 || turn < 0)
+        return;                                        /* 没读出来就别发脏值 */
+    _snprintf(line, sizeof(line) - 1, "RWT node=%d turn=%d", node_id, turn);
+    line[sizeof(line) - 1] = '\0';
+    emit(line, TRUE);
+}
+
+#define DEF_RAILWAYNODE_THUNK(N)                                                 \
+    static void __fastcall hk_railn_##N(void *self, void *a1, const void *method) \
+    {                                                                            \
+        bump_hit(N);                                                             \
+        call_and_emit_railway_node(self, a1, method, g_original[N]);             \
+    }
+
 DEF_PLAIN_THUNK(0)  DEF_PLAIN_THUNK(1)  DEF_PLAIN_THUNK(2)  DEF_PLAIN_THUNK(3)
 DEF_PLAIN_THUNK(4)  DEF_PLAIN_THUNK(5)  DEF_PLAIN_THUNK(6)  DEF_PLAIN_THUNK(7)
 DEF_PLAIN_THUNK(8)  DEF_PLAIN_THUNK(9)  DEF_PLAIN_THUNK(10) DEF_PLAIN_THUNK(11)
@@ -1344,6 +1387,15 @@ DEF_CACHEARG_THUNK(8)  DEF_CACHEARG_THUNK(9)  DEF_CACHEARG_THUNK(10) DEF_CACHEAR
 DEF_CACHEARG_THUNK(12) DEF_CACHEARG_THUNK(13) DEF_CACHEARG_THUNK(14) DEF_CACHEARG_THUNK(15)
 DEF_CACHEARG_THUNK(16) DEF_CACHEARG_THUNK(17) DEF_CACHEARG_THUNK(18) DEF_CACHEARG_THUNK(19)
 DEF_CACHEARG_THUNK(20) DEF_CACHEARG_THUNK(21) DEF_CACHEARG_THUNK(22) DEF_CACHEARG_THUNK(23)
+
+DEF_RAILWAYNODE_THUNK(0)  DEF_RAILWAYNODE_THUNK(1)  DEF_RAILWAYNODE_THUNK(2)
+DEF_RAILWAYNODE_THUNK(3)  DEF_RAILWAYNODE_THUNK(4)  DEF_RAILWAYNODE_THUNK(5)
+DEF_RAILWAYNODE_THUNK(6)  DEF_RAILWAYNODE_THUNK(7)  DEF_RAILWAYNODE_THUNK(8)
+DEF_RAILWAYNODE_THUNK(9)  DEF_RAILWAYNODE_THUNK(10) DEF_RAILWAYNODE_THUNK(11)
+DEF_RAILWAYNODE_THUNK(12) DEF_RAILWAYNODE_THUNK(13) DEF_RAILWAYNODE_THUNK(14)
+DEF_RAILWAYNODE_THUNK(15) DEF_RAILWAYNODE_THUNK(16) DEF_RAILWAYNODE_THUNK(17)
+DEF_RAILWAYNODE_THUNK(18) DEF_RAILWAYNODE_THUNK(19) DEF_RAILWAYNODE_THUNK(20)
+DEF_RAILWAYNODE_THUNK(21) DEF_RAILWAYNODE_THUNK(22) DEF_RAILWAYNODE_THUNK(23)
 
 static detour_fn pick_detour(int index, LONG kind)
 {
@@ -1469,6 +1521,21 @@ static detour_fn pick_detour(int index, LONG kind)
         case 18: return (detour_fn)hk_cachearg_18; case 19: return (detour_fn)hk_cachearg_19;
         case 20: return (detour_fn)hk_cachearg_20; case 21: return (detour_fn)hk_cachearg_21;
         case 22: return (detour_fn)hk_cachearg_22; default: return (detour_fn)hk_cachearg_23;
+        }
+    case BWK_RAILWAY_NODE:
+        switch (index) {
+        case 0: return (detour_fn)hk_railn_0;   case 1: return (detour_fn)hk_railn_1;
+        case 2: return (detour_fn)hk_railn_2;   case 3: return (detour_fn)hk_railn_3;
+        case 4: return (detour_fn)hk_railn_4;   case 5: return (detour_fn)hk_railn_5;
+        case 6: return (detour_fn)hk_railn_6;   case 7: return (detour_fn)hk_railn_7;
+        case 8: return (detour_fn)hk_railn_8;   case 9: return (detour_fn)hk_railn_9;
+        case 10: return (detour_fn)hk_railn_10; case 11: return (detour_fn)hk_railn_11;
+        case 12: return (detour_fn)hk_railn_12; case 13: return (detour_fn)hk_railn_13;
+        case 14: return (detour_fn)hk_railn_14; case 15: return (detour_fn)hk_railn_15;
+        case 16: return (detour_fn)hk_railn_16; case 17: return (detour_fn)hk_railn_17;
+        case 18: return (detour_fn)hk_railn_18; case 19: return (detour_fn)hk_railn_19;
+        case 20: return (detour_fn)hk_railn_20; case 21: return (detour_fn)hk_railn_21;
+        case 22: return (detour_fn)hk_railn_22; default: return (detour_fn)hk_railn_23;
         }
     default:
         return (detour_fn)hk_plain_0;
