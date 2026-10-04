@@ -176,6 +176,12 @@ build_*/
 build_temp/*
 !build_temp/updater.vbs
 
+# 例外: 构建工具的界面是**源码**，不是构建产物。
+# 上面的 build_*/ 是"任意层级"匹配，会把 web/build_ui/ 一起吃掉 —— 不入库的话
+# 换机器 clone 下来 build.py 就没有界面。(父目录被忽略时无法用 ! 取消忽略其中文件，
+# 所以要先放行目录本身)
+!web/build_ui/
+
 # 例外: 皮肤素材的生成脚本要入库。
 # 上面的 tools/ 是全局规则 (匹配任意层级的 tools 目录), 会把
 # web/app_skins/<id>/tools/ 一起吃掉 —— 于是"皮肤素材怎么生成/怎么改构图"
