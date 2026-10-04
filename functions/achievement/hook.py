@@ -169,20 +169,31 @@ def _report_unlocks(log_callback, unlocked, header: str = "") -> list:
         log_callback(f"  [成就] 本地记录写入失败（不影响解锁）: {type(exc).__name__}: {exc}")
 
     # 解锁后**立刻**把成就推回云端（不等下一次启动/手动同步）。
-    # 放后台线程：网络请求不能拖住播报与日志；失败了下次同步会再补（云端是整体替换语义）。
-    try:
-        import threading as _threading
-        from functions.base import user_system as _us
+    #
+    # 用**单条 add** 接口（POST /api/achievements/add）而不是整份列表覆盖：
+    #   · 服务端语义是"加一条"，**幂等**（已有则 added:false），不需要客户端算增量；
+    #   · 只改服务端那一行 → 两台机器各玩各的也不会互相覆盖（整表覆盖会）；
+    #   · 只传一个 ID，不用把整个列表回传。
+    # 放后台线程：网络请求不能拖住播报与日志。失败也不要紧 —— 下次启动的
+    # sync_user 会按并集把本地整份补上去（只增不减）。
+    _builtin_ids = [i for i in
+                    ([getattr(a, "id", "") or "" for a in fresh
+                      if not getattr(a, "plugin", False)]) if i]
+    if _builtin_ids:
+        try:
+            import threading as _threading
+            from functions.base import user_system as _us
 
-        def _push() -> None:
-            try:
-                _us.push_achievements_to_cloud()
-            except Exception:  # noqa: BLE001
-                pass
+            def _push() -> None:
+                for _aid in _builtin_ids:
+                    try:
+                        _us.push_achievement(_aid)
+                    except Exception:  # noqa: BLE001
+                        pass
 
-        _threading.Thread(target=_push, name="faust-ach-push", daemon=True).start()
-    except Exception:  # noqa: BLE001
-        pass
+            _threading.Thread(target=_push, name="faust-ach-push", daemon=True).start()
+        except Exception:  # noqa: BLE001
+            pass
     if header:
         log_callback(header)
     for ach in fresh:

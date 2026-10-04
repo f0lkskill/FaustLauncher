@@ -499,6 +499,36 @@ def pull_achievements_from_cloud(mode: str = "union") -> dict:
             "local_before": len(mine), "local_after": len(merged), "added": added}
 
 
+def push_achievement(achievement_id: str, uid: str = "") -> dict:
+    """立刻把**一条**成就推到云端（服务端 ``POST /api/achievements/add``，幂等）。
+
+    与 ``push_achievements_to_cloud()``（整份覆盖）的分工：
+      · 解锁的**当下**用这个 —— 只加一条、只改服务端那一行，多机轮流上线也不会互相覆盖；
+      · 启动同步（``sync_user``）仍用整份覆盖做**对账**（并集，只增不减）。
+
+    服务端对不认识的成就 ID **不做强制校验**（返回 ``known: false``），
+    所以客户端可以先上新成就、服务端稍后再补 ``achievements.json``。
+    """
+    aid = str(achievement_id or "").strip()
+    if not aid:
+        return {"ok": False, "error": "成就 ID 为空"}
+    target = str(uid or "").strip() or str(_value(load_user(), "user_id", "") or "").strip()
+    if not target:
+        print("[用户] 未登录，跳过单条成就上报")
+        return {"ok": False, "error": "未登录"}
+    result = user_api.add_achievement(aid, target)
+    data = result.get("data") if isinstance(result.get("data"), dict) else {}
+    if result.get("ok"):
+        added = bool(data.get("added"))
+        known = data.get("known")
+        note = "" if known is None else ("（服务端已收录）" if known else "（服务端暂未收录该 ID）")
+        print(f"[用户] 成就单条上报: {aid} → {'新加' if added else '云端已有(幂等跳过)'}{note}")
+        return {"ok": True, "added": added, "known": known,
+                "count": int(data.get("count") or 0)}
+    print(f"[用户] 成就单条上报失败: {aid} → {result.get('error')}")
+    return {"ok": False, "error": str(result.get("error") or "")}
+
+
 def push_achievements_to_cloud() -> dict:
     """把本地**内置**成就全量上报（云端整体替换）。插件成就排除在外。
 
