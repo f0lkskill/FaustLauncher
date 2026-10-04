@@ -664,6 +664,11 @@ PROCESS_QUERY_LIMITED = 0x1000
 SYNCHRONIZE = 0x00100000
 SUSPEND_FAILED = 0xFFFFFFFF
 GAME_STABLE_SECONDS = 1.0        # 与 resources/mod_loader/_internal/main.py 的判定约定一致
+# 注入前等待「游戏进程完全挂起」窗口的上限 (秒)。
+# 进程整体挂起时内存是静止的, 是校验偏移与注入最干净的时机 (Steam 更新收尾 / 引导进程
+# 常见)。但游戏正常跑起来之后线程不会再挂起, 所以**必须有上限** —— 超时就按常规方式注入
+# (由 SuspendWindow 自己临时挂起全部线程建立窗口), 绝不无限等。
+SUSPEND_WAIT_SECONDS = 15.0
 MODULE_VERIFY_SECONDS = 5.0      # 注入后回读远端模块的上限
 GA_VERIFY_RETRY = 3              # 进程内 GameAssembly.dll 没枚举到时的重试次数
 PE_HEADER_BYTES = 0x400
@@ -974,6 +979,57 @@ def dll_info(path: str) -> dict:
     return out
 
 
+def _process_thread_ids(pid: int) -> list[int]:
+    """枚举某个进程的全部线程 ID（快照失败返回空列表）。"""
+    snapshot = _kernel32.CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0)
+    if not snapshot or snapshot == -1:
+        return []
+    out: list[int] = []
+    try:
+        entry = THREADENTRY32()
+        entry.dwSize = ctypes.sizeof(THREADENTRY32)
+        ok = _kernel32.Thread32First(snapshot, ctypes.byref(entry))
+        while ok:
+            if int(entry.th32OwnerProcessID) == pid:
+                out.append(int(entry.th32ThreadID))
+            ok = _kernel32.Thread32Next(snapshot, ctypes.byref(entry))
+    finally:
+        _kernel32.CloseHandle(snapshot)
+    return out
+
+
+def process_thread_suspend_state(pid: int) -> tuple[int, int]:
+    """探测进程的挂起情况，返回 ``(可探测线程数, 其中处于挂起态的线程数)``。
+
+    探测手法: ``SuspendThread`` 的**返回值**是调用前的挂起计数 —— >0 就说明该线程本来
+    就是挂起的；紧接着 ``ResumeThread`` 把这次探测加的计数回滚，进程状态原样不变，
+    所以可以安全地反复轮询（不会替游戏恢复或改变它自己的挂起状态）。
+
+    ⚠ 必须跳过**调用方自己的线程**: 对自己 SuspendThread 会当场把本线程冻住, 后面的
+    ResumeThread 根本没机会执行 —— 那就是死锁 (自查自身进程时踩过)。
+    """
+    own_tid = int(_kernel32.GetCurrentThreadId())
+    total = 0
+    suspended = 0
+    for tid in _process_thread_ids(pid):
+        if tid == own_tid:
+            continue
+        handle = _kernel32.OpenThread(THREAD_SUSPEND_RESUME, False, tid)
+        if not handle:
+            continue
+        try:
+            prev = int(_kernel32.SuspendThread(handle))
+            if prev == SUSPEND_FAILED:
+                continue
+            total += 1
+            if prev > 0:
+                suspended += 1
+            _kernel32.ResumeThread(handle)      # 回滚本次探测
+        finally:
+            _kernel32.CloseHandle(handle)
+    return total, suspended
+
+
 class SuspendWindow:
     """注入窗口：在“进程线程挂起”的状态下做注入，退出时精确恢复。
 
@@ -993,21 +1049,7 @@ class SuspendWindow:
         self.was_suspended = False      # 进入前整个进程是否已挂起
 
     def _enumerate_threads(self) -> list[int]:
-        snapshot = _kernel32.CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0)
-        if not snapshot or snapshot == -1:
-            return []
-        out: list[int] = []
-        try:
-            entry = THREADENTRY32()
-            entry.dwSize = ctypes.sizeof(THREADENTRY32)
-            ok = _kernel32.Thread32First(snapshot, ctypes.byref(entry))
-            while ok:
-                if int(entry.th32OwnerProcessID) == self.pid:
-                    out.append(int(entry.th32ThreadID))
-                ok = _kernel32.Thread32Next(snapshot, ctypes.byref(entry))
-        finally:
-            _kernel32.CloseHandle(snapshot)
-        return out
+        return _process_thread_ids(self.pid)
 
     def __enter__(self) -> "SuspendWindow":
         self.thread_ids = self._enumerate_threads()
@@ -1877,6 +1919,49 @@ class BattleWatch:
             }
         return info
 
+    def _wait_fully_suspended(self, pid: int, timeout: float = SUSPEND_WAIT_SECONDS) -> bool:
+        """等游戏进程进入「全部线程挂起」的窗口：等到返回 True，超时返回 False。
+
+        为什么等: 进程整体挂起时内存是静止的，在这个窗口里做偏移校验与注入最干净，
+        不会撞上游戏正在初始化 GameAssembly 的瞬间。
+        为什么必须有上限: 游戏正常跑起来之后线程不会再挂起，无限等等于永不注入 ——
+        超时就返回 False，由 SuspendWindow 自己临时挂起全部线程建立窗口（原有行为）。
+        """
+        deadline = time.time() + timeout
+        announced = False
+        while time.time() < deadline and not self._stop.is_set():
+            total, suspended = process_thread_suspend_state(pid)
+            if total and suspended >= total:
+                self._log(f"[战斗观测] 已等到游戏进程完全挂起（{suspended}/{total} 个线程）"
+                          "→ 在这个窗口内校验偏移并注入")
+                return True
+            if not announced:
+                self._log(f"[战斗观测] 等待游戏进程完全挂起（当前 {suspended}/{total} 个线程挂起，"
+                          f"最多等 {timeout:.0f}s；超时则按常规挂起窗口注入）")
+                announced = True
+            self._sleep(0.2)
+        if not self._stop.is_set():
+            self._log(f"[战斗观测] {timeout:.0f}s 内未出现完全挂起窗口 → 按常规方式注入")
+        return False
+
+    def _refresh_hook_table(self, log, pe_path: str) -> bool:
+        """注入前把偏移量与钩子表重新对齐到**当前**游戏版本，并写回共享内存配置。
+
+        顺序（用户约定）: 进程就位（最好处在完全挂起窗口）→ 校验本地 hook 缓存与游戏
+        版本 / 环境是否对得上（``ensure_offsets_ready``：对得上直接用；对不上 → 云端对照
+        → 本地重建并上传）→ 用选定索引重建钩子表 → 写回共享内存，保证 DLL 加载时读到的
+        就是这一份。
+        """
+        self._run_preflight()
+        table = build_hook_table(on_log=log, pe_path=pe_path)
+        self.table = table
+        log(f"[战斗观测] 注入前钩子表就绪: 来源={table['source']}，"
+            f"{len(table['entries'])} 个观测点")
+        if not self._write_config(table):
+            log("[战斗观测] 注入前写入钩子配置失败，本次注入跳过")
+            return False
+        return True
+
     def _verify_gameassembly(self) -> None:
         """游戏 DLL 新鲜度：进程里加载的 GameAssembly.dll 是不是磁盘上最新那份。
 
@@ -2564,6 +2649,17 @@ class BattleWatch:
                     pid = None
                     self._sleep(1.0)
                     continue
+                # ---- 注入前三步（顺序有讲究）----
+                # ① 先等进程进入「完全挂起」窗口: 内存静止时校验与注入最干净
+                #    （有上限 SUSPEND_WAIT_SECONDS，等不到就走常规挂起窗口）
+                self._wait_fully_suspended(pid)
+                # ② 进程就位之后，游戏版本 / 环境才算最终确定 → 校验本地 hook 缓存:
+                #    对得上直接注入；对不上 → 云端 → 本地重建并上传，再注入
+                if not self._refresh_hook_table(log, pe_path):
+                    pid = None
+                    self._sleep(5.0)
+                    continue
+                # ③ 注入（SuspendWindow: 进程本来就挂起则直接借用该窗口，否则临时挂起全部线程）
                 if not self._inject(pid, path):
                     self._sleep(5.0)
                     continue
