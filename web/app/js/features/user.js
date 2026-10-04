@@ -182,7 +182,8 @@ function renderPlaytime() {
   if (p && p.ok && p.seconds > 0) {
     el.textContent = p.text || (Math.round((p.hours || 0) * 10) / 10 + ' 小时');
     el.classList.remove('is-empty');
-    el.title = '';
+    // 面板只给小时；更细的写法（X 天 X 小时）放 hover 提示
+    el.title = p.detail ? ('本机 Steam 记录：' + p.detail) : '本机 Steam 记录';
   } else {
     el.textContent = '读不到';
     el.classList.add('is-empty');
