@@ -1176,6 +1176,8 @@ class AppApi:
                 aid = str(getattr(ach, "id", "") or "").strip()
                 if not aid:
                     continue
+                if getattr(ach, "wip", False):
+                    continue      # 开发中的成就：成就页先不显示
                 # 成就徽标素材: web/app/assets/achievement/<id>.<ext>, 没有就交给前端用占位图标
                 icon = ""
                 for ext in (".png", ".webp", ".jpg", ".svg"):

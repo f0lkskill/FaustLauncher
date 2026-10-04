@@ -16,6 +16,9 @@ RAILWAY6_LINE_IDS = (6,)
 class Railway6Under100TurnAchievement(RailwayTotalTurnAchievement):
     """六号线：整条线 100 回合以内通关。"""
 
+    #: 开发中：铁路"总回合"数据源还没定位成功（详见文件头）。
+    wip = True
+
     def __init__(self):
         super().__init__(
             "ach_railway6_100t",
