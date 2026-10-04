@@ -254,6 +254,22 @@ OBSERVE_TARGETS: tuple[ObserveTarget, ...] = (
         description="存档已通关关卡记录（挂 UpdateData 抓对象，供采样线程轮询）",
         resolve_stub=False,
     ),
+    # ---- 关卡身份（界面上的 "10-4"）----------------------------------------
+    # SetData(partId, chapterId, nodeId, stageId, clearState)：入参就是官方口径。
+    ObserveTarget(
+        key="stage_node_id", symbol="StageNodeIdInfo::SetData", kind="stage_node_id",
+        fallback_rva=0x12636F0,
+        description="关卡身份（章 + 第几关 + 关卡id + 通关状态）→ 界面上的 10-4",
+        resolve_stub=False,
+    ),
+    # ---- 铁路总回合的**界面显示值** ---------------------------------------
+    ObserveTarget(
+        key="railway_ui_text",
+        symbol="RailwayDungeonMapUpperUILine1002::UpdateUI", kind="railway_ui_text",
+        fallback_rva=0x1A4E500,
+        description="铁路地图显示的总回合文本（读 UI 显示值，不猜聚合）",
+        resolve_stub=False,
+    ),
 )
 
 
@@ -319,6 +335,9 @@ BATTLE_FIELDS: dict[str, tuple[str, str, int]] = {
     "stage_clear_list": ("UserStageClearInfoData", "_stageClearInfoList", 0x18),
     "clear_info_list": ("StageClearInfoList", "_list", 0x10),
     "clear_info_id": ("StageClearInfo", "_id", 0x10),
+    # 铁路总回合的显示文本：RailwayDungeonMapUpperUILine1002.tmp_totalTurn → TMP_Text.m_text
+    "railway_ui_text": ("RailwayDungeonMapUpperUILine1002", "tmp_totalTurn", 0x28),
+    "tmp_text": ("TMP_Text", "m_text", 0xE0),
 }
 
 
@@ -341,6 +360,9 @@ FOCUS_PATTERNS: tuple[str, ...] = (
     "StageStatisticPopup",
     "RailwayDungeonHistoryData",
     "StageClearInfo",
+    "StageNodeIdInfo",
+    "RailwayDungeonMapUpperUI",
+    "TMP_Text",
     "SaveManager",
     "PlayerData",
     "UserData",
