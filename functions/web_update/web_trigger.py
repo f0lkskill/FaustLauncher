@@ -69,49 +69,41 @@ class WebTrigger:
         """获取所有mod信息"""
         return self._fetch_all(self.get_mod_info, allow_refresh)
     
-    def _add_download_number(self, note: Note, name: str):
-        """增加指定插件或mod的下载次数
-
-        Args:
-            note (Note): 笔记实例
-            name (str): 插件或mod的名称
-        
-        Returns:
-            无名称的时候返回 None
-        """
-        
-        if not name:
-            return
-
-        # 确认笔记内容不为空
-        # 处理确认合法的JSON字符串
-        note_content = note.note_content
-        note_content = re.sub(r'^[\s\ufeff]+|[\s\ufeff]+$', '', note_content)
-        
-        pages = loads(note_content)
-        for page in pages[1:]:  # 跳过第一页的总页数信息
-            for item in page:
-                if item['name'] == name:
-                    item['download_count'] += 1
-                    break
-
-        # 实现更新下载次数
-        if note.note_id == "addon_info":
-            note.note_content = dumps(pages, indent=4, ensure_ascii=False)
-            self.sort_addon_info_by_download_number()
-        elif note.note_id == "mod_info":
-            note.note_content = dumps(pages, indent=4, ensure_ascii=False)
-            self.sort_mod_info_by_download_number()
+    # 注: 原来的 ``_add_download_number``（下载整份笔记 → 本地 +1 → 重排 → 整份写回）
+    # 已随"取消 mod/插件写回机制"一起删除。下载次数现在完全由服务端维护，
+    # 客户端只调 ``POST /api/download`` 报一次（见下面两个方法），不再回写笔记。
 
     def add_download_number_addon(self, addon_name: str):
-        """增加指定插件的下载次数"""
-        self.fetch_all_addon_info(True)
-        self._add_download_number(self.addon_info, addon_name)
+        """插件下载次数 +1 —— **交给服务端**（``POST /api/download``）。
+
+        旧做法是"下载整份插件数据库 → 本地 +1 → 重新排序 → 整份写回 ``/update/``"：
+        多个客户端并发必然互相覆盖（丢数据的经典模式）。服务端那套在锁内完成
+        +1 → 重排 → 重新分页 → 原子写回，客户端只报"谁被下载了"就够。
+        """
+        self._report_download(addon_name, "addon")
 
     def add_download_number_mod(self, mod_name: str):
-        """增加指定mod的下载次数"""
-        self.fetch_all_mod_info(True)
-        self._add_download_number(self.mod_info, mod_name)
+        """mod 下载次数 +1 —— 同上，交给服务端，客户端不再写回笔记。"""
+        self._report_download(mod_name, "mod")
+
+    @staticmethod
+    def _report_download(name: str, kind: str) -> dict:
+        """把"谁被下载了"报给服务端；失败只打日志（下载本身已经完成了）。"""
+        clean = str(name or "").strip()
+        if not clean:
+            return {"ok": False, "error": "名字为空"}
+        try:
+            from functions.base import user_api
+            result = user_api.report_download(clean, kind)
+        except Exception as exc:  # noqa: BLE001
+            print(f"[云端] 下载上报失败({kind}:{clean}): {type(exc).__name__}: {exc}")
+            return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+        if result.get("ok"):
+            print(f"[云端] {kind}「{clean}」下载次数 +1 → "
+                  f"{result.get('download_count')}（第 {result.get('rank', '?')} 名）")
+        else:
+            print(f"[云端] {kind}「{clean}」下载上报失败: {result.get('error')}")
+        return result
 
     def sort_addon_info_by_download_number(self):
         """按插件下载次数排序"""

@@ -258,13 +258,27 @@ function syncAchievementsOnFocus() {
   Promise.resolve(refreshAchievements()).catch(() => {});
 }
 
-// 右上角唯一的按钮: 云端同步刷新 (云端还没接, 现在只做本地刷新)
+// 右上角唯一的按钮: 云端同步刷新
+// 真实流程: 拉云端成就 → 覆盖本地 → 再把本地全量推回云端（插件成就不参与）
 async function cloudSyncAchievements() {
   const btn = $('#ach-cloud-sync');
   if (btn) btn.disabled = true;
   try {
+    if (typeof api === 'undefined' || !api ||
+        typeof api.cloud_sync_achievements !== 'function') {
+      await refreshAchievements();
+      toast('浏览器预览模式：已刷新本地记录', 'info', 3000);
+      return;
+    }
+    const r = await api.cloud_sync_achievements();
     await refreshAchievements();
-    toast('云端同步暂未接入，已刷新本地记录', 'info', 3000);
+    if (r && r.ok) {
+      toast('云端同步完成：云端 ' + (r.pull_count || 0) + ' 条 → 本地，' +
+            '已上传 ' + (r.push_count || 0) + ' 条' +
+            (r.push_method === 'overwrite' ? '（方式②覆盖）' : ''), 'success', 3200);
+    } else {
+      toast('云端同步失败: ' + ((r && r.error) || '未知错误'), 'error', 4000);
+    }
   } catch (e) {
     toast('刷新失败: ' + e, 'error');
   } finally {

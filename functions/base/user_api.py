@@ -299,3 +299,42 @@ def public_user(uid: str) -> dict:
     """按用户 ID 读公开资料 (无需登录)"""
     return _request("GET", "/api/user/" + quote(str(uid or "").strip(), safe=""),
                     note=f"id={mask_uid(uid)}")
+
+
+# --------------------------------------------------------------------------- 成就
+# 服务端提供**两种**上传方式（见 FaustLauncherWeb/API.md §4.2 / §4.10）：
+#   ① POST /api/me/achievements          —— uid 取自登录会话，普通用户即可，**推荐**
+#   ② POST /api/achievements/overwrite   —— uid 写在请求体，普通用户只能覆盖自己、管理员可覆盖他人
+# 两者都是**整体替换**语义（客户端把本地全量列表报上去，不用自己算增量）。
+
+
+def push_achievements(achievements) -> dict:
+    """方式①：整体替换**自己**的成就列表（uid 由服务端从登录会话取，改不到别人）。"""
+    items = [str(a).strip() for a in (achievements or []) if str(a).strip()]
+    return _request("POST", "/api/me/achievements", {"achievements": items},
+                    note=f"{len(items)} 条")
+
+
+def overwrite_achievements(achievements, uid: str = "") -> dict:
+    """方式②：`POST /api/achievements/overwrite`，用户 ID 写在请求体里，整体覆盖。
+
+    ``uid`` 留空则由服务端按登录身份处理（等价于覆盖自己）；
+    传了别人的 ID 且不是管理员会被服务端 403 拒绝。
+    """
+    items = [str(a).strip() for a in (achievements or []) if str(a).strip()]
+    payload: dict = {"achievements": items}
+    if str(uid or "").strip():
+        payload["id"] = str(uid).strip()
+    return _request("POST", "/api/achievements/overwrite", payload,
+                    note=f"{len(items)} 条" + (f" -> {mask_uid(uid)}" if uid else ""))
+
+
+def report_download(name: str, kind: str) -> dict:
+    """上报一次下载（下载次数 **+1 由服务端在锁内完成**）。
+
+    客户端不要再"整份下载数据库 → 本地 +1 → 整份写回" —— 并发必然互相覆盖。
+    ``kind`` 取 ``"mod"`` / ``"addon"``。
+    """
+    return _request("POST", "/api/download",
+                    {"name": str(name or "").strip(), "type": str(kind or "").strip()},
+                    note=f"{kind}:{name}")
