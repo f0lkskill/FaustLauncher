@@ -2858,7 +2858,10 @@ class BattleWatch:
             if line >= 0:
                 self.state.railway_totals[int(line)] = int(total)
             self.state.railway_last = {"line": int(line), "total": int(total)}
-        self._log(f"[战斗观测] ★ 铁路记录: 线路={line} 总回合={total}")
+        vals = event.text("vals", "")
+        extra = f" 各节点原始值={vals}" if vals else ""
+        self._log(f"[战斗观测] ★ 铁路记录: 线路={line} 总回合={total} "
+                  f"节点数={event.get('nodes', -1)}{extra}")
 
     def _apply_buffs(self, event: BattleEvent) -> None:
         """buff 事件：位掩码 → 关注表里的 buff 名集合 → 交给规则表（立刻置位）。"""
