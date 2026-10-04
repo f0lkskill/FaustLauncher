@@ -82,7 +82,7 @@ BW_MAGIC = 0x36574246            # "FBW6"（v6: 关卡结算统计 + 钩子槽 1
 MAP_NAME = "Local\\FaustLauncher_BattleWatch"
 LOG_RING_CAP = 512
 LOG_LINE_MAX = 255
-MAX_HOOKS = 16
+MAX_HOOKS = 20
 STAGE_WATCH_MAX = 32             # 关注关卡上限（与 DLL 的 BW_STAGE_WATCH_MAX 一致）
 HOOK_NAME_LEN = 40
 TARGET_PROCESS = "LimbusCompany.exe"
@@ -526,6 +526,11 @@ FALLBACK_HOOKS: dict[str, tuple[str, int, str]] = {
     # 挂钩 UpdateData —— 存档载入时必调；它只把对象指针缓存下来（cache_self），
     # 之后由采样线程轮询里面的"已通关关卡列表"，于是**以前打过的关卡也能判定**。
     "stage_clear_info": ("UserStageClearInfoData::UpdateData", 0x18E62D0, "cache_self"),
+    # 上面那条只有"载入存档"时才调 —— 实测注入常比存档载入晚，一次都不命中。
+    # 这两条是 **UI 查询**路径：玩家在关卡列表里点选时游戏就会问"这关通了没"，
+    # 一样能把对象指针抓下来（多头挂点，谁先命中算谁）。
+    "stage_clear_query": ("UserStageClearInfoData::GetData", 0x18E6300, "cache_self"),
+    "stage_clear_last": ("UserStageClearInfoData::GetLastClearData", 0x18E63E0, "cache_self"),
 }
 FALLBACK_FIELDS: dict[str, int] = {
     "unit_instance_id": 0x60,
@@ -644,6 +649,7 @@ class BWConfig(ctypes.Structure):
         ("stage_watch_ids", ctypes.c_int32 * STAGE_WATCH_MAX),
         ("stage_clear_data", ctypes.c_int64),   # DLL 自己写：抓到的对象指针
         ("stage_seen_mask", ctypes.c_int32),    # DLL 自己写：已上报槽位图
+        ("stage_diag_done", ctypes.c_int32),    # DLL 自己写：一次性诊断是否已发
     ]
 
 
@@ -2291,6 +2297,11 @@ class BattleWatch:
             self._apply_railway_total(event)
         elif kind == "CLR":
             self._apply_stage_clear(event)
+        elif kind == "CLRD":
+            # 一次性诊断：关注表一个都没命中时，DLL 把扫到的前几个关卡 id 原样报上来
+            ids = event.text("ids", "")
+            count = event.get("n", 0)
+            self._log(f"[战斗观测] ★ 存档里的关卡 id 样本（关注表未命中，n={count}）: {ids}")
         return event
 
     def _apply_anim_tick(self, tag: str, iid: int = -1) -> None:
