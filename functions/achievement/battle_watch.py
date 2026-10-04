@@ -446,6 +446,10 @@ ACTION_END_TAGS: tuple[str, ...] = ()
 # 战斗阶段各调一次，间隔 2~3 秒）→ 不去重 round_seq 会翻倍，max_round/min_round 全错。
 # 真回合之间相隔 20s 以上，4s 窗口很安全。
 ROUND_BOUNDARY_DEDUPE_SEC = 4.0
+# 两场战斗之间的空档兜底：万一没等到 EndStage 信号（日志没读到/中途接管），
+# 回合边界间隔超过这个值也按"新战斗"处理。取 120s 是故意的 ——
+# 实测**同一场战斗内**两个回合边界也能差 60s，间隔小了会误判成新战斗。
+NEW_BATTLE_GAP_SEC = 120.0
 # 静默期兜底（**只在从未见过 skv tick 时用**）：表现层钩子没命中时，事件停这么久
 # 就当作动画放完（否则挂起判定要一直等到回合边界）。
 SKILL_SETTLE_QUIET_SEC = 2.5
@@ -1450,6 +1454,7 @@ class BattleWatch:
         self._last_anim_tick_ts = 0.0
         self._last_anim_release_ts = 0.0
         self._last_round_boundary_ts = 0.0
+        self._battle_ended = False       # 见过 EndStage 后, 下一个回合边界 = 新战斗第 1 回合
         self._event_file = None
         self._phase = "未启动"
         # 注入现场（状态文件里能直接看到“注的是哪个进程/哪份 DLL”）
@@ -1566,6 +1571,15 @@ class BattleWatch:
             return False
         return bool(self.settle_turn(reason, fallback_immediate=False,
                                      only_skills=True))
+
+    def mark_battle_end(self) -> None:
+        """标记"这一场打完了"（Player.log 的 EndStage() 触发）。
+
+        下一个回合边界会被当作**新战斗的第 1 回合**，让 max_round / min_round
+        这类回合窗口按"每场战斗"而不是"整个会话"来算。
+        """
+        with self._lock:
+            self._battle_ended = True
 
     def rule_detail(self, key: str) -> str | None:
         """规则是否命中；命中返回详情文本（未命中返回 None）。"""
@@ -2141,8 +2155,22 @@ class BattleWatch:
                            and now - self._last_round_boundary_ts
                            < ROUND_BOUNDARY_DEDUPE_SEC)
                     if not dup:
+                        # 新战斗判定: 见过 EndStage, 或两场之间空档极大（兜底）。
+                        # round_seq 必须**按战斗**从 1 起算 —— 以前它是整个会话一路累加,
+                        # 于是 max_round=1 这类"首个回合"的判定在第二场之后就永远匹配不上
+                        # （实测:「这他妈的烂牌！」该触发时没触发, 因为钩子眼里已经是第 9 回合）。
+                        gap = now - self._last_round_boundary_ts
+                        new_battle = (self._battle_ended
+                                      or (self._last_round_boundary_ts > 0
+                                          and gap > NEW_BATTLE_GAP_SEC))
                         self._last_round_boundary_ts = now
-                        self.state.round_seq = event.get("seq", self.state.round_seq + 1)
+                        if new_battle:
+                            self._battle_ended = False
+                            self.state.round_seq = 1
+                            self._log(f"[战斗观测] 新战斗开始（距上次回合边界 {gap:.0f}s）"
+                                      "→ 回合计数重置为第 1 回合")
+                        else:
+                            self.state.round_seq = event.get("seq", self.state.round_seq + 1)
                 if not dup:
                     self.settle_turn(f"回合边界({tag or 'hook'})")
                     self._begin_action_batch()   # 上一回合的分组清空，新回合从组 0 开始
@@ -2906,6 +2934,16 @@ def rule_hits() -> dict:
 def settle_turn(reason: str = "") -> list:
     with _watch_lock:
         return _watch.settle_turn(reason) if _watch else []
+
+
+def mark_battle_end() -> None:
+    """通知观测器"这一场打完了"（由 Player.log 的 EndStage() 调用）。
+
+    下一回合边界会被当成**新战斗的第一回合**，回合计数从 1 重新开始。
+    """
+    with _watch_lock:
+        if _watch is not None:
+            _watch.mark_battle_end()
 
 
 def state_snapshot() -> dict:
