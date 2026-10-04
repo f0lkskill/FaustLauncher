@@ -713,8 +713,8 @@ class GameLauncher:
         launch_game_process()
         # 启动成就监测 Hook (独立子进程, 避免主进程结束时被 kill)
         # 子进程内部会：监控 Player.log + 注入 battle_watch.dll 观测战斗事件
-        print("[成就监测] 警告：本版本暂时不开放成就系统。")
-        return
+        # print("[成就监测] 警告：本版本暂时不开放成就系统。")
+        # return
         self._start_achievement_hook()
 
     def _start_achievement_hook(self):
@@ -764,7 +764,7 @@ class GameLauncher:
             with open(hook_log_path, 'w', encoding='utf-8') as f:
                 f.write("")
 
-            self._progress("启动成就监测与战斗观测...", "🏆")
+            # self._progress("启动成就监测与战斗观测...", "🏆")
 
             cmd = [
                 sys.executable,
