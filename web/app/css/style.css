@@ -838,6 +838,12 @@ body.modal-open .res-card {
   transition: color .18s ease, background-color .18s ease, border-color .18s ease;
 }
 .ach-card .ach-icon svg { width: 30px; height: 30px; }
+/* 有徽标图时: 去掉占位块的边框/底色, 让图自己铺满 */
+.ach-card .ach-icon.has-art { border: none; background: none; }
+.ach-card .ach-icon .ach-art {
+  width: 100%; height: 100%; display: block;
+  border-radius: 14px; object-fit: cover;
+}
 .ach-card .ach-icon.done {
   color: var(--success); background: rgba(46, 160, 67, .13);
   border-color: rgba(46, 160, 67, .35);

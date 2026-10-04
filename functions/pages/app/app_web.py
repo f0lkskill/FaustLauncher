@@ -716,6 +716,7 @@ def _active_skin_id():
         from functions.base.user_system import load_user, _value as _user_value
         meta = _skin_meta(sid)
         unlock = meta.get("unlock") if isinstance(meta.get("unlock"), dict) else {"type": "free"}
+        assert unlock is not None
         if str(unlock.get("type") or "free").lower() == "free":
             return sid
         if sid in set(_user_value(load_user(), "unlocked_skins", [])):
@@ -1166,12 +1167,18 @@ class AppApi:
         try:
             from functions.achievement.achievements import achievements
             from functions.base.user_system import completed_achievements
+            from functions.base.common.path_utils import get_web_root
+            # 成就徽标: web/app/assets/achievement/<id>.svg, 没有就交给前端用占位图标
+            art_dir = get_web_root("app", "assets", "achievement")
             done = set(completed_achievements())
             items = []
             for ach in achievements:
                 aid = str(getattr(ach, "id", "") or "").strip()
                 if not aid:
                     continue
+                fname = aid + ".svg"
+                icon = ("assets/achievement/" + fname
+                        if art_dir and os.path.isfile(os.path.join(art_dir, fname)) else "")
                 items.append({
                     "id": aid,
                     "name": str(getattr(ach, "name", "") or ""),
@@ -1179,9 +1186,10 @@ class AppApi:
                     "rarity": str(getattr(ach, "rarity", "") or ""),
                     "hidden": bool(getattr(ach, "hidden", False)),
                     "completed": aid in done,
+                    "icon": icon,
                 })
             n_done = sum(1 for it in items if it["completed"])
-            print(f"[成就页] 本地刷新: {n_done}/{len(items)} 已完成（记录 {len(done)} 条）")
+            # print(f"[成就页] 本地刷新: {n_done}/{len(items)} 已完成（记录 {len(done)} 条）")
             return {"ok": True, "items": items, "completed": n_done, "total": len(items)}
         except Exception as exc:  # noqa: BLE001
             print(f"[成就页] 读取失败: {type(exc).__name__}: {exc}")
@@ -1257,6 +1265,7 @@ class AppApi:
         for sid in names:
             meta = _skin_meta(sid)
             unlock = meta.get("unlock") if isinstance(meta.get("unlock"), dict) else {"type": "free", "description": "免费皮肤"}
+            assert unlock is not None
             is_free = str(unlock.get("type") or "free").lower() == "free"
             skins.append({
                 "id": sid,
@@ -1329,6 +1338,7 @@ class AppApi:
             meta = _skin_meta(sid)
             unlock = meta.get("unlock") if isinstance(meta.get("unlock"), dict) else {"type": "free"}
             unlocked = sid in set(_user_value(load_user(), "unlocked_skins", []))
+            assert unlock is not None
             if str(unlock.get("type") or "free").lower() != "free" and not unlocked:
                 return {"error": "该皮肤尚未解锁", "locked": True, "skin_id": sid}
         # print(f"[皮肤] 已切换: {sid or '默认皮肤'}")
