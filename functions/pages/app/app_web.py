@@ -3220,6 +3220,37 @@ def _game_process_running():
     return bool(_game_process_pids())
 
 
+# ============================================================
+# 游戏运行状态: 变化驱动
+# ------------------------------------------------------------
+# 背景: 多次通过启动器启动游戏之后, 进程检测出现过误报 (把已经退出的游戏判成仍在
+# 运行)。而主页按钮形态正是由这个结论驱动的 —— 一旦首屏被画成"关闭游戏", 用户就
+# 既关不掉也启动不了, 只能重启启动器 (重启还可能再次被误报顶死)。
+#
+# 因此对外状态改成**变化驱动**:
+#   · 初始化阶段不把检测结论交给界面 —— 对外状态恒为"未运行", 主页直接显示可启动;
+#   · 常驻监视的**首次观测只建立基线**, 不改变对外状态;
+#   · 之后只有检测结论真的发生跳变 (游戏开了 / 关了) 才更新对外状态。
+# 于是一直误报"在运行"这种卡死的结论不会再顶死按钮, 而真实的开与关仍旧照常生效。
+_game_state = {"alive": False, "busy": False, "observed": None}
+
+
+def _update_game_state(alive, busy, seed=False):
+    """并入一次检测结论, 返回对外状态是否发生了变化。
+
+    Args:
+        seed: True 表示这是初始化阶段的首次观测 —— **只记基线, 不改变对外状态**。
+              (对外状态保持 _game_state 的初始值: 未运行)
+    """
+    snapshot = (bool(alive), bool(busy))
+    previous = _game_state["observed"]
+    _game_state["observed"] = snapshot
+    if seed or previous == snapshot:
+        return False
+    _game_state["alive"], _game_state["busy"] = snapshot
+    return True
+
+
 def _monitor_game_process(window_ref):
     """后台监听游戏进程: 出现推送 game_started, 退出推送 game_exited 后结束
 
@@ -3245,14 +3276,17 @@ def _monitor_game_process(window_ref):
                 started = True
                 exited_at = None
                 print("检测到游戏进程已启动")
+                _update_game_state(True, True)      # 启动流程确认游戏已起来
                 _push("game_started")
-                _push("game_state", {"game_alive": True})
+                _push("game_state", {"game_alive": True, "game_busy": True})
             elif not running and started:
                 if exited_at is None:
                     exited_at = time.time()
                 elif time.time() - exited_at > 2:
                     print("游戏进程已退出")
-                    _push("game_state", {"game_alive": False})
+                    busy = _any_game_process_running()
+                    _update_game_state(False, busy)
+                    _push("game_state", {"game_alive": False, "game_busy": bool(busy)})
                     _push("game_exited")
                     return
             elif not running and not started:
