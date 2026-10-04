@@ -175,3 +175,11 @@ build_*/
 !build_temp/
 build_temp/*
 !build_temp/updater.vbs
+
+# 例外: 皮肤素材的生成脚本要入库。
+# 上面的 tools/ 是全局规则 (匹配任意层级的 tools 目录), 会把
+# web/app_skins/<id>/tools/ 一起吃掉 —— 于是"皮肤素材怎么生成/怎么改构图"
+# 只存在于开发者本机, 别人 clone 后无法复现或调整背景与图标。
+# (同样要先放行 tools/ 目录本身: 父目录被忽略时无法直接取消忽略其中的文件)
+!web/app_skins/*/tools/
+!web/app_skins/*/tools/*.py
