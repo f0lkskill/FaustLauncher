@@ -1155,6 +1155,39 @@ class AppApi:
         from functions.base.user_system import unlock_skin
         return unlock_skin(skin_id, self.core.settings_manager)
 
+    # ---- 成就页 ----
+    # 完成与否**以本地用户文件里的 id 列表为准**（与皮肤同一份, 见 user_system）,
+    # 不看成就监测子进程里的运行时 unlocked 状态 —— 那玩意一关进程就没了。
+    def get_achievements(self):
+        """成就页数据: 全部成就定义 + 本地完成状态。
+
+        只读本地用户文件, **不联网** —— 云端同步是后面的功能（成就页右上角那个按钮）。
+        """
+        try:
+            from functions.achievement.achievements import achievements
+            from functions.base.user_system import completed_achievements
+            done = set(completed_achievements())
+            items = []
+            for ach in achievements:
+                aid = str(getattr(ach, "id", "") or "").strip()
+                if not aid:
+                    continue
+                items.append({
+                    "id": aid,
+                    "name": str(getattr(ach, "name", "") or ""),
+                    "description": str(getattr(ach, "description", "") or ""),
+                    "rarity": str(getattr(ach, "rarity", "") or ""),
+                    "hidden": bool(getattr(ach, "hidden", False)),
+                    "completed": aid in done,
+                })
+            n_done = sum(1 for it in items if it["completed"])
+            print(f"[成就页] 本地刷新: {n_done}/{len(items)} 已完成（记录 {len(done)} 条）")
+            return {"ok": True, "items": items, "completed": n_done, "total": len(items)}
+        except Exception as exc:  # noqa: BLE001
+            print(f"[成就页] 读取失败: {type(exc).__name__}: {exc}")
+            return {"ok": False, "items": [], "completed": 0, "total": 0,
+                    "error": f"{type(exc).__name__}: {exc}"}
+
     def get_backgrounds(self):
         """返回**一张随机背景图**的 data URI 列表, 应用 bg_gaussian_blur 模糊设置
 

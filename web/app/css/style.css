@@ -821,6 +821,34 @@ body.modal-open .res-card {
 .res-pagination button.active { border-color: var(--accent); color: var(--text); font-weight: 600; background: rgba(var(--accent-rgb),.12); }
 .res-pagination button:disabled { opacity: .4; cursor: default; }
 .res-pagination .res-page-info { font-size: 12px; color: var(--text-3); padding: 0 8px; }
+
+/* ---------------- 成就页 ----------------
+   排列完全沿用 res-* (左分区 + 搜索 + 卡片列表 + 分页), 这里只补三样成就特有的东西:
+   分区按钮上的计数、卡片左侧的图标块、稀有度小标签。 */
+.res-tab-count { margin-left: 6px; font-size: 11.5px; opacity: .75; font-weight: 500; }
+.ach-card .ach-icon {
+  width: 58px; height: 58px; flex-shrink: 0; border-radius: 14px;
+  display: inline-flex; align-items: center; justify-content: center;
+  color: var(--text-3); background: rgba(var(--tint-rgb), .05);
+  border: 1px solid var(--border);
+  transition: color .18s ease, background-color .18s ease, border-color .18s ease;
+}
+.ach-card .ach-icon svg { width: 30px; height: 30px; }
+.ach-card .ach-icon.done {
+  color: var(--success); background: rgba(46, 160, 67, .13);
+  border-color: rgba(46, 160, 67, .35);
+}
+/* 稀有度标签: 颜色与成就系统的 RARITY_COLORS 对齐 (普通/优秀/稀有/史诗/传说/神话) */
+.ach-rarity {
+  font-size: 10.5px; padding: 1px 8px; border-radius: 999px; font-weight: 600;
+  border: 1px solid currentColor; opacity: .85;
+}
+.ach-rarity-common { color: #d8dee9; }
+.ach-rarity-uncommon { color: #60c86e; }
+.ach-rarity-rare { color: #5096ff; }
+.ach-rarity-epic { color: #b46eff; }
+.ach-rarity-legendary { color: #ffc83c; }
+.ach-rarity-mythic { color: #ff5046; }
 /* 资源模态详情 (插件/Mod 统一) */
 .res-detail-head { display: flex; gap: 14px; align-items: center; margin: 18px 20px 12px; }
 .res-detail-icon {

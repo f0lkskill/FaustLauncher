@@ -206,6 +206,10 @@ def _new_user(user_id: str | None = None) -> dict:
     return {
         "user_id": _setting("用户ID", "string", uid, "", "用于跨设备同步用户解锁信息。"),
         "unlocked_skins": _setting("已解锁皮肤", "list", [], [], "已解锁的皮肤 ID 列表。"),
+        # 成就的完成信息与皮肤**同处这一份用户文件**: 只记 id 列表, 完成与否以它为准
+        # (成就监测是独立子进程, 它解锁一条就往这里补一条; 启动器主进程只读)
+        "completed_achievements": _setting("已完成成就", "list", [], [],
+                                           "已完成的成就 ID 列表 (成就页据此判定完成)。"),
         # 注意 _setting 的签名是 (name, type_name, value, default, description) ——
         # value 与 default 都要给, 少一个后面的参数就会错位 (曾经因此启动即崩)
         "server_profile": _setting("服务端资料", "dict", {}, {},
@@ -279,6 +283,14 @@ def _normalize(data: dict) -> dict:
     for sid in _free_skin_ids():
         if sid not in skins:
             skins.append(sid)
+    raw_done = _value(data, "completed_achievements", [])
+    if not isinstance(raw_done, list):
+        raw_done = []
+    done = []
+    for aid in raw_done:
+        aid = str(aid).strip()
+        if aid and aid not in done:
+            done.append(aid)
     # 注意: 这里不再产出 auto_created 之类的账号来源标记 ——
     # 本地无法可靠区分"自动生成的号"和"用户自己的号", 误判会造成困扰。
     # 因此归一化结果里多余的旧字段会在下次保存时被自然剔除。
@@ -287,6 +299,7 @@ def _normalize(data: dict) -> dict:
         profile = {}
     normalized = _new_user(uid)
     normalized["unlocked_skins"]["value"] = skins
+    normalized["completed_achievements"]["value"] = done
     # 服务端资料整份带着走 (原样镜像, 不挑字段)
     normalized["server_profile"]["value"] = profile
     return normalized
@@ -636,6 +649,40 @@ def get_user_info(settings_manager=None) -> dict:
             # 服务端资料的完整副本: 前端据此做"本地 <-> 服务端"的字段级对照
             # (服务端以后新增字段, 这里不用改代码就会带出来)
             "profile": profile if isinstance(profile, dict) else {}}
+
+
+def completed_achievements() -> list[str]:
+    """本地记录的已完成成就 ID 列表（与皮肤同处一份用户文件）。"""
+    done = _value(load_user(), "completed_achievements", [])
+    return [str(x) for x in done] if isinstance(done, list) else []
+
+
+def record_achievements(achievement_ids) -> list[str]:
+    """把成就 ID 追加进本地记录（幂等），返回合并后的完整列表。
+
+    成就监测跑在**独立子进程**里：它解锁一条就往用户文件补一条，启动器主进程只读。
+    每次都是「重新读盘 → 合并 → 写回」，所以主进程刚写过的皮肤/昵称不会被这里覆盖。
+    """
+    wanted: list[str] = []
+    for aid in achievement_ids or ():
+        aid = str(aid or "").strip()
+        if aid and aid not in wanted:
+            wanted.append(aid)
+    if not wanted:
+        return []
+    with _USER_LOCK:
+        data = load_user()
+        current = _value(data, "completed_achievements", [])
+        merged = [str(x).strip() for x in current] if isinstance(current, list) else []
+        merged = [x for x in merged if x]
+        added = [aid for aid in wanted if aid not in merged]
+        if not added:
+            return merged
+        merged.extend(added)
+        data["completed_achievements"]["value"] = merged
+        save_user(data)
+        print(f"[用户] 记录已完成成就 {len(added)} 条（本地共 {len(merged)} 条）")
+        return merged
 
 
 def unlock_skin(skin_id: str, settings_manager=None) -> dict:

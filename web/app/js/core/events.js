@@ -53,6 +53,10 @@ function switchPage(name) {
     // 玻璃窗: 首次进入才拉取皮肤列表 (之后保持, 切换都在页内完成)
     enterSkinsPage();
   }
+  if (name === 'achievement') {
+    // 成就: 每次进入都刷新一次**本地**记录 (完成状态可能刚在游戏里变化)
+    enterAchievementPage();
+  }
   if (name === 'user') {
     enterUserPage();
   }
@@ -161,6 +165,7 @@ function bindEvents() {
   // 导航
   $$('.nav-item').forEach(b => b.addEventListener('click', () => switchPage(b.dataset.page)));
   if (typeof bindUserEvents === 'function') bindUserEvents();
+  if (typeof bindAchievementEvents === 'function') bindAchievementEvents();
   // 主页按钮
   on('#btn-launch', 'click', onLaunch);
   on('#btn-translate', 'click', onTranslate);
