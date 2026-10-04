@@ -454,6 +454,13 @@ SKILL_SETTLE_QUIET_SEC = 2.5
 # 明显大于 10.5s，否则会在动画中途放行（曾用 2.5/6/8s，现象就是用户反馈的
 # “回合开始就结算”）。
 SKILL_SETTLE_QUIET_TICKED_SEC = 15.0
+# 本回合**还没出现过任何 skv tick** 时的最短等待：结算阶段天生比第一手动画早几秒
+# （实测伤害结算 25.5s → 第一手动画 28.8s，差 3.3s）。此时若用短兜底，会在动画开播
+# **之前**就把血量/理智/buff 判定整批放行 —— 正是「回合开始没多久就误判」的来源。
+# 这里要么等到第一手动画出现（之后由 skv_end 按行动组放行），要么至少等满这个宽限期。
+FIRST_ANIM_GRACE_SEC = 10.0
+# DLL 采样线程的事件 tag（每 250ms 重读一次 hp/sp/buff）。
+SAMPLER_TAG = "sampler"
 
 HEARTBEAT_SEC = 20.0
 STATUS_WRITE_SEC = 2.0
@@ -1209,6 +1216,10 @@ class BattleState:
     released_groups: set = field(default_factory=set)   # 已放行的组号
     cur_group: int = 0                                  # 当前正在入队的组号
     next_group: int = 1                                 # 下一个可分配的组号
+    # oid → 结算阶段「动到这个单位」的行动组号。采样线程比结算晚 ~250ms 才报出血量/理智，
+    # 那时行动早已切段；靠这张表把迟到的命中回填到它真正属于的那一组（跟对动画）。
+    unit_group: dict = field(default_factory=dict)
+    round_anim_seen: bool = False                       # 本回合是否已经出现过动画 tick
     group_binding: int = -1                             # 当前正在播的动画绑定的组号（-1 = 无）
     bound_iid: int = -1                                 # 绑定时动画 tick 带的 iid
     group_flushes: int = 0                              # 因“动画结束”而放行的组数（诊断用）
@@ -1261,6 +1272,8 @@ class BattleState:
             "group_flushes": self.group_flushes,
             "anim_open": self.anim_open,
             "stray_anim_ends": self.stray_anim_ends,
+            "round_anim_seen": self.round_anim_seen,
+            "unit_group": {o: g for o, g in sorted(self.unit_group.items())},
             "anim_ticks": self.anim_ticks_total,
             "anim_ticks_with_iid": self.anim_ticks_with_iid,
             "anim_last_tag": self.anim_last_tag,
@@ -1541,8 +1554,15 @@ class BattleWatch:
             ts = max(self._last_event_ts, self._last_anim_tick_ts)
             quiet = time.time() - ts
             ticked = self.state.anim_ticks_total > 0
+            round_ticked = self.state.round_anim_seen
         # 正常路径是 skv_end 逐条放行 + 回合边界清场，这里只防万一
-        if quiet < (SKILL_SETTLE_QUIET_TICKED_SEC if ticked else SKILL_SETTLE_QUIET_SEC):
+        limit = SKILL_SETTLE_QUIET_TICKED_SEC if ticked else SKILL_SETTLE_QUIET_SEC
+        # ⚠ 本回合还没出现任何动画 tick → 结算阶段必然早于第一手动画，用短兜底就会在
+        #   动画开播前整批放行（「回合开始没多久就误判」）。放宽到 FIRST_ANIM_GRACE_SEC：
+        #   第一手动画通常 2~5 秒内就到，到了就交给按行动组放行的那条正路。
+        if not round_ticked:
+            limit = max(limit, FIRST_ANIM_GRACE_SEC)
+        if quiet < limit:
             return False
         return bool(self.settle_turn(reason, fallback_immediate=False,
                                      only_skills=True))
@@ -2158,6 +2178,7 @@ class BattleWatch:
         with self._lock:
             self.state.anim_ticks_total += 1
             self.state.anim_last_tag = tag
+            self.state.round_anim_seen = True
             self._last_anim_tick_ts = now
             if iid >= 0:
                 self.state.anim_ticks_with_iid += 1
@@ -2320,9 +2341,15 @@ class BattleWatch:
                 self.state.vitals[iid] = info
                 if oid > 0:
                     self.state.units[iid] = oid
+            if oid > 0 and event.tag != SAMPLER_TAG:
+                # 结算阶段（钩子直接报的 VAL）把单位记到当前行动组 —— 伤害就是在这一段落的。
+                # 采样线程要晚 ~250ms 才报出「掉血」，那时行动早已切段；命中靠这张表回填，
+                # 才能跟着真正打伤它的那一手动画放行，而不是落进一个空组被兜底提前放掉。
+                self.state.unit_group[oid] = self.state.cur_group
             hits = self._eval_immediate_locked(
                 lambda rule: rule.match_vitals(oid, hp, mhp, mp),
-                lambda rule: self._vitals_detail(rule, info, event.tag))
+                lambda rule: self._vitals_detail(rule, info, event.tag),
+                unit_oid=oid)
             hits += self._eval_presence_locked()
         for detail in hits:
             self._log(f"[战斗观测] ★ {detail}")
@@ -2357,6 +2384,8 @@ class BattleWatch:
             st.group_binding = -1
             st.bound_iid = -1
             st.anim_open = False
+            st.round_anim_seen = False
+            st.unit_group.clear()
             st.pending_group.clear()
 
     def _open_group_locked(self) -> int:
@@ -2368,14 +2397,23 @@ class BattleWatch:
         st.cur_group = gid
         return gid
 
-    def _assign_group_locked(self, key: str) -> int:
-        """把挂起项归到“当前行动组”（已持有锁）。
+    def _assign_group_locked(self, key: str, unit_oid: int = -1) -> int:
+        """把挂起项归到它所属的行动组（已持有锁）。
+
+        优先用 ``unit_group`` 回填：采样线程比结算晚 ~250ms，命中落地时结算早被
+        ``action_done_with_action`` 切成一段段了、``cur_group`` 已经是一个空组 ——
+        直接归到那里，判定就只能跟着**下一手**动画（或被静默兜底）提前放掉。
+        没有记录（例如整局第一次采样）时仍归当前组。
 
         若当前组已经放行过了（例如动画播完后采样线程又报了个 buff），就开一个新组 ——
         它会在下一个动画 tick 放行，而不是永远卡着。
         """
         st = self.state
         gid = st.cur_group
+        if unit_oid > 0:
+            recorded = st.unit_group.get(unit_oid, -1)
+            if recorded >= 0 and recorded in st.groups and recorded not in st.released_groups:
+                gid = recorded
         if gid in st.released_groups or gid not in st.groups:
             gid = self._open_group_locked()
         st.groups[gid].setdefault("keys", []).append(key)
@@ -2441,15 +2479,18 @@ class BattleWatch:
         st.bound_iid = iid
         return pick
 
-    def _queue_pending_locked(self, key: str, detail: str) -> None:
-        """把一条判定挂起（等动画 tick 放行），并记下先后序号。"""
+    def _queue_pending_locked(self, key: str, detail: str, unit_oid: int = -1) -> None:
+        """把一条判定挂起（等动画 tick 放行），并记下先后序号。
+
+        ``unit_oid``: 这条判定是哪个单位身上的（采样线程迟到的血量/理智/buff 命中靠它回填行动组）。
+        """
         if key in self.state.flags or key in self.state.pending_immediate \
                 or key in self.state.pending_flags:
             return
         self.state.pending_seq += 1
         self.state.pending_seqs[key] = self.state.pending_seq
         self.state.pending_immediate[key] = detail
-        self._assign_group_locked(key)
+        self._assign_group_locked(key, unit_oid)
 
     def _flush_one_pending_locked(self, reason: str = "") -> str | None:
         """放行**最早挂起的一条**判定（已持有锁）。返回详情文本。
@@ -2490,12 +2531,13 @@ class BattleWatch:
             out.append(detail)
         return out
 
-    def _eval_immediate_locked(self, match_fn, detail_fn) -> list[str]:
+    def _eval_immediate_locked(self, match_fn, detail_fn, unit_oid: int = -1) -> list[str]:
         """非技能类规则的**统一求值器**（调用方必须已持有 ``self._lock``）。
 
         ``match_fn(rule)`` 决定是否命中，``detail_fn(rule)`` 生成详情；
         命中就写进 ``state.flags``（同一规则只置位一次）。
         速度 / 理智 / 血量 / buff / 在场 都走这一条路——加新类型时不用改这里。
+        ``unit_oid`` 只是把「这条判定属于哪个单位」透传给挂起队列（用于回填行动组）。
         """
         hits: list[str] = []
         for key, rule in registered_rules().items():
@@ -2506,7 +2548,7 @@ class BattleWatch:
             if match_fn(rule):
                 detail = detail_fn(rule)
                 if rule.kind in RULE_KINDS_ANIM_WAIT:
-                    self._queue_pending_locked(key, detail)   # 等动画 tick 放行
+                    self._queue_pending_locked(key, detail, unit_oid)   # 等动画 tick 放行
                 else:
                     self._set_flag_locked(key, detail)        # 速度/在场：本来就该立刻
                 hits.append(detail)
@@ -2545,10 +2587,14 @@ class BattleWatch:
                 self.state.buffs[iid] = info
                 if oid > 0:
                     self.state.units[iid] = oid
+            if oid > 0 and event.tag != SAMPLER_TAG:
+                # 同 _apply_vitals：结算阶段记下"这个单位这一段被谁动到"，供迟到的采样命中回填
+                self.state.unit_group[oid] = self.state.cur_group
             round_seq = self.state.round_seq
             hits = self._eval_immediate_locked(
                 lambda rule: rule.match_buff(oid, present, round_seq)[0],
-                lambda rule: self._buff_detail(rule, info, event.tag, present))
+                lambda rule: self._buff_detail(rule, info, event.tag, present),
+                unit_oid=oid)
             hits += self._eval_presence_locked()
         for detail in hits:
             self._log(f"[战斗观测] ★ {detail}")
