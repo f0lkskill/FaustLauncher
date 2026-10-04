@@ -312,6 +312,7 @@ def _define_achievements():
         "data.ach_heathcliff_sunshower_hurt",
         "data.ach_custom_examples",
         "data.ach_railway6_100t",
+        "data.ach_story_10_4",
     )
     import importlib as _importlib
     for _module in _battle_achievement_modules:
