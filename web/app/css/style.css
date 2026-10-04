@@ -830,23 +830,31 @@ body.modal-open .res-card {
    排列完全沿用 res-* (左分区 + 搜索 + 卡片列表 + 分页), 这里只补三样成就特有的东西:
    分区按钮上的计数、卡片左侧的图标块、稀有度小标签。 */
 .res-tab-count { margin-left: 6px; font-size: 11.5px; opacity: .75; font-weight: 500; }
+
+/* 成就徽标框 —— **边框与辉光的颜色由稀有度自动决定**（素材图片里不含边框）。
+   六个稀有度就是六组 CSS 变量, 以后调配色只改这一处。 */
 .ach-card .ach-icon {
-  width: 58px; height: 58px; flex-shrink: 0; border-radius: 14px;
+  --ach-ring: var(--border-2);
+  --ach-glow: transparent;
+  width: 58px; height: 58px; flex-shrink: 0; border-radius: 15px;
   display: inline-flex; align-items: center; justify-content: center;
-  color: var(--text-3); background: rgba(var(--tint-rgb), .05);
-  border: 1px solid var(--border);
-  transition: color .18s ease, background-color .18s ease, border-color .18s ease;
+  color: var(--text-3);
+  background: radial-gradient(circle at 50% 28%, rgba(var(--tint-rgb), .12), rgba(0, 0, 0, .55) 78%);
+  border: 2px solid var(--ach-ring);
+  box-shadow: 0 0 9px var(--ach-glow), inset 0 0 0 1px rgba(0, 0, 0, .45);
+  transition: border-color .18s ease, box-shadow .18s ease;
 }
+.ach-card .ach-icon.r-common    { --ach-ring: #9aa4b2; --ach-glow: rgba(154, 164, 178, .28); }
+.ach-card .ach-icon.r-uncommon  { --ach-ring: #4fae72; --ach-glow: rgba(79, 174, 114, .32); }
+.ach-card .ach-icon.r-rare      { --ach-ring: #4a86e8; --ach-glow: rgba(74, 134, 232, .36); }
+.ach-card .ach-icon.r-epic      { --ach-ring: #a05ce8; --ach-glow: rgba(160, 92, 232, .40); }
+.ach-card .ach-icon.r-legendary { --ach-ring: #e8b23a; --ach-glow: rgba(232, 178, 58, .44); }
+.ach-card .ach-icon.r-mythic    { --ach-ring: #e04a4a; --ach-glow: rgba(224, 74, 74, .46); }
 .ach-card .ach-icon svg { width: 30px; height: 30px; }
-/* 有徽标图时: 去掉占位块的边框/底色, 让图自己铺满 */
-.ach-card .ach-icon.has-art { border: none; background: none; }
+/* 素材本身是透明底、完整人物/图标: 用 contain 保证"整人不被裁" */
 .ach-card .ach-icon .ach-art {
   width: 100%; height: 100%; display: block;
-  border-radius: 14px; object-fit: cover;
-}
-.ach-card .ach-icon.done {
-  color: var(--success); background: rgba(46, 160, 67, .13);
-  border-color: rgba(46, 160, 67, .35);
+  border-radius: 13px; object-fit: contain;
 }
 /* 稀有度标签: 颜色与成就系统的 RARITY_COLORS 对齐 (普通/优秀/稀有/史诗/传说/神话) */
 .ach-rarity {
