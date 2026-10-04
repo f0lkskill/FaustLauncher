@@ -921,16 +921,14 @@ static void poll_stage_progress(void)
                     (void)read_i32((void *)(uintptr_t)node, g_cfg->off_node_clear_number, &cn);
                 if (ct <= 0 && cn <= 0)
                     continue;                        /* 没通关的不报 */
-                /* 只报关注表里的（章/小节/节点任一命中前缀即可）——
-                 * 全量已通关节点有几百个，全报会刷爆事件环、也会顶满去重表。*/
+                /* 只报关注表里的章（**章号精确匹配，只看 chapter_id**）。
+                 * 不能顺带做小节/节点的前缀匹配：关注 "10" 时 sub 104 / node 10401 也会命中，
+                 * 实测就把第 1 章的几十个节点全刷出来了。*/
                 if (g_cfg->stage_watch_count > 0) {
                     int watched = 0;
                     int wi;
                     for (wi = 0; wi < g_cfg->stage_watch_count && wi < BW_STAGE_WATCH_MAX; wi++) {
-                        int w = (int)g_cfg->stage_watch_ids[wi];
-                        if (id_matches_watch((int)chapter_id, w) ||
-                            id_matches_watch((int)sub_id, w) ||
-                            id_matches_watch((int)node_id, w)) {
+                        if ((int)chapter_id == (int)g_cfg->stage_watch_ids[wi]) {
                             watched = 1;
                             break;
                         }
