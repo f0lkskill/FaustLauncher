@@ -183,6 +183,7 @@ function renderAchPagination(pagination, totalItems, totalPages) {
 }
 
 // 卡片: 与资源卡片同构 (左侧图标块 + 标题/状态徽章/稀有度 + 描述)
+// 图标块: 有徽标图 (`item.icon`, 见 assets/achievement/) 就用它, 否则退回内联占位图标
 function buildAchCard(item) {
   const done = !!item.completed;
   const rarity = ACH_RARITY_ZH[item.rarity] || '';
@@ -190,8 +191,10 @@ function buildAchCard(item) {
   card.className = 'res-card ach-card' + (done ? '' : ' disabled');
   card.innerHTML =
     '<div class="res-card-main">' +
-      '<span class="ach-icon' + (done ? ' done' : '') + '">' +
-        iconSvg(done ? 'checkOne' : 'unlock') +
+      '<span class="ach-icon' + (done ? ' done' : '') + (item.icon ? ' has-art' : '') + '">' +
+        (item.icon
+          ? '<img class="ach-art" src="' + esc(item.icon) + '" alt="">'
+          : iconSvg(done ? 'checkOne' : 'unlock')) +
       '</span>' +
       '<div class="res-info">' +
         '<div class="res-title-row">' +
