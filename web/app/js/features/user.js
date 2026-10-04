@@ -177,17 +177,16 @@ function renderServerProfile(profile) {
 // 读不到就照实说（未安装/未登录 Steam），不编数字。
 function renderPlaytime() {
   const el = $('#user-playtime');
-  const hint = $('#user-playtime-hint');
   if (!el) return;
   const p = (userPageData && userPageData.playtime) || null;
   if (p && p.ok && p.seconds > 0) {
     el.textContent = p.text || (Math.round((p.hours || 0) * 10) / 10 + ' 小时');
     el.classList.remove('is-empty');
-    if (hint) hint.textContent = '来自本机 Steam 记录';
+    el.title = '';
   } else {
     el.textContent = '读不到';
     el.classList.add('is-empty');
-    if (hint) hint.textContent = (p && p.error) || '未安装 / 未登录 Steam';
+    el.title = (p && p.error) || '未安装 / 未登录 Steam';
   }
 }
 
