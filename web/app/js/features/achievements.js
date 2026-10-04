@@ -273,9 +273,10 @@ async function cloudSyncAchievements() {
     const r = await api.cloud_sync_achievements();
     await refreshAchievements();
     if (r && r.ok) {
-      toast('云端同步完成：云端 ' + (r.pull_count || 0) + ' 条 → 本地，' +
+      toast('云端同步完成：云端 ' + (r.pull_count || 0) + ' 条 · 本地新增 ' +
+            (r.local_added || 0) + ' 条 → 合计 ' + (r.local_count || 0) + ' 条，' +
             '已上传 ' + (r.push_count || 0) + ' 条' +
-            (r.push_method === 'overwrite' ? '（方式②覆盖）' : ''), 'success', 3200);
+            (r.push_method === 'overwrite' ? '（方式②覆盖）' : ''), 'success', 3600);
     } else {
       toast('云端同步失败: ' + ((r && r.error) || '未知错误'), 'error', 4000);
     }

@@ -459,13 +459,19 @@ def _server_identity(uid: str, defaults: dict | None = None) -> tuple[dict | Non
 #   · 云端只存**内置成就**的 id 列表（用户记录的 achievements 字段）；**插件成就永远不上云**，
 #     它们只存在本地那份 plugin_achievements.json 里；
 #   · 上传是**整体替换**语义：客户端报全量列表，服务端在锁内只改自己那一行（不会牵连别人）；
-#   · 启动初始化时**以云端为准覆盖本地** —— 换机器/重装后本地立刻对齐。
+#   · 同步口径与皮肤一致：**只增不减**（先取并集写回本地，再把并集推回云端），
+#     这样离线解锁、上次上传失败的条目不会被云端旧列表抹掉。想强制对齐可传 mode="overwrite"。
 
 
-def pull_achievements_from_cloud() -> dict:
-    """读云端成就列表并**覆盖本地**内置成就档。
+def pull_achievements_from_cloud(mode: str = "union") -> dict:
+    """读云端成就列表并与本地合并（默认**只增不减**）。
 
-    返回 ``{"ok": True, "count": n, "achievements": [...]}``；失败给 ``{"ok": False, "error": ...}``。
+    ``mode="union"``（默认）：与皮肤同步同一个口径 —— 本地独有的条目
+    （离线解锁、上次上传失败的那批）不会被云端旧列表抹掉；合并结果随后由
+    :func:`push_achievements_to_cloud` 回传，两边最终收敛到并集。
+    ``mode="overwrite"``：云端为准直接覆盖本地（想强制对齐时用）。
+
+    插件成就不参与（它们只存在本地那份独立文件里）。
     """
     data = user_api.me()
     if not data.get("ok"):
@@ -473,11 +479,24 @@ def pull_achievements_from_cloud() -> dict:
     remote = [str(x).strip() for x in (data.get("achievements") or []) if str(x).strip()]
     with _USER_LOCK:
         local = load_user()
-        local["completed_achievements"]["value"] = remote
+        current = _value(local, "completed_achievements", [])
+        mine = [str(x).strip() for x in current] if isinstance(current, list) else []
+        mine = [x for x in mine if x]
+        if mode == "overwrite":
+            merged = list(remote)
+        else:                                   # union：本地在前，云端补齐
+            merged = list(mine)
+            for aid in remote:
+                if aid not in merged:
+                    merged.append(aid)
+        local["completed_achievements"]["value"] = merged
         local = _normalize(local)
         save_user(local)
-    print(f"[用户] 云端成就已覆盖本地: {len(remote)} 条")
-    return {"ok": True, "count": len(remote), "achievements": remote}
+    added = len(merged) - len(mine)
+    action = "覆盖本地" if mode == "overwrite" else f"与本地取并集（新增 {added} 条）"
+    print(f"[用户] 云端成就 {len(remote)} 条 → {action}，合计 {len(merged)} 条")
+    return {"ok": True, "mode": mode, "count": len(remote), "achievements": merged,
+            "local_before": len(mine), "local_after": len(merged), "added": added}
 
 
 def push_achievements_to_cloud() -> dict:
@@ -497,15 +516,16 @@ def push_achievements_to_cloud() -> dict:
             "first_error": result.get("error")}
 
 
-def sync_achievements(pull: bool = True) -> dict:
+def sync_achievements(pull: bool = True, mode: str = "union") -> dict:
     """成就云端同步的统一入口（**启动初始化**与成就页「云端同步」按钮都走它）。
 
-    ``pull=True``（默认）：先拉云端**覆盖本地**，再把本地全量推回云端 —— 这就是
-    "初始化时获取用户独立数据并覆盖本地"。``pull=False`` 只推不拉。
+    默认口径 **(B) 只增不减**：先把云端与本地**取并集**写回本地，再把并集全量推回云端
+    —— 离线解锁的、上次上传失败的都不会被云端旧列表抹掉（与皮肤同步一致）。
+    ``mode="overwrite"`` 时改为云端覆盖本地（(A) 口径）。
     """
     pulled: dict = {"ok": False, "skipped": True}
     if pull:
-        pulled = pull_achievements_from_cloud()
+        pulled = pull_achievements_from_cloud(mode=mode)
     pushed = push_achievements_to_cloud()
     return {"ok": bool(pushed.get("ok")), "pull": pulled, "push": pushed,
             "local_count": len(completed_achievements())}
@@ -568,12 +588,13 @@ def sync_user(settings_manager=None) -> dict:
         local = _normalize(local)
         save_user(local)
 
-        # 成就也跟着同步一次：**先拉云端覆盖本地**（初始化对齐），再把本地全量推回去。
+        # 成就也跟着同步一次：**先与云端取并集写回本地（只增不减），再把并集全量推回去**。
         # 插件成就不参与（它们只存本地独立文件，永远不上云）。
         try:
             ach = sync_achievements(pull=True)
-            print(f"[用户] 成就同步: 云端 {ach['pull'].get('count', '?')} 条 / "
-                  f"本地 {ach.get('local_count', '?')} 条 / "
+            pull = ach.get("pull") or {}
+            print(f"[用户] 成就同步: 云端 {pull.get('count', '?')} 条 / 本地原有 "
+                  f"{pull.get('local_before', '?')} 条 → 合并 {ach.get('local_count', '?')} 条 / "
                   f"上传方式={ach['push'].get('method', '-')} "
                   f"{'成功' if ach.get('ok') else '失败(' + str(ach['push'].get('error')) + ')'}")
         except Exception as exc:  # noqa: BLE001

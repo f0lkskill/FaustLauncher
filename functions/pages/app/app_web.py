@@ -1160,9 +1160,9 @@ class AppApi:
     def cloud_sync_achievements(self):
         """成就页右上角按钮：**真实**云端同步。
 
-        流程（与服务端 API.md 一致）：
-          1. 拉云端成就列表 → **覆盖本地**内置成就档（换机器/重装后立刻对齐）；
-          2. 把本地全量推回云端（方式① ``/api/me/achievements``，失败退回方式②
+        流程（与服务端 API.md 一致，口径 **(B) 只增不减**）：
+          1. 拉云端成就列表 → 与本地**取并集**写回本地（离线解锁、上次上传失败的不会被抹掉）；
+          2. 把合并后的全量推回云端（方式① ``/api/me/achievements``，失败退回方式②
              ``/api/achievements/overwrite``）。
         插件成就不参与（它们只存本地独立文件，永不上云）。
         """
@@ -1175,6 +1175,8 @@ class AppApi:
                 "ok": bool(result.get("ok")),
                 "pull_ok": bool(pull.get("ok")),
                 "pull_count": int(pull.get("count") or 0),
+                "local_before": int(pull.get("local_before") or 0),
+                "local_added": int(pull.get("added") or 0),
                 "push_ok": bool(push.get("ok")),
                 "push_method": str(push.get("method") or ""),
                 "push_count": int(push.get("count") or 0),
