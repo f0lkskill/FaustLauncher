@@ -806,12 +806,15 @@ static void poll_stage_clears(void)
     }
 }
 
-/* 上报一个已通关节点（(章,小节,节点) 去重；与界面查询那条路共用去重表）。*/
-static void emit_ncl(int main_id, int sub_id, int node_id, int ct, int cn)
+/* 上报一个已通关节点（(章,小节,节点) 去重；与界面查询那条路共用去重表）。
+ * ``idx`` = 本节点在本章内的序号（跨小节累加）—— 界面上的 "10-4" 说的是它，
+ * 而不是 ``node_id``（那是关卡 id，10438 这种，跟"第几关"无关）。*/
+static void emit_ncl(int main_id, int sub_id, int node_id, int ct, int cn,
+                     int idx, int sub_idx)
 {
     int packed;
     int i;
-    char line[128];
+    char line[160];
 
     if (!g_cfg)
         return;
@@ -825,8 +828,8 @@ static void emit_ncl(int main_id, int sub_id, int node_id, int ct, int cn)
         g_cfg->ncl_seen_count += 1;
     }
     _snprintf(line, sizeof(line) - 1,
-              "NCL main=%d sub=%d node=%d cleared=1 ct=%d cn=%d",
-              main_id, sub_id, node_id, ct, cn);
+              "NCL main=%d sub=%d node=%d cleared=1 ct=%d cn=%d idx=%d sidx=%d",
+              main_id, sub_id, node_id, ct, cn, idx, sub_idx);
     line[sizeof(line) - 1] = '\0';
     emit(line, TRUE);
 }
@@ -862,6 +865,7 @@ static void poll_stage_progress(void)
     for (i = 0; i < n_ch; i++) {
         uint64_t chapter = 0;
         int32_t chapter_id = 0;
+        int32_t node_index = 0;      /* 本章第几个节点（界面上的 "10-4" 的 4）*/
         if (!safe_read((char *)(uintptr_t)(ch_items + 0x20 + 8 * i), &chapter, 8) || !chapter)
             continue;
         (void)read_i32((void *)(uintptr_t)chapter, 0x10, &chapter_id);
@@ -902,6 +906,7 @@ static void poll_stage_progress(void)
                     continue;
                 if (!read_i32((void *)(uintptr_t)node, g_cfg->off_node_id, &node_id))
                     continue;
+                node_index += 1;         /* 关卡 id 不等于"第几关"，序号才是界面上那个号 */
                 if (g_cfg->off_node_clear_type > 0)
                     (void)read_i32((void *)(uintptr_t)node, g_cfg->off_node_clear_type, &ct);
                 if (g_cfg->off_node_clear_number > 0)
@@ -925,7 +930,8 @@ static void poll_stage_progress(void)
                     if (!watched)
                         continue;
                 }
-                emit_ncl((int)chapter_id, (int)sub_id, (int)node_id, (int)ct, (int)cn);
+                emit_ncl((int)chapter_id, (int)sub_id, (int)node_id, (int)ct, (int)cn,
+                         (int)node_index, (int)(j + 1));
             }
         }
     }

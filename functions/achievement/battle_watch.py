@@ -2815,16 +2815,23 @@ class BattleWatch:
         main = event.get("main", 0)
         sub = event.get("sub", 0)
         node = event.get("node", 0)
+        idx = event.get("idx", 0)        # 本章内第几个节点 = 界面上的 "10-4" 的 4
+        sidx = event.get("sidx", 0)      # 本章内第几个小节
         ts = time.time()
-        # 原始 id 才是能和"章节-节"对上的东西（组合键只做诊断用）
-        keys = (str(sub), str(node), f"{main}:{sub}:{node}")
+        keys = []
+        if idx:
+            keys.append(f"{main}-{idx}")         # ← 界面口径（10-4 就是这个）
+        if sidx and idx:
+            keys.append(f"{main}-{sidx}-{idx}")
+        keys += [str(sub), str(node), f"{main}:{sub}:{node}"]   # 原始 id（诊断/精确匹配用）
         with self._lock:
             for key in keys:
                 self.state.stage_clears[key] = {
                     "uid": key, "turn": -1, "dead": -1, "ex": 0,
                     "cleared": True, "ts": ts,
                 }
-        self._log(f"[战斗观测] ★ 关卡已通关（游戏查询）: 章{main} 小节id={sub} 节点id={node}")
+        self._log(f"[战斗观测] ★ 关卡已通关（游戏查询）: 章{main} 第{idx}关 "
+                  f"(小节id={sub} 节点id={node})")
 
     def _apply_railway_total(self, event: BattleEvent) -> None:
         """折射铁路记录（DLL 的 ``RWT`` 事件）。两种形态：
