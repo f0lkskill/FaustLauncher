@@ -28,7 +28,7 @@ class YisangLcbThirdSkillAchievement(SkillUseAchievement):
         super().__init__(
             ach_id="ach_yisang_lcb_s3",
             name="将你李箱，也将我李箱。",
-            description="回合结束时检测到 LCB 罪人 李箱 使用了自己的三技能",
+            description="让 LCB 罪人李箱 使用自己的三技能。",
             identity_id=IDENTITY_LCB_YISANG,
             skill_ids=(SKILL_LCB_YISANG_S3,),
             tiers=(3,),

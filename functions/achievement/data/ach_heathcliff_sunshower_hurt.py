@@ -31,7 +31,7 @@ class HeathcliffSunshowerHurtAchievement(DamageTakenAchievement):
         super().__init__(
             ach_id="ach_heathcliff_sunshower_hurt",
             name="神也会受伤吗？",
-            description="脑叶公司E.G.O::狐雨-希斯克里夫 在战斗中受到一次伤害。",
+            description="脑叶公司E.G.O::狐雨-希斯克里夫 受到任意伤害。",
             identity_ids=(IDENTITY_HEATHCLIFF_SUNSHOWER,),
             ratio=HP_RATIO,
             label="狐雨 希斯克里夫",

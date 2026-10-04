@@ -506,7 +506,7 @@ class CompositeAchievement(BattleRuleAchievement):
             raise ValueError("CompositeAchievement 至少需要一个条件")
         self.conditions = conditions
         self.require = (require or "").strip()
-        self.chain = _normalize_chain(chain)
+        self.chain = _normalize_chain(chain) # type: ignore
         self.implied = tuple((str(a), str(b)) for a, b in implied)
         if self.require:
             _validate_expr(self.require, {c.key for c in conditions})
@@ -564,7 +564,7 @@ class CompositeAchievement(BattleRuleAchievement):
         """
         order = {cond.key: battle_watch.rule_order(cond.rule.key)
                  for cond in self.conditions}
-        for first, second in self.chain:
+        for first, second in self.chain: # type: ignore
             o1 = order.get(first, 0)
             o2 = order.get(second, 0)
             if not (o1 and o2 and o1 < o2):

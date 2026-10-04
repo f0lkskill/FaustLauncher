@@ -27,7 +27,7 @@ class Story10_4Achievement(StageClearTurnAchievement):
     def __init__(self):
         super().__init__(
             "ach_story_10_4",
-            "第 10 章 · 4 节",
+            "西西弗斯",
             "通关主线剧情 10-4。",
             uid_prefixes=STAGE_10_4_UID_PREFIXES,
             max_turn=0,          # 不限回合，通关即可
