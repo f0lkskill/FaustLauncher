@@ -152,8 +152,19 @@ def _report_unlocks(log_callback, unlocked, header: str = "") -> list:
     # 成就页据此判定完成 —— 只有这里记下来, 启动器才知道"这条已经完成"。
     # 任何异常都不许影响播报（写不进去最多是成就页少显示一条）。
     try:
-        from functions.base.user_system import record_achievements
-        record_achievements([getattr(a, "id", "") or "" for a in fresh])
+        from functions.base.user_system import (record_achievements,
+                                                record_plugin_achievements)
+        # 内置成就 → settings.json；插件成就 → 独立的 plugin_achievements.json
+        # （插件那份**不进云端**，插件删掉也不影响内置记录）
+        builtin = [getattr(a, "id", "") or "" for a in fresh
+                   if not getattr(a, "plugin", False)]
+        if builtin:
+            record_achievements(builtin)
+        for ach in fresh:
+            if not getattr(ach, "plugin", False):
+                continue
+            record_plugin_achievements([getattr(ach, "id", "") or ""],
+                                       addon=str(getattr(ach, "addon", "") or ""))
     except Exception as exc:  # noqa: BLE001
         log_callback(f"  [成就] 本地记录写入失败（不影响解锁）: {type(exc).__name__}: {exc}")
     if header:

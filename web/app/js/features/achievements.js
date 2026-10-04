@@ -204,6 +204,11 @@ function buildAchCard(item) {
             '<span class="res-state-badge ' + (done ? 'on' : 'off') + '">' +
               (done ? '已完成' : '未完成') + '</span>' +
           '</span>' +
+          (item.plugin
+            ? '<span class="ach-plugin-badge" title="来自插件' +
+                (item.addon ? '：' + esc(item.addon) : '') +
+                '；完成记录只存在本地，不参与云端同步">插件</span>'
+            : '') +
           (rarity ? '<span class="ach-rarity ach-rarity-' + esc(item.rarity || '') + '">' +
                     esc(rarity) + '</span>' : '') +
         '</div>' +
