@@ -595,6 +595,9 @@ class LogProcessor:
             try:
                 from functions.achievement import battle_watch as _bw
                 _bw.settle_turn("战斗结束")
+                # 告诉观测器这场结束了 → 下一个回合边界按新战斗的第 1 回合算，
+                # 否则 max_round=1("首个回合")这类判定在第二场之后就永远匹配不上
+                _bw.mark_battle_end()
             except Exception:
                 pass
             unlocked = check_achievements(self.log_callback)
