@@ -60,14 +60,15 @@
 #include <stddef.h>
 #include "MinHook.h"
 
-#define BW_MAGIC        0x35574246u          /* "FBW5"（v1=FBW1…v3=FBW3，v4=FBW3+HP/理智，v5 加 buff 偏移与关注表，
-                                              * v6 加占位层动画 tick 的 off_skv_attacker_iid）*/
+#define BW_MAGIC        0x36574246u          /* "FBW6"（v1=FBW1…v5=FBW3+HP/理智，v5 加 buff 偏移与关注表，
+                                              *  v6 加关卡结算统计 + 钩子槽 12→16）—— 布局变了就换一个值，
+                                              *  这样"游戏里还挂着旧 DLL"时新驱动能直接判出版本不符。*/
 #define BW_MAP_NAME     L"Local\\FaustLauncher_BattleWatch"
 #define BW_POLL_MS      300
 #define BW_GA_TIMEOUT_MS 60000
 #define BW_LOG_RING_CAP 512
 #define BW_LOG_LINE_MAX 255
-#define BW_MAX_HOOKS    12
+#define BW_MAX_HOOKS    16     /* 钩子槽上限（索引里候选已有 14 个；12 会截断掉 skv_end）*/
 #define BW_NAME_LEN     40
 #define BW_SPEED_SCALE  1000   /* 速度字段的定点比例：_CORRECTION_FOR_SPEED */
 #define BW_VITAL_UNREAD (-1000)  /* HP/理智读不出来时的哨兵（HP 不可能为负、理智只有 ±45）*/
@@ -75,6 +76,7 @@
 #define BW_SAMPLE_MS      250    /* 采样线程重读 hp/sp/buff 的间隔 */
 #define BW_BUFF_WATCH_MAX 32     /* 关注 buff 上限（Python 端同值）*/
 #define BW_BUFF_LIST_MAX  96     /* 单个单位最多看多少个 buff（防脏数据卡死）*/
+#define BW_STAGE_SLOT_MAX 8      /* 结算统计最多看几个 slot（防脏数据卡死）*/
 
 /* ACTk ObscuredInt 内部布局（dump.cs 实测） */
 #define OBI_KEY    0
@@ -96,6 +98,15 @@
                                 * 动画层 self 上的 _attackerInstanceID 就是“这手是谁在打”，
                                 * Python 据此把挂起的判定按行动放行。读不到/越界就发 iid=-1，
                                 * Python 退回“一次 tick 放一条”的老行为。 */
+#define BWK_STAGE_STAT     7   /* void (self, externalData, format, mi)：关卡结算统计
+                                *   self = StageStatisticPopupData（本条就是它自己的 .ctor）
+                                *   → STG uid=<关卡uid> turn=<通关回合数> dead=<阵亡数> ex=<是否EX>
+                                *
+                                * 为什么要它：折射铁路（玩家口中的"一号线/二号线/六号线"）
+                                * 的通关回合数**只在内存里**，Player.log 完全没有 —— 而
+                                * "六号线 <100T 通关"这类成就必须拿到每关的清关回合数。
+                                * 数据在 StageStatisticPopupSlotData._clearTurn（见 dump.cs）；
+                                * 由于列表是构造函数里填的，thunk 必须**先调原函数再读**。*/
 
 /* 错误码 */
 #define BW_ERR_OK         0
@@ -164,14 +175,23 @@ typedef struct _BW_CONFIG {
      * Python 把成就用到的 buff 名做 FNV-1a 64 哈希后填进来；DLL 只在命中关注表时发 BUF。*/
     volatile LONG buff_watch_count;
     volatile unsigned long long buff_watch_hashes[BW_BUFF_WATCH_MAX];
+
+    /* 关卡结算统计（BWK_STAGE_STAT）—— 同样放末尾：ring 偏移保持不变，只让总大小变。
+     * 列表是 IL2CPP 的引用类型 List<T>：_items 在 +0x20、_size 在 +0x18（与 buff 链同）。*/
+    volatile LONG off_stage_slot_list;   /* StageStatisticPopupData._slotDataList  (0x10) */
+    volatile LONG off_slot_uid;          /* StageStatisticPopupSlotData._uid        (0x10) */
+    volatile LONG off_slot_clear_turn;   /* StageStatisticPopupSlotData._clearTurn  (0x18) */
+    volatile LONG off_slot_dead_count;   /* StageStatisticPopupSlotData._deadUnitCount (0x1C) */
+    volatile LONG off_slot_ex_cleared;   /* StageStatisticPopupSlotData._exCleared  (0x20) */
 } BW_CONFIG;
 
-/* 布局自检：v6/FBW5 → ring 偏移 1080，总大小 1080 + 512*256 + 4(+4对齐) + 32*8 = 132416。
+/* 布局自检：v6/FBW6 → 钩子槽 16，ring 偏移 1352，总大小 1352 + 512*256 + 4(+4对齐)
+ *                     + 32*8 + 5*4(对齐后 24) = 132712。
  * Python 侧的 ctypes 结构体用同一份字段定义；注入后会比对 DLL 回写的
  * ring_offset/struct_size，不一致就报错，所以这里只卡对齐与总大小。*/
 _Static_assert(offsetof(BW_CONFIG, log_ring) % 4 == 0, "log_ring 偏移未对齐");
 _Static_assert(offsetof(BW_CONFIG, buff_watch_hashes) % 8 == 0, "关注表未对齐");
-_Static_assert(sizeof(BW_CONFIG) == 132416, "BW_CONFIG 大小不一致（改了字段就同步改 Python）");
+_Static_assert(sizeof(BW_CONFIG) == 132712, "BW_CONFIG 大小不一致（改了字段就同步改 Python）");
 
 static BW_CONFIG *g_cfg = NULL;
 static HANDLE      g_stop_event = NULL;
@@ -186,6 +206,8 @@ typedef int   (__fastcall *fn_unit_get_int)(void *self, const void *method);
 typedef void  (__fastcall *fn_action_int)(void *self, int timing, const void *method);
 typedef float (__fastcall *fn_damage)(void *self, void *action, void *coin, void *attacker,
                                       int8_t is_critical, const void *method);
+typedef void  (__fastcall *fn_stage_stat)(void *self, void *external_data, void *format,
+                                          const void *method);
 
 static void  *g_target[BW_MAX_HOOKS];
 static void  *g_original[BW_MAX_HOOKS];
@@ -816,6 +838,72 @@ typedef void (__fastcall *detour_fn)(void);
         }                                                                        \
     }
 
+/* ---- 关卡结算统计（BWK_STAGE_STAT）------------------------------------------
+ * 挂钩 StageStatisticPopupData..ctor(self, externalData, format, mi)。
+ * **必须先调原构造函数**：_slotDataList 是构造函数里填的，先读只会读到空列表。
+ * 列表布局沿用 buff 链那套：IL2CPP 引用类型 List<T> 的 _items 在 +0x20、_size 在 +0x18。
+ * 每个 slot 读 _uid（判断是哪条线）/ _clearTurn（通关回合数）/ _deadUnitCount / _exCleared。
+ */
+static void emit_stage_stat(void *self, const void *method, void *a1, void *a2,
+                            void *original)
+{
+    uint64_t list, items = 0, slot, uid_ptr;
+    int32_t count = 0, i;
+    char uid[64];
+    char line[192];
+
+    if (original)
+        ((fn_stage_stat)original)(self, a1, a2, method);   /* 先让构造函数把数据填好 */
+    if (!self || !g_cfg || !g_cfg->observing)
+        return;
+    if (g_cfg->off_stage_slot_list <= 0)
+        return;
+    list = read_ptr(self, g_cfg->off_stage_slot_list);
+    if (!list)
+        return;
+    if (!safe_read((char *)(uintptr_t)(list + 0x20), &items, 8) || !items)
+        return;
+    if (!safe_read((char *)(uintptr_t)(list + 0x18), &count, 4))
+        return;
+    if (count <= 0)
+        return;
+    if (count > BW_STAGE_SLOT_MAX)
+        count = BW_STAGE_SLOT_MAX;
+
+    for (i = 0; i < count; i++) {
+        int32_t turn = -1, dead = -1;
+        unsigned char ex = 0;
+        uid[0] = '\0';
+        if (!safe_read((char *)(uintptr_t)(items + 8 * i), &slot, 8) || !slot)
+            continue;
+        if (g_cfg->off_slot_clear_turn > 0)
+            read_i32((void *)(uintptr_t)slot, g_cfg->off_slot_clear_turn, &turn);
+        if (g_cfg->off_slot_dead_count > 0)
+            read_i32((void *)(uintptr_t)slot, g_cfg->off_slot_dead_count, &dead);
+        if (g_cfg->off_slot_ex_cleared > 0)
+            safe_read((char *)(uintptr_t)(slot + g_cfg->off_slot_ex_cleared), &ex, 1);
+        if (g_cfg->off_slot_uid > 0) {
+            uid_ptr = read_ptr((void *)(uintptr_t)slot, g_cfg->off_slot_uid);
+            if (uid_ptr)
+                read_il2cpp_string(uid_ptr, uid, (int)sizeof(uid));
+        }
+        if (!uid[0] && turn < 0)
+            continue;                       /* 什么都没读到就别发脏事件 */
+        _snprintf(line, sizeof(line) - 1, "STG uid=%s turn=%d dead=%d ex=%d",
+                  uid[0] ? uid : "?", (int)turn, (int)dead, ex ? 1 : 0);
+        line[sizeof(line) - 1] = '\0';
+        emit(line, TRUE);
+    }
+}
+
+#define DEF_STAGE_THUNK(N)                                                       \
+    static void __fastcall hk_stage_##N(void *self, void *a1, void *a2,          \
+                                        const void *method)                      \
+    {                                                                            \
+        bump_hit(N);                                                             \
+        emit_stage_stat(self, method, a1, a2, g_original[N]);                    \
+    }
+
 DEF_PLAIN_THUNK(0)  DEF_PLAIN_THUNK(1)  DEF_PLAIN_THUNK(2)  DEF_PLAIN_THUNK(3)
 DEF_PLAIN_THUNK(4)  DEF_PLAIN_THUNK(5)  DEF_PLAIN_THUNK(6)  DEF_PLAIN_THUNK(7)
 DEF_PLAIN_THUNK(8)  DEF_PLAIN_THUNK(9)  DEF_PLAIN_THUNK(10) DEF_PLAIN_THUNK(11)
@@ -839,6 +927,10 @@ DEF_ACTION_THUNK(8)  DEF_ACTION_THUNK(9)  DEF_ACTION_THUNK(10) DEF_ACTION_THUNK(
 DEF_DAMAGE_THUNK(0)  DEF_DAMAGE_THUNK(1)  DEF_DAMAGE_THUNK(2)  DEF_DAMAGE_THUNK(3)
 DEF_DAMAGE_THUNK(4)  DEF_DAMAGE_THUNK(5)  DEF_DAMAGE_THUNK(6)  DEF_DAMAGE_THUNK(7)
 DEF_DAMAGE_THUNK(8)  DEF_DAMAGE_THUNK(9)  DEF_DAMAGE_THUNK(10) DEF_DAMAGE_THUNK(11)
+
+DEF_STAGE_THUNK(0)   DEF_STAGE_THUNK(1)   DEF_STAGE_THUNK(2)   DEF_STAGE_THUNK(3)
+DEF_STAGE_THUNK(4)   DEF_STAGE_THUNK(5)   DEF_STAGE_THUNK(6)   DEF_STAGE_THUNK(7)
+DEF_STAGE_THUNK(8)   DEF_STAGE_THUNK(9)   DEF_STAGE_THUNK(10)  DEF_STAGE_THUNK(11)
 
 static detour_fn pick_detour(int index, LONG kind)
 {
@@ -905,6 +997,15 @@ static detour_fn pick_detour(int index, LONG kind)
         case 6: return (detour_fn)hk_skv_6;    case 7: return (detour_fn)hk_skv_7;
         case 8: return (detour_fn)hk_skv_8;    case 9: return (detour_fn)hk_skv_9;
         case 10: return (detour_fn)hk_skv_10;  default: return (detour_fn)hk_skv_11;
+        }
+    case BWK_STAGE_STAT:
+        switch (index) {
+        case 0: return (detour_fn)hk_stage_0;  case 1: return (detour_fn)hk_stage_1;
+        case 2: return (detour_fn)hk_stage_2;  case 3: return (detour_fn)hk_stage_3;
+        case 4: return (detour_fn)hk_stage_4;  case 5: return (detour_fn)hk_stage_5;
+        case 6: return (detour_fn)hk_stage_6;  case 7: return (detour_fn)hk_stage_7;
+        case 8: return (detour_fn)hk_stage_8;  case 9: return (detour_fn)hk_stage_9;
+        case 10: return (detour_fn)hk_stage_10; default: return (detour_fn)hk_stage_11;
         }
     default:
         return (detour_fn)hk_plain_0;

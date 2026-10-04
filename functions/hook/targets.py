@@ -223,6 +223,17 @@ OBSERVE_TARGETS: tuple[ObserveTarget, ...] = (
         description="受击伤害倍率（已证实会被调用：拿 attacker 身份 + action 技能）",
         resolve_stub=False,
     ),
+    # ---- 关卡结算统计（折射铁路）------------------------------------------
+    # 「六号线 <100T 通关」这类成就的**唯一**数据源：铁路的通关回合数只在内存里，
+    # Player.log 里完全没有（Railway/Turn 一个都搜不到）。这里挂钩结算统计对象的
+    # 构造函数，从每个 slot 读 _clearTurn（通关回合数）与 _uid（判断是哪条线）。
+    # 字段见 dump.cs: StageStatisticPopupSlotData / StageStatisticPopupData。
+    ObserveTarget(
+        key="stage_statistic", symbol="StageStatisticPopupData::.ctor", kind="stage_stat",
+        fallback_rva=0x13C8DE0,
+        description="关卡结算统计（通关回合数 + 关卡 uid；铁路成就靠它）",
+        resolve_stub=False,
+    ),
 )
 
 
@@ -270,6 +281,15 @@ BATTLE_FIELDS: dict[str, tuple[str, str, int]] = {
     "skill_data": ("SkillModel", "_skillData", 0x10),
     "skill_id": ("SkillDataModel", "id", 0x10),          # ObscuredInt：<身份5位><槽位2位>
     "skill_tier": ("SkillDataModel", "skillTier", 0x40),  # ObscuredInt：1/2/3 = 技能一/二/三
+    # ---- 关卡结算统计（折射铁路的通关回合数）----
+    # StageStatisticPopupData[0x10] → List<StageStatisticPopupSlotData>（引用类型 List:
+    #   _items 在 +0x20、_size 在 +0x18）→ slot[0x18] = 通关回合数。
+    # ``_uid`` 是关卡 uid：铁路关卡形如 1095x（六号线）→ 用它判断是哪条线。
+    "stage_slot_list": ("StageStatisticPopupData", "_slotDataList", 0x10),
+    "slot_uid": ("StageStatisticPopupSlotData", "_uid", 0x10),
+    "slot_clear_turn": ("StageStatisticPopupSlotData", "_clearTurn", 0x18),
+    "slot_dead_count": ("StageStatisticPopupSlotData", "_deadUnitCount", 0x1C),
+    "slot_ex_cleared": ("StageStatisticPopupSlotData", "_exCleared", 0x20),
 }
 
 
@@ -289,6 +309,7 @@ FOCUS_PATTERNS: tuple[str, ...] = (
     "BattleManager",
     "Enkephalin",
     "Achievement",
+    "StageStatisticPopup",
     "SaveManager",
     "PlayerData",
     "UserData",

@@ -78,11 +78,11 @@ from dataclasses import dataclass, field
 BW_MAGIC_V5 = 0x34574246         # "FBW4"：旧协议（v5）
 # 2026-09-25 v6 / "FBW5"：多了 off_skv_attacker_iid（动画 tick 带 iid，判定才能按行动对齐）。
 # 魔数不一致时 DLL 会拒收配置并报版本不符，所以“Python/DLL 不同版”不会静默错位。
-BW_MAGIC = 0x35574246            # "FBW5"（当前）
+BW_MAGIC = 0x36574246            # "FBW6"（v6: 关卡结算统计 + 钩子槽 12→16）
 MAP_NAME = "Local\\FaustLauncher_BattleWatch"
 LOG_RING_CAP = 512
 LOG_LINE_MAX = 255
-MAX_HOOKS = 12
+MAX_HOOKS = 16
 HOOK_NAME_LEN = 40
 TARGET_PROCESS = "LimbusCompany.exe"
 
@@ -111,11 +111,12 @@ KIND_UNIT_GET_INT = 3   # int (self, mi)                                  → SP
 KIND_ACTION_INT = 4     # void (self, int timing, mi)                     → ACT
 KIND_DAMAGE_ACTION = 5  # float(self, action, coin, attacker, bool, mi)    → ACT
 KIND_SKV = 6            # void (self, mi)：表现层动画 → RND + iid（self->_attackerInstanceID）
+KIND_STAGE_STAT = 7     # void (self, a1, a2, mi)：关卡结算统计 → STG uid=/turn=/dead=/ex=
                         #   动画 tick 带身份，判定才能“按行动”对齐（否则只能一股脑延后）
 KIND_NUMBERS = {"plain": KIND_PLAIN, "unit": KIND_UNIT,
                 "unit_int_bool": KIND_UNIT_INT_BOOL, "unit_get_int": KIND_UNIT_GET_INT,
                 "action_int": KIND_ACTION_INT, "damage_action": KIND_DAMAGE_ACTION,
-                "skv": KIND_SKV}
+                "skv": KIND_SKV, "stage_stat": KIND_STAGE_STAT}
 
 # --------------------------------------------------------------------------- 字段语义
 
@@ -507,6 +508,11 @@ FALLBACK_HOOKS: dict[str, tuple[str, int, str]] = {
     "skv_start": ("BattleSkillViewBase::Skill_Start", 0x9B4D80, "skv"),
     "skv_complete": ("BattleSkillViewBase::Skill_Complete", 0x9BD810, "skv"),
     "skv_end": ("BattleSkillViewBase::Skill_End", 0x9475C0, "skv"),
+    # ---- 关卡结算统计（折射铁路的通关回合数）-----------------------------
+    # 「六号线 <100T 通关」这类成就的**唯一**数据源：铁路回合数只在内存里，
+    # Player.log 完全没有。挂钩结算统计对象的构造函数，读每个 slot 的 _clearTurn。
+    # （RVA/字段来自 dump.cs，索引里也有同一条，这里只是回退值。）
+    "stage_statistic": ("StageStatisticPopupData::.ctor", 0x13C8DE0, "stage_stat"),
 }
 FALLBACK_FIELDS: dict[str, int] = {
     "unit_instance_id": 0x60,
@@ -532,6 +538,15 @@ FALLBACK_FIELDS: dict[str, int] = {
     "skill_tier": 0x40,
     # 表现层 BattleSkillViewBase::_attackerInstanceID（动画 tick 的身份）
     "skv_attacker_iid": 0x120,
+    # 关卡结算统计（折射铁路的通关回合数）——
+    # StageStatisticPopupData[0x10] → List<slot>（引用类型 List: _items 0x20 / _size 0x18）
+    #   → slot[0x18] = _clearTurn（通关回合数）, slot[0x10] = _uid（关卡 uid）
+    # 偏移来自 dump.cs: StageStatisticPopupData / StageStatisticPopupSlotData。
+    "stage_slot_list": 0x10,
+    "slot_uid": 0x10,
+    "slot_clear_turn": 0x18,
+    "slot_dead_count": 0x1C,
+    "slot_ex_cleared": 0x20,
 }
 # 该候选不做桩解引用（本身就是真实实现/已验证可用）
 NO_STUB_RESOLVE = {"take_attack_dmg_multiplier"}
@@ -591,6 +606,13 @@ class BWConfig(ctypes.Structure):
         # 关注 buff 表（在结构体末尾：ring 偏移不变，只让总大小变）
         ("buff_watch_count", ctypes.c_int32),
         ("buff_watch_hashes", ctypes.c_uint64 * BUFF_WATCH_MAX),
+        # 关卡结算统计字段偏移（同样放末尾，ring 偏移不变）——
+        # 必须与 battle_watch.c 的 BW_CONFIG 尾部一一对应。
+        ("off_stage_slot_list", ctypes.c_int32),
+        ("off_slot_uid", ctypes.c_int32),
+        ("off_slot_clear_turn", ctypes.c_int32),
+        ("off_slot_dead_count", ctypes.c_int32),
+        ("off_slot_ex_cleared", ctypes.c_int32),
     ]
 
 
@@ -1173,7 +1195,7 @@ def status_path() -> str:
 
 # --------------------------------------------------------------------------- 事件 / 状态
 
-_KV_RE = re.compile(r"([A-Za-z_][A-Za-z0-9_]*)=(-?\d+)")
+_KV_RE = re.compile(r"([A-Za-z_][A-Za-z0-9_]*)=(-?\d+|[^\s]+)")
 
 
 @dataclass
@@ -1198,6 +1220,11 @@ class BattleEvent:
             return int(self.values[key])
         except (TypeError, ValueError):
             return None
+
+    def text(self, key: str, default: str = "") -> str:
+        """取**原样字符串**（uid 这类非数字字段；``get`` 只会返回 int）。"""
+        value = self.values.get(key, default)
+        return default if value is None else str(value)
 
 
 @dataclass
@@ -1236,6 +1263,11 @@ class BattleState:
     spd_total: int = 0
     vitals_total: int = 0
     buff_total: int = 0
+    # 关卡结算统计（DLL 的 STG 事件）：铁路的通关回合数只在内存里，Player.log 没有，
+    # "六号线 <100T 通关"这类成就只认这里。uid → {uid,turn,dead,ex,ts}
+    stage_clears: dict = field(default_factory=dict)
+    stage_last: dict = field(default_factory=dict)
+    stage_total: int = 0
     rnd_total: int = 0
     settled_by: str = ""
     flag_counter: int = 0
@@ -2125,7 +2157,12 @@ class BattleWatch:
         tag = ""
         if len(parts) > 1:
             for key, value in _KV_RE.findall(parts[1]):
-                values[key] = int(value)
+                # 数字照旧转 int；非数字（关卡 uid 这类）原样保留字符串，
+                # 用 event.text(key) 取 —— 以前只认数字，遇到 uid=xxx 会直接抛 ValueError。
+                try:
+                    values[key] = int(value)
+                except ValueError:
+                    values[key] = value
             match = re.search(r"tag=([A-Za-z0-9_]+)", parts[1])
             tag = match.group(1) if match else ""
         event = BattleEvent(kind=kind, values=values, tag=tag, raw=line, ts=time.time())
@@ -2188,6 +2225,8 @@ class BattleWatch:
             self._apply_buffs(event)
         elif kind == "ACT":
             self._apply_act(event)
+        elif kind == "STG":
+            self._apply_stage_stat(event)
         return event
 
     def _apply_anim_tick(self, tag: str, iid: int = -1) -> None:
@@ -2597,6 +2636,27 @@ class BattleWatch:
         return (f"第 {self.state.round_seq} 回合 {rule.label or rule.key} 在场上"
                 f"（oid={oid}，目标 {'/'.join(str(i) for i in rule.identity_ids)}）")
 
+    def _apply_stage_stat(self, event: BattleEvent) -> None:
+        """关卡结算统计（DLL 的 ``STG`` 事件）：记下每关的通关回合数。
+
+        为什么只能靠内存：折射铁路（玩家口中的一号线/二号线/六号线…）的通关回合数
+        **Player.log 里没有**，所以"六号线 <100T 通关"这类成就只能读这里。
+        ``uid`` 是关卡 uid（铁路关卡形如 1095x → 六号线），``turn`` 是通关回合数。
+        """
+        uid = event.text("uid", "")
+        turn = event.get("turn", -1)
+        dead = event.get("dead", -1)
+        ex = event.get("ex", 0)
+        with self._lock:
+            self.state.stage_total += 1
+            info = {"uid": uid, "turn": int(turn), "dead": int(dead),
+                    "ex": int(ex or 0), "ts": time.time()}
+            self.state.stage_last = info
+            if uid and uid != "?":
+                self.state.stage_clears[uid] = info
+        self._log(f"[战斗观测] ★ 关卡结算: uid={uid or '?'} 通关回合={turn} "
+                  f"阵亡={dead} EX={1 if ex else 0}")
+
     def _apply_buffs(self, event: BattleEvent) -> None:
         """buff 事件：位掩码 → 关注表里的 buff 名集合 → 交给规则表（立刻置位）。"""
         iid = event.get("iid", -1)
@@ -2944,6 +3004,30 @@ def mark_battle_end() -> None:
     with _watch_lock:
         if _watch is not None:
             _watch.mark_battle_end()
+
+
+def stage_clears() -> dict:
+    """本次观测到的**关卡结算统计**（uid → {uid,turn,dead,ex,ts}）。
+
+    折射铁路（一号线/二号线/六号线…）的通关回合数只在内存里，Player.log 没有 ——
+    "六号线 <100T 通关"这类成就只认这里。
+    """
+    with _watch_lock:
+        watch = _watch
+    if watch is None:
+        return {}
+    with watch._lock:
+        return {k: dict(v) for k, v in watch.state.stage_clears.items()}
+
+
+def stage_last() -> dict:
+    """最近一次关卡结算（没结算过返回空 dict）。"""
+    with _watch_lock:
+        watch = _watch
+    if watch is None:
+        return {}
+    with watch._lock:
+        return dict(watch.state.stage_last)
 
 
 def state_snapshot() -> dict:
