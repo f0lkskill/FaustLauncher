@@ -68,7 +68,7 @@
 #define BW_GA_TIMEOUT_MS 60000
 #define BW_LOG_RING_CAP 512
 #define BW_LOG_LINE_MAX 255
-#define BW_MAX_HOOKS    20     /* 钩子槽上限（候选已 18 个；12 会截断掉 skv_end，16 也快满了）*/
+#define BW_MAX_HOOKS    24     /* 钩子槽上限（候选已 20 个；满槽时排最后的 stage_progress 会被截断）*/
 #define BW_NAME_LEN     40
 #define BW_SPEED_SCALE  1000   /* 速度字段的定点比例：_CORRECTION_FOR_SPEED */
 #define BW_VITAL_UNREAD (-1000)  /* HP/理智读不出来时的哨兵（HP 不可能为负、理智只有 ±45）*/
@@ -80,6 +80,7 @@
 #define BW_STAGE_WATCH_MAX 32    /* 关注关卡上限（已通关列表的轮询上报用；位图按 32 位算）*/
 #define BW_CLEAR_LIST_MAX  512   /* 已通关列表最多扫多少条（防脏数据卡死）*/
 #define BW_NCL_SEEN_MAX    96    /* NCL 已上报去重表（按 章*1e6+小节*1e3+节点 打包）*/
+#define BW_PROGRESS_MAX    32    /* 进度树遍历上限（章/每章小节/每节节点）*/
 
 /* ACTk ObscuredInt 内部布局（dump.cs 实测） */
 #define OBI_KEY    0
@@ -124,6 +125,12 @@
                                 * 为什么不用静态字段链：那条路要靠静态块基址解析，而现有 enkephalin
                                 * 链的运行时重定位本来就是失败的，不能把成就压在它上面。
                                 * 这也是"不打那关也能判定"的关键：存档一直在内存里，进游戏即可回溯。*/
+#define BWK_CACHE_ARG1    11   /* void (self, a1, mi)：把**第一个参数**缓存下来，不发事件
+                                *
+                                * 用途：挂钩 UserStageNodeStateData::UpdateData(List<MainChapterStateFormat>)
+                                * —— 登录时全量下发主线进度，a1 就是整棵 章→小节→节点 树的根。
+                                * 采样线程遍历它即可**全量判定、不需要点开任何界面**。
+                                * （IsNodeCleared 那类查询只在界面渲染时调，实测连第十章都没查过。）*/
 #define BWK_NODE_STATE    10   /* int (self, int main, int sub, int node, mi)：关卡通关状态查询
                                 *   挂钩 UserStageNodeStateData::IsNodeCleared /
                                 *   GetClearNodeState —— 关卡列表每次渲染都会问，
@@ -226,6 +233,16 @@ typedef struct _BW_CONFIG {
     /* NCL（关卡通关状态查询）去重表：打包值 章*1e6+小节*1e3+节点，只报没报过的 */
     volatile LONG ncl_seen[BW_NCL_SEEN_MAX];
     volatile LONG ncl_seen_count;
+
+    /* 存档全量进度树（BWK_CACHE_ARG1 抓 UpdateData 的列表参数 → 采样线程遍历）
+     * 章[id 0x10][小节 off_chapter_subs] → 小节[id 0x10][节点 off_sub_nodes]
+     *   → 节点[off_node_id][off_node_clear_type ct][off_node_clear_number cn] */
+    volatile long long stage_progress_list;
+    volatile LONG off_chapter_subs;
+    volatile LONG off_sub_nodes;
+    volatile LONG off_node_id;
+    volatile LONG off_node_clear_type;
+    volatile LONG off_node_clear_number;
 } BW_CONFIG;
 
 /* 布局自检：v6/FBW6 → 钩子槽 16，ring 偏移 1352，总大小 1352 + 512*256 + 4(+4对齐)
@@ -234,7 +251,7 @@ typedef struct _BW_CONFIG {
  * ring_offset/struct_size，不一致就报错，所以这里只卡对齐与总大小。*/
 _Static_assert(offsetof(BW_CONFIG, log_ring) % 4 == 0, "log_ring 偏移未对齐");
 _Static_assert(offsetof(BW_CONFIG, buff_watch_hashes) % 8 == 0, "关注表未对齐");
-_Static_assert(sizeof(BW_CONFIG) == 133536, "BW_CONFIG 大小不一致（改了字段就同步改 Python）");
+_Static_assert(sizeof(BW_CONFIG) == 133840, "BW_CONFIG 大小不一致（改了字段就同步改 Python）");
 
 static BW_CONFIG *g_cfg = NULL;
 static HANDLE      g_stop_event = NULL;
@@ -777,6 +794,114 @@ static void poll_stage_clears(void)
     }
 }
 
+/* 上报一个已通关节点（(章,小节,节点) 去重；与界面查询那条路共用去重表）。*/
+static void emit_ncl(int main_id, int sub_id, int node_id, int ct, int cn)
+{
+    int packed;
+    int i;
+    char line[128];
+
+    if (!g_cfg)
+        return;
+    packed = (main_id % 1000) * 1000000 + (sub_id % 1000) * 1000 + (node_id % 1000);
+    for (i = 0; i < g_cfg->ncl_seen_count && i < BW_NCL_SEEN_MAX; i++) {
+        if (g_cfg->ncl_seen[i] == packed)
+            return;                                  /* 报过了 */
+    }
+    if (g_cfg->ncl_seen_count < BW_NCL_SEEN_MAX) {
+        g_cfg->ncl_seen[g_cfg->ncl_seen_count] = packed;
+        g_cfg->ncl_seen_count += 1;
+    }
+    _snprintf(line, sizeof(line) - 1,
+              "NCL main=%d sub=%d node=%d cleared=1 ct=%d cn=%d",
+              main_id, sub_id, node_id, ct, cn);
+    line[sizeof(line) - 1] = '\0';
+    emit(line, TRUE);
+}
+
+/* 遍历存档全量进度树（采样线程）。
+ *
+ * 数据链：BWK_CACHE_ARG1 抓到的 List<MainChapterStateFormat>
+ *   章 [id 0x10][off_chapter_subs 小节列表]
+ *     → 小节 [id 0x10][off_sub_nodes 节点列表]
+ *       → 节点 [off_node_id][off_node_clear_type ct][off_node_clear_number cn]
+ *
+ * **这就是"不点任何界面也能判定"的正解**：这棵树登录时全量下发、一直躺在内存里；
+ * 之前挂的 IsNodeCleared 只在界面渲染时调用，实测连第十章都没查过一次。
+ */
+static void poll_stage_progress(void)
+{
+    uint64_t root, ch_items = 0, sub_list, sub_items = 0, node_list, node_items = 0;
+    int32_t n_ch = 0, n_sub = 0, n_node = 0, i, j, k;
+
+    if (!g_cfg || !g_cfg->observing)
+        return;
+    root = (uint64_t)g_cfg->stage_progress_list;
+    if (!root || g_cfg->off_chapter_subs <= 0 || g_cfg->off_sub_nodes <= 0 ||
+        g_cfg->off_node_id <= 0)
+        return;
+    if (!safe_read((char *)(uintptr_t)(root + 0x20), &ch_items, 8) || !ch_items)
+        return;
+    if (!safe_read((char *)(uintptr_t)(root + 0x18), &n_ch, 4))
+        return;
+    if (n_ch <= 0 || n_ch > BW_PROGRESS_MAX)
+        return;
+
+    for (i = 0; i < n_ch; i++) {
+        uint64_t chapter = 0;
+        int32_t chapter_id = 0;
+        if (!safe_read((char *)(uintptr_t)(ch_items + 8 * i), &chapter, 8) || !chapter)
+            continue;
+        (void)read_i32((void *)(uintptr_t)chapter, 0x10, &chapter_id);
+        sub_list = read_ptr((void *)(uintptr_t)chapter, g_cfg->off_chapter_subs);
+        if (!sub_list)
+            continue;
+        sub_items = 0;
+        n_sub = 0;
+        if (!safe_read((char *)(uintptr_t)(sub_list + 0x20), &sub_items, 8) || !sub_items)
+            continue;
+        if (!safe_read((char *)(uintptr_t)(sub_list + 0x18), &n_sub, 4))
+            continue;
+        if (n_sub <= 0 || n_sub > BW_PROGRESS_MAX)
+            continue;
+
+        for (j = 0; j < n_sub; j++) {
+            uint64_t sub = 0;
+            int32_t sub_id = 0;
+            if (!safe_read((char *)(uintptr_t)(sub_items + 8 * j), &sub, 8) || !sub)
+                continue;
+            (void)read_i32((void *)(uintptr_t)sub, 0x10, &sub_id);
+            node_list = read_ptr((void *)(uintptr_t)sub, g_cfg->off_sub_nodes);
+            if (!node_list)
+                continue;
+            node_items = 0;
+            n_node = 0;
+            if (!safe_read((char *)(uintptr_t)(node_list + 0x20), &node_items, 8) || !node_items)
+                continue;
+            if (!safe_read((char *)(uintptr_t)(node_list + 0x18), &n_node, 4))
+                continue;
+            if (n_node <= 0 || n_node > 512)
+                continue;
+
+            for (k = 0; k < n_node; k++) {
+                uint64_t node = 0;
+                int32_t node_id = 0, ct = 0, cn = 0;
+                if (!safe_read((char *)(uintptr_t)(node_items + 8 * k), &node, 8) || !node)
+                    continue;
+                if (!read_i32((void *)(uintptr_t)node, g_cfg->off_node_id, &node_id))
+                    continue;
+                if (g_cfg->off_node_clear_type > 0)
+                    (void)read_i32((void *)(uintptr_t)node, g_cfg->off_node_clear_type, &ct);
+                if (g_cfg->off_node_clear_number > 0)
+                    (void)read_i32((void *)(uintptr_t)node, g_cfg->off_node_clear_number, &cn);
+                if (ct <= 0 && cn <= 0)
+                    continue;                        /* 没通关的不报 */
+                emit_ncl((int)chapter_id, (int)sub_id, (int)node_id, (int)ct, (int)cn);
+            }
+        }
+    }
+}
+
 /* 采样线程：把已经见过的单位每 BW_SAMPLE_MS 重读一次 hp / sp / buff。
  *
  * 为什么必须有它：我们只能在自己挂上的函数被调用时读值，而受击钩子
@@ -797,7 +922,8 @@ static DWORD WINAPI sampler_thread(LPVOID unused)
             break;
         if (!g_cfg || !g_cfg->observing || !g_cfg->installed)
             continue;
-        poll_stage_clears();      /* 已通关关卡列表（存档回溯判定，见该函数注释）*/
+        poll_stage_clears();      /* 已通关关卡列表（存档回溯判定）*/
+        poll_stage_progress();    /* 全量进度树（不点界面也能判定）*/
         for (i = 0; i < BW_VITAL_SLOTS; i++) {
             void *unit;
             int iid = -1, oid = -1;
@@ -1139,6 +1265,18 @@ static int __fastcall call_and_emit_node_state(void *self, int a1, int a2, int a
         return call_and_emit_node_state(self, a1, a2, a3, method, g_original[N]);\
     }
 
+/* ---- 抓第一个参数（BWK_CACHE_ARG1）-----------------------------------------
+ * 用途：UpdateData(List<MainChapterStateFormat>) 的 a1 就是整棵主线进度树。*/
+#define DEF_CACHEARG_THUNK(N)                                                    \
+    static void __fastcall hk_cachearg_##N(void *self, void *a1, const void *method) \
+    {                                                                            \
+        bump_hit(N);                                                             \
+        if (a1 && g_cfg)                                                         \
+            g_cfg->stage_progress_list = (long long)(uintptr_t)a1;               \
+        if (g_original[N])                                                       \
+            ((fn_plain_arg1)g_original[N])(self, a1, method);                    \
+    }
+
 DEF_PLAIN_THUNK(0)  DEF_PLAIN_THUNK(1)  DEF_PLAIN_THUNK(2)  DEF_PLAIN_THUNK(3)
 DEF_PLAIN_THUNK(4)  DEF_PLAIN_THUNK(5)  DEF_PLAIN_THUNK(6)  DEF_PLAIN_THUNK(7)
 DEF_PLAIN_THUNK(8)  DEF_PLAIN_THUNK(9)  DEF_PLAIN_THUNK(10) DEF_PLAIN_THUNK(11)
@@ -1182,6 +1320,13 @@ DEF_NODE_THUNK(4)    DEF_NODE_THUNK(5)    DEF_NODE_THUNK(6)    DEF_NODE_THUNK(7)
 DEF_NODE_THUNK(8)    DEF_NODE_THUNK(9)    DEF_NODE_THUNK(10)   DEF_NODE_THUNK(11)
 DEF_NODE_THUNK(12)   DEF_NODE_THUNK(13)   DEF_NODE_THUNK(14)   DEF_NODE_THUNK(15)
 DEF_NODE_THUNK(16)   DEF_NODE_THUNK(17)   DEF_NODE_THUNK(18)   DEF_NODE_THUNK(19)
+
+DEF_CACHEARG_THUNK(0)  DEF_CACHEARG_THUNK(1)  DEF_CACHEARG_THUNK(2)  DEF_CACHEARG_THUNK(3)
+DEF_CACHEARG_THUNK(4)  DEF_CACHEARG_THUNK(5)  DEF_CACHEARG_THUNK(6)  DEF_CACHEARG_THUNK(7)
+DEF_CACHEARG_THUNK(8)  DEF_CACHEARG_THUNK(9)  DEF_CACHEARG_THUNK(10) DEF_CACHEARG_THUNK(11)
+DEF_CACHEARG_THUNK(12) DEF_CACHEARG_THUNK(13) DEF_CACHEARG_THUNK(14) DEF_CACHEARG_THUNK(15)
+DEF_CACHEARG_THUNK(16) DEF_CACHEARG_THUNK(17) DEF_CACHEARG_THUNK(18) DEF_CACHEARG_THUNK(19)
+DEF_CACHEARG_THUNK(20) DEF_CACHEARG_THUNK(21) DEF_CACHEARG_THUNK(22) DEF_CACHEARG_THUNK(23)
 
 static detour_fn pick_detour(int index, LONG kind)
 {
@@ -1292,6 +1437,21 @@ static detour_fn pick_detour(int index, LONG kind)
         case 14: return (detour_fn)hk_node_14; case 15: return (detour_fn)hk_node_15;
         case 16: return (detour_fn)hk_node_16; case 17: return (detour_fn)hk_node_17;
         case 18: return (detour_fn)hk_node_18; default: return (detour_fn)hk_node_19;
+        }
+    case BWK_CACHE_ARG1:
+        switch (index) {
+        case 0: return (detour_fn)hk_cachearg_0;  case 1: return (detour_fn)hk_cachearg_1;
+        case 2: return (detour_fn)hk_cachearg_2;  case 3: return (detour_fn)hk_cachearg_3;
+        case 4: return (detour_fn)hk_cachearg_4;  case 5: return (detour_fn)hk_cachearg_5;
+        case 6: return (detour_fn)hk_cachearg_6;  case 7: return (detour_fn)hk_cachearg_7;
+        case 8: return (detour_fn)hk_cachearg_8;  case 9: return (detour_fn)hk_cachearg_9;
+        case 10: return (detour_fn)hk_cachearg_10; case 11: return (detour_fn)hk_cachearg_11;
+        case 12: return (detour_fn)hk_cachearg_12; case 13: return (detour_fn)hk_cachearg_13;
+        case 14: return (detour_fn)hk_cachearg_14; case 15: return (detour_fn)hk_cachearg_15;
+        case 16: return (detour_fn)hk_cachearg_16; case 17: return (detour_fn)hk_cachearg_17;
+        case 18: return (detour_fn)hk_cachearg_18; case 19: return (detour_fn)hk_cachearg_19;
+        case 20: return (detour_fn)hk_cachearg_20; case 21: return (detour_fn)hk_cachearg_21;
+        case 22: return (detour_fn)hk_cachearg_22; default: return (detour_fn)hk_cachearg_23;
         }
     default:
         return (detour_fn)hk_plain_0;

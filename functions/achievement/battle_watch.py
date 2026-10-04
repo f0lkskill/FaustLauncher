@@ -82,7 +82,7 @@ BW_MAGIC = 0x36574246            # "FBW6"（v6: 关卡结算统计 + 钩子槽 1
 MAP_NAME = "Local\\FaustLauncher_BattleWatch"
 LOG_RING_CAP = 512
 LOG_LINE_MAX = 255
-MAX_HOOKS = 20
+MAX_HOOKS = 24
 STAGE_WATCH_MAX = 32             # 关注关卡上限（与 DLL 的 BW_STAGE_WATCH_MAX 一致）
 NCL_SEEN_MAX = 96                # NCL 去重表（与 DLL 的 BW_NCL_SEEN_MAX 一致）
 HOOK_NAME_LEN = 40
@@ -117,13 +117,14 @@ KIND_STAGE_STAT = 7     # void (self, a1, a2, mi)：关卡结算统计 → STG u
 KIND_RAILWAY_TOTAL = 8  # int  (self, mi)：折射铁路整条线的总回合 → RWT line=/total=
 KIND_CACHE_SELF = 9     # void (self, a1, mi)：只缓存 self（抓存档对象给采样线程轮询）
 KIND_NODE_STATE = 10    # int  (self, main, sub, node, mi)：关卡通关状态查询 → NCL
+KIND_CACHE_ARG1 = 11    # void (self, a1, mi)：缓存第一个参数（抓全量进度树）
                         #   动画 tick 带身份，判定才能“按行动”对齐（否则只能一股脑延后）
 KIND_NUMBERS = {"plain": KIND_PLAIN, "unit": KIND_UNIT,
                 "unit_int_bool": KIND_UNIT_INT_BOOL, "unit_get_int": KIND_UNIT_GET_INT,
                 "action_int": KIND_ACTION_INT, "damage_action": KIND_DAMAGE_ACTION,
                 "skv": KIND_SKV, "stage_stat": KIND_STAGE_STAT,
                 "railway_total": KIND_RAILWAY_TOTAL, "cache_self": KIND_CACHE_SELF,
-                "node_state": KIND_NODE_STATE}
+                "node_state": KIND_NODE_STATE, "cache_arg1": KIND_CACHE_ARG1}
 
 # --------------------------------------------------------------------------- 字段语义
 
@@ -541,6 +542,10 @@ FALLBACK_HOOKS: dict[str, tuple[str, int, str]] = {
     "node_cleared": ("UserStageNodeStateData::IsNodeCleared", 0x18B0A30, "node_state"),
     "node_clear_state": ("UserStageNodeStateData::GetClearNodeState", 0x18B0630, "node_state"),
     "node_cleared_short": ("UserStageNodeStateData::IsNodeCleared", 0x18B0AB0, "cache_self"),
+    # ---- 存档全量进度树（**不用点任何界面**的正解）----------------------------
+    # 登录时服务端把整棵 章→小节→节点 树下发到这里；a1 就是列表根。
+    # 采样线程遍历它即可全量判定（界面查询那条路实测连第十章都没查过）。
+    "stage_progress": ("UserStageNodeStateData::UpdateData", 0x18AFFE0, "cache_arg1"),
 }
 FALLBACK_FIELDS: dict[str, int] = {
     "unit_instance_id": 0x60,
@@ -581,6 +586,13 @@ FALLBACK_FIELDS: dict[str, int] = {
     "stage_clear_list": 0x18,
     "clear_info_list": 0x10,
     "clear_info_id": 0x10,
+    # 存档全量进度树：章[id 0x10][小节 0x18] → 小节[id 0x10][节点 0x18]
+    #   → 节点[id 0x10][clearType 0x14][clearNumber 0x18]
+    "chapter_subs": 0x18,
+    "sub_nodes": 0x18,
+    "node_id": 0x10,
+    "node_clear_type": 0x14,
+    "node_clear_number": 0x18,
 }
 # 该候选不做桩解引用（本身就是真实实现/已验证可用）
 NO_STUB_RESOLVE = {"take_attack_dmg_multiplier"}
@@ -663,6 +675,13 @@ class BWConfig(ctypes.Structure):
         # NCL 去重表（DLL 自己写）
         ("ncl_seen", ctypes.c_int32 * NCL_SEEN_MAX),
         ("ncl_seen_count", ctypes.c_int32),
+        # 存档全量进度树（BWK_CACHE_ARG1 抓列表参数 → 采样线程遍历）
+        ("stage_progress_list", ctypes.c_int64),
+        ("off_chapter_subs", ctypes.c_int32),
+        ("off_sub_nodes", ctypes.c_int32),
+        ("off_node_id", ctypes.c_int32),
+        ("off_node_clear_type", ctypes.c_int32),
+        ("off_node_clear_number", ctypes.c_int32),
     ]
 
 
