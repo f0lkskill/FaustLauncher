@@ -68,7 +68,7 @@
 #define BW_GA_TIMEOUT_MS 60000
 #define BW_LOG_RING_CAP 512
 #define BW_LOG_LINE_MAX 255
-#define BW_MAX_HOOKS    16     /* 钩子槽上限（索引里候选已有 14 个；12 会截断掉 skv_end）*/
+#define BW_MAX_HOOKS    20     /* 钩子槽上限（候选已 18 个；12 会截断掉 skv_end，16 也快满了）*/
 #define BW_NAME_LEN     40
 #define BW_SPEED_SCALE  1000   /* 速度字段的定点比例：_CORRECTION_FOR_SPEED */
 #define BW_VITAL_UNREAD (-1000)  /* HP/理智读不出来时的哨兵（HP 不可能为负、理智只有 ±45）*/
@@ -212,6 +212,7 @@ typedef struct _BW_CONFIG {
     volatile LONG stage_watch_ids[BW_STAGE_WATCH_MAX];
     volatile long long stage_clear_data;  /* 抓到的 UserStageClearInfoData*（DLL 自己写）*/
     volatile LONG stage_seen_mask;        /* 已上报过的关注槽位图（DLL 自己写，只报一次）*/
+    volatile LONG stage_diag_done;        /* 一次性诊断是否已发（见 poll_stage_clears）*/
 } BW_CONFIG;
 
 /* 布局自检：v6/FBW6 → 钩子槽 16，ring 偏移 1352，总大小 1352 + 512*256 + 4(+4对齐)
@@ -220,7 +221,7 @@ typedef struct _BW_CONFIG {
  * ring_offset/struct_size，不一致就报错，所以这里只卡对齐与总大小。*/
 _Static_assert(offsetof(BW_CONFIG, log_ring) % 4 == 0, "log_ring 偏移未对齐");
 _Static_assert(offsetof(BW_CONFIG, buff_watch_hashes) % 8 == 0, "关注表未对齐");
-_Static_assert(sizeof(BW_CONFIG) == 132872, "BW_CONFIG 大小不一致（改了字段就同步改 Python）");
+_Static_assert(sizeof(BW_CONFIG) == 133144, "BW_CONFIG 大小不一致（改了字段就同步改 Python）");
 
 static BW_CONFIG *g_cfg = NULL;
 static HANDLE      g_stop_event = NULL;
@@ -690,6 +691,7 @@ static void poll_stage_clears(void)
 {
     uint64_t data, list, items = 0;
     int32_t count = 0, i, j;
+    int any_hit = 0;
 
     if (!g_cfg || g_cfg->stage_watch_count <= 0)
         return;
@@ -726,11 +728,37 @@ static void poll_stage_clears(void)
             if (g_cfg->stage_seen_mask & (1L << j))
                 break;                            /* 这个槽已经报过了 */
             g_cfg->stage_seen_mask |= (1L << j);
+            any_hit = 1;
             _snprintf(line, sizeof(line) - 1, "CLR stage=%d cleared=1", (int)id);
             line[sizeof(line) - 1] = '\0';
             emit(line, TRUE);
             break;
         }
+    }
+
+    /* 一次性诊断：关注表一个都没命中时，把扫到的前几个关卡 id 原样打出来
+     * （CLRD ids=…）—— 这样一次就能确定真实 id 格式，不用反复猜前缀。*/
+    if (!any_hit && !g_cfg->stage_diag_done) {
+        char buf[160];
+        int used;
+        g_cfg->stage_diag_done = 1;
+        used = _snprintf(buf, sizeof(buf) - 1, "CLRD n=%d ids=", (int)count);
+        if (used < 0)
+            used = 0;
+        for (i = 0; i < count && i < 6 && used < (int)sizeof(buf) - 12; i++) {
+            uint64_t elem = 0;
+            int32_t id = 0;
+            int wrote;
+            if (!safe_read((char *)(uintptr_t)(items + 8 * i), &elem, 8) || !elem)
+                continue;
+            if (!read_i32((void *)(uintptr_t)elem, g_cfg->off_clear_info_id, &id))
+                continue;
+            wrote = _snprintf(buf + used, sizeof(buf) - 1 - (size_t)used, "%d|", (int)id);
+            if (wrote > 0)
+                used += wrote;
+        }
+        buf[sizeof(buf) - 1] = '\0';
+        emit(buf, TRUE);
     }
 }
 
