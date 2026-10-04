@@ -3324,6 +3324,91 @@
       "dlg": "<color=#2890f0>这是命中注定的死亡。</color>"
     },
     {
+      "id": "battle_select_10315_1",
+      "desc": "###### 高级定制::黑派 品牌经理 堂吉诃德 15 ######",
+      "dlg": "<color=#f7f06e>嘘。默视吧。漆黑之神即将赐下其圣音。</color>"
+    },
+    {
+      "id": "battle_endcommand_10315_1",
+      "desc": "开始攻击",
+      "dlg": "<color=#f7f06e>吾将立于汝等身前。</color>"
+    },
+    {
+      "id": "battle_enemy_break_10315_1",
+      "desc": "敌方混乱",
+      "dlg": "<color=#f7f06e>默视吧。</color>"
+    },
+    {
+      "id": "battle_break_10315_1",
+      "desc": "自身混乱",
+      "dlg": "<color=#f7f06e>……何其不敬。</color>"
+    },
+    {
+      "id": "battle_kill_10315_1",
+      "desc": "击杀敌人",
+      "dlg": "<color=#f7f06e>此乃神之惩罚。</color>"
+    },
+    {
+      "id": "battle_dead_10315_1",
+      "desc": "自身死亡",
+      "dlg": "<color=#f7f06e>吾亦……当得以保存……</color>"
+    },
+    {
+      "id": "battle_s3_10315_1_1",
+      "desc": "",
+      "dlg": "<color=#f7f06e>将其钉起。</color>"
+    },
+    {
+      "id": "battle_s3_10315_1_3",
+      "desc": "",
+      "dlg": "<color=#f7f06e>挥锤砸下！</color>"
+    },
+    {
+      "id": "battle_special_10315_1_1",
+      "desc": "",
+      "dlg": "<color=#f7f06e>闪光！</color>"
+    },
+    {
+      "id": "battle_special_10315_1_2",
+      "desc": "",
+      "dlg": "<color=#f7f06e>审判！</color>"
+    },
+    {
+      "id": "battle_special_10315_2_1",
+      "desc": "",
+      "dlg": "<color=#f7f06e>因汝之罪孽，无比深重。</color>"
+    },
+    {
+      "id": "battle_special_10315_2_1-02",
+      "desc": "",
+      "dlg": "<color=#f7f06e>吾在此宣告神罚！</color>"
+    },
+    {
+      "id": "battle_special_10315_2_2",
+      "desc": "",
+      "dlg": "<color=#f7f06e>几度挥落，吾将击碎汝之生命，</color>"
+    },
+    {
+      "id": "battle_special_10315_2_2-02",
+      "desc": "",
+      "dlg": "<color=#f7f06e>将其化为齑粉！</color>"
+    },
+    {
+      "id": "battle_special_10315_3",
+      "desc": "",
+      "dlg": "<color=#f7f06e>约定之安息。</color>"
+    },
+    {
+      "id": "battle_special_10315_4",
+      "desc": "",
+      "dlg": "<color=#f7f06e>神域宣告。必灿然辉耀。</color>"
+    },
+    {
+      "id": "battle_special_10315_8",
+      "desc": "",
+      "dlg": "<color=#f7f06e>遵循秩序行动。</color>"
+    },
+    {
       "id": "battle_select_10401_1",
       "desc": "############ LCB 罪人 良秀 1 ############",
       "dlg": "<color=#cf0000>带上打火机了吗？</color>"
@@ -3901,7 +3986,7 @@
     {
       "id": "battle_special_10414_4",
       "desc": "",
-      "dlg": "<color=#f25ab7>和所有渴望生的事物一同……归于坟墓吧。</color>"
+      "dlg": "<color=#f25ab7>与所有渴望生的事物一同……归于坟墓吧。</color>"
     },
     {
       "id": "battle_select_10415_1",
