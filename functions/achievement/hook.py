@@ -514,7 +514,10 @@ def _notify_toast(unlocked):
     try:
         from functions.achievement.toast import show_toast_async
         for ach in unlocked:
-            show_toast_async(ach.name, ach.description, getattr(ach, 'rarity', 'common'))
+            # 带上成就 id → 弹窗用该成就自己的徽标素材（没有才回退项目图标）
+            show_toast_async(ach.name, ach.description,
+                             getattr(ach, 'rarity', 'common'),
+                             getattr(ach, 'id', '') or '')
     except Exception:
         pass
 

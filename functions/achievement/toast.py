@@ -66,9 +66,13 @@ RARITY_BORDER_COLORS = {
 
 _ICON_PATH = None
 
-# 渲染好的卡片背景缓存：同一 (稀有度, 高度) 多个弹窗直接复用，
+# 成就徽标素材缓存: 成就 id -> 素材路径 (None = 没有, 回退项目图标)
+_ACH_ICON_CACHE: dict[str, str | None] = {}
+_ACH_ART_DIR: str | None = None       # 素材目录（只解析一次）
+
+# 渲染好的卡片背景缓存：同一 (稀有度, 高度, 成就) 多个弹窗直接复用，
 # 避免每弹一个成就都重画一遍（PIL 合成 + 图标缩放也要几 ms）。
-_BG_CACHE: dict[tuple[str, int], Image.Image] = {}
+_BG_CACHE: dict[tuple, Image.Image] = {}
 _BG_CACHE_MAX = 12
 
 # 描述字体缓存（按 root 复用，避免每次弹窗都新建一个 Tcl 字体）
@@ -102,6 +106,45 @@ def _resolve_icon_path() -> str | None:
     return None
 
 
+def _achievement_art_dir() -> str:
+    """成就素材目录（只解析一次）。
+
+    ⚠ 不要对每个扩展名都调 get_web_root —— 文件不存在时它会打印一大段
+    "找不到前端资源" 诊断，探测 4 个扩展名 × N 个成就就是满屏噪声。
+    """
+    global _ACH_ART_DIR
+    if _ACH_ART_DIR is None:
+        try:
+            from functions.base.common.path_utils import get_web_root
+            _ACH_ART_DIR = get_web_root("app", "assets", "achievement")
+        except Exception:  # noqa: BLE001
+            _ACH_ART_DIR = ""
+    return _ACH_ART_DIR
+
+
+def _resolve_achievement_icon(ach_id: str) -> str | None:
+    """成就自己的徽标素材：web/app/assets/achievement/<成就id>.<ext>。
+
+    找不到（或这个成就还没配素材）返回 None，调用方回退到启动器项目图标。
+    结果按 id 缓存 —— 弹窗是高频路径，不能每次去探文件。
+    """
+    aid = str(ach_id or "").strip()
+    if not aid:
+        return None
+    if aid in _ACH_ICON_CACHE:
+        return _ACH_ICON_CACHE[aid]
+    path = None
+    art_dir = _achievement_art_dir()
+    if art_dir:
+        for ext in (".png", ".webp", ".jpg", ".svg"):
+            cand = os.path.join(art_dir, aid + ext)
+            if os.path.isfile(cand):
+                path = cand
+                break
+    _ACH_ICON_CACHE[aid] = path
+    return path
+
+
 def _rounded_icon(src_path: str, size: int = 60, radius: int = 10) -> Image.Image:
     """加载图标并圆角裁剪为正方形 RGBA (无边框)。"""
     with Image.open(src_path) as im:
@@ -119,16 +162,19 @@ def _rounded_icon(src_path: str, size: int = 60, radius: int = 10) -> Image.Imag
         return out
 
 
-def render_toast_bg(rarity: str = "common", height: int = CARD_MIN_H) -> Image.Image:
+def render_toast_bg(rarity: str = "common", height: int = CARD_MIN_H,
+                    ach_id: str = "") -> Image.Image:
     """渲染卡片背景: 单一深色底 + 稀有度边框 + 圆角图标 (无文字)。
 
     ``height`` 由描述行数决定（自动换行后卡片会变高）；图标垂直居中。
+    ``ach_id`` 给定时用**该成就自己的徽标素材**（web/app/assets/achievement/…），
+    没有才退回启动器项目图标 —— 以前所有弹窗都顶着同一个项目图标。
     文字由 tk.Label 叠加, Label 底色与卡片底色一致 → 无缝融合。
     """
     border_col = RARITY_BORDER_COLORS.get(rarity, RARITY_BORDER_COLORS["common"])
     bg_col = BG_MID  # 单一底色 (与 Label 文字区一致)
     h = max(CARD_MIN_H, int(height))
-    cached = _BG_CACHE.get((rarity, h))
+    cached = _BG_CACHE.get((rarity, h, ach_id))
     if cached is not None:
         return cached
 
@@ -146,8 +192,8 @@ def render_toast_bg(rarity: str = "common", height: int = CARD_MIN_H) -> Image.I
         (1, 1, CARD_W - 2, h - 2), radius=RADIUS - 1,
         outline=border_col, width=1)
 
-    # 图标 (圆角, 无边框, 垂直居中)
-    icon_path = _resolve_icon_path()
+    # 图标 (圆角, 无边框, 垂直居中): **成就自己的徽标素材优先**, 没有才用启动器项目图标
+    icon_path = _resolve_achievement_icon(ach_id) or _resolve_icon_path()
     if icon_path:
         icon = _rounded_icon(icon_path, size=70, radius=10)
         ic_x, ic_y = 12, max(2, (h - 70) // 2)
@@ -161,7 +207,7 @@ def render_toast_bg(rarity: str = "common", height: int = CARD_MIN_H) -> Image.I
     out = Image.composite(im, Image.new("RGB", (CARD_W, h), key), mask)
     if len(_BG_CACHE) >= _BG_CACHE_MAX:
         _BG_CACHE.clear()
-    _BG_CACHE[(rarity, h)] = out
+    _BG_CACHE[(rarity, h, ach_id)] = out
     return out
 
 
@@ -208,13 +254,16 @@ def wrap_text(text: str, font, max_width: int,
     return kept
 
 
-_toast_q: "queue.Queue[tuple[str, str, str]]" = queue.Queue()
+_toast_q: "queue.Queue[tuple[str, str, str, str]]" = queue.Queue()
 
 
-def show_toast_async(name: str, desc: str, rarity: str = "common"):
-    """线程安全: 入队一个成就弹窗。"""
+def show_toast_async(name: str, desc: str, rarity: str = "common", ach_id: str = ""):
+    """线程安全: 入队一个成就弹窗。
+
+    ``ach_id``: 用该成就自己的徽标素材画图标（web/app/assets/achievement/…）。
+    """
     try:
-        _toast_q.put_nowait((name, desc, rarity))
+        _toast_q.put_nowait((name, desc, rarity, str(ach_id or "")))
     except Exception:
         pass
 
@@ -222,7 +271,8 @@ def show_toast_async(name: str, desc: str, rarity: str = "common"):
 class _ToastWindow:
     """单个成就弹窗 (PIL 背景 + tk.Label 文字, 透明 Toplevel)。"""
 
-    def __init__(self, root: tk.Tk, name: str, desc: str, rarity: str = "common"):
+    def __init__(self, root: tk.Tk, name: str, desc: str, rarity: str = "common",
+                 ach_id: str = ""):
         self.root = root
         self.done = False
         self._alive = True
@@ -237,7 +287,7 @@ class _ToastWindow:
         needed = DESC_Y + len(self._lines) * line_h + DESC_BOTTOM_PAD
         self._h = max(CARD_MIN_H, needed)
 
-        bg = render_toast_bg(rarity, self._h)
+        bg = render_toast_bg(rarity, self._h, ach_id)
         self._bg_img = ImageTk.PhotoImage(bg)
         title_col = RARITY_TITLE_COLORS.get(rarity, RARITY_TITLE_COLORS["common"])
 
@@ -398,9 +448,9 @@ class ToastController:
         except Exception:
             pass
 
-    def _spawn(self, name: str, desc: str, rarity: str = "common"):
+    def _spawn(self, name: str, desc: str, rarity: str = "common", ach_id: str = ""):
         try:
-            w = _ToastWindow(self.root, name, desc, rarity)
+            w = _ToastWindow(self.root, name, desc, rarity, ach_id)
             self._active.append(w)
         except Exception:
             pass
@@ -424,11 +474,11 @@ class ToastController:
             # （Tk 建窗 + 图片对象），视觉上就是连续弹出，更自然。
             if len(self._active) < MAX_SHOW:
                 try:
-                    name, desc, rarity = _toast_q.get_nowait()
+                    name, desc, rarity, ach_id = _toast_q.get_nowait()
                 except queue.Empty:
                     pass
                 else:
-                    self._spawn(name, desc, rarity)
+                    self._spawn(name, desc, rarity, ach_id)
             if self._active:
                 self._relayout()
                 remain = []
