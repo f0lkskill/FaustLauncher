@@ -3302,31 +3302,32 @@ def _monitor_game_process(window_ref):
 
 
 def _start_game_state_watcher(window_ref):
-    """常驻监视游戏进程存活状态, 变化时推 game_state (驱动主页按钮形态)。
+    """常驻监视游戏进程存活状态, **只在结论跳变时**更新对外状态并推送。
 
     与 _monitor_game_process 的分工: 后者只在"点过启动游戏"之后短暂存在, 负责
     game_started / game_exited / game_timeout 这些**流水线**事件; 本函数常驻,
     只负责**按钮形态**, 覆盖两种它管不到的情况:
       · 用户自己打开/关闭游戏 (没有走过启动流程, 根本没人监视);
       · 关闭游戏之后 —— 前端必须能把按钮从"关闭游戏"收敛回"启动游戏"。
-    之前只在状态跳变时推一次, 一旦前端错过该事件 (或本地判断错), 按钮就再也
-    回不到正确形态, 正是"关闭后仍显示关闭进程"的直接原因。
-    现在再加一道保险: 状态没变也每 10 秒补推一次, 让按钮最多 10 秒就能自己收敛,
-    不需要用户重启启动器 (重启解决不了的那种"卡死"就是这么来的)。
+
+    ★ 初始化不发布检测结论 (见 _game_state 段注释):
+      首次观测**只建立基线**, 对外状态保持"未运行", 所以主页首屏一律显示可启动,
+      检测误报"仍在运行"时不会把按钮顶成"关闭游戏"。
+      基线之后只有结论真的跳变才更新对外状态; 另外每 10 秒补推一次当前对外状态,
+      让前端漏掉某次事件时也能自己收敛 (推的是对外状态, 不是原始检测结论)。
     """
-    def _push(win, alive, busy):
-        """推送并返回是否成功 (失败则下轮重试, 不记入已知状态)"""
+    def _push(win):
+        """推送当前**对外状态**, 返回是否成功 (失败则下轮重试)"""
         try:
             win.evaluate_js("window.__onEvent('game_state', %s)"
-                            % json.dumps({"game_alive": bool(alive),
-                                          "game_busy": bool(busy)}))
+                            % json.dumps({"game_alive": bool(_game_state["alive"]),
+                                          "game_busy": bool(_game_state["busy"])}))
             return True
         except Exception:
             return False
 
     def _run():
-        last = None
-        last_busy = None
+        seeded = False
         last_push = 0.0
         gone = 0
         while True:
@@ -3339,13 +3340,19 @@ def _start_game_state_watcher(window_ref):
                 gone = 0
                 alive = _game_process_running()
                 busy = _any_game_process_running()
-                # 状态变化时立刻推; 没变化也每 10 秒补推一次 —— 前端漏掉/忽略了某次
-                # 事件 (或它自己的本地判断被写脏) 时, 按钮还能自己收敛回正确形态
-                if (alive != last or busy != last_busy
-                        or time.time() - last_push > 10) and _push(win, alive, busy):
-                    last = alive   # 只有推送成功才记为已知, 否则下轮重试
-                    last_busy = busy
-                    last_push = time.time()
+                if not seeded:
+                    # 首次观测: 只记基线, 不改变对外状态, 也不推送
+                    seeded = True
+                    _update_game_state(alive, busy, seed=True)
+                    print("[游戏] 已建立进程状态基线 (初始化不据此改变按钮形态)")
+                else:
+                    changed = _update_game_state(alive, busy)
+                    if changed:
+                        print(f"[游戏] 状态跳变: game_alive={bool(alive)} "
+                              f"game_busy={bool(busy)}")
+                    # 跳变时立刻推; 没变化也每 10 秒补推一次对外状态
+                    if (changed or time.time() - last_push > 10) and _push(win):
+                        last_push = time.time()
             time.sleep(2)
 
     threading.Thread(target=_run, daemon=True).start()
