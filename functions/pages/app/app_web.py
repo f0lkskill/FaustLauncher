@@ -1176,9 +1176,13 @@ class AppApi:
                 aid = str(getattr(ach, "id", "") or "").strip()
                 if not aid:
                     continue
-                fname = aid + ".svg"
-                icon = ("assets/achievement/" + fname
-                        if art_dir and os.path.isfile(os.path.join(art_dir, fname)) else "")
+                # 成就徽标素材: web/app/assets/achievement/<id>.<ext>, 没有就交给前端用占位图标
+                icon = ""
+                for ext in (".png", ".webp", ".jpg", ".svg"):
+                    fname = aid + ext
+                    if art_dir and os.path.isfile(os.path.join(art_dir, fname)):
+                        icon = "assets/achievement/" + fname
+                        break
                 items.append({
                     "id": aid,
                     "name": str(getattr(ach, "name", "") or ""),

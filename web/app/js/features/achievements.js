@@ -191,7 +191,9 @@ function buildAchCard(item) {
   card.className = 'res-card ach-card' + (done ? '' : ' disabled');
   card.innerHTML =
     '<div class="res-card-main">' +
-      '<span class="ach-icon' + (done ? ' done' : '') + (item.icon ? ' has-art' : '') + '">' +
+      // 稀有度只给一个 class, 边框颜色由 CSS 决定（素材里不含边框）
+      '<span class="ach-icon r-' + esc(achRarityKey(item) || 'common') +
+        (item.icon ? ' has-art' : '') + '">' +
         (item.icon
           ? '<img class="ach-art" src="' + esc(item.icon) + '" alt="">'
           : iconSvg(done ? 'checkOne' : 'unlock')) +
