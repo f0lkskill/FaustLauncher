@@ -1,0 +1,12 @@
+把插件自带的成就图标放在这个目录里，文件名 = 成就 id + 扩展名。
+
+例如成就 id 是 ach_my_first，那就放：
+
+    assets/achievement/ach_my_first.png
+
+规则：
+- 支持 .png / .webp / .jpg / .svg；
+- 建议正方形、透明底、≥128px；
+- **不要在图片里画边框** —— 成就页的边框由前端按 rarity 自动着色；
+- 启动时会同步到 web/app/assets/achievement/，同名文件不会被覆盖；
+- 不放也能用，会用默认占位图标。
