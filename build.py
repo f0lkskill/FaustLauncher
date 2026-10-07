@@ -515,7 +515,7 @@ class BuildApi:
     _window = None
 
 
-# --------------------------------------------------------------------------- 入口
+# 入口
 def main() -> int:
     os.chdir(os.path.dirname(os.path.abspath(__file__)))
     try:
