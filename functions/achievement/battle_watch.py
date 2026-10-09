@@ -2106,9 +2106,11 @@ class BattleWatch:
     # 具体逻辑在 functions/hook/preflight.py（同步执行，只有重建那一步才久）。
     _PREFLIGHT_TEXT = {
         "local-ok": "本地偏移量对得上本机 DLL（未联网、未重建）",
+        "cloud-cached": "采用云端偏移量（本地缓存的那份对得上本机 DLL，未联网）",
         "cloud-updated": "本地偏移量是旧版本 → 已采用云端偏移量",
         "rebuilt": "本地重建偏移量完成（校验通过；push=True 时已上传云端）",
         "rebuilt-unverified": "本地重建完成，但校验仍未通过（看上条日志）",
+        "deferred": "需要重建偏移量，但游戏正在运行 → 本次不重建（已排入后台等游戏退出）",
         "stale": "偏移量对不上本机 DLL，且不允许自动重建（钩子可能装不上）",
         "no-index": "没有任何可用索引（将用内置回退偏移）",
         "no-game-dll": "找不到 GameAssembly.dll（跳过偏移校验）",
