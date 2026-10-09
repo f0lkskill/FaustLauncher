@@ -765,20 +765,81 @@ class GameLauncher:
         from functions.web_update.zeroasso_download import create_config_file
         create_config_file(self._game_path)
 
+    @staticmethod
+    def _original_uid_copy(folder: str):
+        """汉化包里 ``Uid_Copy`` 的原文（个人车票上那个"复制"）；读不到返回 None。
+
+        先按当前汉化文件夹找 ``lang/<folder>/UserInfo_Friends.json``；找不到（插件自定义
+        汉化这类平台目录名在启动器侧没有同名目录）就扫一遍 ``lang/`` 下其它汉化文件夹 ——
+        它们同属一份汉化包家族，"复制"这个原文是一样的。都没有才返回 None（调用方保持现状）。
+        """
+        root = 'lang'
+        candidates = [os.path.join(root, str(folder or ''), 'UserInfo_Friends.json')]
+        try:
+            for name in sorted(os.listdir(root)):
+                path = os.path.join(root, name, 'UserInfo_Friends.json')
+                if path not in candidates:
+                    candidates.append(path)
+        except OSError:
+            pass
+        for path in candidates:
+            if not os.path.isfile(path):
+                continue
+            try:
+                data = read_json(path)
+            except Exception:  # noqa: BLE001
+                continue
+            if not isinstance(data, dict):
+                continue
+            for item in data.get('dataList', []) or []:
+                if isinstance(item, dict) and item.get('id') == 'Uid_Copy':
+                    return str(item.get('content') or '')
+        return None
+
     def _set_user_name(self):
-        """将用户显示名称写入游戏的 UserInfo_Friends.json (文件不存在时跳过)。"""
+        """把用户显示名称写进游戏 ``UserInfo_Friends.json`` 的 ``Uid_Copy``。
+
+        个人车票上那个位置原本写着"复制"，开启「显示用户名」后替换成用户昵称。
+
+        ⚠ 以前这里**完全不看设置项** ``enable_show_user_name``，无条件写入 —— 于是
+        关掉「显示用户名」名字照样显示，而且关掉之后也不会把已经写进去的名字撤掉，
+        整个设置项是失效的。关闭（或昵称为空）时还原成汉化包里的原文。
+        """
         from functions.web_update.translation_source import get_game_lang_dir
-        user_name = self._settings.get_setting('user_name')
-        file_path = os.path.join(get_game_lang_dir(self._game_path), 'UserInfo_Friends.json')
+        lang_dir = get_game_lang_dir(self._game_path)
+        file_path = os.path.join(lang_dir, 'UserInfo_Friends.json')
         if not os.path.exists(file_path):
             print("未找到 UserInfo_Friends.json, 跳过用户名设置")
             return
+
+        enabled = self._settings.get_setting('enable_show_user_name')
+        enabled = True if enabled is None else bool(enabled)
+        name = str(self._settings.get_setting('user_name') or '').strip()
+        restore = not enabled or not name
+        # 原文从**启动器侧**的汉化包目录取（游戏目录里那份已经被我们改过了）
+        wanted = self._original_uid_copy(os.path.basename(lang_dir)) if restore else name
+        if wanted is None:
+            print("[设置用户名称] 需要还原原文, 但读不到汉化包里的 UserInfo_Friends.json → 保持现状")
+            return
+
         data = read_json(file_path)
-        for item in data.get('dataList', []):
-            if item.get('id') == 'Uid_Copy':
-                item['content'] = str(user_name)
+        if not isinstance(data, dict):
+            print("[设置用户名称] UserInfo_Friends.json 结构异常, 跳过")
+            return
+        target = None
+        for item in data.get('dataList', []) or []:
+            if isinstance(item, dict) and item.get('id') == 'Uid_Copy':
+                target = item
                 break
+        if target is None:
+            print("[设置用户名称] UserInfo_Friends.json 里没有 Uid_Copy, 跳过")
+            return
+        if str(target.get('content') or '') == wanted:
+            print(f"[设置用户名称] 无需改动（{'显示用户名' if not restore else '已关闭/昵称为空'}）")
+            return
+        target['content'] = wanted
         write_json(file_path, data, indent=4)
+        print(f"[设置用户名称] Uid_Copy 已{'还原为原文' if restore else '写入昵称'}: {wanted}")
 
     def _fire_addon_events(self):
         """逐个触发插件的游戏启动事件 (显示插件名与进度)。"""
