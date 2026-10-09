@@ -2111,10 +2111,15 @@ class BattleWatch:
                   + (f"；{check['detail']}" if check.get("detail") else "")) # type: ignore
         index = info.get("index")
         if index is not None:
+            game = index.game or {}
             self._index_game_note = {
-                "size": int((index.game or {}).get("gameassembly_size") or 0), # type: ignore
-                "pe_timestamp": int((index.game or {}).get("pe_timestamp") or 0), # type: ignore
-                "game_version": str((index.game or {}).get("game_version") or ""), # type: ignore
+                "size": int(game.get("gameassembly_size") or 0),
+                "pe_timestamp": int(game.get("pe_timestamp") or 0),
+                # 真正的游戏版本信号（Steam buildid / 更新时间），见 hook/updater._game_version_info
+                "game_version": str(game.get("game_version") or ""),
+                "game_build_id": str(game.get("game_build_id") or ""),
+                "game_updated_at": str(game.get("game_updated_at") or ""),
+                "generated_at": str(getattr(index, "generated_at", "") or ""),
                 "source": str(info.get("source") or ""),
             }
         return info

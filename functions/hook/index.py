@@ -177,9 +177,17 @@ class HookIndex:
 
     def describe(self) -> str:
         size, sha = self.fingerprint()
+        game = self.game or {}
+        version_bits = " ".join(bit for bit in (
+            f"版本={game.get('game_version')}" if game.get("game_version") else "",
+            f"build={game.get('game_build_id')}" if game.get("game_build_id") else "",
+            f"更新于={game.get('game_updated_at')}" if game.get("game_updated_at") else "",
+            f"DLL编译于={game.get('dll_build_time')}" if game.get("dll_build_time") else "",
+        ) if bit)
         lines = [
             f"索引: {self.kind} schema={self.schema} 生成于 {self.generated_at}",
             f"游戏: size={size} sha256={sha[:16] or '(空)'}",
+            f"版本: {version_bits or '(未记录)'}",
             f"元数据: {self.metadata.get('source', '?')} version={self.metadata.get('version', '?')}",
             f"钩子 {len(self.hooks)} 个: " + ", ".join(
                 f"{k}(0x{int(v.get('rva') or 0):X})" for k, v in list(self.hooks.items())[:6]),

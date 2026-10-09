@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import re
 import threading
 import time
 from dataclasses import dataclass, field
@@ -309,9 +310,17 @@ def update_hook_index(game_path: str = "", force: bool = False, push: bool = Tru
     note("[fields] " + ", ".join(
         f"{k}=0x{int(v.get('offset') or 0):X}" for k, v in index.fields.items()))
 
+    # ---- 游戏版本信号（Steam buildid / 更新时间；PE 编译时间只作旁证）
+    version_info = _game_version_info(paths, pe, int(meta.version or 0))
+    index.game.update(version_info)
+    note("[version] 游戏版本 {v}（build {b}；更新于 {u}"
+         "）".format(v=version_info["game_version"],
+                     b=version_info["game_build_id"] or "未知",
+                     u=version_info["game_updated_at"] or version_info["game_updated_source"] or "未知"))
+
     # ---- 兼容块（与 web.lcta.top/cheat_damage.json 同字段名）
     compat = {
-        "game_version": _game_version(pe),
+        "game_version": version_info["game_version"],
         "gameassembly_sha256": fingerprint.sha256,
         "gameassembly_size": fingerprint.size,
     }
@@ -323,6 +332,11 @@ def update_hook_index(game_path: str = "", force: bool = False, push: bool = Tru
                            if h.get("compat_field") and h.get("prologue")), "")
     if first_prologue:
         compat["prologue"] = first_prologue
+    # 版本旁证：外部脚本（test/damage_log.py 等）只看 game_version，多给的字段不破坏兼容
+    compat["game_build_id"] = version_info["game_build_id"]
+    compat["game_updated_at"] = version_info["game_updated_at"]
+    compat["dll_build_time"] = version_info["dll_build_time"]
+    compat["metadata_version"] = version_info["metadata_version"]
     index.cheat_damage = compat
 
     # ---- 数据链（运行时校验 / 重定位）
@@ -408,15 +422,96 @@ def update_hook_index(game_path: str = "", force: bool = False, push: bool = Tru
     return UpdateResult(status_, index, pushed, messages, time.time() - started)
 
 
-def _game_version(pe) -> str:
-    """用 PE 时间戳推一个构建日期，作为游戏版本标识（与 LCTA payload 的写法一致）。"""
-    timestamp = int(getattr(pe, "timestamp", 0) or 0)
+STEAM_APP_ID = "1973530"          # Limbus Company
+
+
+def _iso_local(timestamp: int) -> str:
+    """Unix 时间戳 → 本地时间 ISO 串（失败返回空串）。
+
+    ⚠ 必须用 ``localtime``：以前这里用 ``gmtime``，北京时间下午 4 点之后链接出来的
+    DLL 会被算到**前一天**，日志里的版本日期看着永远比实际早一天。
+    """
     if not timestamp:
-        return "unknown"
+        return ""
     try:
-        return time.strftime("%Y-%m-%d", time.gmtime(timestamp))
-    except (ValueError, OSError):
-        return "unknown"
+        return time.strftime("%Y-%m-%dT%H:%M:%S%z", time.localtime(int(timestamp)))
+    except (ValueError, OSError, OverflowError):
+        return ""
+
+
+def _steam_app_state(game_root: str) -> dict:
+    """读 Steam 的 ``appmanifest_<appid>.acf``（游戏在 ``<库>/steamapps/common/<installdir>``）。
+
+    只有这里能给出**真正的游戏版本**：``buildid`` 是 Steam 构建号，``LastUpdated`` 是
+    这次补丁落盘的时间。用正则直接抠两个字段，不依赖 VDF 解析器（结构变了也不会炸）。
+    """
+    root = str(game_root or "").rstrip("\\/")
+    if not root:
+        return {}
+    steamapps = os.path.dirname(os.path.dirname(root))
+    manifest = os.path.join(steamapps, f"appmanifest_{STEAM_APP_ID}.acf")
+    try:
+        with open(manifest, "r", encoding="utf-8", errors="replace") as fh:
+            text = fh.read()
+    except OSError:
+        return {}
+    out = {}
+    for key in ("buildid", "LastUpdated", "name", "StateFlags"):
+        match = re.search(r'"%s"\s+"([^"]*)"' % re.escape(key), text)
+        if match:
+            out[key] = match.group(1)
+    return out
+
+
+def _game_version_info(paths, pe=None, metadata_version: int = 0) -> dict:
+    """收集"这份索引对应哪个游戏版本"的可信信号。
+
+    以前 ``game_version`` 直接拿 ``GameAssembly.dll`` 的 **PE 头编译时间**充数，结果
+    游戏 10-09 更新、云端记录写 10-02 —— 那只是 IL2CPP 那批代码被链接器写进头里的
+    时间，跟"游戏更新到哪一版"没有关系，玩家/服务端看一眼就会以为索引是旧的。
+
+    现在按可信度取：
+
+    1. ``appmanifest`` 的 ``LastUpdated``（Steam 打完补丁的时间）+ ``buildid``（构建号）；
+    2. 拿不到 acf（非 Steam 安装）时退回游戏文件里最新的那个 mtime；
+    3. PE 编译时间单独记成 ``dll_build_time``，只用来解释"为什么指纹变了"。
+
+    另外把 ``metadata_version`` 一起记下：``global-metadata.dat`` 的版本号每次游戏更新都会涨，
+    是判断"索引跟游戏对不对得上"的旁证。
+    """
+    app = _steam_app_state(getattr(paths, "root", "") or "")
+    newest_name, newest_ts = "", 0.0
+    for name, path in (("GameAssembly.dll", getattr(paths, "gameassembly", "")),
+                       ("global-metadata.dat", getattr(paths, "metadata", "")),
+                       ("LimbusCompany.exe", getattr(paths, "exe", ""))):
+        try:
+            stamp = os.path.getmtime(path)
+        except OSError:
+            continue
+        if stamp > newest_ts:
+            newest_name, newest_ts = name, stamp
+
+    updated_ts = 0
+    source = ""
+    try:
+        updated_ts = int(app.get("LastUpdated") or 0)
+    except ValueError:
+        updated_ts = 0
+    if updated_ts:
+        source = "steam-appmanifest"
+    elif newest_ts:
+        updated_ts = int(newest_ts)
+        source = f"文件时间({newest_name})"
+
+    updated_at = _iso_local(updated_ts)
+    return {
+        "game_version": updated_at[:10] if updated_at else "unknown",
+        "game_build_id": str(app.get("buildid") or ""),
+        "game_updated_at": updated_at,
+        "game_updated_source": source,
+        "dll_build_time": _iso_local(int(getattr(pe, "timestamp", 0) or 0)),
+        "metadata_version": int(metadata_version or 0),
+    }
 
 
 def _reuse_decrypted(dump_dir: str, on_log=None) -> metadata_source.MetadataResult | None:
