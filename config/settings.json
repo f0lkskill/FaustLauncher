@@ -394,7 +394,7 @@
         "type": "boolean",
         "default": false,
         "value": false,
-        "description": "默认关闭：logs/achievement_hook.log 只留成就相关内容\n（生命周期/错误/观测点首次命中/心跳/判定结果）并带时间轴，\n全部事件请到 logs/battle_watch.log 看。\n排查问题时打开它，可以把每一条 RND/SPD/VAL/ACT 事件也写进成就日志。\n两个日志都在每次运行时清空重写。",
+        "description": "成就相关日志现在只有一份 logs/achievement_hook.log（含成就生命周期、子进程 stdout/stderr、以及全量 RND/SPD/VAL/ACT 事件流）。\n此开关只控制“事件行要不要也带一条即时摘要行”，排查问题时打开即可。",
         "page": "成就"
     },
     "ui_mode": {
