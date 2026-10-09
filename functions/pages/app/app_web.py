@@ -3402,9 +3402,52 @@ def _monitor_game_process(window_ref):
     threading.Thread(target=_run, daemon=True).start()
 
 
+_HOOK_IDLE_LOCK = threading.Lock()
+_HOOK_IDLE_LAST = {"at": 0.0}
+HOOK_IDLE_COOLDOWN = 120.0        # 两次"空闲补建"触发之间的最小间隔 (秒)
+
+
+def _refresh_hook_index_when_idle(reason: str = "") -> None:
+    """游戏空闲时补建偏移索引（**绝不在游戏运行时重建**）。
+
+    偏移重建是"静态解密约 50 秒 + Il2CppDumper 1~2 分钟"的满核重活。以前它是在
+    **注入前同步**跑的，和游戏启动完全重叠 —— 实测 10-09：游戏 13:11:36 启动、
+    解密 dump 13:12:51→13:15:11 全程并行，整台机器卡到鼠标拖影。
+
+    现在的分工：
+
+      · 注入路径（``functions/hook/preflight.py``）发现"手头索引都对不上本机 DLL"时
+        **绝不重建**，只返回 ``deferred`` 并排一个后台任务；
+      · 后台任务真正的落点在这里 —— 启动器常驻进程在**游戏退出之后**、以及**启动器刚起来
+        游戏还没跑**的时候各触发一次，低优先级重建，玩家全程无感。
+
+    为什么必须由启动器触发：成就监测子进程看到 Player.log 里的退出信号就自己结束了，
+    它内部排的"等游戏退出再重建"根本活不到那一刻。
+
+    重复调用安全：``auto_update_async`` 自身有单例锁，这里再加一道冷却窗口。
+    """
+    now = time.time()
+    with _HOOK_IDLE_LOCK:
+        if now - _HOOK_IDLE_LAST["at"] < HOOK_IDLE_COOLDOWN:
+            return
+        _HOOK_IDLE_LAST["at"] = now
+    try:
+        if _game_process_running() or _any_game_process_running():
+            print(f"[偏移索引] 游戏在运行 → 不重建（{reason or '空闲检查'}）")
+            return
+        from functions.hook.preflight import auto_rebuild_enabled
+        if not auto_rebuild_enabled():
+            return
+        from functions.hook import auto_update_async
+        if auto_update_async(low_priority=True, wait_for_game_idle=True):
+            print(f"[偏移索引] 已在后台检查偏移索引（{reason or '空闲检查'}；"
+                  "只有本机 DLL 变了才会真的重建，低优先级）")
+    except Exception as exc:  # noqa: BLE001
+        print(f"[偏移索引] 空闲补建不可用: {type(exc).__name__}: {exc}")
+
+
 def _start_game_state_watcher(window_ref):
     """常驻监视游戏进程存活状态, **只在结论跳变时**更新对外状态并推送。
-
     与 _monitor_game_process 的分工: 后者只在"点过启动游戏"之后短暂存在, 负责
     game_started / game_exited / game_timeout 这些**流水线**事件; 本函数常驻,
     只负责**按钮形态**, 覆盖两种它管不到的情况:
@@ -3446,11 +3489,17 @@ def _start_game_state_watcher(window_ref):
                     seeded = True
                     _update_game_state(alive, busy, seed=True)
                     print("[游戏] 已建立进程状态基线 (初始化不据此改变按钮形态)")
+                    if not alive:
+                        # 启动器刚起来、游戏还没跑 —— 这是做偏移重建最好的窗口
+                        _refresh_hook_index_when_idle("启动器启动")
                 else:
                     changed = _update_game_state(alive, busy)
                     if changed:
                         print(f"[游戏] 状态跳变: game_alive={bool(alive)} "
                               f"game_busy={bool(busy)}")
+                        if not alive and not busy:
+                            # 游戏刚退出: 若这次更新换了 GameAssembly.dll, 就在这里补建偏移索引
+                            _refresh_hook_index_when_idle("游戏已退出")
                     # 跳变时立刻推; 没变化也每 10 秒补推一次对外状态
                     if (changed or time.time() - last_push > 10) and _push(win):
                         last_push = time.time()

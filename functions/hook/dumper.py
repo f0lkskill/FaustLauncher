@@ -206,11 +206,16 @@ def ensure_dumper(on_log=None, allow_download: bool = True, explicit: str = "") 
 
 
 def run_dumper(dumper_exe: str, gameassembly: str, metadata: str, out_dir: str,
-               on_log=None, timeout: float = 2400.0) -> DumpResult:
+               on_log=None, timeout: float = 2400.0, low_priority: bool = False) -> DumpResult:
     """执行 Il2CppDumper（阻塞），返回产物路径。
 
     注意第三个参数是**输出目录**：给它一个真实路径，别加引号（Il2CppDumper 不会
     去掉首尾引号，会当成相对目录写到工具目录里去）。
+
+    ``low_priority``：把 Il2CppDumper 放进 BELOW_NORMAL 优先级类。它会解析 160+ MB 的
+    GameAssembly.dll 和 50 MB 的 metadata、写出 80 MB 的 dump.cs —— 满核跑 1~2 分钟。
+    在**游戏正在启动/运行**的窗口里以正常优先级跑，实测会把整个桌面卡住（鼠标拖影），
+    所以启动器后台自动重建一律用低优先级；手工跑 CLI 时才用正常优先级（用户就在等它）。
     """
     log = on_log or (lambda _m: None)
     if not os.path.isfile(dumper_exe):
@@ -225,10 +230,14 @@ def run_dumper(dumper_exe: str, gameassembly: str, metadata: str, out_dir: str,
     cmd = [dumper_exe, os.path.abspath(gameassembly), os.path.abspath(metadata), out_dir]
     log(f"[dumper] 执行: {' '.join(cmd)}")
     started = time.time()
+    # CREATE_NO_WINDOW(0x08000000) | BELOW_NORMAL_PRIORITY_CLASS(0x00004000)
+    flags = 0x08000000 | (0x00004000 if low_priority else 0)
+    if low_priority:
+        log("[dumper] 以低优先级运行（后台自动重建，避免和游戏抢 CPU/磁盘）")
     try:
         proc = subprocess.run(
             cmd, cwd=folder, capture_output=True, timeout=timeout,
-            creationflags=0x08000000,          # CREATE_NO_WINDOW：不弹控制台
+            creationflags=flags,
         )
     except subprocess.TimeoutExpired:
         return DumpResult(False, elapsed=time.time() - started,

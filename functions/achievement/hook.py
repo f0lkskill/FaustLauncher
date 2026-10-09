@@ -1071,6 +1071,9 @@ def _hook_index_auto_enabled() -> bool:
 def _start_hook_index_refresh(log_callback):
     """启动时刷新偏移：云端拉链（总是） + 按需重建索引（可通过设置关闭）。
 
+    重建一律走 ``wait_for_game_idle=True``：本进程是**游戏起来之后**才拉起的，
+    这时候重建就是和游戏抢 CPU/磁盘。后台任务会等游戏退出再以低优先级重建。
+
     依赖在主线程先导好（Python 3.14 的 import 锁下，后台线程承担首次导入会有
     deadlock 风险）。
     """
@@ -1096,8 +1099,8 @@ def _start_hook_index_refresh(log_callback):
         log_callback("[成就监测] 已关闭自动刷新偏移索引（设置: 自动刷新游戏偏移索引）")
         return
     try:
-        if auto_update(on_log=log_callback):
-            log_callback("[成就监测] 已在后台检查偏移索引（游戏更新时会自动重建）")
+        if auto_update(on_log=log_callback, low_priority=True, wait_for_game_idle=True):
+            log_callback("[成就监测] 已在后台检查偏移索引（重建会等游戏退出后再做）")
     except Exception as exc:  # noqa: BLE001
         log_callback(f"[成就监测] 偏移索引自动更新不可用: {exc}")
 

@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import os
 import re
@@ -63,6 +64,40 @@ class UpdateResult:
 def _already_published(index: index_mod.HookIndex) -> bool:
     """本地这份索引是否已经与云端完全一致（避免每次启动重复上传）。"""
     return index_mod.already_published(index)
+
+
+@contextlib.contextmanager
+def low_priority_process():
+    """临时把**当前进程**降到 BELOW_NORMAL 优先级类（Windows），退出时恢复原值。
+
+    静态解密（约 50 秒满核）+ 解析 80 MB dump.cs 都跑在调用进程里。如果这个进程就是
+    启动器主进程、而游戏正在启动，正常优先级会让整台机器卡到鼠标拖影（实测）。
+    非 Windows / 调用失败时静默跳过 —— 这只是锦上添花，不能因为它失败就不重建。
+    """
+    kernel32 = None
+    previous = 0
+    try:
+        import ctypes
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel32.GetPriorityClass.restype = ctypes.c_uint32
+        kernel32.GetPriorityClass.argtypes = [ctypes.c_void_p]
+        kernel32.SetPriorityClass.argtypes = [ctypes.c_void_p, ctypes.c_uint32]
+        handle = kernel32.GetCurrentProcess()
+        previous = int(kernel32.GetPriorityClass(handle) or 0)
+        BELOW_NORMAL = 0x00004000
+        if previous and previous != BELOW_NORMAL:
+            if not kernel32.SetPriorityClass(handle, BELOW_NORMAL):
+                previous = 0
+    except Exception:  # noqa: BLE001
+        kernel32, previous = None, 0
+    try:
+        yield
+    finally:
+        if kernel32 is not None and previous:
+            try:
+                kernel32.SetPriorityClass(kernel32.GetCurrentProcess(), previous)
+            except Exception:  # noqa: BLE001
+                pass
 
 
 def _cloud_same_as(index: index_mod.HookIndex, log=None) -> tuple[bool, str]:
@@ -140,8 +175,13 @@ def update_hook_index(game_path: str = "", force: bool = False, push: bool = Tru
                       allow_static_decrypt: bool = True, allow_memory_dump: bool = True,
                       on_log=None, process_name: str = "LimbusCompany.exe",
                       focus=(), reader: ProcessMemoryReader | None = None,
-                      launcher_version: str = "") -> UpdateResult:
-    """更新偏移索引（完整流程）。所有进度都走 ``on_log``。"""
+                      launcher_version: str = "", low_priority: bool = False) -> UpdateResult:
+    """更新偏移索引（完整流程）。所有进度都走 ``on_log``。
+
+    ``low_priority=True``：把本进程与 Il2CppDumper 子进程都降到 BELOW_NORMAL 优先级类。
+    启动器后台自动重建必须用它 —— 解密 + dump 是满核 1~2 分钟的重活，跑在正常优先级上
+    会和正在启动的游戏抢 CPU/磁盘，表现就是整台机器卡到鼠标拖影。
+    """
     log = on_log or (lambda _m: None)
     started = time.time()
     messages: list[str] = []
@@ -182,6 +222,26 @@ def update_hook_index(game_path: str = "", force: bool = False, push: bool = Tru
     else:
         note("开始构建偏移索引")
 
+    # ---- 从这里开始都是重活：解密（~50s 满核）→ Il2CppDumper → 解析 80 MB dump.cs
+    with (low_priority_process() if low_priority else contextlib.nullcontext()):
+        if low_priority:
+            note("以低优先级重建（避免和游戏抢 CPU/磁盘）")
+        return _build_index(fingerprint, paths, previous, force=force, push=push,
+                            dry_run=dry_run, allow_download=allow_download,
+                            allow_static_decrypt=allow_static_decrypt,
+                            allow_memory_dump=allow_memory_dump,
+                            process_name=process_name, focus=focus, reader=reader,
+                            launcher_version=launcher_version, low_priority=low_priority,
+                            note=note, log=log, messages=messages, started=started)
+
+
+def _build_index(fingerprint, paths, previous, *, force: bool, push: bool, dry_run: bool,
+                 allow_download: bool, allow_static_decrypt: bool, allow_memory_dump: bool,
+                 process_name: str, focus, reader, launcher_version: str,
+                 low_priority: bool, note, log, messages: list[str],
+                 started: float) -> UpdateResult:
+    """``update_hook_index`` 的重活段（已按需降优先级）。"""
+
     # ---- 明文 metadata
     dump_dir = paths_mod.cache_path("dump", fingerprint.short)
     meta = _reuse_decrypted(dump_dir, on_log=log)
@@ -207,7 +267,7 @@ def update_hook_index(game_path: str = "", force: bool = False, push: bool = Tru
             note("没有可用的 Il2CppDumper（可手动下载后放到 cache/hook/tools/il2cppdumper/）")
             return UpdateResult("failed", previous, False, messages, time.time() - started)
         result = dumper_mod.run_dumper(dumper_exe, paths.gameassembly, meta.path,
-                                       out_dir, on_log=log)
+                                       out_dir, on_log=log, low_priority=low_priority)
         if not result.ok:
             note(f"Il2CppDumper 失败: {result.detail}")
             log(result.stdout_tail)
@@ -463,6 +523,39 @@ def _steam_app_state(game_root: str) -> dict:
     return out
 
 
+def game_build_note(paths) -> dict:
+    """当前游戏构建的**免费**标识（appmanifest 的 buildid / LastUpdated）。
+
+    只读一个小 acf + 两个文件的 mtime，不联网、不读 160 MB 的 DLL。用途是回答
+    "这份偏移索引是不是**当前这个游戏版本**生成的" —— 以前只有一个信号
+    （"RVA 处那 16 字节对不对得上"），结构体字段 / 数据链偏移有没有过期完全看不出来，
+    于是"本地 prologue 对得上"就被当成了"本地就是最新"。
+    """
+    app = _steam_app_state(getattr(paths, "root", "") or "")
+    updated_ts = 0
+    try:
+        updated_ts = int(app.get("LastUpdated") or 0)
+    except ValueError:
+        updated_ts = 0
+    newest_name, newest_ts = "", 0.0
+    for name, path in (("GameAssembly.dll", getattr(paths, "gameassembly", "")),
+                       ("global-metadata.dat", getattr(paths, "metadata", ""))):
+        try:
+            stamp = os.path.getmtime(path)
+        except OSError:
+            continue
+        if stamp > newest_ts:
+            newest_name, newest_ts = name, stamp
+    effective = updated_ts or int(newest_ts)
+    return {
+        "build_id": str(app.get("buildid") or ""),
+        "updated_ts": effective,
+        "updated_at": _iso_local(effective),
+        "updated_source": ("steam-appmanifest" if updated_ts
+                           else (f"文件时间({newest_name})" if newest_ts else "")),
+    }
+
+
 def _game_version_info(paths, pe=None, metadata_version: int = 0) -> dict:
     """收集"这份索引对应哪个游戏版本"的可信信号。
 
@@ -480,35 +573,14 @@ def _game_version_info(paths, pe=None, metadata_version: int = 0) -> dict:
     是判断"索引跟游戏对不对得上"的旁证。
     """
     app = _steam_app_state(getattr(paths, "root", "") or "")
-    newest_name, newest_ts = "", 0.0
-    for name, path in (("GameAssembly.dll", getattr(paths, "gameassembly", "")),
-                       ("global-metadata.dat", getattr(paths, "metadata", "")),
-                       ("LimbusCompany.exe", getattr(paths, "exe", ""))):
-        try:
-            stamp = os.path.getmtime(path)
-        except OSError:
-            continue
-        if stamp > newest_ts:
-            newest_name, newest_ts = name, stamp
+    build = game_build_note(paths)
 
-    updated_ts = 0
-    source = ""
-    try:
-        updated_ts = int(app.get("LastUpdated") or 0)
-    except ValueError:
-        updated_ts = 0
-    if updated_ts:
-        source = "steam-appmanifest"
-    elif newest_ts:
-        updated_ts = int(newest_ts)
-        source = f"文件时间({newest_name})"
-
-    updated_at = _iso_local(updated_ts)
+    updated_at = build["updated_at"]
     return {
         "game_version": updated_at[:10] if updated_at else "unknown",
-        "game_build_id": str(app.get("buildid") or ""),
+        "game_build_id": build["build_id"],
         "game_updated_at": updated_at,
-        "game_updated_source": source,
+        "game_updated_source": build["updated_source"],
         "dll_build_time": _iso_local(int(getattr(pe, "timestamp", 0) or 0)),
         "metadata_version": int(metadata_version or 0),
     }
@@ -645,11 +717,19 @@ def preload(on_log=None) -> None:
 
 
 def auto_update_async(on_log=None, game_path: str = "", force: bool = False,
-                      push: bool = True) -> bool:
+                      push: bool = True, low_priority: bool = True,
+                      wait_for_game_idle: bool = True,
+                      idle_wait_seconds: float = 900.0,
+                      process_name: str = "LimbusCompany.exe") -> bool:
     """在后台线程里跑一次更新（同时只允许一个）。
 
-    典型用法：成就监测进程发现游戏刚起来 → 顺手刷新偏移索引。
+    典型用法：**游戏空闲时**（启动器刚起来、或游戏已退出）顺手刷新偏移索引。
     返回 False 表示已有任务在跑。
+
+    ``wait_for_game_idle``：重建前先等游戏进程消失（最多 ``idle_wait_seconds``）。
+    **这是"重建搬离游戏启动窗口"的关键**：解密 + Il2CppDumper 是满核 1~2 分钟的重活，
+    和游戏启动/运行重叠会让整台机器卡到鼠标拖影（实测 10-09：游戏 13:11:36 启动、
+    解密 dump 13:12:51→13:15:11 全程并行）。等游戏退出再重建，玩家全程无感。
     """
     global _auto_updating
     preload(on_log=on_log)
@@ -657,6 +737,29 @@ def auto_update_async(on_log=None, game_path: str = "", force: bool = False,
         if _auto_updating:
             return False
         _auto_updating = True
+
+    def wait_until_game_idle() -> bool:
+        """等到游戏不在跑；超时返回 False（超时就本轮不重建，下次再说）。"""
+        try:
+            from .memory import is_process_running
+        except Exception:  # noqa: BLE001
+            return True
+        deadline = time.time() + max(0.0, float(idle_wait_seconds))
+        announced = False
+        while time.time() < deadline:
+            if not is_process_running(process_name):
+                if announced and on_log:
+                    on_log("[hook_index] 游戏已退出 → 开始后台重建偏移索引（低优先级）")
+                return True
+            if not announced:
+                announced = True
+                if on_log:
+                    on_log(f"[hook_index] 游戏正在运行 → 重建推迟到它退出之后"
+                           f"（最多等 {idle_wait_seconds / 60:.0f} 分钟，避免和游戏抢 CPU/磁盘）")
+            time.sleep(3.0)
+        if on_log:
+            on_log("[hook_index] 等待游戏退出超时 → 本轮不重建，下次空闲时再试")
+        return False
 
     def worker() -> None:
         global _auto_updating
@@ -677,7 +780,7 @@ def auto_update_async(on_log=None, game_path: str = "", force: bool = False,
                     verdict = _preflight.ensure_offsets_ready(
                         on_log=on_log, game_path=game_path, push=push,
                         allow_rebuild=False)
-                    if verdict.get("source") in ("local", "cloud"):
+                    if verdict.get("source") in ("local", "cloud", "cloud-cache"):
                         if on_log:
                             on_log("[hook_index] 索引已可用"
                                    f"（{verdict.get('verdict', '')}，来源={verdict.get('source')}）"
@@ -686,8 +789,11 @@ def auto_update_async(on_log=None, game_path: str = "", force: bool = False,
                 except Exception as exc:  # noqa: BLE001
                     if on_log:
                         on_log(f"[hook_index] 预检失败（继续原流程）: {type(exc).__name__}: {exc}")
+            if wait_for_game_idle and not wait_until_game_idle():
+                return
             result = update_hook_index(game_path=game_path, force=force, push=push,
-                                       on_log=on_log)
+                                       on_log=on_log, low_priority=low_priority,
+                                       process_name=process_name)
             if on_log:
                 on_log(f"[hook_index] 自动更新结束：{result.summary()}")
         except Exception as exc:  # noqa: BLE001
