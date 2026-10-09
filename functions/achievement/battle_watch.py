@@ -1537,10 +1537,31 @@ def build_hook_table(on_log=None, pe_path: str = "") -> dict:
             log(f"[战斗观测] 读取 GameAssembly.dll 节表失败（跳过桩解引用）: {exc}")
     resolved: dict[str, dict] = {}
     used_rva: dict[int, str] = {}
+    # 所有"索引里明确配置过"的钩子 RVA：用来识别"尾调用桩解引用把**两个不同的观测点**
+    # 并到了同一个地址"这种情况（实战：unit_refresh_speed 的桩指向 unit_set_random_speed、
+    # manager_on_round_start_before 的桩指向 manager_init）。
+    configured_rva = {int(item["rva"]): key for key, item in entries.items()}
     for key, item in entries.items():
         rva = int(item["rva"])
         if pe is not None and key not in NO_STUB_RESOLVE:
             final, hops = resolve_stub(pe, rva, names, on_log=log)
+            if final != rva:
+                other = configured_rva.get(final)
+                if other and other != key:
+                    # 跟随就会把 other 这个观测点并掉（后面 used_rva 会把它合并进本项），
+                    # 而且本项带着自己的 detour 类型去跑别的函数 —— 事件语义全错。
+                    # 直接钩桩本身：桩就是该方法的入口，prologue 还是索引里那份（可被 DLL 校验）。
+                    log(f"[战斗观测] {key} 的尾调用桩指向 {other} 的地址 0x{final:X} —— 不跟随"
+                        f"（跟随会吃掉 {other} 这个观测点，且两者 detour 类型不同），"
+                        f"改为直接钩桩本身 0x{rva:X}")
+                    final, hops = rva, []
+                elif not names.get(final):
+                    # 符号表里查不到落脚点：连"钩的是哪个函数"都说不清。
+                    # 这时 DLL 侧的 prologue 自检是**自证**的（prologue 就是用本机 DLL
+                    # 在同一个地址上重新读的），等于没有自检 —— 风险太高，不跟随。
+                    log(f"[战斗观测] {key} 的尾调用桩指向未知地址 0x{final:X}"
+                        f"（符号表里查不到该符号）—— 不跟随，改为直接钩桩本身 0x{rva:X}")
+                    final, hops = rva, []
             item["stub_hops"] = [list(h) for h in hops]
             rva = final
         item["final_rva"] = rva
