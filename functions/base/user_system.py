@@ -473,10 +473,17 @@ def pull_achievements_from_cloud(mode: str = "union") -> dict:
 
     插件成就不参与（它们只存在本地那份独立文件里）。
     """
-    data = user_api.me()
-    if not data.get("ok"):
-        return {"ok": False, "error": data.get("error") or "云端读取失败"}
-    remote = [str(x).strip() for x in (data.get("achievements") or []) if str(x).strip()]
+    result = user_api.me()
+    if not result.get("ok"):
+        return {"ok": False, "error": result.get("error") or "云端读取失败"}
+    # ⚠ user_api._request() 返回的是**信封** ``{"ok","data","status",...}``，服务端响应体
+    #   整个塞在 ``data`` 键里（user_api.py:247）。这里以前直接读信封的 ``achievements``，
+    #   永远是 None → remote 恒为 []。后果不只是"同步不上"：紧接着的全量上报走
+    #   ``POST /api/me/achievements``（服务端**整体替换**），于是"云端→本地"从未发生、
+    #   "本地→云端"却是覆盖写，别的设备解锁的成就会被静默抹掉。
+    payload = result.get("data")
+    payload = payload if isinstance(payload, dict) else {}
+    remote = [str(x).strip() for x in (payload.get("achievements") or []) if str(x).strip()]
     with _USER_LOCK:
         local = load_user()
         current = _value(local, "completed_achievements", [])
