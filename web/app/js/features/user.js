@@ -304,9 +304,13 @@ async function syncUserFromPage() {
   if (btn) btn.disabled = false;
   if (!result || !result.ok) toast((result && result.error) || '同步失败', 'error');
   else {
-    userPageData = { user: result.user, user_name: userNameFallback() };
-    renderUserPage();
-    await refreshRestrictions();
+    // 同步成功后**重新拉一次完整资料**再渲染。
+    // 以前这里用 `{ user, user_name }` 这个两键残片整体覆盖 userPageData，把
+    // profile / playtime / profile_url / leaderboard_url 一起丢了 —— 于是刚点完"同步云端"，
+    // 服务端资料面板、游玩时长、主页/排行榜按钮立刻全变"读不到"，切页重新 loadUserPage 才恢复。
+    // 后端 sync_user 返回的字段名是 `cloud`，跟 get_user_info 的 `profile` 并不一致，
+    // 所以别再手动拼一遍，直接复用 loadUserPage（顺带拿到刚上报后的游玩时长与冷却状态）。
+    await loadUserPage();
     if (typeof loadSkins === 'function') await loadSkins();
     toast('用户信息已同步', 'success');
     // 本地已并集成功、但写回服务端失败: 皮肤会一直留在本地, 下次同步再补传
