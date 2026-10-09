@@ -6,7 +6,7 @@
 
 <br>
 
-[![版本](https://img.shields.io/badge/V0.9.1--release-blue?style=for-the-badge&logo=git)](https://github.com/f0lkskill/FaustLauncher/releases)
+[![版本](https://img.shields.io/badge/V0.9.1--release.fix.1-blue?style=for-the-badge&logo=git)](https://github.com/f0lkskill/FaustLauncher/releases)
 [![许可证](https://img.shields.io/badge/许可证-MIT-green?style=for-the-badge&logo=opensourceinitiative)](LICENSE)
 [![状态](https://img.shields.io/badge/状态-开发中-orange?style=for-the-badge&logo=githubactions)](https://github.com/f0lkskill/FaustLauncher)
 [![平台](https://img.shields.io/badge/平台-Windows%2010%20%2F%2011-lightgrey?style=for-the-badge&logo=windows)](https://github.com/f0lkskill/FaustLauncher)
