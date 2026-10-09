@@ -50,10 +50,14 @@ def _load_item_names() -> dict[int, str]:
         lang_name = get_translation_dir_name()
     except Exception:
         lang_name = "LLC_zh-CN"
-    path = os.path.join(
-        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-        "lang", lang_name, "Items.json",
-    )
+    # ⚠ 汉化包在**可写根**的 lang/ 下（启动器把汉化包下到这里）。不能用 __file__ 上溯：
+    #    打包后那指向 PyInstaller 的 _MEIPASS(= _internal\)，读不到 → 物品名静默退回内置表。
+    try:
+        from functions.base.common.path_utils import get_app_root
+        root = get_app_root()
+    except Exception:  # noqa: BLE001
+        root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    path = os.path.join(root, "lang", lang_name, "Items.json")
     try:
         with open(path, "r", encoding="utf-8") as f:
             for item in json.load(f).get("dataList", []):

@@ -9,7 +9,7 @@
    DLL 不写死任何数字；同一地址会被自动合并（去重）；
 3. **命中计数**：DLL 累加每个钩子的调用次数（``hook_hits[]``），驱动轮询后报出
    "哪个钩子被调了多少次" —— 装钩成功但 0 次调用一眼可见；
-4. **可见性**：独立事件日志 ``logs/battle_watch.log``（不刷屏、不被截断）、
+4. **可见性**：事件流写进统一的 ``logs/achievement_hook.log``（不刷屏、不被截断）；
    状态文件 ``cache/achievement/battle_watch_status.json``、每 20 秒一条心跳日志、
    全事件记录（不再只记两个成就相关的），并支持 ``--status`` / ``--probe`` 离线自查。
 
@@ -28,14 +28,18 @@
 都是 ACTk ``ObscuredInt``）；``mp`` 就是界面上的**理智(SP)**：同类常量 ``_minMp = -45`` /
 ``_maxMp = 45`` 正是它的上下限，负数理智 = 陷入恐慌。
 
-日志分工（重要）::
+日志（**只有一份**）::
 
-    logs/battle_watch.log      全量事件流（RND/SPD/VAL/ACT 每行都写）—— 用来看细节
-    logs/achievement_hook.log  只留成就相关：生命周期 / 错误 / 观测点首次命中 /
-                               心跳 / 规则命中（★）；**不刷事件**
+    logs/achievement_hook.log  成就生命周期 / 子进程 stdout+stderr /
+                               全量事件流（RND/SPD/VAL/ACT 每行都写，带毫秒）
+                               —— 每次实例启动时清空重写，只保留本次运行
 
-事件行默认不进成就日志（``verbose=True``，或设置项 ``achievement_log_verbose`` 才进）。
-两个日志都在每次实例启动时清空重写（只保留本次运行）。
+事件流以前单独写在 ``logs/battle_watch.log``，实际排查时要在三份日志之间对时间，
+现在统一登记到 ``log_sink``（见 ``functions/achievement/log_sink.py``）。
+``verbose=True`` 或设置项 ``achievement_log_verbose`` 只影响事件行**是否也打一份到
+成就日志的即时输出流**，全量事件行本身一直写在这份文件里。
+离线自查（``python -m functions.achievement.battle_watch``）没有登记 sink 时，
+仍然退回写自己的 ``logs/battle_watch.log``。
 
 本模块**不认识任何具体成就**：身份 ID / 技能 ID / 阈值这些业务常量全部写在成就模块里
 （``functions/achievement/data/*.py``），通过 ``BattleRule`` 登记进来。驱动只提供
@@ -72,6 +76,8 @@ import sys
 import threading
 import time
 from dataclasses import dataclass, field
+
+from functions.achievement import log_sink
 
 # --------------------------------------------------------------------------- 协议常量
 
@@ -1657,6 +1663,7 @@ class BattleWatch:
         self._last_round_boundary_ts = 0.0
         self._battle_ended = False       # 见过 EndStage 后, 下一个回合边界 = 新战斗第 1 回合
         self._event_file = None
+        self._event_to_sink = False      # 事件流写进统一日志(achievement_hook.log)而非单独文件
         self._phase = "未启动"
         # 注入现场（状态文件里能直接看到“注的是哪个进程/哪份 DLL”）
         self._injected_image = ""
@@ -1850,8 +1857,18 @@ class BattleWatch:
 
     # ---------------------------------------------------------------- 事件日志
     def _open_event_file(self) -> None:
-        """全量事件日志：**每次实例运行都清空重写**（只留本次运行，便于对照）。"""
-        if self._event_file is not None:
+        """全量事件日志。
+
+        **默认写进统一日志**（``logs/achievement_hook.log``，见 log_sink）—— 以前这里是
+        独立的一份 ``logs/battle_watch.log``：一次排查要看三个文件（成就日志 / 子进程
+        stdout / 事件流），时间还得自己对。只有离线自查（``python -m
+        functions.achievement.battle_watch``）没有登记 sink 时才退回自己的文件。
+        """
+        if self._event_file is not None or self._event_to_sink:
+            return
+        if log_sink.installed():
+            self._event_to_sink = True
+            self._event(f"==== 战斗观测会话开始 {time.strftime('%Y-%m-%d %H:%M:%S')} ====")
             return
         path = event_log_path()
         try:
@@ -1873,13 +1890,17 @@ class BattleWatch:
             self._event_file = None
 
     def _event(self, message: str) -> None:
-        """只写事件日志（不进成就日志），用于全量事件记录。"""
+        """全量事件记录：优先写统一日志，没登记时退回自己的事件文件。"""
+        # 带毫秒：结算阶段（一回合的伤害/收尾）全挤在同一秒里，只有毫秒能看清先后
+        line = (f"{time.strftime('%H:%M:%S')}.{int(time.time() * 1000) % 1000:03d} "
+                f"{message}")
+        if self._event_to_sink or log_sink.installed():
+            self._event_to_sink = True
+            if log_sink.write(line):
+                return
         if self._event_file is not None:
             try:
-                # 带毫秒：结算阶段（一回合的伤害/收尾）全挤在同一秒里，只有毫秒能看清先后
-                self._event_file.write(
-                    f"{time.strftime('%H:%M:%S')}.{int(time.time() * 1000) % 1000:03d} "
-                    f"{message}\n")
+                self._event_file.write(line + "\n")
             except OSError:
                 pass
 
@@ -2608,7 +2629,7 @@ class BattleWatch:
     def _apply_vitals(self, event: BattleEvent) -> None:
         """血量 / 理智事件：交给规则表（``kind="mental"/"hp"``，立刻置位）。
 
-        日志只写在规则命中时（没命中就只落到 ``battle_watch.log`` 与状态文件里），
+        日志只写在规则命中时（没命中就只落到全量事件流与状态文件里），
         这样成就日志不会被每秒几十条的 VAL 事件刷屏。
         """
         iid = event.get("iid", -1)

@@ -225,7 +225,7 @@ battle_watch.py（驱动）
 
 ### ⚠ 关键事实：这游戏的战斗是「先算完整回合、再播动画」
 
-日志实测（`logs/battle_watch.log`，已带毫秒）：一整回合里 **4~5 个行动**的伤害
+日志实测（`logs/achievement_hook.log`，已带毫秒）：一整回合里 **4~5 个行动**的伤害
 （`take_attack_dmg_multiplier`）、收尾（`action_on_end_turn` / `done_with_action`）
 全挤在同一秒里算完 —— 也就是说这些钩子属于**结算阶段**，动画是之后才逐个播的。
 2026-09-25 11:04:49 那一段最清楚：``11:04:49.165~.170``（**5ms 内**）把一整回合的伤害
@@ -449,7 +449,7 @@ class MyCombo(CompositeAchievement):
   tick 最长能空 **10.5s**（回合之间是 26s+），8s 会在动画中途放行。
   修：见过 tick 时阈值提到 ``SKILL_SETTLE_QUIET_TICKED_SEC=15s``。
 
-回归验证：``test/replay_battle_log.py`` 把真机 ``logs/battle_watch.log`` 按**日志时间**
+回归验证：``test/replay_battle_log.py`` 把真机 ``logs/achievement_hook.log`` 按**日志时间**
 回放给驱动（不跑游戏），可以直接看到每条规则的重位时刻：修好后
 ``ach_yisang_lcb_s3`` 在 ``11:04:54.933``（结算后 5.8s、动画 tick 上）才解锁，
 而不是 ``11:04:49.16`` 的结算瞬间。
@@ -472,24 +472,30 @@ python -m functions.achievement.battle_watch
 # 离线自检（不需要游戏）：布局 / 桩解引用 / 真注入 / 状态机 / 状态文件 / 成就
 python test\battle_watch_test.py
 
-# 回放真机日志（不需要游戏）：把 logs/battle_watch.log 按日志时间喂给驱动，
+# 回放真机日志（不需要游戏）：把 logs/achievement_hook.log 按日志时间喂给驱动，
 # 打印每条规则的**置位时刻**与同刻附近的事件类别（结算瞬间 vs 动画 tick），
 # 最后直接问每个成就“这场战斗该不该解锁”（含 require/chain）
 python test\replay_battle_log.py
 ```
 
 正常流程不用手动跑：启动器启动游戏时会拉起 `main.py --achievement-hook`，
-其中 `AchievementHook.start_monitoring()` 里 `start_battle_watch()`。**看运行情况的三处**：
+其中 `AchievementHook.start_monitoring()` 里 `start_battle_watch()`。**看运行情况的两处**：
 
 | 看什么 | 位置 | 关键行 |
 |---|---|---|
-| 成就日志（**只留成就相关**） | `logs/achievement_hook.log` | `已注入 …` / `prologue 自检通过` / `已装钩 N 个观测点` / `观测点开始命中: …` / `心跳: …` / `★ …判定…` / `[成就] 解锁: …`；每行都带 `[HH:MM:SS]` 时间轴 |
-| 事件流（全量） | `logs/battle_watch.log` | 每一行 `RND/SPD/VAL/ACT`，带时间戳 |
+| 唯一一份日志 | `logs/achievement_hook.log` | 成就相关：`已注入 …` / `prologue 自检通过` / `已装钩 N 个观测点` / `观测点开始命中: …` / `心跳: …` / `★ …判定…` / `[成就] 解锁: …`（每行带 `[HH:MM:SS]` 时间轴）；以及全量事件流：每行 `RND/SPD/VAL/ACT`（带毫秒） |
 | 机器可读状态 | `cache/achievement/battle_watch_status.json` | 阶段/注入 PID/每个钩子的 rva+命中数/`rule_hits`（每条判定）/`watched_vitals`（目标身份的血量理智） |
 
-两个日志都在**每次实例启动时清空重写**（只留本次运行）。事件行默认**不**进成就日志；
-想看就把设置项 **「成就日志记录全部战斗事件」**（`achievement_log_verbose`）打开，
-或直接用 `logs/battle_watch.log`。
+> 以前是**三份**日志（`achievement_hook.log` + `achievement_hook_child.log` +
+> `battle_watch.log`），排查要在几个文件之间对时间。现在合成一份：子进程的
+> stdout/stderr 由父进程接进同一个文件，事件流通过
+> `functions/achievement/log_sink.py` 登记到同一落点。
+> 只有离线自查（`python -m functions.achievement.battle_watch`）没有登记 sink 时，
+> 才退回写自己的 `logs/achievement_hook.log`。
+
+日志在**每次实例启动时清空重写**（只留本次运行）。事件行一直写在这份文件里；
+设置项 **「成就日志记录全部战斗事件」**（`achievement_log_verbose`）只额外控制
+事件行要不要也打一条即时摘要行。
 
 成就日志的写入方式（修「日志损坏」时改的）：启动时清空一次，之后用
 **`O_APPEND` + 每行一次 `os.write` + 线程锁**（`hook._LogSink`）。
@@ -578,15 +584,15 @@ DLL 还挂在游戏里）—— 直接把新配置写进那块内存，DLL 接�
 | 预检 `rebuilt` | 本地+云端都对不上 → 已本地重建（并按需上传）；耗时 1~2 分钟，属正常 |
 | `⚠ 游戏 DLL 不一致`（进程内 vs 磁盘） | 进程加载的 GameAssembly.dll 不是磁盘上那份（游戏正在更新/加载了旧版本）→ 重启游戏；若目录里的文件已更新过就先 `update` |
 | 游戏内模块已有同名 battle_watch.dll | `LoadLibraryW` 不会重新加载同名模块 → 重启游戏（旧模块随进程退出消失）|
-| 速度/理智/血量没反应 | 先看 `logs/battle_watch.log` 里有没有对应的 `SPD`/`VAL` 行：没有就是钩子没命中或字段偏移不对；有但 `mp=-1000`/`hp=-1000` 就是 `_state` 读失败（看第四节） |
-| buff 成就没反应 | 1) `logs/achievement_hook.log` 启动时应有一行「关注 buff N 个: …」——没有就说明 `battle_watch.watched_buff_names()` 是空的（成就没登记 / 没在模块列表里）；2) `logs/battle_watch.log` 里搜 `BUF`：有行但掩码 `m=0` 就是哈希对不上（改过 C 或 Python 的 fnv1a64？自检里有 C/Python 对照项）；根本没 `BUF` 行就是 buff 链偏移不对（链见第四节） |；3) `logs/battle_watch.log` 里看 `BUF` 行的 `n=`：`n=-1` = 整条 buff 链读不到（`_buffDetail`/`_grantedBuffList`/`_buffData`/`id` 任一环断了，看第四节字段表）；`n>0 m=0` = 链正常、只是身上没有我们关注的 buff（检查成就模块里的 buff 名拼写）；`n=0` = 那一刻该单位身上确实没 buff
+| 速度/理智/血量没反应 | 先看 `logs/achievement_hook.log` 里有没有对应的 `SPD`/`VAL` 行：没有就是钩子没命中或字段偏移不对；有但 `mp=-1000`/`hp=-1000` 就是 `_state` 读失败（看第四节） |
+| buff 成就没反应 | 1) `logs/achievement_hook.log` 启动时应有一行「关注 buff N 个: …」——没有就说明 `battle_watch.watched_buff_names()` 是空的（成就没登记 / 没在模块列表里）；2) `logs/achievement_hook.log` 里搜 `BUF`：有行但掩码 `m=0` 就是哈希对不上（改过 C 或 Python 的 fnv1a64？自检里有 C/Python 对照项）；根本没 `BUF` 行就是 buff 链偏移不对（链见第四节） |；3) `logs/achievement_hook.log` 里看 `BUF` 行的 `n=`：`n=-1` = 整条 buff 链读不到（`_buffDetail`/`_grantedBuffList`/`_buffData`/`id` 任一环断了，看第四节字段表）；`n>0 m=0` = 链正常、只是身上没有我们关注的 buff（检查成就模块里的 buff 名拼写）；`n=0` = 那一刻该单位身上确实没 buff
 | 启动后整台机器卡顿 | 一般是**游戏更新后的索引重建**（capstone 解密 + Il2CppDumper，满核 1~2 分钟），不是观测本身。启动器已把 hook 子进程改成 `BELOW_NORMAL_PRIORITY_CLASS`（不再抢桌面），弹窗空闲时也不 60fps 空转 |
-| 成就日志里看不到战斗事件 | 正常：事件默认只进 `logs/battle_watch.log`；要一起看就打开设置项「成就日志记录全部战斗事件」 |
+| 成就日志里看不到战斗事件 | 正常：事件默认只进 `logs/achievement_hook.log`；要一起看就打开设置项「成就日志记录全部战斗事件」 |
 | `ERR prologue mismatch` / `last_error=3` | 游戏更新了而索引没重建：`python -m functions.hook.main update` 后重启游戏 |
 | `打开游戏进程失败` | 游戏以更高权限启动过（例如 Steam 用管理员启动）；用管理员权限跑启动器 |
 | `CreateRemoteThread 失败` | 杀软拦截注入；加白名单或关掉本功能 |
 | `共享内存已存在…本次不注入以免双钩` | 上次成就子进程没退干净；关掉旧进程或重启游戏 |
-| 速度界面显示 9 但没解锁 | 先看 `logs/battle_watch.log` 里 `SPD … os=14518 osi=14` —— `osi`/`owi` 才是整数速度（×1000 定点数，见第四节）；确认是整数速度后仍不中，就改那个**成就模块**里的 `fields`/`value`（例：`data/ach_faust_kui_speed9.py`）——驱动没有可调的"速度阈值" |
+| 速度界面显示 9 但没解锁 | 先看 `logs/achievement_hook.log` 里 `SPD … os=14518 osi=14` —— `osi`/`owi` 才是整数速度（×1000 定点数，见第四节）；确认是整数速度后仍不中，就改那个**成就模块**里的 `fields`/`value`（例：`data/ach_faust_kui_speed9.py`）——驱动没有可调的"速度阈值" |
 | 成就日志出现空洞 / 乱码 / 被杀断 | 1) **乱码**：日志是 UTF-8（现在带 BOM）—— 用记事本 / `Get-Content` / VS Code 打开都正常；若用只按 ANSI/GBK 解码的工具读就会花，改成 `Get-Content -Encoding UTF8` 或用支持 UTF-8 的编辑器。2) **空洞**：两个实例在写同一个文件（旧实现是固定偏移覆写）。现在：启动器先收残留子进程再清空；写入改成 `O_APPEND` 单行原子写；发现有别的实例时会跳过清空并写一行告警 |
 | 弹窗动画末尾卡顿 / 像卡死 | 旧版把成就轮询（含一次 ~400ms 的读内存）跑在**驱动动画的主线程**上。现在：轮询在独立线程（`ACHIEVEMENT_POLL_SEC`）；内存读取从 ~400ms 降到 ~7ms（不再 `spawn tasklist`，改 ctypes 枚举）；卡片背景改 C 级合成 + 缓存；每帧最多新建 1 张卡；启动时预热 Toplevel/图片 |
 | 弹窗描述被截断 | 现在按**像素宽度自动换行**（显式 `\n` 也认；最多 `MAX_DESC_LINES` 行，超出用省略号），卡片高度随行数自适应 |

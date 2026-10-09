@@ -918,9 +918,16 @@ class GameLauncher:
             pid_file = os.path.join(cache_dir, "hook.pid")
             self._kill_stale_hook_child(pid_file)
 
-            # 清空成就日志（battle_watch.log 由子进程自己清）
-            with open(hook_log_path, 'w', encoding='utf-8') as f:
-                f.write("")
+            # ---- 唯一一份成就日志 ----
+            # 这里把"清空 + 写 BOM"做完，紧接着把子进程的 stdout/stderr **追加**到同一个
+            # 文件上：于是「成就生命周期 / 子进程 stdout+stderr（异常、警告、print）/
+            # 战斗观测 DLL 事件流」全在一份 logs/achievement_hook.log 里，排查不用再跨
+            # 三个文件对时间（以前是 achievement_hook + achievement_hook_child +
+            # battle_watch 三份）。
+            # BOM 必须由这里先写：子进程的 stdout/stderr 会先落盘，等子进程再补 BOM 就晚了，
+            # 而没有 BOM 时记事本 / PowerShell 5.1 的 Get-Content 会把中文按 GBK 读成乱码。
+            with open(hook_log_path, 'wb') as f:
+                f.write(b"\xef\xbb\xbf")
 
             # self._progress("启动成就监测与战斗观测...", "🏆")
 
@@ -932,19 +939,21 @@ class GameLauncher:
                 "--output", hook_log_path,
             ]
             # 子进程的 stdout/stderr 以前是 DEVNULL：一旦它在写下第一行成就日志之前出事
-            # （被重复启动的实例杀掉 / 导入期异常 / 原生崩溃），就只剩“成就日志 3 字节（BOM）”
-            # 这个现象，什么都查不到。现在落到 logs/achievement_hook_child.log。
-            # 排查“成就/观测不生效”的现场：
-            #   logs/achievement_hook.log        成就日志（子进程自己写）
-            #   logs/achievement_hook_child.log  子进程 stdout/stderr（异常/警告）
-            #   cache/achievement/hook_boot.log  子进程启动面包屑（死在哪一步）
-            #   cache/achievement/hook_fatal.log faulthandler（原生崩溃堆栈）
-            child_log_path = os.path.join(logs_dir, "achievement_hook_child.log")
+            # （被重复启动的实例杀掉 / 导入期异常 / 原生崩溃），就只剩"成就日志 3 字节（BOM）"
+            # 这个现象，什么都查不到。现在直接并进同一份成就日志。
+            # 其它排查点（都在 cache/achievement/）：
+            #   hook.pid                   子进程 PID（单实例）
+            #   hook_boot.log              子进程启动面包屑（死在哪一步）
+            #   hook_fatal.log             faulthandler（原生崩溃堆栈）
+            #   battle_watch_status.json   战斗观测状态（机器可读，--status 用）
             child_log = None
             try:
-                child_log = open(child_log_path, "w", encoding="utf-8-sig", errors="replace")
+                child_log = open(hook_log_path, "a", encoding="utf-8", errors="replace")
             except OSError as exc:
-                print(f"[成就] 无法创建子进程日志 {child_log_path}: {exc}")
+                print(f"[成就] 无法打开成就日志 {hook_log_path}: {exc}")
+            child_env = dict(os.environ)
+            # 告诉子进程：清空已经做过了（别再 truncate，否则会把启动期的 stderr 抹掉）
+            child_env["FAUST_ACH_TRUNCATED"] = "1"
             try:
                 proc = subprocess.Popen(
                     cmd,
@@ -952,6 +961,7 @@ class GameLauncher:
                     stdout=child_log if child_log is not None else subprocess.DEVNULL,
                     stderr=child_log if child_log is not None else subprocess.DEVNULL,
                     stdin=subprocess.DEVNULL,
+                    env=child_env,
                     # CREATE_NO_WINDOW | BELOW_NORMAL_PRIORITY_CLASS
                     # 低优先级很重要：游戏更新后子进程要在后台跑一遍 metadata 解密 +
                     # Il2CppDumper（满核 1~2 分钟），正常优先级会把整个桌面卡住。

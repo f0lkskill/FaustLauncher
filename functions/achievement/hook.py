@@ -25,6 +25,22 @@ from functions.achievement.achievements import (
     record_zero_item, poll_inventory_window, detect_owned_items,
     register_inventory_open, achievements,
 )
+from functions.achievement import log_sink
+
+
+def _writable_root() -> str:
+    """**可写**的应用根目录（cache/、logs/ 都该落在这里）。
+
+    ⚠ 不能用 ``__file__`` 上溯三级：打包后 ``__file__`` 在 PyInstaller 的 ``_MEIPASS``
+    （onedir 布局就是 ``_internal\\``）里 —— 单实例 pid 文件写进去之后，父进程按 exe
+    目录算出来的路径是另一份，两边永远对不上（现场：``_internal\\cache\\achievement``
+    里有 hook.pid/hook_boot.log，exe 目录的 cache 里却是空的）。见 path_utils.get_app_root。
+    """
+    try:
+        from functions.base.common.path_utils import get_app_root
+        return get_app_root()
+    except Exception:  # noqa: BLE001
+        return os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # 成就轮询间隔（独立线程；弹窗动画不受影响）
 ACHIEVEMENT_POLL_SEC = 1.0
@@ -408,8 +424,7 @@ def _other_hook_running(pid_file: str = "") -> int:
 
 
 def _default_pid_file() -> str:
-    base = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    return os.path.join(base, "cache", "achievement", "hook.pid")
+    return os.path.join(_writable_root(), "cache", "achievement", "hook.pid")
 
 # ============ 单实例策略（2026-09-25）========================================
 # 以前的做法只是“别打架”：发现另一个实例就不清空日志、继续并存 → 两个进程重复解锁成就、
@@ -903,9 +918,7 @@ def run_achievement_hook():
     args, _ = parser.parse_known_args()
 
     # ---- 单实例：先解决“有没有别的实例”，再开日志（保证只有一个实例在写日志）
-    pid_file = os.path.join(
-        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-        "cache", "achievement", "hook.pid")
+    pid_file = _default_pid_file()
     sole, sole_note = _acquire_single_instance(pid_file, on_log=_boot)
     _boot(f"单实例检查：{sole_note}")
     if not sole:
@@ -919,16 +932,24 @@ def run_achievement_hook():
 
     if args.output:
         import atexit as _atexit
-        # 到这里已经确认自己是唯一实例 → 放心清空日志（不会再有第二个写者）
-        sink = _LogSink(args.output, truncate=True)
+        # 到这里已经确认自己是唯一实例 → 放心清空日志（不会再有第二个写者）。
+        # ⚠ 父进程已经把这份日志清空并写好 BOM、还把子进程的 stdout/stderr 接到它上面，
+        #    所以那种情况下**不能再 truncate**（会把启动面包屑/早期 stderr 抹掉）——
+        #    父进程用 FAUST_ACH_TRUNCATED=1 告诉我们"清空已经做过了"。
+        already_truncated = bool(os.environ.get("FAUST_ACH_TRUNCATED"))
+        sink = _LogSink(args.output, truncate=not already_truncated)
 
         def _write(msg: str):
             sink.write_line(msg)
 
         log_callback = _write
+        # 登记为**本进程统一的日志落点**：战斗观测(原 logs/battle_watch.log)也写这里，
+        # 于是成就生命周期 / 子进程 stdout+stderr / DLL 事件流全在一份文件里。
+        log_sink.install(_write)
         log_callback(f"[成就监测] 单实例：{sole_note}")
 
         def _cleanup():
+            log_sink.clear()
             sink.close()
         _atexit.register(_cleanup)
         _boot(f"成就日志 sink 就绪: {args.output}（已独占）")
@@ -976,7 +997,8 @@ def run_achievement_hook():
     log_callback("")
     log_callback("开始监控...")
     log_callback("-" * 60)
-    log_callback("[成就监测] 战斗观测详情: 事件流 logs/battle_watch.log；"
+    log_callback("[成就监测] 日志: logs/achievement_hook.log 一份到底"
+                 "（成就生命周期 + 子进程 stdout/stderr + 战斗观测事件流）；"
                  "状态 cache/achievement/battle_watch_status.json；"
                  "离线自查 python -m functions.achievement.battle_watch --probe/--status")
 
