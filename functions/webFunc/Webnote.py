@@ -119,9 +119,112 @@ def _build_url(template, key):
 
 
 # 本地缓存 (断网/线路故障时兜底, 保证启动器仍可用)
+def _cache_stem(key):
+    """笔记名 → 缓存文件名主干（与 :func:`_cache_path` 的清洗规则保持一致）。"""
+    return re.sub(r"[^0-9A-Za-z._\-]", "_", str(key))[:80] or "note"
+
+
 def _cache_path(key):
-    safe = re.sub(r"[^0-9A-Za-z._\-]", "_", str(key))[:80] or "note"
-    return os.path.join(CACHE_DIR, safe + ".txt")
+    return os.path.join(CACHE_DIR, _cache_stem(key) + ".txt")
+
+
+def configured_note_names():
+    """当前配置里**会用到**的全部笔记名（清理 cache/webnote 的依据）。
+
+    来源：
+      · ``config/web_config.json`` 的 ``webnote.*.address``（dict 与字符串两种写法都认）；
+      · 构建时内嵌配置里的同名项（exe 旁残留旧配置时 :meth:`Note._candidate_keys` 会用它）；
+      · ``lanzou`` 的三个文件夹名（蓝奏目录列表也走同一套笔记接口）。
+
+    ``simplenote_api_key`` 排除在外：那一项存的是 API 密钥，不是笔记名。
+    """
+    names = []
+
+    def add(value):
+        text = str(value or "").strip()
+        if text and text not in names:
+            names.append(text)
+
+    try:
+        from functions.base.web_config import get_embedded_webnote_address, get_web_config
+    except Exception:
+        return names
+    data = get_web_config() or {}
+    section = data.get("webnote")
+    if isinstance(section, dict):
+        for key, item in section.items():
+            if str(key) == "simplenote_api_key":
+                continue
+            if isinstance(item, dict):
+                add(item.get("address"))
+            elif isinstance(item, str):
+                add(item)
+            try:
+                add(get_embedded_webnote_address(str(key)))
+            except Exception:
+                pass
+    lanzou = data.get("lanzou")
+    if isinstance(lanzou, dict):
+        for key in ("icons_folder", "mods_folder", "addons_folder"):
+            add(lanzou.get(key))
+    return names
+
+
+def prune_cache(extra=()):
+    """删掉 ``cache/webnote`` 里不属于"当前会用到的笔记名"的缓存文件，返回统计。
+
+    为什么需要：笔记改名/废弃之后（本机实测配置已经从 ``FaustLauncher.addon.info.v2``
+    升到 ``v3``），旧笔记的正文会一直躺在磁盘上。除了占地方，它还**有实际风险** ——
+    :meth:`Note.fetch_note_info` 在全部网络源失败时会回退磁盘缓存，作废的旧正文会被
+    当成"离线兜底"喂回上层。
+
+    安全性：拿不到配置（keep 集合为空）时**一份都不删**，避免配置读取失败把缓存清空。
+    """
+    keep = {_cache_stem(name) for name in configured_note_names()}
+    for item in (extra or ()):
+        text = str(item or "").strip()
+        if text:
+            keep.add(_cache_stem(text))
+    result = {"removed": 0, "kept": 0, "freed": 0, "names": sorted(keep)}
+    if not keep:
+        print("[云端] 读不到 web 配置的笔记名 → 跳过笔记缓存清理（不清空）")
+        return result
+    if not os.path.isdir(CACHE_DIR):
+        return result
+    for name in sorted(os.listdir(CACHE_DIR)):
+        path = os.path.join(CACHE_DIR, name)
+        if not os.path.isfile(path) or not name.lower().endswith(".txt"):
+            continue
+        if name[:-4] in keep:
+            result["kept"] += 1
+            continue
+        try:
+            size = os.path.getsize(path)
+            os.remove(path)
+            result["removed"] += 1
+            result["freed"] += size
+            print(f"[云端] 已清理废弃的笔记缓存: {name}（{size} 字节）")
+        except OSError:
+            pass
+    if result["removed"]:
+        print(f"[云端] 笔记缓存清理完成: 删除 {result['removed']} 份 / "
+              f"释放 {result['freed'] / 1024:.1f} KB，保留 {result['kept']} 份")
+    return result
+
+
+_pruned = False
+
+
+def _prune_once():
+    """每次进程只清理一次（在第一次真正发起笔记请求时调用）。"""
+    global _pruned
+    if _pruned:
+        return
+    _pruned = True
+    try:
+        prune_cache()
+    except Exception as exc:  # noqa: BLE001
+        print(f"[云端] 笔记缓存清理失败(忽略): {exc}")
 
 
 def cache_read(key):
@@ -274,6 +377,7 @@ def _fetch_note(keys, verbose=True):
     """
     if isinstance(keys, str):
         keys = [keys]
+    _prune_once()
     bases = get_note_bases()
     cached_text = ""
     for k in keys:

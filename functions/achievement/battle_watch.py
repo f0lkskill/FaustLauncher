@@ -1569,6 +1569,12 @@ def build_hook_table(on_log=None, pe_path: str = "") -> dict:
             data = pe.prologue(rva, 16)
             if data and len(data) == 16:
                 item["prologue"] = data
+                # ⚠ 这份 prologue 是**用本机 DLL 在同一个地址上现读的** —— DLL 侧的
+                #    verify_prologue 拿同一次读出来的字节与自己比，**必然通过**。
+                #    也就是说这一条的自检等于没有：RVA 哪怕指向别的函数、甚至是函数中间，
+                #    也照样会被 MinHook 打上 5 字节 jmp（直接把宿主函数的指令流改坏 → 崩游戏）。
+                #    标记出来，下面按"索引在不在"决定要不要放行。
+                item["prologue_self_read"] = True
         key_owner = used_rva.get(rva)
         if key_owner is not None:
             log(f"[战斗观测] {key} 与 {key_owner} 指向同一地址 0x{rva:X}，"
@@ -1577,11 +1583,32 @@ def build_hook_table(on_log=None, pe_path: str = "") -> dict:
             continue
         used_rva[rva] = key
         resolved[key] = item
+
+    # 4b) 兜底：**有索引时，拒绝下发"自证 prologue"的观测点**
+    #
+    # 索引里没有这个 key，就只能沿用代码里写死的 fallback RVA（注释写着"RVA 来自 build
+    # 2026-09-17 实测"）。游戏一更新这些 RVA 就整体平移 —— 落在别的函数甚至函数中间，
+    # 而上面那条自证 prologue 又让 DLL 拦不住。实战现场（2026-10-09 13:31）：
+    # 24 个观测点里有 8 个是这种，注入后 10 秒登录载入存档时游戏直接崩。
+    # 宁可这次少观测几个点（成就降级），也不能拿钩子去改坏游戏的指令流。
+    dropped: list[str] = []
+    if index is not None:
+        dropped = [k for k, v in resolved.items() if v.get("prologue_self_read")]
+        for k in dropped:
+            resolved.pop(k, None)
+        if dropped:
+            log(f"[战斗观测] 丢弃 {len(dropped)} 个**索引里没有**的观测点（它们的 RVA 只能"
+                f"沿用代码里写死的旧值，prologue 又只能本机现读自证，装钩有把游戏改崩的风险）: "
+                f"{', '.join(dropped)}")
+            log("[战斗观测] 想恢复它们：跑一次 python -m functions.hook.main update 重建索引"
+                "（索引里现在会包含这些观测点，RVA/prologue 都来自当前游戏版本）")
+
     if len(resolved) > MAX_HOOKS:
         log(f"[战斗观测] 候选 {len(resolved)} 个超过 DLL 上限 {MAX_HOOKS}，只取前 {MAX_HOOKS} 个")
         resolved = {k: v for k, v in list(resolved.items())[:MAX_HOOKS]}
     return {"entries": resolved, "source": source, "names": names,
-            "index_available": index is not None}
+            "index_available": index is not None,
+            "dropped_self_read": dropped}
 
 
 def describe_hook_table(table: dict) -> str:

@@ -254,6 +254,62 @@ OBSERVE_TARGETS: tuple[ObserveTarget, ...] = (
         description="存档已通关关卡记录（挂 UpdateData 抓对象，供采样线程轮询）",
         resolve_stub=False,
     ),
+    # ---- 存档：已通关关卡记录（UI 查询路径）--------------------------------
+    # ⚠ 2026-10-09 补进索引：这三条以前**只在 battle_watch.FALLBACK_HOOKS 里写死 RVA**
+    # （来自 2026-09-17 的构建），索引里没有它们 → build_hook_table 只能沿用写死的旧
+    # RVA，而它们的 prologue 是用本机 DLL 在同一个旧地址上现读的 → DLL 侧自检**必然通过**，
+    # 于是"钩到别的函数中间"这件事没有任何一层能拦下来。实战现场（2026-10-09 13:31）
+    # 就是这么崩的：注入后 10 秒、登录载入存档时游戏直接挂掉。
+    # 现在它们和别的观测点一样进索引：RVA/prologue 都来自当前 dump，预检能校验。
+    ObserveTarget(
+        key="stage_clear_query", symbol="UserStageClearInfoData::GetData",
+        kind="cache_self", fallback_rva=0x18E6300,
+        description="UI 查询已通关记录（抓对象指针，与 stage_clear_info 多头挂点）",
+        resolve_stub=False,
+    ),
+    ObserveTarget(
+        key="stage_clear_last", symbol="UserStageClearInfoData::GetLastClearData",
+        kind="cache_self", fallback_rva=0x18E63E0,
+        description="UI 查询最后一次通关记录（抓对象指针）",
+        resolve_stub=False,
+    ),
+    # ---- 关卡通关状态查询（当前 UI 真正在用的那条路）------------------------
+    # 关卡列表每次渲染都会问 UserStageNodeStateData"这关通了没"，章节号/节点号是入参。
+    ObserveTarget(
+        key="node_cleared", symbol="UserStageNodeStateData::IsNodeCleared",
+        kind="node_state", fallback_rva=0x18B0A30,
+        description="关卡是否已通关（章节/节点是入参，不依赖存档结构）",
+        resolve_stub=False,
+    ),
+    ObserveTarget(
+        key="node_clear_state", symbol="UserStageNodeStateData::GetClearNodeState",
+        kind="node_state", fallback_rva=0x18B0630,
+        description="关卡通关状态（含难度/次数）",
+        resolve_stub=False,
+    ),
+    # ---- 存档全量进度树（不用点任何界面的正解）------------------------------
+    # 登录时服务端把整棵 章→小节→节点 树下发到这里；a1 就是列表根。
+    ObserveTarget(
+        key="stage_progress", symbol="UserStageNodeStateData::UpdateData",
+        kind="cache_arg1", fallback_rva=0x18AFFE0,
+        description="存档全量进度树（登录时下发，采样线程遍历即可全量判定）",
+        resolve_stub=False,
+    ),
+    # ---- 折射铁路：每节点通关回合（存档重建时逐个构造）----------------------
+    ObserveTarget(
+        key="railway_node", symbol="RailwayDungeonFormerSaveData::.ctor",
+        kind="railway_node", fallback_rva=0x18B38D0,
+        description="折射铁路每节点通关回合（填 nodeId/clearTurn）",
+        resolve_stub=False,
+    ),
+    # ---- 折射铁路：历史记录（界面上"你最好的回合数"）------------------------
+    # 9 参构造函数：arg1 = 线路号，arg4 = IList<int> 各节点回合；求和得到整条线总回合。
+    ObserveTarget(
+        key="railway_hist", symbol="RailwayDungeonHistoryDataByCollection::.ctor",
+        kind="railway_hist", fallback_rva=0x1A83860,
+        description="折射铁路历史记录（各节点回合列表 → 整条线总回合）",
+        resolve_stub=False,
+    ),
     # ---- 关卡身份（界面上的 "10-4"）----------------------------------------
     # SetData(partId, chapterId, nodeId, stageId, clearState)：入参就是官方口径。
     ObserveTarget(
