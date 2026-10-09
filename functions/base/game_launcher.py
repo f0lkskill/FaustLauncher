@@ -426,6 +426,89 @@ class GameLauncher:
                 if (kind, res) not in alive:
                     shutil.rmtree(os.path.join(kdir, res), ignore_errors=True)
 
+    @classmethod
+    def _gc_changes_backups(cls, lang_root: str, skip_folder=None) -> dict:
+        """清掉**永远不可能再用来还原**的快照，返回统计。
+
+        先说明这个目录为什么存在（它不是"无意义的缓存"，别整目录删）：插件/Mod 的
+        ``changes*.json`` 会改写游戏 Lang 里的文本，改之前这里存一份原始内容；
+        资源被禁用时靠它把文本还原回去，否则"禁用后文本还在生效"。
+
+        但它会无界增长，所以要回收那些**按 _restore_backups 自己的护栏永远不会生效**的条目：
+
+        · 快照文件本身不在了 → 还原时直接 continue；
+        · 目标游戏文件不存在 → 同样 continue；
+        · 目标文件比快照新（超过 2 秒）→ 时间戳护栏会拒绝还原，而 mtime 只增不减，
+          这个快照从此彻底作废；
+        · 目标落在当前平台汉化文件夹里（``skip_folder``）→ 还原时一律跳过
+          （那个文件夹由汉化包整目录重建，拿旧快照回写会把新汉化顶掉）。
+
+        其余一律保留 —— 它们是"禁用资源后还原原始文本"的唯一依据。
+        """
+        root = cls.CHANGES_BACKUP_ROOT
+        stats = {"dirs": 0, "entries": 0, "freed": 0, "kept": 0}
+        if not os.path.isdir(root):
+            return stats
+        for kind in sorted(os.listdir(root)):
+            kdir = os.path.join(root, kind)
+            if not os.path.isdir(kdir):
+                continue
+            for res in sorted(os.listdir(kdir)):
+                backup_dir = os.path.join(kdir, res)
+                if not os.path.isdir(backup_dir):
+                    continue
+                index = cls._load_backup_index(backup_dir)
+                if not index:
+                    continue
+                changed = False
+                for changes_file in list(index.keys()):
+                    slot = index.get(changes_file)
+                    if not isinstance(slot, dict):
+                        index.pop(changes_file, None)
+                        changed = True
+                        continue
+                    for rel in list(slot.keys()):
+                        name = slot.get(rel)
+                        src = os.path.join(backup_dir, str(name))
+                        target = os.path.join(lang_root, *str(rel).split('/'))
+                        top = str(rel).split('/')[0]
+                        dead = False
+                        if skip_folder and top == skip_folder:
+                            dead = True
+                        elif not os.path.isfile(src):
+                            dead = True
+                        elif not os.path.isfile(target):
+                            dead = True
+                        else:
+                            try:
+                                if os.path.getmtime(target) > os.path.getmtime(src) + 2:
+                                    dead = True
+                            except OSError:
+                                dead = True
+                        if not dead:
+                            stats["kept"] += 1
+                            continue
+                        try:
+                            size = os.path.getsize(src)
+                        except OSError:
+                            size = 0
+                        try:
+                            os.remove(src)
+                            stats["freed"] += size
+                        except OSError:
+                            pass
+                        slot.pop(rel, None)
+                        stats["entries"] += 1
+                        changed = True
+                    if not slot:
+                        index.pop(changes_file, None)
+                if changed:
+                    cls._save_backup_index(backup_dir, index)
+                    if not index:
+                        shutil.rmtree(backup_dir, ignore_errors=True)
+                        stats["dirs"] += 1
+        return stats
+
     def _apply_changes(self):
         """应用所有**已启用**资源的 changes*.json 文本补丁到游戏语言文件。
 
@@ -577,6 +660,14 @@ class GameLauncher:
 
         # ---- 4) 已删除资源的快照清掉 ----
         self._prune_changes_backups(alive)
+
+        # ---- 5) 回收永远不可能再还原的快照 (这个目录会无界增长) ----
+        gc = self._gc_changes_backups(lang_data_dir, skip_folder=cur_folder)
+        if gc["entries"]:
+            print(f"[文本补丁] 已回收 {gc['entries']} 份永远无法再还原的旧快照"
+                  f"（{gc['freed'] / 1048576:.1f} MB，剩 {gc['kept']} 份可用）")
+        else:
+            print(f"[文本补丁] 文本改动快照: {gc['kept']} 份可用，无需回收")
 
     def _apply_cosmetic_features(self):
         """应用气泡渐变、EGO 样式、技能描述、提示替换、技能渐变色 (逐项推送进度, 单项失败不中断)"""
