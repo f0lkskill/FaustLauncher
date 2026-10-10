@@ -929,6 +929,16 @@ class GameLauncher:
             with open(hook_log_path, 'wb') as f:
                 f.write(b"\xef\xbb\xbf")
 
+            # 顺手清掉合并前的两个旧日志，免得用户看到"到底看哪个"（内容已并入上面那份）
+            for stale_name in ("achievement_hook_child.log", "battle_watch.log"):
+                stale = os.path.join(logs_dir, stale_name)
+                try:
+                    if os.path.isfile(stale):
+                        os.remove(stale)
+                        print(f"[成就] 已删除合并前的旧日志: {stale_name}")
+                except OSError:
+                    pass
+
             # self._progress("启动成就监测与战斗观测...", "🏆")
 
             cmd = [
@@ -983,12 +993,12 @@ class GameLauncher:
             # hook.pid 一律由**子进程自己**写（``hook._write_own_pid`` 写的是 os.getpid()）。
             print(f"[成就] 成就监测子进程已拉起（launcher pid={proc.pid}；"
                   f"子进程会把自己的 PID 写进 {os.path.basename(pid_file)}）")
-            self._watch_hook_child(proc, hook_log_path, child_log_path)
+            self._watch_hook_child(proc, hook_log_path)
         except Exception as e:
             print(f"[成就] 启动成就监测失败 (不影响游戏启动): {e}")
             traceback.print_exc()
 
-    def _watch_hook_child(self, proc, hook_log_path: str, child_log_path: str) -> None:
+    def _watch_hook_child(self, proc, hook_log_path: str) -> None:
         """子进程健康检查：起来 20s 后成就日志还只有 BOM（3 字节）就主动告警。
 
         以前这种情况是“静默”的：用户只看到启动器一句进度，成就日志没内容，也没提示。
@@ -1005,14 +1015,14 @@ class GameLauncher:
                 size = -1
             code = proc.poll()
             if code is not None:
-                print(f"[成就] 成就监测子进程已退出（exit={code}）→ 看 {child_log_path}"
+                print(f"[成就] 成就监测子进程已退出（exit={code}）→ 看 {hook_log_path}"
                       f" 与 cache/achievement/hook_boot.log")
                 return
             if size <= 3:
                 print("[成就] 成就监测子进程在跑，但成就日志没有任何内容"
                       "（成就解锁与战斗观测都不会生效）→ 现场: "
-                      f"{child_log_path} / cache/achievement/hook_boot.log / "
-                      "cache/achievement/hook_fatal.log")
+                      f"{hook_log_path}（含子进程 stdout/stderr）/ "
+                      "cache/achievement/hook_boot.log / cache/achievement/hook_fatal.log")
 
         try:
             import threading
