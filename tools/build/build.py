@@ -298,9 +298,12 @@ class BuildApi:
                 os.makedirs(f"build_{vi}/{d}", exist_ok=True)
             from functions.web_update.translation_source import get_translation_dir
             os.makedirs(f"build_{vi}/{get_translation_dir()}", exist_ok=True)
-            if not os.path.isfile("build_temp/updater.vbs"):
-                raise FileNotFoundError("未找到 build_temp/updater.vbs（版本更新器必备）")
-            shutil.copy("build_temp/updater.vbs", f"build_{vi}/updater.vbs")
+            # 版本更新器源码在 tools/build_temp/ 下（跟本文件一样属于"工具"而非根目录）
+            updater_vbs = os.path.join(_ROOT, "tools", "build_temp", "updater.vbs")
+            if not os.path.isfile(updater_vbs):
+                raise FileNotFoundError(
+                    f"未找到 {updater_vbs}（版本更新器必备）")
+            shutil.copy(updater_vbs, f"build_{vi}/updater.vbs")
             if os.path.isdir("functions/webFunc"):
                 shutil.copytree("functions/webFunc", f"build_{vi}/_internal/webFunc",
                                 dirs_exist_ok=True)
