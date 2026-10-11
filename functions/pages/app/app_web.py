@@ -3488,7 +3488,7 @@ def _start_game_state_watcher(window_ref):
                     # 首次观测: 只记基线, 不改变对外状态, 也不推送
                     seeded = True
                     _update_game_state(alive, busy, seed=True)
-                    print("[游戏] 已建立进程状态基线 (初始化不据此改变按钮形态)")
+                    print("[游戏] 已建立进程状态基线")
                     if not alive:
                         # 启动器刚起来、游戏还没跑 —— 这是做偏移重建最好的窗口
                         _refresh_hook_index_when_idle("启动器启动")

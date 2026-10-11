@@ -1,1 +1,2 @@
-python -m functions.hook.main update
+"venv\Scripts\python.exe" -m functions.hook.main update
+pause

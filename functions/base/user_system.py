@@ -526,10 +526,12 @@ def push_achievement(achievement_id: str, uid: str = "") -> dict:
     result = user_api.add_achievement(aid, target)
     data = result.get("data") if isinstance(result.get("data"), dict) else {}
     if result.get("ok"):
+        assert data is not None
         added = bool(data.get("added"))
         known = data.get("known")
         note = "" if known is None else ("（服务端已收录）" if known else "（服务端暂未收录该 ID）")
         print(f"[用户] 成就单条上报: {aid} → {'新加' if added else '云端已有(幂等跳过)'}{note}")
+        assert data is not None
         return {"ok": True, "added": added, "known": known,
                 "count": int(data.get("count") or 0)}
     print(f"[用户] 成就单条上报失败: {aid} → {result.get('error')}")
@@ -655,7 +657,7 @@ def sync_user(settings_manager=None) -> dict:
         # 成就也跟着同步一次：**先与云端取并集写回本地（只增不减），再把并集全量推回去**。
         # 插件成就不参与（它们只存本地独立文件，永远不上云）。
         try:
-            print("[用户] 成就云端同步: 开始（拉取 → 与本地取并集 → 回推全量）")
+            print("[用户] 成就云端同步: 开始")
             ach = sync_achievements(pull=True)
             pull = ach.get("pull") or {}
             print(f"[用户] 成就同步: 云端 {pull.get('count', '?')} 条 / 本地原有 "
@@ -1035,10 +1037,12 @@ def verify_skin(skin_id: str) -> dict:
     if not meta:
         return {"ok": False, "unlocked": False, "error": "皮肤不存在"}
     unlock = meta.get("unlock") if isinstance(meta.get("unlock"), dict) else {"type": "free"}
+    assert unlock is not None
     kind = str(unlock.get("type") or "free").lower()
     if kind == "free":
         return {"ok": True, "unlocked": True, "condition": unlock}
     if kind == "edge_window_title":
+        assert unlock is not None
         passed, title = _edge_title_contains(unlock.get("title_keyword") or "DeepSeek")
         return {"ok": True, "unlocked": passed, "title": title, "condition": unlock}
     return {"ok": False, "unlocked": False, "condition": unlock, "error": "未知解锁条件"}
