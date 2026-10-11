@@ -1,5 +1,10 @@
 # Byte-compiled / optimized / DLL files
-tools/
+# tools/ 整体当"本地脚手架目录"忽略（自带 venv / 下载产物 / 预览图）。
+# ⚠ 写成 **/tools/ 而不是 tools/：根目录那份 tools/ 要被文件末尾的例外放行，
+#   而"父目录被忽略时无法直接取消忽略其中的文件"，所以这里不能把 tools/ 目录本身排除掉。
+**/tools/
+!/tools/
+/tools/*
 resources/
 __pycache__/
 *.py[cod]
@@ -190,3 +195,14 @@ build_temp/*
 # (同样要先放行 tools/ 目录本身: 父目录被忽略时无法直接取消忽略其中的文件)
 !web/app_skins/*/tools/
 !web/app_skins/*/tools/*.py
+
+# 例外: 根目录 tools/ 下手写的小工具要入库。
+# 上面 `**/tools/` + `/tools/*` 把 tools/ 整个当本地脚手架忽略掉了，这里逐项放行
+# 源码与快捷方式；tools/wiki_fetch/（自带 .venv 与下载产物）、tools/preview/ 仍然不入库。
+!tools/README.md
+!tools/dev/
+!tools/dev/*.py
+!tools/diag/
+!tools/diag/*.py
+!tools/run/
+!tools/run/*.bat

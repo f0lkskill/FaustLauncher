@@ -3,7 +3,7 @@
 用途: 当某位用户"启动器里云端数据全部获取失败, 但浏览器打开正常"时,
 让他在**同一台机器**上运行本脚本, 一次性看出到底卡在哪一环:
 
-    python webnote_diag.py
+    python tools/diag/webnote_diag.py
 
 会依次检查并打印:
   1. 当前配置的笔记源 (config/web_config.json → webnote_bases)
@@ -21,9 +21,13 @@ import ssl
 import sys
 import time
 
-_HERE = os.path.dirname(os.path.abspath(__file__))
-if _HERE not in sys.path:
-    sys.path.insert(0, _HERE)
+# tools/diag/ -> 仓库根。必须把**仓库根**放进 sys.path 才能 import functions.*；
+# 用脚本自身目录（挪进 tools/diag 之前的写法）会让 `python tools/diag/webnote_diag.py`
+# 直接 ImportError。
+_ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                     "..", ".."))
+if _ROOT not in sys.path:
+    sys.path.insert(0, _ROOT)
 
 try:
     import requests

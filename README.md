@@ -98,7 +98,7 @@
 | 读 | `webnote_bases`（`/note/{key}`） | 模板列表，按顺序回退 |
 | 写 | `webnote_update_url`（`/update/`） | 下载计数 / 排序上传，POST 提交 |
 
-读取侧对国内线路做了加固：**IPv4 优先 → 超时重试 → DoH 兜底解析 → 直连 IP → 本地缓存降级**，每一级都打 `[云端]` 日志，不再出现「浏览器正常、启动器整段失败且无原因」。排障用 `python webnote_diag.py`。
+读取侧对国内线路做了加固：**IPv4 优先 → 超时重试 → DoH 兜底解析 → 直连 IP → 本地缓存降级**，每一级都打 `[云端]` 日志，不再出现「浏览器正常、启动器整段失败且无原因」。排障用 `python tools/diag/webnote_diag.py`。
 
 ### 4. 用户数据同步（服务端 API）
 
@@ -204,7 +204,7 @@ FaustLauncher/
 | 写皮肤 | 复制 `web/app_skins/faust/`，改 `css/style.css` 与 `config.json` |
 | 源码运行 | `python main.py`（默认 Web UI；`--tk-ui` 回旧界面，`--debug` 开调试）｜需要 `pip install -r requirements.txt` |
 | 打包 | `python build.py` |
-| 云端排障 | `python webnote_diag.py`（逐项打印 DNS / TCP / TLS / HTTP 与缓存状态） |
+| 云端排障 | `python tools/diag/webnote_diag.py`（逐项打印 DNS / TCP / TLS / HTTP 与缓存状态） |
 
 > 维护约定：前端改动后请同步提升 `web/app/index.html` 里资源引用的 `?v=NN` 缓存版本号；所有 JS 文件共享同一全局作用域，新增模块请追加到入口之前。
 
