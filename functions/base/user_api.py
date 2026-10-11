@@ -91,19 +91,19 @@ _PATH_ACTIONS = {
     "/api/register": "注册",
     "/api/login": "登录",
     "/api/logout": "退出",
-    "/api/me": "读我的资料",
-    "/api/me/skins": "上报皮肤",
+    "/api/me": "读取用户信息",
+    "/api/me/skins": "上报皮肤信息",
     "/api/me/name": "上报昵称",
-    "/api/me/achievements": "上报成就(方式①)",
-    "/api/achievements/overwrite": "上报成就(方式②)",
+    "/api/me/achievements": "上报成就 (用户信息路径)",
+    "/api/achievements/overwrite": "上报成就 (覆写)",
     "/api/me/playtime": "上报游玩时长",
-    "/api/achievements/add": "上报成就(单条)",
-    "/api/leaderboard": "读排行榜",
-    "/api/download": "上报下载",
+    "/api/achievements/add": "上报成就 (单条添加)",
+    "/api/leaderboard": "读取排行榜信息",
+    "/api/download": "上报资源下载数据",
 }
 _PATH_ACTION_PREFIXES = (
-    ("/api/user/", "读用户资料"),
-    ("/api/profile/", "读用户主页"),
+    ("/api/user/", "读取用户信息"),
+    ("/api/profile/", "读取用户主页信息"),
 )
 
 
