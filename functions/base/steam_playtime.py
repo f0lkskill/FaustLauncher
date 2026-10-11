@@ -9,10 +9,10 @@
         "Software" { "Valve" { "Steam" { "apps" { "1973530" { "Playtime" "44884" } } } } }
     }
 
-⚠ 这个文件**只在已登录 Steam 客户端的本机存在**，远程拿不到 —— 所以只能在用户自己的
+这个文件**只在已登录 Steam 客户端的本机存在**，远程拿不到 —— 所以只能在用户自己的
 电脑上读。多账号（多个 userdata 目录）时取**时长最大的那条**（同一个游戏通常只在一个账号上玩）。
 
-复用 ``steam_locator`` 里那套 VDF 解析与 Steam 安装目录定位（同一个解析器解析
+复用 ``steam_locator`` 里的 VDF 解析与 Steam 安装目录定位（同一个解析器解析
 libraryfolders.vdf / appmanifest，实测能正确读出嵌套结构）。
 """
 
@@ -61,7 +61,7 @@ def _to_int(value) -> int:
 def read_playtime(app_id: str = _sl.STEAM_APP_ID) -> dict:
     """读该游戏的累计游玩时长。
 
-    返回::
+    返回示例::
 
         {"ok": True, "seconds": 2693040, "minutes": 44884, "hours": 748.1,
          "last_played": 1791096623, "accounts": 2, "source": "<localconfig 路径>"}

@@ -182,9 +182,7 @@ def mark_logged_in() -> None:
     _mark_time("login")
 
 
-# ============================================================
 # 本地用户文件
-# ============================================================
 def _setting(name, type_name, value, default, description):
     return {
         "name": name,
@@ -397,9 +395,7 @@ def _apply_user_name(settings_manager, name: str) -> str:
     return name
 
 
-# ============================================================
 # 服务端同步
-# ============================================================
 def _merge_skins(*lists) -> list[str]:
     """皮肤并集 (保持先后顺序, 去空去重)"""
     out: list[str] = []
@@ -476,7 +472,7 @@ def pull_achievements_from_cloud(mode: str = "union") -> dict:
     result = user_api.me()
     if not result.get("ok"):
         return {"ok": False, "error": result.get("error") or "云端读取失败"}
-    # ⚠ user_api._request() 返回的是**信封** ``{"ok","data","status",...}``，服务端响应体
+    #   user_api._request() 返回的是**信封** ``{"ok","data","status",...}``，服务端响应体
     #   整个塞在 ``data`` 键里（user_api.py:247）。这里以前直接读信封的 ``achievements``，
     #   永远是 None → remote 恒为 []。后果不只是"同步不上"：紧接着的全量上报走
     #   ``POST /api/me/achievements``（服务端**整体替换**），于是"云端→本地"从未发生、
