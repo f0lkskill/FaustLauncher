@@ -8,16 +8,11 @@
 
 **《边狱巴士》一体化启动器 —— 汉化 · 美化 · Mod · 插件 · 成就，一次点击全部就位**
 
-[![版本](https://img.shields.io/github/v/release/f0lkskill/FaustLauncher?style=for-the-badge&label=%E7%89%88%E6%9C%AC&include_prereleases&color=blue)](https://github.com/f0lkskill/FaustLauncher/releases)
-[![许可证](https://img.shields.io/badge/%E8%AE%B8%E5%8F%AF%E8%AF%81-MIT-green?style=for-the-badge&logo=opensourceinitiative)](LICENSE)
-[![平台](https://img.shields.io/badge/%E5%B9%B3%E5%8F%B0-Windows%2010%20%7C%2011-lightgrey?style=for-the-badge&logo=windows)](https://github.com/f0lkskill/FaustLauncher)
-[![Stars](https://img.shields.io/github/stars/f0lkskill/FaustLauncher?style=for-the-badge&logo=github)](https://github.com/f0lkskill/FaustLauncher/stargazers)
-[![Downloads](https://img.shields.io/github/downloads/f0lkskill/FaustLauncher/total?style=for-the-badge&logo=github)](https://github.com/f0lkskill/FaustLauncher/releases)
-
-[![总用户](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Ffolkskill.pythonanywhere.com%2Fapi%2Foverview&query=%24.users.total&label=%E6%80%BB%E7%94%A8%E6%88%B7&color=blue&style=for-the-badge&cacheSeconds=600)](https://github.com/f0lkskill/FaustLauncher)
-[![Mod](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Ffolkskill.pythonanywhere.com%2Fapi%2Foverview&query=%24.mods.listed&label=Mod&color=orange&style=for-the-badge&cacheSeconds=600)](https://github.com/f0lkskill/FaustLauncher)
-[![插件](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Ffolkskill.pythonanywhere.com%2Fapi%2Foverview&query=%24.addons.listed&label=%E6%8F%92%E4%BB%B6&color=purple&style=for-the-badge&cacheSeconds=600)](https://github.com/f0lkskill/FaustLauncher)
-[![站点访问](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Ffolkskill.pythonanywhere.com%2Fstatus&query=%24.visit&label=%E7%AB%99%E7%82%B9%E8%AE%BF%E9%97%AE&color=green&style=for-the-badge&cacheSeconds=600)](https://github.com/f0lkskill/FaustLauncher)
+[![版本](https://img.shields.io/github/v/release/f0lkskill/FaustLauncher?style=flat-square&label=%E7%89%88%E6%9C%AC&color=6366f1&labelColor=2b2f3a&logo=github&include_prereleases)](https://github.com/f0lkskill/FaustLauncher/releases)
+[![平台](https://img.shields.io/static/v1?style=flat-square&label=%E5%B9%B3%E5%8F%B0&message=Windows%2010%20%7C%2011&color=9ca3af&labelColor=2b2f3a&logo=windows&logoColor=white)](#stack)
+[![许可证](https://img.shields.io/static/v1?style=flat-square&label=%E8%AE%B8%E5%8F%AF%E8%AF%81&message=MIT&color=6366f1&labelColor=2b2f3a&logo=opensourceinitiative&logoColor=white)](LICENSE)
+[![Stars](https://img.shields.io/github/stars/f0lkskill/FaustLauncher?style=social)](https://github.com/f0lkskill/FaustLauncher/stargazers)
+[![下载量](https://img.shields.io/github/downloads/f0lkskill/FaustLauncher/total?style=flat-square&label=%E4%B8%8B%E8%BD%BD%E9%87%8F&color=6366f1&labelColor=2b2f3a&logo=github)](https://github.com/f0lkskill/FaustLauncher/releases)
 
 [这是什么](#about) · [功能特性](#features) · [界面预览](#preview) · [快速开始](#quickstart) · [工作原理](#how) · [二次开发](#dev) · [常见问题](#faq) · [更新日志](https://github.com/f0lkskill/FaustLauncher/releases)
 
@@ -36,6 +31,13 @@
 **FaustLauncher** 是《边狱巴士 (Limbus Company)》玩家的一体化启动器：把**汉化更新、游戏美化、Mod 与插件管理、自定义翻译、版本自动更新**收进一个界面，点一次「启动游戏」就全部处理完。
 
 它不是一个「把官网链接摆一排」的导航页 —— 而是真正动手处理游戏文件的那一层：下载汉化包、按需改写 `Lang` 文本、搬运资源、加载 Mod、最后把游戏拉起来。
+
+<p align="center">
+  <a href="https://github.com/f0lkskill/FaustLauncher"><img alt="总用户" src="https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Ffolkskill.pythonanywhere.com%2Fapi%2Foverview&query=%24.users.total&label=%E6%80%BB%E7%94%A8%E6%88%B7&color=6366f1&labelColor=2b2f3a&style=flat-square&cacheSeconds=600"></a>
+  <a href="https://github.com/f0lkskill/FaustLauncher"><img alt="Mod 数量" src="https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Ffolkskill.pythonanywhere.com%2Fapi%2Foverview&query=%24.mods.listed&label=Mod&color=6366f1&labelColor=2b2f3a&style=flat-square&cacheSeconds=600"></a>
+  <a href="https://github.com/f0lkskill/FaustLauncher"><img alt="插件数量" src="https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Ffolkskill.pythonanywhere.com%2Fapi%2Foverview&query=%24.addons.listed&label=%E6%8F%92%E4%BB%B6&color=6366f1&labelColor=2b2f3a&style=flat-square&cacheSeconds=600"></a>
+  <a href="https://github.com/f0lkskill/FaustLauncher"><img alt="站点访问量" src="https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Ffolkskill.pythonanywhere.com%2Fstatus&query=%24.visit&label=%E7%AB%99%E7%82%B9%E8%AE%BF%E9%97%AE&color=6366f1&labelColor=2b2f3a&style=flat-square&cacheSeconds=600"></a>
+</p>
 
 > [!NOTE]
 > 所有对游戏的操作都是**可逆的**：被禁用的补丁会自动还原它改过的文本；顶层数据目录（`config` / `lang` / `mods` / `addons`）在更新时只做合并覆盖，绝不清空。
