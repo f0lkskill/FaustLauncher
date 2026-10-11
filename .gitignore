@@ -209,6 +209,7 @@ build_temp/*
 !tools/diag/*.py
 !tools/run/
 !tools/run/*.bat
+!tools/doc/
 !tools/doc/*.md
 !tools/build/
 !tools/build/*
