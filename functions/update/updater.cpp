@@ -1,3 +1,5 @@
+// 已经不再使用，转为使用 VBS 文件操作的更新方式。
+
 #include <iostream>
 #include <filesystem>
 #include <string>
