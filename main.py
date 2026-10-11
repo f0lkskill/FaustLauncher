@@ -65,6 +65,16 @@ def main():
     except Exception as _exc:  # noqa: BLE001
         print(f"控制台日志美化不可用(忽略): {_exc}")
 
+    # 素材检查：图标/音效/背景/皮肤图片已从仓库移出，改成独立的资源包分发
+    # （见 tools/build/assets_pack.py）。缺了不会报错，只是图标变默认、音效不响、皮肤背景空白 ——
+    # 很容易被当成"启动器坏了"，所以这里点一句，省得往代码里找。
+    try:
+        if not os.path.isfile(os.path.join(_project_root(), "assets", "images", "icon", "icon.png")):
+            print(r"[素材] 没找到 assets/images —— 素材不在仓库里，"
+                  r"先拉资源包：tools\run\assets.bat fetch（或把资源包 zip 解压到项目根）")
+    except Exception:  # noqa: BLE001
+        pass
+
     # 今日指令独立窗口模式: 打包环境下由主 exe 以 --nyos-window 二次拉起自身,
     # 直接运行 pywebview 窗口, 不进入 tkinter 主界面 (也需跳过单实例检测)
     if "--nyos-window" in sys.argv:

@@ -175,6 +175,18 @@ backup_resources/*
 resources/*
 build_*/
 
+# 大块素材不入库，改由独立的**资源包**分发（tools/build/assets_pack.py）：
+# 解压即覆盖到仓库根，或 `tools/run/assets.bat fetch`。
+# 这样仓库只留代码；皮肤目录里的 config.json / css / tools 仍然是源码，照常入库。
+# （assets/Font/ 不用列：ChineseFont.ttf 见下面的忽略规则，本来就是运行期产物）
+assets/images/
+assets/voices/
+web/app_skins/*/assets/
+web/app_skins/*/source/
+web/app_skins/*/profile.*
+# 资源包拉取后留下的清单（记录本地当前是哪一版资源）
+.assets-pack/
+
 # 例外: 版本更新器必须入库。
 # updater.vbs 是升级链路的核心 —— 启动器下载新版本后以 wscript 运行它, 由它把
 # 新版本文件覆盖到安装目录。但 tools/build_temp/ 会被上面的 build_*/ 与 /tools/* 忽略,

@@ -246,6 +246,22 @@ class BuildApi:
         proc.wait()
         return int(proc.returncode)
 
+    # 打包前必须存在的素材（文件已从仓库移出，见 assets_pack.py）
+    ASSET_REQUIRED = ("assets/images/icon/icon.ico", "assets/voices/click.wav")
+
+    def _check_assets(self) -> str:
+        """素材没拉全时给一句能直接照做的话。
+
+        素材移出仓库之后，缺了**不会报错**：图标变成默认图标、音效静默不响、皮肤背景空白，
+        打出来的包照样能跑。所以在这里提前拦住，别等发版之后才发现。
+        """
+        missing = [p for p in self.ASSET_REQUIRED if not os.path.isfile(p)]
+        if not missing:
+            return ""
+        return ("缺少素材 " + "、".join(missing)
+                + "。素材不在仓库里，先拉资源包：tools\\run\\assets.bat fetch"
+                "（或把资源包 zip 解压到项目根）")
+
     def _fail(self, index: int, message: str) -> None:
         self._step(index, "failed")
         self._status(message, LEVEL_BAD)
@@ -254,6 +270,12 @@ class BuildApi:
 
     def _run_all_steps(self) -> None:
         vi = self.version_info
+
+        problem = self._check_assets()
+        if problem:
+            self._fail(0, problem)
+            self._building = False
+            return
 
         # ---- 0. PyInstaller ----
         self._step(0, "running")

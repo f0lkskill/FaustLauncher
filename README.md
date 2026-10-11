@@ -163,13 +163,14 @@ web/app_skins/<id>/ css/style.css    → 作为 <style> 追加在默认样式之
 ```
 FaustLauncher/
 ├─ main.py                    # 入口（默认 Web UI；各独立窗口以 --xxx-window 子进程拉起）
-├─ tools/                     # 开发与排障工具（构建 / 诊断 / 快捷方式，见 tools/README.md）
-│  ├─ build/                  #   构建：build.py（可视化构建工具）+ FaustLauncher.spec
+├─ tools/                     # 开发与排障工具（构建 / 资源包 / 诊断 / 快捷方式，见 tools/README.md）
+│  ├─ build/                  #   构建：build.py + FaustLauncher.spec + assets_pack.py（资源包）
+│  ├─ build_temp/             #   打包输入（updater.vbs）
 │  ├─ dev/ diag/ run/         #   小脚本、排障脚本、.bat 快捷方式
 │  └─ doc/ preview/ wiki_fetch/
 ├─ web/                       # 前端（不被 Python 直接引用）
 │  ├─ app/                    #   主界面：index.html + css + js(core/ui/features)
-│  └─ app_skins/              #   皮肤（faust / deepseek …）
+│  └─ app_skins/              #   皮肤（faust / deepseek …；图片在资源包里，css/config 在仓库）
 ├─ functions/                 # 后端
 │  ├─ base/                   #   基础设施：设置、网络配置、用户系统、JSON 读写、路径
 │  ├─ pages/app/app_web.py    #   pywebview 主窗口桥接（AppApi：前端能调的全部接口）
@@ -180,13 +181,41 @@ FaustLauncher/
 │  ├─ hook/ achievement/      #   内存 Hook、偏移索引、成就系统
 │  ├─ translate/ tools/       #   AI 翻译、扩展工具
 │  └─ update/                 #   版本更新流程
-├─ assets/                    # 图片、字体、语音
+├─ assets/                    # 素材（图片/语音）——**不在仓库里**，见下面「素材与资源包」
 ├─ config/                    # settings.json（用户设置）/ web_config.json（云端地址）
-├─ resources/                 # 内嵌资源（Mod 加载器等）
+├─ resources/                 # 运行期资源（Mod 加载器等，启动器自己下载，不入库）
 └─ previews/                  # README 截图
 ```
 
 **数据放哪**：用户数据在 `%APPDATA%\FaustLauncher\`（卸载重装不丢），程序运行时可读写的缓存与更新包在安装目录的 `cache/`。
+
+---
+
+## 🎨 素材与资源包（clone 后必做）
+
+图标、音效、背景、皮肤图片合计约 15 MB，**不在 git 里**。仓库只放代码，素材走一个独立的
+**资源包**（`tools/build/assets_pack.py`）；发布包仍然由构建工具把素材一起打进去，最终用户无感。
+
+```bat
+tools\run\assets.bat fetch      :: 下载资源包并合并（推荐，clone 之后跑一次）
+tools\run\assets.bat status     :: 看本地和资源包差在哪（缺失 / 被改过 / 多出来的）
+tools\run\assets.bat pack       :: 生成 faust-assets.zip（改了素材之后）
+tools\run\assets.bat upload     :: 用 gh 传成 Release 资产（需要 gh auth login）
+```
+
+包格式就是**把仓库根当解压目标**：里面是 `assets/images/...`、`web/app_skins/<皮肤>/assets/...`
+这类和仓库完全一致的相对路径，所以"解压覆盖"即完成合并，代码里的相对路径（`assets/images/icon/icon.ico`）原样可用。
+固定分发地址（tag 不变，永远这一个）：
+
+```
+https://github.com/f0lkskill/FaustLauncher/releases/download/assets/faust-assets.zip
+```
+
+手动分发也行：把 zip 发给别人，`assets.bat fetch` 支持 `--from <zip>` 离线合并。包内自带
+`.assets-pack/manifest.json`（逐文件 sha256），拉取前会先整体校验，坏包不会把工作区改成半截状态。
+
+> **注意**：素材只是"不再进新提交"，**旧的 git 历史里还在** —— 已 clone 的仓库不会因此变小。
+> 想让仓库体积真正降下来需要重写历史（`git filter-repo` / BFG）+ force push，属于一次性破坏性操作，要单独安排。
 
 ---
 
@@ -204,9 +233,10 @@ FaustLauncher/
 | 需求 | 入口 |
 |:---|:---|
 | 写插件 | [MakeAnAddon.md](tools/doc/MakeAnAddon.md)（启动事件钩子、`changes.json` 补丁、资源打包） |
-| 写皮肤 | 复制 `web/app_skins/faust/`，改 `css/style.css` 与 `config.json` |
-| 源码运行 | `python main.py`（默认 Web UI；`--tk-ui` 回旧界面，`--debug` 开调试）｜需要 `pip install -r requirements.txt` |
-| 打包 | `python tools/build/build.py`（可视化构建工具；等价于 `python -m PyInstaller tools/build/FaustLauncher.spec`） |
+| 写皮肤 | 复制 `web/app_skins/faust/`，改 `css/style.css` 与 `config.json`；皮肤图片属于资源包（见上一节） |
+| 源码运行 | `python main.py`（默认 Web UI；`--tk-ui` 回旧界面，`--debug` 开调试）｜需要 `pip install -r requirements.txt` **并先拉素材**：`tools\run\assets.bat fetch` |
+| 打包 | `python tools/build/build.py`（可视化构建工具；等价于 `python -m PyInstaller tools/build/FaustLauncher.spec`）｜**需要素材已就位**，缺了会直接报错 |
+| 资源包 | `tools\run\assets.bat [pack\|status\|fetch\|upload]`（素材的打包 / 校验 / 拉取 / 发布，见上一节） |
 | 云端排障 | `python tools/diag/webnote_diag.py`（逐项打印 DNS / TCP / TLS / HTTP 与缓存状态） |
 
 > 维护约定：前端改动后请同步提升 `web/app/index.html` 里资源引用的 `?v=NN` 缓存版本号；所有 JS 文件共享同一全局作用域，新增模块请追加到入口之前。
