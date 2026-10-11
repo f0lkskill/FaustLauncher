@@ -32,13 +32,6 @@
 
 它不是一个「把官网链接摆一排」的导航页 —— 而是真正动手处理游戏文件的那一层：下载汉化包、按需改写 `Lang` 文本、搬运资源、加载 Mod、最后把游戏拉起来。
 
-<p align="center">
-  <a href="https://github.com/f0lkskill/FaustLauncher"><img alt="总用户" src="https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Ffolkskill.pythonanywhere.com%2Fapi%2Foverview&query=%24.users.total&label=%E6%80%BB%E7%94%A8%E6%88%B7&color=6366f1&labelColor=2b2f3a&style=flat-square&cacheSeconds=600"></a>
-  <a href="https://github.com/f0lkskill/FaustLauncher"><img alt="Mod 数量" src="https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Ffolkskill.pythonanywhere.com%2Fapi%2Foverview&query=%24.mods.listed&label=Mod&color=6366f1&labelColor=2b2f3a&style=flat-square&cacheSeconds=600"></a>
-  <a href="https://github.com/f0lkskill/FaustLauncher"><img alt="插件数量" src="https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Ffolkskill.pythonanywhere.com%2Fapi%2Foverview&query=%24.addons.listed&label=%E6%8F%92%E4%BB%B6&color=6366f1&labelColor=2b2f3a&style=flat-square&cacheSeconds=600"></a>
-  <a href="https://github.com/f0lkskill/FaustLauncher"><img alt="站点访问量" src="https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Ffolkskill.pythonanywhere.com%2Fstatus&query=%24.visit&label=%E7%AB%99%E7%82%B9%E8%AE%BF%E9%97%AE&color=6366f1&labelColor=2b2f3a&style=flat-square&cacheSeconds=600"></a>
-</p>
-
 > [!NOTE]
 > 所有对游戏的操作都是**可逆的**：被禁用的补丁会自动还原它改过的文本；顶层数据目录（`config` / `lang` / `mods` / `addons`）在更新时只做合并覆盖，绝不清空。
 
@@ -293,6 +286,13 @@ FaustLauncher/
 ### ⭐ Star History
 
 [![Star History Chart](https://api.star-history.com/svg?repos=f0lkskill/FaustLauncher&type=Date)](https://star-history.com/#f0lkskill/FaustLauncher&Date)
+
+<p align="center">
+  <a href="https://github.com/f0lkskill/FaustLauncher"><img alt="总用户" src="https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Ffolkskill.pythonanywhere.com%2Fapi%2Foverview&query=%24.users.total&label=%E6%80%BB%E7%94%A8%E6%88%B7&color=6366f1&labelColor=2b2f3a&style=flat-square&cacheSeconds=600"></a>
+  <a href="https://github.com/f0lkskill/FaustLauncher"><img alt="Mod 数量" src="https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Ffolkskill.pythonanywhere.com%2Fapi%2Foverview&query=%24.mods.listed&label=Mod&color=6366f1&labelColor=2b2f3a&style=flat-square&cacheSeconds=600"></a>
+  <a href="https://github.com/f0lkskill/FaustLauncher"><img alt="插件数量" src="https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Ffolkskill.pythonanywhere.com%2Fapi%2Foverview&query=%24.addons.listed&label=%E6%8F%92%E4%BB%B6&color=6366f1&labelColor=2b2f3a&style=flat-square&cacheSeconds=600"></a>
+  <a href="https://github.com/f0lkskill/FaustLauncher"><img alt="站点访问量" src="https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Ffolkskill.pythonanywhere.com%2Fstatus&query=%24.visit&label=%E7%AB%99%E7%82%B9%E8%AE%BF%E9%97%AE&color=6366f1&labelColor=2b2f3a&style=flat-square&cacheSeconds=600"></a>
+</p>
 
 <br>
 
