@@ -54,6 +54,17 @@ def main():
         # return 意味着直接退出主进程
         return
 
+    # 控制台输出美化：给每行加 [时间] [区域] [级别] [文件:行] 前缀并着色。
+    # 必须放在 --achievement-hook 之后：那个子进程的 stdout 会被父进程接到成就日志文件上，
+    # 那边要的是干净的原文（日志里再套一层前缀和时间戳只会更难读）。
+    # 也要放在 UI 重定向器创建之前：两个重定向器都只把"转发到真实控制台"那一步交给
+    # 构造时捕获的 sys.stdout，所以装在这里正好只影响 cmd，UI 终端与日志文件不受影响。
+    try:
+        from functions.base.console_log import install as _install_console_log
+        _install_console_log()
+    except Exception as _exc:  # noqa: BLE001
+        print(f"控制台日志美化不可用(忽略): {_exc}")
+
     # 今日指令独立窗口模式: 打包环境下由主 exe 以 --nyos-window 二次拉起自身,
     # 直接运行 pywebview 窗口, 不进入 tkinter 主界面 (也需跳过单实例检测)
     if "--nyos-window" in sys.argv:
