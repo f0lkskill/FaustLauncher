@@ -118,9 +118,7 @@ def _safe_path(path: str) -> str:
     return "[已隐藏]"
 
 
-# ============================================================
 # 会话 (requests.Session + 登录 Cookie 持久化)
-# ============================================================
 def _restore_cookies(session, base: str) -> None:
     try:
         data = read_json(session_file())
@@ -203,9 +201,7 @@ def _get_session():
         return _session
 
 
-# ============================================================
 # 统一请求
-# ============================================================
 def _request(method: str, path: str, payload: dict | None = None,
              keep_cookies: bool = False, note: str = "") -> dict:
     """发一次请求, 统一返回:
@@ -265,9 +261,7 @@ def _request(method: str, path: str, payload: dict | None = None,
     return {"ok": False, "data": data, "error": msg, "status": status, "offline": False}
 
 
-# ============================================================
 # 对外接口
-# ============================================================
 def register(uid: str, user_name: str | None = None, skins=None) -> dict:
     """注册 / 登记自己的账号 (**幂等**, 客户端应当优先用它而不是 login)。
 
@@ -326,12 +320,10 @@ def public_user(uid: str) -> dict:
                     note=f"id={mask_uid(uid)}")
 
 
-# --------------------------------------------------------------------------- 成就
 # 服务端提供**两种**上传方式（见 FaustLauncherWeb/API.md §4.2 / §4.10）：
 #   ① POST /api/me/achievements          —— uid 取自登录会话，普通用户即可，**推荐**
 #   ② POST /api/achievements/overwrite   —— uid 写在请求体，普通用户只能覆盖自己、管理员可覆盖他人
 # 两者都是**整体替换**语义（客户端把本地全量列表报上去，不用自己算增量）。
-
 
 def push_achievements(achievements) -> dict:
     """方式①：整体替换**自己**的成就列表（uid 由服务端从登录会话取，改不到别人）。"""
@@ -384,11 +376,9 @@ def report_download(name: str, kind: str) -> dict:
                     note=f"{kind}:{name}")
 
 
-# --------------------------------------------------------------------------- 游玩时长
 # 服务端把时长单独存一篇统计笔记（心跳式高频上报，不塞进用户表）。两种写法：
 #   {"add": N}        —— 累加 N 秒（客户端只知道"这一段玩了多久"时用）
 #   {"playtime": N}   —— 覆盖为 N 秒（**本地就是权威总量**时用，我们读 Steam 记录属于这种）
-
 
 def report_playtime(seconds: int, overwrite: bool = True) -> dict:
     """上报自己的累计游玩时长（单位秒）。

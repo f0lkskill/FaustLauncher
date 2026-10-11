@@ -95,7 +95,7 @@ def _decode(raw):
             codec = "latin-1"
 
     # 无 BOM 的 UTF-16：上面的回退"解码成功"了但会掺进大量 NUL，按 UTF-16 重解一次
-    if "\x00" in text[:4096]:
+    if "\x00" in text[:4096]: # type: ignore
         for enc, b in (("utf-16-le", codecs.BOM_UTF16_LE), ("utf-16-be", codecs.BOM_UTF16_BE)):
             try:
                 cand = raw.decode(enc)
@@ -112,6 +112,7 @@ def read_text(path):
     with open(path, "rb") as f:
         raw = f.read()
     text, meta = _decode(raw)
+    assert text is not None
     meta["newline"] = "\n" if text.endswith("\n") else ""    # 保留原文件的行尾习惯
     meta["compact"] = "\n" not in text.strip()               # 压缩成一行的文件不要撑大
     return text, meta
