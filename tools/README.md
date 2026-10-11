@@ -5,11 +5,12 @@
 > `tools/` 整体被 `.gitignore` 当成"本地脚手架目录"忽略（`**/tools/` + `/tools/*`）。
 > 下面这些**手写工具要入库**，所以在 `.gitignore` 末尾逐项放行了
 > `tools/README.md` / `tools/dev/` / `tools/diag/` / `tools/run/` / `tools/doc/` /
-> `tools/build/`；
+> `tools/build/` / `tools/build_temp/updater.vbs`；
 
 | 目录 | 放什么 |
 |---|---|
 | `build/` | 打包：可视化构建工具 + PyInstaller spec |
+| `build_temp/` | 打包输入：`updater.vbs`（唯一入库的文件，其余是产物，不入库） |
 | `dev/` | 开发时跑的小脚本（统计、检查） |
 | `diag/` | 线上排障用的一次性诊断脚本（网络/云端/缓存） |
 | `run/` | 免记命令的启动快捷方式（`.bat`，双击即用） |
@@ -23,7 +24,15 @@
 | `build.py` | `python tools/build/build.py` | 可视化构建工具（pywebview）：PyInstaller → 复制运行环境/资产/配置 → 压缩 zip → 可选发布 |
 | `FaustLauncher.spec` | `python -m PyInstaller tools/build/FaustLauncher.spec` | PyInstaller 配方。源路径全部锚定仓库根（`SPECPATH` 现在是 `tools/build/`，不能直接拿来拼 `web/`、`config/`），所以不依赖当前工作目录 |
 
-> 产物固定落在**仓库根**的 `build/`（PyInstaller workpath + 内嵌 `web_config_data`）与 `dist/`；
+## build_temp/
+
+| 文件 | 说明 |
+|---|---|
+| `updater.vbs` | 版本更新器：启动器下载新版本后以 `wscript` 运行它，由它把新版本文件覆盖到安装目录。**必须入库**（换机器/重新 clone 后 `build.py` 找不到就会直接报错），`.gitignore` 里为此专门放行了这一条 |
+
+> 这个目录里其它的 `addons/ lang/ mods/ _internal/` 是历史构建产物（不入库、也没有任何代码引用），可以随时删。
+
+> 打包产物固定落在**仓库根**的 `build/`（PyInstaller workpath + 内嵌 `web_config_data`）与 `dist/`；
 > `.gitignore` 里因此把 `build/` 锚定成 `/build/`，只忽略根目录那份。
 
 ## dev/
