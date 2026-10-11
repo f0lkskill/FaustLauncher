@@ -149,7 +149,7 @@ web/app_skins/<id>/ css/style.css    → 作为 <style> 追加在默认样式之
 | **后端** | Python 3.14（标准库 + `requests` / `Pillow`） |
 | **进程间** | pywebview `js_api` 双向桥：前端 `window.pywebview.api.*`，后端 `evaluate_js` 推送日志与事件 |
 | **窗口模型** | 主窗口占用 pywebview 主线程；Mod 管理器 / 自定义汉化 / 扩展工具 / 今日指令等独立窗口通过 `main.py --xxx-window` 拉起**子进程**（pywebview 要求 `start()` 在主线程，与主循环互斥） |
-| **打包** | PyInstaller 6.16（onedir）+ `FaustLauncher.spec`；运行时收在 `_internal/` |
+| **打包** | PyInstaller（onedir）+ `tools/build/FaustLauncher.spec`；运行时收在 `_internal/` |
 | **更新** | Windows Script Host（`updater.vbs`） |
 | **游戏资源** | UnityPy · texture2ddecoder · astc-encoder · etcpak · fmod_toolkit · pyfmodex |
 | **逆向 / Hook** | capstone · pefile · pythonnet（偏移索引、元数据恢复、战斗事件观测） |
@@ -163,7 +163,10 @@ web/app_skins/<id>/ css/style.css    → 作为 <style> 追加在默认样式之
 ```
 FaustLauncher/
 ├─ main.py                    # 入口（默认 Web UI；各独立窗口以 --xxx-window 子进程拉起）
-├─ build.py / *.spec          # PyInstaller 构建
+├─ tools/                     # 开发与排障工具（构建 / 诊断 / 快捷方式，见 tools/README.md）
+│  ├─ build/                  #   构建：build.py（可视化构建工具）+ FaustLauncher.spec
+│  ├─ dev/ diag/ run/         #   小脚本、排障脚本、.bat 快捷方式
+│  └─ doc/ preview/ wiki_fetch/
 ├─ web/                       # 前端（不被 Python 直接引用）
 │  ├─ app/                    #   主界面：index.html + css + js(core/ui/features)
 │  └─ app_skins/              #   皮肤（faust / deepseek …）
@@ -203,7 +206,7 @@ FaustLauncher/
 | 写插件 | [MakeAnAddon.md](tools/doc/MakeAnAddon.md)（启动事件钩子、`changes.json` 补丁、资源打包） |
 | 写皮肤 | 复制 `web/app_skins/faust/`，改 `css/style.css` 与 `config.json` |
 | 源码运行 | `python main.py`（默认 Web UI；`--tk-ui` 回旧界面，`--debug` 开调试）｜需要 `pip install -r requirements.txt` |
-| 打包 | `python build.py` |
+| 打包 | `python tools/build/build.py`（可视化构建工具；等价于 `python -m PyInstaller tools/build/FaustLauncher.spec`） |
 | 云端排障 | `python tools/diag/webnote_diag.py`（逐项打印 DNS / TCP / TLS / HTTP 与缓存状态） |
 
 > 维护约定：前端改动后请同步提升 `web/app/index.html` 里资源引用的 `?v=NN` 缓存版本号；所有 JS 文件共享同一全局作用域，新增模块请追加到入口之前。

@@ -390,7 +390,7 @@ class MyCombo(CompositeAchievement):
 
 ### 注入的是哪份 DLL（“确保 DLL 是最新版本”）
 
-- 运行时**只注入编译好的文件，绝不现编译**；发布包（`build.py`）只把 `battle_watch.dll`
+- 运行时**只注入编译好的文件，绝不现编译**；发布包（`tools/build/build.py`）只把 `battle_watch.dll`
   复制进 `_internal/hook_dll/`，`.c` / `.ps1` / README 不进分发产物。
 - 候选路径可能同时存在多份（打包副本 `_MEIPASS/hook_dll/`、开发目录
   `functions/achievement/hook_dll/`、部署目录 `_internal/hook_dll/`），`dll_path()` 取
@@ -398,7 +398,7 @@ class MyCombo(CompositeAchievement):
   （`发现 N 份 battle_watch.dll，选用最新的一份 …`）—— 否则开发目录里重新编译之后，
   打包版会一直注入包里那份旧 DLL。注入时还会把该文件的**大小 / mtime / sha256 前 12 位**
   打进日志与状态文件。
-- `build.py` 额外防一手：`battle_watch.c` 比 DLL 新时会直接报
+- `tools/build/build.py` 额外防一手：`battle_watch.c` 比 DLL 新时会直接报
   “发布包里的是旧构建，请先跑 build.ps1”。
 
 ### 游戏的 DLL（GameAssembly.dll）是不是最新

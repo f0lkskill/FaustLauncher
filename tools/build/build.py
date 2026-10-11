@@ -26,7 +26,18 @@ import threading
 import time
 from datetime import datetime
 
-from functions.base.web_config import get_webnote
+# 仓库根 = 本文件（tools/build/build.py）往上两级。
+# ⚠ 本文件挪进 tools/build/ 之后**不能**再拿"自己所在目录"当仓库根，否则两处会直接炸：
+#   1) 下面 `from functions.base.web_config import ...` 靠 sys.path[0]（= 脚本所在目录）
+#      找到 functions 包 —— 不补仓库根就是 ModuleNotFoundError，构建工具根本起不来；
+#   2) venv/ 、dist/ 、build/web_config_data 、web/build_ui 会全部指到 tools/build 下面。
+_ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
+if _ROOT not in sys.path:
+    sys.path.insert(0, _ROOT)
+# spec 与 build.py 同目录；调用 PyInstaller 时用绝对路径，不依赖当前工作目录
+_SPEC_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "FaustLauncher.spec")
+
+from functions.base.web_config import get_webnote  # noqa: E402
 
 # 与 build_ui/style.css 里的配色保持一致的语义（前端按 level 着色）
 LEVEL_OK, LEVEL_BAD, LEVEL_WARN = "ok", "bad", "warn"
@@ -219,15 +230,14 @@ class BuildApi:
     # ---- 构建步骤（与旧 Tk 版逐条一致） ----
     def _run_pyinstaller(self) -> int:
         py = sys.executable
-        venv_py = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                               "venv", "Scripts", "python.exe")
+        venv_py = os.path.join(_ROOT, "venv", "Scripts", "python.exe")
         if os.path.isfile(venv_py):
             py = venv_py
             self._log(f"· 使用项目 venv 解释器打包：{venv_py}\n")
         else:
             self._log(f"· 未找到项目 venv，使用当前解释器：{sys.executable}\n", LEVEL_WARN)
         proc = subprocess.Popen(
-            [py, "-m", "PyInstaller", "--noconfirm", "FaustLauncher.spec"],
+            [py, "-m", "PyInstaller", "--noconfirm", _SPEC_PATH],
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
             text=True, encoding="utf-8", errors="replace",
         )
@@ -517,7 +527,8 @@ class BuildApi:
 
 # 入口
 def main() -> int:
-    os.chdir(os.path.dirname(os.path.abspath(__file__)))
+    # 相对路径（dist/、build/、build_<版本>/）都按仓库根算
+    os.chdir(_ROOT)
     try:
         from functions.base.settings_manager import get_settings_manager
         sm = get_settings_manager()
@@ -534,8 +545,7 @@ def main() -> int:
         return 1
 
     api = BuildApi(version) # type: ignore
-    index_html = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                              "web", "build_ui", "index.html")
+    index_html = os.path.join(_ROOT, "web", "build_ui", "index.html")
     win = webview.create_window(
         f"FaustLauncher 构建工具 — v{version}",
         index_html, js_api=api, # type: ignore
