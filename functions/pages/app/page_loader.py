@@ -1194,9 +1194,11 @@ def download_and_launch(obj=None, need_run_game=False, manual=False):
                             print(f"复制汉化文件时出错: {e}")
                             traceback.print_exc()
                         # 汉化包自带 info/version.json (含正确版本号), 合并后自然保留, 不覆写
-                        # 合并 rmtree 会清掉之前复制的有色气泡, 这里重新覆盖回云端有色版
+                        # 合并 rmtree 会清掉之前复制的有色气泡, 这里重新覆盖回云端有色版。
+                        # ⚠ 目标必须是**汉化包目录 lang_path**（之前传的是 'lang' 父目录，
+                        #    结果每次都在 lang/ 根下漏一堆 BattleSpeechBubbleDlg*.json）。
                         try:
-                            transfer_bubble('lang')
+                            transfer_bubble(lang_path)
                         except Exception as e:
                             print(f"重新应用有色气泡失败: {e}")
                         # 注意: 这里属于"下载汉化包"这一步, 不要推 _push_step('mods')。
