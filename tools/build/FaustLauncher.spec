@@ -1,6 +1,14 @@
 # -*- mode: python ; coding: utf-8 -*-
 import os as _os, sys as _sys
 
+# 仓库根 = 本 spec 所在目录（tools/build/）往上一级。
+# ⚠ SPECPATH 是 **spec 所在目录**，不是仓库根：本 spec 挪进 tools/build/ 之后，
+#   原来直接用 SPECPATH 拼 web/ 与 config/ 的写法会变成 tools/build/web、tools/build/config
+#   —— 都存在不了，于是 web/ 前端与内嵌的 web_config 会被**静默漏掉**（打包后界面起不来，
+#   而且不报错）。所以这里统一先算出仓库根，下面所有源路径都用绝对路径，
+#   顺带让打包不再依赖当前工作目录（以前要靠 build.py 先 chdir 到根）。
+_ROOT = _os.path.abspath(_os.path.join(SPECPATH, '..', '..'))
+
 _tcl_dir = _os.path.join(_os.path.dirname(_os.path.abspath(_sys.executable)), 'tcl')
 if not _os.path.isdir(_tcl_dir):
     _tcl_dir = _os.path.join(_sys.prefix, 'tcl')
@@ -20,8 +28,7 @@ except Exception:
 # 目标目录写 'web': onedir 布局下 PyInstaller 会把它放进 _internal/web/,
 # 与 exe 同级但对用户不可见 (不再作为顶层 web/ 目录出现在发布包中)。
 # 运行时由 functions.base.common.path_utils.get_web_root() 优先在 _internal 下定位。
-_spec_root = _os.path.abspath(SPECPATH)
-_web_src_dir = _os.path.join(_spec_root, 'web')
+_web_src_dir = _os.path.join(_ROOT, 'web')
 if _os.path.isdir(_web_src_dir):
     for _root, _dirs, _files in _os.walk(_web_src_dir):
         for _f in _files:
@@ -65,10 +72,8 @@ _web_binaries += _py_binaries
 
 # 云端配置 (web_config.json) 内嵌进 PYZ: 构建时读取 config/web_config.json,
 # 生成 web_config_data 模块 (含 EMBEDDED_CONFIG), 编入可执行文件, 不以独立文件分发
-# 注意: SPECPATH 是 spec 所在目录(绝对路径), 不是 spec 文件路径
-_spec_dir = _os.path.abspath(SPECPATH)
-_web_data_dir = _os.path.join(_spec_dir, 'build', 'web_config_data')
-_web_config_src = _os.path.join(_spec_dir, 'config', 'web_config.json')
+_web_data_dir = _os.path.join(_ROOT, 'build', 'web_config_data')
+_web_config_src = _os.path.join(_ROOT, 'config', 'web_config.json')
 _web_embedded = None
 try:
     with open(_web_config_src, 'r', encoding='utf-8') as _f:
@@ -84,7 +89,7 @@ except Exception:
 
 
 a = Analysis(
-    ['main.py'],
+    [_os.path.join(_ROOT, 'main.py')],
     pathex=[_web_data_dir] if _web_embedded else [],
     binaries=_cffi_binaries + _web_binaries,
     datas=_datas + _cffi_datas + _web_datas,
@@ -146,7 +151,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=['assets\\images\\icon\\icon.ico'],
+    icon=[_os.path.join(_ROOT, 'assets', 'images', 'icon', 'icon.ico')],
 )
 coll = COLLECT(
     exe,

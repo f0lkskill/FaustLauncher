@@ -25,7 +25,10 @@ resource_info.json
 vscode/
 _internal/
 temp/
-build/
+# 只忽略**根目录**的 build/（PyInstaller 的 workpath + 内嵌 web_config 的生成目录）。
+# 锚定成 /build/ 是为了让 tools/build/（构建脚本本体）能被下面的例外放行 ——
+# 用不带斜杠开头的 `build/` 会匹配任意层级的 build 目录，父目录被忽略就无法再取消忽略。
+/build/
 develop-eggs/
 dist/
 downloads/
@@ -207,3 +210,5 @@ build_temp/*
 !tools/run/
 !tools/run/*.bat
 !tools/doc/*.md
+!tools/build/
+!tools/build/*
