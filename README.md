@@ -200,7 +200,7 @@ FaustLauncher/
 
 | 需求 | 入口 |
 |:---|:---|
-| 写插件 | [MakeAnAddon.md](MakeAnAddon.md)（启动事件钩子、`changes.json` 补丁、资源打包） |
+| 写插件 | [MakeAnAddon.md](tools/doc/MakeAnAddon.md)（启动事件钩子、`changes.json` 补丁、资源打包） |
 | 写皮肤 | 复制 `web/app_skins/faust/`，改 `css/style.css` 与 `config.json` |
 | 源码运行 | `python main.py`（默认 Web UI；`--tk-ui` 回旧界面，`--debug` 开调试）｜需要 `pip install -r requirements.txt` |
 | 打包 | `python build.py` |
