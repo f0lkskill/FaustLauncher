@@ -13,6 +13,13 @@
 [![Stars](https://img.shields.io/github/stars/f0lkskill/FaustLauncher?style=for-the-badge&logo=github)](https://github.com/f0lkskill/FaustLauncher/stargazers)
 [![Downloads](https://img.shields.io/github/downloads/f0lkskill/FaustLauncher/total?style=for-the-badge&logo=github)](https://github.com/f0lkskill/FaustLauncher/releases)
 
+<br>
+
+[![总用户](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Ffolkskill.pythonanywhere.com%2Fapi%2Foverview&query=%24.users.total&label=%E6%80%BB%E7%94%A8%E6%88%B7&color=blue&style=for-the-badge&cacheSeconds=600)](https://github.com/f0lkskill/FaustLauncher)
+[![Mod](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Ffolkskill.pythonanywhere.com%2Fapi%2Foverview&query=%24.mods.listed&label=Mod&color=orange&style=for-the-badge&cacheSeconds=600)](https://github.com/f0lkskill/FaustLauncher)
+[![插件](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Ffolkskill.pythonanywhere.com%2Fapi%2Foverview&query=%24.addons.listed&label=%E6%8F%92%E4%BB%B6&color=purple&style=for-the-badge&cacheSeconds=600)](https://github.com/f0lkskill/FaustLauncher)
+[![站点访问](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Ffolkskill.pythonanywhere.com%2Fstatus&query=%24.visit&label=%E7%AB%99%E7%82%B9%E8%AE%BF%E9%97%AE&color=green&style=for-the-badge&cacheSeconds=600)](https://github.com/f0lkskill/FaustLauncher)
+
 </div>
 
 ---
