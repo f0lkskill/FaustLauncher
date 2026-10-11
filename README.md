@@ -6,8 +6,6 @@
 
 # FaustLauncher
 
-**《边狱巴士》一体化启动器 —— 汉化 · 美化 · Mod · 插件 · 成就，一次点击全部就位**
-
 [![版本](https://img.shields.io/github/v/release/f0lkskill/FaustLauncher?style=flat-square&label=%E7%89%88%E6%9C%AC&color=6366f1&labelColor=2b2f3a&logo=github&include_prereleases)](https://github.com/f0lkskill/FaustLauncher/releases)
 [![平台](https://img.shields.io/static/v1?style=flat-square&label=%E5%B9%B3%E5%8F%B0&message=Windows%2010%20%7C%2011&color=9ca3af&labelColor=2b2f3a&logo=windows&logoColor=white)](#stack)
 [![许可证](https://img.shields.io/static/v1?style=flat-square&label=%E8%AE%B8%E5%8F%AF%E8%AF%81&message=MIT&color=6366f1&labelColor=2b2f3a&logo=opensourceinitiative&logoColor=white)](LICENSE)
