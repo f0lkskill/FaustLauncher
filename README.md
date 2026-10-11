@@ -1,6 +1,6 @@
 <div align="center">
 
-# <img src="assets/images/icon/icon.png" width="52" height="52" style="vertical-align: middle;"> **FaustLauncher** 浮士德启动器
+# <img src="previews/readme/icon.png" width="52" height="52" style="vertical-align: middle;"> **FaustLauncher** 浮士德启动器
 
 ### *您人生中绝无仅有的完美启动器 —— 让每一个但丁都解放双手，专心坐牢*
 
@@ -28,9 +28,8 @@
 | 🚀 **一键启动流水线** | 一次点击跑完 8 步：汉化检测下载 → 文件同步 → 补丁应用 → 美化 → 字体 → 配置 → 用户名写入 → 启动游戏 |
 | 🌐 **汉化自动更新** | 内置 4 种下载源（蓝奏云转存 / gh-proxy / upfile / GitHub Releases），自动比对版本、更新汉化与气泡文本 |
 | 🎨 **界面全方位美化** | 气泡渐变 · 技能名罪孽渐变 · 技能描述 · EGO 名称（含侵蚀）· 零协会私活 Tip · 自定义字体，逐项可开关 |
-| 🧩 **Mod + 插件双生态** | 自带改装版 Mod 加载器；用户可自写插件（启动事件钩子 + `changes.json` 汉化补丁），见 [MakeAnAddon.md](MakeAnAddon.md) |
+| 🧩 **Mod + 插件双生态** | 自带改装版 Mod 加载器；用户可自写插件（启动事件钩子 + `changes.json` 汉化补丁），见 [MakeAnAddon.md](tools/doc/MakeAnAddon.md) |
 | 📝 **自定义翻译器** | 可视化改写游戏任意文本，生成可移植的补丁；与美化功能互不冲突 |
-| 🤖 **AI 批量翻译** | 接入思知 AI 批量翻译剧情文本，提示词可自定义 |
 | 🏆 **成就系统** | 观测游戏内战斗事件并弹出成就提示，偏移索引随游戏版本自动适配 |
 | 🖼️ **皮肤系统** | 启动器界面可换肤（CSS 变量覆盖 + 资源替换），带解锁条件 |
 | 👤 **用户系统** | 用户 ID 即账号，皮肤解锁状态跨设备同步；本地数据不随程序卸载丢失 |
@@ -67,14 +66,9 @@
 
 ## 🔄 流程实现
 
-### 1. 启动初始化（前端 8 阶段）
+### 1. 启动初始化
 
-界面框架与后端数据解耦：splash 先出，业务数据后到，任何一步失败都只降级不白屏。
-
-```
-① 环境准备(探测 pywebview 桥) → ② 首屏数据(主页卡片) → ③ UI 绑定 → ④ 通知后端 UI 就绪
-→ ⑤ 预取(背景/音效/时钟) → ⑥ 拉取 bootstrap → ⑦ 渲染与尺寸锁定 → ⑧ splash 淡出
-```
+界面框架与后端数据解耦：splash 先出、业务数据后到，任何一步失败都只降级，不会白屏。
 
 ### 2. 一键启动流水线（后端 8 步）
 
@@ -91,40 +85,25 @@
 
 > 非关键步骤失败不阻塞启动；关键步骤（汉化复制 / 字体）失败会明确弹窗。
 
-### 3. 云端数据链（读 / 写分离）
+### 3. 云端数据
 
-| 用途 | 地址 | 说明 |
-|:---|:---|:---|
-| 读 | `webnote_bases`（`/note/{key}`） | 模板列表，按顺序回退 |
-| 写 | `webnote_update_url`（`/update/`） | 下载计数 / 排序上传，POST 提交 |
+云端清单（汉化版本、插件与 Mod 列表、资源包等）由启动器统一拉取，多线路自动回退，并在本地留一份缓存；
+网络不可用时用缓存继续工作，不会卡在启动流程里。对国内线路做了加固（多源回退、超时重试、解析兜底、缓存降级），
+每一级都有 `[云端]` 日志。排障用 `python tools/diag/webnote_diag.py`。
 
-读取侧对国内线路做了加固：**IPv4 优先 → 超时重试 → DoH 兜底解析 → 直连 IP → 本地缓存降级**，每一级都打 `[云端]` 日志，不再出现「浏览器正常、启动器整段失败且无原因」。排障用 `python tools/diag/webnote_diag.py`。
+> 具体的服务端地址、接口与实现细节不在公开文档里 —— 见仓库维护者内部说明。
 
-### 4. 用户数据同步（服务端 API）
+### 4. 账号与数据同步
 
-用户数据**不再整表读写笔记**（那是"最后写入者胜"，会成批丢用户），改为走服务端自助接口：
-
-```
-首次/每次同步  POST /api/register   (幂等: 已存在则一个字段都不改)
-读自己         GET  /api/me
-上报皮肤       POST /api/me/skins    (整体替换自己那一行)
-上报昵称       POST /api/me/name
-切换账号       POST /api/login
-```
-
-- 服务端在锁内「读整表 → 只改自己这一行 → 原子写回」，结构上不可能牵连别人；
-- 皮肤的合并策略是**并集（只增不减）**，避免把本地新解锁的覆盖掉；切换账号则以服务端记录为准；
-- 登录态是 30 天签名 Cookie，落在 `%APPDATA%\FaustLauncher\user\session.json`；
-- 所有网络访问都有 `[用户API]` / `[用户]` 两级脱敏日志（用户 ID 打码、凭据只报有无）。
+- 用户数据存在服务端账号下，客户端**只读写自己那份数据**，账号之间不会互相影响；
+- 同步口径是**并集（只增不减）**：本地新解锁的内容不会被云端旧记录覆盖；
+- 登录态保存在 `%APPDATA%\FaustLauncher\` 下，日志对身份与凭据全程脱敏。
 
 ### 5. 版本自动更新
 
-```
-检查更新 → 下载更新包到 cache/new_version/ → wscript 运行 updater.vbs
-         → ① 新内容复制成 _internal.new  ② 旧目录改名 _internal.old  ③ 新目录就位 → 删 .old
-```
-
-替换运行时目录采用「三步改名」，任何一步失败都不会破坏当前安装；顶层数据目录（`config` / `lang` / `mods` / `addons`）只做合并覆盖，绝不清空。
+检查更新 → 下载更新包 → 由更新脚本替换运行时目录。替换采用「先落地新目录、再切换」的方式，
+任何一步失败都不会破坏当前安装、可以回滚；顶层数据目录（`config` / `lang` / `mods` / `addons`）
+只做合并覆盖，绝不清空。
 
 ### 6. 皮肤加载
 
@@ -145,7 +124,7 @@ web/app_skins/<id>/ css/style.css    → 作为 <style> 追加在默认样式之
 
 | 层 | 技术 |
 |:---|:---|
-| **界面** | **pywebview 6.2（WebView2）** + 原生 HTML / CSS / JavaScript，**无前端框架**；模块按 `core → ui → features → app` 分层，共 25 个文件 |
+| **界面** | **pywebview 6.2（WebView2）** + 原生 HTML / CSS / JavaScript，**无前端框架**；模块按 `core → ui → features → app` 分层 |
 | **后端** | Python 3.14（标准库 + `requests` / `Pillow`） |
 | **进程间** | pywebview `js_api` 双向桥：前端 `window.pywebview.api.*`，后端 `evaluate_js` 推送日志与事件 |
 | **窗口模型** | 主窗口占用 pywebview 主线程；Mod 管理器 / 自定义汉化 / 扩展工具 / 今日指令等独立窗口通过 `main.py --xxx-window` 拉起**子进程**（pywebview 要求 `start()` 在主线程，与主循环互斥） |
@@ -153,7 +132,7 @@ web/app_skins/<id>/ css/style.css    → 作为 <style> 追加在默认样式之
 | **更新** | Windows Script Host（`updater.vbs`） |
 | **游戏资源** | UnityPy · texture2ddecoder · astc-encoder · etcpak · fmod_toolkit · pyfmodex |
 | **逆向 / Hook** | capstone · pefile · pythonnet（偏移索引、元数据恢复、战斗事件观测） |
-| **服务端** | 独立仓库 FaustLauncherWeb（Bottle + PythonAnywhere），提供 `/api/*` 与笔记存储 |
+| **服务端** | 独立部署（另行维护，不随本项目分发）；客户端只通过公开接口读写自己的数据 |
 | **目标平台** | Windows 10 / 11 |
 
 ---
@@ -221,10 +200,10 @@ https://github.com/f0lkskill/FaustLauncher/releases/download/assets/faust-assets
 
 ## 🙋 用户系统与隐私
 
-- **账号就是用户 ID**，没有密码；ID 形如 `FL-` + 16 位字符，首次运行由启动器生成并向服务端登记；
-- 本地用户文件（`%APPDATA%\FaustLauncher\user\settings.json`）保存三项：本机用户 ID、已解锁皮肤、服务端返回的**完整资料快照**（原样镜像，便于字段级对照）；操作冷却的时间戳另存一个文件；
-- 日志默认**脱敏**：用户 ID 打码显示，Cookie / 签名 / 令牌只打印「有 / 无」，绝不落盘到日志；
-- 按 ID 查资料的公开接口是**只读**的；所有写接口都只作用于**自己那一行**（uid 由服务端从登录会话取，不接受请求体传入）。
+- **账号就是用户 ID**，没有密码；首次运行由启动器生成并向服务端登记；
+- 本地只保存必要数据：本机用户 ID、已解锁皮肤、操作冷却时间戳；
+- 日志默认**脱敏**：用户 ID 打码显示，凭据信息只打印「有 / 无」，绝不落盘到日志；
+- 服务端只允许读到公开资料，写入一律只作用于**自己那份数据**，不接受替别人写入。
 
 ---
 
@@ -247,13 +226,13 @@ https://github.com/f0lkskill/FaustLauncher/releases/download/assets/faust-assets
 
 | 头像 | 姓名 | 角色 | 贡献 |
 |:---:|:---|:---|:---|
-| <img src="assets/images/contributor/folkskill.png" width="40" height="40"> | **FolkSkill** | 项目创始人 & 主开发者 | 整体架构设计与全部核心功能（2025-11-25 立项） |
-| <img src="assets/images/contributor/HZB.png" width="40" height="40"> | **HZBHZB1234** | 项目程序贡献者 | 开发早期的部分代码贡献与流程指导，LCTA 作者 |
-| <img src="assets/images/contributor/chen.png" width="40" height="40"> | **尘** | 项目程序贡献者 | LC Mod Loader 手机版作者，贡献 rebank 加载机制 |
-| <img src="assets/images/contributor/bob.png" width="40" height="40"> | **Bob** | 项目程序贡献者 | 修复自定义汉化的递归问题 |
-| <img src="assets/images/contributor/Ariko.png" width="40" height="40"> | **里诺Ariko** | 民间有色战斗气泡文本作者 | 持续为启动器提供有色战斗气泡文本 |
-| <img src="assets/images/contributor/zeroasso.jpg" width="40" height="40"> | **零协会** | 汉化支持 | 都市零协会汉化组官方本地化项目 |
-| <img src="assets/images/contributor/community.png" width="40" height="40"> | **社区贡献者** | 测试 & 反馈 | 使徒 · HZB · 尘 · 海螺 · 庭渡久歌 · 终末之影 · 四季交融 · 快乐咸鱼君 · 盘 等 |
+| <img src="previews/readme/contributors/folkskill.png" width="40" height="40"> | **FolkSkill** | 项目创始人 & 主开发者 | 整体架构设计与全部核心功能（2025-11-25 立项） |
+| <img src="previews/readme/contributors/HZB.png" width="40" height="40"> | **HZBHZB1234** | 项目程序贡献者 | 开发早期的部分代码贡献与流程指导，LCTA 作者 |
+| <img src="previews/readme/contributors/chen.png" width="40" height="40"> | **尘** | 项目程序贡献者 | LC Mod Loader 手机版作者，贡献 rebank 加载机制 |
+| <img src="previews/readme/contributors/bob.png" width="40" height="40"> | **Bob** | 项目程序贡献者 | 修复自定义汉化的递归问题 |
+| <img src="previews/readme/contributors/Ariko.png" width="40" height="40"> | **里诺Ariko** | 民间有色战斗气泡文本作者 | 持续为启动器提供有色战斗气泡文本 |
+| <img src="previews/readme/contributors/zeroasso.jpg" width="40" height="40"> | **零协会** | 汉化支持 | 都市零协会汉化组官方本地化项目 |
+| <img src="previews/readme/contributors/community.png" width="40" height="40"> | **社区贡献者** | 测试 & 反馈 | 使徒 · HZB · 尘 · 海螺 · 庭渡久歌 · 终末之影 · 四季交融 · 快乐咸鱼君 · 盘 等 |
 
 **反馈渠道**：[Bug 反馈](https://github.com/f0lkskill/FaustLauncher/issues/new?template=bug_report.md) · [功能建议](https://github.com/f0lkskill/FaustLauncher/issues/new?template=feature_request.md) · [讨论区](https://github.com/f0lkskill/FaustLauncher/discussions)
 

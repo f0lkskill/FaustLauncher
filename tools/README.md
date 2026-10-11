@@ -46,7 +46,7 @@
 
 | 工具 | 用法 | 说明 |
 |---|---|---|
-| `webnote_diag.py` | `python tools/diag/webnote_diag.py` | 云端笔记（webnote）访问自检：逐个源打印 DNS / 建连 / TLS / HTTP 状态 / 耗时 / DoH 直连 / 本地缓存。用户反馈"浏览器能开、启动器云端全失败"时可以用于测试 |
+| `webnote_diag.py` | `python tools/diag/webnote_diag.py` | 云端访问自检：逐个源打印解析 / 连接 / 握手 / 响应状态与耗时 / 缓存命中情况。用户反馈"浏览器能开、启动器云端全失败"时用它定位卡在哪一环 |
 
 ## run/
 
