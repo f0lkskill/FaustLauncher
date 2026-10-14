@@ -3649,10 +3649,13 @@ def run_web_ui(debug: bool = False):
     def _push_terminal_line(line):
         """收到 console_log 交付的一行: 记进历史(供前端回填) + 推给前端。
 
-        行文本已由 log_format 渲染好并去掉 ANSI, 这里不再加工, 否则 UI 会和
-        cmd/日志文件对不上。窗口还没建好时 _evaluate_js 直接返回, 前端启动后
-        通过 get_terminal() 拿到这段历史。
+        行文本就是 cmd 打印的同一份内容(连 ANSI 颜色一起)。这里只做一处 UI 专属
+        裁剪: 去掉时间戳里的年月日——窄面板不需要它, 也不影响 cmd 与日志文件(那两处
+        仍写完整时间戳)。其余部分一律不动, 否则 UI 会和 cmd/日志文件对不上。窗口还
+        没建好时 _evaluate_js 直接返回, 前端启动后通过 get_terminal() 拿到这段历史。
         """
+        from functions.base.log_format import short_stamp
+        line = short_stamp(line)
         with _log_lock:
             _log_lines.append(line)
         _push_log(line)

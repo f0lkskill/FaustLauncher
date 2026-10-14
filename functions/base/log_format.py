@@ -33,8 +33,8 @@ import sys
 from dataclasses import dataclass
 
 __all__ = [
-    "LogRecord", "build_line", "format_message", "resolve_site", "strip_ansi",
-    "palette", "PALETTE",
+    "LogRecord", "build_line", "format_message", "short_stamp", "resolve_site",
+    "strip_ansi", "palette", "PALETTE",
 ]
 
 # --------------------------------------------------------------------------- constants
@@ -244,3 +244,21 @@ def format_message(message: str, *,
     rendered = [build_line(lines[0], palette_map=palette_map)]
     rendered.extend(lines[1:])
     return "\n".join(rendered)
+
+
+# --------------------------------------------------------------------------- UI 裁剪
+
+# 行首时间戳：允许前面先有若干 ANSI 序列（时间戳本身是灰色的），匹配时一起吃掉再
+# 原样放回，否则裁剪会把颜色也削掉。
+_STAMP_DATE_RE = re.compile(
+    r"^((?:\x1b\[[0-9;]*m)*)\[\d{4}-\d{2}-\d{2} (\d{2}:\d{2}:\d{2}\.\d{3})\]")
+
+
+def short_stamp(line: str) -> str:
+    """去掉行首时间戳的年月日，只留 ``[HH:MM:SS.mmm]``。
+
+    **只给窄面板用**（Web 终端）：那里一眼能看到的只有当天最近的输出，年月日白占
+    宽度。cmd 与滚动日志文件仍保留完整时间戳——日志要跨天回溯，日期是必须的。
+    行内没有可识别的时间戳时原样返回，多行消息的续行也不会被误伤。
+    """
+    return _STAMP_DATE_RE.sub(r"\1[\2]", line, count=1)
