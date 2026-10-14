@@ -566,7 +566,7 @@ def main() -> int:
     try:
         import webview
     except Exception as exc:  # noqa: BLE001
-        print(f"[构建工具] 需要 pywebview：{exc}", file=sys.stderr)
+        print(f"[BuildTool] 需要 pywebview：{exc}", file=sys.stderr)
         return 1
 
     api = BuildApi(version) # type: ignore
