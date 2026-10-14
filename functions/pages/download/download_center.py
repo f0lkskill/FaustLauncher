@@ -918,7 +918,7 @@ class DownloadCenterPage:
         local_name = _safe_mod_dir_name(mod.get('name'))
 
         if not local_name:
-            print(f"[下载] 跳过卸载/删除本地旧目录: 名称不合法 ({mod.get('name')!r})", flush=True)
+            print(f"[Download] 跳过卸载/删除本地旧目录: 名称不合法 ({mod.get('name')!r})", flush=True)
         else:
             try:
                 # 先卸载旧版本: 运行 Uninstaller.bat + 清理已复制的附属文件, 避免残留
@@ -1020,7 +1020,7 @@ class DownloadCenterPage:
         try:
             messagebox.showerror("下载中心", message)
         except Exception:
-            print(f"[错误] {message}")
+            print(f"[Error] {message}")
 
 
 def init_download_center(parent, root, bg_color, lighten_bg_color) -> DownloadCenterPage:

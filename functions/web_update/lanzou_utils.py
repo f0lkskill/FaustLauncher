@@ -1111,7 +1111,7 @@ def _CheckLogin(session):
 
 def Login(username, password):
     """
-    使用账号密码登录蓝奏云 [已弃用]
+    使用账号密码登录蓝奏云 [Deprecated]
     蓝奏云已取消密码登录，仅对部分老账号有效，建议改用 LoginByCookie
     :return: 登录成功的 requests.Session（含 cookie），失败返回 False
     """

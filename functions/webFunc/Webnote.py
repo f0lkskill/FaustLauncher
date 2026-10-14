@@ -187,7 +187,7 @@ def prune_cache(extra=()):
             keep.add(_cache_stem(text))
     result = {"removed": 0, "kept": 0, "freed": 0, "names": sorted(keep)}
     if not keep:
-        print("[云端] 读不到 web 配置的笔记名 → 跳过笔记缓存清理（不清空）")
+        print("[Cloud] 读不到 web 配置的笔记名 → 跳过笔记缓存清理（不清空）")
         return result
     if not os.path.isdir(CACHE_DIR):
         return result
@@ -203,11 +203,11 @@ def prune_cache(extra=()):
             os.remove(path)
             result["removed"] += 1
             result["freed"] += size
-            print(f"[云端] 已清理废弃的笔记缓存: {name}（{size} 字节）")
+            print(f"[Cloud] 已清理废弃的笔记缓存: {name}（{size} 字节）")
         except OSError:
             pass
     if result["removed"]:
-        print(f"[云端] 笔记缓存清理完成: 删除 {result['removed']} 份 / "
+        print(f"[Cloud] 笔记缓存清理完成: 删除 {result['removed']} 份 / "
               f"释放 {result['freed'] / 1024:.1f} KB，保留 {result['kept']} 份")
     return result
 
@@ -224,7 +224,7 @@ def _prune_once():
     try:
         prune_cache()
     except Exception as exc:  # noqa: BLE001
-        print(f"[云端] 笔记缓存清理失败(忽略): {exc}")
+        print(f"[Cloud] 笔记缓存清理失败(忽略): {exc}")
 
 
 def cache_read(key):
@@ -420,7 +420,7 @@ def _fetch_note(keys, verbose=True):
                     if not text.strip():
                         raise RuntimeError("HTTP 200 但内容为空 (笔记名是否正确/是否已迁移?)")
                     if verbose:
-                        print(f"[云端] {key} 获取成功: ({len(text)} 字节, {cost:.2f}s)")
+                        print(f"[Cloud] {key} 获取成功: ({len(text)} 字节, {cost:.2f}s)")
                     cache_write(key, text)
                     return text, url, key, ""
                 except Exception as e:
@@ -431,7 +431,7 @@ def _fetch_note(keys, verbose=True):
                     if isinstance(e, RuntimeError):
                         http_level_fail = True
                     if verbose:
-                        print(f"[云端] {key} 第 {attempt} 次失败"
+                        print(f"[Cloud] {key} 第 {attempt} 次失败"
                               f"{' (IPv4)' if use_ipv4 else ' (IPv6 放开)'}: "
                               f"{reason} ({cost:.2f}s)")
                     if attempt == 1 and _is_conn_error(e):
@@ -444,14 +444,14 @@ def _fetch_note(keys, verbose=True):
                 ips = resolve_via_doh(host)
                 if ips:
                     if verbose:
-                        print(f"[云端] {key} 常规线路失败, 改用 DoH 解析直连: "
+                        print(f"[Cloud] {key} 常规线路失败, 改用 DoH 解析直连: "
                               f"{host} -> {', '.join(ips[:3])}")
                     t0 = time.time()
                     text = _fetch_by_ip(url, host, ips,
                                         (min(conn_to, remain), min(READ_TIMEOUT, remain)))
                     if text:
                         if verbose:
-                            print(f"[云端] {key} DoH 直连获取成功: ({len(text)} 字节, "
+                            print(f"[Cloud] {key} DoH 直连获取成功: ({len(text)} 字节, "
                                   f"{time.time() - t0:.2f}s)")
                         cache_write(key, text)
                         return text, url, key, ""
@@ -557,17 +557,17 @@ def write_note(key, value, update_url=None):
                 ok, info = parse_write_response(r)
                 cost = time.time() - t0
                 if ok:
-                    print(f"[云端] {key} 写回成功 ({method}, {len(value)} 字节, {cost:.2f}s)")
+                    print(f"[Cloud] {key} 写回成功 ({method}, {len(value)} 字节, {cost:.2f}s)")
                     return {"status": 1, "error": None, "method": method,
                             "req_id": info.get("req_id") if isinstance(info, dict) else None}
                 last_err = str(info.get("error"))
-                print(f"[云端] {key} 写回失败 ({method}): {last_err} ({cost:.2f}s)")
+                print(f"[Cloud] {key} 写回失败 ({method}): {last_err} ({cost:.2f}s)")
                 # HTTP 层错误: 换个方法, 不重试
                 break               
             except Exception as e:
                 cost = time.time() - t0
                 last_err = f"{type(e).__name__}: {str(e)[:140]}"
-                print(f"[云端] {key} 写回第 {attempt} 次失败 ({method}): {last_err} ({cost:.2f}s)")
+                print(f"[Cloud] {key} 写回第 {attempt} 次失败 ({method}): {last_err} ({cost:.2f}s)")
                 if attempt == 1 and _is_conn_error(e):
                     time.sleep(0.4)
                     continue
@@ -637,7 +637,7 @@ class Note:
         if not key:
             return
         if key != self._requested:
-            print(f"[云端] {self.note_id} 使用内嵌配置里的笔记名: {key} "
+            print(f"[Cloud] {self.note_id} 使用内嵌配置里的笔记名: {key} "
                   f"(本地配置写的是 {self._requested})")
         self.note_name = key
 
@@ -661,11 +661,11 @@ class Note:
                 self.note_content = text
                 self.has_get = True
                 if age >= 2:
-                    print(f"[云端] {self.note_id} 命中本次启动已有的内容 ({age:.0f}s 前, 不重复请求)")
+                    print(f"[Cloud] {self.note_id} 命中本次启动已有的内容 ({age:.0f}s 前, 不重复请求)")
                 return {"note_content": self.note_content, "note_id": self.note_name}
 
         if self.has_get and not self.note_content:
-            print(f"[云端] 尝试重新获取 {self.note_id} 内容…")
+            print(f"[Cloud] 尝试重新获取 {self.note_id} 内容…")
 
         # 每次真正发起请求前清掉上一次的归因 (只反映"最近一次请求的结果")
         self.last_fetch_error = ""
@@ -688,14 +688,14 @@ class Note:
                 best = (cached, k, age if age is not None else 1e18)
         if best:
             self._use_key(best[1])
-            print(f"[云端] {self.note_id} 云端获取失败, 使用本地缓存 "
+            print(f"[Cloud] {self.note_id} 云端获取失败, 使用本地缓存 "
                   f"({_fmt_age(best[2])}前, 可能过期) | 原因: {err}")
             self.note_content = best[0]
             self.has_get = True
             memo_put(best[1], best[0])      # 避免同一次启动里反复等待超时
             return {"note_content": self.note_content, "note_id": self.note_name}
 
-        print(f"[云端] {self.note_id} 获取失败, 无可用缓存 | 尝试过: {', '.join(keys)} | 原因: {err}")
+        print(f"[Cloud] {self.note_id} 获取失败, 无可用缓存 | 尝试过: {', '.join(keys)} | 原因: {err}")
         self.note_content = ""
         # "HTTP 200 但内容为空" 代表笔记存在但没有内容 (被清空 / 从未写入),
         # 与超时、HTTP 5xx 这类故障区分开, 调用方才能决定是"按首次运行自愈"还是"报错"
@@ -712,7 +712,7 @@ class Note:
             self.req_id = result.get("req_id")
             cache_write(self.note_name, new_content)
         else:
-            print(f"[云端] {self.note_id} 写回未成功 (仅本地生效): {result.get('error')}")
+            print(f"[Cloud] {self.note_id} 写回未成功 (仅本地生效): {result.get('error')}")
         return result
 
     def delete_note(self):

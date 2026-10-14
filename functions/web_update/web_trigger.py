@@ -96,15 +96,15 @@ class WebTrigger:
             from functions.base import user_api
             result = user_api.report_download(clean, kind)
         except Exception as exc:  # noqa: BLE001
-            print(f"[云端] 下载上报失败({kind}:{clean}): {type(exc).__name__}: {exc}")
+            print(f"[Cloud] 下载上报失败({kind}:{clean}): {type(exc).__name__}: {exc}")
             return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
         if result.get("ok"):
             # user_api._request() 返回信封 {"ok","data",...}，下载次数/名次在 data 里
             payload = result.get("data") if isinstance(result.get("data"), dict) else {}
-            print(f"[云端] {kind}「{clean}」下载次数 +1 → "
+            print(f"[Cloud] {kind}「{clean}」下载次数 +1 → "
                   f"{payload.get('download_count')}（第 {payload.get('rank', '?')} 名）")
         else:
-            print(f"[云端] {kind}「{clean}」下载上报失败: {result.get('error')}")
+            print(f"[Cloud] {kind}「{clean}」下载上报失败: {result.get('error')}")
         return result
 
     def sort_addon_info_by_download_number(self):

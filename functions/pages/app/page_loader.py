@@ -957,7 +957,7 @@ def download_and_launch(obj=None, need_run_game=False, manual=False):
         if not _resolve_game_dir(_game_path):
             _msg = (f"游戏路径无效: {_game_path or '(未设置)'}\n"
                     f"请选择一个包含 LimbusCompany.exe 的游戏目录后再操作。")
-            print("[启动流程] " + _msg.replace("\n", " "))
+            print("[Startup] " + _msg.replace("\n", " "))
             try:
                 from functions.web_update import zeroasso_download as _zd0
                 _push0 = getattr(_zd0, '_web_progress', None)
@@ -968,7 +968,7 @@ def download_and_launch(obj=None, need_run_game=False, manual=False):
                 pass
             return False
     except Exception as _e:
-        print(f"[启动流程] 游戏路径校验失败: {_e}")
+        print(f"[Startup] 游戏路径校验失败: {_e}")
 
     global downloading
     if downloading:
@@ -1027,23 +1027,23 @@ def download_and_launch(obj=None, need_run_game=False, manual=False):
                 if _cloud_sync_cache['addon'] is not None and _cloud_sync_cache['mod'] is not None:
                     cloud_addons = _cloud_sync_cache['addon']
                     cloud_mods = _cloud_sync_cache['mod']
-                    print(f"[插件/Mod 同步] 使用内存缓存云端列表 ({len(cloud_addons)} 插件 / {len(cloud_mods)} Mod), 跳过数据库爬取")
+                    print(f"[PluginSync] 使用内存缓存云端列表 ({len(cloud_addons)} 插件 / {len(cloud_mods)} Mod), 跳过数据库爬取")
                 else:
-                    print("[插件/Mod 同步] 正在获取云端列表...")
+                    print("[PluginSync] 正在获取云端列表...")
                     cloud_addons = []
                     cloud_mods = []
                     try:
                         cloud_addons = wt.fetch_all_addon_info() or []
                     except Exception as e:
-                        print(f"[插件/Mod 同步] 获取插件列表失败: {e}")
+                        print(f"[PluginSync] 获取插件列表失败: {e}")
                     try:
                         cloud_mods = wt.fetch_all_mod_info() or []
                     except Exception as e:
-                        print(f"[插件/Mod 同步] 获取 Mod 列表失败: {e}")
+                        print(f"[PluginSync] 获取 Mod 列表失败: {e}")
                     _cloud_sync_cache['addon'] = cloud_addons
                     _cloud_sync_cache['mod'] = cloud_mods
                     _cloud_sync_cache['ts'] = _time.time()
-                    print(f"[插件/Mod 同步] 云端列表: {len(cloud_addons)} 插件 / {len(cloud_mods)} Mod")
+                    print(f"[PluginSync] 云端列表: {len(cloud_addons)} 插件 / {len(cloud_mods)} Mod")
 
                 # 本地已安装
                 local_addons = {}
@@ -1084,7 +1084,7 @@ def download_and_launch(obj=None, need_run_game=False, manual=False):
                             if _ver(it.get('version')) > _ver(local_mods[name]):
                                 jobs.append(('mod', name, url, it.get('icon_url', '')))
                 except Exception as e:
-                    print(f"[插件/Mod 同步] 版本对比失败: {e}")
+                    print(f"[PluginSync] 版本对比失败: {e}")
 
                 if not jobs:
                     print("插件与 Mod 均为最新版本")
@@ -1313,7 +1313,7 @@ def download_and_launch(obj=None, need_run_game=False, manual=False):
     except _PipelineAborted:
         # 用户主动中止: 不是错误, 不计入异常日志。
         # 通知前端推迟到 finally 里做 (原因见 finally 的说明), 这里只记标记。
-        print("[启动流程] 已被用户中止")
+        print("[Startup] 已被用户中止")
         aborted = True
         return
     except Exception as e:

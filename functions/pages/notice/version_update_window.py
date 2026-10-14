@@ -452,7 +452,7 @@ class VersionUpdateApi:
         try:
             data['html'] = md_to_html(data.get('description') or '')
         except Exception as e:
-            print(f"[版本更新] Markdown 渲染失败: {e}")
+            print(f"[Update] Markdown 渲染失败: {e}")
             data['html'] = _esc(data.get('description') or '')
         data.pop('description', None)
         return data
@@ -482,7 +482,7 @@ def _write_choice(action):
         with open(RESULT_FILE, "w", encoding="utf-8") as f:
             json.dump({"action": action}, f)
     except Exception as e:
-        print(f"[版本更新] 写入选择结果失败: {e}")
+        print(f"[Update] 写入选择结果失败: {e}")
     try:
         import webview
         if webview.windows:
@@ -536,7 +536,7 @@ def run_update_window(payload_b64=None, debug: bool = False):
             raw = base64.urlsafe_b64decode(payload_b64.encode('ascii')).decode('utf-8')
             payload = json.loads(raw)
         except Exception as e:
-            print(f"[版本更新] 解析参数失败: {e}")
+            print(f"[Update] 解析参数失败: {e}")
 
     window_kwargs = dict(
         title="版本更新",
@@ -623,7 +623,7 @@ def open_version_update_window(current_version, latest_info, info='发现新版�
     # 更新询问模式必须要有下载链接, 否则窗口无按钮可点, 直接拒绝更新
     url = latest_info.get('bilibili_url') or latest_info.get('url') or ''
     if ask_update and not url:
-        print("[版本更新] 无下载链接, 跳过更新询问")
+        print("[Update] 无下载链接, 跳过更新询问")
         return False
 
     payload = _build_payload(current_version, latest_info, info, ask_update)
@@ -637,7 +637,7 @@ def open_version_update_window(current_version, latest_info, info='发现新版�
     else:
         script = os.path.join(_PROJECT_ROOT, "functions", "pages", "notice", "version_update_window.py")
         if not os.path.exists(script):
-            print("[版本更新] 找不到窗口脚本, 已跳过")
+            print("[Update] 找不到窗口脚本, 已跳过")
             return None
         pythonw = os.path.join(os.path.dirname(sys.executable), "pythonw.exe")
         if not os.path.exists(pythonw):
@@ -650,7 +650,7 @@ def open_version_update_window(current_version, latest_info, info='发现新版�
         flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
         proc = subprocess.Popen(cmd, cwd=_PROJECT_ROOT, creationflags=flags)
     except Exception as e:
-        print(f"[版本更新] 无法启动窗口进程: {e}")
+        print(f"[Update] 无法启动窗口进程: {e}")
         return None
 
     if ask_update:
@@ -682,7 +682,7 @@ def open_version_update_window(current_version, latest_info, info='发现新版�
         try:
             on_result(action)
         except Exception as e:
-            print(f"[版本更新] 选择回调执行失败: {e}")
+            print(f"[Update] 选择回调执行失败: {e}")
 
     Thread(target=_watch, daemon=True).start()
     return True

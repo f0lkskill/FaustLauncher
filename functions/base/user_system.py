@@ -66,9 +66,9 @@ def drop_legacy_user_cache() -> None:
             path = os.path.join(cache_dir, name)
             if os.path.isfile(path):
                 os.remove(path)
-                print(f"[用户] 已清理旧版用户表缓存: {path}")
+                print(f"[User] 已清理旧版用户表缓存: {path}")
     except Exception as exc:
-        print(f"[用户] 清理旧缓存失败(忽略): {exc}")
+        print(f"[User] 清理旧缓存失败(忽略): {exc}")
 
 
 # ============================================================
@@ -105,7 +105,7 @@ def _save_restrictions(data: dict) -> None:
         os.makedirs(os.path.dirname(path), exist_ok=True)
         write_json(path, data if isinstance(data, dict) else {}, indent=4, fsync=True)
     except Exception as exc:
-        print(f"[用户] 保存操作限制失败: {exc}")
+        print(f"[User] 保存操作限制失败: {exc}")
 
 
 def _left_seconds(stamp, cooldown: int) -> int:
@@ -363,7 +363,7 @@ def save_user(data: dict) -> bool:
         write_json(path, normalized, indent=4, fsync=True)
         return True
     except Exception as exc:
-        print(f"[用户] 保存本地用户信息失败: {exc}")
+        print(f"[User] 保存本地用户信息失败: {exc}")
         return False
 
 
@@ -389,9 +389,9 @@ def _apply_user_name(settings_manager, name: str) -> str:
         if str(settings_manager.get_setting("user_name") or "") != name:
             settings_manager.set_setting("user_name", name)
             settings_manager.save_settings()
-            print(f"[用户] 服务端昵称已写回设置项: {name}")
+            print(f"[User] 服务端昵称已写回设置项: {name}")
     except Exception as exc:
-        print(f"[用户] 同步昵称到设置项失败: {exc}")
+        print(f"[User] 同步昵称到设置项失败: {exc}")
     return name
 
 
@@ -430,22 +430,22 @@ def _server_identity(uid: str, defaults: dict | None = None) -> tuple[dict | Non
         if remote_id == uid:
             return result["data"], None
         # 会话里是另一个账号 (例如本地身份被改过): 下面重新登记成本地这个 ID
-        print(f"[用户] 本地登录态属于另一个账号, 重新登记 (账号 {mask_uid(uid)})")
+        print(f"[User] 本地登录态属于另一个账号, 重新登记 (账号 {mask_uid(uid)})")
 
     reg = user_api.register(uid, **dict(defaults or {}))
     if reg.get("ok"):
         created = (reg.get("data") or {}).get("created")
-        print(f"[用户] 注册接口确认账号 (账号 {mask_uid(uid)}, "
+        print(f"[User] 注册接口确认账号 (账号 {mask_uid(uid)}, "
               f"{'新建' if created else '已存在, 未改动任何数据'})")
         return reg["data"], None
     if reg.get("offline"):
         return None, reg
 
     # 注册被拒 (格式不合规 / 需要令牌): 已存在的账号仍可登录
-    print(f"[用户] 注册被拒 (HTTP {reg.get('status')}: {reg.get('error')}), 退回登录接口")
+    print(f"[User] 注册被拒 (HTTP {reg.get('status')}: {reg.get('error')}), 退回登录接口")
     login_result = user_api.login(uid)
     if login_result.get("ok"):
-        print(f"[用户] 登录接口成功 (账号 {mask_uid(uid)})")
+        print(f"[User] 登录接口成功 (账号 {mask_uid(uid)})")
         return login_result["data"], None
     return None, (login_result if login_result.get("error") else reg)
 
@@ -497,7 +497,7 @@ def pull_achievements_from_cloud(mode: str = "union") -> dict:
         save_user(local)
     added = len(merged) - len(mine)
     action = "覆盖本地" if mode == "overwrite" else f"与本地取并集（新增 {added} 条）"
-    print(f"[用户] 云端成就 {len(remote)} 条 → {action}，合计 {len(merged)} 条")
+    print(f"[User] 云端成就 {len(remote)} 条 → {action}，合计 {len(merged)} 条")
     return {"ok": True, "mode": mode, "count": len(remote), "achievements": merged,
             "local_before": len(mine), "local_after": len(merged), "added": added}
 
@@ -517,7 +517,7 @@ def push_achievement(achievement_id: str, uid: str = "") -> dict:
         return {"ok": False, "error": "成就 ID 为空"}
     target = str(uid or "").strip() or str(_value(load_user(), "user_id", "") or "").strip()
     if not target:
-        print("[用户] 未登录，跳过单条成就上报")
+        print("[User] 未登录，跳过单条成就上报")
         return {"ok": False, "error": "未登录"}
     result = user_api.add_achievement(aid, target)
     data = result.get("data") if isinstance(result.get("data"), dict) else {}
@@ -526,11 +526,11 @@ def push_achievement(achievement_id: str, uid: str = "") -> dict:
         added = bool(data.get("added"))
         known = data.get("known")
         note = "" if known is None else ("（服务端已收录）" if known else "（服务端暂未收录该 ID）")
-        print(f"[用户] 成就单条上报: {aid} → {'新加' if added else '云端已有(幂等跳过)'}{note}")
+        print(f"[User] 成就单条上报: {aid} → {'新加' if added else '云端已有(幂等跳过)'}{note}")
         assert data is not None
         return {"ok": True, "added": added, "known": known,
                 "count": int(data.get("count") or 0)}
-    print(f"[用户] 成就单条上报失败: {aid} → {result.get('error')}")
+    print(f"[User] 成就单条上报失败: {aid} → {result.get('error')}")
     return {"ok": False, "error": str(result.get("error") or "")}
 
 
@@ -546,7 +546,7 @@ def push_achievements_to_cloud() -> dict:
         return {**result, "method": "me", "count": len(ids)}
     uid = str(_value(load_user(), "user_id", "")).strip()
     fallback = user_api.overwrite_achievements(ids, uid)
-    print(f"[用户] 方式①上报失败({result.get('error')})，改用方式②覆盖上传")
+    print(f"[User] 方式①上报失败({result.get('error')})，改用方式②覆盖上传")
     return {**fallback, "method": "overwrite", "count": len(ids),
             "first_error": result.get("error")}
 
@@ -580,14 +580,14 @@ def sync_playtime(overwrite: bool = True) -> dict:
         from functions.base import steam_playtime
         info = steam_playtime.read_playtime()
     except Exception as exc:  # noqa: BLE001
-        print(f"[用户] 读取 Steam 游玩时长失败: {type(exc).__name__}: {exc}")
+        print(f"[User] 读取 Steam 游玩时长失败: {type(exc).__name__}: {exc}")
         return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
     if not info.get("ok"):
-        print(f"[用户] 游玩时长未上报: {info.get('error')}")
+        print(f"[User] 游玩时长未上报: {info.get('error')}")
         return {"ok": False, "skipped": True, "error": str(info.get("error") or "")}
     result = user_api.report_playtime(int(info["seconds"]), overwrite=overwrite)
     ok = bool(result.get("ok"))
-    print(f"[用户] 游玩时长上报: 本机 {info['hours']} 小时（{info['minutes']} 分钟）→ "
+    print(f"[User] 游玩时长上报: 本机 {info['hours']} 小时（{info['minutes']} 分钟）→ "
           f"{'成功' if ok else '失败(' + str(result.get('error')) + ')'}")
     return {"ok": ok, "seconds": int(info["seconds"]), "hours": info["hours"],
             "minutes": int(info["minutes"]), "error": str(result.get("error") or "")}
@@ -610,7 +610,7 @@ def sync_user(settings_manager=None) -> dict:
         if settings_manager is not None:
             local_name = str(settings_manager.get_setting("user_name") or "").strip()
         local_skins = list(_value(local, "unlocked_skins", []))
-        print(f"[用户] 开始同步: 账号 {mask_uid(uid)}, 本地皮肤 {len(local_skins)} 项")
+        print(f"[User] 开始同步: 账号 {mask_uid(uid)}, 本地皮肤 {len(local_skins)} 项")
 
         # 建档初值用本地现状: 新环境第一次运行就能把自己的昵称/皮肤一次带上去
         # (ID 已存在时 register 是幂等的, 这些初值不会覆盖服务端数据)
@@ -621,14 +621,14 @@ def sync_user(settings_manager=None) -> dict:
         if data is None:
             err = err or {}
             message = err.get("error") or "云端读取失败"
-            print(f"[用户] 同步失败: {message}")
+            print(f"[User] 同步失败: {message}")
             return {"ok": False, "offline": bool(err.get("offline")), "user": local,
                     "error": message}
 
         remote_skins = [str(s).strip() for s in (data.get("skins") or []) if str(s).strip()]
         merged = _merge_skins(local_skins, remote_skins)
-        print(f"[用户] 服务端资料字段: {_profile_keys(data)}")
-        print(f"[用户] 皮肤对比: 本地 {len(local_skins)} 项 / 服务端 {len(remote_skins)} 项 "
+        print(f"[User] 服务端资料字段: {_profile_keys(data)}")
+        print(f"[User] 皮肤对比: 本地 {len(local_skins)} 项 / 服务端 {len(remote_skins)} 项 "
               f"-> 并集 {len(merged)} 项")
         # 服务端返回的整份用户对象都存进本地快照 (皮肤只是其中一个字段)
         local = _store_server_profile(local, data)
@@ -640,11 +640,11 @@ def sync_user(settings_manager=None) -> dict:
             pushed = bool(push.get("ok"))
             if not pushed:
                 push_error = push.get("error") or "云端写入失败"
-                print(f"[用户] 补写服务端皮肤失败: {push_error}")
+                print(f"[User] 补写服务端皮肤失败: {push_error}")
             else:
-                print(f"[用户] 已把本地多出的皮肤补写到服务端 (共 {len(merged)} 项)")
+                print(f"[User] 已把本地多出的皮肤补写到服务端 (共 {len(merged)} 项)")
         else:
-            print("[用户] 皮肤两边一致, 无需写回")
+            print("[User] 皮肤两边一致, 无需写回")
 
         local["unlocked_skins"]["value"] = merged
         local = _normalize(local)
@@ -653,28 +653,28 @@ def sync_user(settings_manager=None) -> dict:
         # 成就也跟着同步一次：**先与云端取并集写回本地（只增不减），再把并集全量推回去**。
         # 插件成就不参与（它们只存本地独立文件，永远不上云）。
         try:
-            print("[用户] 成就云端同步: 开始")
+            print("[User] 成就云端同步: 开始")
             ach = sync_achievements(pull=True)
             pull = ach.get("pull") or {}
-            print(f"[用户] 成就同步: 云端 {pull.get('count', '?')} 条 / 本地原有 "
+            print(f"[User] 成就同步: 云端 {pull.get('count', '?')} 条 / 本地原有 "
                   f"{pull.get('local_before', '?')} 条 → 合并 {ach.get('local_count', '?')} 条 / "
                   f"上传方式={ach['push'].get('method', '-')} "
                   f"{'成功' if ach.get('ok') else '失败(' + str(ach['push'].get('error')) + ')'}")
         except Exception as exc:  # noqa: BLE001
-            print(f"[用户] 成就同步异常（不影响皮肤同步）: {type(exc).__name__}: {exc}")
+            print(f"[User] 成就同步异常（不影响皮肤同步）: {type(exc).__name__}: {exc}")
 
         # 游玩时长也顺手报一次（排行榜）：读本机 Steam 的 localconfig.vdf。
         # Steam 的 Playtime 是累计总量 → 覆盖语义，重复上报不会翻倍。
         try:
             sync_playtime(overwrite=True)
         except Exception as exc:  # noqa: BLE001
-            print(f"[用户] 游玩时长同步异常（不影响其它同步）: {type(exc).__name__}: {exc}")
+            print(f"[User] 游玩时长同步异常（不影响其它同步）: {type(exc).__name__}: {exc}")
 
         remote_name = str(data.get("user_name") or "").strip()
         if remote_name:
             _apply_user_name(settings_manager, remote_name)
 
-        print(f"[用户] 同步完成: 账号 {mask_uid(uid)}, 本地皮肤 {len(merged)} 项"
+        print(f"[User] 同步完成: 账号 {mask_uid(uid)}, 本地皮肤 {len(merged)} 项"
               + (f"（服务端写入未完成: {push_error}）" if push_error else ""))
         return {"ok": True, "user": local, "cloud": data,
                 "pushed": pushed, "push_error": push_error}
@@ -697,7 +697,7 @@ def push_skins(settings_manager=None) -> dict:
         if data is None:
             err = err or {}
             message = err.get("error") or "云端读取失败"
-            print(f"[用户] 上报皮肤前读取服务端失败: {message}")
+            print(f"[User] 上报皮肤前读取服务端失败: {message}")
             return {"ok": False, "offline": bool(err.get("offline")), "user": local,
                     "error": message}
 
@@ -708,17 +708,17 @@ def push_skins(settings_manager=None) -> dict:
 
         # 两边已经一致就不必再写一次 (少一次请求, 也少一次并发写入的机会)
         if sorted(merged) == sorted(remote):
-            print(f"[用户] 上报皮肤: 服务端已是最新 ({len(merged)} 项), 跳过写入")
+            print(f"[User] 上报皮肤: 服务端已是最新 ({len(merged)} 项), 跳过写入")
             return {"ok": True, "user": load_user(), "cloud": data, "skipped": True}
 
-        print(f"[用户] 上报皮肤: 本地 {len(local_skins)} 项 / 服务端 {len(remote)} 项 "
+        print(f"[User] 上报皮肤: 本地 {len(local_skins)} 项 / 服务端 {len(remote)} 项 "
               f"-> 写入并集 {len(merged)} 项")
         result = user_api.push_skins(merged)
         if not result.get("ok"):
-            print(f"[用户] 上报皮肤失败: {result.get('error')}")
+            print(f"[User] 上报皮肤失败: {result.get('error')}")
             return {"ok": False, "offline": bool(result.get("offline")),
                     "user": load_user(), "error": result.get("error") or "云端写入失败"}
-        print(f"[用户] 上报皮肤成功 ({len(merged)} 项)")
+        print(f"[User] 上报皮肤成功 ({len(merged)} 项)")
         _refresh_profile_from(result.get("data") or {})
         return {"ok": True, "user": load_user(), "cloud": result.get("data") or {}}
 
@@ -737,16 +737,16 @@ def push_name(name: str, settings_manager=None) -> dict:
         if data is None:
             err = err or {}
             message = err.get("error") or "云端读取失败"
-            print(f"[用户] 上报昵称前读取服务端失败: {message}")
+            print(f"[User] 上报昵称前读取服务端失败: {message}")
             return {"ok": False, "offline": bool(err.get("offline")), "error": message}
 
-        print(f"[用户] 上报昵称: {clean}")
+        print(f"[User] 上报昵称: {clean}")
         result = user_api.push_name(clean)
         if not result.get("ok"):
-            print(f"[用户] 上报昵称失败: {result.get('error')}")
+            print(f"[User] 上报昵称失败: {result.get('error')}")
             return {"ok": False, "offline": bool(result.get("offline")),
                     "error": result.get("error") or "云端写入失败"}
-        print("[用户] 上报昵称成功")
+        print("[User] 上报昵称成功")
         _refresh_profile_from(result.get("data") or {})
         return {"ok": True, "cloud": result.get("data") or {}}
 
@@ -763,22 +763,22 @@ def login_user(user_id: str, settings_manager=None) -> dict:
         return {"ok": False, "error": "用户 ID 不能为空"}
     blocked = check_login_allowed()
     if blocked:
-        print(f"[用户] 登录被冷却限制拒绝: {blocked}")
+        print(f"[User] 登录被冷却限制拒绝: {blocked}")
         return {"ok": False, "limited": True, "error": blocked}
     with _USER_LOCK:
         old_id = str(_value(load_user(), "user_id", "")).strip()
         if old_id and old_id == uid:
             return {"ok": False, "error": "当前已经是该账号"}
 
-        print(f"[用户] 开始登录 (目标账号 {mask_uid(uid)})")
+        print(f"[User] 开始登录 (目标账号 {mask_uid(uid)})")
         result = user_api.login(uid)
         if not result.get("ok"):
             message = result.get("error") or "登录失败"
-            print(f"[用户] 登录失败: {message}")
+            print(f"[User] 登录失败: {message}")
             return {"ok": False, "offline": bool(result.get("offline")), "error": message}
 
         data = result.get("data") or {}
-        print(f"[用户] 服务端资料字段: {_profile_keys(data)}")
+        print(f"[User] 服务端资料字段: {_profile_keys(data)}")
         local = _new_user(uid)
         _store_server_profile(local, data)
         local["unlocked_skins"]["value"] = [str(s) for s in (data.get("skins") or []) if str(s).strip()]
@@ -790,7 +790,7 @@ def login_user(user_id: str, settings_manager=None) -> dict:
         if remote_name:
             _apply_user_name(settings_manager, remote_name)
 
-        print(f"[用户] 已登录账号 {mask_uid(uid)}"
+        print(f"[User] 已登录账号 {mask_uid(uid)}"
               + ("（管理员）" if data.get("is_admin") else "")
               + f", 服务端皮肤 {len(_value(local, 'unlocked_skins', []))} 项")
         mark_logged_in()          # 登录成功才计入 12 小时冷却
@@ -939,9 +939,9 @@ def record_plugin_achievements(achievement_ids, addon: str = "") -> list[str]:
                 json.dump(data, fh, ensure_ascii=False, indent=2)
             os.replace(tmp, plugin_achievements_file())
         except Exception as exc:  # noqa: BLE001
-            print(f"[用户] 插件成就记录写入失败: {type(exc).__name__}: {exc}")
+            print(f"[User] 插件成就记录写入失败: {type(exc).__name__}: {exc}")
             return merged
-        print(f"[用户] 记录插件成就 {len(added)} 条（插件档共 {len(merged)} 条）")
+        print(f"[User] 记录插件成就 {len(added)} 条（插件档共 {len(merged)} 条）")
         return merged
 
 
@@ -969,7 +969,7 @@ def record_achievements(achievement_ids) -> list[str]:
         merged.extend(added)
         data["completed_achievements"]["value"] = merged
         save_user(data)
-        print(f"[用户] 记录已完成成就 {len(added)} 条（本地共 {len(merged)} 条）")
+        print(f"[User] 记录已完成成就 {len(added)} 条（本地共 {len(merged)} 条）")
         return merged
 
 
@@ -986,11 +986,11 @@ def unlock_skin(skin_id: str, settings_manager=None) -> dict:
             skins.append(sid)
         data["unlocked_skins"]["value"] = skins
         save_user(data)
-        print(f"[用户] 皮肤 {sid} 已写入本地 (共 {len(skins)} 项), 准备上报服务端")
+        print(f"[User] 皮肤 {sid} 已写入本地 (共 {len(skins)} 项), 准备上报服务端")
         # 本地刚解锁: 与云端取并集后上报。反过来用云端覆盖本地会把这个皮肤抹掉。
         pushed = push_skins(settings_manager)
         if not pushed.get("ok"):
-            print(f"[用户] 皮肤上报未完成(本地已保留): {pushed.get('error')}")
+            print(f"[User] 皮肤上报未完成(本地已保留): {pushed.get('error')}")
     return {"ok": True, "user": load_user(), "sync": pushed}
 
 

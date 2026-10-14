@@ -5,7 +5,7 @@
 Player.log 里没有这个数，只能靠 battle_watch 的 ``RWT`` 事件。
 
 ⚠ 线路号（宿主对象上的 ``_collectionId``）待实测确认：日志里会打
-``[战斗观测] ★ 铁路记录: 线路=N 总回合=N``，如果不是 6 就改下面一行。
+``[BattleWatch] ★ 铁路记录: 线路=N 总回合=N``，如果不是 6 就改下面一行。
 """
 from functions.achievement.battle_achievements import RailwayTotalTurnAchievement
 

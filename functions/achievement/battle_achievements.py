@@ -190,7 +190,7 @@ class RailwayTotalTurnAchievement(BaseAchievement):
     也就是进线路之前游戏显示的那个"你的最好回合数"。
 
     ⚠ ``line_ids`` 是线路号（宿主对象上的 ``_collectionId``）。实测值会打进日志：
-        ``[战斗观测] ★ 铁路记录: 线路=N 总回合=N``
+        ``[BattleWatch] ★ 铁路记录: 线路=N 总回合=N``
     """
 
     battle_driven = True

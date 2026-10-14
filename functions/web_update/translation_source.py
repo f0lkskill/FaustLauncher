@@ -182,10 +182,10 @@ def check_need_up_translate(version_info: str = "") -> bool:
     """
     local_dir = get_builtin_translation_dir()      # 内置包目录: 插件自定义源不影响这里
     if not os.path.isdir(local_dir):
-        print(f"[汉化版本] 本地没有内置汉化包目录 {local_dir}, 需要下载")
+        print(f"[Locale] 本地没有内置汉化包目录 {local_dir}, 需要下载")
         return True
     if not os.path.isfile(os.path.join(local_dir, "info", "version.json")):
-        print(f"[汉化版本] 本地 {local_dir} 缺少 info/version.json, 需要下载")
+        print(f"[Locale] 本地 {local_dir} 缺少 info/version.json, 需要下载")
         return True
     if version_info == "":
         return False
@@ -193,16 +193,16 @@ def check_need_up_translate(version_info: str = "") -> bool:
         local_platform = get_local_platform()
         # 平台类型不匹配 (普通版切神人版等) 必须强制更新, 防止 versionCode 撞号装错包
         if local_platform and local_platform != PLATFORM_TAG_BY_SOURCE[get_translate_source()]:
-            print(f"[汉化版本] 平台标记不一致 (本地 {local_platform}), 需要重新下载")
+            print(f"[Locale] 平台标记不一致 (本地 {local_platform}), 需要重新下载")
             return True
         # OurPlay 旧版安装的 version.json 无 platform 字段, 无法区分普通/神人, 强制更新一次补全
         if not local_platform and is_ourplay_source():
-            print("[汉化版本] OurPlay 旧版安装缺 platform 标记, 强制更新一次补全")
+            print("[Locale] OurPlay 旧版安装缺 platform 标记, 强制更新一次补全")
             return True
         same = str(version_info).strip() == get_local_version().strip()
-        print(f"[汉化版本] 本地 {get_local_version()} / 云端 {version_info} -> "
+        print(f"[Locale] 本地 {get_local_version()} / 云端 {version_info} -> "
               f"{'一致, 无需更新' if same else '需要更新'}")
         return not same
     except Exception as e:
-        print(f"[汉化版本] 比对失败 ({e}), 按需要更新处理")
+        print(f"[Locale] 比对失败 ({e}), 按需要更新处理")
         return True

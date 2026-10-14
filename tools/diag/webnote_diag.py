@@ -166,7 +166,7 @@ def main():
     head("结论")
     if any(ok for _, ok, _ in results):
         print("  ✓ 至少一个源可用 —— 启动器应能正常获取云端数据。")
-        print("    若用户仍失败, 请让其在启动器内查看「终端」面板里的 [云端] 日志。")
+        print("    若用户仍失败, 请让其在启动器内查看「终端」面板里的 [Cloud] 日志。")
     else:
         print("  ✗ 所有常规源都不可用。")
         if ips:

@@ -1215,13 +1215,13 @@ class SuspendWindow:
         total = len(self.thread_ids)
         self.was_suspended = bool(total) and not self.owned and self.already >= total
         if self.was_suspended:
-            self.log(f"[战斗观测] 检测到游戏进程已处于挂起态（{total}/{total} 个线程挂起）"
+            self.log(f"[BattleWatch] 检测到游戏进程已处于挂起态（{total}/{total} 个线程挂起）"
                      "→ 直接在这个挂起窗口内注入")
         elif self.owned:
-            self.log(f"[战斗观测] 已建立注入窗口：挂起 {len(self.owned)} 个线程"
+            self.log(f"[BattleWatch] 已建立注入窗口：挂起 {len(self.owned)} 个线程"
                      f"（共 {total} 个，其中 {self.already} 个本来就挂起）")
         else:
-            self.log(f"[战斗观测] 未能挂起任何线程（共 {total} 个），按普通方式注入")
+            self.log(f"[BattleWatch] 未能挂起任何线程（共 {total} 个），按普通方式注入")
         return self
 
     def __exit__(self, *_exc) -> bool:
@@ -1234,7 +1234,7 @@ class SuspendWindow:
             finally:
                 _kernel32.CloseHandle(handle)
         if self.owned:
-            self.log(f"[战斗观测] 注入窗口关闭：恢复 {len(self.owned)} 个线程")
+            self.log(f"[BattleWatch] 注入窗口关闭：恢复 {len(self.owned)} 个线程")
         self.owned = []
         return False
 
@@ -1482,7 +1482,7 @@ def resolve_stub(pe, rva: int, names: dict, max_hops: int = 4,
         if target is None or target == current:
             break
         hops.append((current, names.get(current, "?"), kind, target, names.get(target, "?")))
-        log(f"[战斗观测] 0x{current:X} ({names.get(current, '?')}) 是{kind}"
+        log(f"[BattleWatch] 0x{current:X} ({names.get(current, '?')}) 是{kind}"
             f" → 改钩 0x{target:X} ({names.get(target, '?')})")
         current = target
     return current, hops
@@ -1523,7 +1523,7 @@ def build_hook_table(on_log=None, pe_path: str = "") -> dict:
                     except ValueError:
                         pass
     except Exception as exc:  # noqa: BLE001
-        log(f"[战斗观测] hook_index 不可用，使用内置回退偏移: {exc}")
+        log(f"[BattleWatch] hook_index 不可用，使用内置回退偏移: {exc}")
 
     # 3) 符号名 → RVA 反查表（把解引用结果翻译成可读名字）
     names: dict[int, str] = {}
@@ -1540,7 +1540,7 @@ def build_hook_table(on_log=None, pe_path: str = "") -> dict:
             from functions.hook.pe import PeFile
             pe = PeFile(pe_path)
         except Exception as exc:  # noqa: BLE001
-            log(f"[战斗观测] 读取 GameAssembly.dll 节表失败（跳过桩解引用）: {exc}")
+            log(f"[BattleWatch] 读取 GameAssembly.dll 节表失败（跳过桩解引用）: {exc}")
     resolved: dict[str, dict] = {}
     used_rva: dict[int, str] = {}
     # 所有"索引里明确配置过"的钩子 RVA：用来识别"尾调用桩解引用把**两个不同的观测点**
@@ -1557,7 +1557,7 @@ def build_hook_table(on_log=None, pe_path: str = "") -> dict:
                     # 跟随就会把 other 这个观测点并掉（后面 used_rva 会把它合并进本项），
                     # 而且本项带着自己的 detour 类型去跑别的函数 —— 事件语义全错。
                     # 直接钩桩本身：桩就是该方法的入口，prologue 还是索引里那份（可被 DLL 校验）。
-                    log(f"[战斗观测] {key} 的尾调用桩指向 {other} 的地址 0x{final:X} —— 不跟随"
+                    log(f"[BattleWatch] {key} 的尾调用桩指向 {other} 的地址 0x{final:X} —— 不跟随"
                         f"（跟随会吃掉 {other} 这个观测点，且两者 detour 类型不同），"
                         f"改为直接钩桩本身 0x{rva:X}")
                     final, hops = rva, []
@@ -1565,7 +1565,7 @@ def build_hook_table(on_log=None, pe_path: str = "") -> dict:
                     # 符号表里查不到落脚点：连"钩的是哪个函数"都说不清。
                     # 这时 DLL 侧的 prologue 自检是**自证**的（prologue 就是用本机 DLL
                     # 在同一个地址上重新读的），等于没有自检 —— 风险太高，不跟随。
-                    log(f"[战斗观测] {key} 的尾调用桩指向未知地址 0x{final:X}"
+                    log(f"[BattleWatch] {key} 的尾调用桩指向未知地址 0x{final:X}"
                         f"（符号表里查不到该符号）—— 不跟随，改为直接钩桩本身 0x{rva:X}")
                     final, hops = rva, []
             item["stub_hops"] = [list(h) for h in hops]
@@ -1583,7 +1583,7 @@ def build_hook_table(on_log=None, pe_path: str = "") -> dict:
                 item["prologue_self_read"] = True
         key_owner = used_rva.get(rva)
         if key_owner is not None:
-            log(f"[战斗观测] {key} 与 {key_owner} 指向同一地址 0x{rva:X}，"
+            log(f"[BattleWatch] {key} 与 {key_owner} 指向同一地址 0x{rva:X}，"
                 f"已合并（{HOOK_MERGE_WARN}）")
             resolved[key_owner].setdefault("merged_keys", []).append(key)
             continue
@@ -1603,14 +1603,14 @@ def build_hook_table(on_log=None, pe_path: str = "") -> dict:
         for k in dropped:
             resolved.pop(k, None)
         if dropped:
-            log(f"[战斗观测] 丢弃 {len(dropped)} 个**索引里没有**的观测点（它们的 RVA 只能"
+            log(f"[BattleWatch] 丢弃 {len(dropped)} 个**索引里没有**的观测点（它们的 RVA 只能"
                 f"沿用代码里写死的旧值，prologue 又只能本机现读自证，装钩有把游戏改崩的风险）: "
                 f"{', '.join(dropped)}")
-            log("[战斗观测] 想恢复它们：跑一次 python -m functions.hook.main update 重建索引"
+            log("[BattleWatch] 想恢复它们：跑一次 python -m functions.hook.main update 重建索引"
                 "（索引里现在会包含这些观测点，RVA/prologue 都来自当前游戏版本）")
 
     if len(resolved) > MAX_HOOKS:
-        log(f"[战斗观测] 候选 {len(resolved)} 个超过 DLL 上限 {MAX_HOOKS}，只取前 {MAX_HOOKS} 个")
+        log(f"[BattleWatch] 候选 {len(resolved)} 个超过 DLL 上限 {MAX_HOOKS}，只取前 {MAX_HOOKS} 个")
         resolved = {k: v for k, v in list(resolved.items())[:MAX_HOOKS]}
     return {"entries": resolved, "source": source, "names": names,
             "index_available": index is not None,
@@ -1749,7 +1749,7 @@ class BattleWatch:
         if only_skills and not settled and not pending:
             return pending
         for detail in settled:
-            self._log(f"[战斗观测] ★ {detail}")
+            self._log(f"[BattleWatch] ★ {detail}")
         self._write_status(force=True)
         return pending
 
@@ -1943,12 +1943,12 @@ class BattleWatch:
                         # 下面的 _write_config 会把新配置覆盖进去，DLL 照新配置继续报事件。
                         self._map_handle = existing
                         self._map_view = view
-                        self._log("[战斗观测] 接管上次遗留的共享内存（本进程是唯一实例；"
+                        self._log("[BattleWatch] 接管上次遗留的共享内存（本进程是唯一实例；"
                                   "游戏里那份 DLL 若还在，会读到下面写入的新配置）")
                         return True
                     _kernel32.UnmapViewOfFile(view)
                     _kernel32.CloseHandle(existing)
-                    self._log("[战斗观测] 共享内存已存在且**还有别的监测实例在跑** → "
+                    self._log("[BattleWatch] 共享内存已存在且**还有别的监测实例在跑** → "
                               "本次不注入以免双钩（另一个实例被杀掉后会自动接管）")
                     return False
                 _kernel32.UnmapViewOfFile(view)
@@ -1956,12 +1956,12 @@ class BattleWatch:
         handle = _kernel32.CreateFileMappingW(-1, None, 0x04, 0, CONFIG_SIZE,
                                               ctypes.c_wchar_p(MAP_NAME))
         if not handle:
-            self._log("[战斗观测] 创建共享内存失败")
+            self._log("[BattleWatch] 创建共享内存失败")
             return False
         view = _kernel32.MapViewOfFile(handle, 0x0006, 0, 0, CONFIG_SIZE)
         if not view:
             _kernel32.CloseHandle(handle)
-            self._log("[战斗观测] 映射共享内存失败")
+            self._log("[BattleWatch] 映射共享内存失败")
             return False
         self._map_handle = handle
         self._map_view = view
@@ -2052,17 +2052,17 @@ class BattleWatch:
         expected = _expected_game_exe() if expect_exe is None else expect_exe
         image = _process_image_path(pid)
         if expected and image and not _same_file(image, expected):
-            self._log(f"[战斗观测] 跳过 PID {pid}：映像是 {image}，与配置的游戏（{expected}）"
+            self._log(f"[BattleWatch] 跳过 PID {pid}：映像是 {image}，与配置的游戏（{expected}）"
                       "不一致 —— 同名残留进程/别的副本，不注入")
             return False
         info = dll_info(path)
-        self._log(f"[战斗观测] 准备注入 {os.path.basename(path)}（{info['size']} 字节，"
+        self._log(f"[BattleWatch] 准备注入 {os.path.basename(path)}（{info['size']} 字节，"
                   f"mtime {info['mtime']}，sha256 {info['sha256'][:12]}…）"
                   + (f"；目标映像 {image}" if image else ""))
         want_name = os.path.basename(path).lower()
         for name, mpath, base in remote_modules(pid):
             if name.lower() == want_name:
-                self._log(f"[战斗观测] 注意：目标进程已有一份 {name}"
+                self._log(f"[BattleWatch] 注意：目标进程已有一份 {name}"
                           f"（{mpath or '路径未知'} @0x{base:X}）—— LoadLibraryW 会直接"
                           "返回它、不会重新加载；若它来自旧构建，本次注入不会生效")
                 break
@@ -2070,7 +2070,7 @@ class BattleWatch:
         with SuspendWindow(pid, self._log) as window:
             proc = _kernel32.OpenProcess(PROCESS_ACCESS, False, pid)
             if not proc:
-                self._log("[战斗观测] 打开游戏进程失败（游戏可能以管理员权限启动过；"
+                self._log("[BattleWatch] 打开游戏进程失败（游戏可能以管理员权限启动过；"
                           "可尝试以管理员权限运行启动器）")
                 return False
             remote = None
@@ -2079,31 +2079,31 @@ class BattleWatch:
                 size = (len(path) + 1) * 2
                 remote = _kernel32.VirtualAllocEx(proc, None, size, 0x3000, 0x04)
                 if not remote:
-                    self._log("[战斗观测] VirtualAllocEx 失败")
+                    self._log("[BattleWatch] VirtualAllocEx 失败")
                     return False
                 written = ctypes.c_size_t()
                 if not _kernel32.WriteProcessMemory(proc, remote, wide, size,
                                                     ctypes.byref(written)):
-                    self._log("[战斗观测] WriteProcessMemory 失败")
+                    self._log("[BattleWatch] WriteProcessMemory 失败")
                     return False
                 kernel32 = _kernel32.GetModuleHandleW("kernel32.dll")
                 load_lib = _kernel32.GetProcAddress(kernel32, b"LoadLibraryW")
                 if not load_lib:
-                    self._log("[战斗观测] 定位 LoadLibraryW 失败")
+                    self._log("[BattleWatch] 定位 LoadLibraryW 失败")
                     return False
                 thread = _kernel32.CreateRemoteThread(proc, None, 0, load_lib, remote, 0, None)
                 if not thread:
-                    self._log("[战斗观测] CreateRemoteThread 失败（杀毒软件可能拦截）")
+                    self._log("[BattleWatch] CreateRemoteThread 失败（杀毒软件可能拦截）")
                     return False
                 waited = _kernel32.WaitForSingleObject(thread, 10000)
                 exit_code = wt.DWORD()
                 _kernel32.GetExitCodeThread(thread, ctypes.byref(exit_code))
                 _kernel32.CloseHandle(thread)
                 if waited == 0x00000102:                                   # WAIT_TIMEOUT
-                    self._log("[战斗观测] LoadLibraryW 超时（远程线程还没返回，可能撞上了"
+                    self._log("[BattleWatch] LoadLibraryW 超时（远程线程还没返回，可能撞上了"
                               "加载器锁；线程已恢复，下面按模块表实际结果判定）")
                 elif not exit_code.value:
-                    self._log("[战斗观测] DLL 加载失败（远程线程退出码为 0）")
+                    self._log("[BattleWatch] DLL 加载失败（远程线程退出码为 0）")
                     return False
             finally:
                 if remote:
@@ -2117,7 +2117,7 @@ class BattleWatch:
         self._injected_image = image
         self._injected_dll = path
         mode = "借用进程原有的挂起窗口" if window.was_suspended else "临时挂起窗口"
-        self._log(f"[战斗观测] 已注入 battle_watch.dll (PID {pid}，{mode})")
+        self._log(f"[BattleWatch] 已注入 battle_watch.dll (PID {pid}，{mode})")
         self._event(f"注入成功 PID={pid} dll={path} sha256={info['sha256'][:12]}")
         return True
 
@@ -2135,16 +2135,16 @@ class BattleWatch:
                 break
             time.sleep(0.2)
         if not found:
-            self._log("[战斗观测] 注入后没在目标进程里看到 battle_watch.dll"
+            self._log("[BattleWatch] 注入后没在目标进程里看到 battle_watch.dll"
                       "（被拦截或加载失败）")
             return False
         name, mpath, base = found
         if mpath and path and not _same_file(mpath, path):
-            self._log(f"[战斗观测] 目标进程里的 {name} 来自 {mpath}，不是刚注入的 {path}"
+            self._log(f"[BattleWatch] 目标进程里的 {name} 来自 {mpath}，不是刚注入的 {path}"
                       " —— 进程里已有一份旧副本（同名模块不会被重新加载），本次注入未生效")
             return False
         self._remote_module = int(base)
-        self._log(f"[战斗观测] 已确认目标进程加载 {name} @0x{base:X}"
+        self._log(f"[BattleWatch] 已确认目标进程加载 {name} @0x{base:X}"
                   + (f"（{mpath}）" if mpath else ""))
         return True
 
@@ -2172,13 +2172,13 @@ class BattleWatch:
             info = ensure_offsets_ready(on_log=self._log, push=True)
         except Exception as exc:  # noqa: BLE001
             info = {"verdict": "error", "detail": f"{type(exc).__name__}: {exc}"}
-            self._log(f"[战斗观测] 偏移预检不可用（继续用现有索引）: {exc}")
+            self._log(f"[BattleWatch] 偏移预检不可用（继续用现有索引）: {exc}")
         verdict = str(info.get("verdict") or "")
         text = self._PREFLIGHT_TEXT.get(verdict, verdict)
         self._preflight = dict(info)
         self._preflight.pop("index", None)          # 索引对象不进状态文件
         check = info.get("check") or {}
-        self._log(f"[战斗观测] 偏移预检结果: {verdict}（{text}）"
+        self._log(f"[BattleWatch] 偏移预检结果: {verdict}（{text}）"
                   + (f"；{check['detail']}" if check.get("detail") else "")) # type: ignore
         index = info.get("index")
         if index is not None:
@@ -2208,16 +2208,16 @@ class BattleWatch:
         while time.time() < deadline and not self._stop.is_set():
             total, suspended = process_thread_suspend_state(pid)
             if total and suspended >= total:
-                self._log(f"[战斗观测] 已等到游戏进程完全挂起（{suspended}/{total} 个线程）"
+                self._log(f"[BattleWatch] 已等到游戏进程完全挂起（{suspended}/{total} 个线程）"
                           "→ 在这个窗口内校验偏移并注入")
                 return True
             if not announced:
-                self._log(f"[战斗观测] 等待游戏进程完全挂起（当前 {suspended}/{total} 个线程挂起，"
+                self._log(f"[BattleWatch] 等待游戏进程完全挂起（当前 {suspended}/{total} 个线程挂起，"
                           f"最多等 {timeout:.0f}s；超时则按常规挂起窗口注入）")
                 announced = True
             self._sleep(0.2)
         if not self._stop.is_set():
-            self._log(f"[战斗观测] {timeout:.0f}s 内未出现完全挂起窗口 → 按常规方式注入")
+            self._log(f"[BattleWatch] {timeout:.0f}s 内未出现完全挂起窗口 → 按常规方式注入")
         return False
 
     def _refresh_hook_table(self, log, pe_path: str) -> bool:
@@ -2231,16 +2231,16 @@ class BattleWatch:
         self._run_preflight()
         table = build_hook_table(on_log=log, pe_path=pe_path)
         self.table = table
-        log(f"[战斗观测] 注入前钩子表就绪: 来源={table['source']}，"
+        log(f"[BattleWatch] 注入前钩子表就绪: 来源={table['source']}，"
             f"{len(table['entries'])} 个观测点")
         if not self._write_config(table):
-            log("[战斗观测] 注入前写入钩子配置失败，本次注入跳过")
+            log("[BattleWatch] 注入前写入钩子配置失败，本次注入跳过")
             return False
         # 重写配置是整块覆盖共享内存 → 关注 buff 表跟着重新落一遍，
         # 保证 DLL 一挂上就读到它（buffwatch=0 会让 DLL 完全跳过整条 buff 链）。
         names = _sync_buff_watch()
         if names:
-            log(f"[战斗观测] 注入前关注 buff 表已写入 {len(names)} 个: {'/'.join(names)}")
+            log(f"[BattleWatch] 注入前关注 buff 表已写入 {len(names)} 个: {'/'.join(names)}")
         # 同理：关注关卡表（已通关记录轮询）也要在注入前落好，否则采样线程读到 0 条就跳过。
         watch = get_watch()
         stage_ids = observe_stage_ids()
@@ -2261,7 +2261,7 @@ class BattleWatch:
         if not remote:
             self._ga_retry += 1
             if self._ga_retry <= GA_VERIFY_RETRY:
-                self._log("[战斗观测] 还没枚举到进程内的 GameAssembly.dll，稍后再校验")
+                self._log("[BattleWatch] 还没枚举到进程内的 GameAssembly.dll，稍后再校验")
             return
         disk = local_pe_identity(_expected_gameassembly())
         same = pe_identity_same(remote, disk)
@@ -2272,11 +2272,11 @@ class BattleWatch:
                                                            "entry_rva")},
                          "same": same}
         if same:
-            self._log(f"[战斗观测] 游戏 DLL 校验通过：进程内 GameAssembly.dll == 磁盘最新那份"
+            self._log(f"[BattleWatch] 游戏 DLL 校验通过：进程内 GameAssembly.dll == 磁盘最新那份"
                       f"（PE 时间戳 0x{int(remote['timestamp']):X}，"
                       f"映像 {int(remote['size_of_image'])} 字节，基址 0x{int(remote['base']):X}）")
         else:
-            self._log(f"[战斗观测] ⚠ 游戏 DLL 不一致：进程内 ts=0x{int(remote['timestamp']):X} "
+            self._log(f"[BattleWatch] ⚠ 游戏 DLL 不一致：进程内 ts=0x{int(remote['timestamp']):X} "
                       f"size={int(remote['size_of_image'])} entry=0x{int(remote['entry_rva']):X}；"
                       f"磁盘 ts=0x{int(disk['timestamp']):X} size={int(disk['size_of_image'])} "
                       f"entry=0x{int(disk['entry_rva']):X} —— 游戏可能正在更新/加载了旧版本，"
@@ -2323,7 +2323,7 @@ class BattleWatch:
                 rows.append(text)
         self._drained_head = head
         if dropped:
-            self._log(f"[战斗观测] 抽取过慢，丢弃了 {dropped} 行事件（可调小轮询间隔）")
+            self._log(f"[BattleWatch] 抽取过慢，丢弃了 {dropped} 行事件（可调小轮询间隔）")
         return rows, head
 
     # ---------------------------------------------------------- buff 关注表
@@ -2336,7 +2336,7 @@ class BattleWatch:
         """
         cfg = self._config()
         if cfg is None:
-            self._log("[战斗观测] ⚠ 关注 buff 表没写进去：共享内存配置不可用（magic 不对？）")
+            self._log("[BattleWatch] ⚠ 关注 buff 表没写进去：共享内存配置不可用（magic 不对？）")
             return None
         names = tuple(names)[:BUFF_WATCH_MAX]
         for i, name in enumerate(names):
@@ -2356,7 +2356,7 @@ class BattleWatch:
         """
         cfg = self._config()
         if cfg is None:
-            self._log("[战斗观测] ⚠ 关注关卡表没写进去：共享内存配置不可用（magic 不对？）")
+            self._log("[BattleWatch] ⚠ 关注关卡表没写进去：共享内存配置不可用（magic 不对？）")
             return 0
         ids = [int(v) for v in stage_ids][:STAGE_WATCH_MAX]
         for i in range(STAGE_WATCH_MAX):
@@ -2364,7 +2364,7 @@ class BattleWatch:
         cfg.stage_watch_count = len(ids)
         cfg.stage_seen_mask = 0          # 新一轮：允许重新上报
         if ids:
-            self._log(f"[战斗观测] 关注关卡 {len(ids)} 个: "
+            self._log(f"[BattleWatch] 关注关卡 {len(ids)} 个: "
                       f"{'/'.join(str(v) for v in ids[:8])}"
                       f"{'…' if len(ids) > 8 else ''}")
         return int(cfg.stage_watch_count)
@@ -2390,17 +2390,17 @@ class BattleWatch:
             tag = match.group(1) if match else ""
         event = BattleEvent(kind=kind, values=values, tag=tag, raw=line, ts=time.time())
         if kind in ("INFO", "ERR", "WARN"):
-            self._log(f"[战斗观测] DLL: {line}")
+            self._log(f"[BattleWatch] DLL: {line}")
             self._event(f"DLL {line}")
             if kind == "ERR":
-                self._log(f"[战斗观测] 提示: 版本不符就先跑 "
+                self._log(f"[BattleWatch] 提示: 版本不符就先跑 "
                           f"`python -m functions.hook.main update` 再重启游戏")
             return event
         self._event(line)
         with self._lock:
             self._last_event_ts = time.time()
         if self.verbose:
-            self._log(f"[战斗观测] 事件 {line}")
+            self._log(f"[BattleWatch] 事件 {line}")
         if kind == "RND":
             if tag in ANIM_TICK_TAGS:
                 # 表现层动画 tick（不是回合边界！）：带 iid 的就按行动分组放行
@@ -2427,7 +2427,7 @@ class BattleWatch:
                         if new_battle:
                             self._battle_ended = False
                             self.state.round_seq = 1
-                            self._log(f"[战斗观测] 新战斗开始（距上次回合边界 {gap:.0f}s）"
+                            self._log(f"[BattleWatch] 新战斗开始（距上次回合边界 {gap:.0f}s）"
                                       "→ 回合计数重置为第 1 回合")
                         else:
                             self.state.round_seq = event.get("seq", self.state.round_seq + 1)
@@ -2435,10 +2435,10 @@ class BattleWatch:
                     self.settle_turn(f"回合边界({tag or 'hook'})")
                     self._begin_action_batch()   # 上一回合的分组清空，新回合从组 0 开始
                 elif self.verbose:
-                    self._log(f"[战斗观测] 回合边界({tag}) 与上一次同回合（{ROUND_BOUNDARY_DEDUPE_SEC:.0f}s 内）→ 不重复计数")
+                    self._log(f"[BattleWatch] 回合边界({tag}) 与上一次同回合（{ROUND_BOUNDARY_DEDUPE_SEC:.0f}s 内）→ 不重复计数")
         elif kind == "BUFDIAG":
             # DLL 侧 buff 链现场（n=-1 链读不到 / n>0 但一个都没命中关注表时会打）
-            # self._log(f"[战斗观测] buff 诊断（DLL）: {line}")
+            # self._log(f"[BattleWatch] buff 诊断（DLL）: {line}")
             self._event(f"DLL {line}")
         elif kind == "SPD":
             self._apply_spd(event)
@@ -2458,7 +2458,7 @@ class BattleWatch:
             # 一次性诊断：关注表一个都没命中时，DLL 把扫到的前几个关卡 id 原样报上来
             ids = event.text("ids", "")
             count = event.get("n", 0)
-            self._log(f"[战斗观测] ★ 存档里的关卡 id 样本（关注表未命中，n={count}）: {ids}")
+            self._log(f"[BattleWatch] ★ 存档里的关卡 id 样本（关注表未命中，n={count}）: {ids}")
         elif kind == "NCL":
             self._apply_node_state(event)
         elif kind == "SNI":
@@ -2518,7 +2518,7 @@ class BattleWatch:
                 detail = self._flush_one_pending_locked("动画结束")
         if not detail:
             return
-        self._log(f"[战斗观测] ▶ 动画结束（{tag}）放行: {detail}")
+        self._log(f"[BattleWatch] ▶ 动画结束（{tag}）放行: {detail}")
         self._write_status(force=True)
 
     def _apply_spd(self, event: BattleEvent) -> None:
@@ -2555,10 +2555,10 @@ class BattleWatch:
                 lambda rule: self._speed_detail(rule, oid, speeds, event.tag))
             hits += self._eval_presence_locked()
         for detail in hits:
-            self._log(f"[战斗观测] ★ {detail}")
+            self._log(f"[BattleWatch] ★ {detail}")
         if event.get("iid", -1) < 0 and event.get("oid", -1) < 0:
             # 钩子命中了但不是单位对象（例如钩到了非单位函数）→ 提示
-            self._log(f"[战斗观测] 注意: {event.tag} 的 SPD 事件里没有单位字段，"
+            self._log(f"[BattleWatch] 注意: {event.tag} 的 SPD 事件里没有单位字段，"
                       f"可能是钩子签名/偏移不对（原始: {event.raw}）")
         # 兜底回合边界：首选边界钩子（manager_*）从未命中时，用“单位回合开始”当边界
         if event.tag == "unit_round_start" and not self._boundary_seen():
@@ -2657,7 +2657,7 @@ class BattleWatch:
                 unit_oid=oid)
             hits += self._eval_presence_locked()
         for detail in hits:
-            self._log(f"[战斗观测] ★ {detail}")
+            self._log(f"[BattleWatch] ★ {detail}")
 
     # ---------------------------------------------------------- 规则求值与详情文本
     def _set_flag_locked(self, key: str, detail: str) -> None:
@@ -2892,7 +2892,7 @@ class BattleWatch:
             self.state.stage_last = info
             if uid and uid != "?":
                 self.state.stage_clears[uid] = info
-        self._log(f"[战斗观测] ★ 关卡结算: uid={uid or '?'} 通关回合={turn} "
+        self._log(f"[BattleWatch] ★ 关卡结算: uid={uid or '?'} 通关回合={turn} "
                   f"阵亡={dead} EX={1 if ex else 0}")
 
     def _apply_stage_clear(self, event: BattleEvent) -> None:
@@ -2912,7 +2912,7 @@ class BattleWatch:
                 "uid": uid, "turn": -1, "dead": -1, "ex": 0,
                 "cleared": True, "ts": time.time(),
             }
-        self._log(f"[战斗观测] ★ 存档记录: 关卡 {stage} 已通关（回溯判定）")
+        self._log(f"[BattleWatch] ★ 存档记录: 关卡 {stage} 已通关（回溯判定）")
 
     def _apply_node_state(self, event: BattleEvent) -> None:
         """关卡通关状态查询（DLL 的 ``NCL`` 事件）——游戏自己在问"这关通了没"。
@@ -2952,7 +2952,7 @@ class BattleWatch:
                     "uid": key, "turn": -1, "dead": -1, "ex": 0,
                     "cleared": True, "ts": ts,
                 }
-        self._log(f"[战斗观测] ★ 关卡已通关（游戏查询）: 章{main} 第{idx}关 "
+        self._log(f"[BattleWatch] ★ 关卡已通关（游戏查询）: 章{main} 第{idx}关 "
                   f"(小节id={sub} 节点id={node})")
 
     def _apply_stage_node_id(self, event: BattleEvent) -> None:
@@ -2978,7 +2978,7 @@ class BattleWatch:
                     "uid": key, "turn": -1, "dead": -1, "ex": 0,
                     "cleared": True, "ts": time.time(),
                 }
-        self._log(f"[战斗观测] ★ 关卡身份: {key} 关卡id={stage} 状态={state}"
+        self._log(f"[BattleWatch] ★ 关卡身份: {key} 关卡id={stage} 状态={state}"
                   + ("（已通关）" if state else ""))
 
     def _apply_railway_ui_text(self, event: BattleEvent) -> None:
@@ -3002,7 +3002,7 @@ class BattleWatch:
                 self.state.railway_totals[line] = value      # 用界面显示值覆盖求和值
             self.state.railway_ui_text = {"text": raw, "value": value, "line": line}
         line_text = f"{line}" if line >= 0 else "?"
-        self._log(f"[战斗观测] ★ 铁路界面显示: 「{raw}」→ {value}（线路={line_text}）")
+        self._log(f"[BattleWatch] ★ 铁路界面显示: 「{raw}」→ {value}（线路={line_text}）")
 
     def _apply_railway_total(self, event: BattleEvent) -> None:
         """折射铁路记录（DLL 的 ``RWT`` 事件）。两种形态：
@@ -3016,7 +3016,7 @@ class BattleWatch:
             turn = event.get("turn", -1)
             with self._lock:
                 self.state.railway_nodes[int(node)] = int(turn)
-            self._log(f"[战斗观测] ★ 铁路节点记录: node={node} 通关回合={turn}")
+            self._log(f"[BattleWatch] ★ 铁路节点记录: node={node} 通关回合={turn}")
             return
         line = event.get("line", -1)
         total = event.get("total", -1)
@@ -3026,7 +3026,7 @@ class BattleWatch:
             self.state.railway_last = {"line": int(line), "total": int(total), "ts": time.time()}
         vals = event.text("vals", "")
         extra = f" 各节点原始值={vals}" if vals else ""
-        self._log(f"[战斗观测] ★ 铁路记录: 线路={line} 总回合={total} "
+        self._log(f"[BattleWatch] ★ 铁路记录: 线路={line} 总回合={total} "
                   f"节点数={event.get('nodes', -1)}{extra}")
 
     def _apply_buffs(self, event: BattleEvent) -> None:
@@ -3057,7 +3057,7 @@ class BattleWatch:
                 unit_oid=oid)
             hits += self._eval_presence_locked()
         for detail in hits:
-            self._log(f"[战斗观测] ★ {detail}")
+            self._log(f"[BattleWatch] ★ {detail}")
 
     def _buff_detail(self, rule, info: dict, tag: str, present: set) -> str:
         hit, names = rule.match_buff(info.get("oid", -1), present, self.state.round_seq)
@@ -3102,7 +3102,7 @@ class BattleWatch:
             self._run()
         except Exception as exc:  # noqa: BLE001
             import traceback
-            self._log(f"[战斗观测] 驱动线程异常退出: {type(exc).__name__}: {exc}")
+            self._log(f"[BattleWatch] 驱动线程异常退出: {type(exc).__name__}: {exc}")
             self._event("驱动线程异常: " + traceback.format_exc().replace("\n", " | "))
 
     def _run(self) -> None:
@@ -3111,7 +3111,7 @@ class BattleWatch:
         path = dll_path()
         if not path:
             self._phase = "缺少 DLL"
-            log("[战斗观测] 找不到 battle_watch.dll，跳过战斗观测"
+            log("[BattleWatch] 找不到 battle_watch.dll，跳过战斗观测"
                 "（可运行 functions/achievement/hook_dll/build.ps1 编译）")
             return
 
@@ -3128,29 +3128,29 @@ class BattleWatch:
         table = self.table
         self._phase = "已解析钩子表"
         if _DLL_CHOICE_NOTE:
-            log(f"[战斗观测] {_DLL_CHOICE_NOTE}")
-        log(f"[战斗观测] 偏移来源={table['source']}；下发 {len(table['entries'])} 个观测点：")
+            log(f"[BattleWatch] {_DLL_CHOICE_NOTE}")
+        log(f"[BattleWatch] 偏移来源={table['source']}；下发 {len(table['entries'])} 个观测点：")
         log(describe_hook_table(table))
         missing = [k for k, item in table["entries"].items() if not item.get("prologue")]
         if missing:
-            log(f"[战斗观测] 注意: 以下观测点没有 prologue（将跳过版本自检）: {missing}")
+            log(f"[BattleWatch] 注意: 以下观测点没有 prologue（将跳过版本自检）: {missing}")
 
         if not self._open_map():
             self._phase = "共享内存失败"
             return
         if not self._write_config(table):
             self._phase = "写配置失败"
-            log("[战斗观测] 写入共享内存配置失败")
+            log("[BattleWatch] 写入共享内存配置失败")
             return
         # 关注 buff 表：成就侧登记了 buff 规则才写（没登记时 DLL 连 buff 链都不读）
         names = watched_buff_names()
         readback = self.sync_buff_watch(names)
         if names and readback is not None:
-            log(f"[战斗观测] 关注 buff 回读: count={readback[0]} "
+            log(f"[BattleWatch] 关注 buff 回读: count={readback[0]} "
                 f"hash0=0x{readback[1]:016X} hash1=0x{readback[2]:016X}"
                 f"（Python 端 hash0=0x{fnv1a64(names[0]):016X}）")
         if names:
-            log(f"[战斗观测] 关注 buff {len(names)} 个: {'/'.join(names)}")
+            log(f"[BattleWatch] 关注 buff {len(names)} 个: {'/'.join(names)}")
         self._write_status(force=True)
         pid = None
         starting_flag = False
@@ -3161,9 +3161,9 @@ class BattleWatch:
                 if pid is None:
                     self._phase = f"等待游戏进程（{self.process_name}）"
                     if waited == 0.0:
-                        log(f"[战斗观测] 等待 {self.process_name} 启动（最长 5 分钟，之后改慢轮询）")
+                        log(f"[BattleWatch] 等待 {self.process_name} 启动（最长 5 分钟，之后改慢轮询）")
                     elif int(waited) % 60 == 0:
-                        log(f"[战斗观测] 仍在等待游戏进程（已等 {int(waited)}s）；"
+                        log(f"[BattleWatch] 仍在等待游戏进程（已等 {int(waited)}s）；"
                             f"钩子表已就绪，状态见 cache/achievement/battle_watch_status.json")
                     self._sleep(2.0 if waited < 300 else 10.0)
                     waited += 2.0
@@ -3172,14 +3172,14 @@ class BattleWatch:
                     continue
                 else:
                     if starting_flag:
-                        print(f"[战斗观测] {self.process_name} 启动，PID: {pid}，进入 hook 注入流程。")
+                        print(f"[BattleWatch] {self.process_name} 启动，PID: {pid}，进入 hook 注入流程。")
                         starting_flag = False
                 if note:
-                    log(f"[战斗观测] 进程选择: PID {pid}（{image or '映像未知'}）；{note}")
+                    log(f"[BattleWatch] 进程选择: PID {pid}（{image or '映像未知'}）；{note}")
                 # 稳定性：Steam 拉起的第一个同名进程可能几秒就退出（引导/闪退），
                 # 注进去只会白加载一份 DLL；与 mod loader 的判定约定保持一致。
                 if not pid_alive_for(pid, GAME_STABLE_SECONDS):
-                    log(f"[战斗观测] PID {pid} 存活不足 {GAME_STABLE_SECONDS:g}s"
+                    log(f"[BattleWatch] PID {pid} 存活不足 {GAME_STABLE_SECONDS:g}s"
                         "（疑似 Steam 引导进程/闪退），继续等真正的游戏进程")
                     pid = None
                     self._sleep(1.0)
@@ -3214,7 +3214,7 @@ class BattleWatch:
                 try:
                     self.handle_line(line)
                 except Exception as exc:  # noqa: BLE001
-                    log(f"[战斗观测] 事件解析失败: {line!r} {exc}")
+                    log(f"[BattleWatch] 事件解析失败: {line!r} {exc}")
             self._scan_hits(cfg)
             # 技能类规则的“动画结束”兜底：事件停了 SKILL_SETTLE_QUIET_SEC 就结算
             self.settle_skills_if_quiet()
@@ -3247,9 +3247,9 @@ class BattleWatch:
             if hits != prev:
                 self._last_hits[key] = hits
                 if prev == 0 and hits > 0:
-                    self._log(f"[战斗观测] 观测点开始命中: {key} ×{hits}")
+                    self._log(f"[BattleWatch] 观测点开始命中: {key} ×{hits}")
                     if key == "take_attack_dmg_multiplier":
-                        self._log("[战斗观测] ↳ 事件链路已通（受击观测钩子活了）")
+                        self._log("[BattleWatch] ↳ 事件链路已通（受击观测钩子活了）")
 
     def _heartbeat(self) -> None:
         now = time.time()
@@ -3260,7 +3260,7 @@ class BattleWatch:
             snap = self.state.snapshot()
         hits = " ".join(f"{k}={v}" for k, v in self._last_hits.items())
         flags = list(snap.get("rule_hits") or {})
-        self._log(f"[战斗观测] 心跳: 阶段={self._phase} PID={self._injected_pid} | "
+        self._log(f"[BattleWatch] 心跳: 阶段={self._phase} PID={self._injected_pid} | "
                   f"事件: RND {snap['rnd_total']} / SPD {snap['spd_total']} / "
                   f"VAL {snap.get('vitals_total', 0)} / ACT {snap['acts_total']} / "
                   f"BUF {snap.get('buff_total', 0)} | "
@@ -3273,30 +3273,30 @@ class BattleWatch:
                   f"成就判定 {len(flags)} 条{('（' + ','.join(flags) + '）') if flags else ''} | "
                   f"钩子命中: {hits or '（全 0）'}")
         if not hits:
-            self._log("[战斗观测] 提示: 所有观测点命中数都是 0")
+            self._log("[BattleWatch] 提示: 所有观测点命中数都是 0")
 
     def _report_status(self, cfg: BWConfig) -> None:
         if int(cfg.gameassembly_found) and "ga" not in self._status_logged:
             self._status_logged.add("ga")
             self._phase = "GameAssembly 已加载"
-            self._log("[战斗观测] 游戏已加载 GameAssembly.dll，等待装钩")
+            self._log("[BattleWatch] 游戏已加载 GameAssembly.dll，等待装钩")
         # 游戏 DLL 新鲜度：进程内那份 vs 磁盘上最新那份（加载晚的话留着重试）
         if not self._ga_verified and int(cfg.gameassembly_found):
             self._verify_gameassembly()
         if int(cfg.verified) and "verified" not in self._status_logged:
             self._status_logged.add("verified")
-            self._log("[战斗观测] prologue 自检通过")
+            self._log("[BattleWatch] prologue 自检通过")
         if int(cfg.installed) and "installed" not in self._status_logged:
             self._status_logged.add("installed")
             self._phase = "观测中（已装钩）"
-            self._log(f"[战斗观测] 已装钩 {int(cfg.hook_count)} 个观测点，开始采集事件")
+            self._log(f"[BattleWatch] 已装钩 {int(cfg.hook_count)} 个观测点，开始采集事件")
         error = int(cfg.last_error)
         if error and f"err{error}" not in self._status_logged:
             self._status_logged.add(f"err{error}")
             self._phase = f"DLL 错误 {error}"
-            self._log(f"[战斗观测] DLL 状态: {ERROR_TEXT.get(error, error)}")
+            self._log(f"[BattleWatch] DLL 状态: {ERROR_TEXT.get(error, error)}")
             if error == 3:
-                self._log("[战斗观测] 提示: 跑一次 `python -m functions.hook.main update` "
+                self._log("[BattleWatch] 提示: 跑一次 `python -m functions.hook.main update` "
                           "重建偏移索引后再启动游戏")
 
     def _log(self, message: str) -> None:
@@ -3488,17 +3488,17 @@ def _probe_preflight() -> None:
         from functions.hook.preflight import ensure_offsets_ready
         info = ensure_offsets_ready(on_log=_print, allow_cloud=False, allow_rebuild=False)
     except Exception as exc:  # noqa: BLE001
-        _print(f"[偏移预检] 不可用: {type(exc).__name__}: {exc}")
+        _print(f"[OffsetProbe] 不可用: {type(exc).__name__}: {exc}")
         return
     verdict = str(info.get("verdict") or "")
-    _print(f"[偏移预检] {verdict}（"
+    _print(f"[OffsetProbe] {verdict}（"
            f"{BattleWatch._PREFLIGHT_TEXT.get(verdict, verdict)}）")
     check = info.get("check") or {}
     if check.get("detail") and verdict != "local-ok":
-        _print(f"[偏移预检] {check['detail']}")
+        _print(f"[OffsetProbe] {check['detail']}")
     elif verdict == "local-ok":
-        _print(f"[偏移预检] {check.get('detail', '')}")
-        _print("[偏移预检] （离线 --probe 不联网、不重建；云端对照/本地重建只在游戏启动时按需发生）")
+        _print(f"[OffsetProbe] {check.get('detail', '')}")
+        _print("[OffsetProbe] （离线 --probe 不联网、不重建；云端对照/本地重建只在游戏启动时按需发生）")
 
 
 def cmd_probe() -> int:
@@ -3567,13 +3567,13 @@ def main(argv=None) -> int:
         print(message, flush=True)
 
     watch = BattleWatch(log_callback=log)
-    log("[战斗观测] 独立调试模式（Ctrl+C 结束）；--probe 看钩子表、--status 看状态")
+    log("[BattleWatch] 独立调试模式（Ctrl+C 结束）；--probe 看钩子表、--status 看状态")
     watch.start()
     try:
         while True:
             time.sleep(5)
             snap = watch.snapshot()
-            log("[战斗观测] 状态: " + ", ".join(
+            log("[BattleWatch] 状态: " + ", ".join(
                 f"{k}={v}" for k, v in snap.items()
                 if k not in ("watched_speeds", "watched_vitals", "rules", "hook_hits")))
     except KeyboardInterrupt:

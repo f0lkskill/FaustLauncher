@@ -7,7 +7,7 @@
 （dump 里的 ``StageScript_10xx`` 是别的内容）。先按几种可能的写法都匹配上，
 打过一次之后看日志里这行即可一行改准：
 
-    [战斗观测] ★ 关卡结算: uid=????????? 通关回合=NN 阵亡=N EX=N
+    [BattleWatch] ★ 关卡结算: uid=????????? 通关回合=NN 阵亡=N EX=N
 """
 from functions.achievement.battle_achievements import StageClearTurnAchievement
 

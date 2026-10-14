@@ -93,7 +93,7 @@ def _start_update_download(root, latest_entry, version_name):
 def _on_update_choice(root, latest_entry, version_name, action):
     """更新询问窗口关闭后的回调 (后台线程); 选择更新时回到主线程开始下载"""
     if action != 'update':
-        print(f"[版本更新] 用户选择: {action or '未选择(窗口直接关闭或超时)'}")
+        print(f"[Update] 用户选择: {action or '未选择(窗口直接关闭或超时)'}")
         return
     if root is not None:
         try:
@@ -134,10 +134,10 @@ def check_version_update(root):
             "error": None,
         })
     except Exception as _e:
-        print(f"[版本更新] 记录内存版本信息失败: {_e}")
+        print(f"[Update] 记录内存版本信息失败: {_e}")
 
     if latest_release != current_version:
-        print(f"[版本更新] 检测到启动器新版本: {latest_release}，当前版本: {current_version}")
+        print(f"[Update] 检测到启动器新版本: {latest_release}，当前版本: {current_version}")
         latest_entry = version_info['versions'][latest_release]
         latest_info = {'version_name': latest_release,
                        'description': latest_entry.get('description', ''),

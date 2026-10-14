@@ -241,13 +241,13 @@ class FaustLauncherCore:
         if same and not force:
             # 同一次启动里两次检测得到同一结果 (ensure_game_path 与 check_settings 都会走到):
             # 不要再弹一次 —— 否则用户会看到"两个询问"
-            print("[设置] 游戏路径检测结果与上次相同, 不重复弹窗")
+            print("[Settings] 游戏路径检测结果与上次相同, 不重复弹窗")
             return
         try:
             from functions.web_update import zeroasso_download as _zd
             push = getattr(_zd, "_web_progress", None)
             if not push:
-                print("[设置] 前端推送不可用, 无法弹出游戏路径确认窗口 (请在设置页手动选择)")
+                print("[Settings] 前端推送不可用, 无法弹出游戏路径确认窗口 (请在设置页手动选择)")
                 return
             push("path_confirm", {
                 "path": found,
@@ -257,13 +257,13 @@ class FaustLauncherCore:
                 "force": bool(force),
             })
             if resolved:
-                print(f"[设置] 已从 Steam VDF 获取到游戏路径, 等待用户确认: {resolved}")
+                print(f"[Settings] 已从 Steam VDF 获取到游戏路径, 等待用户确认: {resolved}")
             elif found:
-                print(f"[设置] Steam 检测到的路径下没有 {GAME_EXE}, 视为无效路径: {found}")
+                print(f"[Settings] Steam 检测到的路径下没有 {GAME_EXE}, 视为无效路径: {found}")
             else:
-                print("[设置] 未从 Steam VDF 获取到游戏路径, 等待用户手动选择")
+                print("[Settings] 未从 Steam VDF 获取到游戏路径, 等待用户手动选择")
         except Exception as e:
-            print(f"[设置] 推送游戏路径确认窗口失败: {e}")
+            print(f"[Settings] 推送游戏路径确认窗口失败: {e}")
 
     def ensure_game_path(self, interactive=True):
         """确定游戏路径: 没有就定位 Steam, 再让用户确认 / 自己选。

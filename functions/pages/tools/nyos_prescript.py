@@ -106,7 +106,7 @@ class NyosPrescript:
                 value = data.get(key)
                 setattr(NyosPrescript, key, value if isinstance(value, list) else list(DEFAULT_DATA[key]))
         except Exception as e:
-            print(f"[今日指令] 读取 {CONFIG_PATH} 失败({e}), 使用内置默认词库")
+            print(f"[Prescript] 读取 {CONFIG_PATH} 失败({e}), 使用内置默认词库")
             for key in keys:
                 setattr(NyosPrescript, key, list(DEFAULT_DATA[key]))
 
@@ -308,7 +308,7 @@ class NyosPrescriptApi:
                 with open(os.path.join(_PROJECT_ROOT, rel_path), "rb") as f:
                     return f"data:{mime};base64," + base64.b64encode(f.read()).decode("ascii")
             except Exception as e:
-                print(f"[今日指令] 读取 {rel_path} 失败: {e}")
+                print(f"[Prescript] 读取 {rel_path} 失败: {e}")
                 return None
 
         return {

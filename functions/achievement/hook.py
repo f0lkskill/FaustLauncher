@@ -182,7 +182,7 @@ def _report_unlocks(log_callback, unlocked, header: str = "") -> list:
             record_plugin_achievements([getattr(ach, "id", "") or ""],
                                        addon=str(getattr(ach, "addon", "") or ""))
     except Exception as exc:  # noqa: BLE001
-        log_callback(f"  [成就] 本地记录写入失败（不影响解锁）: {type(exc).__name__}: {exc}")
+        log_callback(f"  [Achievement] 本地记录写入失败（不影响解锁）: {type(exc).__name__}: {exc}")
 
     # 解锁后**立刻**把成就推回云端（不等下一次启动/手动同步）。
     #
@@ -214,7 +214,7 @@ def _report_unlocks(log_callback, unlocked, header: str = "") -> list:
         log_callback(header)
     for ach in fresh:
         detail = getattr(ach, "detail", "")
-        log_callback(f"  [成就] 解锁: {ach.name}"
+        log_callback(f"  [Achievement] 解锁: {ach.name}"
                      + (f"\n     判定依据: {detail}" if detail else ""))
     return fresh
 
@@ -263,7 +263,7 @@ class _LogSink:
         self.failures += 1
         if self.failures <= 3 or self.failures % 100 == 0:
             try:
-                print(f"[成就日志] {message}（第 {self.failures} 次；path={self.path}）",
+                print(f"[AchLog] {message}（第 {self.failures} 次；path={self.path}）",
                       file=sys.stderr, flush=True)
             except Exception:  # noqa: BLE001
                 pass
@@ -458,7 +458,7 @@ def _terminate_pid(pid: int, on_log=None) -> bool:
     guard = _self_and_ancestors()
     if pid <= 0 or pid in guard:
         if pid in guard and pid != os.getpid():
-            log(f"[成就监测] PID {pid} 是本进程的父进程（解释器 launcher）→ 绝不动它")
+            log(f"[AchMonitor] PID {pid} 是本进程的父进程（解释器 launcher）→ 绝不动它")
         return False
     PROCESS_TERMINATE = 0x0001
     PROCESS_QUERY_LIMITED = 0x1000
@@ -469,7 +469,7 @@ def _terminate_pid(pid: int, on_log=None) -> bool:
                                                     ctypes.POINTER(wintypes.DWORD)]
     handle = kernel32.OpenProcess(PROCESS_TERMINATE | PROCESS_QUERY_LIMITED, False, pid)
     if not handle:
-        log(f"[成就监测] 打不开旧实例 PID {pid}（可能已经退出了）")
+        log(f"[AchMonitor] 打不开旧实例 PID {pid}（可能已经退出了）")
         return False
     try:
         buf = ctypes.create_unicode_buffer(1024)
@@ -477,14 +477,14 @@ def _terminate_pid(pid: int, on_log=None) -> bool:
         if kernel32.QueryFullProcessImageNameW(handle, 0, buf, ctypes.byref(size)):
             image = buf.value
             if not _is_self_image(image):
-                log(f"[成就监测] PID {pid} 的映像是 {image}，不是我们拉起的监测进程 → 不动它")
+                log(f"[AchMonitor] PID {pid} 的映像是 {image}，不是我们拉起的监测进程 → 不动它")
                 return False
         ok = bool(kernel32.TerminateProcess(handle, 0))
-        log(f"[成就监测] 已收掉旧实例 PID {pid}" if ok
-            else f"[成就监测] 终止 PID {pid} 失败")
+        log(f"[AchMonitor] 已收掉旧实例 PID {pid}" if ok
+            else f"[AchMonitor] 终止 PID {pid} 失败")
         return ok
     except Exception as exc:  # noqa: BLE001
-        log(f"[成就监测] 终止 PID {pid} 异常: {type(exc).__name__}: {exc}")
+        log(f"[AchMonitor] 终止 PID {pid} 异常: {type(exc).__name__}: {exc}")
         return False
     finally:
         kernel32.CloseHandle(handle)
@@ -502,7 +502,7 @@ def _acquire_single_instance(pid_file: str = "", on_log=None,
     kernel32.CreateMutexW.argtypes = [ctypes.c_void_p, wintypes.BOOL, ctypes.c_wchar_p]
     handle = kernel32.CreateMutexW(None, False, HOOK_MUTEX_NAME)
     if not handle:
-        log("[成就监测] 创建单实例互斥体失败 → 按老行为继续（可能并存）")
+        log("[AchMonitor] 创建单实例互斥体失败 → 按老行为继续（可能并存）")
         return True, "互斥体不可用"
     globals()["_hook_mutex"] = handle          # 持有到进程结束（内核自动释放）
 
@@ -516,7 +516,7 @@ def _acquire_single_instance(pid_file: str = "", on_log=None,
         # 这里再兜一道：按“新的接管”策略收掉它，然后才认领。
         stale = _other_hook_running(pid_file)
         if stale:
-            log(f"[成就监测] 互斥体给了本进程，但 pid 文件里还有一个活着的监测进程 "
+            log(f"[AchMonitor] 互斥体给了本进程，但 pid 文件里还有一个活着的监测进程 "
                 f"PID {stale} → 先收掉它（新实例接管）")
             _terminate_pid(stale, log)
             deadline = time.time() + 3.0
@@ -530,25 +530,25 @@ def _acquire_single_instance(pid_file: str = "", on_log=None,
     if not other:
         # 认不出持有者（手工启动 / 记录坏了 / 它刚好要退出）——先给它一点时间放开
         # 互斥体，能拿到就接管；拿不到才退出（绝不让两个实例并存）。
-        log("[成就监测] 互斥体被占用，但 pid 文件里没有可用的 PID"
+        log("[AchMonitor] 互斥体被占用，但 pid 文件里没有可用的 PID"
             "（手工启动 / 记录坏了）→ 等它放开互斥体…")
         deadline = time.time() + max(1.0, timeout)
         while time.time() < deadline:
             if _try_take(1.0):
                 _write_own_pid(pid_file)
                 return True, "本进程是唯一实例（上一个实例刚好退出）"
-        log("[成就监测] 等不到互斥体（认不出持有者）→ 本次直接退出，避免两个实例并存")
+        log("[AchMonitor] 等不到互斥体（认不出持有者）→ 本次直接退出，避免两个实例并存")
         return False, "已有实例且拿不到它的 PID"
-    log(f"[成就监测] 检测到已有监测实例在跑（PID {other}）→ 按“新的接管”策略收掉它")
+    log(f"[AchMonitor] 检测到已有监测实例在跑（PID {other}）→ 按“新的接管”策略收掉它")
     if not _terminate_pid(other, log):
-        log("[成就监测] 收不掉旧实例 → 本次直接退出（避免两个实例并存）")
+        log("[AchMonitor] 收不掉旧实例 → 本次直接退出（避免两个实例并存）")
         return False, f"无法收掉旧实例 PID {other}"
     deadline = time.time() + max(1.0, timeout)
     while time.time() < deadline:
         if _try_take(1.0):
             _write_own_pid(pid_file)
             return True, f"已接管（收掉旧实例 PID {other}）"
-    log(f"[成就监测] 旧实例 PID {other} 没收干净（{int(timeout)}s 内没放开互斥体）"
+    log(f"[AchMonitor] 旧实例 PID {other} 没收干净（{int(timeout)}s 内没放开互斥体）"
         "→ 本次直接退出")
     return False, f"旧实例 PID {other} 未退出"
 
@@ -618,7 +618,7 @@ class LogProcessor:
         # ── 1. Steam 登录检测 ──
         if "SetLoginInfo : STEAM" in line and not s.steam_logged:
             s.steam_logged = True
-            self.log_callback(f"[{self._ts()}] [登录] Steam 登录成功")
+            self.log_callback(f"[{self._ts()}] [Login] Steam 登录成功")
             unlocked = check_achievements(self.log_callback)
             if unlocked:
                 _report_unlocks(self.log_callback, unlocked)
@@ -634,7 +634,7 @@ class LogProcessor:
                 if item_id in RARE_ITEM_IDS:
                     record_zero_item(item_id)   # 加入滑动窗口 (窗口结束=一次浏览)
                     if item_id in TEN_PULL_IDS:
-                        self.log_callback(f"  [背包] {RARE_ITEM_IDS[item_id]} = 0 (无此物品)")
+                        self.log_callback(f"  [Inventory] {RARE_ITEM_IDS[item_id]} = 0 (无此物品)")
 
         # ── 3. (浏览归并见主循环 poll_inventory_window) ──
 
@@ -642,7 +642,7 @@ class LogProcessor:
         if self._battle_end_marker in line:
             s.battle_count += 1
             self.log_callback(
-                f"[{self._ts()}] [战斗] 完成关卡 (总计: {s.battle_count})"
+                f"[{self._ts()}] [Battle] 完成关卡 (总计: {s.battle_count})"
             )
             # 战斗结束也当作一次回合结算：避免最后那个回合的技能事件被浪费
             try:
@@ -660,7 +660,7 @@ class LogProcessor:
 
         # ── 5. 游戏退出检测 (参考日志: Quit Local Save → Cleanup → Shutdown) ──
         if any(p in line for p in self._game_quit_patterns):
-            self.log_callback(f"[{self._ts()}] [退出] 检测到游戏退出信号")
+            self.log_callback(f"[{self._ts()}] [Exit] 检测到游戏退出信号")
             quit_seen = True
 
         return quit_seen
@@ -696,7 +696,7 @@ class AchievementHook:
             from functions.achievement import battle_watch as bw
             self.battle_watch = bw.start_battle_watch(self.log_callback)
         except Exception as exc:  # noqa: BLE001
-            self.log_callback(f"[成就监测] 战斗事件观测不可用（仅日志成就生效）: {exc}")
+            self.log_callback(f"[AchMonitor] 战斗事件观测不可用（仅日志成就生效）: {exc}")
 
     def _prepare_tail(self):
         """启动准备: 同步读取偏移到当前文件末尾。
@@ -711,7 +711,7 @@ class AchievementHook:
         except OSError:
             base_size = 0
         self.log_reader.sync_to_end()
-        self.log_callback(f"[成就监测] 已同步日志偏移 ({base_size} B), 开始实时监控")
+        self.log_callback(f"[AchMonitor] 已同步日志偏移 ({base_size} B), 开始实时监控")
 
     def _monitor_logs(self):
         """后台线程函数：监控日志文件。"""
@@ -726,7 +726,7 @@ class AchievementHook:
                     for line in new_lines:
                         quit_seen = self.log_processor.process_log_line(line)
                         if quit_seen:
-                            self.log_callback("[成就监测] 检测到游戏退出信号, 结束监控")
+                            self.log_callback("[AchMonitor] 检测到游戏退出信号, 结束监控")
                             self.running = False
                             break
 
@@ -791,7 +791,7 @@ class AchievementHook:
             register_inventory_open()
             if newly:
                 for item_id, item_name in newly:
-                    self.log_callback(f"  [物品] {item_name} (ID:{item_id})")
+                    self.log_callback(f"  [Item] {item_name} (ID:{item_id})")
             unlocked = check_achievements(self.log_callback)
             if unlocked:
                 _report_unlocks(self.log_callback, unlocked, "==== 成就解锁 ====")
@@ -946,7 +946,7 @@ def run_achievement_hook():
         # 登记为**本进程统一的日志落点**：战斗观测(原 logs/battle_watch.log)也写这里，
         # 于是成就生命周期 / 子进程 stdout+stderr / DLL 事件流全在一份文件里。
         log_sink.install(_write)
-        log_callback(f"[成就监测] 单实例：{sole_note}")
+        log_callback(f"[AchMonitor] 单实例：{sole_note}")
 
         def _cleanup():
             log_sink.clear()
@@ -968,7 +968,7 @@ def run_achievement_hook():
 
     # 等待日志文件出现（最多30秒）
     if not os.path.exists(log_path):
-        log_callback(f"[成就监测] 等待日志文件: {log_path}")
+        log_callback(f"[AchMonitor] 等待日志文件: {log_path}")
         for _ in range(300):
             if os.path.exists(log_path):
                 break
@@ -997,7 +997,7 @@ def run_achievement_hook():
     log_callback("")
     log_callback("开始监控...")
     log_callback("-" * 60)
-    log_callback("[成就监测] 日志: logs/achievement_hook.log 一份到底"
+    log_callback("[AchMonitor] 日志: logs/achievement_hook.log 一份到底"
                  "（成就生命周期 + 子进程 stdout/stderr + 战斗观测事件流）；"
                  "状态 cache/achievement/battle_watch_status.json；"
                  "离线自查 python -m functions.achievement.battle_watch --probe/--status")
@@ -1016,10 +1016,10 @@ def run_achievement_hook():
     try:
         from functions.achievement.input_hook import start_input_monitoring
         input_ctrl = start_input_monitoring()
-        log_callback("[成就监测] 输入统计已启用 (P键/鼠标点击)")
+        log_callback("[AchMonitor] 输入统计已启用 (P键/鼠标点击)")
     except Exception:
         input_ctrl = None
-        log_callback("[成就监测] 输入统计不可用, 跳过按键/点击成就")
+        log_callback("[AchMonitor] 输入统计不可用, 跳过按键/点击成就")
 
     # 尝试启用 GUI 成就弹窗 (若环境无显示则自动降级为纯日志)
     toast_ctrl = None
@@ -1028,7 +1028,7 @@ def run_achievement_hook():
         toast_ctrl = ToastController()
     except Exception:
         toast_ctrl = None
-        log_callback("[成就监测] GUI 弹窗不可用, 仅输出日志")
+        log_callback("[AchMonitor] GUI 弹窗不可用, 仅输出日志")
 
     # 成就轮询放**独立线程**：``check_achievements`` 里的内存成就要读游戏进程，
     # 未附加时单次能到 ~400ms；以前它跑在驱动弹窗动画的主线程上，
@@ -1041,7 +1041,7 @@ def run_achievement_hook():
             try:
                 _check_input_achievements(log_callback)
             except Exception as exc:  # noqa: BLE001
-                log_callback(f"[成就监测] 成就轮询异常: {type(exc).__name__}: {exc}")
+                log_callback(f"[AchMonitor] 成就轮询异常: {type(exc).__name__}: {exc}")
             poll_stop.wait(ACHIEVEMENT_POLL_SEC)
 
     poll_thread = threading.Thread(target=_poll_loop, name="achievement-poll", daemon=True)
@@ -1061,7 +1061,7 @@ def run_achievement_hook():
             else:
                 time.sleep(0.2)
     except KeyboardInterrupt:
-        log_callback("\n[成就监测] 收到停止信号，正在关闭...")
+        log_callback("\n[AchMonitor] 收到停止信号，正在关闭...")
     finally:
         poll_stop.set()
         if input_ctrl is not None:
@@ -1077,7 +1077,7 @@ def run_achievement_hook():
                 pass
         if _hook_instance:
             _hook_instance.stop_monitoring()
-        log_callback("[成就监测] 已停止")
+        log_callback("[AchMonitor] 已停止")
 
 
 def _hook_index_auto_enabled() -> bool:
@@ -1104,27 +1104,27 @@ def _start_hook_index_refresh(log_callback):
     try:
         from functions.achievement.memory_reader import refresh_chain_from_cloud as refresh
     except Exception as exc:  # noqa: BLE001
-        log_callback(f"[成就监测] 偏移链刷新模块不可用: {exc}")
+        log_callback(f"[AchMonitor] 偏移链刷新模块不可用: {exc}")
     try:
         from functions.hook import auto_update_async as auto_update
     except Exception as exc:  # noqa: BLE001
-        log_callback(f"[成就监测] 偏移索引模块不可用: {exc}")
+        log_callback(f"[AchMonitor] 偏移索引模块不可用: {exc}")
 
     if refresh is not None:
         try:
             refresh(background=True, on_log=log_callback)
         except Exception as exc:  # noqa: BLE001
-            log_callback(f"[成就监测] 云端偏移链刷新不可用: {exc}")
+            log_callback(f"[AchMonitor] 云端偏移链刷新不可用: {exc}")
     if auto_update is None:
         return
     if not _hook_index_auto_enabled():
-        log_callback("[成就监测] 已关闭自动刷新偏移索引（设置: 自动刷新游戏偏移索引）")
+        log_callback("[AchMonitor] 已关闭自动刷新偏移索引（设置: 自动刷新游戏偏移索引）")
         return
     try:
         if auto_update(on_log=log_callback, low_priority=True, wait_for_game_idle=True):
-            log_callback("[成就监测] 已在后台检查偏移索引（重建会等游戏退出后再做）")
+            log_callback("[AchMonitor] 已在后台检查偏移索引（重建会等游戏退出后再做）")
     except Exception as exc:  # noqa: BLE001
-        log_callback(f"[成就监测] 偏移索引自动更新不可用: {exc}")
+        log_callback(f"[AchMonitor] 偏移索引自动更新不可用: {exc}")
 
 
 def _check_input_achievements(log_callback=None):

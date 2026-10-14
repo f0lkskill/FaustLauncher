@@ -90,7 +90,7 @@ def _render_markdown_html(description):
         from functions.pages.notice.version_update_window import md_to_html
         return md_to_html(text)
     except Exception as e:
-        print(f"[版本更新] Markdown 渲染失败: {e}")
+        print(f"[Update] Markdown 渲染失败: {e}")
         import html as _html
         return "<p>" + _html.escape(text) + "</p>"
 
@@ -199,7 +199,7 @@ def notify_version(current_version, latest_info, info="发现新版本", root=No
     try:
         ok = bool(pusher(payload))
     except Exception as e:
-        print(f"[版本更新] 推送应用内模态窗口失败: {e}")
+        print(f"[Update] 推送应用内模态窗口失败: {e}")
         return False
     if ok:
         _LAST_SHOWN["t"] = now
@@ -282,7 +282,7 @@ def start_version_download(version_name, url, push):
             _download_and_install(version_name, url, push)
         except Exception as e:
             import traceback
-            print(f"[版本更新] 下载安装失败: {e}")
+            print(f"[Update] 下载安装失败: {e}")
             print(traceback.format_exc())
             push({"stage": "error", "text": f"更新失败: {e}"})
         finally:
@@ -308,7 +308,7 @@ def _download_and_install(version_name, url, push):
     os.makedirs(temp_dir, exist_ok=True)
     temp_file = os.path.join(temp_dir, "FaustLauncher_%s.zip" % version_name.replace(".", "_"))
 
-    print(f"[版本更新] 开始下载新版本 {version_name}: {url}", flush=True)
+    print(f"[Update] 开始下载新版本 {version_name}: {url}", flush=True)
     push({"stage": "status", "text": f"正在下载 {version_name} 安装包…"})
 
     gui = _ProgressGui(push)
@@ -351,7 +351,7 @@ def _download_and_install(version_name, url, push):
         from functions.update.sync_setting import sync_settings
         sync_settings()
     except Exception as e:
-        print(f"[版本更新] 设置同步失败 (继续安装): {e}")
+        print(f"[Update] 设置同步失败 (继续安装): {e}")
 
     updater = os.path.join(new_dir, "updater.vbs")
     if not os.path.exists(updater):
@@ -359,7 +359,7 @@ def _download_and_install(version_name, url, push):
         return
 
     push({"stage": "ready", "percent": 100, "text": "更新准备完成, 即将重启并安装新版本…"})
-    print("[版本更新] 新版本准备完成, 启动更新器并退出启动器", flush=True)
+    print("[Update] 新版本准备完成, 启动更新器并退出启动器", flush=True)
     time.sleep(1.2)
     subprocess.Popen(["wscript.exe", updater], cwd=new_dir, close_fds=True)
     # 更新器需等待启动器完全退出 (WebView2 销毁) 才能覆盖文件, 这里立即结束进程
@@ -381,7 +381,7 @@ def manual_payload():
         return payload
     info = cached_version_info()
     if not info:
-        print("[版本更新] 内存里还没有版本信息 (启动检查未完成), 用本地缓存兜底")
+        print("[Update] 内存里还没有版本信息 (启动检查未完成), 用本地缓存兜底")
         info = collect_version_info(allow_refresh=False)
     entry = dict(info.get("entry") or {})
     entry["version_name"] = info.get("latest") or ""

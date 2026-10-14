@@ -37,16 +37,16 @@ def transfer_bubble_files(config_path: str = "") -> bool:
     气泡文件（曾经就是这么漏的）。
     """
     if not config_path:
-        print("[美化] 未指定气泡目标目录，跳过气泡文件转移")
+        print("[Cosmetic] 未指定气泡目标目录，跳过气泡文件转移")
         return False
     if not os.path.isdir(config_path):
-        print(f"[美化] 气泡目标目录不存在: {config_path}，跳过气泡文件转移")
+        print(f"[Cosmetic] 气泡目标目录不存在: {config_path}，跳过气泡文件转移")
         return False
 
     source = _bubble_source_dir()
     files = sorted(glob.glob(os.path.join(source, "*.json")))
     if not files:
-        print(f"[美化] 没找到气泡文件: {source}")
+        print(f"[Cosmetic] 没找到气泡文件: {source}")
         return False
 
     done = 0
@@ -55,20 +55,20 @@ def transfer_bubble_files(config_path: str = "") -> bool:
             shutil.copy2(path, config_path)
             done += 1
         except Exception as exc:  # noqa: BLE001
-            print(f"[美化] 转移气泡文本文件失败 {os.path.basename(path)}: {exc}")
-    print(f"[美化] 气泡文件已转移 {done}/{len(files)} 份 → {config_path}")
+            print(f"[Cosmetic] 转移气泡文本文件失败 {os.path.basename(path)}: {exc}")
+    print(f"[Cosmetic] 气泡文件已转移 {done}/{len(files)} 份 → {config_path}")
     return done > 0
 
 
 def main(config_path: str = ""):
     """命令行入口点"""
-    print(f"[美化] 开始转移气泡文件, 目标目录: {config_path}")
+    print(f"[Cosmetic] 开始转移气泡文件, 目标目录: {config_path}")
     success = transfer_bubble_files(config_path=config_path)
 
     if success:
-        print("[美化] 气泡文件转移完成!")
+        print("[Cosmetic] 气泡文件转移完成!")
     else:
-        print("[美化] 气泡文件转移失败!")
+        print("[Cosmetic] 气泡文件转移失败!")
 
 
 if __name__ == "__main__":

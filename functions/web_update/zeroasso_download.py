@@ -69,7 +69,7 @@ def _open_stream(url, source_url, **kwargs):
     except requests.exceptions.RequestException:
         if not source_url or source_url == url:
             raise
-        print("[下载] 直链可能已失效，重新解析: %s" % source_url[:90])
+        print("[Download] 直链可能已失效，重新解析: %s" % source_url[:90])
         _invalidate_direct_link(source_url)
         retry_url = resolve_download_url(source_url)
         if not retry_url or retry_url == url:
@@ -89,7 +89,7 @@ def _status_reporter(gui, label=''):
                 gui.current_file_var.set(prefix + str(text))
         except Exception:
             pass
-        print(f"[下载] {prefix}{text}")
+        print(f"[Download] {prefix}{text}")
     return _status
 
 
@@ -145,10 +145,10 @@ def resolve_download_url(url, gui=None, label=''):
 
         # 用户主动点的下载值得等一会儿 (蓝奏云接口偶发限流/超时)
         resolved = ResolveDownloadUrl(url, log=_status, retries=2)
-        print(f"[下载] 直链解析 {label or ''}: {url[:90]} -> {resolved[:90]}")
+        print(f"[Download] 直链解析 {label or ''}: {url[:90]} -> {resolved[:90]}")
         return resolved
     except Exception as e:
-        print(f"[下载] 直链解析失败，使用原始链接: {e}")
+        print(f"[Download] 直链解析失败，使用原始链接: {e}")
         return url
 
 
@@ -291,7 +291,7 @@ def _install_fonts(archive_path):
                     font_src = root
                     break
         if not font_src:
-            print("[字体] 字体包中未找到 Font 目录, 跳过", flush=True)
+            print("[Font] 字体包中未找到 Font 目录, 跳过", flush=True)
             return False
         dest = os.path.join(_PROJECT_ROOT, 'assets', 'Font')
         os.makedirs(dest, exist_ok=True)
@@ -301,7 +301,7 @@ def _install_fonts(archive_path):
             os.makedirs(target_dir, exist_ok=True)
             for f in files:
                 shutil.copy2(os.path.join(root, f), os.path.join(target_dir, f))
-        print(f"[字体] 已安装字体到 {dest}", flush=True)
+        print(f"[Font] 已安装字体到 {dest}", flush=True)
         return True
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
@@ -924,9 +924,9 @@ def download_and_extract_mod(gui, target_dir, download_files):
                     continue
                 temp_file = os.path.join(temp_root, temp_filename)
                 gui.current_file_var.set(f"正在下载 {name}...")
-                print(f"[下载中心] 开始下载: {url}")
+                print(f"[DownloadCenter] 开始下载: {url}")
                 ok = download_file_with_gui(url, temp_file, gui, name)
-                print(f"[下载中心] 下载结果: ok={ok}, exists={os.path.exists(temp_file)}")
+                print(f"[DownloadCenter] 下载结果: ok={ok}, exists={os.path.exists(temp_file)}")
                 if ok is False:
                     return False
                 gui.current_file_var.set(f"正在解压 {name}...")
@@ -945,6 +945,6 @@ def download_and_extract_mod(gui, target_dir, download_files):
                                 pass
             return True
         except Exception as e:
-            print(f"[下载中心] 下载/解压失败: {e}")
+            print(f"[DownloadCenter] 下载/解压失败: {e}")
             _tb.print_exc()
             return False

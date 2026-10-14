@@ -671,7 +671,7 @@ def _active_skin_id():
             return sid
         if sid in set(_user_value(load_user(), "unlocked_skins", [])):
             return sid
-        print(f"[皮肤] {sid} 尚未解锁, 本次回退默认皮肤")
+        print(f"[Skin] {sid} 尚未解锁, 本次回退默认皮肤")
         return ""
     except Exception:
         return sid
@@ -919,16 +919,16 @@ class AppApi:
         if self._user_sync_started:
             return
         self._user_sync_started = True
-        print("[用户] 启动后台同步")
+        print("[User] 启动后台同步")
         def worker():
             try:
                 from functions.base.user_system import sync_user
                 result = sync_user(self.core.settings_manager)
                 if not result.get("ok"):
-                    print(f"[用户] 启动同步未完成: {result.get('error', '云端不可用')}")
+                    print(f"[User] 启动同步未完成: {result.get('error', '云端不可用')}")
             except Exception as exc:
                 # 带上异常类型: 光看消息有时分不清是参数写错还是网络问题
-                print(f"[用户] 启动同步失败: {type(exc).__name__}: {exc}")
+                print(f"[User] 启动同步失败: {type(exc).__name__}: {exc}")
         threading.Thread(target=worker, name="faust-user-sync", daemon=True).start()
 
     def set_window_opacity(self, alpha):
@@ -1065,7 +1065,7 @@ class AppApi:
             from functions.base.steam_locator import resolve_game_dir as _rgd
             _boot_game_path_ok = bool(_rgd(str(sm.get_setting("game_path") or "")))
         except Exception as _e:
-            print(f"[设置] 启动时校验游戏路径失败(按有效处理, 不锁界面): {_e}")
+            print(f"[Settings] 启动时校验游戏路径失败(按有效处理, 不锁界面): {_e}")
             _boot_game_path_ok = True
         return {
             "version": str(sm.get_setting("version_info")),
@@ -1189,10 +1189,10 @@ class AppApi:
                     "cloud": not bool(getattr(ach, "plugin", False)),
                 })
             n_done = sum(1 for it in items if it["completed"])
-            # print(f"[成就页] 本地刷新: {n_done}/{len(items)} 已完成（记录 {len(done)} 条）")
+            # print(f"[AchPage] 本地刷新: {n_done}/{len(items)} 已完成（记录 {len(done)} 条）")
             return {"ok": True, "items": items, "completed": n_done, "total": len(items)}
         except Exception as exc:  # noqa: BLE001
-            print(f"[成就页] 读取失败: {type(exc).__name__}: {exc}")
+            print(f"[AchPage] 读取失败: {type(exc).__name__}: {exc}")
             return {"ok": False, "items": [], "completed": 0, "total": 0,
                     "error": f"{type(exc).__name__}: {exc}"}
 
@@ -1341,7 +1341,7 @@ class AppApi:
             assert unlock is not None
             if str(unlock.get("type") or "free").lower() != "free" and not unlocked:
                 return {"error": "该皮肤尚未解锁", "locked": True, "skin_id": sid}
-        # print(f"[皮肤] 已切换: {sid or '默认皮肤'}")
+        # print(f"[Skin] 已切换: {sid or '默认皮肤'}")
         # ↓↓ 写入逻辑 (曾整段丢失, 导致"切皮肤后只有样式变、背景不跟着变":
         #    背景是后端按 settings.json 里的 skin 决定的 —— 设置没写进去,
         #    _active_skin_id() 就一直是旧皮肤, get_backgrounds() 自然永远给旧背景)
@@ -1470,7 +1470,7 @@ class AppApi:
         path = str(getattr(self.core, "pending_steam_path", "") or "").strip()
         if not accept:
             self.core.pending_steam_path = ""
-            print("[设置] 用户否认了自动检测到的游戏路径, 等待手动选择")
+            print("[Settings] 用户否认了自动检测到的游戏路径, 等待手动选择")
             return {"ok": True, "accepted": False, "path": ""}
         if not path:
             # 检测到的是空路径: 不能写, 让用户自己选
@@ -1484,11 +1484,11 @@ class AppApi:
         fresh = find_steam_game_path() or ""
         if fresh and os.path.normcase(normalize_game_path(fresh)) != os.path.normcase(
                 normalize_game_path(path)):
-            print(f"[设置] 确认 {path} 失败({result.get('error')}), 现场检测到 {fresh}, 再试一次")
+            print(f"[Settings] 确认 {path} 失败({result.get('error')}), 现场检测到 {fresh}, 再试一次")
             retry = self.apply_game_path(fresh)
             if retry.get("ok"):
                 return retry
-        print(f"[设置] 确认自动检测到的路径失败: error={result.get('error')} "
+        print(f"[Settings] 确认自动检测到的路径失败: error={result.get('error')} "
               f"path={result.get('path')!r} reason={result.get('reason')}")
         return result
 
@@ -1506,22 +1506,22 @@ class AppApi:
         )
         raw = str(path or "").strip()
         if not raw:
-            print("[设置] 游戏路径为空, 拒绝写入")
+            print("[Settings] 游戏路径为空, 拒绝写入")
             return {"ok": False, "error": "empty", "path": ""}
         norm = normalize_game_path(raw)
         picked, reason = resolve_game_dir_ex(norm)
         if not picked:
             exe_file = os.path.join(norm, GAME_EXE)
             # 诊断要足够具体: 用户报"明明有 exe 却不认"时, 这行日志就是结论
-            print(f"[设置] 路径校验失败: path={norm!r} 是目录={os.path.isdir(norm)} "
+            print(f"[Settings] 路径校验失败: path={norm!r} 是目录={os.path.isdir(norm)} "
                   f"exe存在={os.path.isfile(exe_file)} reason={reason}")
             if reason == "not_dir":
-                print(f"[设置] 游戏路径不存在: {norm}")
+                print(f"[Settings] 游戏路径不存在: {norm}")
                 return {"ok": False, "error": "not_found", "path": norm, "reason": reason}
         # 注意: 这里**不**替用户换成别的目录 —— 用户明确给了这个路径, 就只校验它;
         # "点『是』却被拒" 的自愈在 confirm_steam_game_path 里做 (那里的路径是我们自己检测的)
         if not picked:
-            print(f"[设置] 目录下没有 {GAME_EXE}, 拒绝写入: {norm} (reason={reason})")
+            print(f"[Settings] 目录下没有 {GAME_EXE}, 拒绝写入: {norm} (reason={reason})")
             return {"ok": False, "error": reason or "no_exe", "path": norm,
                     "game_exe": GAME_EXE, "reason": reason}
         auto_fixed = os.path.normcase(picked) != os.path.normcase(norm)
@@ -1536,7 +1536,7 @@ class AppApi:
         except Exception:
             pass
         self._notify_path_synced()
-        print(f"[设置] 游戏路径已写入: {game_path} (LimbusCompany.exe: 有)"
+        print(f"[Settings] 游戏路径已写入: {game_path} (LimbusCompany.exe: 有)"
               + (f" [自动下探一层: {norm} -> {game_path}]" if auto_fixed else ""))
         return {"ok": True, "path": game_path, "has_exe": True,
                 "auto_fixed": auto_fixed}
@@ -1568,7 +1568,7 @@ class AppApi:
             from functions.base.user_system import check_rename_allowed
             return check_rename_allowed()
         except Exception as exc:
-            print(f"[用户] 检查改名限制失败(按放行处理): {exc}")
+            print(f"[User] 检查改名限制失败(按放行处理): {exc}")
             return ""
 
     def _mark_user_name_changed(self):
@@ -1576,12 +1576,12 @@ class AppApi:
             from functions.base.user_system import mark_renamed
             mark_renamed()
         except Exception as exc:
-            print(f"[用户] 记录改名时间失败: {exc}")
+            print(f"[User] 记录改名时间失败: {exc}")
 
     def set_setting(self, key, value):
         blocked = self._guard_user_name(key, value)
         if blocked:
-            print(f"[用户] 改名被冷却限制拒绝: {blocked}")
+            print(f"[User] 改名被冷却限制拒绝: {blocked}")
             return {"ok": False, "limited": True, "error": blocked}
         self.core.settings_manager.set_setting(key, value)
         self.core.settings_manager.save_settings()
@@ -1608,7 +1608,7 @@ class AppApi:
             self._mark_user_name_changed()
             self._push_user_name()
         if blocked:
-            print(f"[用户] 改名被冷却限制拒绝: {blocked}")
+            print(f"[User] 改名被冷却限制拒绝: {blocked}")
             return {"ok": False, "limited": True, "error": blocked}
         return True
 
@@ -1623,15 +1623,15 @@ class AppApi:
         只改自己那一行, 不会像以前的整表写回那样牵连别人。
         """
         name = str(self.core.settings_manager.get_setting("user_name") or "").strip()
-        print(f"[用户] 设置项昵称已更新, 后台同步到服务端: {name}")
+        print(f"[User] 设置项昵称已更新, 后台同步到服务端: {name}")
         def worker():
             try:
                 from functions.base.user_system import push_name
                 result = push_name(name, self.core.settings_manager)
                 if not result.get("ok"):
-                    print(f"[用户] 昵称上传未完成: {result.get('error', '云端不可用')}")
+                    print(f"[User] 昵称上传未完成: {result.get('error', '云端不可用')}")
             except Exception as exc:
-                print(f"[用户] 昵称上传失败: {exc}")
+                print(f"[User] 昵称上传失败: {exc}")
         threading.Thread(target=worker, name="faust-user-name", daemon=True).start()
 
     def pick_folder(self):
@@ -1671,13 +1671,13 @@ class AppApi:
             cur = ""
         if resolve_game_dir(cur):
             return None
-        print(f"[设置] 游戏路径无效, 拒绝执行该功能: {cur or '(未设置)'}")
+        print(f"[Settings] 游戏路径无效, 拒绝执行该功能: {cur or '(未设置)'}")
         try:
             fresh = find_steam_game_path() or ""
-            print(f"[设置] 重新检测 Steam 路径: {fresh or '(没找到)'}")
+            print(f"[Settings] 重新检测 Steam 路径: {fresh or '(没找到)'}")
             self.core._ask_web_game_path(fresh, force=True)
         except Exception as e:
-            print(f"[设置] 重新推送游戏路径确认窗口失败: {e}")
+            print(f"[Settings] 重新推送游戏路径确认窗口失败: {e}")
         return {"ok": False, "error": "no_game_path", "path": cur}
 
     def _prepare_pipeline(self):
@@ -1695,7 +1695,7 @@ class AppApi:
             return blocked
         from functions.pages.app import page_loader as _pl
         if getattr(_pl, "downloading", False):
-            print("[启动流程] 已有流程在进行, 拒绝新的流程请求")
+            print("[Startup] 已有流程在进行, 拒绝新的流程请求")
             return {"ok": False, "error": "busy",
                     "message": "已有更新流程正在进行, 请稍候或先中止它"}
         _pl.clear_cancel()
@@ -1729,7 +1729,7 @@ class AppApi:
         # 不要求身份校验通过 —— 另一个 Windows 账户可能在玩同一份安装, 一样会占用
         # Lang 目录。宁可多拦一次, 也不能把汉化写坏。
         if _any_game_process_running():
-            print("[汉化更新] 检测到 LimbusCompany.exe 正在运行, 拒绝更新汉化")
+            print("[LocaleUpdate] 检测到 LimbusCompany.exe 正在运行, 拒绝更新汉化")
             return {"ok": False, "error": "game_running",
                     "message": "游戏正在运行, 请先退出游戏再更新汉化"}
         self._pipeline_kind = 'translate'
@@ -1764,10 +1764,10 @@ class AppApi:
             from functions.pages.app import page_loader as _pl
             _pl.request_cancel()
             running = bool(getattr(_pl, "downloading", False))
-            print(f"[启动流程] 收到中止请求 (后端流程运行中={running})")
+            print(f"[Startup] 收到中止请求 (后端流程运行中={running})")
             return {"ok": True, "running": running}
         except Exception as e:
-            print(f"[启动流程] 中止请求失败: {e}")
+            print(f"[Startup] 中止请求失败: {e}")
             return {"ok": False, "error": str(e)}
 
     def kill_game(self):
@@ -1790,7 +1790,7 @@ class AppApi:
                 _update_game_state(False, _any_game_process_running())
                 return {"ok": True, "game_alive": False, "already_exited": True}
 
-            print(f"[游戏] 正在关闭 LimbusCompany.exe (PID: {pids})")
+            print(f"[Game] 正在关闭 LimbusCompany.exe (PID: {pids})")
             for pid in pids:
                 _terminate_pid(pid)
 
@@ -1802,16 +1802,16 @@ class AppApi:
                 time.sleep(0.25)
 
             if _game_process_pids():
-                print("[游戏] 关闭失败: LimbusCompany.exe 仍在运行 (可能以管理员权限启动)")
+                print("[Game] 关闭失败: LimbusCompany.exe 仍在运行 (可能以管理员权限启动)")
                 _update_game_state(True, True)      # 关不掉: 对外状态同步为"在运行"
                 return {"ok": False, "game_alive": True,
                         "error": "无法关闭游戏 (进程可能以管理员权限运行, 请手动关闭)"}
 
-            print("[游戏] 已关闭 LimbusCompany.exe")
+            print("[Game] 已关闭 LimbusCompany.exe")
             _update_game_state(False, _any_game_process_running())
             return {"ok": True, "game_alive": False}
         except Exception as e:
-            print(f"[游戏] 关闭游戏失败: {e}")
+            print(f"[Game] 关闭游戏失败: {e}")
             alive = _game_process_running()
             _update_game_state(alive, _any_game_process_running())
             return {"ok": False, "game_alive": alive, "error": str(e)}
@@ -2817,10 +2817,10 @@ if %errorlevel% equ 0 (
                 data = data or []
                 _pl._cloud_sync_cache[k] = data
                 counts[k] = sum(len(p) for p in data)
-            print(f"[下载中心] 已从云端刷新: {counts}")
+            print(f"[DownloadCenter] 已从云端刷新: {counts}")
             return {'ok': True, 'counts': counts, 'error': None}
         except Exception as e:
-            print(f"[下载中心] 云端刷新失败: {e}")
+            print(f"[DownloadCenter] 云端刷新失败: {e}")
             return {'ok': False, 'counts': {}, 'error': str(e)}
 
     def check_update(self):
@@ -2863,7 +2863,7 @@ if %errorlevel% equ 0 (
             win.evaluate_js("window.__onEvent(%s, %s)" % (json.dumps(str(event)), payload))
             return True
         except Exception as e:
-            print(f"[推送事件] {event} 失败: {e}")
+            print(f"[PushEvent] {event} 失败: {e}")
             return False
 
     def push_version_modal(self, payload):
@@ -2876,7 +2876,7 @@ if %errorlevel% equ 0 (
             win.evaluate_js("window.__onVersionModal(%s)" % json.dumps(payload, ensure_ascii=False))
             return True
         except Exception as e:
-            print(f"[版本更新] 推送应用内模态窗口失败: {e}")
+            print(f"[Update] 推送应用内模态窗口失败: {e}")
             return False
 
     def get_version_modal(self):
@@ -2887,7 +2887,7 @@ if %errorlevel% equ 0 (
             self._version_payload = dict(payload)
             return payload
         except Exception as e:
-            print(f"[版本更新] 读取版本信息失败: {e}")
+            print(f"[Update] 读取版本信息失败: {e}")
             return {'error': str(e), 'has_update': False, 'can_update': False, 'forced': False}
 
     def start_version_update(self):
@@ -2915,7 +2915,7 @@ if %errorlevel% equ 0 (
                 return {'ok': False, 'error': '更新包正在下载中, 请稍候'}
             return {'ok': True, 'error': None}
         except Exception as e:
-            print(f"[版本更新] 启动下载失败: {e}")
+            print(f"[Update] 启动下载失败: {e}")
             return {'ok': False, 'error': str(e)}
 
     # ---- 汉化状态 ----
@@ -3219,7 +3219,7 @@ def _game_process_pids():
     pids = _find_process_pids("LimbusCompany.exe")
     if not pids:
         if _game_pid_log["kept"]:
-            print("[游戏] LimbusCompany.exe 已不在运行")
+            print("[Game] LimbusCompany.exe 已不在运行")
         _game_pid_log.update(kept=None, rejected=None) # type: ignore
         return []
 
@@ -3229,16 +3229,16 @@ def _game_process_pids():
     kept, detail, rejected = [], [], []
     for pid in pids:
         if pid == own_pid:
-            rejected.append(f"[游戏] 跳过 PID {pid}: 这是启动器自己, 不是游戏")
+            rejected.append(f"[Game] 跳过 PID {pid}: 这是启动器自己, 不是游戏")
             continue
         sid = _process_session_id(pid)
         if own_session is not None and sid is not None and sid != own_session:
-            rejected.append(f"[游戏] 跳过 PID {pid}: 位于其它 Windows 会话 "
+            rejected.append(f"[Game] 跳过 PID {pid}: 位于其它 Windows 会话 "
                             f"(会话 {sid}, 本会话 {own_session}) —— 本会话关不掉它")
             continue
         image = _process_image_path(pid)
         if expected and image and not _same_path(image, expected):
-            rejected.append(f"[游戏] 跳过 PID {pid}: 映像是 {image}, 与配置的游戏 "
+            rejected.append(f"[Game] 跳过 PID {pid}: 映像是 {image}, 与配置的游戏 "
                             f"({expected}) 不一致 —— 同名残留进程/别的副本")
             continue
         kept.append(pid)
@@ -3248,9 +3248,9 @@ def _game_process_pids():
         for line in rejected:
             print(line)
         if kept:
-            print(f"[游戏] 认定本机游戏正在运行: PID {', '.join(detail)}")
+            print(f"[Game] 认定本机游戏正在运行: PID {', '.join(detail)}")
         elif _game_pid_log["kept"]:
-            print("[游戏] 本机游戏已退出 (可能只剩同名残留进程)")
+            print("[Game] 本机游戏已退出 (可能只剩同名残留进程)")
         _game_pid_log.update(kept=kept, rejected=rejected) # type: ignore
     return kept
 
@@ -3383,17 +3383,17 @@ def _refresh_hook_index_when_idle(reason: str = "") -> None:
         _HOOK_IDLE_LAST["at"] = now
     try:
         if _game_process_running() or _any_game_process_running():
-            print(f"[偏移索引] 游戏在运行 → 不重建（{reason or '空闲检查'}）")
+            print(f"[OffsetIndex] 游戏在运行 → 不重建（{reason or '空闲检查'}）")
             return
         from functions.hook.preflight import auto_rebuild_enabled
         if not auto_rebuild_enabled():
             return
         from functions.hook import auto_update_async
         if auto_update_async(low_priority=True, wait_for_game_idle=True):
-            print(f"[偏移索引] 已在后台检查偏移索引（{reason or '空闲检查'}；"
+            print(f"[OffsetIndex] 已在后台检查偏移索引（{reason or '空闲检查'}；"
                   "只有本机 DLL 变了才会真的重建，低优先级）")
     except Exception as exc:  # noqa: BLE001
-        print(f"[偏移索引] 空闲补建不可用: {type(exc).__name__}: {exc}")
+        print(f"[OffsetIndex] 空闲补建不可用: {type(exc).__name__}: {exc}")
 
 
 def _start_game_state_watcher(window_ref):
@@ -3438,14 +3438,14 @@ def _start_game_state_watcher(window_ref):
                     # 首次观测: 只记基线, 不改变对外状态, 也不推送
                     seeded = True
                     _update_game_state(alive, busy, seed=True)
-                    print("[游戏] 已建立进程状态基线")
+                    print("[Game] 已建立进程状态基线")
                     if not alive:
                         # 启动器刚起来、游戏还没跑 —— 这是做偏移重建最好的窗口
                         _refresh_hook_index_when_idle("启动器启动")
                 else:
                     changed = _update_game_state(alive, busy)
                     if changed:
-                        print(f"[游戏] 状态跳变: game_alive={bool(alive)} "
+                        print(f"[Game] 状态跳变: game_alive={bool(alive)} "
                               f"game_busy={bool(busy)}")
                         if not alive and not busy:
                             # 游戏刚退出: 若这次更新换了 GameAssembly.dll, 就在这里补建偏移索引
@@ -3708,7 +3708,7 @@ def run_web_ui(debug: bool = False):
         from functions.pages.notice.version_notify import register_web_pusher
         register_web_pusher(api.push_version_modal)
     except Exception as e:
-        print(f"[版本更新] 注册应用内模态窗口失败: {e}")
+        print(f"[Update] 注册应用内模态窗口失败: {e}")
     # 窗口居中显示
     _win_x = _win_y = None
     try:

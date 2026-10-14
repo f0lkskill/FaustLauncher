@@ -56,8 +56,8 @@ def _warn_if_webnote_differs(local: dict, embedded: dict) -> None:
             if va and vb and str(va) != str(vb):
                 diffs.append(f"{k}: 本地 {va} / 内嵌 {vb}")
         if diffs:
-            print("[云端] 本地 config/web_config.json 与内嵌配置的笔记地址不一致: " + " | ".join(diffs))
-            print("[云端] 若本地配置是旧版本残留, 建议删除 exe 同目录的 config/web_config.json (将自动改用内嵌配置)")
+            print("[Cloud] 本地 config/web_config.json 与内嵌配置的笔记地址不一致: " + " | ".join(diffs))
+            print("[Cloud] 若本地配置是旧版本残留, 建议删除 exe 同目录的 config/web_config.json (将自动改用内嵌配置)")
     except Exception:
         pass
 
@@ -76,18 +76,18 @@ def get_web_config() -> dict:
     try:
         data = read_json(CONFIG_PATH)
         _config_source = "本地文件"
-        # print(f"[云端] 使用本地配置: {CONFIG_PATH}")
+        # print(f"[Cloud] 使用本地配置: {CONFIG_PATH}")
         if embedded:
             _warn_if_webnote_differs(data if isinstance(data, dict) else {}, embedded)
     except FileNotFoundError:
         pass
     except Exception as e:
-        print(f"[警告] 读取 {CONFIG_PATH} 失败: {e} (相关云端功能将不可用)")
+        print(f"[Warning] 读取 {CONFIG_PATH} 失败: {e} (相关云端功能将不可用)")
     if data is None and embedded:
         data = embedded
         _config_source = "内嵌配置"
         # 静默正常分支运行。
-        # print("[云端] 使用内嵌配置 (exe 同目录无 config/web_config.json)")
+        # print("[Cloud] 使用内嵌配置 (exe 同目录无 config/web_config.json)")
     _config_cache = data if isinstance(data, dict) else {}
     return _config_cache
 

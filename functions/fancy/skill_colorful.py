@@ -56,7 +56,7 @@ def skill_color_process(gameLang: str):
             cf_c = read_json(cf_path)
 
             if not isinstance(pf_c, dict) or not isinstance(pf_c.get("dataList"), list):
-                print(f"  [美化] 跳过技能渐变色(空文件/结构不符): {os.path.basename(pf)}")
+                print(f"  [Cosmetic] 跳过技能渐变色(空文件/结构不符): {os.path.basename(pf)}")
                 continue
 
             for skill_content in pf_c["dataList"]:

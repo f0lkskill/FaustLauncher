@@ -958,7 +958,7 @@ def notify_new_version(current_version_name, info = '发现新版本', root = No
                                   forced=has_new_version, root=root):
                     return True
             except Exception as _e:
-                print(f"[版本更新] 应用内模态窗口推送失败: {_e}")
+                print(f"[Update] 应用内模态窗口推送失败: {_e}")
             # 显示消息框
             if not must_show and ("release" not in latest_info['version_name'] or "release" not in version_info): # type: ignore
                 # 不显示alpha版本更新提示

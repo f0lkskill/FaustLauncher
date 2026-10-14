@@ -248,14 +248,14 @@ def handle_base(translate_pack_path, func_file, func_structure, label="美化") 
             why = _shape_problem(content)
             if why:
                 skipped += 1
-                print(f"  [美化/{label}] 跳过 {name}: {why}")
+                print(f"  [Cosmetic/{label}] 跳过 {name}: {why}")
                 continue
             write_json(file_path, func_structure(content), indent=4)
             done += 1
         except Exception as e:
             failed += 1
-            print(f"  [美化/{label}] {name} 处理失败: {type(e).__name__}: {e}")
-    print(f"  [美化/{label}] 完成 {done} 个, 跳过 {skipped} 个(空文件/结构不符), 异常 {failed} 个")
+            print(f"  [Cosmetic/{label}] {name} 处理失败: {type(e).__name__}: {e}")
+    print(f"  [Cosmetic/{label}] 完成 {done} 个, 跳过 {skipped} 个(空文件/结构不符), 异常 {failed} 个")
 
 
 def get_passive_files(translate_pack_path) -> list:

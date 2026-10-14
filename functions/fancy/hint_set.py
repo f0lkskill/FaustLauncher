@@ -27,7 +27,7 @@ def simple_replace(battlehint_path:str):
     
     data_list = battlehint_data.get("dataList") or []
     if not data_list or not loading_texts:
-        print("  [美化] 跳过战斗提示替换: BattleHint/loadingText 为空或结构不符")
+        print("  [Cosmetic] 跳过战斗提示替换: BattleHint/loadingText 为空或结构不符")
         return
     
     # 随机选择要替换的条目（替换1/3的条目）
@@ -44,4 +44,4 @@ def simple_replace(battlehint_path:str):
     # 保存修改后的文件
     write_json(battlehint_path, battlehint_data, indent=2)
     
-    print(f"[美化] 成功替换了 {num_replacements} 个 Tip 的内容！")
+    print(f"[Cosmetic] 成功替换了 {num_replacements} 个 Tip 的内容！")

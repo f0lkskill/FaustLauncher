@@ -20,7 +20,7 @@ def safe_merge_dirs(src, dst, overwrite=True):
     try:
         os.makedirs(dst, exist_ok=True)
     except Exception as e:
-        print(f"[调试] safe_merge_dirs: os.makedirs({dst!r}) 失败: {e}")
+        print(f"[Debug] safe_merge_dirs: os.makedirs({dst!r}) 失败: {e}")
         traceback.print_exc()
         raise
     for item in os.listdir(src):
@@ -35,7 +35,7 @@ def safe_merge_dirs(src, dst, overwrite=True):
                     os.remove(dst_item)
                 shutil.copy2(src_item, dst_item)
             except Exception as e:
-                print(f"[调试] safe_merge_dirs: 复制文件失败 src={src_item!r} dst={dst_item!r}: {e}")
+                print(f"[Debug] safe_merge_dirs: 复制文件失败 src={src_item!r} dst={dst_item!r}: {e}")
                 traceback.print_exc()
                 raise
 
@@ -226,20 +226,20 @@ class GameLauncher:
         transfer_bubble(config_path=self._lang_dir)
 
         target = translation_source_lib.get_game_lang_dir(self._game_path)
-        print(f"[调试] _prepare_translation: 游戏路径={self._game_path!r}")
-        print(f"[调试] _prepare_translation: 源={os.path.abspath(self._lang_dir)!r} 存在={os.path.exists(self._lang_dir)} 是目录={os.path.isdir(self._lang_dir)}")
-        print(f"[调试] _prepare_translation: 目标={target!r} 存在={os.path.exists(target)} 是目录={os.path.isdir(target)}")
+        print(f"[Debug] _prepare_translation: 游戏路径={self._game_path!r}")
+        print(f"[Debug] _prepare_translation: 源={os.path.abspath(self._lang_dir)!r} 存在={os.path.exists(self._lang_dir)} 是目录={os.path.isdir(self._lang_dir)}")
+        print(f"[Debug] _prepare_translation: 目标={target!r} 存在={os.path.exists(target)} 是目录={os.path.isdir(target)}")
         if not os.path.isdir(self._lang_dir):
             # 汉化包未下载 (如首次启动/刚切换平台): 跳过该步骤, 不阻断后续字体/启动
-            print(f"[汉化] 汉化包目录不存在: {self._lang_dir} (请先在下载中心下载当前平台汉化包), 跳过汉化文件复制")
+            print(f"[Locale] 汉化包目录不存在: {self._lang_dir} (请先在下载中心下载当前平台汉化包), 跳过汉化文件复制")
             return
         if os.path.exists(target):
             if os.path.isdir(target):
                 shutil.rmtree(target, ignore_errors=True)
             else:
-                print(f"[调试] _prepare_translation: 目标路径不是目录，正在删除文件")
+                print(f"[Debug] _prepare_translation: 目标路径不是目录，正在删除文件")
                 os.remove(target)
-        print(f"[调试] _prepare_translation: 开始 copytree {self._lang_dir!r} -> {target!r}")
+        print(f"[Debug] _prepare_translation: 开始 copytree {self._lang_dir!r} -> {target!r}")
         shutil.copytree(self._lang_dir, target, dirs_exist_ok=True)
 
     @staticmethod
@@ -540,7 +540,7 @@ class GameLauncher:
                 continue
             is_mods = (kind == 'mods')
             if is_mods and mods_off:
-                print("[文本补丁] 设置里关闭了 Mod 功能: 不应用 mods 的文本补丁")
+                print("[TextPatch] 设置里关闭了 Mod 功能: 不应用 mods 的文本补丁")
             for res_dir in sorted(os.listdir(kind)):
                 info_path = os.path.join(kind, res_dir, f"{kind[:-1]}_info.json")
                 if not os.path.isfile(info_path):
@@ -553,7 +553,7 @@ class GameLauncher:
                     info = {}
                 enabled = self._resource_enabled(kind[:-1], info) and not (is_mods and mods_off)
                 if not enabled:
-                    print(f"[文本补丁] {kind}/{res_dir} 已禁用: 不应用它的文本补丁")
+                    print(f"[TextPatch] {kind}/{res_dir} 已禁用: 不应用它的文本补丁")
                 (apply_jobs if enabled else revert_jobs).append((kind, res_dir))
 
         # ---- 2) 先还原被禁用资源的改动 ----
@@ -562,17 +562,17 @@ class GameLauncher:
             has_snapshot = bool(self._load_backup_index(self._changes_backup_dir(kind, res_dir)))
             n = self._restore_backups(kind, res_dir, lang_data_dir, skip_folder=cur_folder)
             if n:
-                print(f"[文本补丁] {kind}/{res_dir} 已禁用 -> 还原它之前改过的 {n} 个文本文件")
+                print(f"[TextPatch] {kind}/{res_dir} 已禁用 -> 还原它之前改过的 {n} 个文本文件")
             elif not has_snapshot and self._list_changes_files(res_path):
                 # 修复前就应用过 (没有快照可还原): 明确告诉用户残留怎么清
-                print(f"[文本补丁] 提示: {kind}/{res_dir} 已禁用且没有改动快照, 无法自动还原; "
+                print(f"[TextPatch] 提示: {kind}/{res_dir} 已禁用且没有改动快照, 无法自动还原; "
                       f"若游戏里还能看到它的文本 (早期应用留下的), "
                       f"可在资源管理里对相关汉化插件点一次「重装」恢复原始文本")
 
         # ---- 3) 再应用已启用资源 (lang 的自定义翻译补丁放最后) ----
         dirs = [os.path.join(kind, res_dir) for kind, res_dir in apply_jobs]
         dirs.append('lang')
-        print(f"[调试] _apply_changes: 需要处理的目录: {dirs}")
+        print(f"[Debug] _apply_changes: 需要处理的目录: {dirs}")
 
         # 载入替换文件
         ModManager.load_language('', 'lang')
@@ -612,7 +612,7 @@ class GameLauncher:
                                                   only_changes_files={changes_file},
                                                   skip_folder=cur_folder)
                         if n:
-                            print(f"[文本补丁] {dir_path} 的图层 {changes_file} 已禁用 -> 还原 {n} 个文本文件")
+                            print(f"[TextPatch] {dir_path} 的图层 {changes_file} 已禁用 -> 还原 {n} 个文本文件")
 
             # 逐个来源显示: 正在应用 插件/Mod xxx 的文本补丁
             self._progress(f"正在应用 {src_label} {src_name} 的文本补丁...", "🚀")
@@ -664,10 +664,10 @@ class GameLauncher:
         # ---- 5) 回收永远不可能再还原的快照 (这个目录会无界增长) ----
         gc = self._gc_changes_backups(lang_data_dir, skip_folder=cur_folder)
         if gc["entries"]:
-            print(f"[文本补丁] 已回收 {gc['entries']} 份永远无法再还原的旧快照"
+            print(f"[TextPatch] 已回收 {gc['entries']} 份永远无法再还原的旧快照"
                   f"（{gc['freed'] / 1048576:.1f} MB，剩 {gc['kept']} 份可用）")
         else:
-            print(f"[文本补丁] 文本改动快照: {gc['kept']} 份可用，无需回收")
+            print(f"[TextPatch] 文本改动快照: {gc['kept']} 份可用，无需回收")
 
     def _apply_cosmetic_features(self):
         """应用气泡渐变、EGO 样式、技能描述、提示替换、技能渐变色 (逐项推送进度, 单项失败不中断)"""
@@ -680,73 +680,73 @@ class GameLauncher:
         _bubble_color = self._settings.get_setting('enable_bubble_color')
         if _bubble_color is False:
             try:
-                print(f"[美化] 开启去除气泡文本颜色标签...")
+                print(f"[Cosmetic] 开启去除气泡文本颜色标签...")
                 self._progress("正在去除气泡文本颜色标签...", "🚀")
                 from functions.fancy.dialog_colorful import main_remove_color as remove_bubble_color
                 remove_bubble_color()
             except Exception as e:
-                print(f"[美化] 去除气泡文本颜色跳过: {e}")
+                print(f"[Cosmetic] 去除气泡文本颜色跳过: {e}")
         elif self._settings.get_setting('enable_text_gradient'):
             try:
-                print(f"[美化] 开启应用对话文本渐变色...")
+                print(f"[Cosmetic] 开启应用对话文本渐变色...")
                 self._progress("正在应用对话文本渐变色...", "🚀")
                 from functions.fancy.dialog_colorful import main as handle_colorful
                 handle_colorful()
             except Exception as e:
-                print(f"[美化] 对话文本渐变色跳过: {e}")
+                print(f"[Cosmetic] 对话文本渐变色跳过: {e}")
         if self._settings.get_setting('enable_ego_style'):
             try:
-                print(f"[美化] 开启应用 EGO 样式美化...")
+                print(f"[Cosmetic] 开启应用 EGO 样式美化...")
                 self._progress("正在应用 EGO 样式美化...", "🚀")
                 from functions.fancy.EGO_colorful import main as apply_ego_style
                 apply_ego_style()
             except Exception as e:
-                print(f"[美化] EGO 样式跳过: {e}")
+                print(f"[Cosmetic] EGO 样式跳过: {e}")
 
         if self._settings.get_setting('enable_skill_style'):
             try:
-                print(f"[美化] 开启美化技能描述文本...")
+                print(f"[Cosmetic] 开启美化技能描述文本...")
                 self._progress("正在美化技能描述文本...", "🚀")
                 from functions.fancy.skill_info import total_handle
                 total_handle(lang_path)
             except Exception as e:
-                print(f"[美化] 技能描述美化跳过: {e}")
+                print(f"[Cosmetic] 技能描述美化跳过: {e}")
 
         if self._settings.get_setting('enable_ego_gift_style'):
             try:
-                print(f"[美化] 开启美化 EGO 饰品效果...")
+                print(f"[Cosmetic] 开启美化 EGO 饰品效果...")
                 self._progress("正在美化 EGO 饰品效果...", "🚀")
                 from functions.fancy.skill_info import handle_EGOgift
                 handle_EGOgift(lang_path)
             except Exception as e:
-                print(f"[美化] EGO 饰品跳过: {e}")
+                print(f"[Cosmetic] EGO 饰品跳过: {e}")
 
         if self._settings.get_setting('enable_buff_style'):
             try:
-                print(f"[美化] 开启美化 Buff 效果文本...")
+                print(f"[Cosmetic] 开启美化 Buff 效果文本...")
                 self._progress("正在美化 Buff 效果文本...", "🚀")
                 from functions.fancy.skill_info import handle_buff
                 handle_buff(lang_path + '/')
             except Exception as e:
-                print(f"[美化] Buff 美化跳过: {e}")
+                print(f"[Cosmetic] Buff 美化跳过: {e}")
 
         if self._settings.get_setting('enable_special_tip'):
             try:
-                print(f"[美化] 开启替换战斗提示文本...")
+                print(f"[Cosmetic] 开启替换战斗提示文本...")
                 self._progress("正在替换战斗提示文本...", "🚀")
                 from functions.fancy.hint_set import simple_replace
                 simple_replace(os.path.join(lang_path, 'BattleHint.json'))
             except Exception as e:
-                print(f"[美化] 战斗提示替换跳过: {e}")
+                print(f"[Cosmetic] 战斗提示替换跳过: {e}")
 
         if self._settings.get_setting('enable_skill_text_gradient'):
             try:
-                print(f"[美化] 开启应用技能文本渐变色...")
+                print(f"[Cosmetic] 开启应用技能文本渐变色...")
                 self._progress("正在应用技能文本渐变色...", "🚀")
                 from functions.fancy.skill_colorful import skill_color_process
                 skill_color_process(lang_root + '/')
             except Exception as e:
-                print(f"[美化] 技能渐变色跳过: {e}")
+                print(f"[Cosmetic] 技能渐变色跳过: {e}")
 
     def _copy_fonts(self):
         """复制字体文件到游戏汉化目录。"""
@@ -754,7 +754,7 @@ class GameLauncher:
         from functions.web_update.zeroasso_download import _PROJECT_ROOT as _font_root
         src = os.path.join(_font_root, 'assets', 'Font')
         if not os.path.isdir(src):
-            print(f"[字体] assets/Font 不存在 ({src}), 跳过字体转移")
+            print(f"[Font] assets/Font 不存在 ({src}), 跳过字体转移")
             return
         target = os.path.join(get_game_lang_dir(self._game_path), 'Font')
         os.makedirs(target, exist_ok=True)
@@ -819,12 +819,12 @@ class GameLauncher:
         # 原文从**启动器侧**的汉化包目录取（游戏目录里那份已经被我们改过了）
         wanted = self._original_uid_copy(os.path.basename(lang_dir)) if restore else name
         if wanted is None:
-            print("[设置用户名称] 需要还原原文, 但读不到汉化包里的 UserInfo_Friends.json → 保持现状")
+            print("[SetUserName] 需要还原原文, 但读不到汉化包里的 UserInfo_Friends.json → 保持现状")
             return
 
         data = read_json(file_path)
         if not isinstance(data, dict):
-            print("[设置用户名称] UserInfo_Friends.json 结构异常, 跳过")
+            print("[SetUserName] UserInfo_Friends.json 结构异常, 跳过")
             return
         target = None
         for item in data.get('dataList', []) or []:
@@ -832,14 +832,14 @@ class GameLauncher:
                 target = item
                 break
         if target is None:
-            print("[设置用户名称] UserInfo_Friends.json 里没有 Uid_Copy, 跳过")
+            print("[SetUserName] UserInfo_Friends.json 里没有 Uid_Copy, 跳过")
             return
         if str(target.get('content') or '') == wanted:
-            print(f"[设置用户名称] 无需改动（{'显示用户名' if not restore else '已关闭/昵称为空'}）")
+            print(f"[SetUserName] 无需改动（{'显示用户名' if not restore else '已关闭/昵称为空'}）")
             return
         target['content'] = wanted
         write_json(file_path, data, indent=4)
-        print(f"[设置用户名称] Uid_Copy 已{'还原为原文' if restore else '写入昵称'}: {wanted}")
+        print(f"[SetUserName] Uid_Copy 已{'还原为原文' if restore else '写入昵称'}: {wanted}")
 
     def _fire_addon_events(self):
         """逐个触发插件的游戏启动事件 (显示插件名与进度)。"""
@@ -865,7 +865,7 @@ class GameLauncher:
         launch_game_process()
         # 启动成就监测 Hook (独立子进程, 避免主进程结束时被 kill)
         # 子进程内部会：监控 Player.log + 注入 battle_watch.dll 观测战斗事件
-        # print("[成就监测] 警告：本版本暂时不开放成就系统。")
+        # print("[AchMonitor] 警告：本版本暂时不开放成就系统。")
         # return
         self._start_achievement_hook()
 
@@ -880,10 +880,10 @@ class GameLauncher:
 
             try:
                 if self._settings.get_setting("enable_achievement_hook") is False:
-                    print("[成就监测] 已关闭成就监测（设置: 启用成就监测与战斗观测）")
+                    print("[AchMonitor] 已关闭成就监测（设置: 启用成就监测与战斗观测）")
                     return
                 else:
-                    print("[成就监测] 已开启成就监测")
+                    print("[AchMonitor] 已开启成就监测")
             except Exception:
                 pass
 
@@ -935,7 +935,7 @@ class GameLauncher:
                 try:
                     if os.path.isfile(stale):
                         os.remove(stale)
-                        print(f"[成就] 已删除合并前的旧日志: {stale_name}")
+                        print(f"[Achievement] 已删除合并前的旧日志: {stale_name}")
                 except OSError:
                     pass
 
@@ -960,7 +960,7 @@ class GameLauncher:
             try:
                 child_log = open(hook_log_path, "a", encoding="utf-8", errors="replace")
             except OSError as exc:
-                print(f"[成就] 无法打开成就日志 {hook_log_path}: {exc}")
+                print(f"[Achievement] 无法打开成就日志 {hook_log_path}: {exc}")
             child_env = dict(os.environ)
             # 告诉子进程：清空已经做过了（别再 truncate，否则会把启动期的 stderr 抹掉）
             child_env["FAUST_ACH_TRUNCATED"] = "1"
@@ -991,11 +991,11 @@ class GameLauncher:
             # （现场：成就日志 0 字节，boot 日志停在“已收掉旧实例 PID …”，
             #  启动器 1 秒后报“子进程已退出（exit=0）”）。
             # hook.pid 一律由**子进程自己**写（``hook._write_own_pid`` 写的是 os.getpid()）。
-            print(f"[成就] 成就监测子进程已拉起（launcher pid={proc.pid}；"
+            print(f"[Achievement] 成就监测子进程已拉起（launcher pid={proc.pid}；"
                   f"子进程会把自己的 PID 写进 {os.path.basename(pid_file)}）")
             self._watch_hook_child(proc, hook_log_path)
         except Exception as e:
-            print(f"[成就] 启动成就监测失败 (不影响游戏启动): {e}")
+            print(f"[Achievement] 启动成就监测失败 (不影响游戏启动): {e}")
             traceback.print_exc()
 
     def _watch_hook_child(self, proc, hook_log_path: str) -> None:
@@ -1015,11 +1015,11 @@ class GameLauncher:
                 size = -1
             code = proc.poll()
             if code is not None:
-                print(f"[成就] 成就监测子进程已退出（exit={code}）→ 看 {hook_log_path}"
+                print(f"[Achievement] 成就监测子进程已退出（exit={code}）→ 看 {hook_log_path}"
                       f" 与 cache/achievement/hook_boot.log")
                 return
             if size <= 3:
-                print("[成就] 成就监测子进程在跑，但成就日志没有任何内容"
+                print("[Achievement] 成就监测子进程在跑，但成就日志没有任何内容"
                       "（成就解锁与战斗观测都不会生效）→ 现场: "
                       f"{hook_log_path}（含子进程 stdout/stderr）/ "
                       "cache/achievement/hook_boot.log / cache/achievement/hook_fatal.log")
@@ -1028,7 +1028,7 @@ class GameLauncher:
             import threading
             threading.Thread(target=worker, name="hook-child-watch", daemon=True).start()
         except Exception as exc:  # noqa: BLE001
-            print(f"[成就] 子进程健康检查线程启动失败: {exc}")
+            print(f"[Achievement] 子进程健康检查线程启动失败: {exc}")
 
     @staticmethod
     def _kill_stale_hook_child(pid_file: str) -> None:
@@ -1075,7 +1075,7 @@ class GameLauncher:
         # hook.pid 已经指向**最新**那个子进程了，收掉它 = 子进程刚起就被杀，
         # 现场正是“成就日志只有 3 字节（BOM）、没有任何内容”。
         if age is not None and age < STALE_HOOK_MIN_AGE:
-            print(f"[成就] 上一个成就监测子进程（PID {pid}）只启动了 {age:.0f}s，"
+            print(f"[Achievement] 上一个成就监测子进程（PID {pid}）只启动了 {age:.0f}s，"
                   f"疑似重复启动留下的 → 本次不收它（避免掐死新子进程）")
             # ⚠ **绝不能删 pid 文件**：它是那个活实例的**唯一记录**。删了之后新子进程
             # 在 `_acquire_single_instance` 里就认不出旧实例（互斥体占着、PID 又没了）

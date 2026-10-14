@@ -118,7 +118,7 @@ def prologue_check(index, gameassembly: str, on_log=None) -> dict:
                          + (f"；不一致: {'; '.join(out['mismatch'][:4])}" if out["mismatch"] else "")
                          + ("；索引里没有可校验的钩子" if not out["checked"] else ""))
     if out["mismatch"]:
-        log(f"[偏移预检] 对不上的钩子: {'; '.join(out['mismatch'])}")
+        log(f"[OffsetProbe] 对不上的钩子: {'; '.join(out['mismatch'])}")
     return out
 
 
@@ -200,7 +200,7 @@ def ensure_offsets_ready(on_log=None, game_path: str = "", push: bool = True,
     if not ga or not os.path.isfile(ga):
         result["verdict"] = VERDICT_NO_GAME_DLL
         result["detail"] = f"找不到 GameAssembly.dll（{ga or '路径未配置'}）"
-        log(f"[偏移预检] {result['detail']}：跳过校验")
+        log(f"[OffsetProbe] {result['detail']}：跳过校验")
         return result
 
     # ---- 1) 手头能用的两份（本地完整版 + 本地缓存的云端索引）：都不联网
@@ -210,7 +210,7 @@ def ensure_offsets_ready(on_log=None, game_path: str = "", push: bool = True,
         entries.append({"index": local, "source": "local",
                         "check": prologue_check(local, ga, on_log=log)})
     else:
-        log("[偏移预检] 本地没有完整版索引")
+        log("[OffsetProbe] 本地没有完整版索引")
     cloud_cache = index_mod.load_local(paths_mod.cloud_index_path())
     if cloud_cache is not None:
         entries.append({"index": cloud_cache, "source": "cloud-cache",
@@ -219,7 +219,7 @@ def ensure_offsets_ready(on_log=None, game_path: str = "", push: bool = True,
     for entry in entries:
         stale, why = index_stale_for_game(entry["index"], paths)
         label = "本地" if entry["source"] == "local" else "云端缓存"
-        log(f"[偏移预检] {label}偏移量 vs 本机 DLL: {entry['check']['detail']}"
+        log(f"[OffsetProbe] {label}偏移量 vs 本机 DLL: {entry['check']['detail']}"
             f"；版本: {why}")
         result["check"] = entry["check"]
 
@@ -232,7 +232,7 @@ def ensure_offsets_ready(on_log=None, game_path: str = "", push: bool = True,
         result.update(index=chosen["index"], source=chosen["source"],
                       check=chosen["check"], detail=chosen["check"]["detail"],
                       verdict=VERDICT_CLOUD_CACHED if cloud_won else VERDICT_LOCAL_OK)
-        log("[偏移预检] 采用"
+        log("[OffsetProbe] 采用"
             + ("**云端**" if cloud_won else "本地")
             + f"偏移量（{chosen['check']['detail']}）"
             + ("；本机也有一份能对上的本地索引" if cloud_won and others else "")
@@ -242,30 +242,30 @@ def ensure_offsets_ready(on_log=None, game_path: str = "", push: bool = True,
     # ---- 2) 两份都对不上 → 和云端对照（这一步才联网）
     if not allow_cloud:
         result["verdict"] = VERDICT_STALE
-        log("[偏移预检] 已按要求跳过云端对照")
+        log("[OffsetProbe] 已按要求跳过云端对照")
         return result
-    log("[偏移预检] 手头的索引都对不上本机 DLL → 开始与云端对照"
+    log("[OffsetProbe] 手头的索引都对不上本机 DLL → 开始与云端对照"
         f"（{index_mod.note_key()}）…")
     cloud = index_mod.refresh_local_from_cloud(allow_refresh=True, on_log=log)
     if cloud is not None:
         ccheck = prologue_check(cloud, ga, on_log=log)
         result["cloud_check"] = ccheck
         stale, why = index_stale_for_game(cloud, paths)
-        log(f"[偏移预检] 云端偏移量 vs 本机 DLL: {ccheck['detail']}；版本: {why}")
+        log(f"[OffsetProbe] 云端偏移量 vs 本机 DLL: {ccheck['detail']}；版本: {why}")
         if ccheck["ok"]:
             index_mod.use_index(cloud, "cloud")
             result.update(verdict=VERDICT_CLOUD_UPDATED, index=cloud, source="cloud",
                           detail=ccheck["detail"])
-            log("[偏移预检] 已采用云端索引（云端对得上本机 DLL）")
+            log("[OffsetProbe] 已采用云端索引（云端对得上本机 DLL）")
             return result
-        log("[偏移预检] 云端偏移量也对不上本机 DLL")
+        log("[OffsetProbe] 云端偏移量也对不上本机 DLL")
     else:
-        log("[偏移预检] 云端没有可用索引（首次使用/读取失败）")
+        log("[OffsetProbe] 云端没有可用索引（首次使用/读取失败）")
 
     # ---- 3) 都对不上 → 需要重建
     if not allow_rebuild:
         result["verdict"] = VERDICT_STALE
-        log("[偏移预检] 需要本地重建，但设置项「自动刷新游戏偏移索引」已关闭 / 本轮不允许"
+        log("[OffsetProbe] 需要本地重建，但设置项「自动刷新游戏偏移索引」已关闭 / 本轮不允许"
             " → 跳过（本次钩子可能装不上，请在设置里打开或跑 "
             "python -m functions.hook.main update）")
         return result
@@ -277,7 +277,7 @@ def ensure_offsets_ready(on_log=None, game_path: str = "", push: bool = True,
         result["verdict"] = VERDICT_DEFERRED
         result["detail"] = ("需要重建偏移索引，但游戏正在运行 → 本次不重建"
                            "（已排入后台，等游戏退出后以低优先级重建）")
-        log(f"[偏移预检] {result['detail']}")
+        log(f"[OffsetProbe] {result['detail']}")
         if not _background_update_running(log):
             try:
                 from . import updater as updater_mod
@@ -285,10 +285,10 @@ def ensure_offsets_ready(on_log=None, game_path: str = "", push: bool = True,
                                               low_priority=True, wait_for_game_idle=True,
                                               process_name=process_name)
             except Exception as exc:  # noqa: BLE001
-                log(f"[偏移预检] 排入后台重建失败: {type(exc).__name__}: {exc}")
+                log(f"[OffsetProbe] 排入后台重建失败: {type(exc).__name__}: {exc}")
         return result
 
-    log("[偏移预检] 本地+云端都对不上本机 DLL，且游戏没在运行 → 本地重建偏移量"
+    log("[OffsetProbe] 本地+云端都对不上本机 DLL，且游戏没在运行 → 本地重建偏移量"
         + ("并上传云端" if push else "（不上传）") + "…")
     try:
         from . import updater as updater_mod
@@ -299,7 +299,7 @@ def ensure_offsets_ready(on_log=None, game_path: str = "", push: bool = True,
     except Exception as exc:  # noqa: BLE001
         result["verdict"] = VERDICT_ERROR
         result["detail"] = f"本地重建失败: {type(exc).__name__}: {exc}"
-        log(f"[偏移预检] {result['detail']}")
+        log(f"[OffsetProbe] {result['detail']}")
         return result
     index_mod.clear_memo()
     fresh, source = index_mod.get_index()
@@ -308,7 +308,7 @@ def ensure_offsets_ready(on_log=None, game_path: str = "", push: bool = True,
         index_mod.use_index(fresh, "rebuilt")
     result.update(index=fresh, source="rebuilt", check=check, pushed=bool(outcome.pushed),
                   detail=(check.get("detail") or outcome.summary()))
-    log(f"[偏移预检] 重建结果: {outcome.summary()}；校验: {check.get('detail', '无')}")
+    log(f"[OffsetProbe] 重建结果: {outcome.summary()}；校验: {check.get('detail', '无')}")
     result["verdict"] = (VERDICT_REBUILT if check.get("ok")
                          else f"{VERDICT_REBUILT}-unverified")
     return result
@@ -319,7 +319,7 @@ def _background_update_running(log) -> bool:
     try:
         from . import updater as updater_mod
         if updater_mod.is_auto_updating():
-            log("[偏移预检] 已有后台重建任务在跑 → 不重复排队")
+            log("[OffsetProbe] 已有后台重建任务在跑 → 不重复排队")
             return True
     except Exception:  # noqa: BLE001
         pass

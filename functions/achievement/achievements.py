@@ -310,7 +310,7 @@ def _define_achievements():
         try:
             achievements.append(_cls().with_rarity(_rarity)) # type: ignore
         except Exception as _exc:  # noqa: BLE001
-            print(f"[成就] {_cls.__name__} 注册失败: {_exc}")
+            print(f"[Achievement] {_cls.__name__} 注册失败: {_exc}")
 
     # === 内存成就 ===
     # 该成就自身维护内存读取器，不使用成就状态缓存。
@@ -334,7 +334,7 @@ def _define_achievements():
         "data.ach_story_10_4",
     )
     # ⚠ 打包（PyInstaller）**只收集静态可见的导入**：动态 ``import_module`` 的模块不会进包，
-    # 冻结后就是 "[成就] 模块 data.ach_xxx 导入失败: No module named ..."（实测踩过）。
+    # 冻结后就是 "[Achievement] 模块 data.ach_xxx 导入失败: No module named ..."（实测踩过）。
     # 所以这里显式 import 一遍，下面的遍历只处理这些已经导入进来的模块对象 —— 与打包配置无关，
     # 以后新增成就模块时**只要加到这个 import 列表里**（别再只往字符串元组里加）。
     from functions.achievement.data import (            # noqa: F401
@@ -368,7 +368,7 @@ def _define_achievements():
             try:
                 achievements.append(_cls())
             except Exception as exc:  # noqa: BLE001
-                print(f"[成就] {_name}.{_cls.__name__} 注册失败（抽象基类可忽略）: {exc}")
+                print(f"[Achievement] {_name}.{_cls.__name__} 注册失败（抽象基类可忽略）: {exc}")
 
     # === 插件（addon）自定义成就 ===
     # 扫描 addons/*/ 里插件声明的成就模块，登记到同一张表 —— 与内置成就完全同权。
@@ -376,17 +376,17 @@ def _define_achievements():
     try:
         _plugins = load_addon_achievements()
         if _plugins:
-            print(f"[成就] 插件自定义成就: {len(_plugins)} 个（{', '.join(_plugins)}）")
+            print(f"[Achievement] 插件自定义成就: {len(_plugins)} 个（{', '.join(_plugins)}）")
     except Exception as _exc:  # noqa: BLE001
-        print(f"[成就] 插件成就加载失败: {_exc}")
+        print(f"[Achievement] 插件成就加载失败: {_exc}")
 
     # 把本地**已完成**的成就直接标记成已解锁（见函数注释：不同步这一步，重启后会重复获取）
     try:
         _marked = load_completed_state()
         if _marked:
-            print(f"[成就] 本地已完成 {_marked} 条，直接标记为已解锁（不再重复获取）")
+            print(f"[Achievement] 本地已完成 {_marked} 条，直接标记为已解锁（不再重复获取）")
     except Exception as _exc:  # noqa: BLE001
-        print(f"[成就] 读取本地完成记录失败: {_exc}")
+        print(f"[Achievement] 读取本地完成记录失败: {_exc}")
 
 
 # ============ 已完成状态（防止重复获取）============
@@ -581,7 +581,7 @@ def load_addon_achievements() -> list[str]:
             module = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(module)
         except Exception as exc:  # noqa: BLE001
-            print(f"[成就] 插件 {name} 的成就模块导入失败: {exc}")
+            print(f"[Achievement] 插件 {name} 的成就模块导入失败: {exc}")
             continue
         explicit = getattr(module, "ACHIEVEMENTS", None)
         if explicit:

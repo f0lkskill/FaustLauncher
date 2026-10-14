@@ -604,7 +604,7 @@ class TranslationEngine:
                             self._state[m] = {"disabled": v, "color": None}
                     self._active = data.get("active", "") if isinstance(data.get("active"), str) else ""
         except Exception as e:
-            print(f"[自定义汉化] 加载修改记录状态失败: {e}")
+            print(f"[CustomLocale] 加载修改记录状态失败: {e}")
 
     def _save_state(self):
         try:
@@ -615,7 +615,7 @@ class TranslationEngine:
             with open(os.path.join(self.lang_dir, LAYER_STATE_FILE), "w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False, indent=4)
         except Exception as e:
-            print(f"[自定义汉化] 保存修改记录状态失败: {e}")
+            print(f"[CustomLocale] 保存修改记录状态失败: {e}")
 
     def _layer_color(self, marker: str) -> str:
         return (self._state.get(marker) or {}).get("color") or _MAIN_LAYER_COLOR
@@ -660,10 +660,10 @@ class TranslationEngine:
                     if isinstance(data, dict):
                         self._layers[marker] = data
                     else:
-                        print(f"[自定义汉化] 跳过非对象图层文件: {fname}")
+                        print(f"[CustomLocale] 跳过非对象图层文件: {fname}")
                         self._layers[marker] = {}
                 except Exception as e:
-                    print(f"[自定义汉化] 解析图层文件失败 {fname}: {e}")
+                    print(f"[CustomLocale] 解析图层文件失败 {fname}: {e}")
                     self._layers[marker] = {}
             for m in list(self._state.keys()):
                 if m not in self._layer_files:
@@ -672,7 +672,7 @@ class TranslationEngine:
             self._layers.setdefault("", {})
             self._layer_files.setdefault("", self._layer_path(""))
         except Exception as e:
-            print(f"[自定义汉化] 加载图层失败: {e}")
+            print(f"[CustomLocale] 加载图层失败: {e}")
 
     def _layer_path(self, marker: str) -> str:
         fname = "changes.json" if marker == "" else f"changes_{marker}.json"
@@ -1627,7 +1627,7 @@ def open_custom_translation_window(root=None):
         script = os.path.join(_PROJECT_ROOT, "functions", "pages", "tools",
                               "custom_translation_window.py")
         if not os.path.exists(script):
-            print("[自定义汉化] 找不到窗口脚本, 已跳过")
+            print("[CustomLocale] 找不到窗口脚本, 已跳过")
             return None
         pythonw = os.path.join(os.path.dirname(sys.executable), "pythonw.exe")
         if not os.path.exists(pythonw):
@@ -1638,7 +1638,7 @@ def open_custom_translation_window(root=None):
         flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
         subprocess.Popen(cmd, cwd=_PROJECT_ROOT, creationflags=flags)
     except Exception as e:
-        print(f"[自定义汉化] 无法启动窗口进程: {e}")
+        print(f"[CustomLocale] 无法启动窗口进程: {e}")
         return None
     return True
 

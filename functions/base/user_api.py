@@ -115,7 +115,7 @@ def _safe_path(path: str) -> str:
     for prefix, label in _PATH_ACTION_PREFIXES:
         if clean.startswith(prefix):
             return label
-    return "[已隐藏]"
+    return "[Hidden]"
 
 
 # 会话 (requests.Session + 登录 Cookie 持久化)
@@ -138,7 +138,7 @@ def _restore_cookies(session, base: str) -> None:
             except Exception:
                 pass
     if restored:
-        print(f"[用户API] 已载入本地登录态 ({host})")
+        print(f"[UserAPI] 已载入本地登录态 ({host})")
 
 
 def _save_cookies(session) -> None:
@@ -156,9 +156,9 @@ def _save_cookies(session) -> None:
     try:
         os.makedirs(os.path.dirname(path), exist_ok=True)
         write_json(path, {"cookies": cookies, "saved_at": time.time()}, indent=4, fsync=True)
-        print("[用户API] 已保存登录态 (login_user / login_sig, 内容不打印)")
+        print("[UserAPI] 已保存登录态 (login_user / login_sig, 内容不打印)")
     except Exception as exc:
-        print(f"[用户API] 保存登录态失败: {exc}")
+        print(f"[UserAPI] 保存登录态失败: {exc}")
 
 
 def clear_session() -> None:
@@ -171,11 +171,11 @@ def clear_session() -> None:
                 os.remove(session_file())
                 removed = True
         except Exception as exc:
-            print(f"[用户API] 清除登录态失败: {exc}")
+            print(f"[UserAPI] 清除登录态失败: {exc}")
         _session = None
         _session_base = ""
         if removed:
-            print("[用户API] 已清除本地登录态")
+            print("[UserAPI] 已清除本地登录态")
 
 
 def has_session() -> bool:
@@ -210,7 +210,7 @@ def _request(method: str, path: str, payload: dict | None = None,
 
     · offline=True 表示压根没连上服务端 (断网/超时), 与"服务端明确拒绝"区分开;
     · 失败原因优先用服务端给的 `msg` (它的文案已经足够给用户看);
-    · 每次调用都会打印一行 `[用户API] ...` 日志 (方法/路径/状态码/耗时),
+    · 每次调用都会打印一行 `[UserAPI] ...` 日志 (方法/路径/状态码/耗时),
       `note` 用来补充业务上下文 (例如打码后的用户 ID), 路径上的 ID 也会自动打码。
     """
     url = api_base() + path
@@ -222,7 +222,7 @@ def _request(method: str, path: str, payload: dict | None = None,
                                timeout=(CONNECT_TIMEOUT, READ_TIMEOUT))
     except Exception as exc:
         cost = time.time() - started
-        print(f"[用户API] {label} 连接失败: {type(exc).__name__} ({cost:.2f}s)")
+        print(f"[UserAPI] {label} 连接失败: {type(exc).__name__} ({cost:.2f}s)")
         return {"ok": False, "data": {}, "status": 0, "offline": True,
                 "error": f"无法连接服务端（{type(exc).__name__}），请检查网络后重试"}
     cost = time.time() - started
@@ -237,7 +237,7 @@ def _request(method: str, path: str, payload: dict | None = None,
         data = {}
 
     if status == 200 and data.get("ok"):
-        print(f"[用户API] {label} -> {status} 成功 ({cost:.2f}s)")
+        print(f"[UserAPI] {label} -> {status} 成功 ({cost:.2f}s)")
         if keep_cookies:
             _save_cookies(session)
         return {"ok": True, "data": data, "error": "", "status": status, "offline": False}
@@ -257,7 +257,7 @@ def _request(method: str, path: str, payload: dict | None = None,
                    404: "该用户不存在", 405: "服务端不支持这个请求",
                    413: "请求内容过大", 500: "服务端内部错误"}.get(
                        status, f"服务端返回 {status or '未知状态'}")
-    print(f"[用户API] {label} -> {status} 失败: {msg} ({cost:.2f}s)")
+    print(f"[UserAPI] {label} -> {status} 失败: {msg} ({cost:.2f}s)")
     return {"ok": False, "data": data, "error": msg, "status": status, "offline": False}
 
 

@@ -70,7 +70,7 @@ def main():
     # 很容易被当成"启动器坏了"，所以这里点一句，省得往代码里找。
     try:
         if not os.path.isfile(os.path.join(_project_root(), "assets", "images", "icon", "icon.png")):
-            print(r"[素材] 没找到 assets/images —— 素材不在仓库里，"
+            print(r"[Assets] 没找到 assets/images —— 素材不在仓库里，"
                   r"先拉资源包：tools\run\assets.bat fetch（或把资源包 zip 解压到项目根）")
     except Exception:  # noqa: BLE001
         pass

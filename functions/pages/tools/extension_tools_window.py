@@ -100,7 +100,7 @@ class ExtensionToolsApi:
                         })
             return result
         except Exception as e:
-            print(f"[扩展工具] 获取 mods 列表失败: {e}")
+            print(f"[Extensions] 获取 mods 列表失败: {e}")
             return []
 
     def list_addons(self):
@@ -122,7 +122,7 @@ class ExtensionToolsApi:
                         })
             return result
         except Exception as e:
-            print(f"[扩展工具] 获取 addons 列表失败: {e}")
+            print(f"[Extensions] 获取 addons 列表失败: {e}")
             return []
 
     def pick_folder(self):
@@ -133,7 +133,7 @@ class ExtensionToolsApi:
                 webview.FileDialog.FOLDER)
             return paths[0] if paths else None
         except Exception as e:
-            print(f"[扩展工具] 打开文件夹对话框失败: {e}")
+            print(f"[Extensions] 打开文件夹对话框失败: {e}")
             return None
 
     def pick_files(self):
@@ -146,7 +146,7 @@ class ExtensionToolsApi:
                 file_types=('Mod文件 (*.bank;*.carra2)',))
             return list(paths) if paths else []
         except Exception as e:
-            print(f"[扩展工具] 打开文件对话框失败: {e}")
+            print(f"[Extensions] 打开文件对话框失败: {e}")
             return []
 
     def pick_icon(self):
@@ -158,7 +158,7 @@ class ExtensionToolsApi:
                 file_types=('图片文件 (*.png;*.jpg;*.jpeg;*.ico)',))
             return paths[0] if paths else None
         except Exception as e:
-            print(f"[扩展工具] 打开图标对话框失败: {e}")
+            print(f"[Extensions] 打开图标对话框失败: {e}")
             return None
 
     # ---- 包装 Mod ----
@@ -382,7 +382,7 @@ def open_extension_tools_window(root=None):
     else:
         script = os.path.join(_PROJECT_ROOT, "functions", "pages", "tools", "extension_tools_window.py")
         if not os.path.exists(script):
-            print("[扩展工具] 找不到窗口脚本, 已跳过")
+            print("[Extensions] 找不到窗口脚本, 已跳过")
             return None
         pythonw = os.path.join(os.path.dirname(sys.executable), "pythonw.exe")
         if not os.path.exists(pythonw):
@@ -393,7 +393,7 @@ def open_extension_tools_window(root=None):
         flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
         subprocess.Popen(cmd, cwd=_PROJECT_ROOT, creationflags=flags)
     except Exception as e:
-        print(f"[扩展工具] 无法启动窗口进程: {e}")
+        print(f"[Extensions] 无法启动窗口进程: {e}")
         return None
     return True
 

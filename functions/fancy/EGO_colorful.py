@@ -117,14 +117,14 @@ def main():
     try:
         success = process_ego_json_files()
         if success:
-            print("[美化] 所有EGO技能JSON文件处理完成")
+            print("[Cosmetic] 所有EGO技能JSON文件处理完成")
         else:
-            print("[美化] EGO技能JSON文件处理失败，处理过程中出现错误")
+            print("[Cosmetic] EGO技能JSON文件处理失败，处理过程中出现错误")
         
         return success
         
     except Exception as e:
-        print(f"[美化] 处理失败: {e}")
+        print(f"[Cosmetic] 处理失败: {e}")
         return False
 
 if __name__ == "__main__":
