@@ -3650,9 +3650,9 @@ def run_web_ui(debug: bool = False):
         """收到 console_log 交付的一行: 记进历史(供前端回填) + 推给前端。
 
         行文本就是 cmd 打印的同一份内容(连 ANSI 颜色一起)。这里只做一处 UI 专属
-        裁剪: 去掉时间戳里的年月日——窄面板不需要它, 也不影响 cmd 与日志文件(那两处
-        仍写完整时间戳)。其余部分一律不动, 否则 UI 会和 cmd/日志文件对不上。窗口还
-        没建好时 _evaluate_js 直接返回, 前端启动后通过 get_terminal() 拿到这段历史。
+        裁剪: 时间戳压成 [HH:MM:SS]——窄面板既不需要年月日, 也不需要毫秒。cmd 与
+        日志文件仍写完整时间戳。其余部分一律不动, 否则 UI 会和 cmd/日志文件对不上。
+        窗口还没建好时 _evaluate_js 直接返回, 前端启动后通过 get_terminal() 拿到这段历史。
         """
         from functions.base.log_format import short_stamp
         line = short_stamp(line)
