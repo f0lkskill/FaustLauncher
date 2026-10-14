@@ -290,7 +290,6 @@ def _normalize(data: dict) -> dict:
         aid = str(aid).strip()
         if aid and aid not in done:
             done.append(aid)
-    # 注意: 这里不再产出 auto_created 之类的账号来源标记 ——
     # 本地无法可靠区分"自动生成的号"和"用户自己的号", 误判会造成困扰。
     # 因此归一化结果里多余的旧字段会在下次保存时被自然剔除。
     profile = _value(data, "server_profile", {})
