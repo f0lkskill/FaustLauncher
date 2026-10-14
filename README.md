@@ -2,7 +2,7 @@
 
 <div align="center">
 
-<img src="previews/readme/icon.png" width="112" alt="FaustLauncher 图标">
+<img src="previews/readme/icon.png" alt="FaustLauncher 图标">
 
 # FaustLauncher
 
