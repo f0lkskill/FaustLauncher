@@ -485,62 +485,12 @@ def _patch_tk_dialogs(push_event):
 
 # ============================================================
 # 日志重定向: print/stdout/stderr -> Web 前端终端
+#
+# 由 functions/base/console_log.py 的 add_line_hook 接管 (见 run_web_ui):
+# 控制台渲染一行之后就回调前端推送, 所以 cmd / 日志文件 / Web 终端三处
+# 用的是同一份文本。旧的 WebLogRedirector 会自己再拼一遍前缀并单独写日志
+# 文件, 造成 UI 时间戳重复和日志双重记录, 已移除。
 # ============================================================
-
-class WebLogRedirector:
-    """把 stdout/stderr 重定向到 Web 前端迷你终端 (保留 ANSI 转义序列由前端解析)"""
-
-    def __init__(self, pusher):
-        self.pusher = pusher          # callable(text)
-        self.original_stdout = sys.stdout
-        self.original_stderr = sys.stderr
-        self.buffer = ""
-
-    def write(self, message):
-        if not message:
-            return
-        try:
-            self.original_stdout.write(message)
-            self.original_stdout.flush()
-        except Exception:
-            pass
-        try:
-            from functions.base.log_manager import log_message
-            log_message(message)
-        except Exception:
-            pass
-        self.buffer += message
-        while "\n" in self.buffer:
-            line, self.buffer = self.buffer.split("\n", 1)
-            if line.strip():
-                self._push(line.rstrip("\r"))
-        # 无换行的部分行 (如进度条) 按行缓存, 前端定时刷新
-        if self.buffer.strip():
-            pass
-
-    def flush(self):
-        if self.buffer.strip():
-            self._push(self.buffer.rstrip("\r\n"))
-            self.buffer = ""
-
-    def _push(self, line):
-        if line.startswith("|"):
-            return
-        with _log_lock:
-            _log_lines.append(line)
-        try:
-            self.pusher(line)
-        except Exception:
-            pass
-
-    def start(self):
-        sys.stdout = self
-        sys.stderr = self
-
-    def stop(self):
-        self.flush()
-        sys.stdout = self.original_stdout
-        sys.stderr = self.original_stderr
 
 
 # 无头下载进度 shim: 兼容 DownloadGUI 的鸭子类型接口
@@ -3674,6 +3624,9 @@ def run_web_ui(debug: bool = False):
     # 先把 stdout/stderr 接到 Web 终端, 再创建核心对象:
     # 这样 FaustLauncherCore 初始化期间(加载背景图/扫描 mod 等)的 print 也能在界面终端里看到,
     # 而不再是无处可去(以前这段在 core 之后, 早期输出全丢)
+    # 先把 stdout/stderr 接到 Web 终端, 再创建核心对象:
+    # 这样 FaustLauncherCore 初始化期间(加载背景图/扫描 mod 等)的 print 也能在界面终端里看到,
+    # 而不再是无处可去(以前这段在 core 之后, 早期输出全丢)
     window_holder = {}
 
     def _evaluate_js(code):
@@ -3693,8 +3646,19 @@ def run_web_ui(debug: bool = False):
         except Exception:
             pass
 
-    log_redirector = WebLogRedirector(_push_log)
-    log_redirector.start()
+    def _push_terminal_line(line):
+        """收到 console_log 交付的一行: 记进历史(供前端回填) + 推给前端。
+
+        行文本已由 log_format 渲染好并去掉 ANSI, 这里不再加工, 否则 UI 会和
+        cmd/日志文件对不上。窗口还没建好时 _evaluate_js 直接返回, 前端启动后
+        通过 get_terminal() 拿到这段历史。
+        """
+        with _log_lock:
+            _log_lines.append(line)
+        _push_log(line)
+
+    from functions.base.console_log import add_line_hook
+    add_line_hook(_push_terminal_line)
 
     from functions.pages.app.app_core import FaustLauncherCore
     from functions.extension.addon.addon_utils import AddonManager

@@ -1853,7 +1853,6 @@ body.path-locked #app *:focus { outline: none; }
   scrollbar-width: thin;
 }
 .term-line { white-space: pre-wrap; word-break: break-all; }
-.term-line .t-time { color: var(--text-3); margin-right: 6px; }
 .term-line.info { color: #c7d0e0; }
 .term-line.success { color: var(--success); }
 .term-line.error { color: var(--danger); }

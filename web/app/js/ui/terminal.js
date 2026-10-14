@@ -1,14 +1,19 @@
 /* ==============================================================================
- * js/ui/terminal.js — 终端面板: ANSI 着色渲染 + 日志追加
+ * js/ui/terminal.js — 终端面板: 着色渲染 + 日志追加
  * ------------------------------------------------------------------------------
  * 职责:
- *   · ansiToHtml: 把后端日志里的 ANSI 颜色码转成 HTML, 并推断语义色(成功/警告/错误/进行中)
- *   · addLog: 带时间戳写入终端 DOM, 自动滚动与行数上限, 同时转发给流水线关键字解析
+ *   · ansiToHtml: 把一行日志转成 HTML(后端若带 ANSI 颜色码则解析上色)
+ *   · addLog: 追加一行到终端 DOM, 自动滚动与行数上限, 同时转发给流水线关键字解析
  * 本文件提供:
  *  函数: ansiToHtml / addLog
  *  状态/常量: ANSI_COLORS / termBody / termAutoScroll
  * 依赖: 依赖 bootstrap($) 与 utils(esc); handlePipelineLog 在 pipeline.js 中实现(运行时调用)
  * 加载顺序: 9/22    (拆分自原 app.js 行 398-452)
+ *
+ * 统一约定: 时间戳、区域与级别都由后端写进这一行, 形如
+ *   [2026-10-14 18:28:44.350] [用户API] [WARN ] [user_api.py:141]: 已载入本地登录态
+ * 前端只负责上色和排版, 不再自己补时间戳、也不再按关键字猜级别——否则同一行
+ * 在 cmd 窗口、日志文件与终端面板里就会长得不一样。
  * ============================================================================== */
 'use strict';
 
@@ -20,16 +25,28 @@ const ANSI_COLORS = {
   94: '#60a5fa', 95: '#d8b4fe', 96: '#67e8f9', 97: '#ffffff',
 };
 
+// 级别直接读后端行里的 [INFO] / [WARN] / [ERROR] 标记(后端是唯一的判定点)
+function levelClass(text) {
+  if (/\[ERROR\]/.test(text)) return 'error';
+  if (/\[WARN\s*\]/.test(text)) return 'warning';
+  return 'info';
+}
+
 function ansiToHtml(text) {
-  const parts = String(text).split(/\x1b\[/);
-  let out = parts[0];
-  let cls = 'info';
+  const raw = String(text);
+  if (raw.indexOf('\x1b[') < 0) {
+    // 后端没给颜色时走这条快路; 顺带保证整行都被转义。
+    return { html: esc(raw), cls: levelClass(raw) };
+  }
+  const parts = raw.split(/\x1b\[/);
+  let out = esc(parts[0]);
   for (let i = 1; i < parts.length; i++) {
     const m = /^([0-9;]*)m/.exec(parts[i]);
-    if (!m) { out += parts[i]; continue; }
+    if (!m) { out += esc(parts[i]); continue; }
     const codes = m[1] ? m[1].split(';') : [];
-    let rest = parts[i].slice(m[0].length);
-    if (codes.includes('0')) { cls = 'info'; out += '</span>'.repeat(0) + rest; continue; }
+    const rest = parts[i].slice(m[0].length);
+    // 0 是复位: 必须真的闭合上一个 span, 否则后面的颜色会盖住前面那些列。
+    if (codes.includes('0')) { out += '</span>' + esc(rest); continue; }
     let style = '';
     if (codes.includes('1')) style += 'font-weight:bold;';
     for (const c of codes) {
@@ -38,12 +55,7 @@ function ansiToHtml(text) {
     }
     out += '<span style="' + style + '">' + esc(rest) + '</span>';
   }
-  // 简易语义色
-  if (/❌|错误|失败|出错/.test(out)) cls = 'error';
-  else if (/✓|成功|完成|安装到/.test(out)) cls = 'success';
-  else if (/警告/.test(out)) cls = 'warning';
-  else if (/开始|正在|下载|检查/.test(out)) cls = 'wait';
-  return { html: out, cls };
+  return { html: out, cls: levelClass(raw) };
 }
 
 // ---------------- 终端 ----------------
@@ -56,13 +68,13 @@ function addLog(text) {
   const { html, cls } = ansiToHtml(line);
   const div = document.createElement('div');
   div.className = 'term-line ' + cls;
-  const t = new Date();
-  const ts = t.toTimeString().slice(0, 8);
-  div.innerHTML = '<span class="t-time">[' + ts + ']</span>' + html;
+  // 时间戳由后端随行给出, 这里不再插一个前端时间, 否则一行会出现两个时间。
+  div.innerHTML = html;
   if (termBody) {
     termBody.appendChild(div);
     while (termBody.children.length > 1500) termBody.firstChild.remove();
     if (termAutoScroll) termBody.scrollTop = termBody.scrollHeight;
   }
-  handlePipelineLog(line);
+  // 流水线关键字解析要的是纯文本: ANSI 转义序列夹在行里会让关键字匹配失灵。
+  handlePipelineLog(line.replace(/\x1b\[[0-9;]*m/g, ''));
 }

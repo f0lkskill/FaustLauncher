@@ -1,8 +1,17 @@
-"""FaustLauncher 日志系统
+"""日志文件生命周期：每次运行一个文件，保留数量有上限。
 
-- 每次实例运行生成一个日志文件: logs/YYYY-MM-DD_HHMMSS.log
-- 最多保留 3 天内的日志文件
-- 同一天(同一天内多次实例运行)最多保留 7 个日志文件, 超出删除最早的
+布局约定
+--------
+行通过 :func:`write_line` 进入本模块，此时文本已由
+:mod:`functions.base.log_format` 渲染完毕（控制台、Tk 终端、Web 终端共用同一套
+布局）。因此文件 handler **不再**添加任何前缀——再加一次就会打印两遍时间戳，并让
+``logs/*.log`` 与 cmd 窗口对不上，而这正是本模块以前造成的问题。
+
+命名与保留策略：
+
+- 每次运行一个文件：``logs/YYYY-MM-DD_HH-MM-SS.log``
+- 超过 :data:`MAX_KEEP_DAYS` 天的文件删除
+- 每个自然日最多保留 :data:`MAX_KEEP_PER_DAY` 个文件，从最早的开始删
 """
 import os
 import re
@@ -21,7 +30,7 @@ def _ensure_dir():
 
 
 def _cleanup_logs():
-    """清理过期日志: 超过 3 天的删除; 同一天超过 7 个的删除最早的文件"""
+    """删除超过 MAX_KEEP_DAYS 天的日志，并把每天的文件数压到 MAX_KEEP_PER_DAY。"""
     try:
         today = datetime.date.today()
         cutoff = today - datetime.timedelta(days=MAX_KEEP_DAYS - 1)
@@ -57,7 +66,7 @@ def _cleanup_logs():
 
 
 def init_logger():
-    """初始化日志系统(每次实例运行调用一次)"""
+    """创建本次运行的日志文件并把它装成唯一的 handler（每次运行调用一次）。"""
     global _logger
     _ensure_dir()
     fname = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S") + ".log"
@@ -72,37 +81,68 @@ def init_logger():
         except Exception:
             pass
     handler = logging.FileHandler(path, encoding="utf-8")
-    handler.setFormatter(logging.Formatter(
-        "%(asctime)s [%(levelname)s] %(message)s", datefmt="%Y-%m-%d %H:%M:%S"))
+    # formatter 里不带时间戳/级别：write_line() 收到的行已经由统一布局打好标记，
+    # 这里再加前缀就会重复。
+    handler.setFormatter(logging.Formatter("%(message)s"))
     _logger.addHandler(handler)
 
     _cleanup_logs()
-    
+
     from functions.base.terminal_banner import get_banner, get_random_font, get_random_color
     font = get_random_font()
     color = get_random_color()
-    text = get_banner("FaustLauncher", font=font, colors=color)
-    colorless_text = get_banner("FaustLauncher", font=font, colors="")
-    print(text)
-    _logger.info(f'\n' + colorless_text)
-    _logger.info("Faust Launcher 实例启动")
-    _logger.info("日志文件: %s", fname)
+    print(get_banner("FaustLauncher", font=font, colors=color))
+
+    # 横幅本身已经通过 print() -> 控制台流 -> write_line() 进了文件，这里只补一条
+    # 运行头。以前把横幅再写一遍，正是日志文件与 cmd 窗口对不上（多一份、前缀还不
+    # 一样）的原因。
+    _announce(f"Faust Launcher instance started ({fname})")
     return _logger
 
 
+def _announce(message: str) -> None:
+    """按统一布局写一行启动信息。
+
+    普通输出经控制台流进入文件；这里覆盖的是控制台流装好之前就存在的少数消息。
+    """
+    try:
+        from functions.base import log_format
+        write_line(log_format.build_line(message, site=("log_manager.py", 0, "logs")))
+    except Exception:
+        pass
+
+
 def get_logger():
-    """获取全局 logger"""
+    """返回进程级 logger，首次使用时创建本次运行的日志文件。"""
     global _logger
     if _logger is None:
         init_logger()
     return _logger
 
 
-def log_message(message):
-    """写入一行日志(自动去除 ANSI 转义序列)"""
+def write_line(line: str) -> None:
+    """把一条**已格式化**的行原样追加到日志文件。
+
+    :mod:`functions.base.console_log` 用它写入与控制台完全相同的那份文本，这也是
+    ``logs/*.log`` 能与 cmd 窗口逐字节一致的原因。文件要当纯文本读，所以 ANSI 颜色
+    会被剥掉。
+    """
     try:
-        text = re.sub(r"\x1b\[[0-9;]*m", "", message).rstrip("\n")
+        text = re.sub(r"\x1b\[[0-9;]*m", "", line).rstrip("\r\n")
         if text:
             get_logger().info("%s", text) # type: ignore
+    except Exception:
+        pass
+
+
+def log_message(message) -> None:
+    """用统一布局格式化 *message* 后追加到日志文件。
+
+    留给手里只有未加前缀原文的调用方。经由 ``sys.stdout`` 的输出不需要它——控制台流
+    已经记过一遍，再调一次就会出现重复行。
+    """
+    try:
+        from functions.base import log_format
+        write_line(log_format.format_message(str(message)))
     except Exception:
         pass

@@ -21,7 +21,7 @@
 * 已有流 → ``reconfigure(errors="replace")``：**编码保持不变**（中文在 GBK/cp950 控制台仍正常显示），
   只有放不下的字符（简体/emoji）退化成 ``?``，绝不抛异常；
 * 流为 None → 绑定到 UTF-8 + replace 的 ``os.devnull``，让 rich / print 都有落点
-  （Web 界面启动后 stdout 会被 WebLogRedirector 接管，早期输出也就有去处了）。
+  （Web 界面启动后 stdout 会被 console_log 的前缀流接管，早期输出也就有去处了）。
 
 只依赖标准库，可被任意入口（启动器 main.py、app_web.run_web）在最早期调用，重复调用无副作用。
 """
