@@ -135,6 +135,21 @@ def write_line(line: str) -> None:
         pass
 
 
+def flush() -> None:
+    """立刻把日志缓冲区刷进文件。
+
+    退出流程需要它：``_terminate_now()`` 直接 TerminateProcess，不做任何清理，
+    没刷出去的行会永远留在缓冲区里——退出横幅正是这样丢的。
+    """
+    if _logger is None:
+        return
+    for handler in list(_logger.handlers):
+        try:
+            handler.flush()
+        except Exception:
+            pass
+
+
 def log_message(message) -> None:
     """用统一布局格式化 *message* 后追加到日志文件。
 

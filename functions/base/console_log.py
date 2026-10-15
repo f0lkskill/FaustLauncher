@@ -119,8 +119,10 @@ class _ConsoleStream:
     """给写进控制台流的行加前缀，并把它们镜像到日志文件。
 
     ``print("a\\nb\\nc")`` 会以两次写入到达这里（正文、然后是结尾换行），所以规则是：
-    **一次写入里只有第一行算新的日志行，其余原样透传**。``_raw_tail`` 记住上一次
-    写入没有以换行结束，于是紧随其后的那个换行会被直接转发，而不是给横幅的最后
+    **单行走正常前缀流程；一次写入里带后续行的，按“自带排版的整块”整块放行**——
+    横幅艺术字、异常回溯、打印块都靠自己的缩进和图案排版，给它们逐行加前缀会把
+    图案拼不回去。整块同样进日志文件和 UI，只是不加前缀。``_raw_tail`` 记住上一次
+    写入没有以换行结束，于是紧随其后的那个换行会被直接转发，而不是给整块的最后
     一行加上前缀。
     """
 
@@ -181,13 +183,26 @@ class _ConsoleStream:
                 return len(text)
             first, rest = self._buf.split("\n", 1)
             self._buf = ""
-        out = self._format(first)
         if rest:
-            # 同一次写入里剩下的行（横幅 / 回溯 / 打印块）原样透传，
-            # 这样缩进和图案排版不会被破坏。
+            # 一次写入里还有后续行：这是一整块“自带排版”的内容（艺术字横幅、异常
+            # 回溯、打印块）。整块原样放行——连第一行也不加前缀，否则横幅的第一行
+            # 会被前缀推歪，图案就拼不回原形了。整块照旧进日志文件、照旧上报 UI：
+            # 先前只把首行当日志行，于是日志里只剩下横幅的第一行、回溯也只有一行。
+            block = first + "\n" + rest
             self._raw_tail = not rest.endswith("\n")
-            out += rest
+            self._mirror_block(block)
+            return self._raw.write(block)
+        out = self._format(first)
         return self._raw.write(out)
+
+    def _mirror_block(self, block: str) -> None:
+        """把整块的每一行原样送进日志文件与 UI（不加前缀、不剥颜色）。"""
+        for line in block.split("\n"):
+            if not line.strip():
+                continue
+            _mirror_to_log(line)
+            if not line.startswith("|"):                  # 启动器内部管道标记
+                _emit_line(line)
 
     def _format(self, line: str) -> str:
         if not line.strip():

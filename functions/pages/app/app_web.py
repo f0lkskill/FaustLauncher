@@ -831,8 +831,12 @@ def _get_project_icon_uri():
 
 def _goodbye_to_console():
     """退出时输出 GoodBye 美化艺术字。
-    仅写原始 stdout (控制台)。绝不走 print —— 它会被重定向到前端 evaluate_js,
-    在 closing 事件 (UI 线程) 调用时会导致死锁卡死; 无控制台时静默跳过。"""
+
+    控制台那份只写原始 stdout (sys.__stdout__)。绝不走 print —— 它会被重定向到前端
+    evaluate_js, 而本函数是在 closing 事件 (UI 线程) 里调的, 推 JS 会死锁卡死; 没有
+    控制台就静默跳过。同一份艺术字另外逐行抄进滚动日志文件 (不加前缀, 保住图案排版),
+    否则 cmd 上看得见、日志里查无此事。写完立刻 flush: 紧接着就是 _terminate_now() 的
+    TerminateProcess, 不做任何清理, 留在缓冲区里的行会直接丢。"""
     try:
         from functions.base.terminal_banner import get_banner_with_random_style
         banner = get_banner_with_random_style('GoodBye')
@@ -840,6 +844,10 @@ def _goodbye_to_console():
         if out is not None:
             out.write('\n\n' + banner + '\n')
             out.flush()
+        from functions.base import log_manager
+        for line in banner.split('\n'):
+            log_manager.write_line(line)
+        log_manager.flush()
     except Exception:
         pass
 
