@@ -897,7 +897,7 @@ def _install_child_diagnostics() -> None:
 _hook_instance: AchievementHook | None = None
 
 
-def run_achievement_hook():
+def run_achievement_hook(debug = False):
     """成就监测独立进程入口。
 
     在当前进程中启动成就监测循环（阻塞），
