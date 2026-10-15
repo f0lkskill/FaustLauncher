@@ -632,6 +632,14 @@ class HeadlessDownloadGUI:
 SKIN_SETTING_KEY = "skin"
 _IMAGE_EXTS = (".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp")
 
+# 一次性下发给前端的背景池上限 (前端拉全后在本地随机轮换, 不再每换一次图走一次 js_api)
+# 上限只为兜底防内存: 皮肤塞几十张背景时不会把整池 data URI 全压在前端
+_BG_POOL_MAX = 12
+# 背景池单张的最长边与 JPEG 质量 —— 必须与 get_backgrounds() 保持一致,
+# 否则"首图"和"池子里的同一张图"看起来会不一样 (尺寸/压缩痕迹不同)
+_BG_POOL_MAX_SIDE = 1600
+_BG_POOL_JPEG_Q = 78
+
 
 def _skins_root():
     """皮肤根目录 (打包后在 _internal/web/app_skins)"""
@@ -697,6 +705,36 @@ def _file_uri(path, max_side=1600, quality=82):
             img.convert("RGB").save(buf, "JPEG", quality=quality)
             mime = "image/jpeg"
         return "data:" + mime + ";base64," + base64.b64encode(buf.getvalue()).decode("ascii")
+    except Exception:
+        return ""
+
+
+def _bg_blur_setting():
+    """当前背景高斯模糊半径 (设置读不到就按 0 处理)"""
+    try:
+        from functions.base.settings_manager import get_settings_manager
+        return float(get_settings_manager().get_setting("bg_gaussian_blur") or 0.0)
+    except Exception:
+        return 0.0
+
+
+def _bg_encode(path, blur=0.0):
+    """背景图文件 -> JPEG data URI (应用 blur)。
+
+    get_backgrounds() 与 get_background_pool() 共用这一个编码器, 保证"首屏那张"
+    与"池子里的同一张"在尺寸和压缩痕迹上完全一致 —— 否则轮换到同一张图时
+    会看出一次细微的画质跳变。失败返回空串, 调用方顺延到下一张。
+    """
+    try:
+        from PIL import Image, ImageFilter
+        img = Image.open(path).convert("RGB")
+        img.thumbnail((_BG_POOL_MAX_SIDE, _BG_POOL_MAX_SIDE), Image.Resampling.LANCZOS)
+        if blur > 0:
+            img = img.filter(ImageFilter.GaussianBlur(radius=blur))
+        buf = BytesIO()
+        img.save(buf, "JPEG", quality=_BG_POOL_JPEG_Q)
+        return "data:image/jpeg;base64," + base64.b64encode(
+            buf.getvalue()).decode("ascii")
     except Exception:
         return ""
 
@@ -1210,37 +1248,55 @@ class AppApi:
         2026-09-25 修: 以前是 sorted() 取前 4 张 —— 文件名靠后的图永远轮不到, 前端又每
         25 秒在这 4 张里换, 看着就是"轮询"。现在每次调用都从 background 目录的**全部**
         图片里随机抽 1 张 (顺带省掉 3/4 的编码开销与传输量)。
+
+        分工: 本方法只负责**首屏快速出图** (只编码 1 张)。整池之后由
+        get_background_pool() 一次性下发, 前端在本地随机轮换, 不再反复调本方法。
         """
         uris = []
         try:
             import random
-            from PIL import Image, ImageFilter
-            from functions.base.settings_manager import get_settings_manager
-            blur = 0.0
-            try:
-                blur = float(get_settings_manager().get_setting("bg_gaussian_blur") or 0.0)
-            except Exception:
-                blur = 0.0
+            blur = _bg_blur_setting()
             # 背景来源跟随当前皮肤: 皮肤提供 background 目录就整体接管, 否则用默认目录
             paths = _background_files(_active_skin_id())
             random.shuffle(paths)
             for path in paths:
                 if uris:
                     break        # 已经拿到一张 (解码失败会顺延到下一张)
-                try:
-                    img = Image.open(path).convert("RGB")
-                    img.thumbnail((1600, 1600), Image.Resampling.LANCZOS)
-                    if blur > 0:
-                        img = img.filter(ImageFilter.GaussianBlur(radius=blur))
-                    buf = BytesIO()
-                    img.save(buf, "JPEG", quality=78)
-                    uris.append("data:image/jpeg;base64," + base64.b64encode(
-                        buf.getvalue()).decode("ascii"))
-                except Exception:
-                    continue
+                u = _bg_encode(path, blur)
+                if u:
+                    uris.append(u)
         except Exception:
             pass
         return uris
+
+    def get_background_pool(self):
+        """当前背景来源的**全部**背景图 (data URI 列表), 供前端本地随机轮换。
+
+        与 get_backgrounds() 的分工:
+          · get_backgrounds()     每次只随机给 1 张 (随机发生在后端), 负责首屏快速出图
+          · get_background_pool() 一次性下发整个池子, 之后前端换图**不再走 js_api** ——
+            0 往返、换图瞬时, 且随机完全在前端发生 (不会再有"轮询"感)
+
+        代价是首次要传完整个池子, 所以限三处:
+          · 最多 _BG_POOL_MAX 张 (防皮肤塞几十张把前端内存吃满)
+          · 单张最长边 _BG_POOL_MAX_SIDE / JPEG q78, 与 get_backgrounds() 完全一致
+          · 模糊照常应用 —— 所以 bg_gaussian_blur 一变, 前端必须重新拉池子
+
+        返回 {"backgrounds": [...], "total": 池中图片总数, "truncated": 是否被上限截断}
+        """
+        out = []
+        total = 0
+        try:
+            blur = _bg_blur_setting()
+            paths = _background_files(_active_skin_id())
+            total = len(paths)
+            for path in paths[:_BG_POOL_MAX]:
+                u = _bg_encode(path, blur)
+                if u:
+                    out.append(u)
+        except Exception:
+            pass
+        return {"backgrounds": out, "total": total, "truncated": total > _BG_POOL_MAX}
 
     # ---- 皮肤 (玻璃窗) ----
     def get_skins(self):
