@@ -1259,6 +1259,15 @@ def download_and_launch(obj=None, need_run_game=False, manual=False):
 
         gui_res.root.destroy()
 
+        # 资源步骤可能刚下载完 resources/bubble_speech。首次运行时这个源目录还不存在,
+        # 上面"合并汉化文件"阶段的 transfer_bubble 只能跳过; 在这里补一次,
+        # 否则本次流程装出来的气泡美化要等下一次启动才生效。
+        try:
+            if os.path.isdir(lang_path):
+                transfer_bubble(lang_path)
+        except Exception as e:
+            print(f"重新应用有色气泡失败: {e}")
+
         _push_step('install')
 
         # 合并/安装汉化之前再查一次: 上面资源轮询可能刚结束, 不想在做破坏性写入前才开始处理中止

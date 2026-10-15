@@ -63,6 +63,13 @@ def transfer_bubble_files(config_path: str = "") -> bool:
 def main(config_path: str = ""):
     """命令行入口点"""
     print(f"[Cosmetic] 开始转移气泡文件, 目标目录: {config_path}")
+    # 首次运行时 resources/bubble_speech 还没被资源更新下载下来, "一个文件都没有"
+    # 属于正常状态而不是失败 —— 早期这里会打印"气泡文件转移失败!", 既误导用户,
+    # 又让前端流水线(按日志文本判定失败)误以为流程挂了。
+    source = _bubble_source_dir()
+    if not glob.glob(os.path.join(source, "*.json")):
+        print("[Cosmetic] 云端气泡资源尚未下载, 跳过气泡美化 (资源更新后会自动应用)")
+        return
     success = transfer_bubble_files(config_path=config_path)
 
     if success:
