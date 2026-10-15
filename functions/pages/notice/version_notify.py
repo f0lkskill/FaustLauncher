@@ -126,7 +126,10 @@ def collect_version_info(allow_refresh=False):
         entry = info.get("versions", {}).get(latest, {}) if latest else {}
         result["latest"] = latest
         result["entry"] = entry if isinstance(entry, dict) else {}
-        result["has_update"] = bool(latest and latest != current)
+        # 版本号语义比较: 只看字符串不等会把"本地版本比云端新"也当成有更新,
+        # 进而弹出更新窗口甚至强制降级 (详见 functions/base/version_compare.py)
+        from functions.base.version_compare import is_newer_version
+        result["has_update"] = bool(latest and is_newer_version(latest, current))
         remember_version_info(result)      # 留在内存: 手动打开版本窗口不再联网
     except Exception as e:
         result["error"] = str(e)

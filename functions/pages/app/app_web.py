@@ -2838,11 +2838,13 @@ if %errorlevel% equ 0 (
                 return {'current': current, 'has_update': False, 'error': '未配置版本信息'}
             info = loads(note.note_content)
             latest = (info.get('latest_release_version') or '').strip()
+            # 版本号语义比较 (字符串不等会把"本地版本比云端新"误判成需要更新)
+            from functions.base.version_compare import is_newer_version
             entry = info.get('versions', {}).get(latest, {}) if latest else {}
             return {
                 'current': current,
                 'latest': latest,
-                'has_update': bool(latest and latest != current),
+                'has_update': bool(latest and is_newer_version(latest, current)),
                 'description': entry.get('description', ''),
                 'date': entry.get('data') or entry.get('date', ''),
                 'bilibili_url': entry.get('url', ''),

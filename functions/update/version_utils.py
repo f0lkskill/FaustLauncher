@@ -5,6 +5,7 @@ from functions.base.web_config import get_webnote
 from threading import Thread
 from tkinter import messagebox
 from functions.web_update.zeroasso_download import download_and_extract_gui
+from functions.base.version_compare import is_newer_version
 
 settings_manager = get_settings_manager()
 
@@ -123,22 +124,27 @@ def check_version_update(root):
         print("云端版本信息未填写最新版本 (latest_release_version 为空), 跳过更新检查")
         return need_update, {}, current_version, None
 
+    # 版本号语义比较, 不是字符串不等 —— 否则本地自建/未发布的 V0.9.2-release 会被
+    # 云端还停在 V0.9.1-release.fix.1 的 latest_release_version 判定成"新版本",
+    # 然后强制下载安装, 把用户手上的新版本降级成旧版本。
+    latest_entry = (version_info.get('versions') or {}).get(latest_release) or {}
+    has_update = is_newer_version(latest_release, current_version)
+
     # 这次抓到的版本信息留在内存: 主页版本卡"手动打开版本窗口"直接读它, 不再联网
     try:
         from functions.pages.notice.version_notify import remember_version_info
         remember_version_info({
             "current": current_version,
             "latest": latest_release,
-            "has_update": latest_release != current_version,
-            "entry": (version_info.get('versions') or {}).get(latest_release) or {},
+            "has_update": has_update,
+            "entry": latest_entry,
             "error": None,
         })
     except Exception as _e:
         print(f"[Update] 记录内存版本信息失败: {_e}")
 
-    if latest_release != current_version:
+    if has_update:
         print(f"[Update] 检测到启动器新版本: {latest_release}，当前版本: {current_version}")
-        latest_entry = version_info['versions'][latest_release]
         latest_info = {'version_name': latest_release,
                        'description': latest_entry.get('description', ''),
                        'date': latest_entry.get('data') or latest_entry.get('date'),
@@ -147,7 +153,7 @@ def check_version_update(root):
         from functions.pages.notice.version_notify import notify_version
         if notify_version(current_version, latest_info, info='发现新版本',
                           has_new_version=True, forced=True, root=root):
-            return (need_update, version_info['versions'][latest_release],
+            return (need_update, latest_entry,
                     latest_release, current_version)
         # 旧版 TK 界面: 正式版/测试版统一询问用户, 不再自动更新
         from functions.pages.notice.version_update_window import open_version_update_window
@@ -165,6 +171,10 @@ def check_version_update(root):
                 _start_update_download(root, latest_entry, latest_release)
                 need_update = True
     else:
-        print(f"当前启动器版本 {current_version} 已是最新版本，无需更新。")
-    
-    return need_update, version_info['versions'][latest_release], latest_release, current_version
+        if latest_release == current_version:
+            print(f"当前启动器版本 {current_version} 已是最新版本，无需更新。")
+        else:
+            print(f"[Update] 云端最新版本 {latest_release} 不高于当前版本 "
+                  f"{current_version}，跳过更新检查。")
+
+    return need_update, latest_entry, latest_release, current_version
