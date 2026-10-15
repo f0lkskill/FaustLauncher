@@ -188,24 +188,24 @@ class GameLauncher:
         print("启动游戏流水线作业开始")
 
         steps = [
-            ("复制汉化文件",      "🚀", self._prepare_translation),
-            ("应用拓展汉化修改",   "🚀", self._apply_changes),
-            ("应用美化功能",      "🚀", self._apply_cosmetic_features),
-            ("复制字体文件",      "🚀", self._copy_fonts),
-            ("创建零协会配置",     "🚀", self._create_zeroasso_config),
-            ("设置用户名称",      "🚀", self._set_user_name),
-            ("触发插件启动事件",   "🚀", self._fire_addon_events),
-            ("启动游戏进程",      "🚀", self._launch_game_process),
+            ("复制汉化文件",      "CopyTranslation", "🚀", self._prepare_translation),
+            ("应用拓展汉化修改",   "ApplyAddonPatch", "🚀", self._apply_changes),
+            ("应用美化功能",      "ApplyCosmetic",   "🚀", self._apply_cosmetic_features),
+            ("复制字体文件",      "CopyFonts",       "🚀", self._copy_fonts),
+            ("创建零协会配置",     "ZeroAssoConfig",  "🚀", self._create_zeroasso_config),
+            ("设置用户名称",      "SetUserName",     "🚀", self._set_user_name),
+            ("触发插件启动事件",   "AddonEvents",     "🚀", self._fire_addon_events),
+            ("启动游戏进程",      "LaunchGame",      "🚀", self._launch_game_process),
         ]
 
-        for name, icon, step in steps:
+        for name, label, icon, step in steps:
             self._progress(f"正在{name}...", icon)
-            print(f"[{name}] 开始...")
+            print(f"[{label}] 开始...")
             try:
                 step()
-                print(f"[{name}] 完成")
+                print(f"[{label}] 完成")
             except Exception as e:
-                print(f"[{name}] 失败: {e}")
+                print(f"[{label}] 失败: {e}")
                 traceback.print_exc()
                 # 汉化/字体失败不阻断启动游戏 (如汉化包未下载), 仅提示后继续后续步骤
                 if name in ("复制汉化文件", "复制字体文件"):

@@ -111,11 +111,17 @@ def strip_ansi(text: str) -> str:
 # --------------------------------------------------------------------------- 来源与区域
 
 def _area_of(filename: str) -> str:
-    """``functions/hook/updater.py`` -> ``hook``；顶层脚本则用文件名主干。"""
+    """``functions/hook/updater.py`` -> ``hook``；顶层脚本则用文件名主干。
+
+    ``addons/<插件名>/scr.py`` 例外地取目录名当区域：插件脚本**一律**叫 scr.py，
+    只看文件名的话所有插件都挤在同一个 ``scr`` 区域里，出了问题分不清是哪家在说话。
+    """
     parts = re.split(r"[\\/]", os.path.abspath(filename))
-    if "functions" in parts:
-        idx = len(parts) - 1 - parts[::-1].index("functions")
-        if idx + 2 < len(parts):                          # functions/<区域>/.../x.py
+    for marker in ("functions", "addons"):
+        if marker not in parts:
+            continue
+        idx = len(parts) - 1 - parts[::-1].index(marker)
+        if idx + 2 < len(parts):                          # <marker>/<区域>/.../x.py
             return parts[idx + 1]
     return os.path.splitext(parts[-1])[0]
 
@@ -137,11 +143,29 @@ def resolve_site() -> tuple[str, int, str]:
     return "?", 0, "?"
 
 
+# “异常 0 个”“跳过 0 次”这类统计只是在念计数，不是在报错。命中词后面紧跟零值时
+# 就不算数，否则每一行统计都会被涂成 ERROR（用户报过这个）。
+_ZERO_STAT_RE = re.compile(r"\s*[:：]?\s*0(?:\s*[个次条项分%])?")
+
+
+def _mentions(message: str, word: str) -> bool:
+    """*message* 里是否**真的**用到了 *word*（零值统计不算）。"""
+    start = 0
+    while True:
+        idx = message.find(word, start)
+        if idx < 0:
+            return False
+        if not _ZERO_STAT_RE.match(message, idx + len(word)):
+            return True
+        start = idx + len(word)
+
+
 def _level_of(message: str) -> str:
     """按正文关键字推断级别，未命中即 INFO。"""
     lowered = message.lower()
     for level, words in LEVEL_RULES:
-        if any(word in message or word in lowered for word in words):
+        if any(_mentions(message, word) or _mentions(lowered, word)
+               for word in words):
             return level
     return "INFO"
 
