@@ -965,6 +965,14 @@ class GameLauncher:
             #     ``[BattleWatch] DLL: ...`` 是同一件事，前者丢弃（见 _pump_hook_child_log）。
             child_env["PYTHONIOENCODING"] = "utf-8"
             child_env["PYTHONUTF8"] = "1"
+            # 子进程 stdout 是**管道**，Python 会自动切成 8 KB 块缓冲：几十处裸 print
+            # （memory_reader / achievements / battle_watch，都没 flush）会在缓冲区里积压，
+            # 直到写满或进程退出才一次性吐出。父进程 _pump_hook_child_log 是按"读到的时刻"
+            # 打时间戳的，于是这些陈旧输出全堆在日志末尾、时间戳=退出时刻 —— 现象就是
+            # 游戏都结束了才刷出"LimbusCompany.exe 启动，PID …""enkephalin 指针链来源 …"，
+            # 看起来像退出后还在跑监测（实际是 5 分钟前的启动期输出）。且崩溃时这半屏诊断
+            # 直接丢光。强制不缓冲：每行即时落到父进程的 pump。
+            child_env["PYTHONUNBUFFERED"] = "1"
             try:
                 proc = subprocess.Popen(
                     cmd,

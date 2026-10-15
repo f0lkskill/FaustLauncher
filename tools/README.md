@@ -47,6 +47,7 @@
 | 工具 | 用法 | 说明 |
 |---|---|---|
 | `webnote_diag.py` | `python tools/diag/webnote_diag.py` | 云端访问自检：逐个源打印解析 / 连接 / 握手 / 响应状态与耗时 / 缓存命中情况。用户反馈"浏览器能开、启动器云端全失败"时用它定位卡在哪一环 |
+| `enkephalin_probe.py` | `python tools/diag/enkephalin_probe.py` | 脑啡肽内存读取自检：找进程 / `OpenProcess` 权限 / `GameAssembly.dll` 基址与大小 / 逐级指针 / 最终值，逐步打印。**不依赖启动器**，游戏跑着就能单独测。`--watch` 连续读、`--raw` 只出数字、`--json` 机器可读；退出码 0 成功 / 1 游戏没开 / 2 权限被拒 / 3 找不到模块 / 4 指针链断 |
 
 ## run/
 
