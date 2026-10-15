@@ -219,10 +219,35 @@
     return 0;
   }
 
+  // 日志格式: "2026-10-15 14:04:17,615 [INFO] xxx" (无时间戳的行原样显示)
+  var TS_RE = /^(\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}[,.]\d{3})\s*(?:\[([A-Za-z]+)\])?\s*([\s\S]*)$/;
+
   function makeLogLine(item, animate) {
     var line = document.createElement("div");
     line.className = "ml-line " + (item.level || "info") + (animate ? " is-new" : "");
-    line.textContent = item.text;
+
+    var text = item.text || "";
+    var m = TS_RE.exec(text);
+    var ts = m ? m[1].replace("T", " ").replace(".", ",") : "";
+    var lv = m ? (m[2] || "") : "";
+    var msg = m ? (m[3] || "") : text;
+
+    if (ts) {
+      var tsEl = document.createElement("span");
+      tsEl.className = "ml-ts";
+      tsEl.textContent = ts;
+      line.appendChild(tsEl);
+    }
+    if (lv) {
+      var lvEl = document.createElement("span");
+      lvEl.className = "ml-lv";
+      lvEl.textContent = lv;
+      line.appendChild(lvEl);
+    }
+    var msgEl = document.createElement("span");
+    msgEl.className = "ml-msg";
+    msgEl.textContent = msg;
+    line.appendChild(msgEl);
     return line;
   }
 
@@ -233,6 +258,12 @@
     if (ui.logCount.textContent !== String(lines.length)) {
       ui.logCount.textContent = String(lines.length);
     }
+
+    // 必须在改动 DOM **之前**测量: 追加日志后 scrollHeight 已经变大,
+    // 那时再判断会把"本来贴着底部"误判成"用户上滚了"(旧版日志不自动滚的根因)。
+    var hadContent = cache.logs.length > 0;
+    var stick = !hadContent ||
+      (box.scrollHeight - box.scrollTop - box.clientHeight < 32);
 
     var k = overlap(cache.logs, lines);
     var removeCount = cache.logs.length - k;
@@ -245,9 +276,7 @@
       if (box.firstChild) box.removeChild(box.firstChild);
     }
 
-    if (removeCount > 0 && addItems.length === 0) {
-      // 纯滚动: 已移除头部, 结束
-    } else if (addItems.length) {
+    if (addItems.length) {
       var frag = document.createDocumentFragment();
       var animateFrom = addItems.length > 12 ? addItems.length - 12 : 0;
       for (i = 0; i < addItems.length; i++) {
@@ -256,10 +285,12 @@
       box.appendChild(frag);
     }
 
-    // 保持“贴着底部”: 只有当用户本来就在底部附近时才自动滚动
-    var stick = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
     cache.logs = lines;
-    if (stick) box.scrollTop = box.scrollHeight;
+    if (stick) {
+      box.scrollTop = box.scrollHeight;
+      // 首帧/内容不足一屏时, 布局尚未稳定, 下一帧再贴一次底
+      requestAnimationFrame(function () { box.scrollTop = box.scrollHeight; });
+    }
   }
 
   // ============================================================

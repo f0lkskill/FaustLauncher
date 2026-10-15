@@ -38,7 +38,13 @@ if _ROOT not in sys.path:
 _SPEC_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "FaustLauncher.spec")
 
 from functions.base.web_config import get_webnote  # noqa: E402
-from functions.base.skin_theme import SkinBridge, apply_theme_to_window, window_background  # noqa: E402
+from functions.base.skin_theme import window_background  # noqa: E402
+from functions.base.window_chrome import (  # noqa: E402
+    WindowChromeBridge,
+    apply_window_chrome,
+    child_window_size,
+    window_icon_path,
+)
 
 # 与 build_ui/style.css 里的配色保持一致的语义（前端按 level 着色）
 LEVEL_OK, LEVEL_BAD, LEVEL_WARN = "ok", "bad", "warn"
@@ -127,7 +133,7 @@ def upload_version_info(version, download_url: str = "", log=None) -> bool:
 
 
 # --------------------------------------------------------------------------- JS API
-class BuildApi(SkinBridge):
+class BuildApi(WindowChromeBridge):
     """暴露给前端（``pywebview`` 的 js_api）。所有耗时活儿都在后台线程里跑。"""
 
     def __init__(self, version_info: str):
@@ -572,15 +578,20 @@ def main() -> int:
 
     api = BuildApi(version) # type: ignore
     index_html = os.path.join(_ROOT, "web", "build_ui", "index.html")
+    win_w, win_h = child_window_size(780, 800)     # 内容区 780x800 + 40px 自绘标题栏
+    min_w, min_h = child_window_size(680, 620)
     win = webview.create_window(
         f"FaustLauncher 构建工具 — v{version}",
         index_html, js_api=api, # type: ignore
-        width=780, height=800, min_size=(680, 620),
+        width=win_w, height=win_h, min_size=(min_w, min_h),
         background_color=window_background("#14161c"),
+        frameless=True,    # 去掉系统标题栏, 改用与主界面同款的自绘标题栏
+        easy_drag=False,   # 只允许拖标题栏
+        shadow=False,
     )
     api._window = win # type: ignore
-    apply_theme_to_window(win)   # 注入共享主题层 + 当前皮肤
-    webview.start()
+    apply_window_chrome(win)   # 共享主题层 + 当前皮肤 + 统一标题栏
+    webview.start(icon=window_icon_path())
     return 0
 
 

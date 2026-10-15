@@ -16,7 +16,13 @@ else:
 if _PROJECT_ROOT not in sys.path:
     sys.path.insert(0, _PROJECT_ROOT)
 
-from functions.base.skin_theme import SkinBridge, apply_theme_to_window, window_background  # noqa: E402
+from functions.base.skin_theme import window_background  # noqa: E402
+from functions.base.window_chrome import (  # noqa: E402
+    WindowChromeBridge,
+    apply_window_chrome,
+    child_window_size,
+    window_icon_path,
+)
 
 
 def _center_xy(width, height):
@@ -279,7 +285,7 @@ class NyosPrescript:
         return text
 
 
-class NyosPrescriptApi(SkinBridge):
+class NyosPrescriptApi(WindowChromeBridge):
     """
     pywebview js_api
     供前端调用的指令生成接口
@@ -359,7 +365,8 @@ def run_prescript_window(debug: bool = False):
         raise SystemExit(1)
 
     try:
-        width, height = 640, 540
+        width, height = child_window_size(640, 540)   # 内容区 640x540 + 40px 自绘标题栏
+        min_w, min_h = child_window_size(480, 400)
         x, y = _center_xy(width, height)
         window = webview.create_window(
             "今日指令",
@@ -369,11 +376,14 @@ def run_prescript_window(debug: bool = False):
             height=height,
             x=x,
             y=y,
-            min_size=(480, 400),
+            min_size=(min_w, min_h),
             background_color=window_background("#060f22"),
+            frameless=True,    # 去掉系统标题栏, 改用与主界面同款的自绘标题栏
+            easy_drag=False,   # 只允许拖标题栏
+            shadow=False,
         )
-        apply_theme_to_window(window)   # 注入共享主题层 + 当前皮肤
-        webview.start(debug=debug)
+        apply_window_chrome(window)   # 共享主题层 + 当前皮肤 + 统一标题栏
+        webview.start(debug=debug, icon=window_icon_path())
     except BaseException as e:
         import traceback
         try:

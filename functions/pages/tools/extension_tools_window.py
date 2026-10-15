@@ -37,7 +37,13 @@ from functions.tools.post_extension_tools import (
 )
 
 from functions.base.common.path_utils import get_web_root
-from functions.base.skin_theme import SkinBridge, apply_theme_to_window, window_background
+from functions.base.skin_theme import window_background
+from functions.base.window_chrome import (
+    WindowChromeBridge,
+    apply_window_chrome,
+    child_window_size,
+    window_icon_path,
+)
 
 HTML_PATH = get_web_root("extension_tools", "index.html")
 
@@ -68,7 +74,7 @@ def _notify(func_name, arg):
 # pywebview js_api
 # ============================================================
 
-class ExtensionToolsApi(SkinBridge):
+class ExtensionToolsApi(WindowChromeBridge):
     """pywebview js_api: 供前端调用包装/生成/发布等后端操作 (含皮肤桥接)"""
 
     # ---- 通用 ----
@@ -348,24 +354,29 @@ def run_extension_tools_window(debug: bool = False):
         _error_dialog("扩展工具", f"找不到页面文件:\n{HTML_PATH}")
         raise SystemExit(1)
 
+    win_w, win_h = child_window_size(820, 660)     # 内容区 820x660 + 40px 自绘标题栏
+    min_w, min_h = child_window_size(680, 520)
     window_kwargs = dict(
         title="扩展工具",
         url=HTML_PATH,
         js_api=ExtensionToolsApi(),
-        width=820,
-        height=660,
-        min_size=(680, 520),
+        width=win_w,
+        height=win_h,
+        min_size=(min_w, min_h),
         background_color=window_background("#060f22"),
+        frameless=True,    # 去掉系统标题栏, 改用与主界面同款的自绘标题栏
+        easy_drag=False,   # 只允许拖标题栏
+        shadow=False,
     )
-    x, y = _center_xy(820, 660)
+    x, y = _center_xy(win_w, win_h)
     if x is not None and y is not None:
         window_kwargs["x"] = x
         window_kwargs["y"] = y
 
     try:
         _win = webview.create_window(**window_kwargs)
-        apply_theme_to_window(_win)   # 注入共享主题层 + 当前皮肤
-        webview.start(debug=debug)
+        apply_window_chrome(_win)   # 共享主题层 + 当前皮肤 + 统一标题栏
+        webview.start(debug=debug, icon=window_icon_path())
     except BaseException as e:
         import traceback
         _write_error_log(traceback.format_exc())

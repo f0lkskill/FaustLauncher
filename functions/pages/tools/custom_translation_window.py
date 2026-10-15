@@ -27,7 +27,13 @@ if _PROJECT_ROOT not in sys.path:
     sys.path.insert(0, _PROJECT_ROOT)
 
 from functions.base.common.path_utils import get_web_root
-from functions.base.skin_theme import SkinBridge, apply_theme_to_window, window_background
+from functions.base.skin_theme import window_background
+from functions.base.window_chrome import (
+    WindowChromeBridge,
+    apply_window_chrome,
+    child_window_size,
+    window_icon_path,
+)
 
 HTML_PATH = get_web_root("custom_translation", "index.html")
 
@@ -1392,7 +1398,7 @@ class TranslationEngine:
 # pywebview js_api
 # ============================================================
 
-class CustomTranslationApi(SkinBridge):
+class CustomTranslationApi(WindowChromeBridge):
     """pywebview js_api: 前端 ↔ TranslationEngine 桥接 (含皮肤桥接)"""
 
     def __init__(self):
@@ -1591,15 +1597,19 @@ def run_custom_translation_window(debug: bool = False):
         _error_dialog("自定义汉化", f"找不到页面文件:\n{HTML_PATH}")
         raise SystemExit(1)
 
-    width, height = 1280, 800
+    width, height = child_window_size(1280, 800)   # 内容区 1280x800 + 40px 自绘标题栏
+    min_w, min_h = child_window_size(960, 640)
     window_kwargs = dict(
         title="自定义汉化工具",
         url=HTML_PATH,
         js_api=CustomTranslationApi(),
         width=width,
         height=height,
-        min_size=(960, 640),
+        min_size=(min_w, min_h),
         background_color=window_background("#060f22"),
+        frameless=True,    # 去掉系统标题栏, 改用与主界面同款的自绘标题栏
+        easy_drag=False,   # 只允许拖标题栏
+        shadow=False,
     )
     x, y = _center_xy(width, height)
     if x is not None and y is not None:
@@ -1608,8 +1618,8 @@ def run_custom_translation_window(debug: bool = False):
 
     try:
         _win = webview.create_window(**window_kwargs)
-        apply_theme_to_window(_win)   # 注入共享主题层 + 当前皮肤
-        webview.start(debug=debug)
+        apply_window_chrome(_win)   # 共享主题层 + 当前皮肤 + 统一标题栏
+        webview.start(debug=debug, icon=window_icon_path())
     except BaseException as e:
         import traceback
         _write_error_log(traceback.format_exc())

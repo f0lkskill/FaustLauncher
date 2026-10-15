@@ -85,6 +85,39 @@ def skin_profile_file(skin_id) -> str:
     return ""
 
 
+# settings.json 变化检测: 子窗口是独立进程, SettingsManager 在 import 时
+# 就把配置读进内存了; 主程序里换皮肤只改磁盘文件, 所以按 mtime 判断重读。
+_SETTINGS_STATE = {"path": "", "mtime": -1.0}
+
+
+def refresh_settings() -> bool:
+    """settings.json 在磁盘上变过就重载设置单例 (变了返回 True)
+
+    文件正在被写入 / 解析失败时保持旧值, 下一个轮询周期再试, 不会把
+    半截 JSON 当成新配置。
+    """
+    try:
+        from functions.base.settings_manager import get_settings_manager
+        mgr = get_settings_manager()
+        path = os.path.abspath(mgr.config_path)
+        mtime = os.path.getmtime(path)
+    except Exception:
+        return False
+    if _SETTINGS_STATE["path"] == path and _SETTINGS_STATE["mtime"] == mtime:
+        return False
+    try:
+        from functions.base.common.json_io import read_json
+        fresh = read_json(path)
+    except Exception:
+        return False
+    if not isinstance(fresh, dict) or not fresh:
+        return False
+    mgr.settings = fresh
+    _SETTINGS_STATE["path"] = path
+    _SETTINGS_STATE["mtime"] = mtime
+    return True
+
+
 def active_skin_id() -> str:
     """当前启用的皮肤 id (空串 = 默认皮肤)
 
@@ -92,6 +125,7 @@ def active_skin_id() -> str:
     直接生效会让解锁系统形同虚设。未解锁时回退默认皮肤, 但不改写用户设置
     (解锁后会自动恢复生效)。
     """
+    refresh_settings()   # 主程序刚换过皮肤时, 本进程也能立刻跟上 (子窗口热更新)
     try:
         from functions.base.settings_manager import get_settings_manager
         sid = str(get_settings_manager().get_setting(SKIN_SETTING_KEY) or "").strip()

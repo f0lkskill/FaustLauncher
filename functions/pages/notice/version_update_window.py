@@ -24,7 +24,13 @@ if _PROJECT_ROOT not in sys.path:
     sys.path.insert(0, _PROJECT_ROOT)
 
 from functions.base.common.path_utils import get_web_root
-from functions.base.skin_theme import SkinBridge, apply_theme_to_window, window_background
+from functions.base.skin_theme import window_background
+from functions.base.window_chrome import (
+    WindowChromeBridge,
+    apply_window_chrome,
+    child_window_size,
+    window_icon_path,
+)
 
 RESULT_FILE = os.path.join(_PROJECT_ROOT, "cache", "update_choice.json")
 HTML_PATH = get_web_root("version_update", "index.html")
@@ -441,7 +447,7 @@ def md_to_html(md_text):
 # pywebview js_api 与窗口
 # ============================================================
 
-class VersionUpdateApi(SkinBridge):
+class VersionUpdateApi(WindowChromeBridge):
     """pywebview js_api: 供前端获取版本数据与回传用户选择 (含皮肤桥接)"""
 
     def __init__(self, payload):
@@ -539,25 +545,30 @@ def run_update_window(payload_b64=None, debug: bool = False):
         except Exception as e:
             print(f"[Update] 解析参数失败: {e}")
 
+    win_w, win_h = child_window_size(560, 640)     # 内容区 560x640 + 40px 自绘标题栏
+    min_w, min_h = child_window_size(440, 460)
     window_kwargs = dict(
         title="版本更新",
         url=HTML_PATH,
         js_api=VersionUpdateApi(payload),
-        width=560,
-        height=640,
-        min_size=(440, 460),
+        width=win_w,
+        height=win_h,
+        min_size=(min_w, min_h),
         background_color=window_background("#060f22"),
         on_top=True,   # 系统级置顶 (WS_EX_TOPMOST), 不被其他窗口遮挡
+        frameless=True,    # 去掉系统标题栏, 改用与主界面同款的自绘标题栏
+        easy_drag=False,   # 只允许拖标题栏
+        shadow=False,
     )
-    x, y = _center_xy(560, 640)
+    x, y = _center_xy(win_w, win_h)
     if x is not None and y is not None:
         window_kwargs["x"] = x
         window_kwargs["y"] = y
 
     try:
         _win = webview.create_window(**window_kwargs) # type: ignore
-        apply_theme_to_window(_win)   # 注入共享主题层 + 当前皮肤
-        webview.start(debug=debug)
+        apply_window_chrome(_win)   # 共享主题层 + 当前皮肤 + 统一标题栏
+        webview.start(debug=debug, icon=window_icon_path())
     except BaseException as e:
         import traceback
         try:

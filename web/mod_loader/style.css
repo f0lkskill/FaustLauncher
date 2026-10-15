@@ -28,19 +28,22 @@ body {
   user-select: none;
 }
 
+/* 尺寸对齐旧版 tkinter 窗口 (440x540 内容区):
+   高度用 100% (而不是 100vh), 这样后端注入的自定义标题栏占用 html padding 后,
+   内容区仍然正好填满可视区, 不会被挤出一条 40px 的滚动。 */
 .ml-app {
-  height: 100vh;
+  height: 100%;
   display: grid;
   grid-template-rows: auto auto auto auto minmax(0, 1fr) auto;
-  gap: 10px;
-  padding: 14px 16px 12px;
+  gap: 8px;
+  padding: 12px 14px 10px;
 }
 
 /* ---------------- 头部 ---------------- */
 .ml-head { display: flex; align-items: center; gap: 12px; }
 
 .ml-logo {
-  width: 42px; height: 42px; flex: 0 0 auto; border-radius: 12px;
+  width: 38px; height: 38px; flex: 0 0 auto; border-radius: 11px;
   display: flex; align-items: center; justify-content: center;
   background: rgba(var(--tint-rgb, 255, 255, 255), 0.06);
   border: 1px solid rgba(var(--tint-rgb, 255, 255, 255), 0.1);
@@ -51,7 +54,7 @@ body {
 .ml-logo.has-icon { background: transparent; border-color: transparent; }
 
 .ml-head-main { flex: 1 1 auto; min-width: 0; }
-.ml-title { font-size: 16px; font-weight: 600; letter-spacing: .3px; }
+.ml-title { font-size: 15px; font-weight: 600; letter-spacing: .3px; }
 .ml-sub {
   font-size: 12px; color: var(--text-3, #7a8496); margin-top: 3px;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -97,8 +100,9 @@ body {
 }
 .ml-pct { font-variant-numeric: tabular-nums; color: var(--text-2, #b0b7c3); }
 
-/* ---------------- 阶段 ---------------- */
-.ml-steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+/* ---------------- 阶段 ----------------
+   440px 宽下 3 列会把阶段名截断成 "备份并修补…", 改成 2 列。 */
+.ml-steps { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; }
 
 .ml-step {
   display: flex; align-items: center; gap: 8px;
@@ -144,7 +148,7 @@ body {
   border: 1px solid rgba(var(--tint-rgb, 255, 255, 255), 0.07);
   overflow: hidden;
 }
-.ml-panel-threads { max-height: 104px; }
+.ml-panel-threads { max-height: 92px; }
 .ml-panel-log { min-height: 0; }
 
 .ml-panel-head {
@@ -185,15 +189,41 @@ body {
 .ml-log {
   padding: 6px 9px;
   font-family: var(--mono, "Cascadia Code", "Consolas", monospace);
-  font-size: 11.5px; line-height: 1.65;
+  font-size: 11.5px; line-height: 1.6;
   color: var(--text-2, #b0b7c3);
+  overflow-anchor: none;      /* 自动贴底由 JS 控制, 不用浏览器锚定 */
 }
-.ml-line { white-space: pre-wrap; word-break: break-all; }
+/* 日志行: 时间戳 / 级别标签 / 正文 三段, 时间戳按级别着色 (时间轴着色) */
+.ml-line {
+  display: flex; gap: 6px; align-items: baseline;
+  white-space: pre-wrap; word-break: break-all;
+}
 .ml-line.is-new { animation: ml-fade-in .3s ease both; }
+.ml-line .ml-ts {
+  flex: 0 0 auto;
+  color: var(--text-3, #7a8496);
+  font-variant-numeric: tabular-nums;
+  opacity: .78;
+  transition: color .3s ease;
+}
+.ml-line .ml-lv {
+  flex: 0 0 auto;
+  min-width: 44px;
+  font-weight: 600; font-size: 10.5px; letter-spacing: .2px;
+}
+.ml-line .ml-msg { flex: 1 1 auto; min-width: 0; }
+
 .ml-line.info    { color: var(--text-2, #b0b7c3); }
+.ml-line.info    .ml-lv { color: var(--text-3, #7a8496); }
 .ml-line.success { color: var(--success, #2ea043); }
+.ml-line.success .ml-ts { color: var(--success, #2ea043); opacity: .85; }
+.ml-line.success .ml-lv { color: var(--success, #2ea043); }
 .ml-line.error   { color: var(--danger, #ef4444); }
+.ml-line.error   .ml-ts { color: var(--danger, #ef4444); opacity: .85; }
+.ml-line.error   .ml-lv { color: var(--danger, #ef4444); }
 .ml-line.warning { color: var(--warn, #f59e0b); }
+.ml-line.warning .ml-ts { color: var(--warn, #f59e0b); opacity: .85; }
+.ml-line.warning .ml-lv { color: var(--warn, #f59e0b); }
 
 @keyframes ml-fade-in { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
 

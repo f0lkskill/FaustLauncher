@@ -1,0 +1,69 @@
+/* ============================================================
+   子窗口统一标题栏 (web/shared/chrome.css)
+
+   —— 与主界面 web/app/css/style.css 里的 #titlebar **同款**:
+      同样的高度 / 渐变 / 毛玻璃 / 按钮尺寸, 由
+      functions/base/window_chrome.py 注入到每个子窗口
+      (子窗口自身是 frameless, 系统标题栏已移除)。
+
+   颜色全部写成 var(--x, 兜底值): 共享主题层 web/shared/theme.css
+   (以及当前皮肤) 注入后自动跟随主程序外观, 注入失败也不会看不见。
+   ============================================================ */
+
+#fl-titlebar {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 9998;
+  height: var(--titlebar-h, 40px);
+  display: flex; align-items: center; justify-content: space-between;
+  background: linear-gradient(180deg,
+    var(--titlebar-from, rgba(38, 58, 99, .927)),
+    var(--titlebar-to, rgba(24, 38, 70, .867)));
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border-bottom: 1px solid var(--titlebar-border, rgba(var(--accent-rgb, 55, 148, 255), .2));
+  -webkit-user-select: none; user-select: none;
+  -webkit-app-region: no-drag;
+  cursor: default;
+}
+
+#fl-titlebar .tb-drag {
+  display: flex; align-items: center; gap: 8px;
+  padding: 0 12px; height: 100%; flex: 1; min-width: 0;
+  cursor: default; -webkit-app-region: no-drag;
+}
+#fl-titlebar .tb-icon {
+  width: 20px; height: 20px; flex: 0 0 auto;
+  object-fit: contain; border-radius: 5px;
+}
+#fl-titlebar .tb-icon[hidden] { display: none; }
+#fl-titlebar .tb-title {
+  font-size: 13px; font-weight: 600; letter-spacing: .3px;
+  color: var(--text-2, #b0b7c3);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+#fl-titlebar .tb-actions { display: flex; height: 100%; flex: 0 0 auto; }
+#fl-titlebar .tb-btn {
+  width: 46px; height: 100%; border: none; background: transparent;
+  color: var(--text-2, #b0b7c3); font-size: 14px; cursor: pointer; outline: none;
+  appearance: none; -webkit-appearance: none; box-shadow: none;
+  -webkit-app-region: no-drag;
+  display: inline-flex; align-items: center; justify-content: center;
+  transition: background-color .15s ease, color .15s ease;
+  font-family: inherit;
+}
+#fl-titlebar .tb-btn:focus,
+#fl-titlebar .tb-btn:focus-visible,
+#fl-titlebar .tb-btn:active { outline: none; border: none; box-shadow: none; }
+#fl-titlebar .tb-btn:hover { background: rgba(var(--tint-rgb, 255, 255, 255), .08); color: var(--text, #e8ecf4); }
+#fl-titlebar .tb-close:hover { background: #e81123; color: #fff; }
+
+/* 给标题栏让出高度: 加在 <html> 上而不是 <body> 上, 这样页面里
+   height:100% 的根容器会自动算成「可视区 - 标题栏」, 不会溢出。
+   (页面里若用了 100vh 的根容器, 需要改成 100% —— 见各页注释。) */
+html.fl-chrome {
+  padding-top: var(--titlebar-h, 40px);
+  box-sizing: border-box;
+}
+html.fl-chrome,
+html.fl-chrome body { height: 100%; }
+html.fl-chrome body { margin: 0; }

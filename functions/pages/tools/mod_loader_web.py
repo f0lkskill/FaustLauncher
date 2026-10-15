@@ -24,14 +24,22 @@ import os
 import time
 
 from functions.base.common.path_utils import get_mod_root_dir, get_web_root
-from functions.base.skin_theme import SkinBridge, apply_theme_to_window, window_background
+from functions.base.skin_theme import window_background
+from functions.base.window_chrome import (
+    WindowChromeBridge,
+    apply_window_chrome,
+    child_window_size,
+    titlebar_icon_path,
+    window_icon_path,
+)
 
 # ---- 文件 ----
 PROGRESS_FILE = os.path.join(get_mod_root_dir(create=False), "loader_progress.txt")
 THREADS_FILE = os.path.join(get_mod_root_dir(create=False), "loader_threads.txt")
 LOG_FILE = os.path.join(get_mod_root_dir(create=False), "log.txt")
 
-ICON_FILE = get_web_root("app", "assets", "icon", "icon.png")
+# 标题图标: Mod 加载器 = 李箱 (素材, 取加载器自带的 _internal/assets/icon.png)
+ICON_FILE = titlebar_icon_path("yisang")
 
 TOTAL_STAGES = 6
 # 阶段标题: 与 resources/mod_loader/_internal 里的 progress.stage(n, ...) 对应。
@@ -165,7 +173,7 @@ def _icon_data_uri():
 # ============================================================
 # js_api
 # ============================================================
-class ModLoaderApi(SkinBridge):
+class ModLoaderApi(WindowChromeBridge):
     """前端唯一的后端接口: 轮询 get_state() 拿全部状态"""
 
     def __init__(self, loader_pid=0):
@@ -294,14 +302,21 @@ def run_mod_loader_web(loader_pid=0, debug=False):
         return False
 
     api = ModLoaderApi(loader_pid)
+    # 内容区 440x540 (与旧版 tkinter 窗口一致) + 40px 自绘标题栏
+    win_w, win_h = child_window_size(440, 540)
+    min_w, min_h = child_window_size(440, 480)
     try:
         window = webview.create_window(
             "Mod 加载器",
             html,
             js_api=api,
-            width=660,
-            height=540,
-            min_size=(560, 440),
+            width=win_w,
+            height=win_h,
+            min_size=(min_w, min_h),
+            resizable=False,
+            frameless=True,       # 去掉系统标题栏, 用与主界面同款的自绘标题栏
+            easy_drag=False,      # 只允许拖标题栏 (关掉整窗拖动)
+            shadow=False,
             background_color=window_background("#0b0e14"),
             on_top=True,
             hidden=True,
@@ -311,9 +326,11 @@ def run_mod_loader_web(loader_pid=0, debug=False):
         return False
 
     api.attach(window)
-    apply_theme_to_window(window, show_when_ready=True, fallback_ms=1500)
+    # 共享主题层 + 当前皮肤 + 统一标题栏 (李箱图标)
+    apply_window_chrome(window, title="Mod 加载器", kind="yisang",
+                        show_when_ready=True, fallback_ms=1500)
     try:
-        webview.start(debug=debug)
+        webview.start(debug=debug, icon=window_icon_path("yisang"))
     except Exception as e:
         print(f"[Mod加载器] pywebview 启动失败: {e}")
         return False
