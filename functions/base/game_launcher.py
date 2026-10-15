@@ -565,9 +565,7 @@ class GameLauncher:
                 print(f"[TextPatch] {kind}/{res_dir} 已禁用 -> 还原它之前改过的 {n} 个文本文件")
             elif not has_snapshot and self._list_changes_files(res_path):
                 # 修复前就应用过 (没有快照可还原): 明确告诉用户残留怎么清
-                print(f"[TextPatch] 提示: {kind}/{res_dir} 已禁用且没有改动快照, 无法自动还原; "
-                      f"若游戏里还能看到它的文本 (早期应用留下的), "
-                      f"可在资源管理里对相关汉化插件点一次「重装」恢复原始文本")
+                print(f"[TextPatch] {kind}/{res_dir} 已禁用且没有改动快照。")
 
         # ---- 3) 再应用已启用资源 (lang 的自定义翻译补丁放最后) ----
         dirs = [os.path.join(kind, res_dir) for kind, res_dir in apply_jobs]
