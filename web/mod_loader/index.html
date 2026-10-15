@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mod 加载器</title>
+<!-- 只引自己的布局样式; 设计令牌 / 皮肤 (web/shared/theme.css + app_skins)
+     由后端 functions.base.skin_theme.apply_theme_to_window() 注入到 <head>。
+     style.css 里所有颜色都写成 var(--x, 兜底值), 所以即使注入失败也不会白屏。 -->
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="ml-app">
+
+  <header class="ml-head">
+    <div class="ml-logo"><img id="ml-icon" alt=""></div>
+    <div class="ml-head-main">
+      <div class="ml-title" id="ml-title">正在加载模组</div>
+      <div class="ml-sub" id="ml-sub">准备中…</div>
+    </div>
+    <div class="ml-chip" id="ml-chip">加载中</div>
+  </header>
+
+  <section class="ml-bar-wrap">
+    <div class="ml-bar" id="ml-bar-track"><div class="ml-bar-fill" id="ml-bar"></div></div>
+    <div class="ml-bar-meta">
+      <span id="ml-stage-label">阶段 1 / 6</span>
+      <span class="ml-pct" id="ml-pct">0%</span>
+    </div>
+  </section>
+
+  <section class="ml-steps" id="ml-steps"></section>
+
+  <section class="ml-panel ml-panel-threads">
+    <div class="ml-panel-head">
+      <span>加载线程</span>
+      <span class="ml-badge" id="ml-thread-count">0</span>
+    </div>
+    <div class="ml-thread-list" id="ml-threads">
+      <div class="ml-empty">暂无活跃线程</div>
+    </div>
+  </section>
+
+  <section class="ml-panel ml-panel-log">
+    <div class="ml-panel-head">
+      <span>日志</span>
+      <span class="ml-badge" id="ml-log-count">0</span>
+    </div>
+    <div class="ml-log" id="ml-log"></div>
+  </section>
+
+  <footer class="ml-foot">
+    <span class="ml-foot-status" id="ml-foot-status">已运行 0.0s</span>
+    <div class="ml-foot-actions">
+      <span class="ml-foot-hint" id="ml-foot-hint"></span>
+      <button class="ml-btn" id="ml-close" hidden>关闭</button>
+    </div>
+  </footer>
+
+</div>
+<script src="app.js"></script>
+</body>
+</html>

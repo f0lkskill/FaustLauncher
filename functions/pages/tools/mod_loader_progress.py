@@ -501,7 +501,17 @@ def _set_window_icon(root):
 
 
 def run_mod_loader_progress(loader_pid=0, debug=False):
-    """子进程入口: 运行进度提示窗口"""
+    """子进程入口: 运行进度提示窗口
+
+    优先使用 Web 版 (funcions/pages/tools/mod_loader_web.py, 界面在 web/mod_loader/,
+    与其它子窗口共用主题层与皮肤), pywebview 不可用时回退下面的 tkinter 版。
+    """
+    try:
+        from functions.pages.tools.mod_loader_web import run_mod_loader_web
+        if run_mod_loader_web(loader_pid, debug=debug):
+            return
+    except Exception as e:
+        print(f"[Mod加载器] Web 版加载页不可用, 回退 tkinter 版: {e}")
     try:
         root = tk.Tk()
         _set_window_icon(root)
