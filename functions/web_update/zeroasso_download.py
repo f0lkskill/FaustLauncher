@@ -93,13 +93,31 @@ def _status_reporter(gui, label=''):
     return _status
 
 
-def open_download_source(url, gui=None, label='', **kwargs):
-    """取下载流: **默认先本地直链解析**, 解析不出(或直链已失效)时用原链接
+# 原链接连续失败多少次后才尝试"破解"蓝奏云直链 (用户要求: 默认原链接, 失败两次再解析)
+RAW_LINK_ATTEMPTS = 2
+# 原链接重试间隔 (秒): 原链接本来就快, 失败通常是瞬时的, 不像解析那样需要等 8 秒
+RAW_LINK_RETRY_WAIT = 3.0
 
-    云端条目里的下载链接是蓝奏云分享链接或指向它的解析服务链接
-    (lz0.qaiu.top/parser?url=<分享链接>)。默认先用本地实现解析成蓝奏云直链
-    (自带 WAF 挑战求解, 不依赖第三方解析服务); 解析不出直链时就退回原链接 ——
-    lz0 这类修复版解析服务链接本身就是可下载地址 (GET 会 302 到真文件)。
+
+def _close_quietly(resp):
+    try:
+        if resp is not None:
+            resp.close()
+    except Exception:
+        pass
+
+
+def open_download_source(url, gui=None, label='', **kwargs):
+    """取下载流: **默认直接用原链接**, 连续失败两次才尝试本地解析蓝奏云直链
+
+    云端条目里的下载链接本身就是可下载地址 (lz0/lz.qaiu.top 的
+    /parser?url=<分享链接> 会 302 到真文件), 正常情况根本不需要"破解"蓝奏云直链。
+    原先"默认先解析"的写法有两个代价: 每次下载白等 10~20 秒; 解析失败时把
+    "蓝奏云直链解析失败"刷进日志, 而前端流水线把带"失败"字样的日志当致命错误,
+    会把流水线 UI 打回未启动状态。
+
+    所以顺序反过来: 原链接先试 RAW_LINK_ATTEMPTS 次, 都不成 (或被判定成
+    JSON/HTML 错误页) 才退回本地直链解析 (自带 WAF 挑战求解)。
     非蓝奏云链接 (GitHub / ghproxy 等) 解析步骤原样返回, 等于直连, 与历史行为一致。
 
     :return: (response, 原始链接)
@@ -110,18 +128,38 @@ def open_download_source(url, gui=None, label='', **kwargs):
     from functions.web_update.lanzou_utils import LooksLikeFileResponse
 
     status = _status_reporter(gui, label)
-    # ① 先本地解析成直链 (直链失效由 _open_stream 丢缓存重解析一次)
+
+    # ① 默认原链接: 连试 RAW_LINK_ATTEMPTS 次, 任一次拿到文件本体就直接返回
+    resp = None
+    for attempt in range(1, RAW_LINK_ATTEMPTS + 1):
+        try:
+            resp = requests.get(url, **kwargs)
+            if resp.status_code < 400 and LooksLikeFileResponse(resp):
+                if attempt > 1:
+                    status(f'原链接第 {attempt} 次尝试成功')
+                return resp, url
+            status(f'原链接未返回文件(HTTP {resp.status_code})')
+        except requests.exceptions.RequestException as e:
+            status(f'原链接下载失败({type(e).__name__})')
+            resp = None
+        if attempt < RAW_LINK_ATTEMPTS:
+            _close_quietly(resp)
+            status(f'原链接失败，{RAW_LINK_RETRY_WAIT:.0f} 秒后重试（{attempt}/{RAW_LINK_ATTEMPTS}）')
+            time.sleep(RAW_LINK_RETRY_WAIT)
+
+    # ② 原链接连续失败两次, 才尝试自动解析蓝奏云直链 (直链失效由 _open_stream 丢缓存重解析一次)
+    status('原链接连续失败，尝试自动解析蓝奏云直链...')
     resolved = resolve_download_url(url, gui=gui, label=label)
     if resolved and resolved != url:
         try:
             return _open_stream(resolved, url, **kwargs), url
         except requests.exceptions.RequestException as e:
             status(f'直链下载失败({type(e).__name__})，改用原链接')
-    # ② 退回原链接 (解析不出直链, 或直链已失效)
-    raw = requests.get(url, **kwargs)
-    if not LooksLikeFileResponse(raw):
-        status(f'原链接返回的不是文件(HTTP {raw.status_code})')
-    return raw, url
+
+    # ③ 直链也拿不到: 把最后一次原链接的结果原样交给调用方 (由它按状态码报错)
+    if resp is None:
+        resp = requests.get(url, **kwargs)
+    return resp, url
 
 
 # 下载前置处理: 先本地直链解析, 解析不出/失效再用原链接
