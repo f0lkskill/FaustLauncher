@@ -376,11 +376,12 @@ cache/hook/
 
 ## 九、何时会自动更新
 
-- 成就监测进程在游戏启动时（`functions/achievement/hook.py` → `_start_hook_index_refresh`）
-  会：① 后台拉一次云端笔记里的指针链；② 调 `updater.auto_update_async()` 检查索引，
-  **指纹没变就直接返回**（0.2 秒），变了才真的跑解密+dump（游戏在跑时优先内存 dump，几秒）。
-- 想关掉自动更新：设置项 **「自动刷新游戏偏移索引」**（`config/settings.json`
-  → `auto_update_hook_index`）设为 false，之后只有手动跑 CLI 才会更新。
+- **客户端不会自动重建偏移索引**（2026-10 起按用户要求取消）：成就监测进程在游戏启动时
+  （`functions/achievement/hook.py` → `_start_hook_index_refresh`）只会后台拉一次云端笔记里的
+  指针链；预检发现「手头偏移量对不上本机 DLL」时最多再与云端对照一次，仍对不上就报 `stale`
+  并继续用现有索引，**绝不在本地解密 metadata / 重建**。
+- 需要新偏移时手动跑 CLI：`python -m functions.hook.main update`（解密 + Il2CppDumper，
+  约 1 分钟）。
 
 ---
 

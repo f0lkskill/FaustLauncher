@@ -1080,51 +1080,26 @@ def run_achievement_hook():
         log_callback("[AchMonitor] 已停止")
 
 
-def _hook_index_auto_enabled() -> bool:
-    """设置项 auto_update_hook_index（缺省 true）：是否在游戏启动时自动刷新偏移索引。"""
-    try:
-        from functions.base.settings_manager import get_settings_manager
-        value = get_settings_manager().get_setting("auto_update_hook_index")
-        return True if value is None else bool(value)
-    except Exception:
-        return True
-
-
 def _start_hook_index_refresh(log_callback):
-    """启动时刷新偏移：云端拉链（总是） + 按需重建索引（可通过设置关闭）。
+    """启动时刷新偏移：只从云端拉一次偏移链（客户端不再本地重建索引）。
 
-    重建一律走 ``wait_for_game_idle=True``：本进程是**游戏起来之后**才拉起的，
-    这时候重建就是和游戏抢 CPU/磁盘。后台任务会等游戏退出再以低优先级重建。
+    ★ 自动重建已按用户要求取消（2026-10）：不再调 ``auto_update_async`` —— 以前它会
+    在游戏起来之后后台重建索引。现在这里只做"云端偏移链刷新"这一件便宜的事。
 
     依赖在主线程先导好（Python 3.14 的 import 锁下，后台线程承担首次导入会有
     deadlock 风险）。
     """
     refresh = None
-    auto_update = None
     try:
         from functions.achievement.memory_reader import refresh_chain_from_cloud as refresh
     except Exception as exc:  # noqa: BLE001
         log_callback(f"[AchMonitor] 偏移链刷新模块不可用: {exc}")
-    try:
-        from functions.hook import auto_update_async as auto_update
-    except Exception as exc:  # noqa: BLE001
-        log_callback(f"[AchMonitor] 偏移索引模块不可用: {exc}")
 
     if refresh is not None:
         try:
             refresh(background=True, on_log=log_callback)
         except Exception as exc:  # noqa: BLE001
             log_callback(f"[AchMonitor] 云端偏移链刷新不可用: {exc}")
-    if auto_update is None:
-        return
-    if not _hook_index_auto_enabled():
-        log_callback("[AchMonitor] 已关闭自动刷新偏移索引（设置: 自动刷新游戏偏移索引）")
-        return
-    try:
-        if auto_update(on_log=log_callback, low_priority=True, wait_for_game_idle=True):
-            log_callback("[AchMonitor] 已在后台检查偏移索引（重建会等游戏退出后再做）")
-    except Exception as exc:  # noqa: BLE001
-        log_callback(f"[AchMonitor] 偏移索引自动更新不可用: {exc}")
 
 
 def _check_input_achievements(log_callback=None):

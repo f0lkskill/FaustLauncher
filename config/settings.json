@@ -378,7 +378,7 @@
         "type": "boolean",
         "default": true,
         "value": true,
-        "description": "游戏更新后自动重建偏移索引并同步到云端笔记\nFaustLauncher.hook_index（供注入DLL/插件/成就监测读取）\n首次运行会解密 metadata 并跑一遍 Il2CppDumper（约 1 分钟）",
+        "description": "已废弃：客户端不再自动重建偏移索引（2026-10 起）\n预检发现偏移量对不上本机 DLL 时只会与云端对照，\n仍对不上就继续用现有索引。需要新偏移请手动跑\npython -m functions.hook.main update",
         "page": "成就"
     },
     "enable_achievement_hook": {

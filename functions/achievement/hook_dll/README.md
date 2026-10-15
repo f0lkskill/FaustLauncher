@@ -357,16 +357,16 @@ class MyCombo(CompositeAchievement):
 
 ### 注入前的偏移量预检（`functions/hook/preflight.py`）
 
-先看「偏移量还能不能用」，顺序是 **先本地、后云端、最后才重建**：
+先看「偏移量还能不能用」，顺序是 **先本地、后云端、对不上就收手**：
 
 | 步 | 动作 | 是否联网 | verdict |
 |---|---|---|---|
 | 1 | 把手头索引的**每条钩子 prologue** 与本机 `GameAssembly.dll` 字节逐条比对（另核 size / PE 时间戳）。对得上 → 直接用 | ❌ 一个请求都不发 | `local-ok` |
 | 2 | 本地对不上才与云端对照（强制拉一次 `FaustLauncher.hook_index`）；云端对得上 → 采用云端（写进 `cache/hook/hook_index_cloud.json`，**不覆盖**本地完整版；进程内固定来源=cloud） | ✅ | `cloud-updated` |
-| 3 | 云端也对不上 → 本地重建（解密→dump→解析→四重校验），写本地，`push=True` 时**上传云端** | ✅ | `rebuilt` |
+| 3 | 云端也对不上 → **就此收手**（客户端不再本地重建），继续用现有索引 | ✅ | `stale` |
 
-- 重建那一步受设置项 **「自动刷新游戏偏移索引」**（`auto_update_hook_index`）控制；关掉时只看不下手（`stale`）。
-- 启动时可能已经有一个后台重建在跑（`hook._start_hook_index_refresh` → `auto_update_async`）：预检会**等它结束**再校验，不重复解密/dump。
+- 本地重建已按用户要求整体取消（2026-10）：预检、启动器空闲补建、成就监测启动时都不再触发
+  解密 / Il2CppDumper。需要新偏移请手动 `python -m functions.hook.main update`，或等云端更新。
 - 选定的索引会固定成进程内「本次就用它」（`hook.index.use_index`），保证钩子表 / 字段偏移 / 数据链用**同一份**，不会出现「钩子表来自云端、字段偏移来自旧本地文件」。
 - 离线看：`python -m functions.achievement.battle_watch --probe`（只做第 1 步，不联网、不重建）。
 
@@ -579,9 +579,9 @@ DLL 还挂在游戏里）—— 直接把新配置写进那块内存，DLL 接�
 | 心跳里所有钩子命中数都是 0 | 这些函数当前没被调用（v1 就是这个）→ 把心跳那段日志发我，或跑 `--probe` 看钩子表 |
 | 日志里没有“已注入” | 看同段日志的前几行：`跳过 PID … 映像不一致`（注错进程）/ `存活不足 1s`（Steam 引导进程）/ `CreateRemoteThread 失败`（杀软）/ `打开游戏进程失败`（权限）|
 | 改了 DLL 代码但没生效 | 看 `发现 N 份 battle_watch.dll，选用最新的一份 …`：说明注的是另一份（旧）副本；`发现 N 份` 那句后面列的就是被忽略的路径 |
-| `⚠ 偏移索引与磁盘上的 GameAssembly.dll 不匹配` | 游戏更新过：预检会自动走云端/重建；若看到 `stale` 就是设置项「自动刷新游戏偏移索引」被关了，或手动 `python -m functions.hook.main update` |
-| 预检 `cloud-updated` | 本地偏移量旧了、已采用云端那份（本地完整版索引没被覆盖，下次启动的后台任务会补齐）|
-| 预检 `rebuilt` | 本地+云端都对不上 → 已本地重建（并按需上传）；耗时 1~2 分钟，属正常 |
+| `⚠ 偏移索引与磁盘上的 GameAssembly.dll 不匹配` | 游戏更新过：预检会先与云端对照；若看到 `stale` 说明客户端不再自动重建（2026-10 起），需要手动 `python -m functions.hook.main update` |
+| 预检 `cloud-updated` | 本地偏移量旧了、已采用云端那份（本地完整版索引没被覆盖）|
+| 预检 `rebuilt` | 历史状态：早期版本会本地重建并上传；现在客户端不再产生该结果 |
 | `⚠ 游戏 DLL 不一致`（进程内 vs 磁盘） | 进程加载的 GameAssembly.dll 不是磁盘上那份（游戏正在更新/加载了旧版本）→ 重启游戏；若目录里的文件已更新过就先 `update` |
 | 游戏内模块已有同名 battle_watch.dll | `LoadLibraryW` 不会重新加载同名模块 → 重启游戏（旧模块随进程退出消失）|
 | 速度/理智/血量没反应 | 先看 `logs/achievement_hook.log` 里有没有对应的 `SPD`/`VAL` 行：没有就是钩子没命中或字段偏移不对；有但 `mp=-1000`/`hp=-1000` 就是 `_state` 读失败（看第四节） |

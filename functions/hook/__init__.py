@@ -27,7 +27,7 @@
 **常用入口**
 
 - ``updater.update_hook_index()``   完整更新（带日志回调，适合挂在界面上）
-- ``updater.auto_update_async()``   后台线程跑一次（成就监测进程里用它）
+- ``updater.auto_update_async()``   后台线程跑一次（客户端已不再自动调用，供手动/显式发起）
 - ``index.get_target_chain("enkephalin")``  读一条数据链（进程内记忆 → 本地缓存 → 内置默认）
 - CLI：``python -m functions.hook.main status|update|show|gen-header|locate``
 

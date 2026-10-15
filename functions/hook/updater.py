@@ -721,15 +721,13 @@ def auto_update_async(on_log=None, game_path: str = "", force: bool = False,
                       wait_for_game_idle: bool = True,
                       idle_wait_seconds: float = 900.0,
                       process_name: str = "LimbusCompany.exe") -> bool:
-    """在后台线程里跑一次更新（同时只允许一个）。
+    """在后台线程里跑一次更新（同时只允许一个）。返回 False 表示已有任务在跑。
 
-    典型用法：**游戏空闲时**（启动器刚起来、或游戏已退出）顺手刷新偏移索引。
-    返回 False 表示已有任务在跑。
+    ⚠ **客户端已不再自动调用它**（2026-10 按用户要求取消"偏移量对不上就本地破译"：
+    启动器空闲补建、成就监测启动时的自动刷新都已移除）。保留它只为手动/显式发起。
 
     ``wait_for_game_idle``：重建前先等游戏进程消失（最多 ``idle_wait_seconds``）。
-    **这是"重建搬离游戏启动窗口"的关键**：解密 + Il2CppDumper 是满核 1~2 分钟的重活，
-    和游戏启动/运行重叠会让整台机器卡到鼠标拖影（实测 10-09：游戏 13:11:36 启动、
-    解密 dump 13:12:51→13:15:11 全程并行）。等游戏退出再重建，玩家全程无感。
+    解密 + Il2CppDumper 是满核 1~2 分钟的重活，等游戏退出再做玩家全程无感。
     """
     global _auto_updating
     preload(on_log=on_log)
@@ -772,14 +770,12 @@ def auto_update_async(on_log=None, game_path: str = "", force: bool = False,
             # 玩家感受到的就是"首次打开游戏卡好一阵子"——而这份索引往往**根本用不上**：
             # 预检随后从云端拿到一份对得上的索引就直接采用了（实测日志 18:45:36 开始重建，
             # 18:45:38 云端索引已 19/19 命中，重建纯属白烧）。
-            # 这里传 allow_rebuild=False：预检只做判断，绝不在这里触发重建，
-            # 免得两边同时解密。
+            # 预检只做判断（它本身已不再重建任何东西）。
             if not force:
                 try:
                     from . import preflight as _preflight
                     verdict = _preflight.ensure_offsets_ready(
-                        on_log=on_log, game_path=game_path, push=push,
-                        allow_rebuild=False)
+                        on_log=on_log, game_path=game_path)
                     if verdict.get("source") in ("local", "cloud", "cloud-cache"):
                         if on_log:
                             on_log("[hook_index] 索引已可用"

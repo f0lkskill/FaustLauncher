@@ -798,7 +798,7 @@ _kernel32.Process32NextW.argtypes = [_HANDLE, ctypes.POINTER(PROCESSENTRY32W)]
 #      （``LoadLibraryW`` 遇到同名已加载模块只会返回旧句柄，不会重新加载）。
 # 另外把“偏移量还能不能用”在**注入前**就查清楚（``_run_preflight`` →
 # ``functions/hook/preflight.py``）：先用偏移量对**本机 GameAssembly.dll** 逐条比 prologue
-# （不联网）；对不上才与云端对照（采用云端新版）；云端也对不上就本地重建并按需上传。
+# （不联网）；对不上才与云端对照（采用云端新版）；仍对不上就报 stale 继续用现有索引。
 # 注入之后再比一次**进程内**的 GameAssembly.dll（``_verify_gameassembly``）作为收尾。
 TH32CS_SNAPTHREAD = 0x00000004
 TH32CS_SNAPMODULE = 0x00000008
@@ -2150,16 +2150,15 @@ class BattleWatch:
 
     # ------------------------------------------------------- 偏移量预检（注入前）
     # 顺序：先用偏移量对**本机 DLL** 校验（prologue 逐条比对，不联网）；
-    # 对不上 → 云端对照（采用云端新版）；云端也对不上 → 本地重建并按需上传。
-    # 具体逻辑在 functions/hook/preflight.py（同步执行，只有重建那一步才久）。
+    # 对不上 → 云端对照（采用云端新版）；云端也对不上 → 就此收手（客户端不重建）。
+    # 具体逻辑在 functions/hook/preflight.py（只读文件 / 最多下几十 KB）。
     _PREFLIGHT_TEXT = {
         "local-ok": "本地偏移量对得上本机 DLL（未联网、未重建）",
         "cloud-cached": "采用云端偏移量（本地缓存的那份对得上本机 DLL，未联网）",
         "cloud-updated": "本地偏移量是旧版本 → 已采用云端偏移量",
-        "rebuilt": "本地重建偏移量完成（校验通过；push=True 时已上传云端）",
-        "rebuilt-unverified": "本地重建完成，但校验仍未通过（看上条日志）",
-        "deferred": "需要重建偏移量，但游戏正在运行 → 本次不重建（已排入后台等游戏退出）",
-        "stale": "偏移量对不上本机 DLL，且不允许自动重建（钩子可能装不上）",
+        "rebuilt": "本地重建偏移量（历史状态，客户端已不再产生）",
+        "rebuilt-unverified": "本地重建未通过校验（历史状态）",
+        "stale": "偏移量对不上本机 DLL，客户端不重建（钩子可能装不上）",
         "no-index": "没有任何可用索引（将用内置回退偏移）",
         "no-game-dll": "找不到 GameAssembly.dll（跳过偏移校验）",
         "error": "偏移预检异常（继续用现有索引）",
@@ -2169,7 +2168,7 @@ class BattleWatch:
         """注入前跑一遍偏移量预检，并把选定索引固定成进程内“本次就用它”。"""
         try:
             from functions.hook.preflight import ensure_offsets_ready
-            info = ensure_offsets_ready(on_log=self._log, push=True)
+            info = ensure_offsets_ready(on_log=self._log)
         except Exception as exc:  # noqa: BLE001
             info = {"verdict": "error", "detail": f"{type(exc).__name__}: {exc}"}
             self._log(f"[BattleWatch] 偏移预检不可用（继续用现有索引）: {exc}")
@@ -2224,9 +2223,9 @@ class BattleWatch:
         """注入前把偏移量与钩子表重新对齐到**当前**游戏版本，并写回共享内存配置。
 
         顺序（用户约定）: 进程就位（最好处在完全挂起窗口）→ 校验本地 hook 缓存与游戏
-        版本 / 环境是否对得上（``ensure_offsets_ready``：对得上直接用；对不上 → 云端对照
-        → 本地重建并上传）→ 用选定索引重建钩子表 → 写回共享内存，保证 DLL 加载时读到的
-        就是这一份。
+        版本 / 环境是否对得上（``ensure_offsets_ready``：对得上直接用；对不上 → 云端对照，
+        仍对不上就报 ``stale`` 并继续用现有索引）→ 用选定索引重建钩子表 → 写回共享内存，
+        保证 DLL 加载时读到的就是这一份。
         """
         self._run_preflight()
         table = build_hook_table(on_log=log, pe_path=pe_path)
@@ -3189,7 +3188,7 @@ class BattleWatch:
                 #    （有上限 SUSPEND_WAIT_SECONDS，等不到就走常规挂起窗口）
                 self._wait_fully_suspended(pid)
                 # ② 进程就位之后，游戏版本 / 环境才算最终确定 → 校验本地 hook 缓存:
-                #    对得上直接注入；对不上 → 云端 → 本地重建并上传，再注入
+                #    对得上直接注入；对不上 → 云端对照，仍对不上就用现有索引继续
                 if not self._refresh_hook_table(log, pe_path):
                     pid = None
                     self._sleep(5.0)
@@ -3486,7 +3485,7 @@ def _probe_preflight() -> None:
     """``--probe`` 用：只做本地校验（**不联网、不重建**），看偏移量对不对得上本机 DLL。"""
     try:
         from functions.hook.preflight import ensure_offsets_ready
-        info = ensure_offsets_ready(on_log=_print, allow_cloud=False, allow_rebuild=False)
+        info = ensure_offsets_ready(on_log=_print, allow_cloud=False)
     except Exception as exc:  # noqa: BLE001
         _print(f"[OffsetProbe] 不可用: {type(exc).__name__}: {exc}")
         return
@@ -3498,7 +3497,7 @@ def _probe_preflight() -> None:
         _print(f"[OffsetProbe] {check['detail']}")
     elif verdict == "local-ok":
         _print(f"[OffsetProbe] {check.get('detail', '')}")
-        _print("[OffsetProbe] （离线 --probe 不联网、不重建；云端对照/本地重建只在游戏启动时按需发生）")
+        _print("[OffsetProbe] （离线 --probe 不联网、不重建；云端对照只在游戏启动时按需发生）")
 
 
 def cmd_probe() -> int:

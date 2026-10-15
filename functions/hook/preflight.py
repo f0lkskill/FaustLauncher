@@ -10,17 +10,15 @@
 2. **都对不上才找云端**：强制联网拉一次云端索引；若云端这份能对上本机 DLL
    （说明"本地偏移量是旧版本，云端已经有新版"）→ 采用云端（写进云端缓存文件，
    **不覆盖**本地完整版索引），后续所有消费者都用它。
-3. **都对不上**：本地重建（解密 → dump.cs → 解析 → 四重校验），写本地缓存，
-   ``push=True`` 时把新偏移**上传云端**。
+3. **都对不上**：就此收手（``VERDICT_STALE``）—— 不联网、不重建。调用方照常继续，
+   用现有索引 / 内置回退偏移，只是本次观测可能不完整。
 
-   ⚠ **游戏正在运行时绝不在这里重建**（``VERDICT_DEFERRED``）。解密约 50 秒满核 +
-   Il2CppDumper 满核 1~2 分钟，跑在游戏启动/运行的同一时刻会把整台机器卡到鼠标拖影
-   （实测 10-09：游戏 13:11:36 启动，解密 dump 13:12:51→13:15:11 全程并行）。
-   改成排一个后台任务，等游戏退出后再以低优先级重建（见 ``updater.auto_update_async``
-   的 ``wait_for_game_idle``）；启动器侧在游戏退出/启动器刚起来时也会主动触发一次。
-
-第 3 步可以用设置项 ``auto_update_hook_index``（缺省 true）关掉；关掉时只做校验与
-云端参考，不改本地、不上传。
+   ★ 按用户要求（2026-10）**彻底取消**了"偏移量对不上就本地破译"的行为：以前第 3 步
+   会在游戏没跑时同步跑一次本地重建（静态解密 → Il2CppDumper → 解析 → 四重校验），
+   游戏在跑时则排一个后台任务等它退出再以低优先级重建；启动器的空闲补建、成就监测
+   启动时的自动刷新也属于同一套自动重建。现在这些全部移除 —— 客户端永远不再自行解密
+   metadata / 重建偏移索引。需要新偏移时靠云端索引，或由人手动跑
+   ``python -m functions.hook.main update``。
 
 判定"对得上"的为什么是 prologue 而不是指纹：真正决定能不能装钩的是
 "索引里的 RVA 处、本机 DLL 的字节是不是我们记下的那几条指令"（DLL 装钩前也会再比一次）。
@@ -41,22 +39,11 @@ from . import paths as paths_mod
 VERDICT_LOCAL_OK = "local-ok"            # 本地索引就能对上本机 DLL（未联网）
 VERDICT_CLOUD_CACHED = "cloud-cached"    # 用本地缓存的云端索引（未联网）
 VERDICT_CLOUD_UPDATED = "cloud-updated"  # 本地旧了，已采用云端索引
-VERDICT_REBUILT = "rebuilt"              # 都对不上，已本地重建（并按需上传）
-VERDICT_DEFERRED = "deferred"            # 需要重建，但游戏在跑 → 推迟到空闲时
-VERDICT_STALE = "stale"                  # 对不上，但按要求不许重建/联网
+VERDICT_REBUILT = "rebuilt"              # 历史值：本地重建曾产生过，现已不再出现
+VERDICT_STALE = "stale"                  # 对不上（不再重建；默认也不联网重试）
 VERDICT_NO_INDEX = "no-index"            # 本地/云端都没有索引
 VERDICT_NO_GAME_DLL = "no-game-dll"      # 找不到 GameAssembly.dll
 VERDICT_ERROR = "error"
-
-
-def auto_rebuild_enabled() -> bool:
-    """设置项 ``auto_update_hook_index``（缺省 true）：对不上时允不允许本地重建。"""
-    try:
-        from functions.base.settings_manager import get_settings_manager
-        value = get_settings_manager().get_setting("auto_update_hook_index")
-        return True if value is None else bool(value)
-    except Exception:  # noqa: BLE001
-        return True
 
 
 def prologue_check(index, gameassembly: str, on_log=None) -> dict:
@@ -176,27 +163,24 @@ def _candidate_score(entry: dict, paths) -> tuple:
             int(entry["check"].get("matched") or 0))
 
 
-def ensure_offsets_ready(on_log=None, game_path: str = "", push: bool = True,
-                         allow_cloud: bool = True, allow_rebuild: bool | None = None,
-                         local_index=None, process_name: str = "LimbusCompany.exe") -> dict:
-    """注入前的偏移量预检（同步；只有真的要重建时才会久，约 1~2 分钟）。
+def ensure_offsets_ready(on_log=None, game_path: str = "",
+                         allow_cloud: bool = True, local_index=None) -> dict:
+    """注入前的偏移量预检（只读文件 / 最多下几十 KB，很快）。
 
-    返回 ``{"verdict", "source", "index", "check", "cloud_check", "detail", "pushed"}``；
+    返回 ``{"verdict", "source", "index", "check", "cloud_check", "detail"}``；
     选定索引时会把进程内记忆一并固定（``index_mod.use_index``），保证后面钩子表 / 字段偏移 /
     数据链全用同一份。
 
-    **本函数不会在游戏运行时做重建**：那种情况返回 ``VERDICT_DEFERRED`` 并排一个
-    "等游戏退出再重建"的后台任务，调用方应当照常继续（用现有索引 / 内置回退偏移），
-    只是本次观测可能不完整。
+    **本函数永远不会重建索引**（客户端已彻底取消本地破译）：本地与云端都比不上本机 DLL
+    时返回 ``VERDICT_STALE``，调用方照常继续（用现有索引 / 内置回退偏移），只是本次观测
+    可能不完整。
     """
     log = on_log or (lambda _m: None)
-    if allow_rebuild is None:
-        allow_rebuild = auto_rebuild_enabled()
 
     paths = paths_mod.game_paths(game_path)
     ga = getattr(paths, "gameassembly", "") or ""
     result = {"verdict": VERDICT_NO_INDEX, "source": "", "index": None, "check": {},
-              "cloud_check": {}, "detail": "", "pushed": False}
+              "cloud_check": {}, "detail": ""}
     if not ga or not os.path.isfile(ga):
         result["verdict"] = VERDICT_NO_GAME_DLL
         result["detail"] = f"找不到 GameAssembly.dll（{ga or '路径未配置'}）"
@@ -262,65 +246,10 @@ def ensure_offsets_ready(on_log=None, game_path: str = "", push: bool = True,
     else:
         log("[OffsetProbe] 云端没有可用索引（首次使用/读取失败）")
 
-    # ---- 3) 都对不上 → 需要重建
-    if not allow_rebuild:
-        result["verdict"] = VERDICT_STALE
-        log("[OffsetProbe] 需要本地重建，但设置项「自动刷新游戏偏移索引」已关闭 / 本轮不允许"
-            " → 跳过（本次钩子可能装不上，请在设置里打开或跑 "
-            "python -m functions.hook.main update）")
-        return result
-
-    from .memory import is_process_running
-    if is_process_running(process_name):
-        # ⚠ 关键：绝不在游戏运行时重建。解密 + Il2CppDumper 是满核 1~2 分钟的重活，
-        #    和游戏启动/运行重叠会把整台机器卡住（实测鼠标拖影）。
-        result["verdict"] = VERDICT_DEFERRED
-        result["detail"] = ("需要重建偏移索引，但游戏正在运行 → 本次不重建"
-                           "（已排入后台，等游戏退出后以低优先级重建）")
-        log(f"[OffsetProbe] {result['detail']}")
-        if not _background_update_running(log):
-            try:
-                from . import updater as updater_mod
-                updater_mod.auto_update_async(on_log=log, game_path=game_path, push=push,
-                                              low_priority=True, wait_for_game_idle=True,
-                                              process_name=process_name)
-            except Exception as exc:  # noqa: BLE001
-                log(f"[OffsetProbe] 排入后台重建失败: {type(exc).__name__}: {exc}")
-        return result
-
-    log("[OffsetProbe] 本地+云端都对不上本机 DLL，且游戏没在运行 → 本地重建偏移量"
-        + ("并上传云端" if push else "（不上传）") + "…")
-    try:
-        from . import updater as updater_mod
-        outcome = updater_mod.update_hook_index(game_path=game_path, force=True,
-                                                push=push, on_log=log,
-                                                low_priority=True,
-                                                process_name=process_name)
-    except Exception as exc:  # noqa: BLE001
-        result["verdict"] = VERDICT_ERROR
-        result["detail"] = f"本地重建失败: {type(exc).__name__}: {exc}"
-        log(f"[OffsetProbe] {result['detail']}")
-        return result
-    index_mod.clear_memo()
-    fresh, source = index_mod.get_index()
-    check = prologue_check(fresh, ga, on_log=log) if fresh is not None else {}
-    if fresh is not None:
-        index_mod.use_index(fresh, "rebuilt")
-    result.update(index=fresh, source="rebuilt", check=check, pushed=bool(outcome.pushed),
-                  detail=(check.get("detail") or outcome.summary()))
-    log(f"[OffsetProbe] 重建结果: {outcome.summary()}；校验: {check.get('detail', '无')}")
-    result["verdict"] = (VERDICT_REBUILT if check.get("ok")
-                         else f"{VERDICT_REBUILT}-unverified")
+    # ---- 3) 都对不上 → 就此收手（客户端不再本地重建）
+    result["verdict"] = VERDICT_STALE
+    result["detail"] = "偏移量与本机 GameAssembly.dll 对不上，且客户端已取消本地重建"
+    log("[OffsetProbe] 本地与云端都对不上本机 DLL → 不再本地重建（客户端已取消该行为）。"
+        "本次钩子可能装不上；需要新偏移请等云端更新，"
+        "或手动跑 python -m functions.hook.main update")
     return result
-
-
-def _background_update_running(log) -> bool:
-    """是否已经有一个后台重建任务在跑（避免重复排队）。"""
-    try:
-        from . import updater as updater_mod
-        if updater_mod.is_auto_updating():
-            log("[OffsetProbe] 已有后台重建任务在跑 → 不重复排队")
-            return True
-    except Exception:  # noqa: BLE001
-        pass
-    return False
