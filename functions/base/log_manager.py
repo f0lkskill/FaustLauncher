@@ -96,7 +96,7 @@ def init_logger():
     # 横幅本身已经通过 print() -> 控制台流 -> write_line() 进了文件，这里只补一条
     # 运行头。以前把横幅再写一遍，正是日志文件与 cmd 窗口对不上（多一份、前缀还不
     # 一样）的原因。
-    _announce(f"Faust Launcher instance started ({fname})")
+    _announce(f"Faust Launcher 开始运行... ({fname})")
     return _logger
 
 

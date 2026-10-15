@@ -9,7 +9,6 @@
 import os
 import json
 import time as _time
-import importlib
 from datetime import datetime
 from functions.achievement.base_achievement import BaseAchievement
 
@@ -333,7 +332,7 @@ def _define_achievements():
         "data.ach_railway6_100t",
         "data.ach_story_10_4",
     )
-    # ⚠ 打包（PyInstaller）**只收集静态可见的导入**：动态 ``import_module`` 的模块不会进包，
+    # 打包（PyInstaller）**只收集静态可见的导入**：动态 ``import_module`` 的模块不会进包，
     # 冻结后就是 "[Achievement] 模块 data.ach_xxx 导入失败: No module named ..."（实测踩过）。
     # 所以这里显式 import 一遍，下面的遍历只处理这些已经导入进来的模块对象 —— 与打包配置无关，
     # 以后新增成就模块时**只要加到这个 import 列表里**（别再只往字符串元组里加）。

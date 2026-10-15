@@ -1,6 +1,4 @@
-import json
 import os
-from pathlib import Path
 from functions.base.common.json_io import read_json, write_json
 
 class SettingsManager:

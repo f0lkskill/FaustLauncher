@@ -138,7 +138,7 @@ def _restore_cookies(session, base: str) -> None:
             except Exception:
                 pass
     if restored:
-        print(f"[UserAPI] 已载入本地登录态 ({host})")
+        print(f"[UserAPI] 已载入本地登录态。")
 
 
 def _save_cookies(session) -> None:

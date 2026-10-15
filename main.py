@@ -7,18 +7,8 @@ Faust Launcher - 主入口
 4. 解耦：降低模块间依赖
 """
 
-import tkinter as tk
-import os
-import sys
-
-from functions.base.common.stdio import harden_stdio
-
-# 必须最早执行: 打包时 console=False 会让 sys.stdout/stderr 为 None, 而 rich 会退回它自己
-# 用系统首选编码(cp950/cp936/cp932)打开的 devnull —— 打印简体字/emoji 直接 UnicodeEncodeError,
-# 用户看到的就是 PyInstaller 弹出的 "Unhandled exception in script"。
-# (会把编码不变地改成 errors='replace'，放不下的字符退化成 '?' 而不报错)
-harden_stdio()
-
+from functions.base.app_initializer import launch_app
+import sys, os
 
 def _project_root():
     """项目根目录: 打包后是 exe 所在目录, 源码下是 main.py 所在目录。
@@ -33,10 +23,7 @@ def _project_root():
         return os.path.dirname(os.path.abspath(sys.executable))
     return os.path.dirname(os.path.abspath(__file__))
 
-
-def main():
-    """优化后的主函数"""
-    harden_stdio()          # 双保险(入口可能被别处直接调用)
+if __name__ == "__main__":
 
     # 把工作目录固定到项目根, 相对路径才稳定 (见 _project_root 的说明)。
     # 必须放在所有"独立窗口模式"分支之前: 那些子进程同样依赖相对路径。
@@ -45,149 +32,5 @@ def main():
     except OSError as e:
         print(f"切换工作目录失败(继续使用当前目录): {e}")
 
-    # 成就监测独立进程模式
-    # 由 GameLauncher 通过 subprocess 启动，新开一个隐藏进程，
-    # 持续监控 Player.log 直到用户手动关闭或游戏退出
-    if "--achievement-hook" in sys.argv:
-        from functions.achievement.hook import run_achievement_hook
-        run_achievement_hook()  # 此函数内部会阻塞，不会返回
-        # return 意味着直接退出主进程
-        return
-
-    # 控制台输出美化：给每行加 [时间] [区域] [级别] [文件:行] 前缀并着色。
-    # 必须放在 --achievement-hook 之后：那个子进程的 stdout 会被父进程接到成就日志文件上，
-    # 那边要的是干净的原文（日志里再套一层前缀和时间戳只会更难读）。
-    # 也要放在 UI 重定向器创建之前：两个重定向器都只把"转发到真实控制台"那一步交给
-    # 构造时捕获的 sys.stdout，所以装在这里正好只影响 cmd，UI 终端与日志文件不受影响。
-    try:
-        from functions.base.console_log import install as _install_console_log
-        _install_console_log()
-    except Exception as _exc:  # noqa: BLE001
-        print(f"控制台日志美化不可用(忽略): {_exc}")
-
-    # 素材检查：图标/音效/背景/皮肤图片已从仓库移出，改成独立的资源包分发
-    # （见 tools/build/assets_pack.py）。缺了不会报错，只是图标变默认、音效不响、皮肤背景空白 ——
-    # 很容易被当成"启动器坏了"，所以这里点一句，省得往代码里找。
-    try:
-        if not os.path.isfile(os.path.join(_project_root(), "assets", "images", "icon", "icon.png")):
-            print(r"[Assets] 没找到 assets/images —— 素材不在仓库里，"
-                  r"先拉资源包：tools\run\assets.bat fetch（或把资源包 zip 解压到项目根）")
-    except Exception:  # noqa: BLE001
-        pass
-
-    # 今日指令独立窗口模式: 打包环境下由主 exe 以 --nyos-window 二次拉起自身,
-    # 直接运行 pywebview 窗口, 不进入 tkinter 主界面 (也需跳过单实例检测)
-    if "--nyos-window" in sys.argv:
-        from functions.pages.tools.nyos_prescript import run_prescript_window
-        run_prescript_window(debug="--debug" in sys.argv)
-        return
-
-    # 版本更新提示独立窗口模式: 与 --nyos-window 同一模式
-    if "--update-window" in sys.argv:
-        from functions.pages.notice.version_update_window import run_update_window
-        payload_b64 = None
-        if "--update-payload" in sys.argv:
-            idx = sys.argv.index("--update-payload")
-            if idx + 1 < len(sys.argv):
-                payload_b64 = sys.argv[idx + 1]
-        run_update_window(payload_b64, debug="--debug" in sys.argv)
-        return
-
-    # Mod管理器独立窗口模式: 与 --nyos-window 同一模式
-    if "--mod-manager-window" in sys.argv:
-        from functions.pages.tools.mod_manager_window import run_mod_manager_window
-        run_mod_manager_window(debug="--debug" in sys.argv)
-        return
-
-    # Mod加载器进度提示独立窗口模式: 与 --mod-manager-window 同一模式
-    if "--mod-loader-progress" in sys.argv:
-        from functions.pages.tools.mod_loader_progress import run_mod_loader_progress
-        loader_pid = 0
-        if "--pid" in sys.argv:
-            idx = sys.argv.index("--pid")
-            if idx + 1 < len(sys.argv):
-                try:
-                    loader_pid = int(sys.argv[idx + 1])
-                except ValueError:
-                    loader_pid = 0
-        run_mod_loader_progress(loader_pid, debug="--debug" in sys.argv)
-        return
-
-    # 扩展工具独立窗口模式: 与 --mod-manager-window 同一模式
-    if "--extension-tools-window" in sys.argv:
-        from functions.pages.tools.extension_tools_window import run_extension_tools_window
-        run_extension_tools_window(debug="--debug" in sys.argv)
-        return
-
-    # 自定义汉化工具独立窗口模式: 与 --extension-tools-window 同一模式
-    if "--custom-translation-window" in sys.argv:
-        from functions.pages.tools.custom_translation_window import run_custom_translation_window
-        run_custom_translation_window(debug="--debug" in sys.argv)
-        return
-
-    # Web 现代化 UI 模式: 默认启动方式 (新版 Web 界面)
-    # 可用 --tk-ui 参数或设置"界面模式=旧版界面 (0)"回到经典 TK 界面
-    from functions.base.settings_manager import get_settings_manager
-    if "--tk-ui" in sys.argv:
-        pass
-    elif "--web-ui" in sys.argv or get_settings_manager().get_setting("ui_mode") != 0:
-        from functions.pages.app.app_web import run_web_ui, check_single_instance
-        if check_single_instance():
-            os._exit(0)
-        run_web_ui(debug="--debug" in sys.argv)
-        return
-
-    from functions.pages.app.app_core import FaustLauncherCore
-    from functions.pages.app.app_ui import FaustLauncherUI, check_single_instance
-    from functions.pages.notice.loading_info import create_simple_splash
-    from functions.base.settings_manager import get_settings_manager
-    from functions.base.sound_utils import play_sound
-
-    # 检测是否已有实例在运行
-    if check_single_instance():
-        os._exit(0)
-
-    # 初始化日志系统
-    from functions.base.log_manager import init_logger
-    init_logger()
-
-    # 删除旧的更新脚本
-    if os.path.exists("updater.vbs"):
-        os.remove("updater.vbs")
-
-    # 创建主窗口
-    root = tk.Tk()
-    root.withdraw()
-
-    # 创建启动画面
-    splash, splash_root = create_simple_splash(root)
-
-    settings_manager = get_settings_manager()
-
-    # 创建核心后端实例
-    core = FaustLauncherCore()  # 传入调试参数
-
-    def on_app_initialized():
-        """应用程序初始化完成后的回调"""
-        root.update_idletasks()
-        root.update()
-
-        root.after(4000, lambda: root.deiconify())
-
-        ws_path = settings_manager.get_setting("welcome_sound")
-        root.after(4000, lambda: play_sound(ws_path))
-
-        core.terminal_redirector.enable_type = True  # type: ignore
-
-        root.after(4500, core.check_settings)
-
-    # 创建UI实例（传入核心后端）
-    app = FaustLauncherUI(root, core, on_initialized=on_app_initialized)
-    app.initialize_pages()
-
-    # 启动主循环
-    root.mainloop()
-
-
-if __name__ == "__main__":
-    main()
+    # 启动 APP
+    launch_app()
