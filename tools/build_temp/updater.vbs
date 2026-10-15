@@ -28,6 +28,25 @@ up3Dir = fso.GetParentFolderName(up2Dir)
 exeDir = up3Dir
 exePath = fso.BuildPath(exeDir, "FaustLauncher.exe")
 
+' ========== 0) 位置自检 ==========
+' 本脚本必须待在 "<安装根>\cache\new_version\FaustLauncher\" 里, 从它往上数三层 (up3Dir)
+' 才是真正的安装根。如果它被放到别的位置执行 —— 最常见的是用户直接在发行包根目录里
+' 双击它 —— up3Dir 会算成安装根的曾祖父目录, 第 1 步就会把 FaustLauncher.exe 等根目录
+' 文件"复制过去再删掉原件", exe 当场从安装目录消失(而更新本身并不会完成)。
+' 所以动手之前先确认 up3Dir 确实是一个已安装的 FaustLauncher 目录。
+If (Not fso.FileExists(exePath)) Or _
+   (Not fso.FolderExists(fso.BuildPath(up3Dir, "_internal")) And _
+    Not fso.FolderExists(fso.BuildPath(up3Dir, "web"))) Then
+    MsgBox "FaustLauncher 更新器不能直接运行。" & vbCrLf & vbCrLf & _
+           "请双击 FaustLauncher.exe 启动启动器, 在界面里检查更新。" & vbCrLf & vbCrLf & _
+           "更新器只由启动器自动调用: 它必须位于 " & _
+           "安装目录\cache\new_version\FaustLauncher\ 下才能正确工作。", _
+           16, "FaustLauncher"
+    Set fso = Nothing
+    Set WshShell = Nothing
+    WScript.Quit 1
+End If
+
 ' ========== 等待旧进程退出 (5 秒) ==========
 ' 旧启动器退出时会先隐藏窗口再后台慢慢关闭 (WebView2 销毁), 需等待其完全退出,
 ' 否则覆盖 exe 时文件被占用而失败

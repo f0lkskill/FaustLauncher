@@ -133,8 +133,22 @@ def launch_app():
 
     # 确认进入主流程
     # 删除旧的更新脚本
-    if os.path.exists("updater.vbs"):
-        os.remove("updater.vbs")
+    # 必须按**安装根**定位, 不能用相对路径 "updater.vbs": 启动器的工作目录不一定是
+    # 安装目录 (快捷方式/托盘/文件关联启动时 cwd 可能是 System32 之类), 用相对路径
+    # 会删不到, 把 updater.vbs 一直留在 FaustLauncher.exe 旁边。
+    # 那个脚本按"往上数三层"定位安装根, 直接在根目录里双击它会算到安装根的曾祖父目录,
+    # 然后把它看到的每个文件"复制过去再删掉原件" —— exe 会当场从安装目录消失。
+    if getattr(sys, "frozen", False):
+        _project_root = os.path.dirname(os.path.abspath(sys.executable))
+    else:
+        _project_root = os.path.abspath(
+            os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
+    _old_updater = os.path.join(_project_root, "updater.vbs")
+    if os.path.exists(_old_updater):
+        try:
+            os.remove(_old_updater)
+        except OSError:
+            pass
 
     if detect_ui_mode():
         # 是web UI，静默不处理
