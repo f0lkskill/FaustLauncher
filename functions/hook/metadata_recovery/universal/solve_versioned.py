@@ -152,8 +152,12 @@ def solve(metadata: bytes, profile: dict, version: int = 39) -> dict:
             continue
         if e["offset"] < 0:
             continue
-        if e["offset"] + e["size"] > len(metadata) + 4:
-            continue          # 越界辅助表（幻影）
+        if e["offset"] >= len(metadata):
+            continue          # 逻辑起点已在文件外 → 幻影辅助表
+        # ★ 不再按 offset + size 越界丢弃：加密 metadata 里逻辑位置与物理位置相差一个
+        #   adj（可正可负），负 adj 会让 offset + size 超过文件长度，但条目本身是真实的
+        #   （2026-10 游戏更新后正是这些条目被误丢，导致 rec=4 一类槽位候选不足、
+        #   求解报"无可行锚点槽位组合"）。是否放得下交给位置约束与内容评分。
         if e["index"] in prot_entries:
             continue
         pool.append(e)
@@ -320,15 +324,20 @@ def solve(metadata: bytes, profile: dict, version: int = 39) -> dict:
     best_solution: dict | None = None
     best_score = -1.0
     best_slot_assign: list[int] = []
+    first_fail: str | None = None
     for slot_assign in enumerate_assignments(0, []):
         used = set(prot_entries)
         cur_sol: dict = {"sections": {}, "protected": {}, "evidence": {}}
         ok = True
         total_score = 0.0
-        for prev_end, next_start, slots in gaps_of(slot_assign):
+        for gi, (prev_end, next_start, slots) in enumerate(gaps_of(slot_assign)):
             res = solve_gap(prev_end, next_start, slots, used)
             if res is None:
                 ok = False
+                if first_fail is None:
+                    nz = [(s, names[s]) for s in slots if rec[names[s]] != 0]
+                    first_fail = (f"锚点槽位={slot_assign} gap{gi} "
+                                  f"跨度={prev_end}->{next_start} 待放槽位={nz}")
                 break
             placements, score = res
             total_score += score
@@ -361,7 +370,8 @@ def solve(metadata: bytes, profile: dict, version: int = 39) -> dict:
             best_slot_assign = list(slot_assign)
 
     if best_solution is None:
-        raise SolveError("无可行锚点槽位组合")
+        raise SolveError("无可行锚点槽位组合"
+                         + (f"；首个失败：{first_fail}" if first_fail else ""))
 
     solution = best_solution
     solution["layout"] = layout
