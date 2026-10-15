@@ -427,6 +427,7 @@ def run_mod_manager_window(debug: bool = False):
         frameless=True,    # 去掉系统标题栏, 改用与主界面同款的自绘标题栏
         easy_drag=False,   # 只允许拖标题栏
         shadow=False,
+        hidden=True,     # 先隐藏, 注入主题+标题栏后淡入
     )
     x, y = _center_xy(win_w, win_h)
     if x is not None and y is not None:
@@ -435,7 +436,7 @@ def run_mod_manager_window(debug: bool = False):
 
     try:
         window = webview.create_window(**window_kwargs)
-        apply_window_chrome(window)   # 共享主题层 + 当前皮肤 + 统一标题栏
+        apply_window_chrome(window, show_when_ready=True)   # 共享主题层 + 当前皮肤 + 统一标题栏 (注入完再淡入)
 
         # 页面加载完成后注册 DOM drop 事件, 捕获从资源管理器拖入的文件
         def _register_dnd():

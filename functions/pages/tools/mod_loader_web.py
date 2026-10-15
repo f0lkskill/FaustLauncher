@@ -29,6 +29,8 @@ from functions.base.window_chrome import (
     WindowChromeBridge,
     apply_window_chrome,
     child_window_size,
+    fade_in_window,
+    fade_out_window,
     titlebar_icon_path,
     window_icon_path,
 )
@@ -213,7 +215,11 @@ class ModLoaderApi(WindowChromeBridge):
         self._finished = True
         if not self._hidden:
             self._call_window("show")
-        self._call_window("destroy")
+        # 淡出再关 (与主界面同一观感)
+        if self._window is not None:
+            fade_out_window(self._window, then_close=True)
+        else:
+            self._call_window("destroy")
 
     # ---- 前端调用 ----
     def get_state(self):
@@ -253,7 +259,10 @@ class ModLoaderApi(WindowChromeBridge):
             self._call_window("hide")   # 游戏已起来, 窗口退到后台不打扰
         elif kind == "restore" and self._hidden:
             self._hidden = False
-            self._call_window("show")
+            if self._window is not None:
+                fade_in_window(self._window)   # 游戏退出后回来, 淡入
+            else:
+                self._call_window("show")
         elif self._pid <= 0:
             # pid 未知: 没有进度变化太久就自动收工, 避免窗口永远留在桌面上
             if time.time() - self._last_change > NO_PID_IDLE_TIMEOUT and kind in ("", "launch", "unknown"):
@@ -276,8 +285,11 @@ class ModLoaderApi(WindowChromeBridge):
         }
 
     def close(self):
-        """用户点击关闭按钮"""
-        self._call_window("destroy")
+        """用户点击关闭按钮 (淡出后再关)"""
+        if self._window is not None:
+            fade_out_window(self._window, then_close=True)
+        else:
+            self._call_window("destroy")
         return True
 
 
@@ -328,7 +340,8 @@ def run_mod_loader_web(loader_pid=0, debug=False):
     api.attach(window)
     # 共享主题层 + 当前皮肤 + 统一标题栏 (李箱图标)
     apply_window_chrome(window, title="Mod 加载器", kind="yisang",
-                        show_when_ready=True, fallback_ms=1500)
+                        show_when_ready=True, fallback_ms=1500,
+                        resizable=False)   # 与旧版 tkinter 窗口一样固定尺寸
     try:
         webview.start(debug=debug, icon=window_icon_path("yisang"))
     except Exception as e:

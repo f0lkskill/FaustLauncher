@@ -381,8 +381,9 @@ def run_prescript_window(debug: bool = False):
             frameless=True,    # 去掉系统标题栏, 改用与主界面同款的自绘标题栏
             easy_drag=False,   # 只允许拖标题栏
             shadow=False,
+            hidden=True,     # 先隐藏, 注入主题+标题栏后淡入
         )
-        apply_window_chrome(window)   # 共享主题层 + 当前皮肤 + 统一标题栏
+        apply_window_chrome(window, show_when_ready=True)   # 共享主题层 + 当前皮肤 + 统一标题栏 (注入完再淡入)
         webview.start(debug=debug, icon=window_icon_path())
     except BaseException as e:
         import traceback

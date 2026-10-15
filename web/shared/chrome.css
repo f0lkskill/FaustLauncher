@@ -67,3 +67,26 @@ html.fl-chrome {
 html.fl-chrome,
 html.fl-chrome body { height: 100%; }
 html.fl-chrome body { margin: 0; }
+
+/* 关键: 页面根容器多用 `.wrap { position: absolute; inset: 0 }`.
+   没有定位祖先时, absolute 的包含块是「初始包含块」(视口原点),
+   不受 html 的 padding 影响 → 会被标题栏盖住上半部分。
+   让 body 成为定位祖先, inset:0 就等于「标题栏以下的可视区」。*/
+html.fl-chrome body { position: relative; }
+
+/* ============================================================
+   边框缩放热区 (frameless 窗口没有系统边框)
+   ============================================================ */
+#fl-resize-layer {
+  position: fixed; inset: 0; z-index: 9999;
+  pointer-events: none;
+}
+#fl-resize-layer .fl-rz {
+  position: fixed; pointer-events: auto;
+  -webkit-app-region: no-drag;
+}
+#fl-resize-layer .fl-rz-n { z-index: 2; }
+#fl-resize-layer .fl-rz-se,
+#fl-resize-layer .fl-rz-sw,
+#fl-resize-layer .fl-rz-ne,
+#fl-resize-layer .fl-rz-nw { z-index: 3; }

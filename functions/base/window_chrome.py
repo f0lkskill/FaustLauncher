@@ -242,17 +242,13 @@ def minimize_window(window) -> bool:
         return False
 
 
-def close_window(window) -> bool:
-    """发送 WM_CLOSE (走 pywebview 正常关闭流程, 让窗口自己决定怎么退)"""
-    hwnd = hwnd_of(window)
-    if not hwnd:
-        return False
-    try:
-        import ctypes
-        ctypes.windll.user32.PostMessageW(hwnd, 0x0010, 0, 0)
+def close_window(window, fade: bool = True) -> bool:
+    """淡出后再关闭 (与主界面退出同一观感); fade=False 则立刻关闭"""
+    if fade:
+        fade_out_window(window, then_close=True)
         return True
-    except Exception:
-        return False
+    _post_close(window)
+    return True
 
 
 _drag_lock = threading.Lock()
@@ -305,6 +301,154 @@ def end_move_window(window) -> bool:
 
 
 # ============================================================
+# 边框缩放 / 最大化 (frameless 窗口没有系统边框, 这两件事要自己做)
+# ============================================================
+_resize_lock = threading.Lock()
+_resize_origins: dict[int, tuple] = {}
+_maximized: dict[int, tuple] = {}   # hwnd -> 最大化之前的窗口矩形
+
+
+def _min_outer_size(window) -> tuple:
+    """窗口最小尺寸
+
+    ``min_size`` 传进来的已经是外框尺寸 (各窗口用 :func:`child_window_size`
+    换算过), 所以这里不再叠加系统框, 只在缺失时给个兜底。
+    """
+    try:
+        min_size = getattr(window, "min_size", None)
+        if min_size:
+            return int(min_size[0]), int(min_size[1])
+    except Exception:
+        pass
+    return child_window_size(200, 100)
+
+
+def begin_resize_window(window, edge, mouse_x, mouse_y) -> bool:
+    """记录缩放起点 (edge 取 n/s/e/w/ne/nw/se/sw)"""
+    hwnd = hwnd_of(window)
+    if not hwnd:
+        return False
+    try:
+        import ctypes
+        import ctypes.wintypes as wt
+        r = wt.RECT()
+        ctypes.windll.user32.GetWindowRect(hwnd, ctypes.byref(r))
+        min_w, min_h = _min_outer_size(window)
+        with _resize_lock:
+            _resize_origins[hwnd] = (str(edge), float(mouse_x), float(mouse_y),
+                                     r.left, r.top, r.right - r.left, r.bottom - r.top,
+                                     min_w, min_h)
+        return True
+    except Exception:
+        return False
+
+
+def resize_window(window, mouse_x, mouse_y) -> bool:
+    """按缩放起点计算新矩形 (绝对坐标, 不做增量累加, 避免异步竞态)"""
+    hwnd = hwnd_of(window)
+    if not hwnd:
+        return False
+    with _resize_lock:
+        origin = _resize_origins.get(hwnd)
+    if not origin:
+        return False
+    edge, mx, my, x0, y0, w0, h0, min_w, min_h = origin
+    try:
+        import ctypes
+        dx = round(float(mouse_x) - mx)
+        dy = round(float(mouse_y) - my)
+        x, y, w, h = x0, y0, w0, h0
+        if "e" in edge:
+            w = w0 + dx
+        if "s" in edge:
+            h = h0 + dy
+        if "w" in edge:
+            w = w0 - dx
+        if "n" in edge:
+            h = h0 - dy
+        # 撞到最小尺寸时, 让被拖动的那条边停在原位 (窗口不会"缩着跑")
+        if w < min_w:
+            if "w" in edge:
+                x = x0 + (w0 - min_w)
+            elif "e" not in edge:
+                x = x0
+            w = min_w
+        if h < min_h:
+            if "n" in edge:
+                y = y0 + (h0 - min_h)
+            h = min_h
+        if "e" not in edge and "w" not in edge:
+            x = x0
+        if "n" not in edge and "s" not in edge:
+            y = y0
+        # 最大化状态下拖动边框 → 先还原, 保持和系统窗口一致的手感
+        if hwnd in _maximized:
+            _maximized.pop(hwnd, None)
+        ctypes.windll.user32.SetWindowPos(hwnd, None, x, y, w, h,
+                                          0x0004 | 0x0010)   # SWP_NOZORDER | SWP_NOACTIVATE
+        return True
+    except Exception:
+        return False
+
+
+def end_resize_window(window) -> bool:
+    hwnd = hwnd_of(window)
+    with _resize_lock:
+        _resize_origins.pop(hwnd, None)
+    return True
+
+
+def _work_area() -> tuple:
+    """主屏工作区 (去掉任务栏)"""
+    try:
+        import ctypes
+        import ctypes.wintypes as wt
+        r = wt.RECT()
+        if ctypes.windll.user32.SystemParametersInfoW(0x0030, 0, ctypes.byref(r), 0):
+            return int(r.left), int(r.top), int(r.right - r.left), int(r.bottom - r.top)
+    except Exception:
+        pass
+    return 0, 0, 0, 0
+
+
+def toggle_maximize_window(window) -> bool:
+    """最大化 / 还原 (手算工作区, frameless 窗口最大化了也不会盖住任务栏)
+
+    Returns:
+        True: 现在处于最大化状态
+    """
+    hwnd = hwnd_of(window)
+    if not hwnd:
+        return False
+    try:
+        import ctypes
+        import ctypes.wintypes as wt
+        saved = _maximized.get(hwnd)
+        if saved:
+            x, y, w, h = saved
+            ctypes.windll.user32.SetWindowPos(hwnd, None, x, y, w, h,
+                                              0x0020 | 0x0004 | 0x0010)  # SWP_FRAMECHANGED|NOZORDER|NOACTIVATE
+            _maximized.pop(hwnd, None)
+            return False
+        ax, ay, aw, ah = _work_area()
+        if not aw or not ah:
+            return False
+        cur = wt.RECT()
+        ctypes.windll.user32.GetWindowRect(hwnd, ctypes.byref(cur))
+        _maximized[hwnd] = (cur.left, cur.top, cur.right - cur.left, cur.bottom - cur.top)
+        ctypes.windll.user32.SetWindowPos(hwnd, None, ax, ay, aw, ah,
+                                          0x0020 | 0x0004 | 0x0010)
+        return True
+    except Exception:
+        return False
+
+
+def is_maximized_window(window) -> bool:
+    hwnd = hwnd_of(window)
+    return bool(hwnd and hwnd in _maximized)
+
+
+# ============================================================
 # 注入
 # ============================================================
 def _inject_js(style_id: str, css: str) -> str:
@@ -315,11 +459,177 @@ def _inject_js(style_id: str, css: str) -> str:
     )
 
 
-def _safe_show(window):
+def _plain_show(window):
     try:
         window.show()
     except Exception:
         pass
+
+
+# ============================================================
+# 淡入 / 淡出 (与主界面同一套: WS_EX_LAYERED + SetLayeredWindowAttributes)
+# ============================================================
+_layered_ready = set()   # 已加过 WS_EX_LAYERED 的 hwnd (幂等)
+
+
+def ensure_layered(hwnd) -> bool:
+    """给窗口加 WS_EX_LAYERED (淡入淡出必需, 幂等)"""
+    if not hwnd:
+        return False
+    if hwnd in _layered_ready:
+        return True
+    try:
+        import ctypes
+        GWL_EXSTYLE, WS_EX_LAYERED = -20, 0x80000
+        style = ctypes.windll.user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
+        ctypes.windll.user32.SetWindowLongW(hwnd, GWL_EXSTYLE, style | WS_EX_LAYERED)
+        _layered_ready.add(hwnd)
+        return True
+    except Exception:
+        return False
+
+
+def clear_layered(hwnd) -> None:
+    """摘掉 WS_EX_LAYERED, 让窗口回到正常的 GPU 合成路径
+
+    分层窗口走 DWM 软件合成 (逐帧拷贝), WebView2 内容在切页/滚动时容易撕裂、
+    残留上帧画面 —— 所以淡入到 alpha=255 之后必须摘掉 (与主界面
+    ``app_web._clear_layered`` 的原因一致)。
+    """
+    try:
+        import ctypes
+        GWL_EXSTYLE, WS_EX_LAYERED = -20, 0x80000
+        style = ctypes.windll.user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
+        if style & WS_EX_LAYERED:
+            ctypes.windll.user32.SetWindowLongW(hwnd, GWL_EXSTYLE, style & ~WS_EX_LAYERED)
+            _layered_ready.discard(hwnd)
+            # 强制 DWM 重算窗口帧, 否则样式变更可能延迟生效
+            SWP_FRAMECHANGED, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER = 0x20, 2, 1, 4
+            ctypes.windll.user32.SetWindowPos(hwnd, None, 0, 0, 0, 0,
+                                              SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER)
+    except Exception:
+        pass
+
+
+def set_window_alpha(hwnd, alpha) -> None:
+    """设置窗口透明度 0~255 (需先 ensure_layered)"""
+    try:
+        import ctypes
+        ctypes.windll.user32.SetLayeredWindowAttributes(
+            hwnd, 0, max(0, min(255, int(alpha))), 0x2)   # LWA_ALPHA
+    except Exception:
+        pass
+
+
+def get_window_alpha(hwnd) -> int:
+    """读当前窗口透明度 (读不到返回 -1)"""
+    try:
+        import ctypes
+        import ctypes.wintypes as wt
+        key = wt.COLORREF()
+        alpha = wt.BYTE()
+        flags = ctypes.wintypes.DWORD()
+        if ctypes.windll.user32.GetLayeredWindowAttributes(
+                hwnd, ctypes.byref(key), ctypes.byref(alpha), ctypes.byref(flags)):
+            return int(alpha.value)
+    except Exception:
+        pass
+    return -1
+
+
+def fade_window(hwnd, start, end, step=20, delay=0.01) -> None:
+    """同步阻塞的透明度渐变 (在后台线程里调用)"""
+    import time
+
+    if not hwnd or start == end:
+        if hwnd:
+            set_window_alpha(hwnd, end)
+        return
+    a = start
+    while True:
+        set_window_alpha(hwnd, a)
+        time.sleep(delay)
+        if start < end:
+            a = min(a + step, end)
+            if a >= end:
+                break
+        else:
+            a = max(a - step, end)
+            if a <= end:
+                break
+    set_window_alpha(hwnd, end)
+
+
+def fade_in_window(window, *, step=15, delay=0.01) -> bool:
+    """显示窗口并淡入 (先置为全透明再 show, 避免闪现; 结束后摘掉分层样式)"""
+    hwnd = hwnd_of(window)
+    if not hwnd:
+        _plain_show(window)
+        return False
+    ensure_layered(hwnd)
+    set_window_alpha(hwnd, 0)
+    _plain_show(window)
+
+    def _work():
+        try:
+            fade_window(hwnd, 0, 255, step=step, delay=delay)
+        except Exception:
+            pass
+        finally:
+            set_window_alpha(hwnd, 255)
+            clear_layered(hwnd)
+
+    threading.Thread(target=_work, daemon=True).start()
+    return True
+
+
+def _post_close(window, hwnd=0) -> None:
+    """真正关闭窗口: 优先 WM_CLOSE (走 pywebview 正常关闭流程)"""
+    try:
+        import ctypes
+        if not hwnd:
+            hwnd = hwnd_of(window)
+        if hwnd:
+            ctypes.windll.user32.PostMessageW(hwnd, 0x0010, 0, 0)   # WM_CLOSE
+            return
+    except Exception:
+        pass
+    try:
+        window.destroy()
+    except Exception:
+        pass
+
+
+def fade_out_window(window, *, step=20, delay=0.008, then_close=False) -> bool:
+    """淡出, 可选淡完自动关闭 (标题栏关闭按钮 / 页面关闭按钮都走这里)"""
+    hwnd = hwnd_of(window)
+
+    def _work():
+        try:
+            if hwnd:
+                ensure_layered(hwnd)
+                fade_window(hwnd, 255, 0, step=step, delay=delay)
+        except Exception:
+            pass
+        finally:
+            if then_close:
+                _post_close(window, hwnd)
+
+    threading.Thread(target=_work, daemon=True).start()
+    return bool(hwnd)
+
+
+_shown_hwnds = set()   # 已经"显示过"的窗口 (兜底定时器和 loaded 可能都想显示)
+
+
+def _safe_show(window):
+    """显示窗口 (淡入, 只做一次) —— 注入完主题再显示时用"""
+    hwnd = hwnd_of(window)
+    if hwnd and hwnd in _shown_hwnds:
+        return          # 兜底定时器 / loaded 各调一次, 二次淡入会看到"闪一下"
+    if hwnd:
+        _shown_hwnds.add(hwnd)
+    fade_in_window(window)
 
 
 def theme_revision() -> str:
@@ -344,7 +654,8 @@ def theme_revision() -> str:
 def apply_window_chrome(window, *, title: str = "", kind: str = "launcher",
                         icon: str = "", icon_path: str = "",
                         show_when_ready: bool = False, fallback_ms: int = 1500,
-                        poll_ms: int = 1200, on_skin_change: str = "") -> bool:
+                        poll_ms: int = 1200, on_skin_change: str = "",
+                        resizable: bool = True) -> bool:
     """把「主题 + 皮肤 + 统一标题栏」一次性注入子窗口
 
     必须在 ``webview.start()`` 之前调用 (这时还没有 DOM, 只能注册事件);
@@ -380,7 +691,8 @@ def apply_window_chrome(window, *, title: str = "", kind: str = "launcher",
             theme = full_theme_css()
         except Exception as e:
             print(f"[Chrome] 主题读取失败: {e}")
-        cfg = {"title": title, "icon": icon, "poll_ms": poll_ms}
+        cfg = {"title": title, "icon": icon, "poll_ms": poll_ms,
+               "resizable": bool(resizable)}
         if on_skin_change:
             cfg["on_skin_change"] = on_skin_change
         js = "".join([
@@ -453,6 +765,23 @@ class WindowChromeBridge(SkinBridge):
 
     def end_move_window(self):
         return end_move_window(self._win())
+
+    # ---- 边框缩放 / 最大化 ----
+    def begin_resize_window(self, edge, mouse_x, mouse_y):
+        return begin_resize_window(self._win(), edge, mouse_x, mouse_y)
+
+    def resize_window(self, mouse_x, mouse_y):
+        return resize_window(self._win(), mouse_x, mouse_y)
+
+    def end_resize_window(self):
+        return end_resize_window(self._win())
+
+    def toggle_maximize_window(self):
+        """最大化/还原切换; 返回切换后是否最大化"""
+        return toggle_maximize_window(self._win())
+
+    def is_maximized(self) -> bool:
+        return is_maximized_window(self._win())
 
     # ---- 皮肤热更新 ----
     def theme_revision(self) -> str:
