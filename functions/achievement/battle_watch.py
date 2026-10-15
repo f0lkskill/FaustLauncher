@@ -1890,17 +1890,19 @@ class BattleWatch:
             self._event_file = None
 
     def _event(self, message: str) -> None:
-        """全量事件记录：优先写统一日志，没登记时退回自己的事件文件。"""
-        # 带毫秒：结算阶段（一回合的伤害/收尾）全挤在同一秒里，只有毫秒能看清先后
-        line = (f"{time.strftime('%H:%M:%S')}.{int(time.time() * 1000) % 1000:03d} "
-                f"{message}")
+        """全量事件记录：优先写统一日志，没登记时退回自己的事件文件。
+
+        时间戳 / 区域 / 级别一律交给 :func:`log_sink.format_line`（带毫秒：结算阶段一回合的
+        伤害/收尾全挤在同一秒里，只有毫秒能看清先后），这里只提供正文。
+        """
         if self._event_to_sink or log_sink.installed():
             self._event_to_sink = True
-            if log_sink.write(line):
+            if log_sink.write(message, "BattleWatch"):
                 return
         if self._event_file is not None:
             try:
-                self._event_file.write(line + "\n")
+                self._event_file.write(
+                    log_sink.format_line(message, area="BattleWatch") + "\n")
             except OSError:
                 pass
 

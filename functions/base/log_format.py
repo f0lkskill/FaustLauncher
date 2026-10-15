@@ -34,7 +34,7 @@ from dataclasses import dataclass
 
 __all__ = [
     "LogRecord", "build_line", "format_message", "short_stamp", "resolve_site",
-    "strip_ansi", "palette", "PALETTE",
+    "strip_ansi", "palette", "PALETTE", "level_of", "split_area",
 ]
 
 # --------------------------------------------------------------------------- constants
@@ -176,6 +176,16 @@ def _split_area(message: str, fallback: str) -> tuple[str, str]:
     if match:
         return match.group(1), match.group(2)
     return fallback, message
+
+
+def level_of(message: str) -> str:
+    """公开别名：按正文关键字推断级别（成就日志等其它日志落点复用同一套规则）。"""
+    return _level_of(message)
+
+
+def split_area(message: str, fallback: str) -> tuple[str, str]:
+    """公开别名：把消息开头的 ``[标签]`` 提升为区域列，返回 ``(区域, 正文)``。"""
+    return _split_area(message, fallback)
 
 
 # --------------------------------------------------------------------------- 渲染

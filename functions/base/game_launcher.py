@@ -954,33 +954,38 @@ class GameLauncher:
             #   hook_boot.log              子进程启动面包屑（死在哪一步）
             #   hook_fatal.log             faulthandler（原生崩溃堆栈）
             #   battle_watch_status.json   战斗观测状态（机器可读，--status 用）
-            child_log = None
-            try:
-                child_log = open(hook_log_path, "a", encoding="utf-8", errors="replace")
-            except OSError as exc:
-                print(f"[Achievement] 无法打开成就日志 {hook_log_path}: {exc}")
             child_env = dict(os.environ)
             # 告诉子进程：清空已经做过了（别再 truncate，否则会把启动期的 stderr 抹掉）
             child_env["FAUST_ACH_TRUNCATED"] = "1"
+            # 子进程 stdout/stderr 走**管道**，由父进程逐行格式化后写进同一份日志：
+            #   · 编码：强制子进程按 UTF-8 输出（以前它按系统 ANSI(GBK) 写字节，混进
+            #     UTF-8 文件就是日志开头那几行乱码）；
+            #   · 格式：子进程的裸 print / stderr 面包屑也带上 [时间] [区域] [级别]；
+            #   · 去重：DLL 自己 printf 的 ``HH:MM:SS.mmm DLL ...`` 与 Python 侧的
+            #     ``[BattleWatch] DLL: ...`` 是同一件事，前者丢弃（见 _pump_hook_child_log）。
+            child_env["PYTHONIOENCODING"] = "utf-8"
+            child_env["PYTHONUTF8"] = "1"
             try:
                 proc = subprocess.Popen(
                     cmd,
                     cwd=project_root,
-                    stdout=child_log if child_log is not None else subprocess.DEVNULL,
-                    stderr=child_log if child_log is not None else subprocess.DEVNULL,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
                     stdin=subprocess.DEVNULL,
                     env=child_env,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    bufsize=1,
                     # CREATE_NO_WINDOW | BELOW_NORMAL_PRIORITY_CLASS
                     # 低优先级很重要：游戏更新后子进程要在后台跑一遍 metadata 解密 +
                     # Il2CppDumper（满核 1~2 分钟），正常优先级会把整个桌面卡住。
                     creationflags=0x08000000 | 0x00004000,
                 )
-            finally:
-                if child_log is not None:
-                    try:
-                        child_log.close()
-                    except OSError:
-                        pass
+            except OSError as exc:
+                print(f"[Achievement] 无法启动成就监测子进程: {exc}")
+                return
+            self._pump_hook_child_log(proc, hook_log_path)
             # 这里**不要**写 hook.pid！``proc.pid`` 是 **launcher（py.exe）的 PID**，
             # 不是跑 main.py 的那个进程 —— 本机 venv 的 ``python.exe`` 其实是
             # py.exe launcher（InternalName = Python Launcher），真解释器是它拉起的**子进程**。
@@ -995,6 +1000,52 @@ class GameLauncher:
         except Exception as e:
             print(f"[Achievement] 启动成就监测失败 (不影响游戏启动): {e}")
             traceback.print_exc()
+
+    def _pump_hook_child_log(self, proc, hook_log_path: str) -> None:
+        """把成就子进程的 stdout/stderr **逐行格式化**后追加进成就日志。
+
+        子进程自己写日志（``_LogSink``，O_APPEND）与这里并行：两者都是一行一次追加写，
+        所以不会互相插队。子进程的裸输出（早期 stderr 面包屑、第三方库的 print、
+        DLL 的 stdout）也走 :func:`functions.achievement.log_sink.format_line`，
+        于是整份日志只有一种行格式。
+        """
+        import re as _re
+        import threading as _threading
+
+        from functions.achievement import log_sink
+
+        # DLL 直接 printf 出来的原始行（``12:06:28.770 DLL INFO ...``）：Python 侧已经用
+        # ``[BattleWatch] DLL: ...`` 记录过同一件事，留着只会让人把同一行读两遍。
+        dll_raw_re = _re.compile(r"^\d{2}:\d{2}:\d{2}\.\d{3}\s+DLL\b")
+
+        def worker() -> None:
+            try:
+                fh = open(hook_log_path, "a", encoding="utf-8", errors="replace",
+                          buffering=1)
+            except OSError as exc:
+                print(f"[Achievement] 无法打开成就日志 {hook_log_path}: {exc}")
+                return
+            try:
+                stream = proc.stdout
+                if stream is None:
+                    return
+                for raw in stream:
+                    line = raw.rstrip("\r\n")
+                    if not line.strip():
+                        fh.write("\n")
+                        continue
+                    if dll_raw_re.match(line):
+                        continue
+                    fh.write(log_sink.format_line(line, area="AchLog") + "\n")
+            except Exception:  # noqa: BLE001
+                pass
+            finally:
+                try:
+                    fh.close()
+                except OSError:
+                    pass
+
+        _threading.Thread(target=worker, name="faust-ach-log", daemon=True).start()
 
     def _watch_hook_child(self, proc, hook_log_path: str) -> None:
         """子进程健康检查：起来 20s 后成就日志还只有 BOM（3 字节）就主动告警。

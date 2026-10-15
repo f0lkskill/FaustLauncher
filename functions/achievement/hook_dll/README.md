@@ -483,13 +483,14 @@ python test\replay_battle_log.py
 
 | 看什么 | 位置 | 关键行 |
 |---|---|---|
-| 唯一一份日志 | `logs/achievement_hook.log` | 成就相关：`已注入 …` / `prologue 自检通过` / `已装钩 N 个观测点` / `观测点开始命中: …` / `心跳: …` / `★ …判定…` / `[成就] 解锁: …`（每行带 `[HH:MM:SS]` 时间轴）；以及全量事件流：每行 `RND/SPD/VAL/ACT`（带毫秒） |
+| 唯一一份日志 | `logs/achievement_hook.log` | 每行统一为 ``[时:分:秒.毫秒] [区域] [级别] 正文``（区域如 `[AchMonitor]` / `[BattleWatch]` / `[AchLog]` / `[OffsetProbe]`，级别 `[INFO]` / `[WARN]` / `[ERROR]`；多行消息的续行原样缩进）。成就相关正文：`已注入 …` / `prologue 自检通过` / `已装钩 N 个观测点` / `心跳: …` / `[成就] 解锁: …`；全量事件流正文以 `RND/SPD/VAL/ACT/BUF` 开头 |
 | 机器可读状态 | `cache/achievement/battle_watch_status.json` | 阶段/注入 PID/每个钩子的 rva+命中数/`rule_hits`（每条判定）/`watched_vitals`（目标身份的血量理智） |
 
 > 以前是**三份**日志（`achievement_hook.log` + `achievement_hook_child.log` +
 > `battle_watch.log`），排查要在几个文件之间对时间。现在合成一份：子进程的
-> stdout/stderr 由父进程接进同一个文件，事件流通过
-> `functions/achievement/log_sink.py` 登记到同一落点。
+> stdout/stderr 走管道交给父进程**逐行套用同一套格式**再写进同一个文件（编码统一
+> UTF-8；DLL 自己 `printf` 的裸行与 Python 侧记录的同一件事会去重），事件流通过
+> `functions/achievement/log_sink.py` 登记到同一落点（`format_line()` 是唯一的行格式化点）。
 > 只有离线自查（`python -m functions.achievement.battle_watch`）没有登记 sink 时，
 > 才退回写自己的 `logs/achievement_hook.log`。
 

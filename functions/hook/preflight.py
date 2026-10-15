@@ -101,11 +101,17 @@ def prologue_check(index, gameassembly: str, on_log=None) -> dict:
                          + ("（指纹也一致）" if out["fingerprint_ok"] else "（⚠ 指纹不一致）")
                          + (f"；{len(out['skipped'])} 条无 prologue 跳过" if out["skipped"] else ""))
     else:
+        # 摘要只放前几条：完整清单一律另起多行（见下面的 log），
+        # 否则这一行会长到几千字符，谁也没法读（用户反馈过日志"没法看"）。
+        brief = "; ".join(out["mismatch"][:3])
+        more = f" …等共 {len(out['mismatch'])} 条" if len(out["mismatch"]) > 3 else ""
         out["detail"] = (f"{out['matched']}/{out['checked']} 条一致"
-                         + (f"；不一致: {'; '.join(out['mismatch'][:4])}" if out["mismatch"] else "")
+                         + (f"；不一致: {brief}{more}" if out["mismatch"] else "")
                          + ("；索引里没有可校验的钩子" if not out["checked"] else ""))
     if out["mismatch"]:
-        log(f"[OffsetProbe] 对不上的钩子: {'; '.join(out['mismatch'])}")
+        log(f"[OffsetProbe] 对不上的钩子 {len(out['mismatch'])}/{out['checked']} 条:")
+        for item in out["mismatch"]:
+            log(f"[OffsetProbe]   不一致: {item}")
     return out
 
 

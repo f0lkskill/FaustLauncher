@@ -126,15 +126,18 @@ class LogReader:
 
 
 # ============ 日志时间轴 ============
-_TS_PREFIX_RE = re.compile(r"^\[\d{2}:\d{2}:\d{2}\]")
+# 前缀格式的唯一实现在 functions/achievement/log_sink.py（成就日志只有一种格式）。
+# 这里以前有一条 ``_TS_PREFIX_RE`` 用来避免重复加时间戳 —— 现在由 format_line 负责，
+# 它会把旧式 ``[HH:MM:SS]`` / ``HH:MM:SS.mmm`` 前缀先剥掉再统一渲染。
 
 
 def with_timestamp(message: str) -> str:
-    """给日志行加时间轴前缀 ``[HH:MM:SS]``（已经有前缀的保持原样）。"""
-    text = str(message)
-    if _TS_PREFIX_RE.match(text):
-        return text
-    return f"[{datetime.now().strftime('%H:%M:%S')}] {text}"
+    """给日志行加统一前缀 ``[时:分:秒.毫秒] [区域] [级别]``。
+
+    格式的**唯一实现**在 :mod:`functions.achievement.log_sink`（成就日志只此一种格式），
+    这里保留函数名是因为它被几处当公共入口调用。
+    """
+    return log_sink.format_line(message)
 
 
 # ============ 解锁日志（统一出口）============
@@ -281,9 +284,10 @@ class _LogSink:
             self._fd = None
             self._report_failure(f"打开失败: {exc}")
 
-    def write_line(self, message: str) -> None:
-        text = with_timestamp(message)
-        data = (text + "\n").encode("utf-8", "replace")
+    def write_line(self, message: str, area: str | None = None) -> None:
+        text = log_sink.format_line(message, area=area)
+        # 空行保持空行：以前这里会写出一条"只有时间戳、没有内容"的孤儿行
+        data = b"\n" if not text else (text + "\n").encode("utf-8", "replace")
         with self._lock:
             if self._fd is None:
                 self._open()
@@ -838,7 +842,11 @@ def _hook_boot_path() -> str:
 
 
 def _boot(message: str) -> None:
-    """面包屑：写 cache/achievement/hook_boot.log + stderr（启动器已把 stderr 转存到文件）。"""
+    """面包屑：写 cache/achievement/hook_boot.log；统一日志就绪后它带头进成就日志。
+
+    两条路径的**格式一致**：sink 就绪时走 sink（区域 ``[AchLog]``）；没就绪时退回 stderr，
+    父进程会把子进程 stderr 逐行按同一格式追加进成就日志（见 game_launcher）。
+    """
     line = f"[{time.strftime('%H:%M:%S')}] pid={os.getpid()} {message}"
     try:
         path = _hook_boot_path()
@@ -847,6 +855,8 @@ def _boot(message: str) -> None:
             fh.write(line + "\n")
     except OSError:
         pass
+    if log_sink.write(f"pid={os.getpid()} {message}", "AchLog"):
+        return
     try:
         print(line, file=sys.stderr, flush=True)
     except Exception:  # noqa: BLE001
@@ -939,8 +949,8 @@ def run_achievement_hook():
         already_truncated = bool(os.environ.get("FAUST_ACH_TRUNCATED"))
         sink = _LogSink(args.output, truncate=not already_truncated)
 
-        def _write(msg: str):
-            sink.write_line(msg)
+        def _write(msg: str, area: str | None = None):
+            sink.write_line(msg, area)
 
         log_callback = _write
         # 登记为**本进程统一的日志落点**：战斗观测(原 logs/battle_watch.log)也写这里，
