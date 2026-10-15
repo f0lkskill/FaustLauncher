@@ -91,8 +91,14 @@ window.__onEvent = function (event, data) {
       if (icoEl && icon) { icoEl.innerHTML = iconSvgAuto(icon); icoEl.dataset.task = ''; }
     }
   } else if (event === 'step') {
-    // 若流水线未启动 (如启动时自动汉化更新), 自动显示并启动流水线
-    if (!pipeline.running) pipelineReset(false);
+    // 若流水线未启动 (如启动时自动汉化更新), 自动显示并启动流水线。
+    // 步骤表按后端随事件下发的 kind 选 (没有就用本地已知的按钮态兜底) ——
+    // 早期硬编码 false(汉化更新 5 步表) 会导致"点启动游戏却显示汉化更新步骤"。
+    if (!pipeline.running) {
+      const k = (data && data.kind)
+        || (typeof launchBtnState !== 'undefined' && launchBtnState ? launchBtnState.kind : null);
+      pipelineReset(k === 'launch');
+    }
     // 后端显式步骤推进 (与真实进度同步; 不再依赖日志关键词, 避免顺序错乱)
     const s = data && data.step;
     const idx = pipeline.steps.findIndex(x => x.key === s);
@@ -110,6 +116,11 @@ window.__onEvent = function (event, data) {
     // 用户点了"中止启动/中止更新": 后端已停止流程
     try { pipelineAborted(); } catch (e) {}
     toast('流程已中止', 'warn', 3000);
+  } else if (event === 'pipeline_error') {
+    // 后端显式失败事件 (带 message): 这是唯一会判定"流程失败"的来源。
+    // 日志文本不再参与判定 (见 pipeline.js handlePipelineLog 的说明)。
+    try { pipelineError(data && data.message); } catch (e) {}
+    toast('流程执行失败, 详见终端', 'error', 5000);
   } else if (event === 'game_state') {
     // 游戏进程存活状态变化: 只更新本地记录 (按钮形态已不再由它驱动)
     // game_alive = 身份校验过的本机游戏; game_busy = 存在任何同名进程

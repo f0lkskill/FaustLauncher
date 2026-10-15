@@ -975,6 +975,7 @@ def download_and_launch(obj=None, need_run_game=False, manual=False):
         return
     downloading = True
     aborted = False   # 本次流程是否因用户中止而结束 (finally 据此通知前端)
+    error_text = ''   # 本次流程是否因异常而失败 (finally 据此通知前端)
     # 注意: 这里**不要**清中止标志。清理动作放在用户发起流程的 API 入口
     # (app_web 的 launch_game / update_translation) 里同步完成。
     # 若在这里清, 用户点了启动后很快再点中止时, 标志会先被设置、再被这行抹掉,
@@ -986,13 +987,18 @@ def download_and_launch(obj=None, need_run_game=False, manual=False):
             # 内置汉化包的下载/合并一律用内置目录名: 插件自定义汉化源不该影响这一步
             get_builtin_translation_dir, get_builtin_dir_name,
         )
+        # 本次流程属于哪条流水线: 决定前端渲染 7 步启动表还是 5 步汉化更新表
+        pipe_kind = 'launch' if (need_run_game or obj is not None) else 'translate'
+
         def _push_step(step):
             """推送流水线步骤事件 (web 模式经 _web_progress 钩子实时到前端)"""
             try:
                 from functions.web_update import zeroasso_download as _zd
                 _push = getattr(_zd, '_web_progress', None)
                 if _push:
-                    _push('step', {'step': step})
+                    # 带上 kind: 前端若还没建好流水线, 据此选对步骤表, 不再靠猜测
+                    # (猜错就会出现"点启动游戏却显示汉化更新列表")
+                    _push('step', {'step': step, 'kind': pipe_kind})
             except Exception:
                 pass
 
@@ -1319,6 +1325,9 @@ def download_and_launch(obj=None, need_run_game=False, manual=False):
     except Exception as e:
         print(f"下载过程中出错: {e}")
         traceback.print_exception(*sys.exc_info())
+        # 真正的失败只有这一条路径: 先记下来, 等 finally 里 downloading 归位后再通知前端
+        # (提前通知的话, 前端回读 get_launch_state 会看到 running 仍为 True, 按钮卡在"中止")
+        error_text = str(e) or e.__class__.__name__
         return
     finally:
         downloading = False
@@ -1332,6 +1341,15 @@ def download_and_launch(obj=None, need_run_game=False, manual=False):
                 _push = getattr(_zd, '_web_progress', None)
                 if _push:
                     _push('pipeline_aborted', {})
+            except Exception:
+                pass
+        elif error_text:
+            # 显式失败事件: 前端据此在详情面板显示错误并收尾, 不再靠扫日志文本猜
+            try:
+                from functions.web_update import zeroasso_download as _zd
+                _push = getattr(_zd, '_web_progress', None)
+                if _push:
+                    _push('pipeline_error', {'message': error_text})
             except Exception:
                 pass
         # 流程结束(无论正常/中止/出错)一律清掉中止标志, 避免影响下一次操作

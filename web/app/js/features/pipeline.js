@@ -75,11 +75,15 @@ function pipelineAdvance() {
   updatePipeDetail(pipeline.steps[idx].key);
 }
 
-function pipelineError() {
+function pipelineError(detail) {
   // 状态统一由右侧详情面板显示
   const icoEl = $('#pipe-detail-ico'), txtEl = $('#pipe-detail-text');
   if (icoEl) { icoEl.innerHTML = iconSvg('harm'); icoEl.dataset.task = ''; }
-  if (txtEl) txtEl.textContent = '启动过程中出现错误, 详见终端';
+  if (txtEl) {
+    txtEl.textContent = detail
+      ? ('启动过程中出现错误: ' + String(detail))
+      : '启动过程中出现错误, 详见终端';
+  }
   hidePipeDownloadProgress();
   const i = pipeline.currentIdx;
   if (i >= 0) setStep(i, 'active'); // 保留高亮
@@ -181,12 +185,13 @@ function applyPipeTextHints(line) {
 
 function handlePipelineLog(line) {
   if (!pipeline.running) return;
-  if (/错误|失败|出错|❌/.test(line)) {
-    if (!/汉化包下载失败|启动游戏失败/.test(line) || /下载过程中出错/.test(line)) {
-      pipelineError();
-    }
-    return;
-  }
-  // 步骤推进完全信任后端 _push_step; 日志仅用于细节文本提示
+  // 这里**只**做文本细节提示, 不再按"失败/错误"字样杀流水线。
+  // 原因: 日志里带这些字样的多半是可重试的中间状态 —— 蓝奏云直链解析失败后会自动
+  // 回退原链接(业务上照样成功)、气泡文件转移失败后还有资源包补下载等。早期按文本
+  // 判定失败会执行 pipelineError() → pipeline.running=false, 而 finishPipelineUI()
+  // 里的 syncLaunchButtons() 又会从后端读回 running:true, 按钮弹回"中止启动";
+  // 紧接着下一个 step 事件走进 bridge.js 的"未启动就自动建流水线"分支, 把面板重建成
+  // 汉化更新的 5 步表 —— 表现就是"点了启动游戏, 面板却在装汉化"。
+  // 现在失败一律由后端显式事件驱动: pipeline_done / pipeline_aborted / pipeline_error。
   applyPipeTextHints(line);
 }
