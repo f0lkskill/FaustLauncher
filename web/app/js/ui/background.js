@@ -137,6 +137,10 @@ function loadBackgroundPool() {
       const list = (r && r.backgrounds) ? r.backgrounds : [];
       _bgPool = list.filter(u => typeof u === 'string' && u);
       _bgRotateIdx = -1;                      // 首屏那张不在池内下标语义里, 不参与去重
+      // 进入程序立刻换一次随机背景, 不等第一个 30s 轮换间隔:
+      // 首屏那张是后端只编码 1 张的"单张", 这里从**整池**随机抽一张换上;
+      // 池子已到齐, 所以这次换图之后看到的必然是整池里的随机一张。
+      if (_bgPool.length >= 2) _bgRotateStep();
       startBackgroundRotation();
       return _bgPool.length > 0;
     })

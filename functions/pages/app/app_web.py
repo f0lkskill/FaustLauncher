@@ -2307,6 +2307,21 @@ class AppApi:
                 print(f"重载插件失败: {e}")
         threading.Thread(target=_run, daemon=True).start()
 
+    def _fire_addon_disabled(self, name):
+        """触发插件注册的禁用回调 (必须在重载之前调用)
+
+        重载会 unload_all_addons() 清空 disabled_funcs / del_funcs, 而被禁用的插件
+        不会再被载入 (run_addon 见到 settings.enable=false 直接跳过), 所以它的回调
+        不会重新注册 —— 重载完再找就什么都没有了, 表现就是"禁用不触发清理,
+        因为事件被注销"。
+        """
+        try:
+            am = getattr(self.core, 'addon_manager', None)
+            if am is not None and hasattr(am, 'when_addon_disabled'):
+                am.when_addon_disabled(str(name))
+        except Exception as e:
+            print(f"触发插件 {name} 的禁用回调失败: {e}")
+
     def set_addon_settings(self, name, settings):
         """更新插件 addon_info.json 的 settings 字段 (含 enable 与各项自定义设置)"""
         import json, os
@@ -2315,8 +2330,12 @@ class AppApi:
             return {'error': f"插件信息文件不存在: {path}"}
         try:
             info = read_json(path)
+            was_enabled = bool(info.get('settings', {}).get('enable', True))
             info['settings'] = dict(settings or {})
             write_json(path, info, indent=4)
+            # 本方法也可能顺手把 enable 改掉 (整个 settings 被替换), 同样要补禁用回调
+            if was_enabled and not bool(info['settings'].get('enable', True)):
+                self._fire_addon_disabled(name)
             self._reload_addons_async()   # 设置修改后自动重载插件
             return {'error': None}
         except Exception as e:
@@ -2344,8 +2363,13 @@ class AppApi:
             return {'error': f"插件信息文件不存在: {path}"}
         try:
             info = read_json(path)
+            was_enabled = bool(info.get('settings', {}).get('enable', True))
             info.setdefault('settings', {})['enable'] = bool(enabled)
             write_json(path, info, indent=4)
+            # 启用 -> 禁用 时必须**先**触发禁用回调, 再重载: 重载会清空回调注册表,
+            # 而被禁用的插件不会再被载入, 回调不会重新注册 (详见 _fire_addon_disabled)
+            if was_enabled and not bool(enabled):
+                self._fire_addon_disabled(name)
             self._reload_addons_async()   # 启用/禁用后自动重载插件
             return {'error': None}
         except Exception as e:

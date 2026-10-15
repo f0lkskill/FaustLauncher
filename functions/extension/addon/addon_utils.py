@@ -6,6 +6,35 @@ from typing import Dict, List, Optional, Any
 from functions.web_update.translation_source import CustomTranslateSource
 from functions.base.common.json_io import read_json, write_json
 
+class _ScratchAddonManager:
+    """一次性替身: 只为"把插件注册的回调收集出来"而存在。
+
+    插件被禁用时 run_addon() 会跳过载入, 它的 del_funcs / disabled_funcs 根本不会
+    被注册。此时若直接删除插件, remove_addon() 找不到删除回调, 结果是只删掉了
+    addons/<name>, 插件铺到游戏目录的文件 (dxgi.dll / reshade-shaders / …) 原样留着
+    —— 而且插件目录一没, 那份清理逻辑就再也找不回来了。
+
+    所以给 scr.py 传这个替身: 里面所有 ADDON_MANAGER.xxx.append(...) 都落到这里,
+    真实管理器完全不受影响 (不会多出托盘菜单项, 也不会多出 gamestart 启动回调)。
+    """
+
+    def __init__(self) -> None:
+        self.menu_items: List[Any] = []
+        self.custom_tray_items: List[Any] = []
+        self.gamestart_funcs: List[Any] = []
+        self.del_funcs: List[Dict[str, Any]] = []
+        self.enabled_funcs: List[Dict[str, Any]] = []
+        self.disabled_funcs: List[Dict[str, Any]] = []
+        self.extend_translate_source: List[Any] = []
+
+    def register_tray_item(self, item) -> None:
+        self.custom_tray_items.append(item)
+        self.menu_items.append(item)
+
+    def _refresh_tray_menu(self) -> None:
+        pass
+
+
 class AddonManager:
     """
     插件管理器
@@ -423,6 +452,56 @@ class AddonManager:
             print(f"添加插件失败: {e}")
             return False
     
+    def _run_del_funcs(self, addon_name: str, funcs: List[Dict[str, Any]]) -> bool:
+        """对一份回调表执行其中属于 addon_name 的删除回调; 返回是否真跑到过"""
+        ran = False
+        for del_func in funcs:
+            if del_func.get('name') == addon_name and del_func.get('func'):
+                try:
+                    del_func['func']()
+                    print(f"插件 {addon_name} 的删除回调已执行")
+                    ran = True
+                except Exception as e:
+                    print(f"执行插件 {addon_name} 的删除回调失败: {e}")
+                    ran = True   # 回调找到了, 只是它自己炸了 —— 不该再走收集兜底
+        return ran
+
+    def collect_addon_callbacks(self, addon_name: str) -> _ScratchAddonManager:
+        """临时执行插件 scr.py, 只为把它注册的回调**收集**到一份一次性替身里。
+
+        复用 run_addon() 的隔离命名空间手法 (同样注入 ADDON_ARG / __file__),
+        区别只有一个: ADDON_ARG['AddonManager'] 指向替身而不是真实管理器,
+        所以插件注册的托盘菜单项与启动回调都不会污染真实状态。
+
+        插件目录/scr.py 不存在时返回空替身, 不抛异常。
+        """
+        scratch = _ScratchAddonManager()
+        addon_path = self.get_addon_path(addon_name)
+        if not addon_path:
+            return scratch
+        scr_path = os.path.join(addon_path, 'scr.py')
+        if not os.path.exists(scr_path):
+            return scratch
+        try:
+            addon_arg: Dict[str, Any] = {
+                'AddonManager': scratch,
+                'AddonName': addon_name,
+                'ExtendTranslateSource': scratch.extend_translate_source,
+            }
+            builtins_dict = vars(__builtins__) if isinstance(__builtins__, ModuleType) else dict(__builtins__)
+            module_globals: Dict[str, Any] = {
+                **builtins_dict,
+                'ADDON_ARG': addon_arg,
+                '__file__': scr_path,
+                '__name__': f"__addon_collect_{addon_name}__",
+            }
+            with open(scr_path, 'r', encoding='utf-8') as f:
+                addon_scr = f.read()
+            exec(compile(addon_scr, scr_path, 'exec'), module_globals)
+        except Exception as e:
+            print(f"收集插件 {addon_name} 的清理回调失败: {e}")
+        return scratch
+
     def remove_addon(self, addon_name: str) -> bool:
         """
         删除插件
@@ -433,16 +512,20 @@ class AddonManager:
         Returns:
             是否删除成功
         """
-        # print(self.del_funcs)
-        for del_func in self.del_funcs:
-            # print(f"检查插件 {addon_name} 的删除回调注册: {del_func}")
-            if del_func.get('name') == addon_name and del_func.get('func'):
-                try:
-                    del_func['func']()
-                    print(f"插件 {addon_name} 的删除回调已执行")
-                except Exception as e:
-                    print(f"执行插件 {addon_name} 的删除回调失败: {e}")
-        
+        # ① 正常路径: 插件启用中 -> scr.py 已载入 -> 删除回调就在 del_funcs 里
+        ran = self._run_del_funcs(addon_name, self.del_funcs)
+
+        # ② 兜底路径: 插件处于**禁用**状态时 run_addon() 会跳过载入, 它的回调从未
+        #    注册, 于是 del_funcs 里根本没有它 —— 直接 rmtree 就是"删了插件却没清理
+        #    游戏目录", 且插件目录一没就再也补不回来。这里临时把 scr.py 跑一遍, 用
+        #    一次性替身把它注册的删除回调收出来再执行。
+        if not ran:
+            scratch = self.collect_addon_callbacks(addon_name)
+            if scratch.del_funcs:
+                self._run_del_funcs(addon_name, scratch.del_funcs)
+            else:
+                print(f"插件 {addon_name} 未注册删除回调, 仅删除插件目录 (游戏目录残留需手动清理)")
+
         addon_path = self.get_addon_path(addon_name)
         if not addon_path:
             print(f"插件 {addon_name} 不存在")
