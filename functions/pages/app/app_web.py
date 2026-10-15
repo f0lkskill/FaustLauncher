@@ -1729,17 +1729,9 @@ class AppApi:
         blocked = self._prepare_pipeline()
         if blocked:
             return blocked
-        # 游戏运行中禁止更新汉化: 游戏正占用 LimbusCompany_Data/Lang 下的文件,
-        # 此时写入会失败, 或者只合并进去一半 —— 直接把汉化弄坏。
-        # 前端也会把按钮置灰, 这里是后端兜底: 启动时的自动汉化更新等其它调用路径
-        # 同样必须被挡住。
-        # 这里用宽松判断 (_any_game_process_running): 只要有同名进程在跑就拦,
-        # 不要求身份校验通过 —— 另一个 Windows 账户可能在玩同一份安装, 一样会占用
-        # Lang 目录。宁可多拦一次, 也不能把汉化写坏。
-        if _any_game_process_running():
-            print("[LocaleUpdate] 检测到 LimbusCompany.exe 正在运行, 拒绝更新汉化")
-            return {"ok": False, "error": "game_running",
-                    "message": "游戏正在运行, 请先退出游戏再更新汉化"}
+        # 游戏运行中**不再**拦截汉化更新 (按用户要求去掉该限制)。
+        # 原先的写保护是为了避免游戏正占用 LimbusCompany_Data/Lang 时只合并进去一半,
+        # 现在这条路没有保护: 写入可能失败, 也可能把汉化合并成半新半旧的状态。
         self._pipeline_kind = 'translate'
         # 必须阻塞等待下载线程真正完成, 否则前端 await 立即返回,
         # 800ms 后 pipelineDone 会在后端仍在下载时就显示"流水线完成"
@@ -1828,15 +1820,14 @@ class AppApi:
         """启动器按钮所需的实时状态。
 
         running   : 是否正有启动/汉化流程在跑 (按钮显示"中止...")
-        game_alive: 游戏是否在运行 (按钮显示"关闭游戏")
-        game_busy : 是否存在任何同名进程 (汉化更新按钮据此置灰, 与后端拦截口径一致)
+        game_alive: 游戏是否在运行
+        game_busy : 是否存在任何同名进程
         kind      : 当前流程类型 'launch' / 'translate'
 
-        ★ game_alive / game_busy 取自**变化驱动**的对外状态 (见 _game_state),
-          这里**不再现查进程**: 初始化阶段恒为"未运行"(主页直接显示可启动),
-          之后只随检测结论跳变 —— 于是检测误报也不会在切页/窗口聚焦回读时
-          把按钮顶成"关闭游戏"。真正需要实时判断的地方 (汉化更新的写保护)
-          仍在后端用宽松检测硬拦, 不受这里影响。
+        ★ 按用户要求, 游戏是否在运行**不再影响前端按钮形态与可点性**:
+          启动按钮恒为"启动游戏", 汉化更新也不再因游戏在跑而置灰。
+          game_alive / game_busy 仍照常汇报 (取自**变化驱动**的对外状态, 见
+          _game_state, 这里不再现查进程), 留给需要判断游戏状态的调用方。
         """
         try:
             from functions.pages.app import page_loader as _pl

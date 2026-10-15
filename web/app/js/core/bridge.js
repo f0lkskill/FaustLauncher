@@ -111,8 +111,8 @@ window.__onEvent = function (event, data) {
     try { pipelineAborted(); } catch (e) {}
     toast('流程已中止', 'warn', 3000);
   } else if (event === 'game_state') {
-    // 游戏进程存活状态变化: 主页按钮在"启动游戏"与"关闭游戏"间切换
-    // game_alive = 身份校验过的本机游戏; game_busy = 存在任何同名进程 (禁汉化更新用)
+    // 游戏进程存活状态变化: 只更新本地记录 (按钮形态已不再由它驱动)
+    // game_alive = 身份校验过的本机游戏; game_busy = 存在任何同名进程
     if (typeof launchBtnState !== 'undefined' && data) {
       launchBtnState.gameAlive = !!data.game_alive;
       if (typeof data.game_busy === 'boolean') launchBtnState.gameBusy = data.game_busy;
