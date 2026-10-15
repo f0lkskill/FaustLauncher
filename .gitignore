@@ -225,3 +225,7 @@ web/app_skins/*/profile.*
 !tools/doc/*.md
 !tools/build/
 !tools/build/*
+# 例外: functions/pages/tools/ 是启动器源码（工具类子窗口），不是本地脚手架。
+# 少了这两行，往该目录新增 .py 会被 `**/tools/` 静默忽略、提交时丢失。
+!functions/pages/tools/
+!functions/pages/tools/*.py
