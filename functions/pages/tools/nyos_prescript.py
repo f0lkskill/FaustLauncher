@@ -16,6 +16,8 @@ else:
 if _PROJECT_ROOT not in sys.path:
     sys.path.insert(0, _PROJECT_ROOT)
 
+from functions.base.skin_theme import SkinBridge, apply_theme_to_window, window_background  # noqa: E402
+
 
 def _center_xy(width, height):
     """计算窗口居中的屏幕坐标 (Windows)"""
@@ -277,7 +279,7 @@ class NyosPrescript:
         return text
 
 
-class NyosPrescriptApi:
+class NyosPrescriptApi(SkinBridge):
     """
     pywebview js_api
     供前端调用的指令生成接口
@@ -359,7 +361,7 @@ def run_prescript_window(debug: bool = False):
     try:
         width, height = 640, 540
         x, y = _center_xy(width, height)
-        webview.create_window(
+        window = webview.create_window(
             "今日指令",
             html_path,
             js_api=NyosPrescriptApi(),
@@ -368,8 +370,9 @@ def run_prescript_window(debug: bool = False):
             x=x,
             y=y,
             min_size=(480, 400),
-            background_color="#060f22",
+            background_color=window_background("#060f22"),
         )
+        apply_theme_to_window(window)   # 注入共享主题层 + 当前皮肤
         webview.start(debug=debug)
     except BaseException as e:
         import traceback

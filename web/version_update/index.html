@@ -16,13 +16,13 @@
         width: 100%;
         height: 100%;
         overflow: hidden;
-        background: #000;
-        font-family: "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
+        background: var(--bg, #000);
+        font-family: var(--font, "Microsoft YaHei UI", "Microsoft YaHei", sans-serif);
     }
 
     body {
-        background: radial-gradient(120% 90% at 50% 30%, #04060c 0%, #010102 100%);
-        color: #d3d3d3;
+        background: radial-gradient(120% 90% at 50% 30%, var(--splash-bg, #04060c) 0%, var(--splash-bg, #010102) 100%);
+        color: var(--text, #d3d3d3);
     }
 
     #bgimg {
@@ -33,7 +33,7 @@
         opacity: 0.08;
         pointer-events: none;
         object-fit: contain;
-        filter: drop-shadow(0 0 60px rgba(90, 160, 255, 0.25));
+        filter: drop-shadow(0 0 60px rgba(var(--accent-rgb, 90, 160, 255), 0.25));
     }
 
     .wrap {
@@ -53,17 +53,17 @@
 
     .title-bar .tag {
         font-size: 14px;
-        color: #9fc9ff;
+        color: var(--accent, #9fc9ff);
         letter-spacing: 1px;
-        text-shadow: 0 0 8px rgba(130, 190, 255, 0.4);
+        text-shadow: 0 0 8px rgba(var(--accent-rgb, 130, 190, 255), 0.4);
     }
 
     .title-bar h1 {
         font-size: 22px;
         font-weight: bold;
-        color: #f4fbff;
+        color: var(--text, #f4fbff);
         letter-spacing: 2px;
-        text-shadow: 0 0 6px rgba(255, 255, 255, 0.3), 0 0 22px rgba(140, 190, 255, 0.35);
+        text-shadow: 0 0 6px rgba(var(--tint-rgb, 255, 255, 255), 0.3), 0 0 22px rgba(var(--accent-rgb, 140, 190, 255), 0.35);
     }
 
     /* ── 版本信息区 ── */
@@ -79,17 +79,17 @@
         border-radius: 999px;
         font-size: 13px;
         font-weight: bold;
-        border: 1px solid rgba(148, 163, 184, 0.25);
-        background: rgba(255, 255, 255, 0.04);
-        color: #cbd5e1;
+        border: 1px solid rgba(var(--tint-rgb, 148, 163, 184), 0.25);
+        background: rgba(var(--tint-rgb, 255, 255, 255), 0.04);
+        color: var(--text-2, #cbd5e1);
         letter-spacing: 0.5px;
     }
 
     .chip.new {
-        border-color: rgba(16, 185, 129, 0.55);
-        background: rgba(16, 185, 129, 0.12);
-        color: #34d399;
-        box-shadow: 0 0 14px rgba(16, 185, 129, 0.18);
+        border-color: rgba(var(--success-rgb, 16, 185, 129), 0.55);
+        background: rgba(var(--success-rgb, 16, 185, 129), 0.12);
+        color: var(--success, #34d399);
+        box-shadow: 0 0 14px rgba(var(--success-rgb, 16, 185, 129), 0.18);
     }
 
     .meta {
@@ -98,7 +98,7 @@
         gap: 18px;
         margin-top: 12px;
         font-size: 12.5px;
-        color: #94a3b8;
+        color: var(--text-3, #94a3b8);
     }
 
     .meta .row {
@@ -112,7 +112,7 @@
     }
 
     .meta a {
-        color: #58a6ff;
+        color: var(--accent, #58a6ff);
         text-decoration: none;
         max-width: 320px;
         overflow: hidden;
@@ -130,8 +130,8 @@
         overflow-y: auto;
         margin-top: 14px;
         padding: 18px 24px;
-        background: rgba(255, 255, 255, 0.03);
-        border: 1px solid rgba(148, 163, 184, 0.14);
+        background: rgba(var(--tint-rgb, 255, 255, 255), 0.03);
+        border: 1px solid rgba(var(--tint-rgb, 148, 163, 184), 0.14);
         border-radius: 12px;
         user-select: text;
     }
@@ -141,7 +141,7 @@
     }
 
     .body::-webkit-scrollbar-thumb {
-        background: rgba(148, 163, 184, 0.25);
+        background: rgba(var(--tint-rgb, 148, 163, 184), 0.25);
         border-radius: 4px;
     }
 
@@ -152,27 +152,27 @@
     .markdown-body {
         font-size: 13.5px;
         line-height: 1.75;
-        color: #d3d3d3;
+        color: var(--text, #d3d3d3);
         word-break: break-word;
     }
 
     .markdown-body h1 {
         font-size: 20px;
-        color: #f8fafc;
+        color: var(--text, #f8fafc);
         margin: 16px 0 8px;
         padding-bottom: 6px;
-        border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+        border-bottom: 1px solid rgba(var(--tint-rgb, 148, 163, 184), 0.2);
     }
 
     .markdown-body h2 {
         font-size: 17px;
-        color: #e2e8f0;
+        color: var(--text, #e2e8f0);
         margin: 14px 0 6px;
     }
 
     .markdown-body h3 {
         font-size: 15px;
-        color: #cbd5e1;
+        color: var(--text-2, #cbd5e1);
         margin: 12px 0 5px;
     }
 
@@ -183,9 +183,9 @@
     .markdown-body blockquote {
         margin: 10px 0;
         padding: 8px 14px;
-        border-left: 4px solid #3b82f6;
-        background: rgba(51, 65, 85, 0.45);
-        color: #94a3b8;
+        border-left: 4px solid var(--accent, #3b82f6);
+        background: rgba(var(--panel-rgb, 51, 65, 85), 0.45);
+        color: var(--text-3, #94a3b8);
         font-style: italic;
         border-radius: 0 8px 8px 0;
     }
@@ -197,26 +197,26 @@
     .markdown-body pre {
         margin: 10px 0;
         padding: 12px 14px;
-        background: #0d1117;
-        border: 1px solid rgba(148, 163, 184, 0.15);
+        background: var(--card, #0d1117);
+        border: 1px solid rgba(var(--tint-rgb, 148, 163, 184), 0.15);
         border-radius: 8px;
         overflow-x: auto;
     }
 
     .markdown-body code {
-        font-family: Consolas, "Courier New", monospace;
+        font-family: var(--mono, Consolas, "Courier New", monospace);
         font-size: 12px;
     }
 
     .markdown-body p code, .markdown-body li code {
-        background: #1e293b;
+        background: var(--card, #1e293b);
         padding: 1px 6px;
         border-radius: 4px;
-        color: #f87171;
+        color: var(--danger, #f87171);
     }
 
     .markdown-body pre code {
-        color: #e2e8f0;
+        color: var(--text, #e2e8f0);
         background: none;
         padding: 0;
     }
@@ -237,7 +237,7 @@
 
     .markdown-body li.task input {
         margin-right: 8px;
-        accent-color: #10b981;
+        accent-color: var(--success, #10b981);
         vertical-align: middle;
     }
 
@@ -248,23 +248,23 @@
     }
 
     .markdown-body th, .markdown-body td {
-        border: 1px solid rgba(148, 163, 184, 0.25);
+        border: 1px solid rgba(var(--tint-rgb, 148, 163, 184), 0.25);
         padding: 6px 12px;
     }
 
     .markdown-body th {
-        background: #1e293b;
-        color: #e2e8f0;
+        background: var(--card, #1e293b);
+        color: var(--text, #e2e8f0);
     }
 
     .markdown-body hr {
         border: none;
-        border-top: 1px solid rgba(148, 163, 184, 0.25);
+        border-top: 1px solid rgba(var(--tint-rgb, 148, 163, 184), 0.25);
         margin: 14px 0;
     }
 
     .markdown-body a {
-        color: #58a6ff;
+        color: var(--accent, #58a6ff);
         text-decoration: none;
     }
 
@@ -273,7 +273,7 @@
     }
 
     .markdown-body del {
-        color: #94a3b8;
+        color: var(--text-3, #94a3b8);
     }
 
     /* ── 底部按钮 ── */
@@ -293,25 +293,25 @@
         letter-spacing: 1px;
         padding: 9px 28px;
         border-radius: 8px;
-        color: #ffffff;
+        color: var(--text, #ffffff);
         transition: background 0.15s ease, box-shadow 0.15s ease;
     }
 
     .btn-later {
-        background: #334155;
+        background: var(--card, #334155);
     }
 
     .btn-later:hover {
-        background: #475569;
+        background: var(--card-2, #475569);
     }
 
     .btn-update {
-        background: #10b981;
-        box-shadow: 0 0 14px rgba(16, 185, 129, 0.25);
+        background: var(--success, #10b981);
+        box-shadow: 0 0 14px rgba(var(--success-rgb, 16, 185, 129), 0.25);
     }
 
     .btn-update:hover {
-        background: #059669;
+        background: var(--success-2, #059669);
     }
 </style>
 </head>

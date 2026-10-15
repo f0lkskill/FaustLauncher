@@ -24,6 +24,7 @@ if _PROJECT_ROOT not in sys.path:
     sys.path.insert(0, _PROJECT_ROOT)
 
 from functions.base.common.path_utils import get_web_root
+from functions.base.skin_theme import SkinBridge, apply_theme_to_window, window_background
 
 RESULT_FILE = os.path.join(_PROJECT_ROOT, "cache", "update_choice.json")
 HTML_PATH = get_web_root("version_update", "index.html")
@@ -440,8 +441,8 @@ def md_to_html(md_text):
 # pywebview js_api 与窗口
 # ============================================================
 
-class VersionUpdateApi:
-    """pywebview js_api: 供前端获取版本数据与回传用户选择"""
+class VersionUpdateApi(SkinBridge):
+    """pywebview js_api: 供前端获取版本数据与回传用户选择 (含皮肤桥接)"""
 
     def __init__(self, payload):
         self._payload = payload
@@ -545,7 +546,7 @@ def run_update_window(payload_b64=None, debug: bool = False):
         width=560,
         height=640,
         min_size=(440, 460),
-        background_color="#060f22",
+        background_color=window_background("#060f22"),
         on_top=True,   # 系统级置顶 (WS_EX_TOPMOST), 不被其他窗口遮挡
     )
     x, y = _center_xy(560, 640)
@@ -554,7 +555,8 @@ def run_update_window(payload_b64=None, debug: bool = False):
         window_kwargs["y"] = y
 
     try:
-        webview.create_window(**window_kwargs) # type: ignore
+        _win = webview.create_window(**window_kwargs) # type: ignore
+        apply_theme_to_window(_win)   # 注入共享主题层 + 当前皮肤
         webview.start(debug=debug)
     except BaseException as e:
         import traceback

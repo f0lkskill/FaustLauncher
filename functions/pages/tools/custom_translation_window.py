@@ -27,6 +27,7 @@ if _PROJECT_ROOT not in sys.path:
     sys.path.insert(0, _PROJECT_ROOT)
 
 from functions.base.common.path_utils import get_web_root
+from functions.base.skin_theme import SkinBridge, apply_theme_to_window, window_background
 
 HTML_PATH = get_web_root("custom_translation", "index.html")
 
@@ -1391,8 +1392,8 @@ class TranslationEngine:
 # pywebview js_api
 # ============================================================
 
-class CustomTranslationApi:
-    """pywebview js_api: 前端 ↔ TranslationEngine 桥接"""
+class CustomTranslationApi(SkinBridge):
+    """pywebview js_api: 前端 ↔ TranslationEngine 桥接 (含皮肤桥接)"""
 
     def __init__(self):
         self.engine = TranslationEngine()
@@ -1598,7 +1599,7 @@ def run_custom_translation_window(debug: bool = False):
         width=width,
         height=height,
         min_size=(960, 640),
-        background_color="#060f22",
+        background_color=window_background("#060f22"),
     )
     x, y = _center_xy(width, height)
     if x is not None and y is not None:
@@ -1606,7 +1607,8 @@ def run_custom_translation_window(debug: bool = False):
         window_kwargs["y"] = y
 
     try:
-        webview.create_window(**window_kwargs)
+        _win = webview.create_window(**window_kwargs)
+        apply_theme_to_window(_win)   # 注入共享主题层 + 当前皮肤
         webview.start(debug=debug)
     except BaseException as e:
         import traceback

@@ -38,6 +38,7 @@ if _ROOT not in sys.path:
 _SPEC_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "FaustLauncher.spec")
 
 from functions.base.web_config import get_webnote  # noqa: E402
+from functions.base.skin_theme import SkinBridge, apply_theme_to_window, window_background  # noqa: E402
 
 # 与 build_ui/style.css 里的配色保持一致的语义（前端按 level 着色）
 LEVEL_OK, LEVEL_BAD, LEVEL_WARN = "ok", "bad", "warn"
@@ -126,7 +127,7 @@ def upload_version_info(version, download_url: str = "", log=None) -> bool:
 
 
 # --------------------------------------------------------------------------- JS API
-class BuildApi:
+class BuildApi(SkinBridge):
     """暴露给前端（``pywebview`` 的 js_api）。所有耗时活儿都在后台线程里跑。"""
 
     def __init__(self, version_info: str):
@@ -575,9 +576,10 @@ def main() -> int:
         f"FaustLauncher 构建工具 — v{version}",
         index_html, js_api=api, # type: ignore
         width=780, height=800, min_size=(680, 620),
-        background_color="#14161c",
+        background_color=window_background("#14161c"),
     )
     api._window = win # type: ignore
+    apply_theme_to_window(win)   # 注入共享主题层 + 当前皮肤
     webview.start()
     return 0
 

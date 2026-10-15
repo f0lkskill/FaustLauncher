@@ -16,12 +16,12 @@
         width: 100%;
         height: 100%;
         overflow: hidden;
-        background: #000;
-        font-family: "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
+        background: var(--bg, #000);
+        font-family: var(--font, "Microsoft YaHei UI", "Microsoft YaHei", sans-serif);
     }
 
     body {
-        background: radial-gradient(120% 90% at 50% 40%, #04060c 0%, #010102 100%);
+        background: radial-gradient(120% 90% at 50% 40%, var(--splash-bg, #04060c) 0%, var(--splash-bg, #010102) 100%);
     }
 
     #bgimg {
@@ -32,7 +32,7 @@
         opacity: 0.15;
         pointer-events: none;
         object-fit: contain;
-        filter: drop-shadow(0 0 50px rgba(90, 160, 255, 0.22));
+        filter: drop-shadow(0 0 50px rgba(var(--accent-rgb, 90, 160, 255), 0.22));
     }
 
     #prescript {
@@ -46,7 +46,7 @@
     }
 
     .line {
-        font-family: "STKaiti", "KaiTi", "Microsoft YaHei", serif;
+        font-family: var(--font, "STKaiti", "KaiTi", "Microsoft YaHei", serif);
         font-size: 36px;
         line-height: 2.05;
         letter-spacing: 10px;
@@ -55,18 +55,18 @@
         white-space: pre-wrap;
         word-break: break-all;
         max-width: 100%;
-        color: #dbeaff;
-        text-shadow: 0 0 6px rgba(255, 255, 255, 0.3), 0 0 22px rgba(140, 190, 255, 0.35);
+        color: var(--text, #dbeaff);
+        text-shadow: 0 0 6px rgba(var(--tint-rgb, 255, 255, 255), 0.3), 0 0 22px rgba(var(--accent-rgb, 140, 190, 255), 0.35);
     }
 
     .line .u {
-        color: #9fc9ff;
-        text-shadow: 0 0 8px rgba(130, 190, 255, 0.65), 0 0 22px rgba(110, 175, 255, 0.45);
+        color: var(--info, #9fc9ff);
+        text-shadow: 0 0 8px rgba(var(--accent-rgb, 130, 190, 255), 0.65), 0 0 22px rgba(var(--accent-rgb, 110, 175, 255), 0.45);
     }
 
     .line .r {
-        color: #f4fbff;
-        text-shadow: 0 0 6px rgba(255, 255, 255, 0.9), 0 0 18px rgba(165, 215, 255, 0.8), 0 0 42px rgba(105, 175, 255, 0.55);
+        color: var(--text, #f4fbff);
+        text-shadow: 0 0 6px rgba(var(--tint-rgb, 255, 255, 255), 0.9), 0 0 18px rgba(var(--accent-rgb, 165, 215, 255), 0.8), 0 0 42px rgba(var(--accent-rgb, 105, 175, 255), 0.55);
         animation: pop 0.22s ease;
     }
 
@@ -76,12 +76,12 @@
     }
 
     .line .idle {
-        color: #cfe3ff;
+        color: var(--text-2, #cfe3ff);
         opacity: 0.85;
     }
 
     .line.done:hover {
-        text-shadow: 0 0 10px rgba(255, 255, 255, 0.6), 0 0 30px rgba(170, 215, 255, 0.55);
+        text-shadow: 0 0 10px rgba(var(--tint-rgb, 255, 255, 255), 0.6), 0 0 30px rgba(var(--accent-rgb, 170, 215, 255), 0.55);
     }
 
     .line.corrupting {

@@ -24,6 +24,7 @@ if _PROJECT_ROOT not in sys.path:
     sys.path.insert(0, _PROJECT_ROOT)
 
 from functions.base.common.path_utils import get_mod_root_dir, get_web_root
+from functions.base.skin_theme import SkinBridge, apply_theme_to_window, window_background
 
 HTML_PATH = get_web_root("mod_manager", "index.html")
 
@@ -268,8 +269,8 @@ def _rebank_info(raw_name):
 # pywebview js_api 与窗口
 # ============================================================
 
-class ModManagerApi:
-    """pywebview js_api: 供前端读取列表与执行文件操作"""
+class ModManagerApi(SkinBridge):
+    """pywebview js_api: 供前端读取列表与执行文件操作 (含皮肤桥接)"""
 
     def get_data(self):
         return {'mod_dir': _get_mod_dir(), 'files': _scan_files()}
@@ -414,7 +415,7 @@ def run_mod_manager_window(debug: bool = False):
         width=760,
         height=600,
         min_size=(560, 420),
-        background_color="#060f22",
+        background_color=window_background("#060f22"),
     )
     x, y = _center_xy(760, 600)
     if x is not None and y is not None:
@@ -423,6 +424,7 @@ def run_mod_manager_window(debug: bool = False):
 
     try:
         window = webview.create_window(**window_kwargs)
+        apply_theme_to_window(window)   # 注入共享主题层 + 当前皮肤
 
         # 页面加载完成后注册 DOM drop 事件, 捕获从资源管理器拖入的文件
         def _register_dnd():
