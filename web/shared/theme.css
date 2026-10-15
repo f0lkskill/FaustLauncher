@@ -1,0 +1,219 @@
+/* ============================================================
+   FaustLauncher 子窗口共享主题层  (web/shared/theme.css)
+   ------------------------------------------------------------
+   所有独立 pywebview 子窗口共用这一份设计令牌 + 基础组件:
+
+     version_update / mod_manager / extension_tools /
+     custom_translation / nyos_prescript / mod_loader
+
+   它和主界面 web/app/css/style.css 的 :root 令牌一一对应 (同源同值),
+   所以子窗口和主界面是同一套设计系统, 不再各自硬编码配色。
+
+   皮肤 (web/app_skins/<id>/css/style.css) 只写 :root 变量覆盖即可,
+   后端会把「本文件 + 当前皮肤 CSS」一起注入到每个子窗口的 <head>,
+   注入层在页面自身 <style> 之后, 因此变量与覆盖规则都能生效。
+
+   注意: 本层只定义颜色 / 字体 / 基础组件, 不碰 height / display /
+   overflow 等布局属性 —— 每个子窗口的布局仍是自己的事。
+   ============================================================ */
+
+:root {
+  --titlebar-h: 40px;
+  --glass-factor: 1;
+  /* ---- 底色 / 卡片 / 描边 ---- */
+  --bg: #181818;
+  --bg-2: #1e1e1e;
+  --card: #252526;
+  --card-2: #2d2d30;
+  --border: #1e1e1e;
+  --border-2: #4b4b4f;
+  /* ---- 文字 ---- */
+  --text: #e8ecf4;
+  --text-2: #b0b7c3;
+  --text-3: #7a8496;
+  /* ---- 主题色 ---- */
+  --accent: #2586f5;
+  --accent-2: #1e80f0;
+  --accent-rgb: 55, 148, 255;
+  --accent-2-rgb: 30, 128, 240;
+  --accent-3-rgb: 99, 102, 241;
+  --accent-glow: rgba(var(--accent-rgb), 0.30);
+  --info: #4fc1ff;
+  --info-rgb: 79, 193, 255;
+  --success: #2ea043;
+  --success-2: #059669;
+  --warn: #f59e0b;
+  --danger: #ef4444;
+  --success-rgb: 46, 160, 67;
+  --warn-rgb: 245, 158, 11;
+  --danger-rgb: 239, 68, 68;
+  /* 提亮色: 深色主题 = 白(提亮), 浅色主题覆盖成 0,0,0 (压暗)。
+     边框 / hover / 分隔线 / 内侧高光一律引用它, 不要写死白色。 */
+  --tint-rgb: 255, 255, 255;
+  --scrim-rgb: 6, 8, 12;
+  /* 面板底色 RGB: 皮肤换浅色主题时覆盖这几个即可 */
+  --panel-rgb: 37, 37, 38;
+  --panel-rgb-2: 45, 45, 46;
+  --panel-rgb-3: 13, 16, 24;
+  --panel-rgb-4: 255, 255, 255;
+  --term-rgb: 8, 10, 15;
+  --panel-alpha: 0.72;
+  /* 玻璃渐变 (标题栏 / 聚焦高亮) */
+  --titlebar-from: rgba(38, 58, 99, 0.927);
+  --titlebar-to: rgba(24, 38, 70, 0.867);
+  --titlebar-border: rgba(var(--accent-rgb), 0.2);
+  --focus-from: rgba(38, 58, 99, 0.912);
+  --focus-to: rgba(24, 38, 70, 0.396);
+  --splash-bg: #0b0e14;
+  --toast-text: #eef2f8;
+  /* ---- 形状 / 字体 ---- */
+  --radius: 14px;
+  --radius-sm: 8px;
+  --font: "Microsoft YaHei UI", "PingFang SC", "Segoe UI", system-ui, sans-serif;
+  --mono: "Cascadia Code", "Consolas", monospace;
+  /* ---- 兼容别名: 部分旧子页/工具页沿用这些变量名 ---- */
+  --muted: var(--text-3);
+  --card-line: var(--border);
+  --card-line-2: var(--border-2);
+}
+
+/* ---------- 基础基座 (只碰颜色/字体, 不碰布局) ---------- */
+html, body {
+  background-color: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  -webkit-font-smoothing: antialiased;
+}
+
+body {
+  /* 所有子窗口统一的柔和顶部光晕 (浅色皮肤下 --tint-rgb 变 0,0,0, 自动转为柔和压暗) */
+  background-image: radial-gradient(120% 90% at 50% 0%,
+    rgba(var(--tint-rgb), 0.05) 0%, rgba(var(--tint-rgb), 0) 62%);
+  background-attachment: fixed;
+}
+
+/* ---------- 滚动条 (与主界面同款) ---------- */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: rgba(var(--tint-rgb), 0.14);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover { background: rgba(var(--tint-rgb), 0.24); }
+* { scrollbar-width: thin; scrollbar-color: rgba(var(--tint-rgb), 0.2) transparent; }
+
+/* ============================================================
+   通用组件 (fl- = FaustLauncher)
+   子窗口尽量用这些类, 皮肤与主界面同步更新时全站一起变
+   ============================================================ */
+
+/* 玻璃卡片 */
+.fl-card {
+  background: rgba(var(--panel-rgb), var(--panel-alpha));
+  border: 1px solid rgba(var(--tint-rgb), 0.08);
+  border-radius: var(--radius);
+  backdrop-filter: blur(calc(var(--glass-factor) * 12px));
+}
+.fl-card-2 {
+  background: rgba(var(--panel-rgb-2), var(--panel-alpha));
+  border: 1px solid rgba(var(--tint-rgb), 0.07);
+  border-radius: var(--radius-sm);
+}
+
+/* 文字 */
+.fl-title { color: var(--text); font-weight: 600; }
+.fl-sub   { color: var(--text-2); }
+.fl-muted { color: var(--text-3); }
+.fl-mono  { font-family: var(--mono); }
+
+/* 徽章 / 状态标签 */
+.fl-chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 2px 9px; border-radius: 999px; font-size: 11px;
+  color: var(--text-2);
+  background: rgba(var(--tint-rgb), 0.05);
+  border: 1px solid rgba(var(--tint-rgb), 0.09);
+}
+.fl-chip.ok   { color: var(--success); background: rgba(46, 160, 67, 0.13);  border-color: rgba(46, 160, 67, 0.32); }
+.fl-chip.warn { color: var(--warn);    background: rgba(245, 158, 11, 0.13); border-color: rgba(245, 158, 11, 0.32); }
+.fl-chip.err  { color: var(--danger);  background: rgba(239, 68, 68, 0.12);  border-color: rgba(239, 68, 68, 0.32); }
+.fl-chip.busy { color: var(--accent);  background: rgba(var(--accent-rgb), 0.14); border-color: rgba(var(--accent-rgb), 0.36); }
+
+/* 按钮 */
+.fl-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  padding: 7px 14px; border-radius: var(--radius-sm); cursor: pointer;
+  font-size: 12px; font-family: var(--font);
+  color: var(--text); background: rgba(var(--tint-rgb), 0.06);
+  border: 1px solid rgba(var(--tint-rgb), 0.1);
+  transition: background .16s ease, border-color .16s ease, transform .16s ease;
+}
+.fl-btn:hover { background: rgba(var(--tint-rgb), 0.11); border-color: rgba(var(--tint-rgb), 0.2); }
+.fl-btn:active { transform: translateY(1px); }
+.fl-btn.primary {
+  color: #fff; border-color: transparent;
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  box-shadow: 0 6px 18px rgba(var(--accent-rgb), 0.24);
+}
+.fl-btn.ghost { background: transparent; }
+.fl-btn[disabled] { opacity: .45; pointer-events: none; }
+
+/* 进度条 */
+.fl-progress {
+  position: relative; height: 8px; border-radius: 999px; overflow: hidden;
+  background: rgba(var(--tint-rgb), 0.08);
+}
+.fl-progress-fill {
+  height: 100%; border-radius: 999px; width: 0;
+  background: linear-gradient(90deg, var(--accent), var(--accent-2));
+  box-shadow: 0 0 14px rgba(var(--accent-rgb), 0.45);
+  transition: width .35s cubic-bezier(.22, .61, .36, 1);
+}
+.fl-progress-fill.ok { background: linear-gradient(90deg, var(--success), #34d399); box-shadow: 0 0 14px rgba(46, 160, 67, .4); }
+.fl-progress-fill.err { background: linear-gradient(90deg, var(--danger), #f87171); box-shadow: 0 0 14px rgba(239, 68, 68, .4); }
+/* 进行中: 掠过的流光 */
+.fl-progress.run .fl-progress-fill::after {
+  content: ""; position: absolute; inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .35), transparent);
+  animation: fl-sheen 1.5s linear infinite;
+}
+@keyframes fl-sheen { from { transform: translateX(-100%); } to { transform: translateX(100%); } }
+
+/* 阶段步骤 */
+.fl-step { display: flex; align-items: center; gap: 10px; padding: 7px 2px; color: var(--text-3); }
+.fl-step-dot {
+  width: 16px; height: 16px; border-radius: 50%; flex: 0 0 auto;
+  border: 1.5px solid rgba(var(--tint-rgb), 0.2);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 10px; line-height: 1;
+}
+.fl-step.done { color: var(--text-2); }
+.fl-step.done .fl-step-dot { border-color: var(--success); color: var(--success); }
+.fl-step.active { color: var(--text); font-weight: 600; }
+.fl-step.active .fl-step-dot {
+  border-color: var(--accent); color: var(--accent);
+  box-shadow: 0 0 10px rgba(var(--accent-rgb), .5);
+  animation: fl-pulse 1.4s ease-in-out infinite;
+}
+@keyframes fl-pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.14); } }
+
+/* 日志 / 终端块 */
+.fl-log {
+  background: rgba(var(--term-rgb), 0.72);
+  border: 1px solid rgba(var(--tint-rgb), 0.07);
+  border-radius: var(--radius-sm);
+  font-family: var(--mono); font-size: 12px; line-height: 1.6;
+  color: var(--text-2);
+}
+.fl-log-line { white-space: pre-wrap; word-break: break-all; }
+.fl-log-line.info    { color: var(--text-2); }
+.fl-log-line.success { color: var(--success); }
+.fl-log-line.error   { color: var(--danger); }
+.fl-log-line.warning { color: var(--warn); }
+
+/* 工具类 */
+.fl-row   { display: flex; align-items: center; }
+.fl-grow  { flex: 1 1 auto; min-width: 0; }
+.fl-ellip { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fl-scroll { overflow-y: auto; }
+.fl-hidden { display: none !important; }
