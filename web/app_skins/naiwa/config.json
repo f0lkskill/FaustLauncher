@@ -1,0 +1,13 @@
+{
+    "name": "奶蛙",
+    "id": "naiwa",
+    "description": "奶蛙风格启动器皮肤（V2026.9.30）。\n暖橙黄浅色主题，取自奶蛙（变异奶龙）本体的黄：奶蛙黄 #F5C542 + 主橙 #F5A524 + 焦糖 #E07B00。\n背景直接使用 Nailong-Studio/wallpaper 素材仓库的官方 4K 壁纸，署名与许可见皮肤目录 CREDITS.md（MIT）。",
+    "authors": {
+        "FolkSkill": "https://space.bilibili.com/599331034"
+    },
+    "theme_color": "#FFB300",
+    "unlock": {
+        "type": "free",
+        "description": "免费皮肤，无需任何解锁条件"
+    }
+}

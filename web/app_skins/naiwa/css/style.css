@@ -1,0 +1,173 @@
+/* ============================================================
+   奶蛙 (Naiwa) 皮肤 — 变量覆盖层
+   ------------------------------------------------------------
+   与浮士德 / DeepSeek 皮肤同一范式: 以 **CSS 变量覆盖** 为主,
+   只有少数没法用变量表达的地方才写选择器规则。
+   布局 / 动画 / 透明度全部沿用默认 style.css, 所以几个皮肤之间不会
+   互相打架; 半透明底依旧由 rgba(var(--panel-rgb), var(--panel-alpha))
+   驱动, 也照旧受设置页「控件透明度」控制。
+
+   配色就是"奶油底上的奶蛙黄":
+     奶油 #FFF6E6 / 蛋奶 #FFEFD8 / 卡其边 #E3C493
+     奶蛙黄 #F5C542 / 主橙 #F5A524 / 深橙 #E07B00 / 焦糖 #C4580A
+     墨棕 #4A2F10 (正文) / 可可 #7C5A2E (次要)
+
+   ⚠ --*-rgb 系列必须是 "R, G, B" 分量格式, **不能写 #hex** ——
+     它们只被用在 rgba(var(--accent-rgb), .5) 这类位置,
+     写成 #rrggbb 会让整条声明失效 (症状: 聚焦 / 描边背景消失)。
+   ============================================================ */
+:root {
+  /* ---------- 奶油浅底 ---------- */
+  --bg: #fff6e6;
+  --bg-2: #ffefd8;
+  --card: #fffaf0;
+  --card-2: #fff1da;
+  --border: #f2ddbb;
+  --border-2: #e3c493;
+  --text: #4a2f10;
+  --text-2: #7c5a2e;
+  --text-3: #a98a5c;
+
+  /* 面板底色 (R, G, B): 换成奶油白 -> 整套面板一起变暖。
+     透明度不在这里控制, 统一由 --panel-alpha / 设置项决定。 */
+  --panel-rgb: 255, 250, 240;
+  --panel-rgb-2: 252, 235, 206;
+  --panel-rgb-3: 255, 252, 246;
+  --panel-rgb-4: 255, 255, 255;
+  --term-rgb: 255, 252, 245;   /* 终端: 去掉蓝黑, 换温白 */
+  --splash-bg: #fff6e6;        /* 启动转圈界面底色: 跟随奶油底 */
+
+  /* 浅色主题: 边框 / hover / 分隔线要用**压暗**色,
+     白线在奶油底上完全看不见 (与默认真皮肤/浮士德同理)。 */
+  --tint-rgb: 74, 47, 16;
+  --scrim-rgb: 255, 240, 214;
+
+  /* ---------- 标题栏 ---------- */
+  --titlebar-from: rgba(255, 250, 240, 0.93);
+  --titlebar-to: rgba(255, 238, 209, 0.86);
+  --titlebar-border: rgba(227, 196, 147, 0.55);
+  /* 高亮: 与标题栏同色系但更通透 */
+  --focus-from: rgba(255, 246, 230, 0.95);
+  --focus-to: rgba(255, 223, 168, 0.45);
+
+  /* ---------- 主题色: 奶蛙橙黄 (注意 RGB 分量格式) ---------- */
+  --accent: #f5a524;
+  --accent-2: #e07b00;
+  --accent-glow: rgba(245, 165, 36, 0.33);
+  --info: #c98a1e;
+  --accent-rgb: 245, 165, 36;
+  --accent-2-rgb: 224, 123, 0;
+  --accent-3-rgb: 201, 138, 30;
+  --info-rgb: 201, 138, 30;
+}
+
+/* ---- 奶蛙视觉层 ---- */
+
+/* 标题栏底色变浅后, 标题 / 按钮文字必须转深;
+   "文字色反转"没法用变量表达, 所以保留这三条规则。 */
+#titlebar .tb-title { color: #5a3a12; }
+#titlebar .tb-btn { color: #8a6636; }
+#titlebar .tb-btn:hover { background: rgba(245, 165, 36, .16); color: #3d2607; }
+
+/* 背景图当环境光用, 而不是把面板文字冲花: 官方影棚壁纸本身很亮,
+   这里只叠一点暖色光晕 + 轻微压低不透明度。 */
+#bg-layer {
+  background:
+    radial-gradient(920px 640px at 82% -14%, rgba(245, 165, 36, .16), transparent 66%),
+    radial-gradient(760px 560px at 6% 112%, rgba(224, 123, 0, .10), transparent 68%),
+    var(--bg);
+}
+#bg-layer .bg-img.on {
+  opacity: .68;
+  filter: saturate(1.06) contrast(1.02);
+}
+
+/* 侧栏: 奶油色 + 活动项左侧一条橙黄指示线, 不再只是一块浅色。 */
+#sidebar {
+  background: linear-gradient(180deg, rgba(255, 250, 240, .92), rgba(255, 240, 214, .86));
+  border-right-color: rgba(227, 196, 147, .65);
+}
+.nav-item { position: relative; }
+.nav-item.active {
+  background: linear-gradient(100deg, rgba(245, 165, 36, .22), rgba(245, 165, 36, .06));
+  border-color: rgba(224, 123, 0, .35);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .55), 0 6px 18px rgba(160, 96, 0, .10);
+}
+.nav-item.active::before {
+  content: '';
+  position: absolute; left: -1px; top: 8px; bottom: 8px; width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: linear-gradient(180deg, #f5c542, #e07b00);
+  box-shadow: 0 0 12px rgba(245, 165, 36, .55);
+}
+.nav-item:hover { background: rgba(245, 165, 36, .10); }
+
+/* 卡片统一为"奶油底 + 暖描边", 避免半透明叠加后边界消失。 */
+.card, .skin-side, .skin-stage {
+  border-color: rgba(227, 196, 147, .62);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .60), 0 14px 34px rgba(150, 104, 30, .08);
+}
+.card:hover, .hero:hover, .skin-side:hover, .skin-stage:hover {
+  border-color: rgba(224, 123, 0, .45);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .65), 0 12px 30px rgba(160, 110, 30, .14), 0 0 0 1px rgba(245, 165, 36, .16);
+}
+
+/* 终端信息行 */
+.term-line.info { color: #b57500; }
+
+/* 主页 hero: 左侧保持安静, 右侧让奶蛙图标与时钟成为焦点。 */
+.hero-bg {
+  position: absolute; inset: 0;
+  background:
+    radial-gradient(660px 340px at 14% 6%, rgba(245, 165, 36, .20), transparent 66%),
+    linear-gradient(112deg, rgba(255, 250, 240, .95) 0%, rgba(255, 242, 219, .80) 55%, rgba(255, 236, 205, .38) 100%),
+    radial-gradient(420px 310px at 88% 42%, rgba(245, 197, 66, .22), transparent 70%);
+}
+.hero-aside .hero-bg-icon {
+  right: -56px; bottom: -74px; width: 320px; height: 320px;
+  opacity: .38;
+  filter: drop-shadow(0 10px 28px rgba(224, 123, 0, .30));
+}
+.hero-clock .hc-date { color: #8a6636; }
+.hero-clock .hc-time {
+  color: #45290a;
+  text-shadow: 0 2px 18px rgba(245, 165, 36, .38);
+}
+
+/* 按钮与状态芯片: 主操作使用奶蛙橙, 次要操作保持轻量。 */
+.btn-primary {
+  background: linear-gradient(135deg, #ffb733, #e07b00);
+  box-shadow: 0 8px 24px rgba(224, 123, 0, .28), inset 0 1px 0 rgba(255, 255, 255, .32);
+}
+.btn-ghost { background: rgba(245, 165, 36, .08); border-color: rgba(224, 123, 0, .22); }
+.btn-ghost:hover { background: rgba(245, 165, 36, .16); border-color: rgba(224, 123, 0, .45); }
+.chip { background: rgba(255, 244, 224, .70); border-color: rgba(227, 196, 147, .65); }
+
+/* 标签、搜索框和进度条共用同一套聚焦反馈。 */
+.res-tab, .dc-tab { background: rgba(255, 250, 240, .80); border-color: rgba(227, 196, 147, .65); }
+.res-tab.active, .dc-tab.active { background: rgba(245, 165, 36, .18); border-color: rgba(224, 123, 0, .50); }
+.res-search:focus, .res-set-row input:focus { box-shadow: 0 0 0 3px rgba(245, 165, 36, .16); }
+.progress-fill, .dc-progress-fill, .dl-fill { background: linear-gradient(90deg, #f5c542, #e07b00); }
+
+/* 皮肤预览区: 让背景图完整展示并保留控制栏的层次。 */
+.skin-side, .skin-stage { background: rgba(255, 250, 240, .76); }
+.skin-card { border-color: rgba(227, 196, 147, .62); }
+.skin-card.active { border-color: #e07b00; box-shadow: 0 6px 22px rgba(224, 123, 0, .26), inset 0 0 0 1px rgba(255, 255, 255, .55); }
+.skin-stage-bar { background: rgba(255, 246, 230, .62); }
+
+/* 滚动条也纳入主题, 避免系统灰色滚动条破坏整体观感。 */
+#main, #nav, .skin-list, .res-list, #term-body { scrollbar-color: rgba(224, 123, 0, .42) transparent; }
+
+@media (max-width: 760px) {
+  #sidebar { width: 76px; min-width: 76px; padding-left: 9px; padding-right: 9px; }
+  .brand { justify-content: center; padding-left: 0; padding-right: 0; }
+  .brand-text, .nav-item > span:last-child, .sidebar-footer { display: none; }
+  .nav-item { justify-content: center; padding-left: 10px; padding-right: 10px; }
+  .nav-ico { width: auto; }
+  #main { padding-left: 16px; padding-right: 16px; }
+  .hero-aside { width: 170px; }
+  .hero-aside .hero-bg-icon { right: -86px; opacity: .26; }
+  .hero-clock .hc-time { font-size: 42px; }
+  .skin-wrap { gap: 10px; }
+  .skin-side { width: 158px; }
+}
