@@ -328,7 +328,7 @@ def test_color_gradient(gradient_rate: float = 2.0):
         if test_case['input'] != processed:
             print("处理成功 - 文本已被渐变处理")
         else:
-            print("ℹ️  未处理 - 文本保持原样（可能是白色或特殊情况）")
+            print("ℹ未处理 - 文本保持原样（可能是白色或特殊情况）")
         
         print("-" * 40)
 
@@ -385,7 +385,7 @@ def process_all_json_files(game_path: str, gradient_rate: float = 2.0) -> bool:
             if process_json_file(file_path, gradient_rate):
                 success_count += 1
         else:
-            print(f"⚠️ 文件不存在: {file_path}")
+            print(f"文件不存在: {file_path}")
     
     print(f"\n处理完成: {success_count}/{len(json_files)} 个文件成功处理")
     print(f"渐变度设置: {gradient_rate}")
@@ -492,7 +492,7 @@ def process_temp_json_files(gradient_rate: float = 2.0) -> bool:
             if process_json_file(file_path, gradient_rate):
                 success_count += 1
         else:
-            print(f"⚠️ 文件不存在: {file_path}")
+            print(f"文件不存在: {file_path}")
     
     print(f"\n处理完成: {success_count}/{len(json_files)} 个文件成功处理")
     print(f"渐变度设置: {gradient_rate}")

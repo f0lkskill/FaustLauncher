@@ -56,7 +56,7 @@ def update_resource(dow_root:DownloadGUI, download_files:list, res:str, auto_clo
     if success:
         local_data[res]['version_info'] = data[res]['version_info']
     else:
-        print(f"⚠ 云端资源 {res} 多次下载后仍为空文件夹, 保持旧版本, 下次启动将再次检查")
+        print(f"云端资源 {res} 多次下载后仍为空文件夹, 保持旧版本, 下次启动将再次检查")
     if auto_close:
         download_gui.is_downloading = False
 

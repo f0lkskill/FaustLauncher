@@ -79,7 +79,7 @@ def get_bubble_json_files(host, port, user, password, database):
             table_exists = cursor.fetchone()
             
             if not table_exists:
-                print("⚠️ faust_launcher表格不存在")
+                print("faust_launcher表格不存在")
                 return None, None, None
             
             cursor.execute("SELECT battle_speech_bubble, battle_speech_bubble_cultivation, battle_speech_bubble_mowe FROM faust_launcher WHERE id = 1")
@@ -89,7 +89,7 @@ def get_bubble_json_files(host, port, user, password, database):
                 print("获取JSON文件成功")
                 return result['battle_speech_bubble'], result['battle_speech_bubble_cultivation'], result['battle_speech_bubble_mowe']
             else:
-                print("⚠️ JSON文件字段为空或记录不存在")
+                print("JSON文件字段为空或记录不存在")
                 return None, None, None
         
     except pymysql.Error as e:
@@ -208,7 +208,7 @@ def get_all_records(host, port, user, password, database):
             table_exists = cursor.fetchone()
             
             if not table_exists:
-                print("⚠️ faust_launcher表格不存在")
+                print("faust_launcher表格不存在")
                 return []
             
             cursor.execute("SELECT * FROM faust_launcher ORDER BY id")
@@ -383,7 +383,7 @@ def get_latest_version(host, port, user, password, database):
                 print(f"获取最新版本信息: {result['version_name']}")
                 return result
             else:
-                print("⚠️ 没有设置最新版本")
+                print("没有设置最新版本")
                 return None
         
     except pymysql.Error as e:
@@ -408,7 +408,7 @@ def get_version_by_id(host, port, user, password, database, version_id):
                 print(f"获取版本信息: {result['version_name']}")
                 return result
             else:
-                print(f"⚠️ 版本ID {version_id} 不存在")
+                print(f"版本ID {version_id} 不存在")
                 return None
         
     except pymysql.Error as e:
