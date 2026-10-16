@@ -165,10 +165,8 @@ class GameLauncher:
 
         for name, label, icon, step in steps:
             self._progress(f"正在{name}...", icon)
-            print(f"[{label}] 开始...")
             try:
                 step()
-                print(f"[{label}] 完成")
             except Exception as e:
                 print(f"[{label}] 失败: {e}")
                 traceback.print_exc()
