@@ -250,46 +250,6 @@ class FaustLauncherUI:
             pystray.MenuItem('隐藏', _hide_win),
         ]
         
-        def build_addon_menu() -> pystray.Menu:
-            self.addon_menu_items.clear()
-            
-            auto_items = []
-            for addon in self.core.addon_manager.get_all_addons():
-                name = addon['name']
-                try:
-                    enabled = bool(addon.get('info', {}).get('settings', {}).get('enable', True))
-                except Exception:
-                    enabled = True
-                
-                def _make_runner(n: str):
-                    def _run(icon=None, item=None):
-                        try:
-                            self.core.addon_manager.run_addon(n)
-                        except Exception as e:
-                            from rich import print
-                            print(f"手动运行插件 {n} 失败: {e}")
-                    return _run
-                
-                label = f"🔧 {name}" if enabled else f"⚙️ {name} (已禁用)"
-                auto_items.append(pystray.MenuItem(label, _make_runner(name)))
-            
-            custom_items = self.core.addon_manager.get_custom_tray_items()
-            
-            self.addon_menu_items.extend(auto_items)
-            if custom_items:
-                if auto_items:
-                    self.addon_menu_items.append(pystray.MenuItem(
-                        '─── 自定义项 ───', None, enabled=False))
-                self.addon_menu_items.extend(custom_items)
-            
-            if not self.addon_menu_items:
-                self.addon_menu_items.append(pystray.MenuItem('（暂无可用插件）', None, enabled=False))
-            
-            return pystray.Menu(*self.addon_menu_items)
-        
-        def addon_menu_lambda(icon=None, item=None):
-            return build_addon_menu()
-        
         def when_exit():
             from functions.base.terminal_banner import get_banner_with_random_style
             print('\n\n' + get_banner_with_random_style('GoodBye'))
@@ -298,7 +258,9 @@ class FaustLauncherUI:
             self.tray.stop()
             os._exit(0)
         
-        root_menu = pystray.MenuItem('插件', lambda icon, item: build_addon_menu())
+        # Menu(callable) is a dynamic submenu; an action returning Menu is not.
+        root_menu = pystray.MenuItem('插件', pystray.Menu(
+            lambda: self.core.addon_manager.build_tray_menu_items()))
         menu_items.append(root_menu)
         menu_items.append(pystray.MenuItem('重载插件', lambda icon=None, item=None: self.core._on_reload_addons()))
         menu_items.append(pystray.MenuItem('退出', lambda: when_exit()))
