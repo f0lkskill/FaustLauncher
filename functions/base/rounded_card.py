@@ -1,12 +1,7 @@
-"""
-圆角绘制工具 — 在 Canvas 上画圆角矩形
-"""
 import tkinter as tk
-
 
 def draw_rounded_rect(canvas: tk.Canvas, x: float, y: float, w: float, h: float, *,
                       fill: str = '', outline: str = '', radius: int = 10, **kw):
-    """在 Canvas 上绘制圆角矩形，返回绘制的 item id 列表"""
     r = radius
     d = r * 2
     rx = x + w - 1

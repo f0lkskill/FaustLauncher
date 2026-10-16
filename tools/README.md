@@ -41,6 +41,15 @@
 | 工具 | 用法 | 说明 |
 |---|---|---|
 | `count_lines.py` | `python tools/dev/count_lines.py [目录]` | 统计 `.py`/`.js`/`.html` 行数并排行。**不带参数默认统计整个仓库**（按脚本位置推仓库根，不受当前工作目录影响） |
+| `audit_log.py` | `python tools/dev/audit_log.py` | 统计注释 / 文档串 / `print()` / 日志调用的分布，用来评估日志与注释改造的范围 |
+| `test_logger.py` | `python tools/dev/test_logger.py` | 日志系统冒烟测试：四个级别的渲染、`print` 归 INFO、按级别归档是否生效 |
+
+## doc/
+
+| 文档 | 说明 |
+|---|---|
+| `Logging.md` | 日志系统约定：行格式、四个级别的用法、各出口分工、`[文件:行号]` 的来源推断、日志文件与按级别归档 |
+| `MakeAnAddon.md` | 插件开发：目录结构、`scr.py` 回调、自定义汉化源注册 |
 
 ## diag/
 

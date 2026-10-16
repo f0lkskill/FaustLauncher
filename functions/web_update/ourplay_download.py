@@ -1,10 +1,3 @@
-"""OurPlay 汉化包下载: 获取下载 URL / 版本, 以及神人版结构转换
-
-两个版本 (均为 OurPlay Android 端 API, 以 is_unofficial 区分):
-    普通版 (正经版): is_unofficial=2
-    神人版:          is_unofficial=3
-下载内容为 transfile (hash 命名文件), 需借助基板包 (参考包) 转换为标准结构。
-"""
 import base64
 import json
 import os
@@ -15,11 +8,7 @@ from collections import defaultdict
 
 import requests
 
-# ── 设备信息 ────────────────────────────────────────────────────
-
-
 def _make_device_android() -> str:
-    """OurPlay Android 端设备信息 (base64)"""
     device = {
         "product": "V1824A",
         "mainver": 306800,
@@ -83,21 +72,8 @@ def _make_device_android() -> str:
     device_str = json.dumps(device)
     return base64.b64encode(device_str.encode("utf-8")).decode("utf-8")
 
-
-# ── 下载信息获取 ────────────────────────────────────────────────
-
-
 def get_ourplay_download_info(official: bool = True):
-    """获取 OurPlay 汉化包下载信息
-
-    official=True  -> 普通版 (is_unofficial=2)
-    official=False -> 神人版 (is_unofficial=3)
-
-    Returns:
-        (download_url, md5, size, version_code) 或 None
-    """
     return _fetch_android_info(official=official)
-
 
 def _fetch_android_info(official: bool):
     headers = {
@@ -116,12 +92,7 @@ def _fetch_android_info(official: bool):
     d = response_data["data"]
     return d["url"], d["md5"], d["size"], str(d["versionCode"])
 
-
-# ── 解压与结构处理 ──────────────────────────────────────────────
-
-
 def extract_translation_zip(zip_path: str, extract_dir: str) -> bool:
-    """解压 OurPlay 汉化包 zip 到目录"""
     try:
         with zipfile.ZipFile(zip_path, "r") as zf:
             zf.extractall(extract_dir)
@@ -130,28 +101,20 @@ def extract_translation_zip(zip_path: str, extract_dir: str) -> bool:
         print(f"[OurPlay] 解压失败: {e}")
         return False
 
-
 def find_ourplay_root(extract_dir: str) -> str | None:
-    """在解压目录中定位标准 OurPlayHanHua 目录 (如 com.ProjectMoon.LimbusCompany/Lang/OurPlayHanHua)"""
     for dirpath, dirnames, filenames in os.walk(extract_dir):
         if os.path.basename(dirpath) == "OurPlayHanHua":
             if os.path.isfile(os.path.join(dirpath, "manifest.json")):
                 return dirpath
     return None
 
-
-# ── 神人版转换 (移植自 LCTA) ────────────────────────────────────
-
-# 参考包索引缓存: 参考包不变时跳过全量解析 (参考包通常 2000+ 文件)
 _reference_index_cache = {
     "fingerprint": "",
     "ref_files": None,
     "id_to_paths": None,
 }
 
-
 def _dir_fingerprint(root) -> str:
-    """目录快速指纹: 基于所有文件的相对路径 + 大小 + 修改时间"""
     import hashlib
     h = hashlib.md5()
     try:
@@ -170,12 +133,7 @@ def _dir_fingerprint(root) -> str:
         return ""
     return h.hexdigest()
 
-
 def _build_reference_index(refer_root):
-    """基板包索引: {relative_path: set_of_ids} / {id: [paths]}
-
-    参考包目录内容未变化时使用缓存, 避免每次转换都重新解析全部文件。
-    """
     global _reference_index_cache
     fp = _dir_fingerprint(refer_root)
     if fp and fp == _reference_index_cache.get("fingerprint") \
@@ -215,12 +173,7 @@ def _build_reference_index(refer_root):
             fingerprint=fp, ref_files=ref_files, id_to_paths=id_to_paths)
     return ref_files, id_to_paths
 
-
 def _build_transfile_index(hash_dir):
-    """transfile 索引: {hash_filename: (data_list, set_of_ids)}
-
-    2000+ 个 JSON 文件逐个解析较慢, 用线程池并行解析 (json.load 为 C 实现, 多线程可提速)。
-    """
     from concurrent.futures import ThreadPoolExecutor
 
     hash_files = {}
@@ -263,15 +216,12 @@ def _build_transfile_index(hash_dir):
     print(f"[OurPlay] transfile 扫描: {len(hash_files)} 个 JSON, {binary_count} 个二进制/非JSON")
     return hash_files, binary_count
 
-
 def _match_ref_to_transfile(ref_files, hash_files, id_to_paths):
-    """为每个基板包文件找到最佳 transfile hash 文件 (多数投票)"""
     id_to_hash = defaultdict(set)
     for hash_name, (data_list, hash_ids) in hash_files.items():
         for hid in hash_ids:
             id_to_hash[hid].add(hash_name)
 
-    # 预计算各 hash 文件的 id 数 (max 排序用, 避免重复 len)
     hash_id_size = {h: len(hash_files[h][1]) for h in hash_files}
 
     ref_to_hash = {}
@@ -289,13 +239,7 @@ def _match_ref_to_transfile(ref_files, hash_files, id_to_paths):
     print(f"[OurPlay] 匹配完成: {len(ref_to_hash)}/{len(ref_files)} 个基板文件已匹配 transfile")
     return ref_to_hash
 
-
 def convert_god_package(extract_dir: str, refer_root: str) -> str:
-    """将神人版 transfile 目录转换为标准 OurPlayHanHua 结构, 返回输出目录
-
-    extract_dir: 神人版包解压目录 (含 com.ProjectMoon.LimbusCompany/)
-    refer_root:  基板包目录 (已安装的零协汉化目录, 标准结构)
-    """
     hash_dir = os.path.join(extract_dir, "com.ProjectMoon.LimbusCompany")
     ref_files, id_to_paths = _build_reference_index(refer_root)
     if not ref_files:
@@ -324,8 +268,6 @@ def convert_god_package(extract_dir: str, refer_root: str) -> str:
                 shutil.copy2(src, dest)
             from_reference += 1
 
-    # 复制非 dataList 文件 (Info、无 dataList 的 JSON 等), 但跳过 Font 字体
-    # (OurPlay 包不带字体, 参考包字体为其他汉化组所有, 不应混入; 空目录已满足游戏验证)
     for dirpath, dirnames, filenames in os.walk(refer_root):
         for filename in filenames:
             filepath = os.path.join(dirpath, filename)
@@ -346,26 +288,14 @@ def convert_god_package(extract_dir: str, refer_root: str) -> str:
           f"来自基板回退: {from_reference}, 跳过二进制: {binary_count}")
     return ourplay_root
 
-
 def prepare_ourplay_dir(zip_path: str, refer_root: str = "") -> tuple[str, str]:
-    """处理 OurPlay 汉化包 zip -> 标准 OurPlayHanHua 目录
-
-    Args:
-        zip_path: 下载的汉化包 zip 路径
-        refer_root: 转换所需的基板包目录 (标准结构汉化包, 如零协会)
-
-    Returns:
-        (ourplay_dir, temp_dir_to_cleanup) 或抛异常
-    """
     temp_dir = tempfile.mkdtemp(prefix="ourplay_")
     try:
         if not extract_translation_zip(zip_path, temp_dir):
             raise RuntimeError("OurPlay 汉化包解压失败")
-        # 1) 直接定位标准结构 (manifest 内置的完整包)
         root = find_ourplay_root(temp_dir)
         if root:
             return root, temp_dir
-        # 2) transfile 结构: 需参考包转换
         if not refer_root or not os.path.isdir(refer_root):
             raise RuntimeError(
                 "OurPlay 汉化包为 transfile 结构, 需要基板包(参考包)转换, 但未找到参考包。\n"
@@ -376,7 +306,6 @@ def prepare_ourplay_dir(zip_path: str, refer_root: str = "") -> tuple[str, str]:
     except Exception:
         shutil.rmtree(temp_dir, ignore_errors=True)
         raise
-
 
 if __name__ == "__main__":
     info = get_ourplay_download_info(official=True)

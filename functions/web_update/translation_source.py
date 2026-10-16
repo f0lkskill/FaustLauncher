@@ -1,44 +1,23 @@
-"""汉化包平台方统一入口
-
-两条线要分清 (2026-09-25 修):
-  ① **内置汉化包** (零协会 LLC_zh-CN / OurPlay OurPlayHanHua): 下载 / 版本比对 /
-     解压合并 -> 一律用 get_builtin_dir_name() / get_builtin_translation_dir();
-  ② **插件自定义汉化源**: 决定"往游戏里部署哪份汉化 / 美化作用于哪个目录 /
-     config.json 指向哪个目录" -> 用 get_translation_dir_name() / get_translation_dir()。
-
-翻译目录名跟随所选平台动态变化, 启动器内所有硬编码的 LLC_zh-CN
-路径都应改为通过本模块获取当前平台对应的目录名, 以保证汉化包
-下载/同步/美化处理正常。
-
-平台与目录名对应关系:
-    0 零协会        -> LLC_zh-CN
-    1 OurPlay 普通  -> OurPlayHanHua
-    2 OurPlay 神人  -> OurPlayHanHua
-"""
 import os
 
 from functions.base.settings_manager import get_settings_manager
 
-# 平台枚举
 SOURCE_ZERO = 0
 SOURCE_OURPLAY = 1
 SOURCE_OURPLAY_GOD = 2
 
-# 各平台对应的翻译目录名 (lang/ 下)
 DIR_NAME_BY_SOURCE = {
     SOURCE_ZERO: "LLC_zh-CN",
     SOURCE_OURPLAY: "OurPlayHanHua",
     SOURCE_OURPLAY_GOD: "OurPlayHanHua",
 }
 
-# 各平台的显示名 (主页"汉化源"芯片 / 日志用)
 SOURCE_NAMES = {
     SOURCE_ZERO: "零协会",
     SOURCE_OURPLAY: "OurPlay 普通版",
     SOURCE_OURPLAY_GOD: "OurPlay 神人版",
 }
 
-# 各平台写入 version.json 的 platform 标记 (用于区分普通/神人包, 防止 versionCode 撞号装错包)
 PLATFORM_TAG_BY_SOURCE = {
     SOURCE_ZERO: "zeroasso",
     SOURCE_OURPLAY: "ourplay_normal",
@@ -48,14 +27,7 @@ PLATFORM_TAG_BY_SOURCE = {
 extend_translate_source:list[CustomTranslateSource] = []
 
 class CustomTranslateSource:
-    """自定义汉化包平台方, 供插件扩展"""
     def __init__(self, source: str, name: str):
-        """初始化自定义汉化包平台方
-
-        Args:
-            source (str): 汉化路径
-            name (str): 平台名称
-        """
         self.source = source
         self.name = name
 
@@ -63,7 +35,6 @@ class CustomTranslateSource:
         return self.name, self.source
 
 def get_translate_source() -> int:
-    """当前汉化包平台方 (0 零协会 / 1 OurPlay 普通 / 2 OurPlay 神人)"""
     try:
         value = get_settings_manager().get_setting("translate_source")
         value = int(value) # type: ignore
@@ -73,43 +44,27 @@ def get_translate_source() -> int:
     except Exception:
         return SOURCE_ZERO
 
-
 def set_extend_translate_source(sources=None) -> list:
-    """同步插件注册的自定义汉化源 (插件加载/重载完成后调用)
-
-    原地更新列表, 保持引用不变 (别处 import 到的还是同一个对象)。
-    """
     try:
         extend_translate_source[:] = list(sources or [])
     except Exception:
         pass
     return extend_translate_source
 
-
 def get_translate_source_name() -> str:
-    """当前汉化源显示名: 优先插件注册的第一个自定义汉化源, 否则内置平台名"""
     for source in extend_translate_source:
         name = str(getattr(source, "name", "") or "").strip()
         if name:
             return name
     return SOURCE_NAMES.get(get_translate_source(), "未知")
 
-
 def get_translation_dir_name() -> str:
-    """当前汉化包平台对应的翻译目录名 (如 LLC_zh-CN / OurPlayHanHua)"""
     if len(extend_translate_source) == 0:
         return DIR_NAME_BY_SOURCE[get_translate_source()]
     else:
         return extend_translate_source[-1].source.split("/")[-1]
 
-
 def get_translation_dir() -> str:
-    """
-    启动器本地 lang/ 下的汉化目录 (如 lang/LLC_zh-CN)
-
-    Returns:
-        str: 汉化目录路径 (如 lang/LLC_zh-CN), 若有插件自定义汉化包平台方则返回最后一个自定义路径。
-    """
     if len(extend_translate_source) == 0:
         dir_source = os.path.join("lang", get_translation_dir_name())
     else:
@@ -117,43 +72,24 @@ def get_translation_dir() -> str:
     return dir_source
 
 def get_builtin_dir_name() -> str:
-    """内置平台 (零协会 / OurPlay) 的翻译目录名 —— **不受插件自定义汉化源影响**
-
-    插件自定义汉化源 (CustomTranslateSource) 只决定"启动器往游戏里部署哪份汉化、
-    美化作用于哪个目录、config.json 指向哪个目录"; 而**内置汉化包的下载 / 版本比对 /
-    解压合并**走的是零协会或 OurPlay 自己的目录名, 两者不能混 —— 混了就会出现
-    "本地版本去插件目录里找, 找不到 -> 每次都判定需要更新" (2026-09-25 修)。
-    """
     return DIR_NAME_BY_SOURCE[get_translate_source()]
 
-
 def get_builtin_translation_dir() -> str:
-    """内置汉化包在 lang/ 下的目录 (如 lang/LLC_zh-CN), 同样不跟随插件自定义源"""
     return os.path.join("lang", get_builtin_dir_name())
 
-
 def get_game_lang_dir(game_path: str) -> str:
-    """游戏目录中的汉化目录 (LimbusCompany_Data/Lang/<目录名>)"""
     if len(extend_translate_source) == 0:
         return os.path.join(game_path, "LimbusCompany_Data", "Lang", get_translation_dir_name())
     else:
         return os.path.join(game_path, "LimbusCompany_Data", "Lang", extend_translate_source[-1].source.split("/")[-1])
 
 def is_ourplay_source() -> bool:
-    """当前平台是否为 OurPlay (普通/神人)"""
     return get_translate_source() in (SOURCE_OURPLAY, SOURCE_OURPLAY_GOD)
 
-
 def is_god_source() -> bool:
-    """当前平台是否为 OurPlay 神人版 (需要基板包转换)"""
     return get_translate_source() == SOURCE_OURPLAY_GOD
 
-
 def get_local_version() -> str:
-    """读取**内置**汉化包本地版本 (lang/<内置目录>/info/version.json), 无则返回空串
-
-    用内置目录名 (不是插件自定义源目录): 内置包的版本信息只可能写在那里。
-    """
     version_path = os.path.join(get_builtin_translation_dir(), "info", "version.json")
     try:
         from json import load
@@ -162,9 +98,7 @@ def get_local_version() -> str:
     except Exception:
         return ""
 
-
 def get_local_platform() -> str:
-    """读取内置汉化包 version.json 的 platform 标记 (无则返回空串)"""
     version_path = os.path.join(get_builtin_translation_dir(), "info", "version.json")
     try:
         from json import load
@@ -173,14 +107,8 @@ def get_local_platform() -> str:
     except Exception:
         return ""
 
-
 def check_need_up_translate(version_info: str = "") -> bool:
-    """当前平台的汉化包是否需要下载/更新
-
-    本地目录不存在或版本信息缺失时返回 True (需要下载/安装);
-    传入远端版本时与本地版本比较, 不一致返回 True。
-    """
-    local_dir = get_builtin_translation_dir()      # 内置包目录: 插件自定义源不影响这里
+    local_dir = get_builtin_translation_dir()
     if not os.path.isdir(local_dir):
         print(f"[Locale] 本地没有内置汉化包目录 {local_dir}, 需要下载")
         return True
@@ -191,11 +119,9 @@ def check_need_up_translate(version_info: str = "") -> bool:
         return False
     try:
         local_platform = get_local_platform()
-        # 平台类型不匹配 (普通版切神人版等) 必须强制更新, 防止 versionCode 撞号装错包
         if local_platform and local_platform != PLATFORM_TAG_BY_SOURCE[get_translate_source()]:
             print(f"[Locale] 平台标记不一致 (本地 {local_platform}), 需要重新下载")
             return True
-        # OurPlay 旧版安装的 version.json 无 platform 字段, 无法区分普通/神人, 强制更新一次补全
         if not local_platform and is_ourplay_source():
             print("[Locale] OurPlay 旧版安装缺 platform 标记, 强制更新一次补全")
             return True

@@ -1,26 +1,3 @@
-"""FaustLauncherWeb 服务端 API 客户端
-
-用户身份与皮肤数据**全部通过服务端接口读写**, 不再直接读写用户笔记:
-
-  · 旧做法是"读整张用户表 → 改 → 写回"(`/note/FaustLauncher.users` + `/update/`),
-    那是**最后写入者胜**: 客户端本地表旧一点、或两台设备同时解锁, 就会成批丢用户;
-  · 现在统一走 `/api/me/*` —— uid 由服务端从**登录会话**里取(绝不从请求体读),
-    服务端在锁内"读整表 → 只改自己这一行 → 原子写回", 结构上不可能牵连别人;
-  · 本模块**不做任何缓存**: 每次调用都发真实请求 (服务端响应本身带 no-store)。
-
-接口 (详见服务端 API.md 4.1 / 4.2):
-
-  POST /api/login        {"id": uid}             -> 统一用户对象; 失败: HTTP 200 + ok:false
-  GET  /api/me                                    -> 统一用户对象 (401 未登录 / 404 无此人)
-  POST /api/me/skins     {"skins": [...]}         -> 整体替换**自己**的皮肤列表
-  POST /api/me/name      {"user_name": "..."}     -> 设置**自己**的昵称
-  GET  /api/user/<uid>                            -> 公开只读 (404 无此人)
-  GET  /api/logout                                -> 清登录态
-
-登录态: 服务端下发 `login_user` / `login_sig` 两个签名 Cookie (30 天), 这里持久化到
-`%APPDATA%\\FaustLauncher\\user\\session.json`。登录只要用户 ID、**没有密码**, 所以
-Cookie 失效时随时可以用本地保存的 ID 重建会话。
-"""
 
 from __future__ import annotations
 
@@ -31,11 +8,10 @@ from urllib.parse import quote, urlsplit
 
 from functions.base.common.json_io import read_json, write_json
 
-# 站点根地址 (config/web_config.json → api_base 可覆盖)
 DEFAULT_API_BASE = "https://folkskill.pythonanywhere.com"
 
-CONNECT_TIMEOUT = 10        # 建连超时 (秒)
-READ_TIMEOUT = 20           # 读取超时 (秒)
+CONNECT_TIMEOUT = 10
+READ_TIMEOUT = 20
 _SESSION_FILE = "session.json"
 _LOGIN_COOKIES = ("login_user", "login_sig")
 
@@ -43,21 +19,16 @@ _lock = threading.RLock()
 _session = None
 _session_base = ""
 
-
 def user_data_dir() -> str:
-    """用户数据目录 (`%APPDATA%\\FaustLauncher\\user`) —— 全项目唯一定义处"""
     roaming = os.getenv("APPDATA")
     if not roaming:
         roaming = os.path.join(os.path.expanduser("~"), "AppData", "Roaming")
     return os.path.join(roaming, "FaustLauncher", "user")
 
-
 def session_file() -> str:
     return os.path.join(user_data_dir(), _SESSION_FILE)
 
-
 def api_base() -> str:
-    """服务端站点根地址"""
     base = ""
     try:
         from functions.base.web_config import get_api_base
@@ -66,15 +37,7 @@ def api_base() -> str:
         base = ""
     return (base or DEFAULT_API_BASE).rstrip("/")
 
-
-# ============================================================
-# 日志脱敏
-# ------------------------------------------------------------
-# 日志会进启动器的终端面板, 可能被截图或贴出来, 所以完整用户 ID 一律打码;
-# Cookie / 签名 / 令牌这类凭据只报"存没存", 绝不打印内容。
-# ============================================================
 def mask_uid(uid) -> str:
-    """日志用的打码用户 ID: 保留 `FL-` 前缀与末 2 位, 中间全部遮掉"""
     text = str(uid or "").strip()
     if not text:
         return "(空)"
@@ -84,9 +47,6 @@ def mask_uid(uid) -> str:
         return head + "•" * rest
     return head + "•" * (rest - 2) + text[-2:]
 
-
-# 日志里**不打印真实 API 路由**：服务端路由结构算内部信息，而且路径里可能带
-# 用户 ID / 主页令牌。日志只留一个人看得懂的动作名，认不出来的一律折叠。
 _PATH_ACTIONS = {
     "/api/register": "注册",
     "/api/login": "登录",
@@ -106,9 +66,7 @@ _PATH_ACTION_PREFIXES = (
     ("/api/profile/", "读取用户主页信息"),
 )
 
-
 def _safe_path(path: str) -> str:
-    """给日志用的**动作名** —— 绝不原样输出路由（含路径里的用户 ID / 令牌）。"""
     clean = str(path or "").split("?", 1)[0]
     if clean in _PATH_ACTIONS:
         return _PATH_ACTIONS[clean]
@@ -117,8 +75,6 @@ def _safe_path(path: str) -> str:
             return label
     return "[Hidden]"
 
-
-# 会话 (requests.Session + 登录 Cookie 持久化)
 def _restore_cookies(session, base: str) -> None:
     try:
         data = read_json(session_file())
@@ -140,9 +96,7 @@ def _restore_cookies(session, base: str) -> None:
     if restored:
         print(f"[UserAPI] 已载入本地登录态。")
 
-
 def _save_cookies(session) -> None:
-    """只持久化登录用的那两个 Cookie (其余会话 Cookie 没有保留价值)"""
     cookies = {}
     try:
         for c in session.cookies:
@@ -160,9 +114,7 @@ def _save_cookies(session) -> None:
     except Exception as exc:
         print(f"[UserAPI] 保存登录态失败: {exc}")
 
-
 def clear_session() -> None:
-    """清掉本地登录态 (Cookie 文件 + 内存会话)"""
     global _session, _session_base
     with _lock:
         removed = False
@@ -177,11 +129,8 @@ def clear_session() -> None:
         if removed:
             print("[UserAPI] 已清除本地登录态")
 
-
 def has_session() -> bool:
-    """本地是否存有登录态 (不代表它还有效)"""
     return os.path.isfile(session_file())
-
 
 def _get_session():
     global _session, _session_base
@@ -191,7 +140,6 @@ def _get_session():
         if _session is None or _session_base != base:
             session = requests.Session()
             session.headers.update({
-                # 服务端日志里能认出是启动器, 与网页端区分开
                 "User-Agent": "FaustLauncher-Client/1.0",
                 "Accept": "application/json",
             })
@@ -200,19 +148,8 @@ def _get_session():
             _session_base = base
         return _session
 
-
-# 统一请求
 def _request(method: str, path: str, payload: dict | None = None,
              keep_cookies: bool = False, note: str = "") -> dict:
-    """发一次请求, 统一返回:
-
-        {"ok": bool, "data": dict, "error": str, "status": int, "offline": bool}
-
-    · offline=True 表示压根没连上服务端 (断网/超时), 与"服务端明确拒绝"区分开;
-    · 失败原因优先用服务端给的 `msg` (它的文案已经足够给用户看);
-    · 每次调用都会打印一行 `[UserAPI] ...` 日志 (方法/路径/状态码/耗时),
-      `note` 用来补充业务上下文 (例如打码后的用户 ID), 路径上的 ID 也会自动打码。
-    """
     url = api_base() + path
     label = f"{method} {_safe_path(path)}" + (f" [{note}]" if note else "")
     started = time.time()
@@ -260,21 +197,7 @@ def _request(method: str, path: str, payload: dict | None = None,
     print(f"[UserAPI] {label} -> {status} 失败: {msg} ({cost:.2f}s)")
     return {"ok": False, "data": data, "error": msg, "status": status, "offline": False}
 
-
-# 对外接口
 def register(uid: str, user_name: str | None = None, skins=None) -> dict:
-    """注册 / 登记自己的账号 (**幂等**, 客户端应当优先用它而不是 login)。
-
-    服务端策略:
-      · ID 已存在 → 原样返回并登录, **一个字段都不改** (不会冲掉昵称/皮肤/角色);
-      · ID 不存在 → 建档 (未传 user_name 用 `Player`, 未传 skins 用 `["faust"]`)。
-
-    所以它同时覆盖"老用户重建会话"和"新环境首次登记"两种情况, 成功后直接下发
-    登录 Cookie, 紧接着就能用 `/api/me/*`。
-
-    注意: ID 格式必须是 `FL-` + 16 位数字/大写字母 (与 `_make_user_id()` 一致),
-    否则服务端返回 400。
-    """
     payload: dict = {"id": str(uid or "").strip()}
     if user_name:
         payload["user_name"] = str(user_name).strip()
@@ -283,61 +206,36 @@ def register(uid: str, user_name: str | None = None, skins=None) -> dict:
     return _request("POST", "/api/register", payload, keep_cookies=True,
                     note=f"id={mask_uid(uid)}")
 
-
 def login(uid: str) -> dict:
-    """用用户 ID 登录 (要求该 ID **已存在**; 新环境请先用 register)"""
     return _request("POST", "/api/login", {"id": str(uid or "").strip()}, keep_cookies=True,
                     note=f"id={mask_uid(uid)}")
 
-
 def logout() -> dict:
-    """退出登录 (清服务端 Cookie + 本地登录态)"""
     result = _request("GET", "/api/logout")
     clear_session()
     return result
 
-
 def me() -> dict:
-    """读自己在服务端的记录 (未登录 401 / 不存在 404)"""
     return _request("GET", "/api/me")
 
-
 def push_skins(skins) -> dict:
-    """整体替换**自己**的皮肤列表 (调用方负责先与云端取并集)"""
     items = [str(s) for s in (skins or [])]
     return _request("POST", "/api/me/skins", {"skins": items}, note=f"{len(items)} 项")
 
-
 def push_name(name: str) -> dict:
-    """设置**自己**的昵称"""
     clean = str(name or "").strip()
     return _request("POST", "/api/me/name", {"user_name": clean}, note=f"昵称={clean}")
 
-
 def public_user(uid: str) -> dict:
-    """按用户 ID 读公开资料 (无需登录)"""
     return _request("GET", "/api/user/" + quote(str(uid or "").strip(), safe=""),
                     note=f"id={mask_uid(uid)}")
 
-
-# 服务端提供**两种**上传方式（见 FaustLauncherWeb/API.md §4.2 / §4.10）：
-#   ① POST /api/me/achievements          —— uid 取自登录会话，普通用户即可，**推荐**
-#   ② POST /api/achievements/overwrite   —— uid 写在请求体，普通用户只能覆盖自己、管理员可覆盖他人
-# 两者都是**整体替换**语义（客户端把本地全量列表报上去，不用自己算增量）。
-
 def push_achievements(achievements) -> dict:
-    """方式①：整体替换**自己**的成就列表（uid 由服务端从登录会话取，改不到别人）。"""
     items = [str(a).strip() for a in (achievements or []) if str(a).strip()]
     return _request("POST", "/api/me/achievements", {"achievements": items},
                     note=f"{len(items)} 条")
 
-
 def overwrite_achievements(achievements, uid: str = "") -> dict:
-    """方式②：`POST /api/achievements/overwrite`，用户 ID 写在请求体里，整体覆盖。
-
-    ``uid`` 留空则由服务端按登录身份处理（等价于覆盖自己）；
-    传了别人的 ID 且不是管理员会被服务端 403 拒绝。
-    """
     items = [str(a).strip() for a in (achievements or []) if str(a).strip()]
     payload: dict = {"achievements": items}
     if str(uid or "").strip():
@@ -345,17 +243,7 @@ def overwrite_achievements(achievements, uid: str = "") -> dict:
     return _request("POST", "/api/achievements/overwrite", payload,
                     note=f"{len(items)} 条" + (f" -> {mask_uid(uid)}" if uid else ""))
 
-
 def add_achievement(achievement_id: str, uid: str = "") -> dict:
-    """给**自己**加一条成就（服务端 ``POST /api/achievements/add``）。
-
-    为什么不整份覆盖：这个接口只改服务端那一条记录，语义是"加一条"且**幂等**
-    （已经有了就返回 ``added: false``，不报错）。整表覆盖在多机轮流上线的场景下
-    会互相覆盖，而这里天然是并集。
-
-    返回体里 ``known`` 表示服务端 ``achievements.json`` 是否认识这个 ID（它**不做强制
-    校验**，所以客户端可以先上新成就，服务端稍后再补定义）。
-    """
     aid = str(achievement_id or "").strip()
     if not aid:
         return {"ok": False, "error": "成就 ID 为空", "status": 0, "data": {}, "offline": False}
@@ -364,28 +252,12 @@ def add_achievement(achievement_id: str, uid: str = "") -> dict:
         payload["id"] = str(uid)
     return _request("POST", "/api/achievements/add", payload, note=f"单条 {aid}")
 
-
 def report_download(name: str, kind: str) -> dict:
-    """上报一次下载（下载次数 **+1 由服务端在锁内完成**）。
-
-    客户端不要再"整份下载数据库 → 本地 +1 → 整份写回" —— 并发必然互相覆盖。
-    ``kind`` 取 ``"mod"`` / ``"addon"``。
-    """
     return _request("POST", "/api/download",
                     {"name": str(name or "").strip(), "type": str(kind or "").strip()},
                     note=f"{kind}:{name}")
 
-
-# 服务端把时长单独存一篇统计笔记（心跳式高频上报，不塞进用户表）。两种写法：
-#   {"add": N}        —— 累加 N 秒（客户端只知道"这一段玩了多久"时用）
-#   {"playtime": N}   —— 覆盖为 N 秒（**本地就是权威总量**时用，我们读 Steam 记录属于这种）
-
 def report_playtime(seconds: int, overwrite: bool = True) -> dict:
-    """上报自己的累计游玩时长（单位秒）。
-
-    ``overwrite=True`` 走覆盖语义（``{"playtime": N}``）—— Steam 的 ``Playtime`` 本身就是
-    累计总量，覆盖最准确；``overwrite=False`` 时走累加语义（``{"add": N}``）。
-    """
     try:
         value = max(0, int(seconds))
     except (TypeError, ValueError):
@@ -394,13 +266,7 @@ def report_playtime(seconds: int, overwrite: bool = True) -> dict:
     return _request("POST", "/api/me/playtime", payload,
                     note=f"{'覆盖' if overwrite else '累加'} {value} 秒")
 
-
 def leaderboard(kind: str = "playtime", limit: int = 20) -> dict:
-    """读排行榜（公开只读，不需要登录也能拿；登录了会额外带自己的名次）。
-
-    ``kind`` 取 ``"playtime"``（游玩时长）或 ``"achievements"``（已解锁成就数）。
-    榜单是 **GET + 查询串**（``?type=&limit=``），所以这里把参数拼进路径。
-    """
     try:
         size = max(1, min(200, int(limit)))
     except (TypeError, ValueError):

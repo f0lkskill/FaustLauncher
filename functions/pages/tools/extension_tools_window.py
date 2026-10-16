@@ -1,14 +1,4 @@
 #! 扩展工具窗口 (工具页)
-#? 使用 pywebview 展示: web/extension_tools/index.html (与 Mod管理器同一深色 GitHub 风格)
-#? 三种模式:
-#? - 包装 Mod: 选择原始文件夹(标准: Installer.bat / Assets / Uninstaller.bat; 单文件类型: 仅 .bank/.carra2) -> 填写信息表单 -> 复制到 mods/
-#? - 生成插件模板: 填写插件信息 -> addons/ 下生成 scr.py + icon.png + addon_info.json
-#? - 发布 Mod 信息: 选择 mods/ 下的 Mod -> 上传 mod_info.json 到云端笔记
-#? 后端操作全部位于 functions/tools/post_extension_tools.py
-#? pywebview 6 要求 webview.start() 运行在主线程, 与 tkinter 主循环互斥,
-#? 故以独立子进程方式拉起窗口 (与 Mod管理器同一模式):
-#? - 源码模式: 用 pythonw 运行本脚本子进程
-#? - 打包模式 (sys.frozen): 用自身 exe 以 --extension-tools-window 参数二次启动
 
 import base64
 import json
@@ -47,18 +37,10 @@ from functions.base.window_chrome import (
 
 HTML_PATH = get_web_root("extension_tools", "index.html")
 
-
-# ============================================================
-# 页面通知 (进度/日志实时推送)
-# ============================================================
-
 def _safe_js_str(obj):
-    """json 转 JS 字面量, 处理 U+2028/2029 (JS 字符串字面量中的非法字符)"""
     return json.dumps(obj, ensure_ascii=False).replace('\u2028', '\\u2028').replace('\u2029', '\\u2029')
 
-
 def _notify(func_name, arg):
-    """从 Python 侧调用页面 JS 全局函数 (发布进度/日志推送)"""
     try:
         import webview
         for w in webview.windows:
@@ -69,18 +51,9 @@ def _notify(func_name, arg):
     except Exception:
         pass
 
-
-# ============================================================
-# pywebview js_api
-# ============================================================
-
 class ExtensionToolsApi(WindowChromeBridge):
-    """pywebview js_api: 供前端调用包装/生成/发布等后端操作 (含皮肤桥接)"""
-
-    # ---- 通用 ----
 
     def assets(self):
-        """返回背景装饰图的 base64 data URI (使用 icon.png)"""
         try:
             icon_path = os.path.join(_PROJECT_ROOT, "assets", "images", "icon", "icon.png")
             with open(icon_path, "rb") as f:
@@ -89,10 +62,6 @@ class ExtensionToolsApi(WindowChromeBridge):
             return {"bg": None}
 
     def list_mods(self):
-        """mods/ 下所有子文件夹 [{name, path, wrapped}] (wrapped=是否已有 mod_info.json)
-
-        未打包的原始 Mod 文件夹也可选 (用于包装)
-        """
         try:
             mods_dir = os.path.join(_PROJECT_ROOT, MODS_DIR)
             result = []
@@ -111,10 +80,6 @@ class ExtensionToolsApi(WindowChromeBridge):
             return []
 
     def list_addons(self):
-        """addons/ 下所有子文件夹 [{name, path, wrapped}] (wrapped=是否已有 addon_info.json)
-
-        wrapped=False 的插件不能发布（缺信息文件），只能先补全/重新生成模板。
-        """
         try:
             addons_dir = os.path.join(_PROJECT_ROOT, ADDONS_DIR)
             result = []
@@ -133,7 +98,6 @@ class ExtensionToolsApi(WindowChromeBridge):
             return []
 
     def pick_folder(self):
-        """原生文件夹选择对话框 (create_file_dialog 始终返回元组, 需解包)"""
         try:
             import webview
             paths = webview.windows[0].create_file_dialog(
@@ -144,7 +108,6 @@ class ExtensionToolsApi(WindowChromeBridge):
             return None
 
     def pick_files(self):
-        """原生多选文件对话框 (Mod 单文件)"""
         try:
             import webview
             paths = webview.windows[0].create_file_dialog(
@@ -157,7 +120,6 @@ class ExtensionToolsApi(WindowChromeBridge):
             return []
 
     def pick_icon(self):
-        """原生选择图标文件对话框 (create_file_dialog 始终返回元组, 需解包)"""
         try:
             import webview
             paths = webview.windows[0].create_file_dialog(
@@ -168,13 +130,7 @@ class ExtensionToolsApi(WindowChromeBridge):
             print(f"[Extensions] 打开图标对话框失败: {e}")
             return None
 
-    # ---- 包装 Mod ----
-
     def scan_mod_files(self, folder, single_file=False):
-        """校验原始文件夹并扫描可载入文件, 返回 {ok, files, error}
-
-        single_file=True 时跳过 Installer.bat/Uninstaller.bat/Assets 必需结构检测
-        """
         folder = (folder or '').strip()
         if not folder:
             return {'ok': False, 'files': [], 'error': '请先选择原始文件夹'}
@@ -187,7 +143,6 @@ class ExtensionToolsApi(WindowChromeBridge):
         return {'ok': True, 'files': _scan_mod_files(folder), 'error': ''}
 
     def wrap_mod(self, data):
-        """按表单填写的信息包装 Mod (single_file=True 为单文件 Mod 类型)"""
         try:
             data = data or {}
             info = {
@@ -206,10 +161,7 @@ class ExtensionToolsApi(WindowChromeBridge):
         except Exception as e:
             return {'ok': False, 'msg': f'包装 Mod 失败: {e}'}
 
-    # ---- 生成插件 ----
-
     def spawn_extension(self, data):
-        """按表单填写的信息生成插件模板"""
         try:
             data = data or {}
             ok, msg = spawn_extension(
@@ -224,10 +176,7 @@ class ExtensionToolsApi(WindowChromeBridge):
         except Exception as e:
             return {'ok': False, 'msg': f'生成插件模板失败: {e}'}
 
-    # ---- 发布 Mod ----
-
     def preview_mod(self, folder):
-        """读取 mod_info.json 用于预览, 返回 {ok, info, max_size_mb, error}"""
         info, err = load_mod_info(folder)
         if err:
             return {'ok': False, 'info': {}, 'max_size_mb': None, 'error': err}
@@ -239,10 +188,6 @@ class ExtensionToolsApi(WindowChromeBridge):
         return {'ok': True, 'info': info, 'max_size_mb': max_mb, 'error': ''}
 
     def publish_mod(self, folder):
-        """完整发布: 压缩+上传蓝奏云(图标→FaustLauncher.icons, 本体→FaustLauncher.Mods)
-        → 直链解析 URL → 发布 Mod 信息到云端笔记
-        返回 {ok, msg, log, info}; 期间实时推送进度到页面 (__onPublishProgress/__onPublishLog)
-        """
         logs = []
 
         def _log(s):
@@ -266,10 +211,6 @@ class ExtensionToolsApi(WindowChromeBridge):
             return {'ok': False, 'msg': f'发布失败: {e}', 'log': '\n'.join(logs), 'info': {}}
 
     def preview_addon(self, folder):
-        """读取 addon_info.json 用于预览, 返回 {ok, info, max_addon_mb, error}
-
-        max_addon_mb 对外统一叫 max_size_mb（与 Mod 同一个蓝奏云单文件上限）。
-        """
         info, err = load_addon_info(folder)
         if err:
             return {'ok': False, 'info': {}, 'max_size_mb': None, 'error': err}
@@ -281,10 +222,6 @@ class ExtensionToolsApi(WindowChromeBridge):
         return {'ok': True, 'info': info, 'max_size_mb': max_mb, 'error': ''}
 
     def publish_addon(self, folder):
-        """完整发布插件: 压缩+上传蓝奏云(图标→FaustLauncher.icons,
-        本体→FaustLauncher.Addons) → 直链解析 URL → 更新云端插件数据库 (addon_info)
-        返回 {ok, msg, log, info}; 期间推送进度 (__onAddonProgress/__onAddonLog)
-        """
         logs = []
 
         def _log(s):
@@ -307,22 +244,15 @@ class ExtensionToolsApi(WindowChromeBridge):
         except Exception as e:
             return {'ok': False, 'msg': f'发布失败: {e}', 'log': '\n'.join(logs), 'info': {}}
 
-
-# ============================================================
-# 窗口启动
-# ============================================================
-
 def _center_xy(width, height):
-    """主屏居中坐标, 失败时返回 (None, None)"""
     try:
         import ctypes
         u = ctypes.windll.user32
-        screen_w = u.GetSystemMetrics(0)  # SM_CXSCREEN
-        screen_h = u.GetSystemMetrics(1)  # SM_CYSCREEN
+        screen_w = u.GetSystemMetrics(0)
+        screen_h = u.GetSystemMetrics(1)
         return max((screen_w - width) // 2, 0), max((screen_h - height) // 2, 0)
     except Exception:
         return None, None
-
 
 def _error_dialog(title, text):
     import ctypes
@@ -331,7 +261,6 @@ def _error_dialog(title, text):
     except Exception:
         pass
 
-
 def _write_error_log(exc_info):
     try:
         with open(os.path.join(_PROJECT_ROOT, "extension_tools_window_error.log"), "a", encoding="utf-8") as f:
@@ -339,9 +268,7 @@ def _write_error_log(exc_info):
     except Exception:
         pass
 
-
 def run_extension_tools_window(debug: bool = False):
-    """子进程入口: 直接运行扩展工具 pywebview 窗口"""
     try:
         import webview
     except BaseException as e:
@@ -354,7 +281,7 @@ def run_extension_tools_window(debug: bool = False):
         _error_dialog("扩展工具", f"找不到页面文件:\n{HTML_PATH}")
         raise SystemExit(1)
 
-    win_w, win_h = child_window_size(820, 660)     # 内容区 820x660 + 40px 自绘标题栏
+    win_w, win_h = child_window_size(820, 660)
     min_w, min_h = child_window_size(680, 520)
     window_kwargs = dict(
         title="扩展工具",
@@ -364,10 +291,10 @@ def run_extension_tools_window(debug: bool = False):
         height=win_h,
         min_size=(min_w, min_h),
         background_color=window_background("#060f22"),
-        frameless=True,    # 去掉系统标题栏, 改用与主界面同款的自绘标题栏
-        easy_drag=False,   # 只允许拖标题栏
+        frameless=True,
+        easy_drag=False,
         shadow=False,
-        hidden=True,     # 先隐藏, 注入主题+标题栏后淡入
+        hidden=True,
     )
     x, y = _center_xy(win_w, win_h)
     if x is not None and y is not None:
@@ -376,7 +303,7 @@ def run_extension_tools_window(debug: bool = False):
 
     try:
         _win = webview.create_window(**window_kwargs)
-        apply_window_chrome(_win, show_when_ready=True)   # 共享主题层 + 当前皮肤 + 统一标题栏 (注入完再淡入)
+        apply_window_chrome(_win, show_when_ready=True)
         webview.start(debug=debug, icon=window_icon_path())
     except BaseException as e:
         import traceback
@@ -384,13 +311,7 @@ def run_extension_tools_window(debug: bool = False):
         _error_dialog("扩展工具", f"无法启动窗口:\n{type(e).__name__}: {e}")
         raise SystemExit(1)
 
-
 def open_extension_tools_window(root=None):
-    """非阻塞拉起扩展工具窗口 (与 Mod管理器同一模式, 立即返回)
-
-    Returns:
-        True: 窗口成功拉起; None: 拉起失败
-    """
     if getattr(sys, "frozen", False):
         cmd = [os.path.abspath(sys.executable), "--extension-tools-window"]
     else:
@@ -410,7 +331,6 @@ def open_extension_tools_window(root=None):
         print(f"[Extensions] 无法启动窗口进程: {e}")
         return None
     return True
-
 
 if __name__ == "__main__":
     run_extension_tools_window(debug="--debug" in sys.argv)

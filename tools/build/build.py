@@ -35,8 +35,14 @@ _ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)),
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 # spec 与 build.py 同目录；调用 PyInstaller 时用绝对路径，不依赖当前工作目录
-_SPEC_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "FaustLauncher.spec")
+_TOOLS_BUILD_DIR = os.path.dirname(os.path.abspath(__file__))
+_SPEC_PATH = os.path.join(_TOOLS_BUILD_DIR, "FaustLauncher.spec")
+# 签名助手（code_sign.py）与本文件同目录：以 `python tools/build/build.py` 运行时
+# sys.path[0] 本来就是这里，但被别处 import 时就不是了，所以显式补一条。
+if _TOOLS_BUILD_DIR not in sys.path:
+    sys.path.insert(0, _TOOLS_BUILD_DIR)
 
+from code_sign import load_config as load_signing_config, pfx_path, sign_file  # noqa: E402
 from functions.base.web_config import get_webnote  # noqa: E402
 from functions.base.skin_theme import window_background  # noqa: E402
 from functions.base.window_chrome import (  # noqa: E402
@@ -60,6 +66,7 @@ BUILD_STEPS = [
     ("resources", "复制资源文件"),
     ("docs", "复制文档文件"),
     ("exe", "复制可执行文件"),
+    ("sign", "签名可执行文件"),
     ("compress", "压缩打包 zip"),
 ]
 
@@ -465,10 +472,37 @@ class BuildApi(WindowChromeBridge):
             self._building = False
             return
         self._step(9, "done")
-        self._progress(92)
+        self._progress(90)
 
-        # ---- 10. 压缩打包 zip ----
+        # ---- 10. 代码签名（Authenticode） ----
+        # 证书与配置在 tools/build/signing/（私钥不入库，见那里的 README）。
+        # 放在「复制 exe」之后、「压缩 zip」之前 —— zip 里装的必须是签好的 exe。
+        # 没配证书只是跳过，其它机器 clone 下来照样能跑完整构建。
         self._step(10, "running")
+        self._status("签名可执行文件…")
+        try:
+            cfg = load_signing_config()
+            cert = pfx_path(cfg)
+            if not cert or not os.path.isfile(cert):
+                self._log("⚠ 未找到代码签名证书（tools/build/signing/），本次跳过签名\n",
+                          LEVEL_WARN)
+            else:
+                ok, message = sign_file(f"build_{vi}/FaustLauncher.exe", cfg, log=self._log)
+                if not ok:
+                    if cfg.get("required"):
+                        self._fail(10, message)
+                        self._building = False
+                        return
+                    self._log(f"⚠ 签名失败，按 required=false 继续打包：{message}\n", LEVEL_WARN)
+        except Exception as exc:  # noqa: BLE001
+            self._fail(10, f"签名步骤异常：{exc}")
+            self._building = False
+            return
+        self._step(10, "done")
+        self._progress(94)
+
+        # ---- 11. 压缩打包 zip ----
+        self._step(11, "running")
         self._status("压缩打包 zip…")
         try:
             import zipfile
@@ -493,15 +527,15 @@ class BuildApi(WindowChromeBridge):
                                        os.path.relpath(full, folder)).replace("\\", "/")
                     zf.write(full, arc)
                     if (i + 1) % 200 == 0:
-                        self._progress(92 + int((i + 1) / len(files) * 8))
+                        self._progress(94 + int((i + 1) / len(files) * 6))
             size_mb = os.path.getsize(zip_path) / 1024.0 / 1024.0
             self._log(f"✔ 压缩完成：{zip_path}（{size_mb:.1f} MB）\n", LEVEL_OK)
             self._zip_path = zip_path
         except Exception as exc:  # noqa: BLE001
-            self._fail(10, f"压缩打包失败：{exc}")
+            self._fail(11, f"压缩打包失败：{exc}")
             self._building = False
             return
-        self._step(10, "done")
+        self._step(11, "done")
         self._progress(100, "ok")
         self._status(f"构建完成！v{vi}", LEVEL_OK)
         self._log(f"\n✔ 构建完成：build_{vi}\n", LEVEL_OK)

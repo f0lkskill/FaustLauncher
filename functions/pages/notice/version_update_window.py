@@ -1,9 +1,4 @@
 #! 版本更新提示窗口
-#? 使用 pywebview 展示: web/version_update/index.html (GitHub 文档风格, 与今日指令窗口同一模式)
-#? pywebview 6 要求 webview.start() 运行在主线程, 与 tkinter 主循环互斥,
-#? 故以独立子进程方式拉起窗口:
-#? - 源码模式: 用 pythonw 运行本脚本子进程
-#? - 打包模式 (sys.frozen): 用自身 exe 以 --update-window 参数二次启动原生子进程
 
 import base64
 import html
@@ -16,7 +11,6 @@ import time
 from threading import Thread
 
 if getattr(sys, "frozen", False):
-    # 打包环境下模块在临时解压目录, 以 exe 所在目录为项目根目录 (config/assets 在 exe 旁)
     _PROJECT_ROOT = os.path.dirname(os.path.abspath(sys.executable))
 else:
     _PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", ".."))
@@ -35,17 +29,10 @@ from functions.base.window_chrome import (
 RESULT_FILE = os.path.join(_PROJECT_ROOT, "cache", "update_choice.json")
 HTML_PATH = get_web_root("version_update", "index.html")
 
-
-# ============================================================
-# Markdown → GitHub 风格 HTML 渲染 (离线渲染, 与版本介绍数据同源)
-# ============================================================
-
 def _esc(text):
     return html.escape(text, quote=False)
 
-
 def _find_link(text, link_start):
-    """解析 [text](url) 格式，返回 (text_end, url_end) 或 None"""
     if text[link_start] != '[':
         return None
     depth = 0
@@ -76,13 +63,7 @@ def _find_link(text, link_start):
         return None
     return (j, k)
 
-
 def _inline(text):
-    """状态机方式解析行内格式, 输出 HTML。
-    支持: **粗体** __粗体__ *斜体* _斜体_ ***粗斜体*** ___粗斜体___
-          `行内代码`  ~~删除线~~  [链接](url)  ![图片](url)  <url>  http://...
-          关键字格式: "bold 文字" "italic 文字" "bold_italic 文字"
-    """
     i, n = 0, len(text)
     buf = []
     out = []
@@ -93,7 +74,6 @@ def _inline(text):
             buf.clear()
 
     while i < n:
-        # ══ 非标准 Markdown: 关键字格式切换 bold / italic / bold_italic ══
         if re.match(r'^(?:[(（]?)?(bold_italic|bold|italic)[)）]?\s+', text[i:], re.IGNORECASE):
             match = re.match(r'^(?:[(（]?)?(bold_italic|bold|italic)[)）]?\s+', text[i:], re.IGNORECASE)
             assert match is not None
@@ -124,13 +104,11 @@ def _inline(text):
             i = end_idx
             continue
 
-        # 转义 \
         if text[i] == '\\' and i + 1 < n:
             buf.append(text[i + 1])
             i += 2
             continue
 
-        # 图片 ![alt](url) → 以文字占位
         if text[i:i + 2] == '![':
             result = _find_link(text, i + 1)
             if result:
@@ -140,7 +118,6 @@ def _inline(text):
                 i = url_end + 1
                 continue
 
-        # 链接 [text](url)
         if text[i] == '[':
             result = _find_link(text, i)
             if result:
@@ -152,7 +129,6 @@ def _inline(text):
                 i = url_end + 1
                 continue
 
-        # 自动链接 <url> 或 <email>
         if text[i] == '<':
             gt = text.find('>', i + 1)
             if gt != -1:
@@ -163,7 +139,6 @@ def _inline(text):
                     i = gt + 1
                     continue
 
-        # 自动 URL 识别
         if re.match(r'^https?://', text[i:]) or re.match(r'^www\.', text[i:]):
             m = re.match(r'^(https?://[^\s)>\]]+|www\.[^\s)>\]]+)', text[i:])
             if m:
@@ -177,7 +152,6 @@ def _inline(text):
                     i += len(url)
                     continue
 
-        # 粗斜体 ***text*** 或 ___text___
         triple = text[i:i + 3]
         if triple == '***' or triple == '___':
             end = text.find(triple, i + 3)
@@ -187,7 +161,6 @@ def _inline(text):
                 i = end + 3
                 continue
 
-        # 粗体 **text** 或 __text__
         double = text[i:i + 2]
         if double == '**' or double == '__':
             end = text.find(double, i + 2)
@@ -197,7 +170,6 @@ def _inline(text):
                 i = end + 2
                 continue
 
-        # 斜体 *text* 或 _text_
         single = text[i]
         if single in ('*', '_'):
             if text[i:i + 2] in ('**', '__'):
@@ -225,7 +197,6 @@ def _inline(text):
                     i = end + 1
                     continue
 
-        # 删除线 ~~text~~
         if text[i:i + 2] == '~~':
             end = text.find('~~', i + 2)
             if end != -1 and end > i + 2:
@@ -236,7 +207,6 @@ def _inline(text):
                     i = end + 2
                     continue
 
-        # 行内代码 `code` 或 ``code with ` inside``
         if text[i] == '`':
             bt_count = 0
             j = i
@@ -258,9 +228,7 @@ def _inline(text):
     flush()
     return ''.join(out)
 
-
 def _is_block_start(stripped):
-    """判断一行是否是块级元素的起始行（用于段落合并）"""
     if not stripped:
         return True
     if stripped.startswith('#'):
@@ -279,9 +247,7 @@ def _is_block_start(stripped):
         return True
     return False
 
-
 def _table_html(table_lines):
-    """渲染完整 Markdown 表格 HTML（含表头、分隔行、数据行与对齐）"""
     def parse_row(line):
         s = line.strip()
         if s.startswith('|'):
@@ -329,9 +295,7 @@ def _table_html(table_lines):
     tbody = '<tbody>' + ''.join(f'<tr>{row_cells(r, "td")}</tr>' for r in data_rows) + '</tbody>'
     return f'<table>{thead}{tbody}</table>'
 
-
 def md_to_html(md_text):
-    """将 GitHub 风格 Markdown 文本渲染为 HTML 字符串"""
     md_text = md_text.replace('\r\n', '\n').replace('\r', '\n')
     lines = md_text.split('\n')
     n = len(lines)
@@ -341,7 +305,6 @@ def md_to_html(md_text):
     while i < n:
         stripped = lines[i].strip()
 
-        # ── 代码块 ``` ... ``` ──
         if stripped.startswith('```'):
             lang = stripped[3:].strip()
             code_lines = []
@@ -349,17 +312,15 @@ def md_to_html(md_text):
             while i < n and not lines[i].strip().startswith('```'):
                 code_lines.append(lines[i])
                 i += 1
-            i += 1  # 跳过结束围栏
+            i += 1
             cls = f' class="language-{_esc(lang)}"' if lang else ''
             out.append(f'<pre><code{cls}>{_esc(chr(10).join(code_lines))}</code></pre>')
             continue
 
-        # ── 空行 ──
         if not stripped:
             i += 1
             continue
 
-        # ── 标题 # ~ ###### ──
         hm = re.match(r'^(#{1,6})\s+(.+?)\s*#*\s*$', stripped)
         if hm:
             level = min(len(hm.group(1)), 3)
@@ -367,7 +328,6 @@ def md_to_html(md_text):
             i += 1
             continue
 
-        # ── Setext 风格标题（下划线式）──
         if i + 1 < n and re.match(r'^=+\s*$', lines[i + 1].strip()):
             out.append(f'<h1>{_inline(stripped)}</h1>')
             i += 2
@@ -377,13 +337,11 @@ def md_to_html(md_text):
             i += 2
             continue
 
-        # ── 水平分割线 ──
         if re.match(r'^([-*_])(\s*\1\s*){2,}$', stripped):
             out.append('<hr>')
             i += 1
             continue
 
-        # ── 引用块（多行连续引用合并）──
         if stripped.startswith('>'):
             block_lines = []
             while i < n and lines[i].strip().startswith('>'):
@@ -392,7 +350,6 @@ def md_to_html(md_text):
             out.append(f'<blockquote><p>{_inline(" ".join(block_lines))}</p></blockquote>')
             continue
 
-        # ── 任务列表 / 无序列表 / 有序列表（连续条目合并为一个列表）──
         tm = re.match(r'^\s*[-*+]\s+\[([ xX])\]\s+(.+)$', stripped)
         um = None if tm else re.match(r'^\s*[-*+]\s+(.+)$', stripped)
         om = None if (tm or um) else re.match(r'^\s*(\d+)\.\s+(.+)$', stripped)
@@ -423,7 +380,6 @@ def md_to_html(md_text):
             out.append(f'<{tag}>{"".join(items)}</{tag}>')
             continue
 
-        # ── 表格 ──
         if '|' in stripped:
             table_lines = []
             while i < n and '|' in lines[i].strip():
@@ -432,7 +388,6 @@ def md_to_html(md_text):
             out.append(_table_html(table_lines))
             continue
 
-        # ── 普通段落（合并连续非空行为一段）──
         para_lines = [stripped]
         i += 1
         while i < n and lines[i].strip() and not _is_block_start(lines[i].strip()):
@@ -442,19 +397,12 @@ def md_to_html(md_text):
 
     return '\n'.join(out)
 
-
-# ============================================================
-# pywebview js_api 与窗口
-# ============================================================
-
 class VersionUpdateApi(WindowChromeBridge):
-    """pywebview js_api: 供前端获取版本数据与回传用户选择 (含皮肤桥接)"""
 
     def __init__(self, payload):
         self._payload = payload
 
     def get_data(self):
-        """返回前端渲染所需的全部数据, description 已渲染为 GitHub 风格 HTML"""
         data = dict(self._payload)
         try:
             data['html'] = md_to_html(data.get('description') or '')
@@ -465,11 +413,9 @@ class VersionUpdateApi(WindowChromeBridge):
         return data
 
     def choose(self, action):
-        """用户点击按钮: update=立即更新 later=稍后再说 ok=确定"""
         _write_choice(action)
 
     def assets(self):
-        """返回背景装饰图的 base64 data URI (使用 icon.png)"""
         import base64 as _b64
 
         def data_uri(rel_path, mime):
@@ -481,9 +427,7 @@ class VersionUpdateApi(WindowChromeBridge):
 
         return {"bg": data_uri(os.path.join("assets", "images", "icon", "icon.png"), "image/png")}
 
-
 def _write_choice(action):
-    """写入用户选择结果文件, 供主进程读取"""
     try:
         os.makedirs(os.path.dirname(RESULT_FILE), exist_ok=True)
         with open(RESULT_FILE, "w", encoding="utf-8") as f:
@@ -497,30 +441,24 @@ def _write_choice(action):
     except Exception:
         pass
 
-
 def _msgbox(title, text, is_error=True):
-    """原生消息框 (ctypes MessageBoxW), 不依赖 tkinter"""
     try:
         import ctypes
         ctypes.windll.user32.MessageBoxW(None, text, title, 0x10 if is_error else 0x40)
     except Exception:
         pass
 
-
 def _center_xy(width, height):
-    """主屏居中坐标, 失败时返回 (None, None)"""
     try:
         import ctypes
         u = ctypes.windll.user32
-        screen_w = u.GetSystemMetrics(0)  # SM_CXSCREEN
-        screen_h = u.GetSystemMetrics(1)  # SM_CYSCREEN
+        screen_w = u.GetSystemMetrics(0)
+        screen_h = u.GetSystemMetrics(1)
         return max((screen_w - width) // 2, 0), max((screen_h - height) // 2, 0)
     except Exception:
         return None, None
 
-
 def run_update_window(payload_b64=None, debug: bool = False):
-    """子进程入口: 直接运行版本更新 pywebview 窗口"""
     try:
         import webview
     except BaseException as e:
@@ -545,7 +483,7 @@ def run_update_window(payload_b64=None, debug: bool = False):
         except Exception as e:
             print(f"[Update] 解析参数失败: {e}")
 
-    win_w, win_h = child_window_size(560, 640)     # 内容区 560x640 + 40px 自绘标题栏
+    win_w, win_h = child_window_size(560, 640)
     min_w, min_h = child_window_size(440, 460)
     window_kwargs = dict(
         title="版本更新",
@@ -555,11 +493,11 @@ def run_update_window(payload_b64=None, debug: bool = False):
         height=win_h,
         min_size=(min_w, min_h),
         background_color=window_background("#060f22"),
-        on_top=True,   # 系统级置顶 (WS_EX_TOPMOST), 不被其他窗口遮挡
-        frameless=True,    # 去掉系统标题栏, 改用与主界面同款的自绘标题栏
-        easy_drag=False,   # 只允许拖标题栏
+        on_top=True,
+        frameless=True,
+        easy_drag=False,
         shadow=False,
-        hidden=True,     # 先隐藏, 注入主题+标题栏后淡入 (避免闪一下默认配色)
+        hidden=True,
     )
     x, y = _center_xy(win_w, win_h)
     if x is not None and y is not None:
@@ -568,7 +506,7 @@ def run_update_window(payload_b64=None, debug: bool = False):
 
     try:
         _win = webview.create_window(**window_kwargs) # type: ignore
-        apply_window_chrome(_win, show_when_ready=True)   # 共享主题层 + 当前皮肤 + 统一标题栏 (注入完再淡入)
+        apply_window_chrome(_win, show_when_ready=True)
         webview.start(debug=debug, icon=window_icon_path())
     except BaseException as e:
         import traceback
@@ -579,7 +517,6 @@ def run_update_window(payload_b64=None, debug: bool = False):
             pass
         _msgbox("版本更新", f"无法启动窗口:\n{type(e).__name__}: {e}")
         raise SystemExit(1)
-
 
 def _build_payload(current_version, latest_info, info, ask_update):
     def _dt(value):
@@ -602,39 +539,13 @@ def _build_payload(current_version, latest_info, info, ask_update):
         'ask_update': bool(ask_update),
     }
 
-
-# 记录最近一次更新询问窗口的打开时间, 供通知逻辑去重 (避免询问窗与详情窗同时弹出)
 _ASK_WINDOW_OPENED = {'t': 0.0}
 
-
 def ask_window_just_opened(within_seconds=5):
-    """判断更新询问窗口是否刚刚打开 (用于跳过重复的详情窗口)"""
     return time.time() - _ASK_WINDOW_OPENED['t'] < within_seconds
-
 
 def open_version_update_window(current_version, latest_info, info='发现新版本', root=None,
                                ask_update: bool = False, on_result=None, timeout: int = 600):
-    """非阻塞拉起版本更新 pywebview 窗口 (GitHub 文档风格)。
-
-    与今日指令窗口同一模式: 窗口运行在独立子进程, 本函数立即返回,
-    调用方 (tkinter 主线程) 不会被阻塞。
-
-    Args:
-        current_version: 当前版本名称
-        latest_info: 最新版本信息字典, 支持键:
-            version_name / description | version_description / date | data | created_at
-            bilibili_url | url (下载链接, 存在时前端显示"立即更新"按钮)
-        info: 提示信息标题
-        root: 兼容旧接口的 tkinter 根窗口 (不使用)
-        ask_update: 是否等待用户选择"立即更新/稍后再说"
-        on_result: ask_update 模式下, 后台线程监听用户选择后的回调
-            (运行在后台线程); 参数 action: 'update' / 'later' / None(超时或窗口直接关闭)
-        timeout: 等待用户选择的超时秒数
-
-    Returns:
-        True: 窗口成功拉起; None: 拉起失败 (调用方自行回退到其他提示方式)
-    """
-    # 更新询问模式必须要有下载链接, 否则窗口无按钮可点, 直接拒绝更新
     url = latest_info.get('bilibili_url') or latest_info.get('url') or ''
     if ask_update and not url:
         print("[Update] 无下载链接, 跳过更新询问")
@@ -645,7 +556,6 @@ def open_version_update_window(current_version, latest_info, info='发现新版�
         json.dumps(payload, ensure_ascii=False).encode('utf-8')
     ).decode('ascii')
 
-    # ---- 以独立子进程拉起窗口 (与今日指令同一模式) ----
     if getattr(sys, "frozen", False):
         cmd = [os.path.abspath(sys.executable), "--update-window", "--update-payload", payload_b64]
     else:
@@ -670,7 +580,6 @@ def open_version_update_window(current_version, latest_info, info='发现新版�
     if ask_update:
         _ASK_WINDOW_OPENED['t'] = time.time()
 
-    # 非询问模式, 或调用方不关心选择结果: 直接返回, 不阻塞
     if not ask_update or on_result is None:
         return True
 
@@ -701,20 +610,11 @@ def open_version_update_window(current_version, latest_info, info='发现新版�
     Thread(target=_watch, daemon=True).start()
     return True
 
-
 def show_version_update_window(current_version, latest_info, info='发现新版本', root=None,
                                ask_update: bool = False, timeout: int = 600):
-    """兼容入口: 非阻塞拉起版本更新窗口 (不等待用户选择, 立即返回)。
-
-    原阻塞式接口已废弃; 需要监听用户选择请使用 open_version_update_window(on_result=...)。
-
-    Returns:
-        True: 窗口成功拉起; None: 拉起失败; False: 询问模式但无下载链接
-    """
 
     return open_version_update_window(current_version, latest_info, info, root,
                                       ask_update=ask_update, on_result=None, timeout=timeout)
-
 
 if __name__ == "__main__":
     payload_arg = None

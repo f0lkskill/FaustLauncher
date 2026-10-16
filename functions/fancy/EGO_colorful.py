@@ -7,19 +7,15 @@ from functions.base.common.json_io import read_json, write_json
 settings_manager = get_settings_manager()
 
 def process_ego_json_files():
-    """处理所有EGO技能JSON文件，对name和abName字段应用颜色渐变效果"""
     global settings_manager
     from functions.web_update.translation_source import get_translation_dir_name
 
     base_path = f"{settings_manager.get_setting('game_path')}/LimbusCompany_Data/Lang/{get_translation_dir_name()}/"
     
-    # 定义JSON文件路径模式
     json_pattern = f"{base_path}Skills_Ego_Personality-*.json"
     
-    # 获取所有匹配的JSON文件
     json_files = glob.glob(json_pattern)
 
-    # 添加旧赛季的EGO文件，用于兼容
     json_files.append(f"{base_path}Skills_Ego.json")
     
     if not json_files:
@@ -28,12 +24,9 @@ def process_ego_json_files():
     
     print(f"找到 {len(json_files)} 个JSON文件, 开始处理...")
     
-    # 处理每个JSON文件
     for json_file in json_files:
-        # print(f"正在处理: {json_file}")
         success = process_single_json_file(json_file)
         if success:
-            # print(f"{json_file} 处理完成")
             pass
         else:
             print(f"{json_file} 处理失败")
@@ -41,17 +34,13 @@ def process_ego_json_files():
     return True
 
 def process_single_json_file(file_path: str) -> bool:
-    """处理单个JSON文件"""
     try:
-        # 读取JSON文件
         data = read_json(file_path)
         
-        # 处理dataList中的每个字典
         if 'dataList' in data and isinstance(data['dataList'], list):
             for item in data['dataList']:
                 process_ego_item(item)
             
-            # 保存修改后的数据
             write_json(file_path, data, indent=2)
             
             return True
@@ -64,30 +53,23 @@ def process_single_json_file(file_path: str) -> bool:
         return False
 
 def process_ego_item(item: Dict[str, Any]):
-    """处理单个EGO项目"""
-    # 检查是否有levelList
     if 'levelList' not in item or not isinstance(item['levelList'], list):
         return
     
-    # 处理每个level
     for level_data in item['levelList']:
         process_ego_level(level_data)
 
 def process_ego_level(level_data: Dict[str, Any]):
-    """处理单个技能等级数据"""
-    # 检查desc字段是否包含"指定"
     desc_contains_specified = False
     if 'desc' in level_data and level_data['desc']:
         desc_contains_specified = '指定' in level_data['desc']
     
-    # 处理name字段
     if 'name' in level_data and level_data['name']:
         level_data['name'] = process_text_field(
             level_data['name'], 
             desc_contains_specified
         )
     
-    # 处理abName字段
     if 'abName' in level_data and level_data['abName']:
         level_data['abName'] = process_text_field(
             level_data['abName'], 
@@ -95,24 +77,17 @@ def process_ego_level(level_data: Dict[str, Any]):
         )
 
 def process_text_field(text: str, is_specified: bool) -> str:
-    """处理文本字段，应用颜色渐变和格式化"""
     
     if is_specified:
-        # 包含"指定"的情况：红色向白色渐变，添加粗体斜体和emoji
-        # 应用颜色渐变：红色(#ff0000)向白色(#ffffff)渐变，渐变度0.5
         processed_text = apply_color_gradient_custom(f"! {text} !", "#ff0000", "#ffffff", 0.5)
-        # 添加粗体和斜体标签
         processed_text = f"<b><i>{processed_text}</i></b>"
     else:
-        # 不包含"指定"的情况：白色向亮灰色渐变
-        # 亮灰色：#d3d3d3
         processed_text = text
         processed_text = f"<b><i>{processed_text}</i></b>"
     
     return processed_text
 
 def main():
-    """主函数"""
     
     try:
         success = process_ego_json_files()

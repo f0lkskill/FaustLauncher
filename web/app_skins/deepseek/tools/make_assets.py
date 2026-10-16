@@ -1,19 +1,3 @@
-"""DeepSeek 皮肤素材生成 (PIL 程序化合成, 可重复运行)。
-
-素材: source/whale-girl-transparent.png (CC BY-NC-SA 4.0, 见 CREDITS.md)
-产出:
-  assets/launcher/background/deepseek_1..3.jpg   全屏背景 (cover, 1600x900)
-  profile.jpg                                    玻璃窗卡片图 (700x977)
-  assets/web/icon/icon.png                       启动器图标 (256x256, 透明底)
-
-调色板取自立绘本身 + DeepSeek 官方蓝:
-  深海藏青 #0C1122 / #1A2340   主蓝紫 #54609C   亮蓝 #789CCC
-  冰白     #FCF0F0             官方蓝 #4D6BFE
-
-用法 (在本目录下执行):
-  python tools/make_assets.py           # 全部重新生成
-  python tools/make_assets.py icon      # 只生成启动器图标 (不动已入库的背景图)
-"""
 import os
 import sys
 from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageOps
@@ -23,16 +7,14 @@ SKIN = os.path.dirname(HERE)
 SRC = os.path.join(SKIN, "source", "whale-girl-transparent.png")
 BG_DIR = os.path.join(SKIN, "assets", "launcher", "background")
 
-DEEP = (12, 17, 34)          # 深藏青
-MID = (26, 35, 64)           # 中间调
-INK = (8, 11, 24)            # 近黑
-BLUE = (77, 107, 254)        # DeepSeek 官方蓝
-ICE = (120, 156, 204)        # 亮蓝
-WHITE = (252, 240, 240)      # 冰白
-
+DEEP = (12, 17, 34)
+MID = (26, 35, 64)
+INK = (8, 11, 24)
+BLUE = (77, 107, 254)
+ICE = (120, 156, 204)
+WHITE = (252, 240, 240)
 
 def vgrad(size, stops):
-    """垂直渐变。stops=[(0.0,(r,g,b)), (1.0,(r,g,b))] 按位置线性插值"""
     w, h = size
     col = Image.new("RGB", (1, h))
     px = col.load()
@@ -47,17 +29,9 @@ def vgrad(size, stops):
                 break
     return col.resize((w, h), Image.BILINEAR)
 
-
 _RADIAL_CACHE = {}
 
-
 def radial_mask(size=256, power=2.0):
-    """严格圆形的径向渐变 mask: 中心 255 -> 边缘 0, 圆外恒 0。
-
-    不用 PIL 的 Image.radial_gradient: 它按**对角线**归一化, 画布边缘中点仍有
-    ~74/255 的亮度 (实测 中心=0 / 边缘中点=181 / 角=255), resize 放大后用 screen
-    叠加, 会在图上留下一块方形硬边亮块。
-    """
     key = (size, power)
     if key not in _RADIAL_CACHE:
         m = Image.new("L", (size, size), 0)
@@ -71,9 +45,7 @@ def radial_mask(size=256, power=2.0):
         _RADIAL_CACHE[key] = m
     return _RADIAL_CACHE[key]
 
-
 def glow(size, center, radius, color, peak=1.0):
-    """径向光斑 (screen 叠加用)"""
     d = max(16, int(radius * 2))
     m = radial_mask(256, 2.0).resize((d, d), Image.LANCZOS)
     m = m.filter(ImageFilter.GaussianBlur(d * 0.05))
@@ -84,9 +56,7 @@ def glow(size, center, radius, color, peak=1.0):
                 (int(center[0] - radius), int(center[1] - radius)), m)
     return layer
 
-
 def light_shafts(size, color=ICE, alpha=30):
-    """斜向柔光带: 深海光柱意象, 用来填充大片空白"""
     w, h = size
     out = Image.new("RGBA", size, (0, 0, 0, 0))
     for i in range(3):
@@ -102,9 +72,7 @@ def light_shafts(size, color=ICE, alpha=30):
             Image.new("L", size, color[2]), band)))
     return out.filter(ImageFilter.GaussianBlur(w * 0.018))
 
-
 def bubbles(size, count=30, seed=7, color=ICE):
-    """悬浮微粒: 让深海背景不至于太空"""
     import random
     rnd = random.Random(seed)
     w, h = size
@@ -119,7 +87,6 @@ def bubbles(size, count=30, seed=7, color=ICE):
         d.ellipse([x - r, y - r, x + r, y + r], outline=(255, 255, 255, min(255, a + 34)), width=1)
     return layer
 
-
 def grid(size, step=44, color=ICE, alpha=13):
     g = Image.new("RGBA", size, (0, 0, 0, 0))
     d = ImageDraw.Draw(g)
@@ -129,9 +96,7 @@ def grid(size, step=44, color=ICE, alpha=13):
         d.line([(0, y), (size[0], y)], fill=color + (alpha,))
     return g
 
-
 def edge_shade(size, top_ratio=0.0, bottom_ratio=0.0, color=INK, max_alpha=200, power=1.7):
-    """顶部/底部压暗 (小图拉伸成大图, 避免逐像素循环)"""
     w, h = size
     mask = Image.new("L", (1, h), 0)
     mp = mask.load()
@@ -149,10 +114,8 @@ def edge_shade(size, top_ratio=0.0, bottom_ratio=0.0, color=INK, max_alpha=200, 
     layer.putalpha(mask.resize((w, h), Image.BILINEAR))
     return layer
 
-
 def place_char(base, height, x_ratio, flip=False, glow_color=BLUE, glow_alpha=120,
                glow_blur=34, shadow=True, y_shift=0):
-    """把鲸鱼娘立绘合到 base 上 (阴影 + 蓝色外发光 + 本体)"""
     char = Image.open(SRC).convert("RGBA")
     if flip:
         char = ImageOps.mirror(char)
@@ -178,10 +141,8 @@ def place_char(base, height, x_ratio, flip=False, glow_color=BLUE, glow_alpha=12
     layer.paste(char, (x, y), char)
     return Image.alpha_composite(base, layer)
 
-
 def base_canvas(size, hot=(0.80, -0.06), cool=(0.06, 1.06), hot_peak=0.95, cool_peak=0.5,
                 shafts=True):
-    """深蓝渐变底 + 光斑 + 细网格 + 深海光柱 + 微粒"""
     img = vgrad(size, [(0.0, DEEP), (0.45, MID), (1.0, INK)]).convert("RGB")
     for center, radius, color, peak in (
         (hot, size[0] * 0.62, BLUE, hot_peak),
@@ -199,38 +160,32 @@ def base_canvas(size, hot=(0.80, -0.06), cool=(0.06, 1.06), hot_peak=0.95, cool_
         out = Image.alpha_composite(out, light_shafts(size))
     return Image.alpha_composite(out, bubbles(size))
 
-
 def write_bg(name, canvas, quality=90):
     os.makedirs(BG_DIR, exist_ok=True)
     out = os.path.join(BG_DIR, name)
     canvas.convert("RGB").save(out, "JPEG", quality=quality, optimize=True)
     print("  %-22s %s  %.0fKB" % (name, canvas.size, os.path.getsize(out) / 1024))
 
-
 def make_backgrounds():
     W, H = 1600, 900
     print("背景图:")
 
-    # 1) 角色居右: 主视觉
     c = base_canvas((W, H))
     c = place_char(c, H * 0.96, 0.73)
     c = Image.alpha_composite(c, edge_shade((W, H), top_ratio=0.22, bottom_ratio=0.34, max_alpha=205))
     write_bg("deepseek_1.jpg", c)
 
-    # 2) 角色居左 (镜像): 换一侧的观感
     c = base_canvas((W, H), hot=(0.18, -0.06), cool=(0.96, 1.06))
     c = place_char(c, H * 0.94, 0.26, flip=True)
     c = Image.alpha_composite(c, edge_shade((W, H), top_ratio=0.22, bottom_ratio=0.34, max_alpha=205))
     write_bg("deepseek_2.jpg", c)
 
-    # 3) 角色稍小 + 蓝雾更重: 氛围向
     c = base_canvas((W, H), hot=(0.70, 0.10), cool=(0.20, 0.95), hot_peak=0.8)
     c = ImageChops.screen(c.convert("RGB"),
                           glow((W, H), (W * 0.55, H * 0.62), W * 0.78, ICE, 0.30)).convert("RGBA")
     c = place_char(c, H * 0.88, 0.74, glow_alpha=150, glow_blur=44)
     c = Image.alpha_composite(c, edge_shade((W, H), top_ratio=0.24, bottom_ratio=0.30, max_alpha=200))
     write_bg("deepseek_3.jpg", c)
-
 
 def make_profile():
     W, H = 700, 977
@@ -242,14 +197,7 @@ def make_profile():
     print("卡片图:")
     print("  %-22s %s  %.0fKB" % ("profile.jpg", c.size, os.path.getsize(out) / 1024))
 
-
 def make_icon():
-    """取立绘头部做启动器图标 (透明底)。
-
-    裁切框要涵盖"头饰 + 整张脸 + 两侧鲸鱼耳": 只到眼睛上半的话,
-    缩到标题栏 20px 就完全看不出是角色了。比例按立绘 910x941 量的:
-    头饰顶 y≈2%, 下巴/脖子 y≈72%, 脸中心 x≈50%, 左右各让 36%。
-    """
     char = Image.open(SRC).convert("RGBA")
     w, h = char.size
     box = (int(w * 0.135), int(h * 0.020), int(w * 0.865), int(h * 0.725))
@@ -264,7 +212,6 @@ def make_icon():
     icon.save(out, "PNG", optimize=True)
     print("启动器图标:")
     print("  %-22s %s  %.0fKB" % ("icon.png", icon.size, os.path.getsize(out) / 1024))
-
 
 if __name__ == "__main__":
     if not os.path.isfile(SRC):

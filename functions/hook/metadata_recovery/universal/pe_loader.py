@@ -1,29 +1,21 @@
 #!/usr/bin/env python3
-"""pe_loader.py - PE 解析（零第三方依赖）。
-
-提供：镜像基址、节表（.text/.rdata/.data...）、VA↔文件偏移映射、
-原始字节读取。仅用于 x86-64 PE（PE32+）。
-"""
 
 from __future__ import annotations
 
 import struct
 from dataclasses import dataclass
 
-
 class PEFormatError(ValueError):
     pass
-
 
 @dataclass
 class Section:
     name: str
-    virtual_address: int      # RVA
+    virtual_address: int
     virtual_size: int
-    raw_offset: int           # 文件偏移
+    raw_offset: int
     raw_size: int
     characteristics: int
-
 
 @dataclass
 class PEImage:
@@ -31,7 +23,7 @@ class PEImage:
     data: bytes
     image_base: int
     sections: list[Section]
-    entry_point: int          # RVA
+    entry_point: int
 
     @property
     def text_section(self) -> Section | None:
@@ -59,7 +51,6 @@ class PEImage:
                 return s
         return None
 
-
 def load_pe(path: str) -> PEImage:
     data = open(path, "rb").read()
     if data[:2] != b"MZ":
@@ -73,7 +64,7 @@ def load_pe(path: str) -> PEImage:
     opt_size = struct.unpack_from("<H", data, pe_off + 20)[0]
     opt_off = pe_off + 24
     magic = struct.unpack_from("<H", data, opt_off)[0]
-    if magic != 0x20B:  # PE32+
+    if magic != 0x20B:
         raise PEFormatError(f"unsupported optional header magic {magic:#x}")
 
     image_base = struct.unpack_from("<Q", data, opt_off + 24)[0]

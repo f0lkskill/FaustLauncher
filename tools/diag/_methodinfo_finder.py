@@ -1,16 +1,3 @@
-"""临时诊断：用 dump.cs 里的方法 RVA 反查 MethodInfo，再摸到 Il2CppClass。
-
-原理
-----
-IL2CPP 的 ``MethodInfo`` 第一个字段就是 ``methodPointer``（指向编译出来的函数体的
-绝对地址）。所以「内存里值恰好等于 ``module_base + RVA`` 的 8 字节槽」就是某个
-``MethodInfo`` 的起点。找到它，再顺着结构就能读到 ``name``（方法名）和
-``klass``（所属类），从而绕过一切布局假设。
-
-用法::
-
-    python tools/diag/_methodinfo_finder.py 0xBBCF60 0x1DECA60
-"""
 from __future__ import annotations
 
 import os
@@ -24,10 +11,8 @@ from functions.hook.memory import ProcessMemoryReader  # noqa: E402
 CHUNK = 8 << 20
 OVERLAP = 16
 
-
 def find_value(reader: ProcessMemoryReader, target: int,
                ranges, limit: int = 24) -> list[int]:
-    """在 ranges 里搜 8 字节小端值 == target 的所有位置。"""
     needle = struct.pack("<Q", target)
     hits: list[int] = []
     for r in ranges:
@@ -48,7 +33,6 @@ def find_value(reader: ProcessMemoryReader, target: int,
             pos += size if size <= OVERLAP else size - OVERLAP
     return hits
 
-
 def try_string(reader: ProcessMemoryReader, v: int) -> str:
     if not v or v < 0x10000:
         return ""
@@ -58,11 +42,10 @@ def try_string(reader: ProcessMemoryReader, v: int) -> str:
         return ""
     return s if s and s.isprintable() else ""
 
-
 def main() -> int:
     rvas = [int(a, 16) for a in sys.argv[1:]]
     if not rvas:
-        rvas = [0xBBCF60]   # UserInfoData.get_Stamina
+        rvas = [0xBBCF60]
 
     reader = ProcessMemoryReader()
     if not reader.attach(timeout=3.0):
@@ -95,7 +78,6 @@ def main() -> int:
                     print(f"              str: {s!r}")
     reader.detach()
     return 0
-
 
 if __name__ == "__main__":
     raise SystemExit(main())

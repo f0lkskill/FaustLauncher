@@ -1,16 +1,4 @@
 #! 自定义汉化工具窗口 (HTML webview 版)
-#? 使用 pywebview 展示: web/custom_translation/index.html (与扩展工具同一深色 GitHub 风格)
-#? 功能:
-#? - 文件树浏览 lang/ 目录, 搜索文件名 (重建式过滤, 无 detach/reattach 索引位移问题)
-#? - 虚拟滚动条目列表 (服务端扁平化+分片拉取, 支持数十万级条目), 编辑叶子值
-#? - 两种编辑模式: 表单树视图 / 直接编辑 JSON 原文, 可自由切换
-#? - 多个 changes 文件 (图层): changes.json + changes_标记.json, 重名警告,
-#?   图层可见性切换 (PS 式, 影响编辑器合并视图与启动加载), 当前编辑目标层
-#? 后端逻辑全部位于 TranslationEngine (可独立测试)
-#? pywebview 6 要求 webview.start() 运行在主线程, 与 tkinter 主循环互斥,
-#? 故以独立子进程方式拉起窗口 (与扩展工具同一模式):
-#? - 源码模式: 用 pythonw 运行本脚本子进程
-#? - 打包模式 (sys.frozen): 用自身 exe 以 --custom-translation-window 参数二次启动
 
 import base64
 import json
@@ -37,35 +25,22 @@ from functions.base.window_chrome import (
 
 HTML_PATH = get_web_root("custom_translation", "index.html")
 
-# changes 文件命名: changes.json 或 changes_标记.json (changes_layers.json 是图层状态文件, 不属于 changes)
 CHANGES_PATTERN = re.compile(r"^changes(_[^/\\]+)?\.json$", re.IGNORECASE)
-# 图层状态文件 (不属于 changes 文件)
 LAYER_STATE_FILE = "changes_layers.json"
-# 默认层 (changes.json) 颜色
 _MAIN_LAYER_COLOR = "#f59e0b"
-# 扩展图层调色板 (独特颜色标识)
 _LAYER_COLORS = ["#f97316", "#eab308", "#22c55e", "#06b6d4",
                  "#3b82f6", "#8b5cf6", "#ec4899", "#f43f5e"]
 
-
 def _is_changes_file(fname: str) -> bool:
-    """判断文件名是否为 changes 文件家族 (含图层状态文件, 均需从文件树隐藏)"""
     return bool(CHANGES_PATTERN.match(fname))
 
-
 def _is_layer_changes_file(fname: str) -> bool:
-    """判断文件名是否为真正的图层数据文件 (排除 changes_layers.json 状态文件)"""
     return _is_changes_file(fname) and fname.lower() != LAYER_STATE_FILE
-# 键黑名单 (表单模式默认隐藏)
 HIDDEN_KEYS = {"id", "usage", "personalityid", "voicefile"}
-# 非法标记字符
 _ILLEGAL_MARKER = set('\\/:*?"<>|')
-# 默认分页大小
 PAGE_SIZE = 500
 
-
 def _safe_marker(marker: str) -> str:
-    """标记校验: 非空、无非法字符、不能与 changes_layers 冲突"""
     marker = (marker or "").strip()
     if not marker:
         return "标记不能为空"
@@ -77,7 +52,6 @@ def _safe_marker(marker: str) -> str:
         return "标记不能为 changes"
     return ""
 
-
 def _deep_copy(data):
     if isinstance(data, dict):
         return {k: _deep_copy(v) for k, v in data.items()}
@@ -85,13 +59,10 @@ def _deep_copy(data):
         return [_deep_copy(v) for v in data]
     return data
 
-
 def _normalize_path(path: str) -> str:
     return path.replace("\\", "/")
 
-
 def _recursive_apply(original, changes):
-    """把补丁递归应用到数据 (与 game_launcher.apply_changes_to_data 语义一致)"""
     if isinstance(original, dict) and isinstance(changes, dict):
         for k, v in changes.items():
             if k in original:
@@ -123,9 +94,7 @@ def _recursive_apply(original, changes):
                 else:
                     original[idx] = change
 
-
 def _compute_diff(original, modified, _count=None):
-    """计算差异; 返回 (patch or None, 叶子修改数)"""
     if isinstance(original, dict) and isinstance(modified, dict):
         changes = {}
         for k, v in modified.items():
@@ -167,9 +136,7 @@ def _compute_diff(original, modified, _count=None):
             return (modified, _count[0] if _count is not None else -1)
         return (None, _count[0] if _count is not None else -1)
 
-
 def _coerce_value(original, raw):
-    """按原始值类型把用户输入字符串转成对应类型; 失败抛 ValueError"""
     if isinstance(original, bool):
         lower = str(raw).strip().lower()
         if lower not in ("true", "false"):
@@ -181,9 +148,7 @@ def _coerce_value(original, raw):
         return float(str(raw).strip())
     return str(raw)
 
-
 def _resolve_parts(container, path_str):
-    """把扁平路径解析为逐层导航段列表 (支持键名本身含 / 的 dict 键: 整串优先匹配)"""
     if isinstance(container, dict):
         if path_str in container:
             return [path_str], True
@@ -212,9 +177,7 @@ def _resolve_parts(container, path_str):
                     return [f"[{idx}]"] + sub, True
     return [], False
 
-
 def _diff_has_path(diff, nav):
-    """diff 结构 (action/changes 标记) 中是否存在该路径的修改"""
     if not nav:
         return bool(diff)
     if isinstance(diff, dict):
@@ -249,9 +212,7 @@ def _diff_has_path(diff, nav):
         return False
     return True
 
-
 def _patch_has_value(patch, kw):
-    """patch 中是否存在某个标量修改值包含关键字 (搜索全部修改记录的值)"""
     if isinstance(patch, dict):
         if "action" in patch and isinstance(patch.get("changes"), dict):
             action = patch.get("action")
@@ -282,9 +243,7 @@ def _patch_has_value(patch, kw):
                 return True
     return False
 
-
 def _replace_in_data(data, kw, replacement, count):
-    """递归替换数据中所有字符串值 (不区分大小写, 仅替换值不替换键)"""
     if isinstance(data, dict):
         for k, v in list(data.items()):
             if isinstance(v, (dict, list)):
@@ -300,11 +259,7 @@ def _replace_in_data(data, kw, replacement, count):
                 data[i] = re.sub(re.escape(kw), lambda m: replacement, it, flags=re.IGNORECASE)
                 count[0] += 1
 
-
 def _diff_remove_aligned(diff, original, parts):
-    """按原始数据对齐的路径段导航删除 diff 中的修改 (list 位置用 id 定位, 应对索引位移;
-    未命中时严格返回原引用, 上层不会误判命中)。
-    返回 (新diff或None, 是否命中)"""
     if not parts:
         return None, True
     part = parts[0]
@@ -342,15 +297,12 @@ def _diff_remove_aligned(diff, original, parts):
         return diff, False
     if isinstance(diff, list):
         if part.startswith("[") and part.endswith("]"):
-            # 无 id 包装的纯值列表 diff: 元素按位置对应, 删除单个元素会导致后续错位
-            # (位置语义无法安全移除, 直接删除整个列表的修改记录)
             wrapped = all(isinstance(it, dict) and "id" in it and "changes" in it
                           for it in diff)
             if not wrapped:
                 return None, True
             idx = int(part[1:-1])
             real_idx = idx
-            # 用原始数据对应项的 id 在 diff 中定位 (索引可能因先前删除而位移)
             if isinstance(original, list) and 0 <= idx < len(original):
                 oitem = original[idx]
                 if isinstance(oitem, dict) and "id" in oitem:
@@ -382,10 +334,7 @@ def _diff_remove_aligned(diff, original, parts):
         return diff, False
     return diff, False
 
-
 def _diff_leaf_paths(diff, original, prefix=""):
-    """收集 diff 中所有修改叶子的路径字符串列表 (相对 diff 根);
-    list 位置用原始数据对齐的索引 (diff 项顺序/数量可能与原始数据不同)"""
     out = []
     if isinstance(diff, dict):
         if "action" in diff and isinstance(diff.get("changes"), dict):
@@ -420,10 +369,7 @@ def _diff_leaf_paths(diff, original, prefix=""):
         out.append(prefix)
     return out
 
-
 def _diff_union(a, b):
-    """合并两棵 patch 树 (b 优先); list 按 id 对齐合并。
-    用于保存到图层时保留该图层原有的、本次净差异未涉及的修改"""
     if b is None:
         return a
     if a is None:
@@ -468,9 +414,7 @@ def _diff_union(a, b):
         return b
     return b
 
-
 def _navigate_and_delete(data, path_parts):
-    """按路径删除键/元素; 返回是否成功"""
     if not path_parts:
         return False
     parent = data
@@ -498,9 +442,7 @@ def _navigate_and_delete(data, path_parts):
         return True
     return False
 
-
 def _navigate_get(data, path_parts):
-    """按路径读取值; 返回 (值, 是否存在)"""
     if not path_parts:
         return None, False
     cur = data
@@ -518,9 +460,7 @@ def _navigate_get(data, path_parts):
             cur = cur[part]
     return cur, True
 
-
 def _navigate_and_set(data, path_parts, value):
-    """按路径导航并写入; 返回是否成功"""
     if not path_parts:
         return False
     parent = data
@@ -566,31 +506,27 @@ def _navigate_and_set(data, path_parts, value):
         return True
     return False
 
-
 class TranslationEngine:
-    """自定义汉化核心逻辑 (多层 changes 文件 / 图层可见性 / 合并视图 / diff)"""
 
     def __init__(self, lang_dir: str = "lang"):
         self.lang_dir = lang_dir
         os.makedirs(self.lang_dir, exist_ok=True)
-        self._layers = None          # marker -> {relative: patch}
-        self._layer_files = {}       # marker -> 文件绝对路径
-        self._state = {}             # marker -> {'disabled': bool, 'color': str}
-        self._active = ""            # 当前编辑目标层
+        self._layers = None
+        self._layer_files = {}
+        self._state = {}
+        self._active = ""
         self.current_relative = None
         self.original_data = None
         self.modified_data = None
-        self.saved_view = None       # 所有可见层合并结果 (未写入层的临时修改基准)
+        self.saved_view = None
         self._flat_cache = None
-        self._search_cache = None    # rel -> 原文小写全文 (值搜索用, 首次搜索时构建)
+        self._search_cache = None
         self._filters = {"keyword": "", "only_modified": False,
                          "show_hidden": False, "hidden_layers": [],
                          "collapsed": []}
         self._load_state()
         self._load_layers()
         self._ensure_layer_colors()
-
-    # ── 图层文件管理 ──────────────────────────────────────
 
     def _load_state(self):
         self._state = {}
@@ -615,7 +551,6 @@ class TranslationEngine:
 
     def _save_state(self):
         try:
-            # 只持久化颜色与禁用状态; 隐藏/显示属于纯前端编辑显示辅助, 不记录
             data = {m: {"disabled": bool(s.get("disabled", False)),
                         "color": s.get("color")} for m, s in self._state.items()}
             data["active"] = self._active
@@ -628,7 +563,6 @@ class TranslationEngine:
         return (self._state.get(marker) or {}).get("color") or _MAIN_LAYER_COLOR
 
     def _assign_layer_color(self, marker: str):
-        """为图层分配独特颜色并持久化 (主层固定金色)"""
         st = self._state.setdefault(marker, {})
         if marker == "":
             st["color"] = _MAIN_LAYER_COLOR
@@ -643,7 +577,6 @@ class TranslationEngine:
         st["color"] = _LAYER_COLORS[len(self._layers) % len(_LAYER_COLORS)]
 
     def _ensure_layer_colors(self):
-        """为没有颜色的图层分配调色板颜色并持久化"""
         for marker in self._layers:
             self._assign_layer_color(marker)
         self._save_state()
@@ -675,7 +608,6 @@ class TranslationEngine:
             for m in list(self._state.keys()):
                 if m not in self._layer_files:
                     del self._state[m]
-            # 主层 (changes.json) 始终存在, 即使磁盘文件尚未创建
             self._layers.setdefault("", {})
             self._layer_files.setdefault("", self._layer_path(""))
         except Exception as e:
@@ -697,13 +629,11 @@ class TranslationEngine:
             self._persist_layer(marker)
 
     def layer_order(self):
-        """图层应用/显示顺序: changes.json(主) 在前, changes_*.json 按标记排序"""
         markers = [m for m in self._layers if m == ""] + \
                   sorted(m for m in self._layers if m != "")
         return markers
 
     def is_disabled(self, marker: str) -> bool:
-        """禁用 = 不参与合并视图 (持久化); 隐藏/显示只是前端编辑显示辅助, 与数据无关"""
         return bool(self._state.get(marker, {}).get("disabled", False))
 
     def list_layers(self):
@@ -786,14 +716,12 @@ class TranslationEngine:
             return {"ok": False, "msg": f"删除失败: {e}"}
 
     def set_layer_disabled(self, marker: str, disabled: bool):
-        """禁用/启用修改记录文件: 禁用后其修改不参与合并视图 (持久化)"""
         if marker not in self._layers:
             return {"ok": False, "msg": f"修改记录不存在: {marker}"}
         s = self._state.setdefault(marker, {})
         s["disabled"] = bool(disabled)
         self._save_state()
         self._remerge_current()
-        # 视图级操作: 重新对齐"已保存"基准, 避免误报未保存修改
         if self.modified_data is not None:
             self.saved_view = _deep_copy(self.modified_data)
         return {"ok": True, "disabled": bool(disabled)}
@@ -805,11 +733,7 @@ class TranslationEngine:
         self._save_state()
         return {"ok": True}
 
-    # ── 文件/合并视图 ──────────────────────────────────────
-
     def _merge_relative(self, relative: str, skip_layer: str = None):
-        """把 (除 skip_layer 外的) 修改记录补丁依次应用到原始数据, 返回合并结果。
-        始终包含全部记录文件 (禁用状态除外); 隐藏/显示只是前端显示辅助, 不影响合并"""
         result = _deep_copy(self.original_data)
         for marker in self.layer_order():
             if marker == skip_layer:
@@ -822,7 +746,6 @@ class TranslationEngine:
         return result
 
     def _changes_colors_for_relative(self, relative: str):
-        """返回修改过该文件的记录文件颜色 (按应用顺序, 不含禁用记录)"""
         colors = []
         for marker in self.layer_order():
             if self.is_disabled(marker):
@@ -860,7 +783,6 @@ class TranslationEngine:
             patch = (self._layers.get(marker) or {}).get(relative)
             if patch:
                 _recursive_apply(self.modified_data, patch)
-        # 已保存视图 (全部记录文件合并结果): 与当前视图的差异 = 未写入修改记录的临时修改
         self.saved_view = _deep_copy(self.modified_data)
         self._invalidate_flat()
         return {"ok": True, "relative": relative}
@@ -871,13 +793,10 @@ class TranslationEngine:
         self.modified_data = self._merge_relative(self.current_relative)
         self._invalidate_flat()
 
-    # ── 扁平化 (分页切片) ──────────────────────────────────
-
     def _invalidate_flat(self):
         self._flat_cache = None
 
     def _flatten(self):
-        """扁平化 merged 视图 → 紧凑条目列表 (带过滤/折叠)"""
         entries = []
         collapsed = set(self._filters.get("collapsed") or [])
         keyword = (self._filters.get("keyword") or "").strip().lower()
@@ -887,7 +806,6 @@ class TranslationEngine:
         saved = self.saved_view
 
         def hidden_only_source(path):
-            """该叶子路径的修改是否全部来自"前端隐藏"的记录文件"""
             if not hidden_layers:
                 return False
             nav = path[5:] if path.startswith("root/") else path
@@ -1013,7 +931,6 @@ class TranslationEngine:
         }
 
     def unsaved_count(self):
-        """当前文件中未写入修改记录的临时修改数量"""
         if self.current_relative is None or self.saved_view is None:
             return {"count": 0}
         saved_filters = self._filters
@@ -1028,7 +945,6 @@ class TranslationEngine:
             self._invalidate_flat()
 
     def all_container_paths(self):
-        """当前过滤视图下所有容器条目的路径 (用于全部折叠)"""
         saved = self._filters
         self._filters = dict(saved, collapsed=[])
         try:
@@ -1038,8 +954,6 @@ class TranslationEngine:
         finally:
             self._filters = saved
             self._invalidate_flat()
-
-    # ── 编辑 ──────────────────────────────────────────────
 
     def set_value(self, path: str, raw):
         if self.current_relative is None or self.modified_data is None:
@@ -1054,7 +968,6 @@ class TranslationEngine:
         parts, ok = _resolve_parts(self.modified_data, nav_path)
         if not ok or not parts:
             return {"ok": False, "msg": "无法定位字段，请重新加载文件"}
-        # 找到原值用于类型强制转换
         current = self.modified_data
         for part in parts:
             if part.startswith("[") and part.endswith("]"):
@@ -1071,7 +984,6 @@ class TranslationEngine:
         return {"ok": True, "path": path}
 
     def remove_field(self, path: str):
-        """撤销该字段的全部修改: 删除所有图层中该字段的修改记录, 并恢复未写入图层的临时修改"""
         if self.current_relative is None or self.modified_data is None:
             return {"ok": False, "msg": "请先打开一个文件"}
         nav_path = path
@@ -1081,7 +993,6 @@ class TranslationEngine:
             nav_path = nav_path[len("root/"):]
         if not nav_path:
             return {"ok": False, "msg": "无效路径"}
-        # 用原始数据解析路径段 (list 索引以原始数据为准, 应对先前删除导致的位移)
         parts, ok = _resolve_parts(self.original_data, nav_path)
         orig_ref = self.original_data
         if not ok or not parts:
@@ -1089,7 +1000,6 @@ class TranslationEngine:
             orig_ref = None
         if not ok or not parts:
             return {"ok": False, "msg": "无法定位该字段的路径，请尝试重新加载文件"}
-        # 捕获未保存的临时修改 (层记录删除后 remerge 会重建视图, 需在合并前比较)
         had_unsaved = False
         cur, has_cur = _navigate_get(self.modified_data, parts)
         sv, has_sv = _navigate_get(self.saved_view, parts)
@@ -1119,9 +1029,6 @@ class TranslationEngine:
         return {"ok": True, "msg": f"已撤销字段 '{path}' 的修改 ({', '.join(removed)})"}
 
     def _compute_and_save(self, relative: str, marker: str):
-        """把当前合并视图相对 (除 marker 外其他记录文件) 的净差异写入 marker 记录文件;
-        基准包含全部记录文件, 避免覆盖其他记录文件的修改。
-        归一化: 本次保存涉及的字段路径从其他记录文件移除 (同字段只保留目标文件)"""
         base = self._merge_relative(relative, skip_layer=marker)
         count = [0]
         diff, _ = _compute_diff(base, self.modified_data, count)
@@ -1132,7 +1039,6 @@ class TranslationEngine:
             old = patches.get(relative)
             patches[relative] = _diff_union(old, diff) if old else diff
         self._persist_layer(marker)
-        # 归一化: 其他记录文件中同字段的旧记录移除, 避免来源标识显示多个文件
         if diff is not None and self.original_data is not None:
             leaf_paths = _diff_leaf_paths(diff, self.original_data)
             for omarker in self.layer_order():
@@ -1203,8 +1109,6 @@ class TranslationEngine:
     def _layer_name(self, marker: str) -> str:
         return "changes.json" if marker == "" else f"changes_{marker}.json"
 
-    # ── 文件树 ────────────────────────────────────────────
-
     def get_tree(self):
         nodes = []
 
@@ -1239,13 +1143,10 @@ class TranslationEngine:
         return {"root": "lang", "nodes": build(self.lang_dir)}
 
     def search_values(self, keyword: str):
-        """全局搜索: 像文件内搜索那样逐文件处理 — 匹配每个 JSON 原文(键/id/值, 含未修改内容)
-        以及全部修改记录文件中的值, 返回匹配的文件路径列表 (包含匹配, 不区分大小写)"""
         kw = (keyword or "").strip().lower()
         if not kw:
             return {"ok": True, "paths": []}
         matches = set()
-        # 1) 各文件原文 (首次搜索时全量缓存, lang 源文件只读不变化)
         if self._search_cache is None:
             cache = {}
             for root, dirs, files in os.walk(self.lang_dir):
@@ -1263,7 +1164,6 @@ class TranslationEngine:
         for rel, text in self._search_cache.items():
             if kw in text:
                 matches.add(rel)
-        # 2) 各修改记录文件中的值 (译文/新增内容可能不在原文中)
         for patches in (self._layers or {}).values():
             for relative, patch in patches.items():
                 if relative not in matches and _patch_has_value(patch, kw):
@@ -1271,8 +1171,6 @@ class TranslationEngine:
         return {"ok": True, "paths": sorted(matches)}
 
     def _replace_in_relative(self, relative, kw, replacement):
-        """对单个文件执行值替换: 以全部修改记录合并结果为基准递归替换字符串值,
-        净差异写入 active 层并归一化其他记录文件同字段。返回替换次数"""
         full = os.path.join(self.lang_dir, *relative.split("/"))
         try:
             with open(full, "r", encoding="utf-8") as f:
@@ -1281,7 +1179,6 @@ class TranslationEngine:
             return 0
         if not isinstance(original, (dict, list)):
             return 0
-        # 临时以该文件为当前文件, 复用修改记录合并/对齐逻辑
         self.original_data = original
         self.current_relative = relative
         base = self._merge_relative(relative)
@@ -1323,7 +1220,6 @@ class TranslationEngine:
         return count[0]
 
     def _clear_current_state(self):
-        """批量替换后不保留"当前文件"状态 (前端会重新加载)"""
         self.original_data = None
         self.current_relative = None
         self.modified_data = None
@@ -1331,9 +1227,6 @@ class TranslationEngine:
         self._invalidate_flat()
 
     def replace_values(self, keyword, replacement):
-        """值替换: 只处理当前值搜索命中的文件。
-        对每个匹配文件: 以全部修改记录合并结果为基准递归替换字符串值 (不区分大小写),
-        净差异写入 active 层并归一化其他记录文件同字段 (与 _compute_and_save 同机制)"""
         kw = (keyword or "").strip().lower()
         if not kw:
             return {"ok": False, "msg": "请先进行值搜索"}
@@ -1354,7 +1247,6 @@ class TranslationEngine:
                 "count": total, "files": files}
 
     def replace_current_values(self, keyword, replacement):
-        """局部值替换: 只处理当前正在编辑的文件"""
         kw = (keyword or "").strip().lower()
         if not kw:
             return {"ok": False, "msg": "请输入待替换值"}
@@ -1393,13 +1285,7 @@ class TranslationEngine:
         except Exception as e:
             return {"ok": False, "msg": f"打开目录失败: {e}"}
 
-
-# ============================================================
-# pywebview js_api
-# ============================================================
-
 class CustomTranslationApi(WindowChromeBridge):
-    """pywebview js_api: 前端 ↔ TranslationEngine 桥接 (含皮肤桥接)"""
 
     def __init__(self):
         self.engine = TranslationEngine()
@@ -1550,11 +1436,6 @@ class CustomTranslationApi(WindowChromeBridge):
         except Exception as e:
             return {"ok": False, "msg": str(e)}
 
-
-# ============================================================
-# 窗口启动
-# ============================================================
-
 def _center_xy(width, height):
     try:
         import ctypes
@@ -1565,14 +1446,12 @@ def _center_xy(width, height):
     except Exception:
         return None, None
 
-
 def _error_dialog(title, text):
     import ctypes
     try:
         ctypes.windll.user32.MessageBoxW(None, text, title, 0x10)
     except Exception:
         pass
-
 
 def _write_error_log(exc_info):
     try:
@@ -1582,9 +1461,7 @@ def _write_error_log(exc_info):
     except Exception:
         pass
 
-
 def run_custom_translation_window(debug: bool = False):
-    """子进程入口: 直接运行自定义汉化 pywebview 窗口"""
     try:
         import webview
     except BaseException as e:
@@ -1597,7 +1474,7 @@ def run_custom_translation_window(debug: bool = False):
         _error_dialog("自定义汉化", f"找不到页面文件:\n{HTML_PATH}")
         raise SystemExit(1)
 
-    width, height = child_window_size(1280, 800)   # 内容区 1280x800 + 40px 自绘标题栏
+    width, height = child_window_size(1280, 800)
     min_w, min_h = child_window_size(960, 640)
     window_kwargs = dict(
         title="自定义汉化工具",
@@ -1607,10 +1484,10 @@ def run_custom_translation_window(debug: bool = False):
         height=height,
         min_size=(min_w, min_h),
         background_color=window_background("#060f22"),
-        frameless=True,    # 去掉系统标题栏, 改用与主界面同款的自绘标题栏
-        easy_drag=False,   # 只允许拖标题栏
+        frameless=True,
+        easy_drag=False,
         shadow=False,
-        hidden=True,     # 先隐藏, 注入主题+标题栏后淡入
+        hidden=True,
     )
     x, y = _center_xy(width, height)
     if x is not None and y is not None:
@@ -1619,7 +1496,7 @@ def run_custom_translation_window(debug: bool = False):
 
     try:
         _win = webview.create_window(**window_kwargs)
-        apply_window_chrome(_win, show_when_ready=True)   # 共享主题层 + 当前皮肤 + 统一标题栏 (注入完再淡入)
+        apply_window_chrome(_win, show_when_ready=True)
         webview.start(debug=debug, icon=window_icon_path())
     except BaseException as e:
         import traceback
@@ -1627,13 +1504,7 @@ def run_custom_translation_window(debug: bool = False):
         _error_dialog("自定义汉化", f"无法启动窗口:\n{type(e).__name__}: {e}")
         raise SystemExit(1)
 
-
 def open_custom_translation_window(root=None):
-    """非阻塞拉起自定义汉化窗口 (与扩展工具同一模式, 立即返回)
-
-    Returns:
-        True: 窗口成功拉起; None: 拉起失败
-    """
     if getattr(sys, "frozen", False):
         cmd = [os.path.abspath(sys.executable), "--custom-translation-window"]
     else:
@@ -1654,7 +1525,6 @@ def open_custom_translation_window(root=None):
         print(f"[CustomLocale] 无法启动窗口进程: {e}")
         return None
     return True
-
 
 if __name__ == "__main__":
     run_custom_translation_window(debug="--debug" in sys.argv)

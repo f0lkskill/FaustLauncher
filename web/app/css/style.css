@@ -1855,6 +1855,7 @@ body.path-locked #app *:focus { outline: none; }
 }
 .term-line { white-space: pre-wrap; word-break: break-all; }
 .term-line.info { color: #c7d0e0; }
+.term-line.debug { color: #6b7689; }
 .term-line.success { color: var(--success); }
 .term-line.error { color: var(--danger); }
 .term-line.warning { color: var(--warn); }

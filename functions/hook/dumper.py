@@ -1,16 +1,3 @@
-"""Il2CppDumper 的获取与执行。
-
-Il2CppDumper 是纯 .NET 程序（Windows 需要 .NET 6/8 运行时，或下载 self-contained
-的 win-x64 包）。它做的事正是我们最需要的那件：把 ``（GameAssembly.dll,
-global-metadata.dat）`` 还原成带偏移注释的 ``dump.cs``。
-
-下载策略：GitHub Release 的资产名优先选 self-contained（``...win-x64...``），
-其次 ``...net8...``，都没有才随便挑一个 zip。下载走项目里既有的 gh-proxy
-代理列表（``functions.base.common.github_release``），国内线路更稳。
-
-执行策略：**必须**覆盖 ``RequireAnyKey=false``（否则它 dump 完会等按键，
-无人值守时会挂住），所以我们自己写一份 config.json 放进工具目录。
-"""
 
 from __future__ import annotations
 
@@ -26,7 +13,6 @@ from . import paths as paths_mod
 
 DUMPER_REPO = ("Perfare", "Il2CppDumper")
 DUMPER_EXE = "Il2CppDumper.exe"
-# 我们需要的输出项：字段偏移 + 方法偏移 + TypeDefIndex（DummyDll/Struct 关掉，省时间与体积）
 DUMPER_CONFIG = {
     "DumpMethod": True,
     "DumpField": True,
@@ -44,7 +30,6 @@ DUMPER_CONFIG = {
     "ForceDump": False,
     "NoRedirectedPointer": False,
 }
-# 常见的手动放置位置（用户自己下过一份时直接复用，不必重新下载）
 _EXTRA_SEARCH = (
     os.path.join(os.path.expanduser("~"), "Desktop", "win-x64-net8"),
     os.path.join(os.path.expanduser("~"), "Desktop", "Il2CppDumper"),
@@ -52,7 +37,6 @@ _EXTRA_SEARCH = (
     r"D:\tools\Il2CppDumper",
     r"C:\tools\Il2CppDumper",
 )
-
 
 @dataclass
 class DumpResult:
@@ -64,13 +48,10 @@ class DumpResult:
     stdout_tail: str = ""
     detail: str = ""
 
-
 def tool_dir() -> str:
     return paths_mod.cache_path("tools", "il2cppdumper")
 
-
 def find_dumper(explicit: str = "") -> str:
-    """找一个可用的 Il2CppDumper.exe；找不到返回空串。"""
     candidates = []
     if explicit:
         candidates.append(explicit)
@@ -82,17 +63,13 @@ def find_dumper(explicit: str = "") -> str:
             return path
     return ""
 
-
 def write_config(folder: str) -> str:
-    """写入我们的 config.json（覆盖，确保 RequireAnyKey=false）。"""
     path = os.path.join(folder, "config.json")
     with open(path, "w", encoding="utf-8") as fh:
         json.dump(DUMPER_CONFIG, fh, ensure_ascii=False, indent=2)
     return path
 
-
 def dumper_version(dumper_exe: str) -> str:
-    """尽力读出工具版本（deps.json / 同目录的 dll 元数据）。"""
     folder = os.path.dirname(dumper_exe)
     deps = os.path.join(folder, "Il2CppDumper.deps.json")
     try:
@@ -102,12 +79,7 @@ def dumper_version(dumper_exe: str) -> str:
     except Exception:
         return "unknown"
 
-
-# --------------------------------------------------------------------------- 下载
-
-
 def _download(url: str, dest: str, proxies=(), on_log=None) -> bool:
-    """下载文件（直连失败时依次尝试代理前缀）。"""
     log = on_log or (lambda _m: None)
     import requests
 
@@ -135,9 +107,7 @@ def _download(url: str, dest: str, proxies=(), on_log=None) -> bool:
             log(f"[dumper] 下载失败: {type(exc).__name__}: {exc}")
     return False
 
-
 def download_dumper(on_log=None) -> str:
-    """从 GitHub Release 下载 Il2CppDumper 到工具目录；成功返回 exe 路径。"""
     log = on_log or (lambda _m: None)
     folder = tool_dir()
     os.makedirs(folder, exist_ok=True)
@@ -178,16 +148,13 @@ def download_dumper(on_log=None) -> str:
         return ""
     exe = os.path.join(folder, DUMPER_EXE)
     if not os.path.isfile(exe):
-        # 有些包外面套了一层目录
         for root, _dirs, files in os.walk(folder):
             if DUMPER_EXE in files:
                 exe = os.path.join(root, DUMPER_EXE)
                 break
     return exe if os.path.isfile(exe) else ""
 
-
 def ensure_dumper(on_log=None, allow_download: bool = True, explicit: str = "") -> str:
-    """确保有可用的 Il2CppDumper：本地 → 常见位置 → 下载。"""
     log = on_log or (lambda _m: None)
     found = find_dumper(explicit)
     if found:
@@ -201,22 +168,8 @@ def ensure_dumper(on_log=None, allow_download: bool = True, explicit: str = "") 
     write_config(folder)
     return found
 
-
-# --------------------------------------------------------------------------- 执行
-
-
 def run_dumper(dumper_exe: str, gameassembly: str, metadata: str, out_dir: str,
                on_log=None, timeout: float = 2400.0, low_priority: bool = False) -> DumpResult:
-    """执行 Il2CppDumper（阻塞），返回产物路径。
-
-    注意第三个参数是**输出目录**：给它一个真实路径，别加引号（Il2CppDumper 不会
-    去掉首尾引号，会当成相对目录写到工具目录里去）。
-
-    ``low_priority``：把 Il2CppDumper 放进 BELOW_NORMAL 优先级类。它会解析 160+ MB 的
-    GameAssembly.dll 和 50 MB 的 metadata、写出 80 MB 的 dump.cs —— 满核跑 1~2 分钟。
-    在**游戏正在启动/运行**的窗口里以正常优先级跑，实测会把整个桌面卡住（鼠标拖影），
-    所以启动器后台自动重建一律用低优先级；手工跑 CLI 时才用正常优先级（用户就在等它）。
-    """
     log = on_log or (lambda _m: None)
     if not os.path.isfile(dumper_exe):
         return DumpResult(False, detail=f"Il2CppDumper 不存在: {dumper_exe}")
@@ -230,7 +183,6 @@ def run_dumper(dumper_exe: str, gameassembly: str, metadata: str, out_dir: str,
     cmd = [dumper_exe, os.path.abspath(gameassembly), os.path.abspath(metadata), out_dir]
     log(f"[dumper] 执行: {' '.join(cmd)}")
     started = time.time()
-    # CREATE_NO_WINDOW(0x08000000) | BELOW_NORMAL_PRIORITY_CLASS(0x00004000)
     flags = 0x08000000 | (0x00004000 if low_priority else 0)
     if low_priority:
         log("[dumper] 以低优先级运行（后台自动重建，避免和游戏抢 CPU/磁盘）")
@@ -272,7 +224,6 @@ def run_dumper(dumper_exe: str, gameassembly: str, metadata: str, out_dir: str,
     return DumpResult(True, dump_cs=dump_cs, script_json=script_json, out_dir=out_dir,
                       elapsed=elapsed, stdout_tail=combined[-1200:], detail=detail)
 
-
 def _decode(raw) -> str:
     if not raw:
         return ""
@@ -283,16 +234,13 @@ def _decode(raw) -> str:
             continue
     return raw.decode("utf-8", errors="replace")
 
-
 def _first_error(text: str) -> str:
     for line in text.splitlines():
         if "error" in line.lower():
             return line.strip()[:200]
     return ""
 
-
 def cleanup(out_dir: str, keep_dump_cs: bool = True) -> None:
-    """清理 dump 产物（默认保留 dump.cs）。"""
     if not os.path.isdir(out_dir):
         return
     for name in os.listdir(out_dir):

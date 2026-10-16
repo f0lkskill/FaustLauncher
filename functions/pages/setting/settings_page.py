@@ -6,14 +6,12 @@ from functions.base.custom_notebook import CustomNotebook
 from functions.base.style_utils import apply_scrollbar_style, RoundedFrame, RoundedButton
 from functions.base.animation_utils import smooth_scroll
 
-# ===== 统一字体配置 - 现代化 =====
 _TITLE_FONT = ('Microsoft YaHei UI', 12, 'bold')
 _DESC_FONT = ('Microsoft YaHei UI', 9)
 _CONTROL_FONT = ('Microsoft YaHei UI', 10)
 _SMALL_FONT = ('Microsoft YaHei UI', 9)
 _BUTTON_FONT = ('Microsoft YaHei UI', 9, 'bold')
 _BIG_BUTTON_FONT = ('Microsoft YaHei UI', 11, 'bold')
-
 
 class SettingsPage:
     def __init__(self, parent_frame, bg_color, lighten_bg_color):
@@ -47,22 +45,19 @@ class SettingsPage:
         content_frame = tk.Frame(outer_frame.inner, bg=self.lighten_bg_color)
         content_frame.pack(fill=tk.BOTH, expand=True, padx=12, pady=12)
 
-        # 创建标签页
         self.notebook = CustomNotebook(content_frame, bg=self.bg_color, accent=C.ACCENT)
         self.notebook.pack(fill=tk.BOTH, expand=True, padx=2, pady=(0, 8))
 
         settings_by_page = self.group_settings_by_page()
         page_names = list(settings_by_page.keys())
         for page_name in page_names:
-            page_frame = tk.Frame(self.notebook, bg=self.bg_color)  # 用 tk.Frame 控制底色，避免受 ttk 默认主题影响
+            page_frame = tk.Frame(self.notebook, bg=self.bg_color)
             self.notebook.add(page_frame, text=page_name)
             self.create_scrollable_settings_area(page_frame, settings_by_page[page_name])
 
-        # 操作按钮区域
         button_frame = tk.Frame(content_frame, bg=self.lighten_bg_color)
         button_frame.pack(fill=tk.X, pady=(6, 0), padx=10)
 
-        # 圆角重置按钮
         reset_all_btn = RoundedButton(button_frame, text="↺ 重置所有设置",
                                       command=self.reset_all_settings,
                                       width=180, height=36,
@@ -73,7 +68,6 @@ class SettingsPage:
         reset_all_btn.pack(anchor=tk.CENTER, padx=10)
 
     def group_settings_by_page(self):
-        """按page分组设置项"""
         settings = self.settings_manager.get_all_settings()
         settings_by_page = {}
         for key, setting_info in settings.items():
@@ -86,7 +80,6 @@ class SettingsPage:
         return settings_by_page
 
     def create_scrollable_settings_area(self, parent, settings_list):
-        """创建可滚动的设置区域"""
         canvas_holder = tk.Frame(parent, bg=self.lighten_bg_color)
         canvas_holder.pack(fill=tk.BOTH, expand=True)
 
@@ -130,14 +123,12 @@ class SettingsPage:
         self._bind_mousewheel_recursive(scrollable_frame, _on_mousewheel)
 
     def _animate_scroll_step(self, canvas):
-        """单帧动画：ease-in-out cubic"""
         state = self._anim_states.get(id(canvas))
         if state is None or state['steps'] <= 0:
             return
 
         state['step'] += 1
         t = state['step'] / state['steps']
-        # ease-in-out cubic: 3t² - 2t³
         eased = t * t * (3 - 2 * t) if t < 1 else 1.0
 
         target = state['target']
@@ -160,7 +151,6 @@ class SettingsPage:
             state['current'] = target
 
     def _bind_mousewheel_recursive(self, widget, handler):
-        """递归绑定鼠标滚轮事件，跳过 Combobox/Spinbox 等表单控件"""
         try:
             klass = widget.winfo_class()
             if klass not in ('TCombobox', 'TSpinbox'):
@@ -171,7 +161,6 @@ class SettingsPage:
             self._bind_mousewheel_recursive(child, handler)
 
     def create_settings_controls(self, parent, settings_list):
-        """动态生成设置控件"""
         tk.Frame(parent, bg=self.bg_color, height=8).pack(fill=tk.X)
 
         for i, (key, setting_info) in enumerate(settings_list):
@@ -179,7 +168,6 @@ class SettingsPage:
             if setting_type == 'UNABLE_TO_EDIT':
                 continue
 
-            # 边框用 _card_border，保证有清晰边界
             card_frame = tk.Frame(parent, bg=self._card_bg,
                                   relief='flat', borderwidth=0,
                                   highlightthickness=1,
@@ -217,7 +205,6 @@ class SettingsPage:
             elif setting_type == 'combobox':
                 self.create_combobox_control(setting_frame, key, setting_info, current_value)
 
-            # 圆角重置按钮
             reset_btn = RoundedButton(setting_frame, text="↺ 重置",
                                       command=lambda k=key: self.reset_setting(k),
                                       width=70, height=26,
@@ -344,7 +331,6 @@ class SettingsPage:
                                bg=self._card_bg, fg=C.TEXT_MUTED)
         range_label.pack(anchor=tk.E, pady=(0, 2))
 
-        # 滑动条：槽色与卡片底色形成对比
         scale = tk.Scale(control_frame,
                          from_=min_val, to=max_val,
                          resolution=step,
@@ -446,7 +432,6 @@ class SettingsPage:
                        ("所有文件", "*.*")])
         if not path:
             return
-        # 硬校验: 目录里必须有 LimbusCompany.exe (少点一层会自动下探)
         game_dir = resolve_game_dir(path)
         if not game_dir:
             print(f"错误: 选择的路径下没有 {GAME_EXE}: {path}")
@@ -528,7 +513,6 @@ class SettingsPage:
     def auto_refresh(self):
         self.save_all_settings()
         self.parent.after(1000, self.auto_refresh)
-
 
 def init_settings_page(parent_frame, bg_color: str, lighten_bg_color: str) -> SettingsPage:
     return SettingsPage(parent_frame, bg_color, lighten_bg_color)

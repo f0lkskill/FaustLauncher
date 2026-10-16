@@ -1,24 +1,3 @@
-"""临时诊断：从类名字符串反向定位 Il2CppClass*，并尝试读出脑啡肽。
-
-目标路径（来自 cache/hook/dump/DD6F2022/out/dump.cs）：
-
-* ``UserDataManager`` (dump.cs:628260) 是 ``Singleton<UserDataManager>``
-* ``Singleton<T>._instance`` (dump.cs:570387) 是静态字段，static_fields 内偏移 0x0
-* ``UserDataManager._userInfo`` (dump.cs:628264) 实例偏移 **0x18**
-* ``UserInfoData._stamina`` (dump.cs:629111) 实例偏移 **0x28**（int）
-
-所以链是::
-
-    klass = UserDataManager 的 Il2CppClass*
-    sf    = *(klass + 0xB8)      # static_fields（索引里的 static_fields_offset=184）
-    inst  = *(sf + 0x0)          # Singleton<UserDataManager>._instance
-    ui    = *(inst + 0x18)       # _userInfo
-    value = *(int32*)(ui + 0x28) # 脑啡肽
-
-用法::
-
-    python tools/diag/_klass_by_name.py UserDataManager
-"""
 from __future__ import annotations
 
 import faulthandler
@@ -34,10 +13,8 @@ from functions.hook.memory import ProcessMemoryReader  # noqa: E402
 
 CHUNK = 8 << 20
 
-
 def scan(reader: ProcessMemoryReader, needle: bytes, ranges, limit: int,
          tag: str = "") -> list[int]:
-    """在 ranges 里找 needle 的所有出现，返回绝对地址。"""
     hits: list[int] = []
     step = max(1, len(needle))
     total = sum(r.size for r in ranges)
@@ -72,7 +49,6 @@ def scan(reader: ProcessMemoryReader, needle: bytes, ranges, limit: int,
                   f"{time.time() - t0:.0f}s 命中 {len(hits)}", flush=True)
     return hits
 
-
 def cstr(reader: ProcessMemoryReader, addr, n: int = 64) -> str:
     if not addr or addr < 0x10000 or addr > 0x7FFFFFFFFFFF:
         return ""
@@ -81,14 +57,12 @@ def cstr(reader: ProcessMemoryReader, addr, n: int = 64) -> str:
     except Exception:  # noqa: BLE001
         return ""
 
-
 def read_i32(reader: ProcessMemoryReader, addr):
     try:
         b = reader.read(addr, 4)
     except Exception:  # noqa: BLE001
         return None
     return struct.unpack("<i", b)[0] if b and len(b) == 4 else None
-
 
 def describe(reader: ProcessMemoryReader, klass: int, base: int, mod_end: int,
              want: str) -> list[str]:
@@ -122,7 +96,6 @@ def describe(reader: ProcessMemoryReader, klass: int, base: int, mod_end: int,
     except Exception as exc:  # noqa: BLE001
         lines.append(f"   klass=0x{klass:X} 读取异常: {exc}")
     return lines
-
 
 def main() -> int:
     names = [a for a in sys.argv[1:] if not a.startswith("--")] or ["UserDataManager"]
@@ -161,7 +134,6 @@ def main() -> int:
 
     reader.detach()
     return 0
-
 
 if __name__ == "__main__":
     raise SystemExit(main())

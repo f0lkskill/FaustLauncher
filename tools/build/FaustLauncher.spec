@@ -9,6 +9,24 @@ import os as _os, sys as _sys
 #   顺带让打包不再依赖当前工作目录（以前要靠 build.py 先 chdir 到根）。
 _ROOT = _os.path.abspath(_os.path.join(SPECPATH, '..', '..'))
 
+if SPECPATH not in _sys.path:
+    _sys.path.insert(0, SPECPATH)
+
+_VERSION_FILE = _os.path.join(SPECPATH, 'version_info.txt')
+try:
+    _cwd = _os.getcwd()
+    _os.chdir(_ROOT)
+    import version_info_gen
+    version_info_gen.main()
+except Exception as _exc:
+    print('[spec] version_info.txt 生成失败: %s' % _exc)
+finally:
+    try:
+        _os.chdir(_cwd)
+    except Exception:
+        pass
+
+
 _tcl_dir = _os.path.join(_os.path.dirname(_os.path.abspath(_sys.executable)), 'tcl')
 if not _os.path.isdir(_tcl_dir):
     _tcl_dir = _os.path.join(_sys.prefix, 'tcl')
@@ -141,10 +159,12 @@ exe = EXE(
     [],
     exclude_binaries=True,
     name='FaustLauncher',
+    version=_VERSION_FILE,
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=True,
+    # UPX 加壳会显著抬高杀软误报率（本仓库并未依赖 upx，这里显式关掉）
+    upx=False,
     console=False,
     disable_windowed_traceback=False,
     argv_emulation=False,
@@ -158,7 +178,7 @@ coll = COLLECT(
     a.binaries,
     a.datas,
     strip=False,
-    upx=True,
-    upx_exclude=[],
+    # UPX 加壳会显著抬高杀软误报率（本仓库并未依赖 upx，这里显式关掉）
+    upx=False,
     name='FaustLauncher',
 )

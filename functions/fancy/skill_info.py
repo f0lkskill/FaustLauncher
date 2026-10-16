@@ -1,18 +1,12 @@
 import os
 from functions.base.common.json_io import read_json, write_json
 
-
 def handle_base_info(name:str) -> str:
-    # 为原始的技能信息添加更好的样式
     
-    # 保护 C# 占位符 {0} / {1:xx}: 数字高亮与关键词替换不得破坏
-    # 占位符结构, 否则游戏 string.Format 会抛 FormatException
-    # (已发生过: {0} 被高亮成 {<color=#ffffff>0</color>} 导致战斗卡死)
     import re as _re
     placeholder_pattern = _re.compile(r'\{(\d+)(?::[^}]*)?\}')
     placeholders = []
     def _idx_to_chars(i: int) -> str:
-        # 编号转纯字母 (a, b, ..., z, aa, ...), 避免被数字高亮二次匹配
         s = ""
         i += 1
         while i:
@@ -24,39 +18,27 @@ def handle_base_info(name:str) -> str:
         return f"\x00PLH_{_idx_to_chars(len(placeholders)-1)}_\x00"
     name = placeholder_pattern.sub(_protect, name)
 
-    # 逻辑性文本替换, 比如大于, 不少于等等.
     replace_dict = {
         "≥": ["不低于"],
         "≤": ["不高于"],
         ">": ["大于","高于"],
         "<": ["小于","低于"],
     }
-    # 按关键词长度降序替换, 避免 "不低于" 先被 "低于" 替换成 "不<"
     replace_pairs = sorted(((k, kw) for k, lst in replace_dict.items() for kw in lst),
                            key=lambda kv: len(kv[1]), reverse=True)
     for key, value in replace_pairs:
         name = name.replace(value, key)
     
-    # 数字颜色处理 - 根据数字大小进行渐变：数字越大越黄，越小越白
     import re
-    # 匹配所有数字（包括整数、小数、负数）
     pattern = r'(-?\d+(?:\.\d+)?)'
     matches = list(re.finditer(pattern, name))
     
-    # 处理每个匹配的数字
-    for match in reversed(matches):  # 反向处理避免位置偏移
+    for match in reversed(matches):
         number_str = match.group(1)
         
-        # 检查是否有百分号在后面
-        # 获取 match 的结束位置
         max_color_value = 10
         end_pos = match.end()
 
-        # 检测数字是否位于 <...> 标签内部 (如 <color=#a16a3b> 的颜色值、<sprite=3> 参数等),
-        # 标签属性内的数字不处理。
-        # 注意两点:
-        # 1) 不能用"数字后面存在 <"判断: 描述后续的 <i>/<color> 标签会让数字全部漏色;
-        # 2) 逻辑替换产生的裸 < (如 "低于"→"<") 不是标签, 不能参与配对判断
         before = name[:match.start()]
         inside_tag = False
         scan = before
@@ -80,45 +62,30 @@ def handle_base_info(name:str) -> str:
         if inside_tag:
             continue
 
-        # 检测数字是否位于 [...] 方括号内 (如 [UnlockBuffAlly_3], [Breath], [KarmaOfIndexAlly]):
-        # 方括号内是 buff 名字 ID, 数字是 ID 的一部分, 高亮会破坏 ID 导致游戏认不出来
         last_bracket = before.rfind('[')
         if last_bracket != -1 and before.find(']', last_bracket) == -1:
             continue
 
-        # 检查是否有百分号在后面
         if end_pos < len(name) and name[end_pos] == '%':
-            # 如果有百分号，将其添加到数字后面
             max_color_value = 100
 
         try:
             number = float(number_str)
             
-            # 根据数字大小计算颜色渐变
-            # 数字越大越黄，越小越白
-            # 假设数字范围在0-100之间，可以根据实际情况调整
             if number < 0:
-                # 负数：使用红色
                 color = "#FF0000"
             else:
-                # 正数：根据大小渐变，从白色到黄色
-                # 将数字映射到0-1的范围，假设最大值为100
                 normalized_value = min(number / max_color_value, 1.0)
                 
-                # 计算RGB值：白色(255,255,255)到黄色(255,255,0)的渐变
-                # 保持红色和绿色为255，蓝色从255渐变到0
                 blue_value = int(255 * (1 - normalized_value))
                 color = f"#{255:02x}{255:02x}{blue_value:02x}"
             
-            # 为数字添加颜色标签
             colored_number = f"<color={color}>{number_str}</color>"
             name = name[:match.start()] + colored_number + name[match.end():]
             
         except ValueError:
-            # 如果无法转换为数字，跳过
             continue
 
-    # 特殊关键词处理 - 下划线, 浅棕色 #7C5738
     deep_brown = "#7C5738"
     light_brown = "#936E46"
     keyword_color = "#FFFFFF"
@@ -133,8 +100,6 @@ def handle_base_info(name:str) -> str:
     special_keywords = {
         f"<color={deep_brown}><u>$</u></color>": 
         ["自身","目标","行动槽","重复使用","基础威力","最终威力","拼点威力","混乱阈值","陷入混乱","混乱","回合结束","首个波次","首个回合","回合","波次","结束","首个","恐慌类型"],
-        # f"<u>$</u>":
-        # ["层数","强度","层","级"],
         f"<color={backup_color}><u>$</u></color>":
         ["护盾","理智值"],
         f"<color={heal_color}><u>$</u></color>":
@@ -147,26 +112,20 @@ def handle_base_info(name:str) -> str:
         ["无法使用", "无法解除", "无法进入", "无法生效", "无法", "解除"],
         f"<color={use_color}><u>$</u></color>":
         ["正面命中", "反面命中", "命中", "正面", "反面"],
-        # f"<u><color={damage_color}>$</color></u>":
-        # ["伤害"],
         f"<color={coin_color}><u>$</u></color>":
         ["加算硬币","减算硬币","硬币威力","本硬币","硬币","减算","加算"],
     }
 
     for keyword, keywords in special_keywords.items():
         for k in keywords:
-            # 只替换一遍: 替换结果里本身就含关键词(如 <u><color=#CAFE98>命中</color></u>),
-            # 再替换一次只会把标签又套一层(旧代码这里重复调了一次, 输出会两层嵌套)
             name = name.replace(k, keyword.replace("$", k))
     
-    # 恢复被保护的 C# 占位符
     for i, ph in enumerate(placeholders):
         name = name.replace(f"\x00PLH_{_idx_to_chars(i)}_\x00", ph)
 
     return name
 
 def handle_skill_structure(skill_content:dict) -> dict: # type: ignore
-    # 处理技能信息, 提取需要的信息, 并返回一个字典
     dataList = skill_content["dataList"]
     for skill in dataList:
         if not skill.get('levelList'):
@@ -174,7 +133,6 @@ def handle_skill_structure(skill_content:dict) -> dict: # type: ignore
         levelList = skill["levelList"]
         for level in levelList:
             level:dict
-            # 技能的描述
             if level.get('desc'):
                 level['desc'] = handle_base_info(level['desc'])
 
@@ -183,7 +141,6 @@ def handle_skill_structure(skill_content:dict) -> dict: # type: ignore
                 continue
 
             for coin in level['coinlist']:
-                # 硬币的描述
                 coin:dict
                 if coin == {}:
                     coin = {"coindescs":[{"desc": "<i><color=#7C5738>无效果的硬币</color></i>"}]}
@@ -201,18 +158,11 @@ def handle_passive_structure(passive_content:dict) -> dict:
         try:
             data['desc'] = handle_base_info(data['desc'])
         except:
-            # print(f"处理data美化时出错: {data}")
             pass
     
     return passive_content
 
 def _shape_problem(content):
-    """返回"结构不符合美化预期"的说明; 没问题返回 None
-
-    汉化包/游戏目录里有些文件是 2 字节的 "{}" (该章节没有内容),
-    直接取 content["dataList"] 会抛 KeyError: 'dataList'; 以前这个异常会打断
-    整个美化步骤, 后面的文件全部不再处理(日志里就是"XX跳过: 'dataList'")。
-    """
     if not isinstance(content, dict):
         return "顶层不是对象(%s)" % type(content).__name__
     data_list = content.get("dataList")
@@ -223,10 +173,7 @@ def _shape_problem(content):
         return "dataList 不是数组(%s)" % type(data_list).__name__
     return None
 
-
 def get_skill_files(translate_pack_path) -> list:
-    # 遍历json文件, 并选择名字为Skill***.json的文件, 返回完整路径列表
-    #   (返回完整路径而不是文件名: 原来外层再 join 一次, 子目录里的文件会拼错路径)
     skill_info_list = []
     for root, dirs, files in os.walk(translate_pack_path):
         for file in files:
@@ -238,7 +185,6 @@ def get_skill_files(translate_pack_path) -> list:
     return skill_info_list
 
 def handle_base(translate_pack_path, func_file, func_structure, label="美化") -> None:
-    """逐文件处理: 单个文件结构不符/处理失败只跳过它自己, 不打断整批"""
     file_list = func_file(translate_pack_path)
     done = skipped = failed = 0
     for file_path in file_list:
@@ -257,9 +203,7 @@ def handle_base(translate_pack_path, func_file, func_structure, label="美化") 
             print(f"  [Cosmetic/{label}] {name} 处理失败: {type(e).__name__}: {e}")
     print(f"  [Cosmetic/{label}] 完成 {done} 个, 跳过 {skipped} 个(空文件/结构不符), 异常 {failed} 个")
 
-
 def get_passive_files(translate_pack_path) -> list:
-    # 遍历json文件, 并选择名字为Passive***.json的文件, 返回完整路径列表
     passive_info_list = []
     for root, dirs, files in os.walk(translate_pack_path):
         for file in files:
@@ -271,7 +215,6 @@ def get_passive_files(translate_pack_path) -> list:
     return passive_info_list
 
 def get_EGOgift_files(translate_pack_path) -> list:
-    # 遍历json文件, 并选择名字为EGOgift***.json的文件, 返回完整路径列表
     EGOgift_info_list = []
     for root, dirs, files in os.walk(translate_pack_path):
         for file in files:
@@ -283,7 +226,6 @@ def get_EGOgift_files(translate_pack_path) -> list:
     return EGOgift_info_list
 
 def get_buff_files(translate_pack_path) -> list:
-    # 遍历json文件, 并选择名字为Bufs***.json的文件, 返回完整路径列表
     buff_info_list = []
     for root, dirs, files in os.walk(translate_pack_path):
         for file in files:

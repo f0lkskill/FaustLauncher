@@ -1,12 +1,4 @@
 #!/usr/bin/env python3
-"""versions.py - IL2CPP metadata 版本表（v39）。
-
-记录 31 标准节名、规范序、固定记录大小（rec）。rec=None 表示无固定
-记录大小（字节流/变长表）。rec=0 表示零尺寸节。
-
-v39 rec 常量表从 08-06 标准文件（global-metadata-standard-steam-2026-08-06.dat）
-导出：rec = size // count（整除时）。
-"""
 
 from __future__ import annotations
 
@@ -23,11 +15,10 @@ V39_NAMES = [
     "windowsRuntimeStrings", "exportedTypeDefinitions",
 ]
 
-# (name -> rec)。v39 导出值；rec=0 表示零尺寸节。
 V39_REC = {
     "stringLiteral": 4,
-    "stringLiteralData": None,        # 字节流（size≈count）
-    "string": None,                   # 变长表
+    "stringLiteralData": None,
+    "string": None,
     "events": 24,
     "properties": 20,
     "methods": 32,
@@ -49,7 +40,7 @@ V39_REC = {
     "assemblies": 68,
     "fieldRefs": 8,
     "referencedAssemblies": 4,
-    "attributeData": None,            # 字节流（size≈count）
+    "attributeData": None,
     "attributeDataRange": 8,
     "unresolvedVirtualCallParameterTypes": 4,
     "unresolvedVirtualCallParameterRanges": 8,
@@ -64,7 +55,6 @@ VERSIONS = {
         "rec": V39_REC,
     },
 }
-
 
 def version_table(metadata_version: int) -> dict:
     if metadata_version not in VERSIONS:

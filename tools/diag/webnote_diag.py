@@ -1,19 +1,3 @@
-"""云端笔记 (webnote) 访问自检工具 
-
-用途: 当某位用户"启动器里云端数据全部获取失败, 但浏览器打开正常"时,
-让他在**同一台机器**上运行本脚本, 一次性看出到底卡在哪一环:
-
-    python tools/diag/webnote_diag.py
-
-会依次检查并打印:
-  1. 当前配置的笔记源 (config/web_config.json → webnote_bases)
-  2. 系统 DNS 解析结果 (A/AAAA) —— 与 DoH 结果对比可发现 DNS 污染
-  3. 逐个源: 建连 / TLS 握手 / HTTP 状态 / 响应大小 / 耗时
-  4. DoH 解析 + 按原域名 SNI 直连 IP 的结果 (启动器的兜底路径)
-  5. 本地缓存 (cache/webnote) 状态
-
-依赖与启动器一致 (requests), 需要 Python 3.8+。
-"""
 
 import os
 import socket
@@ -21,9 +5,6 @@ import ssl
 import sys
 import time
 
-# tools/diag/ -> 仓库根。必须把**仓库根**放进 sys.path 才能 import functions.*；
-# 用脚本自身目录（挪进 tools/diag 之前的写法）会让 `python tools/diag/webnote_diag.py`
-# 直接 ImportError。
 _ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                      "..", ".."))
 if _ROOT not in sys.path:
@@ -40,19 +21,15 @@ warnings.filterwarnings("ignore")
 
 WIDTH = 74
 
-
 def line(ch="─"):
     print(ch * WIDTH)
-
 
 def head(title):
     line()
     print(title)
     line()
 
-
 def check_dns(host):
-    """系统 DNS (启动器实际使用的解析结果)"""
     out = {"A": [], "AAAA": [], "error": ""}
     try:
         for item in socket.getaddrinfo(host, 443, proto=socket.IPPROTO_TCP):
@@ -66,17 +43,13 @@ def check_dns(host):
         out["error"] = f"{type(e).__name__}: {e}"
     return out
 
-
 def check_source(url, key, timeout=(6, 15)):
-    """常规请求一个笔记源, 返回 (ok, 摘要)"""
-    # 1) DNS
     host = url.split("//", 1)[-1].split("/", 1)[0]
     dns = check_dns(host)
     a = ", ".join(dns["A"]) or "-"
     aaaa = ", ".join(dns["AAAA"]) or "-"
     print(f"  系统 DNS: A=[{a}] AAAA=[{aaaa}]" + (f" 错误={dns['error']}" if dns["error"] else ""))
 
-    # 2) TCP 建连 (单独计时, 便于区分"连不上"和"连上但没响应")
     t0 = time.time()
     try:
         sock = socket.create_connection((host, 443), timeout=timeout[0])
@@ -94,7 +67,6 @@ def check_source(url, key, timeout=(6, 15)):
     except Exception as e:
         print(f"  TCP 建连: 失败 {type(e).__name__}: {e}")
 
-    # 3) HTTP
     t0 = time.time()
     try:
         r = requests.get(url, verify=False, timeout=timeout)
@@ -108,7 +80,6 @@ def check_source(url, key, timeout=(6, 15)):
         cost = time.time() - t0
         print(f"  HTTP: 失败 {type(e).__name__}: {str(e)[:160]} ({cost:.2f}s)")
         return False, f"{type(e).__name__} ({cost:.2f}s)"
-
 
 def main():
     head("云端笔记 (webnote) 访问自检")
@@ -136,7 +107,6 @@ def main():
         results.append((template, ok, summary))
         print()
 
-    # DoH 兜底路径 (启动器在常规请求失败时使用)
     host = bases[0].split("//", 1)[-1].split("/", 1)[0]
     head("DoH 解析 (阿里/腾讯, 用于绕过 DNS 污染)")
     t0 = time.time()
@@ -179,7 +149,6 @@ def main():
     print("\n各源结果:")
     for name, ok, summary in results:
         print(f"  {'✓' if ok else '✗'} {name}  {summary}")
-
 
 if __name__ == "__main__":
     try:

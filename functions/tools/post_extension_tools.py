@@ -1,16 +1,4 @@
 #! 扩展工具 — 后端操作 (GUI 为 web/extension_tools/index.html, 经 extension_tools_window.py 的 js_api 调用)
-#? 功能:
-#? - 包装 Mod: 校验原始文件夹(须含 Installer.bat / Assets 文件夹 / Uninstaller.bat),
-#?   复制必需结构到 mods/, 按用户填写的信息生成 icon.png 与 mod_info.json
-#? - 生成插件模板: 在 addons/ 下生成 插件名/ 目录 (scr.py + icon.png + addon_info.json)
-#? - 发布 Mod 信息: 压缩 Mod 本体, 图标/压缩包上传到蓝奏云 (FaustLauncher.icons / FaustLauncher.Mods),
-#?   以 lz0.qaiu.top 直链解析 URL 填写 dowload_url/icon_url, 再上传 mod_info 到云端笔记
-#? - 发布插件信息: 同样流程, 压缩包上传到蓝奏云 FaustLauncher.Addons (web_config.json → lanzou.addons_folder),
-#?   再以同一套机制更新云端插件数据库 (web_config.json → webnote.addon_info)
-#?   蓝奏云凭据 (phpdisk_info/ylogin) 配置于 config/web_config.json 的 lanzou 节
-#?
-#? Mod 与插件共用同一套核心 (INFO_KINDS 表 + upload_extension_*/publish_extension/upload_extension_info),
-#? 差异只在: 本地目录/信息文件名/蓝奏云目标文件夹/云端笔记/头部计数字段。
 
 import json
 import os
@@ -31,15 +19,11 @@ MOD_FILE_EXTS = ('.bank', '.carra2')
 DEFAULT_ICON_BG = (30, 41, 59, 255)
 DEFAULT_ICON_ACCENT = (99, 102, 241, 255)
 
-PAGE_SIZE = 5  # 云端 mod 分页: 每页 5 个
+PAGE_SIZE = 5
 
-# 云端笔记地址一律取自 config/web_config.json (webnote_bases / webnote_update_url):
-# 不再硬编码 textdb.online —— 该域名已弃用 (2026-09-25 起)
-PARSER_BASE = 'https://lz.qaiu.top/parser?url='  # 蓝奏云直链解析服务 (修复版; 老域名 lz.qaiu.top 已失效)
-
+PARSER_BASE = 'https://lz.qaiu.top/parser?url='
 
 def _note_read_url(address):
-    """云端笔记读取地址 (与启动器读取走同一套 webnote_bases 源)"""
     try:
         from functions.webFunc.Webnote import get_note_bases
         bases = get_note_bases()
@@ -51,13 +35,7 @@ def _note_read_url(address):
     return (base.replace('{key}', str(address)) if '{key}' in base
             else base.rstrip('/') + '/' + str(address))
 
-
-# ============================================================
-# 图标生成
-# ============================================================
-
 def generate_icon(path, text=''):
-    """生成默认占位图标 (256x256 圆角边框 + 首字符)"""
     img = Image.new('RGBA', (256, 256), DEFAULT_ICON_BG)
     draw = ImageDraw.Draw(img)
     draw.rounded_rectangle([8, 8, 247, 247], radius=24,
@@ -70,11 +48,6 @@ def generate_icon(path, text=''):
         draw.text((128, 128), text[0], font=font, fill=(226, 232, 240, 255),
                   anchor='mm')
     img.save(path)
-
-
-# ============================================================
-# 生成插件模板
-# ============================================================
 
 ADDON_INFO_TEMPLATE = {
     'name': '',
@@ -89,9 +62,7 @@ SCR_TEMPLATE = """# 插件代码入口: 在此编写插件的加载逻辑
 # 完整示例请参考 addons/example/scr.py
 """
 
-
 def spawn_extension(name, info=None):
-    """在 addons/ 下生成插件模板 (info 为表单填写的 addon_info 字段), 返回 (成功, 消息)"""
     name = (name or '').strip()
     if not name:
         return False, '插件名称不能为空'
@@ -102,15 +73,12 @@ def spawn_extension(name, info=None):
         return False, f'插件 {name} 已存在: {target}'
     try:
         os.makedirs(target)
-        # 空的 scr.py
         with open(os.path.join(target, 'scr.py'), 'w', encoding='utf-8') as f:
             f.write(SCR_TEMPLATE)
-        # 图标: 用户选择的自定义图标或生成的默认图标
         if info and info.get('icon_path'):
             shutil.copy2(info['icon_path'], os.path.join(target, 'icon.png'))
         else:
             generate_icon(os.path.join(target, 'icon.png'), text=name)
-        # addon_info.json (用户填写字段)
         info_json = dict(ADDON_INFO_TEMPLATE)
         info_json['name'] = name
         if info:
@@ -123,13 +91,7 @@ def spawn_extension(name, info=None):
         shutil.rmtree(target, ignore_errors=True)
         return False, f'生成插件模板失败: {e}'
 
-
-# ============================================================
-# 包装 Mod
-# ============================================================
-
 def _scan_mod_files(mod_dir):
-    """扫描 mod 根目录下的单文件 (.bank/.carra2), 用于 file_names"""
     result = []
     try:
         for f in os.listdir(mod_dir):
@@ -140,9 +102,7 @@ def _scan_mod_files(mod_dir):
         pass
     return sorted(result)
 
-
 def _validate_wrap_source(source_folder):
-    """校验 Mod 原始文件夹, 返回错误消息 (None 表示通过)"""
     source = (source_folder or '').strip()
     if not source:
         return '请先选择原始文件夹'
@@ -158,15 +118,7 @@ def _validate_wrap_source(source_folder):
         return 'Assets 必须是文件夹'
     return None
 
-
 def wrap_mod(source_folder, info=None, icon_path=None, extra_files=None, single_file=False):
-    """包装 Mod: 校验必需文件, 复制到 mods/ 下, 按表单填写的信息生成图标与 mod_info.json
-
-    info: {'name','desc','version','authors','file_names'} (file_names 为用户勾选)
-    single_file: True=单文件 Mod 类型, 跳过 Installer.bat/Uninstaller.bat/Assets
-                 必需结构检测, 仅复制勾选的 .bank/.carra2 等单文件
-    返回 (成功, 消息)
-    """
     source = (source_folder or '').strip()
     if not source:
         return False, '请先选择原始文件夹'
@@ -184,12 +136,10 @@ def wrap_mod(source_folder, info=None, icon_path=None, extra_files=None, single_
         return False, '无法确定 Mod 名称'
     entries = {e.lower(): e for e in os.listdir(source)}
     target = os.path.join(MODS_DIR, name)
-    created_target = False   # target 是否本次新建 (失败时据此回滚)
+    created_target = False
     try:
         if not os.path.isdir(MODS_DIR):
             os.makedirs(MODS_DIR)
-        # 复制 mod 必需结构: Installer.bat / Uninstaller.bat / Assets / changes.json
-        # (单文件 Mod 跳过结构复制, 但仍做同名存在检查)
         if os.path.abspath(source) != os.path.abspath(target):
             if os.path.exists(target):
                 return False, f'mods 下已存在同名 Mod: {target}'
@@ -207,34 +157,24 @@ def wrap_mod(source_folder, info=None, icon_path=None, extra_files=None, single_
                     else:
                         os.makedirs(os.path.dirname(dst_entry), exist_ok=True)
                         shutil.copy2(src_entry, dst_entry)
-        # 用户额外勾选的文件复制到 mod 根目录
         extra_names = []
         for f in extra_files:
             if not f or not os.path.isfile(f):
                 continue
             shutil.copy2(f, os.path.join(target, os.path.basename(f)))
             extra_names.append(os.path.basename(f))
-        # 表单勾选的源目录单文件 (.bank/.carra2) 复制到 mod 根目录
-        # (mod 加载器按 file_names 从 mod 根目录复制文件, 必须真实存在)
         file_names = sorted(set(info.get('file_names') or []) | set(extra_names))
         same_dir = os.path.abspath(source) == os.path.abspath(target)
         for fn in file_names:
             src_file = os.path.join(source, fn)
             dst_file = os.path.join(target, fn)
-            # same_dir 表示源就是 mods/<name> 本身 (用户在重新包装一个已有 mod),
-            # 此时 src_file 与 dst_file 是同一个文件: 文件本来就在目标位置,
-            # 再 shutil.copy2 会抛 SameFileError 让整个包装失败。
-            # 原来的条件是 (same_dir or 路径不同) —— 恰好把这种情况判成"需要复制",
-            # 逻辑写反了, 必须改成 not same_dir。
             if os.path.isfile(src_file) and not same_dir:
                 shutil.copy2(src_file, dst_file)
-        # 图标: 用户选择的自定义图标, 否则生成默认
         target_icon = os.path.join(target, 'icon.png')
         if icon_path and os.path.isfile(icon_path):
             shutil.copy2(icon_path, target_icon)
         elif not os.path.exists(target_icon):
             generate_icon(target_icon, text=name)
-        # mod_info.json (用户填写字段)
         info_json = dict(ADDON_INFO_TEMPLATE)
         info_json['name'] = name
         info_json['desc'] = (info.get('desc') or '').strip()
@@ -247,26 +187,11 @@ def wrap_mod(source_folder, info=None, icon_path=None, extra_files=None, single_
         write_json(os.path.join(target, 'mod_info.json'), info_json, indent=4)
         return True, f'Mod 包装完成: {target}'
     except Exception as e:
-        # 中途失败必须回滚刚创建的目录: 复制 Assets 这类大目录时容易因磁盘空间、
-        # 文件被占用、路径过长而失败, 留下一个只有半个 mod 的目录。而下次包装同一个
-        # mod 时, 上面那句"已存在同名 Mod"会直接拦下来 —— 用户只能手动进 mods/
-        # 删掉残留才能重试。
         if created_target:
             shutil.rmtree(target, ignore_errors=True)
             print(f"包装失败, 已回滚残留目录: {target}", flush=True)
         return False, f'包装 Mod 失败: {e}'
 
-
-# ============================================================
-# 发布扩展信息到云端笔记 —— Mod / 插件 共用一套核心
-# ============================================================
-
-# 两类扩展的全部差异都集中在这张表里（以后再加第三类只需加一行）：
-#   dir        本地目录
-#   info_file  本地信息文件（发布时取 name/desc/authors/version）
-#   note       web_config.json → webnote.<note> 的云端笔记
-#   folder_key web_config.json → lanzou.<folder_key> 里放压缩包（图标统一放 icons_folder）
-#   counter    云端首页头部里的“总数”字段名（两套笔记的字段名不一样）
 INFO_KINDS = {
     'mod': {
         'dir': MODS_DIR, 'info_file': 'mod_info.json', 'note': 'mod_info',
@@ -282,12 +207,7 @@ INFO_KINDS = {
     },
 }
 
-
 def load_extension_info(kind, folder):
-    """读取扩展目录下的信息文件, 返回 (info dict, 错误消息)
-
-    kind: 'mod' | 'addon' (见 INFO_KINDS)
-    """
     meta = INFO_KINDS.get(kind)
     if not meta:
         return None, f'未知的扩展类型: {kind}'
@@ -310,39 +230,21 @@ def load_extension_info(kind, folder):
     name = (info.get('name') or '').strip()
     if not name:
         return None, f'{info_file} 缺少 name 字段'
-    # 兼容旧文档里的 addon_version（云端数据库字段统一叫 version）
     if not (info.get('version') or '').strip() and (info.get('addon_version') or '').strip():
         info['version'] = str(info['addon_version']).strip()
     return info, None
 
-
 def load_mod_info(mod_folder):
-    """读取 mod 文件夹下的 mod_info.json, 返回 (info dict, 错误消息)"""
     return load_extension_info('mod', mod_folder)
 
-
 def load_addon_info(addon_folder):
-    """读取插件文件夹下的 addon_info.json, 返回 (info dict, 错误消息)
-
-    插件目录里比 Mod 多一个 settings 字段（本地启用状态），发布时不会写进云端。
-    """
     return load_extension_info('addon', addon_folder)
 
-
 def _fetch_note(address, label='Mod'):
-    """只读拉取云端数据, 返回解析后的完整结构 (list) 或 None (笔记为空/不存在)。
-
-    读取走 Webnote 的网络链路 (配置里的 webnote_bases + IPv4 优先 + DoH 兜底),
-    不再硬编码域名; **只走网络、不落缓存兜底**。
-    读取失败一律抛异常让调用方中止发布 —— 把"读不到"当成"笔记是空的"会把云端
-    已有条目整份覆盖掉 (2026-09-25 version_info 就是这样被清空的)。
-    格式异常时抛 ValueError。
-    """
     from functions.webFunc.Webnote import read_note_live
     text, _used, err = read_note_live(None, address)
     text = str(text or '').strip()
     if not text:
-        # 区分"笔记确实还不存在(200 + 空)"与"读取失败": 后者绝不能当成新笔记
         url = _note_read_url(address)
         if url:
             try:
@@ -350,7 +252,7 @@ def _fetch_note(address, label='Mod'):
             except Exception as e:
                 raise RuntimeError(f'云端{label}笔记读取失败: {e}')
             if probe.status_code == 200 and not (probe.text or '').strip():
-                return None                     # 真·空笔记: 首次发布, 安全初始化
+                return None
         raise RuntimeError(f'云端{label}笔记读取失败: {err or "内容为空"}')
     try:
         data = json.loads(text)
@@ -360,18 +262,10 @@ def _fetch_note(address, label='Mod'):
         raise ValueError(f'云端{label}笔记结构异常 (应为 [总信息, 页1, 页2...])')
     return data
 
-
 def _fetch_mod_note(address):
-    """兼容旧名：拉取云端 Mod 数据。"""
     return _fetch_note(address, 'Mod')
 
-
-# ============================================================
-# 蓝奏云上传 (图标 + Mod 压缩包)
-# ============================================================
-
 def _lanzou_session(log=None):
-    """按 web_config.json 的 lanzou 凭据登录蓝奏云, 返回 session (失败抛 RuntimeError)"""
     cfg = get_lanzou_config()
     cookie = {}
     for key in ('phpdisk_info', 'ylogin', 'ylogins'):
@@ -387,14 +281,7 @@ def _lanzou_session(log=None):
         raise RuntimeError('蓝奏云登录失败: cookie 已失效, 请更新 web_config.json 中的 lanzou 凭据')
     return session
 
-
 def _zip_folder(folder, target_zip, arc_name=None, progress=None, label='Mod'):
-    """把文件夹根目录下所有内容打包为 zip (按文件数回报进度)
-
-    zip 内所有条目置于 <arc_name>/ 顶层文件夹下（与历史包格式一致：
-    下载器把 zip 解压到 mods/ （插件则是 addons/）根目录，
-    顶层文件夹保证内容落进 mods/<名字>/ 、addons/<名字>/）
-    """
     folder = os.path.abspath(folder)
     if not os.path.isdir(folder):
         raise RuntimeError(f'{label} 文件夹不存在: {folder}')
@@ -414,23 +301,11 @@ def _zip_folder(folder, target_zip, arc_name=None, progress=None, label='Mod'):
             if progress:
                 progress((i + 1) / len(files) * 100, f'压缩中 {os.path.basename(full)} ({i + 1}/{len(files)})')
 
-
 def _zip_mod_folder(mod_folder, target_zip, arc_name=None, progress=None):
-    """兼容旧名：打包 Mod 文件夹。"""
     return _zip_folder(mod_folder, target_zip, arc_name=arc_name, progress=progress,
                        label='Mod')
 
-
 def upload_extension_to_lanzou(kind, folder, log=None, progress=None):
-    """压缩扩展本体 + 上传图标/压缩包 到蓝奏云，返回直链解析 URL 字典
-
-    - kind='mod'  : 图标 → <icons_folder>，压缩包 → <mods_folder> (默认 FaustLauncher.Mods)
-    - kind='addon': 图标 → <icons_folder>，压缩包 → <addons_folder> (默认 FaustLauncher.Addons)
-    - 返回 {'icon_url','dowload_url','icon_share_url','mod_share_url'}
-      (键名与旧版一致，插件也复用这组键，云端字段名本来就叫 dowload_url)
-    - 失败抛 RuntimeError，异常对象带 partial_urls（已成功的链接，
-      便于调用方继续更新数据库）
-    """
     meta = INFO_KINDS.get(kind)
     if not meta:
         raise RuntimeError(f'未知的扩展类型: {kind}')
@@ -454,7 +329,7 @@ def upload_extension_to_lanzou(kind, folder, log=None, progress=None):
     from functions.web_update.lanzou_utils import GetOrCreateFolder, UploadFile
     session = _lanzou_session(log)
 
-    partial = {}  # 已成功的上传结果 (上传中途失败时带回)
+    partial = {}
 
     def _fail(msg):
         e = RuntimeError(msg)
@@ -463,7 +338,6 @@ def upload_extension_to_lanzou(kind, folder, log=None, progress=None):
 
     tmpdir = tempfile.mkdtemp(prefix='fl_lanzou_')
     try:
-        # 1. 压缩本体
         zip_path = os.path.join(tmpdir, f'{name}.zip')
         log(f'压缩{body}: {name}.zip')
         if progress:
@@ -471,14 +345,12 @@ def upload_extension_to_lanzou(kind, folder, log=None, progress=None):
         _zip_folder(folder, zip_path, arc_name=name, progress=progress, label=label)
         zip_size_mb = os.path.getsize(zip_path) / 1024.0 / 1024.0
         log(f'压缩完成: {zip_size_mb:.1f} MB')
-        # 压缩包超限时先记录，图标仍照常上传 (保证云端条目有图标)，到压缩包步骤才报错
         zip_too_big_msg = None
         if zip_size_mb > max_size_mb:
             zip_too_big_msg = (f'{label}包 {zip_size_mb:.1f} MB 超过蓝奏云单文件上限 {max_size_mb} MB'
                                f'（该账号实测约 66MB；可在 web_config.json 的 lanzou.max_size_mb 调整）')
             log(f'⚠ {zip_too_big_msg}（压缩包无法上传，仍会先上传图标供数据库使用）')
 
-        # 2. 图标上传
         log(f'定位蓝奏云文件夹: {icons_folder}')
         icon_fid = GetOrCreateFolder(session, icons_folder)
         if not icon_fid:
@@ -489,9 +361,6 @@ def upload_extension_to_lanzou(kind, folder, log=None, progress=None):
         if ret_icon.get('status') != 1:
             _fail(f'图标上传失败: {ret_icon.get("msg")}')
         icon_share = ret_icon.get('share_url') or ''
-        # share_url 为空时必须在这里报错, 不能拼出 'PARSER_BASE + ""' 这种垃圾链接:
-        # 拼接结果是非空字符串, 于是发布时 keep_old_urls 的"链接缺失才沿用云端旧值"
-        # 判断不会生效, 结果把云端原有的可用链接覆盖成一个打不开的地址。
         if not icon_share:
             _fail('图标上传返回成功但缺少 share_url, 无法生成直链')
         partial = {
@@ -499,7 +368,6 @@ def upload_extension_to_lanzou(kind, folder, log=None, progress=None):
             'icon_share_url': icon_share,
         }
 
-        # 3. 压缩包上传
         if zip_too_big_msg:
             _fail(zip_too_big_msg)
         log(f'定位蓝奏云文件夹: {target_folder}')
@@ -512,7 +380,6 @@ def upload_extension_to_lanzou(kind, folder, log=None, progress=None):
         if ret_pack.get('status') != 1:
             _fail(f'压缩包上传失败: {ret_pack.get("msg")}')
         pack_share = ret_pack.get('share_url') or ''
-        # 同上: 缺 share_url 时不能拼出垃圾直链, 否则会覆盖云端旧值
         if not pack_share:
             _fail('压缩包上传返回成功但缺少 share_url, 无法生成直链')
 
@@ -525,30 +392,13 @@ def upload_extension_to_lanzou(kind, folder, log=None, progress=None):
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
 
-
 def upload_mod_to_lanzou(mod_folder, log=None, progress=None):
-    """压缩 Mod 本体, 图标 → 蓝奏云 <icons_folder>, 压缩包 → 蓝奏云 <mods_folder>"""
     return upload_extension_to_lanzou('mod', mod_folder, log=log, progress=progress)
 
-
 def upload_addon_to_lanzou(addon_folder, log=None, progress=None):
-    """压缩插件本体, 图标 → 蓝奏云 <icons_folder>, 压缩包 → 蓝奏云 <addons_folder>
-
-    默认目标目录为 FaustLauncher.Addons（可在 web_config.json 的 lanzou.addons_folder 改）。
-    """
     return upload_extension_to_lanzou('addon', addon_folder, log=log, progress=progress)
 
-
 def publish_extension(kind, folder, address=None, log=None, progress=None):
-    """完整发布: 蓝奏云上传 (图标+压缩包) → 直链解析 URL → 发布信息到云端笔记
-
-    蓝奏云上传失败时不会中止: 仍会将信息发布到云端数据库
-    (已成功的链接会填入; 缺失的 dowload_url/icon_url 沿用云端旧值),
-    返回 (False, 消息) 并在消息中同时说明上传失败原因与数据库更新结果。
-
-    progress: 可选回调 (percent: float 0~100, text: str)
-    返回 (成功, 消息)
-    """
     meta = INFO_KINDS.get(kind)
     if not meta:
         return False, f'未知的扩展类型: {kind}'
@@ -575,31 +425,13 @@ def publish_extension(kind, folder, address=None, log=None, progress=None):
         return False, f'上传失败: {upload_err} | 但{label}信息已更新到云端: {msg}'
     return ok, msg
 
-
 def publish_mod(mod_folder, address=None, log=None, progress=None):
-    """发布 Mod: 上传到蓝奏云 <mods_folder> + 更新云端 <mod_info> 数据库"""
     return publish_extension('mod', mod_folder, address=address, log=log, progress=progress)
 
-
 def publish_addon(addon_folder, address=None, log=None, progress=None):
-    """发布插件: 上传到蓝奏云 <addons_folder>（默认 FaustLauncher.Addons）
-    + 更新云端 <addon_info> 数据库（与 Mod 完全同一套更新机制）
-    """
     return publish_extension('addon', addon_folder, address=address, log=log, progress=progress)
 
-
 def upload_extension_info(kind, folder, address=None, log=None, urls=None, keep_old_urls=True):
-    """将扩展信息发布到云端笔记（Mod 用 <mod_info>，插件用 <addon_info>）
-
-    - dowload_url/icon_url 取 urls（蓝奏云直链解析 URL），未提供时留空；
-      keep_old_urls=True 且云端存在同名条目时，缺失的链接沿用云端旧值
-    - 同名条目视为更新: 替换信息/链接并置顶，保留 download_count
-    - 新条目插入第 1 页最前，并按每页 5 个重新分页；
-      头部保留原有字段（total_page 重新计数，Mod 写 total_mods、插件写 total_addons）
-    - 云端格式异常时中止 (不会覆盖云端)
-
-    返回 (成功, 消息)
-    """
     meta = INFO_KINDS.get(kind)
     if not meta:
         return False, f'未知的扩展类型: {kind}'
@@ -622,12 +454,10 @@ def upload_extension_info(kind, folder, address=None, log=None, urls=None, keep_
         log(f'读取云端{label}信息: {address}\n')
         data = _fetch_note(address, label)
 
-        # 笔记为空/不存在 -> 视为全新列表, 安全初始化 (不会覆盖已有数据)
         if data is None:
             data = [{}]
         header = dict(data[0]) if isinstance(data[0], dict) else {}
 
-        # 检查同名条目: 存在则视为更新 (替换信息与链接, 保留 download_count)
         old_count = 0
         old_item = None
         for page in data[1:]:
@@ -638,7 +468,6 @@ def upload_extension_info(kind, folder, address=None, log=None, urls=None, keep_
                     old_count = m.get('download_count') or 0
                     old_item = m
 
-        # 缺失的链接沿用云端旧值 (上传失败后仍发布时, 保证下载链接不丢)
         dowload_url = urls.get('dowload_url') or ''
         icon_url = urls.get('icon_url') or ''
         if keep_old_urls and old_item:
@@ -647,8 +476,6 @@ def upload_extension_info(kind, folder, address=None, log=None, urls=None, keep_
             if not icon_url:
                 icon_url = old_item.get('icon_url') or ''
 
-        # 条目字段与 Mod/插件数据库现有条目完全一致
-        # (name/desc/authors/version/dowload_url/icon_url/download_count/disabled/is_new)
         item = {
             'name': name,
             'desc': (info.get('desc') or '').strip(),
@@ -661,7 +488,6 @@ def upload_extension_info(kind, folder, address=None, log=None, urls=None, keep_
             'is_new': True
         }
 
-        # 新条目置顶, 重新按每页 5 个分页 (同名旧条目被替换)
         items = [item]
         for page in data[1:]:
             if not isinstance(page, list):
@@ -677,14 +503,6 @@ def upload_extension_info(kind, folder, address=None, log=None, urls=None, keep_
 
         new_content = json.dumps(new_data, ensure_ascii=False, indent=4)
         log(f'上传{label}信息: {name}\n')
-        # 统一走 Webnote.write_note, 不要在这里自己 requests.post:
-        #   · write_note 用 multipart 发送; 而 data={'value': ...} 是 urlencoded 表单,
-        #     中文会被 percent-encode 成 9 字节/字, 请求体膨胀 2.5 倍以上 ——
-        #     笔记一大就撞上服务端请求体上限, 返回 413 Content Too Large
-        #     (version_info 已经踩过一次, 见之前的笔记上传修复);
-        #   · write_note 还带连接类错误重试、小内容 GET 兜底、严格响应解析,
-        #     这些在这个裸实现里全都没有。
-        # (write_note 内部会把 key 作为 query 参数拼上, 无需手工构造 URL)
         from functions.webFunc.Webnote import write_note
         res = write_note(address, new_content)
         if res.get('status') == 1:
@@ -693,18 +511,10 @@ def upload_extension_info(kind, folder, address=None, log=None, urls=None, keep_
     except Exception as e:
         return False, f'发布失败: {e}'
 
-
 def upload_mod_info(mod_folder, address=None, log=None, urls=None, keep_old_urls=True):
-    """将 Mod 信息发布到云端笔记 (默认使用 web_config.json 中 mod_info 的地址)"""
     return upload_extension_info('mod', mod_folder, address=address, log=log, urls=urls,
                                  keep_old_urls=keep_old_urls)
 
-
 def upload_addon_info(addon_folder, address=None, log=None, urls=None, keep_old_urls=True):
-    """将插件信息发布到云端笔记 (默认使用 web_config.json 中 addon_info 的地址)
-
-    与 upload_mod_info 完全同一套机制：同名更新、保留 download_count、
-    缺失链接沿用旧值、分页与头部计数（total_addons）重算。
-    """
     return upload_extension_info('addon', addon_folder, address=address, log=log, urls=urls,
                                  keep_old_urls=keep_old_urls)

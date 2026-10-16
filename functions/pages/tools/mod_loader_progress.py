@@ -1,16 +1,4 @@
 #! Mod 加载器进度提示窗口 (tkinter)
-#? 打包 (rebank 差分生成/应用) 期间以阶段式提示 + 实时日志展示加载进度, 美观地替代裸 cmd 窗口
-#? 轮询 %APPDATA%/LimbusCompanyMods/loader_progress.txt (loader 侧 progress.py 写入):
-#?   - "n|文本"   -> 更新阶段进度
-#?   - "LAUNCH"   -> 游戏已启动, 窗口隐藏 (进程常驻, 等待恢复阶段)
-#?   - "RESTORE|.."-> 游戏退出、正在恢复原版文件: 窗口重新弹出提示
-#?   - "ERROR|.." -> 红色错误提示, 加载器进程退出后自动关闭
-#? 同时滚动展示加载器 log.txt 末尾日志 (按 [WARNING]/[ERROR] 着色, 完成类日志显示为绿色)
-#? 实时显示当前活跃的多线程任务列表（每个线程一行：名字 + 阶段 + 描述），线程完成后自动从列表移除
-#? 加载器进程 (--pid) 退出后自动关闭, 避免窗口残留
-#? 与 Mod管理器同一子进程模式:
-#? - 源码模式: 用 pythonw 运行本脚本子进程
-#? - 打包模式 (sys.frozen): 用自身 exe 以 --mod-loader-progress 参数二次启动
 
 import os
 import subprocess
@@ -39,39 +27,36 @@ PROGRESS_FILE = os.path.join(get_mod_root_dir(create=False), "loader_progress.tx
 THREADS_FILE = os.path.join(get_mod_root_dir(create=False), "loader_threads.txt")
 LOG_FILE = os.path.join(get_mod_root_dir(create=False), "log.txt")
 
-# 标题栏图标：优先用 loader 内部的 icon.png
 ICON_FILE = os.path.join(_PROJECT_ROOT, "resources", "mod_loader", "_internal", "assets", "icon.png")
 if not os.path.isfile(ICON_FILE):
     ICON_FILE = os.path.join(_PROJECT_ROOT, "assets", "images", "icon", "icon.png")
 
-BG = "#2a2a2a"          # 主背景 (Catppuccin 暗色)
-BG_PANEL = "#1B1B1B"    # 面板/线程列表背景
-BG_LOGS = "#1B1B1B"     # 日志区背景
-BORDER = "#444444"      # 分隔线/描边
+BG = "#2a2a2a"
+BG_PANEL = "#1B1B1B"
+BG_LOGS = "#1B1B1B"
+BORDER = "#444444"
 
-FG_TITLE = '#89b4fa'    # 标题蓝
-FG_STAGE = '#cdd6f4'    # 阶段主文本
-FG_DETAIL = '#a6adc8'   # 详情文本
-FG_FOOTER = '#7f849c'   # 小标签
+FG_TITLE = '#89b4fa'
+FG_STAGE = '#cdd6f4'
+FG_DETAIL = '#a6adc8'
+FG_FOOTER = '#7f849c'
 
-LOG_FG = '#cdd6f4'      # 日志默认
-LOG_WARN_FG = '#f9e2af' # 日志警告
-LOG_ERR_FG = '#f38ba8'  # 日志错误
-LOG_SUCCESS_FG = '#a6e3a1'  # 完成类日志绿色
+LOG_FG = '#cdd6f4'
+LOG_WARN_FG = '#f9e2af'
+LOG_ERR_FG = '#f38ba8'
+LOG_SUCCESS_FG = '#a6e3a1'
 
-THREAD_NAME_FG = '#cdd6f4'  # 线程名
-THREAD_STAGE_FG = '#89b4fa' # 阶段
-THREAD_DESC_FG = '#a6adc8'  # 描述
-THREAD_BG = '#2a2a3c'       # 线程项背景
-THREAD_BG_ALT = '#313244'   # 交替背景
+THREAD_NAME_FG = '#cdd6f4'
+THREAD_STAGE_FG = '#89b4fa'
+THREAD_DESC_FG = '#a6adc8'
+THREAD_BG = '#2a2a3c'
+THREAD_BG_ALT = '#313244'
 
 TOTAL_STAGES = 6
 LOG_MAX_LINES = 14
 POLL_MS = 300
 
-
 def _pick_font(candidates):
-    """按顺序选第一个系统里存在的字体, 避免字体缺失回退到难看的默认字体"""
     try:
         import tkinter.font as tkfont
         available = set(tkfont.families())
@@ -82,8 +67,6 @@ def _pick_font(candidates):
         pass
     return candidates[0]
 
-
-# 字体（等宽优先 Cascadia Mono，缺失回退 Consolas/Courier New；中文用微软雅黑）
 MONO_FONT = _pick_font(["Cascadia Mono", "Cascadia Code", "Consolas", "Courier New"])
 UI_FONT = _pick_font(["Microsoft YaHei UI", "Microsoft YaHei", "Segoe UI", "PingFang SC"])
 
@@ -95,20 +78,18 @@ FONT_LOG = (MONO_FONT, 8)
 FONT_THREAD = (MONO_FONT, 8)
 FONT_THREAD_NAME = (UI_FONT, 8, "bold")
 
-
 def _pid_alive(pid):
-    """进程是否存活 (OpenProcess + GetExitCodeProcess, 避免刚终止进程句柄误判)"""
     if not pid:
         return True
     try:
         import ctypes
         k32 = ctypes.windll.kernel32
-        h = k32.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
+        h = k32.OpenProcess(0x1000, False, pid)
         if not h:
             return False
         try:
             code = ctypes.c_ulong()
-            if k32.GetExitCodeProcess(h, ctypes.byref(code)) and code.value == 259:  # STILL_ACTIVE
+            if k32.GetExitCodeProcess(h, ctypes.byref(code)) and code.value == 259:
                 return True
             return False
         finally:
@@ -116,9 +97,7 @@ def _pid_alive(pid):
     except Exception:
         return True
 
-
 def _read_progress():
-    """读取进度文件最后一行"""
     try:
         with open(PROGRESS_FILE, "r", encoding="utf-8") as f:
             lines = [line.strip() for line in f if line.strip()]
@@ -126,20 +105,15 @@ def _read_progress():
     except OSError:
         return ""
 
-
 def _read_threads():
-    """读取线程状态JSON文件 - 返回 OrderedDict 保持顺序"""
     try:
         with open(THREADS_FILE, "r", encoding="utf-8") as f:
             data = json.load(f)
-        # Python 3.7+ dict 保持插入顺序
         return data
     except (OSError, ValueError):
         return {}
 
-
 def _read_log_tail(max_lines=LOG_MAX_LINES, max_bytes=200000):
-    """读取加载器 log.txt 末尾若干行 (utf-8, 失败回退 gbk)"""
     try:
         size = os.path.getsize(LOG_FILE)
         with open(LOG_FILE, "rb") as f:
@@ -154,9 +128,7 @@ def _read_log_tail(max_lines=LOG_MAX_LINES, max_bytes=200000):
     except OSError:
         return []
 
-
 def _is_success_log(line: str) -> bool:
-    """判断是否是需要显示为绿色的"完成/成功"类日志"""
     lower = line.lower()
     success_keywords = [
         "* 修补完成", "* 完成", "* 备份", "已恢复",
@@ -167,23 +139,18 @@ def _is_success_log(line: str) -> bool:
             return True
     return False
 
-
 def _load_header_icon(size=24):
-    """加载标题栏图标, 返回 PhotoImage (失败返回 None)"""
     if not HAS_PIL or not os.path.isfile(ICON_FILE):
         return None
     try:
         img = Image.open(ICON_FILE)
         img = img.convert("RGBA")
-        # 等比缩放到目标尺寸
         img.thumbnail((size, size), Image.LANCZOS) # type: ignore
         return ImageTk.PhotoImage(img)
     except Exception:
         return None
 
-
 class LoaderProgressWindow:
-    """状态: loading(加载中) -> launched(游戏运行, 窗口隐藏) -> restoring(恢复文件) -> 关闭"""
 
     def __init__(self, root, loader_pid):
         self.root = root
@@ -192,11 +159,9 @@ class LoaderProgressWindow:
         self._closing = False
         self._last_log_lines = []
         self._last_threads_state = None
-        self._header_icon = None  # 保持图标引用避免被 GC
+        self._header_icon = None
         self._build_ui()
         self._poll()
-
-    # ---------- UI ----------
 
     def _build_ui(self):
         import random
@@ -205,7 +170,6 @@ class LoaderProgressWindow:
         root.title("Mod 加载器")
         root.configure(bg=BG)
         root.resizable(False, False)
-        # 固定窗口尺寸，避免任务列表增减时窗口跳动；紧凑布局控制空间占用
         root.geometry("440x540")
         root.attributes("-topmost", True)
 
@@ -216,12 +180,10 @@ class LoaderProgressWindow:
             "我就像被水流摆弄的毒蛇一样被固定在地平，再也无法动弹。"
         ]
 
-        # 顶部标题栏（紧凑）
         header_bar = tk.Frame(root, bg=BG)
         header_bar.pack(fill="x", padx=16, pady=(10, 0))
         tk.Label(header_bar, text="李箱正在努力加载 MOD...", font=FONT_STAGE,
                  bg=BG, fg=FG_TITLE).pack(side="left")
-        # 右侧：图标 + 状态文本
         right_side = tk.Frame(header_bar, bg=BG)
         right_side.pack(side="right")
         tk.Label(right_side, text=random.choice(yisang_sayings)[:15]+'...', font=FONT_FOOTER,
@@ -231,10 +193,8 @@ class LoaderProgressWindow:
             tk.Label(right_side, image=self._header_icon,
                      bg=BG).pack(side="left", padx=(3, 0))
 
-        # 分隔线
         tk.Frame(root, bg=BORDER, height=1).pack(fill="x", padx=16, pady=(8, 0))
 
-        # 阶段状态
         self.stage_lbl = tk.Label(root, text="正在启动加载器…", font=FONT_STAGE,
                                   bg=BG, fg=FG_STAGE, anchor="w")
         self.stage_lbl.pack(fill="x", padx=16, pady=(8, 0))
@@ -242,14 +202,12 @@ class LoaderProgressWindow:
                                    bg=BG, fg=FG_DETAIL, anchor="w")
         self.detail_lbl.pack(fill="x", padx=16, pady=(0, 0))
 
-        # 活跃任务列表（固定高度 + 滚动，不影响窗口大小）
         threads_frame = tk.Frame(root, bg=BG)
         threads_frame.pack(fill="x", padx=16, pady=(8, 0))
         self._threads_header = tk.Label(threads_frame, text="活跃任务 (0)", font=FONT_FOOTER,
                                         bg=BG, fg=FG_FOOTER, anchor="w")
         self._threads_header.pack(fill="x")
 
-        # 滚动容器
         list_wrap = tk.Frame(threads_frame, bg=BG_PANEL,
                              highlightbackground=BORDER, highlightthickness=1)
         list_wrap.pack(fill="x", pady=(4, 0))
@@ -272,7 +230,6 @@ class LoaderProgressWindow:
             lambda e: self._threads_canvas.itemconfig(self._threads_window, width=e.width))
         self._thread_widgets = {}
 
-        # 日志区域（占较小空间，expand 补足剩余）
         log_frame = tk.Frame(root, bg=BG)
         log_frame.pack(fill="both", expand=True, padx=16, pady=(8, 12))
         tk.Label(log_frame, text="处理日志", font=FONT_FOOTER,
@@ -284,10 +241,9 @@ class LoaderProgressWindow:
         self.log_text.pack(fill="both", expand=True, pady=(4, 0))
         self.log_text.tag_config("warn", foreground=LOG_WARN_FG)
         self.log_text.tag_config("err", foreground=LOG_ERR_FG)
-        self.log_text.tag_config("ok", foreground=LOG_SUCCESS_FG)  # 绿色
+        self.log_text.tag_config("ok", foreground=LOG_SUCCESS_FG)
 
     def _on_threads_configure(self, event):
-        """线程列表内容变化时更新滚动区域"""
         self._threads_canvas.configure(scrollregion=self._threads_canvas.bbox("all"))
 
     def _set_error(self, message):
@@ -308,7 +264,7 @@ class LoaderProgressWindow:
             elif "[ERROR]" in ln:
                 tag = "err"
             elif _is_success_log(ln):
-                tag = "ok"  # 绿色显示完成类日志
+                tag = "ok"
             else:
                 tag = "info"
             t.insert("end", ln + "\n", tag)
@@ -316,9 +272,7 @@ class LoaderProgressWindow:
         t.see("end")
 
     def _update_threads(self):
-        """更新多线程任务列表 - 差异更新（线程完成/新增/删除时只动变化的项）"""
         threads = _read_threads()
-        # 准备稳定字符串用于比较（避免无意义重绘）
         stable = json.dumps(threads, sort_keys=True, ensure_ascii=False)
         if stable == self._last_threads_state:
             return
@@ -327,21 +281,17 @@ class LoaderProgressWindow:
         current_names = set(threads.keys())
         existing_names = set(self._thread_widgets.keys())
 
-        # 1) 移除已不在列表中的线程（线程完成后自动移除）
         for name in list(existing_names - current_names):
             widgets = self._thread_widgets.pop(name, None)
             if widgets:
                 widgets["frame"].destroy()
 
-        # 2) 新增或更新现有线程
         idx = 0
         for name, info in threads.items():
             stage = info.get("stage", "")
             desc = info.get("description", "")
             status = info.get("status", "running")
-            # 阶段符号
             if status == "running":
-                # 用旋转指示符让用户感知到线程还在动
                 spinner = "●" if idx % 2 == 0 else "○"
             else:
                 spinner = "✓"
@@ -355,15 +305,12 @@ class LoaderProgressWindow:
                 bg = THREAD_BG if idx % 2 == 0 else THREAD_BG_ALT
                 frame = tk.Frame(self._threads_inner, bg=bg)
                 frame.pack(fill="x", padx=1, pady=0)
-                # 名称（占左侧）
                 name_lbl = tk.Label(frame, text=display_name, font=FONT_THREAD_NAME,
                                     bg=bg, fg=THREAD_NAME_FG, anchor="w", width=22)
                 name_lbl.pack(side="left", padx=(6, 2), pady=1)
-                # 阶段
                 stage_lbl = tk.Label(frame, text=stage, font=FONT_THREAD,
                                      bg=bg, fg=THREAD_STAGE_FG, anchor="w", width=11)
                 stage_lbl.pack(side="left", padx=2, pady=1)
-                # 描述
                 desc_lbl = tk.Label(frame, text=desc, font=FONT_THREAD,
                                     bg=bg, fg=THREAD_DESC_FG, anchor="w")
                 desc_lbl.pack(side="left", fill="x", expand=True, padx=(2, 6), pady=1)
@@ -375,7 +322,6 @@ class LoaderProgressWindow:
                 }
             idx += 1
 
-        # 表头计数（只统计 running/waiting 的活跃线程，不统计主控线程）
         active_count = sum(
             1 for v in threads.values()
             if v.get("status") in ("running", "waiting")
@@ -388,7 +334,6 @@ class LoaderProgressWindow:
         self._threads_header.config(text=header_text)
 
     def _finish(self, text, delay_ms):
-        """显示结束语并延迟关闭 (只触发一次)"""
         if self._closing:
             return
         self._closing = True
@@ -398,8 +343,6 @@ class LoaderProgressWindow:
         self.stage_lbl.config(text=text, fg=FG_STAGE)
         self.detail_lbl.config(text="", fg=FG_DETAIL)
         self.root.after(delay_ms, self.root.destroy)
-
-    # ---------- 轮询 ----------
 
     def _poll(self):
         try:
@@ -418,7 +361,6 @@ class LoaderProgressWindow:
         content = _read_progress()
         pid_alive = _pid_alive(self.pid)
 
-        # 游戏启动 -> 窗口隐藏, 常驻等待恢复阶段
         if content == "LAUNCH":
             if not self._closing and self.state != "launched":
                 self.state = "launched"
@@ -431,7 +373,6 @@ class LoaderProgressWindow:
                 self._finish("加载器已退出，原版文件已恢复", 2500)
             return
 
-        # 游戏退出、恢复原版文件 -> 重新弹出提示
         if content.startswith("RESTORE"):
             if self.state != "loading" and self.state != "restoring" and not self._closing:
                 self.state = "restoring"
@@ -468,7 +409,6 @@ class LoaderProgressWindow:
             self._update_threads()
             return
 
-        # 游戏运行中 (窗口隐藏): 加载器异常退出时提示
         if self.state == "launched":
             self._update_log()
             self._update_threads()
@@ -481,13 +421,10 @@ class LoaderProgressWindow:
                 self._finish("加载器已退出", 1200)
             return
 
-        # 初始状态: 进度文件尚未写入
         self._update_log()
         self._update_threads()
 
-
 def _set_window_icon(root):
-    """设置窗口图标: 启动器以 cwd=项目根目录 拉起本窗口, 优先按 cwd 找 icon.png"""
     try:
         path = os.path.join(os.getcwd(), "assets", "images", "icon", "icon.png")
         if not os.path.isfile(path):
@@ -495,17 +432,11 @@ def _set_window_icon(root):
         if os.path.isfile(path):
             img = tk.PhotoImage(file=path)
             root.iconphoto(True, img)
-            root._icon_img = img  # 防止被垃圾回收
+            root._icon_img = img
     except Exception:
         pass
 
-
 def run_mod_loader_progress(loader_pid=0, debug=False):
-    """子进程入口: 运行进度提示窗口
-
-    优先使用 Web 版 (funcions/pages/tools/mod_loader_web.py, 界面在 web/mod_loader/,
-    与其它子窗口共用主题层与皮肤), pywebview 不可用时回退下面的 tkinter 版。
-    """
     try:
         from functions.pages.tools.mod_loader_web import run_mod_loader_web
         if run_mod_loader_web(loader_pid, debug=debug):
@@ -534,13 +465,7 @@ def run_mod_loader_progress(loader_pid=0, debug=False):
             pass
         raise SystemExit(1)
 
-
 def open_mod_loader_progress(loader_pid):
-    """非阻塞拉起进度提示窗口 (与 Mod管理器同一模式, 立即返回)
-
-    Returns:
-        True: 窗口成功拉起; None: 拉起失败
-    """
     if getattr(sys, "frozen", False):
         cmd = [os.path.abspath(sys.executable), "--mod-loader-progress", "--pid", str(loader_pid)]
     else:
@@ -560,7 +485,6 @@ def open_mod_loader_progress(loader_pid):
         print(f"[Mod加载器] 无法启动进度窗口进程: {e}")
         return None
     return True
-
 
 if __name__ == "__main__":
     pid = 0

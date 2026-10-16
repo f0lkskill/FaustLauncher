@@ -12,7 +12,6 @@ data:dict = loads(note_content) if note_content.strip() else {}
 
 download_gui:DownloadGUI = None # type: ignore
 
-# 不存在文件时，创建空字典
 try:
     import os
     if not os.path.exists("resources/resource_info.json"):
@@ -27,13 +26,11 @@ else:
     local_data:dict = loads(local_data_str)
 
 def _is_empty_dir(path):
-    """检测目录是否为空 (无任何文件/子目录)"""
     import os
     try:
         return os.path.isdir(path) and not any(os.scandir(path))
     except Exception:
         return False
-
 
 def update_resource(dow_root:DownloadGUI, download_files:list, res:str, auto_close:bool = True):
     global download_gui
@@ -41,7 +38,6 @@ def update_resource(dow_root:DownloadGUI, download_files:list, res:str, auto_clo
     import shutil,os
     from time import sleep
     os.makedirs(f"resources/{res}", exist_ok=True)
-    # 下载后核对: 若解压结果为空文件夹则视为缺失, 重新下载 (最多 3 次)
     success = False
     for attempt in range(1, 4):
         try:
@@ -53,7 +49,6 @@ def update_resource(dow_root:DownloadGUI, download_files:list, res:str, auto_clo
         download_thread.start()
         while download_thread.is_alive():
             sleep(1)
-            # print(f"下载资源 {res} 正在进行中...")
         if not _is_empty_dir(f"resources/{res}"):
             success = True
             break
@@ -61,7 +56,7 @@ def update_resource(dow_root:DownloadGUI, download_files:list, res:str, auto_clo
     if success:
         local_data[res]['version_info'] = data[res]['version_info']
     else:
-        print(f"⚠ 云端资源 {res} 多次下载后仍为空文件夹, 保持旧版本, 下次启动将再次检查")
+        print(f"云端资源 {res} 多次下载后仍为空文件夹, 保持旧版本, 下次启动将再次检查")
     if auto_close:
         download_gui.is_downloading = False
 
@@ -79,11 +74,8 @@ def check_resource_update(dow_root):
             del local_data[res]['url']
 
     for res in data:
-        # print(f"检查资源 {res}，云端版本: {data[res]['version_info']}，本地版本: {local_data[res]['version_info']}")
         up_list.append(res)
         
-    # print(up_list)
-
     for res in up_list:
         if data[res]['version_info'] != local_data[res]['version_info']:
             print(f"需要更新云端资源 {res}，url: {data[res]['url']}")
@@ -99,10 +91,8 @@ def check_resource_update(dow_root):
             print(f"资源 {res} 已为最新，无需更新。")
     
     if download_gui is not None:
-        # 关闭下载窗口
         download_gui.is_downloading = False
 
-    # 保存更新后的本地资源信息
     with open("resources/resource_info.json",'w',encoding='utf-8') as f:
         f.write(dumps(local_data, ensure_ascii=False, indent=4))
 
