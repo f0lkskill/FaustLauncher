@@ -360,8 +360,8 @@ class PageLoader:
         self.core.terminal_text.tag_config("wait", foreground=C.TERMINAL_LINK)
         
         self.core.setup_terminal_redirect()
-        self.core.add_terminal_message("🚀 Faust Launcher 已启动")
-        self.core.add_terminal_message("💻 终端重定向已启用")
+        self.core.add_terminal_message("Faust Launcher 已启动")
+        self.core.add_terminal_message("终端重定向已启用")
         self.core.add_terminal_message("=" * 50)
         
         return quick_actions_frame
@@ -1176,7 +1176,7 @@ def download_and_launch(obj=None, need_run_game=False, manual=False):
                     if os.path.isdir(lang_path) and os.path.isfile(os.path.join(lang_path, 'info', 'version.json')):
                         print(f"OurPlay 汉化包已安装到 {lang_path}")
                     else:
-                        print("❌ OurPlay 汉化包安装失败, 请查看上方日志")
+                        print("OurPlay 汉化包安装失败, 请查看上方日志")
                         downloading = False
                         return
                 else:

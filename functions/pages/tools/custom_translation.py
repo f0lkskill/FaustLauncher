@@ -2107,7 +2107,7 @@ class CustomTranslationTool:
                 messagebox.showinfo("成功",
                                     f"✏ 修改内容已保存\n\n文件: {relative}")
             # 保存后不要刷新文件树 —— 目录结构没变，不需要重建
-            # 只需要刷新 ✏ 标记 + 编辑区
+            # 只需要刷新 标记 + 编辑区
             self._refresh_tree_markers()
             try:
                 pixel_top = self.data_canvas.canvasy(0)

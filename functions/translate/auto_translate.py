@@ -46,7 +46,7 @@ class AutoTranslator:
             return value
         
         if is_all_punctuation(value):
-            self.window.log_message(f"⏩ 跳过纯标点符号的值: {value}")
+            self.window.log_message(f"跳过纯标点符号的值: {value}")
             return value
         
         try:
@@ -116,7 +116,7 @@ class AutoTranslator:
             
             return True
         except Exception as e:
-            self.window.log_message(f"❌ 处理文件失败 {source_file}: {e}")
+            self.window.log_message(f"处理文件失败 {source_file}: {e}")
             return False
     
     def translate(self, source_path, target_path, blacklist_files=None, progress_callback=None, is_skill=False):
@@ -134,7 +134,7 @@ class AutoTranslator:
             self.window.log_message(f"⚠️ 在源路径 {source_path} 下没有找到 json 文件")
             return False
         
-        self.window.log_message(f"📁 找到 {total_files} 个 json 文件")
+        self.window.log_message(f"找到 {total_files} 个 json 文件")
         
         # 过滤掉黑名单文件
         filtered_files = []
@@ -144,7 +144,7 @@ class AutoTranslator:
                 filtered_files.append(file)
         
         if filtered_files != source_files:
-            self.window.log_message(f"🚫 跳过了 {total_files - len(filtered_files)} 个黑名单文件")
+            self.window.log_message(f"跳过了 {total_files - len(filtered_files)} 个黑名单文件")
         
         total_files = len(filtered_files)
         processed_files = 0
@@ -171,7 +171,7 @@ class AutoTranslator:
                         progress_callback(processed_files, total_files, f"已处理 {processed_files}/{total_files} 个文件")
                     continue
 
-                self.window.log_message(f"🔄 开始处理文件: {file_name}")
+                self.window.log_message(f"开始处理文件: {file_name}")
                 
                 # 确保目标文件的父目录存在
                 os.makedirs(os.path.dirname(target_file), exist_ok=True)

@@ -98,7 +98,7 @@ def test_fixed_translator():
             
             # 根据错误码提供具体建议
             if error_code == '54001':
-                print("💡 签名错误建议:")
+                print("签名错误建议:")
                 print("1. 检查API密钥是否正确")
                 print("2. 检查签名生成顺序: appid + q + salt + appkey")
                 print("3. 确保文本编码为UTF-8")

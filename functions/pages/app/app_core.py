@@ -119,7 +119,7 @@ class FaustLauncherCore:
             self.terminal_text.config(state=tk.NORMAL)
             self.terminal_text.delete(1.0, tk.END)
             self.terminal_text.config(state=tk.DISABLED)
-            print("🗑️ 终端内容已清空")
+            print("终端内容已清空")
             
     def copy_terminal_content(self):
         """复制终端内容到剪贴板"""
@@ -128,7 +128,7 @@ class FaustLauncherCore:
                 content = self.terminal_text.get(1.0, tk.END)
                 self.root.clipboard_clear()
                 self.root.clipboard_append(content)
-                print("📋 终端内容已复制到剪贴板")
+                print("终端内容已复制到剪贴板")
         except Exception as e:
             print(f"复制失败: {e}")
             
@@ -137,7 +137,7 @@ class FaustLauncherCore:
         try:
             from functions.pages.tools.custom_translation_window import open_custom_translation_window
             open_custom_translation_window(self)
-            print("🔧 自定义汉化工具已打开")
+            print("自定义汉化工具已打开")
         except Exception as e:
             print(f"打开自定义汉化工具失败: {e}")
             from tkinter import messagebox
@@ -160,7 +160,7 @@ class FaustLauncherCore:
                 return
             from functions.pages.tools.extension_tools_window import open_extension_tools_window
             open_extension_tools_window(self)
-            print("🧩 扩展工具已打开")
+            print("扩展工具已打开")
         except Exception as e:
             print(f"打开扩展工具失败: {e}")
             from tkinter import messagebox

@@ -70,14 +70,14 @@ def main():
     
     # 按行数排序显示前10个最大的文件
     file_stats.sort(key=lambda x: x[1], reverse=True)
-    print("\n📊 文件大小排行 (前10名):")
+    print("\n文件大小排行 (前10名):")
     for i, (file_path, lines) in enumerate(file_stats[:10], 1):
         rel_path = os.path.relpath(file_path, current_dir)
         print(f"{i:2d}. {rel_path}: {lines} 行")
     
     # 显示平均行数
     avg_lines = total_lines / len(py_files) if py_files else 0
-    print(f"\n📈 平均每个文件: {avg_lines:.1f} 行")
+    print(f"\n平均每个文件: {avg_lines:.1f} 行")
     # 双击运行时留住窗口；被管道/脚本调用时 stdin 不是终端，pause 会白等
     if sys.stdin is not None and sys.stdin.isatty():
         os.system("pause")

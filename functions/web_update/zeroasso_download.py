@@ -661,13 +661,13 @@ def _install_ourplay(gui, temp_file, game_path, version, is_god):
         refer_root = _ensure_refer_root(gui)
         if not refer_root:
             gui.current_file_var.set("❌ 汉化包处理失败: 参考包获取失败, 无法重命名哈希文件")
-            print("❌ _install_ourplay: 参考包获取失败")
+            print("_install_ourplay: 参考包获取失败")
             return False
         ourplay_root, temp_extract = prepare_ourplay_dir(
             temp_file, refer_root=refer_root)
     except Exception as e:
         gui.current_file_var.set(f"❌ 汉化包处理失败: {e}")
-        print(f"❌ _install_ourplay: 汉化包处理失败: {e}")
+        print(f"_install_ourplay: 汉化包处理失败: {e}")
         return False
 
     try:

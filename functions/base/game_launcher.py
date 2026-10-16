@@ -937,7 +937,7 @@ class GameLauncher:
                 except OSError:
                     pass
 
-            # self._progress("启动成就监测与战斗观测...", "🏆")
+
 
             cmd = [
                 sys.executable,

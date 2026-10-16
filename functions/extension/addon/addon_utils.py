@@ -406,7 +406,7 @@ class AddonManager:
         2. 重新扫描 addons 目录
         3. 逐个加载新插件
         """
-        print("🔄 开始重载插件...")
+        print("开始重载插件...")
         try:
             # 清空插件自定义汉化包源
             self.extend_translate_source.clear()
@@ -414,10 +414,10 @@ class AddonManager:
             self.unload_all_addons()
             self.scan_addons()
             self.run_all_addon(ADDON_ARG)
-            print("✅ 插件重载完成")
+            print("插件重载完成")
             return True
         except Exception as e:
-            print(f"❌ 插件重载失败: {e}")
+            print(f"插件重载失败: {e}")
             return False
         
     def add_addon(self, addon_path: str) -> bool:

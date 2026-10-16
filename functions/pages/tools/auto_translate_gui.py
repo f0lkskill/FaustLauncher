@@ -318,11 +318,11 @@ EGOgift.json
                 self.source_path, self.target_path = self.dict_path[mode]
                 is_skill = True
 
-            self.log_message("🎯 开始翻译任务...")
-            self.log_message(f"📁 源路径: {self.source_path}")
-            self.log_message(f"📂 目标路径: {self.target_path}")
+            self.log_message("开始翻译任务...")
+            self.log_message(f"源路径: {self.source_path}")
+            self.log_message(f"目标路径: {self.target_path}")
             if blacklist_files:
-                self.log_message(f"🚫 黑名单文件: {blacklist_files}")
+                self.log_message(f"黑名单文件: {blacklist_files}")
             
             success = auto_translate(self, self.source_path, self.target_path, blacklist_files, progress_callback, is_skill)
             
@@ -331,7 +331,7 @@ EGOgift.json
                 messagebox.showinfo("完成", "翻译任务已完成!")
         
         except Exception as e:
-            self.log_message(f"💥 翻译任务异常: {e}")
+            self.log_message(f"翻译任务异常: {e}")
             messagebox.showerror("错误", f"翻译任务异常: {e}")
 
         finally:
@@ -340,7 +340,7 @@ EGOgift.json
     def stop_translation(self):
         """停止翻译"""
         self.is_running = False
-        self.log_message("🛑 正在停止翻译任务...")
+        self.log_message("正在停止翻译任务...")
         self.stop_button.config(state=tk.DISABLED)
     
     def translation_finished(self):

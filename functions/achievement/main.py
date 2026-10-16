@@ -66,10 +66,10 @@ def run_hidden(log_path: str, debug: bool = False):
 
     # Print startup banner
     print("=" * 60)
-    print("🎮 Limbus Company - Achievement Monitor")
-    print(f"📁 Log file: {os.path.abspath(log_path)}")
-    print(f"⏰ Started: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    print("🔒 Running hidden in background...")
+    print("Limbus Company - Achievement Monitor")
+    print(f"Log file: {os.path.abspath(log_path)}")
+    print(f"Started: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print("Running hidden in background...")
     print("=" * 60)
     print("")
 

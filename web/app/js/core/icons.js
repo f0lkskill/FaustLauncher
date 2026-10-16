@@ -224,7 +224,7 @@ function iconSvgAuto(value) {
   return mapped ? iconSvg(mapped) : '';
 }
 
-// 把 "📁 游戏目录" 这样的标题拆成 { icon, text }。
+// 把 "游戏目录" 这样的标题拆成 { icon, text }。
 // 快捷方式/工具卡片的 name 由后端提供且带 emoji 前缀 —— open_feature 是按**完整
 // 字符串**(含 emoji)匹配的, 旧版 Tk UI 也依赖它, 因此数据层不能改;
 // 这里只在渲染时把前缀 emoji 摘出来换成 SVG 图标, 文字部分原样使用。

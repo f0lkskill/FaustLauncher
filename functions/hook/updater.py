@@ -762,7 +762,7 @@ def auto_update_async(on_log=None, game_path: str = "", force: bool = False,
     def worker() -> None:
         global _auto_updating
         try:
-            # ⚡ 先做一次**便宜的预检**（本地索引 → 云端索引，都只是读文件 / 下几十 KB），
+            # 先做一次**便宜的预检**（本地索引 → 云端索引，都只是读文件 / 下几十 KB），
             #    只要其中一份对得上本机 DLL 就**不重建**。
             #
             # 为什么必须这样：``update_hook_index`` 在"本地没有索引"时会走 metadata
