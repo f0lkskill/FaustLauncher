@@ -22,9 +22,9 @@ SETTINGS_PATH = os.path.join(_ROOT, "config", "settings.json")
 OUT_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "version_info.txt")
 
 FILE_DESCRIPTION = "FaustLauncher - Limbus Company launcher and localization tool"
-COMPANY_NAME = "folk.skill"
+COMPANY_NAME = "folkskill"
 PRODUCT_NAME = "FaustLauncher"
-LEGAL_COPYRIGHT = "Copyright (c) 2025 folk.skill. MIT License."
+LEGAL_COPYRIGHT = "Copyright (c) 2025 folkskill. MIT License."
 
 
 def read_project_version() -> str:
