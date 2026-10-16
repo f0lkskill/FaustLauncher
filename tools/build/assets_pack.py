@@ -142,6 +142,12 @@ def cmd_pack(args) -> int:
         for rel in files:
             zf.write(os.path.join(ROOT, rel), rel)
         zf.writestr(MANIFEST_IN_PACK, json.dumps(manifest, ensure_ascii=False, indent=1))
+        # 同时刷新本地清单：pack 之后本地清单代表的应该是"我刚刚打进去的这一版"。
+        # 只写进 zip 会让 .assets-pack/manifest.json 一直停在 fetch 那次的快照上，
+        # 于是紧接着跑 status 会把刚打包上传的文件全报成"清单外(本地多出来)"。
+        os.makedirs(os.path.join(ROOT, ".assets-pack"), exist_ok=True)
+        with open(os.path.join(ROOT, MANIFEST_IN_PACK), "w", encoding="utf-8") as fh:
+            fh.write(json.dumps(manifest, ensure_ascii=False, indent=1))
     size = os.path.getsize(out)
     print(f"已生成 {out}（{size / 1048576:.1f} MB，压缩率 {size / max(total, 1):.0%}）")
     print(f"固定分发地址：{pack_url(args.repo, args.tag)}")
@@ -267,6 +273,14 @@ def cmd_fetch(args) -> int:
         shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
+def gh_run(gh: str, argv: list[str]):
+    """跑 gh 并捕获输出。必须显式指定 UTF-8：Windows 上 text=True 默认按 cp936(GBK)
+    解码，gh 的进度条/提示里只要有 GBK 无法表示的字节，读取线程就会抛
+    UnicodeDecodeError（上传其实已经成功，但异常会污染调用方输出）。"""
+    return subprocess.run([gh, *argv], capture_output=True, text=True,
+                          encoding="utf-8", errors="replace")
+
+
 def cmd_upload(args) -> int:
     zip_path = os.path.abspath(args.out or os.path.join(ROOT, DEFAULT_ZIP_NAME))
     if not os.path.isfile(zip_path):
@@ -279,24 +293,21 @@ def cmd_upload(args) -> int:
         return 1
     url = pack_url(args.repo, args.tag)
     print(f"目标：{args.repo} 的 tag={args.tag}，资产名 {ASSET_NAME}")
-    check = subprocess.run([gh, "release", "view", args.tag, "--repo", args.repo],
-                           capture_output=True, text=True)
+    check = gh_run(gh, ["release", "view", args.tag, "--repo", args.repo])
     if check.returncode != 0:
         print(f"tag {args.tag} 还没有 Release，创建它…")
-        made = subprocess.run(
-            [gh, "release", "create", args.tag, "--repo", args.repo,
-             "--title", "资源包（assets pack）",
-             "--notes", "开发者用的资源包。下载后解压到仓库根即完成合并，"
-                        "或直接跑 tools/run/assets.bat fetch。"],
-            capture_output=True, text=True)
+        made = gh_run(gh, [
+            "release", "create", args.tag, "--repo", args.repo,
+            "--title", "资源包（assets pack）",
+            "--notes", "开发者用的资源包。下载后解压到仓库根即完成合并，"
+                       "或直接跑 tools/run/assets.bat fetch。"])
         if made.returncode != 0:
-            print(f"创建 Release 失败：{made.stderr.strip()}")
+            print(f"创建 Release 失败：{(made.stderr or '').strip()}")
             return 1
-    up = subprocess.run([gh, "release", "upload", args.tag, zip_path,
-                         "--repo", args.repo, "--clobber"],
-                        capture_output=True, text=True)
+    up = gh_run(gh, ["release", "upload", args.tag, zip_path,
+                     "--repo", args.repo, "--clobber"])
     if up.returncode != 0:
-        print(f"上传失败：{up.stderr.strip()}")
+        print(f"上传失败：{(up.stderr or '').strip()}")
         return 1
     print(f"上传完成：{url}")
     print("（tag 固定不变 → 拉取地址永远是这个，开发者不需要关心版本）")

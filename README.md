@@ -195,6 +195,7 @@ FaustLauncher/
 | 写插件 | [MakeAnAddon.md](tools/doc/MakeAnAddon.md) —— 启动事件钩子、`changes.json` 文本补丁、资源打包 |
 | 写皮肤 | 复制 `web/app_skins/faust/`，改 `css/style.css` 与 `config.json`（皮肤图片属于素材资源包） |
 | 素材资源包 | `tools\run\assets.bat [pack\|status\|fetch\|upload]` —— clone 之后先 `fetch`，否则图标/音效/背景是空的 |
+| 发布素材 | `tools\run\upload_assets.bat [版本号]` —— 改完素材后一键 `pack` + `upload` 到 Release `tag=assets`（只影响开发者拉取，与用户安装包无关） |
 | 打包发布 | `python tools/build/build.py` |
 | 云端排障 | `python tools/diag/webnote_diag.py` |
 | 工具索引 | [tools/README.md](tools/README.md) —— 每个脚本干什么、怎么跑 |

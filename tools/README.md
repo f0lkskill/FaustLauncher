@@ -54,6 +54,7 @@
 | 快捷方式 | 等价命令 | 说明 |
 |---|---|---|
 | `assets.bat` | `python tools/build/assets_pack.py <动作>` | 素材资源包：`pack`（生成 zip）/ `status`（本地 vs 包）/ `fetch`（下载合并）/ `upload`（gh 发布）。**不带参数＝pack**。clone 之后先跑 `assets.bat fetch` |
+| `upload_assets.bat` | `pack` + `upload` 两步 | **素材改动后的一键发布**：先查关键素材在不在 → `pack`（覆盖 `faust-assets.zip`）→ `upload`（覆盖 Release `tag=assets` 的资产）。可选参数传版本号（默认今天日期）。任何一步失败就中止，不会拿旧 zip 去传。改完素材、想让别人 `fetch` 到新版就跑它 |
 | `debug.bat` | `python main.py --debug` | 调试模式启动启动器（`--debug` 不重定向 stdout，控制台能直接看到输出） |
 | `web_tool.bat` | `python main.py --extension-tools-window` | 只拉起"扩展工具"窗口 |
 | `update_hook.bat` | `python -m functions.hook.main update` | 手动重建并上传偏移索引（约 1~2 分钟满核）请先挂起游戏之后再运行 |
