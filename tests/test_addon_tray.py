@@ -76,7 +76,7 @@ class AddonTrayTests(unittest.TestCase):
                 tray = self.create_tray(kind)
                 parent = next(item for item in tray.menu if item.text == '插件')
                 self.assertIsInstance(parent.submenu, pystray.Menu)
-                self.assertIn(nested, list(parent.submenu))
+                self.assertEqual(list(parent.submenu), [nested])
                 child = list(nested.submenu)[0]
                 self.assertTrue(child.checked)
                 child(None)
@@ -84,11 +84,11 @@ class AddonTrayTests(unittest.TestCase):
                 late = pystray.MenuItem('Late registration', lambda: None)
                 self.manager.register_tray_item(late)
                 tray.update_menu.assert_called()
-                self.assertIn(late, list(parent.submenu))
+                self.assertEqual(list(parent.submenu), [nested, late])
                 self.assertEqual(list(parent.submenu).count(late), 1)
                 self.manager.clear_custom_tray_items()
                 self.assertNotIn(nested, list(parent.submenu))
-                self.assertNotIn(late, list(parent.submenu))
+                self.assertEqual(list(parent.submenu), [])
 
     def test_legacy_append_refreshes_after_load_and_reload_removes_items(self):
         folder = Path(self.tmp.name)
