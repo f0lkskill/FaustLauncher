@@ -374,7 +374,7 @@
         "page": "其它"
     },
     "auto_update_hook_index": {
-        "name": "自动刷新游戏偏移索引（不开放）",
+        "name": "自动刷新游戏偏移索引",
         "type": "boolean",
         "default": true,
         "value": true,
@@ -382,7 +382,7 @@
         "page": "成就"
     },
     "enable_achievement_hook": {
-        "name": "启用成就监测与战斗观测（不开放）",
+        "name": "启用成就监测与战斗观测",
         "type": "boolean",
         "default": true,
         "value": true,
@@ -390,7 +390,7 @@
         "page": "成就"
     },
     "achievement_log_verbose": {
-        "name": "成就日志记录全部战斗事件（不开放）",
+        "name": "成就日志记录全部战斗事件",
         "type": "boolean",
         "default": false,
         "value": false,
