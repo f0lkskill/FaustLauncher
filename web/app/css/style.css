@@ -115,6 +115,9 @@ body {
     var(--bg);
   z-index: 0;
 }
+/* 有背景图时: 上层的装饰渐变收掉 (它是压在图片上的又一层"暗色", 与 opacity 叠加
+   就成了黑色蒙版), 只留纯图片满不透明显示。没图时仍用上面的渐变兜底。 */
+#bg-layer.show-img { background: var(--bg); }
 /* 背景图分两层交替淡入。
    2026-09-26: 由 ::before/::after + CSS 自定义属性改为真实子元素 ——
    原来把 100KB+ 的 data URI 写进 style.setProperty('--bg-image-x'),
@@ -130,12 +133,10 @@ body {
   transition: opacity 1.1s ease;
   pointer-events: none;
 }
-#bg-layer .bg-img.on { opacity: .62; }
-#bg-layer.show-img {
-  background-size: cover;
-  background-position: center;
-  background-repeat: no-repeat;
-}
+/* 2026-10-xx 修: 原来这里是 opacity: .62 —— 深色底 (--bg #181818) + 三层径向渐变
+   透过来就是用户看到的"黑色蒙版", 背景图被整体压暗。现在直接满不透明显示,
+   去蒙版 (深色渐变仍在 #bg-layer 自己那层, 只在不显示图时兜底)。 */
+#bg-layer .bg-img.on { opacity: 1; }
 
 
 /* ============================================================

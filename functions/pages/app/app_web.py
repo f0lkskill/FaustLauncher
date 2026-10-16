@@ -640,6 +640,10 @@ _BG_POOL_MAX = 12
 _BG_POOL_MAX_SIDE = 1600
 _BG_POOL_JPEG_Q = 78
 
+# 上一次通过 get_backgrounds() 真正下发给前端的背景图路径 (只记首屏那张)
+# 用途: 下一轮随机时把它排到最后, 保证连续两次启动/重载不会又是同一张 (见 get_backgrounds)
+_LAST_BG_PATH: dict = {}
+
 
 def _skins_root():
     """皮肤根目录 (打包后在 _internal/web/app_skins)"""
@@ -763,15 +767,21 @@ def _default_background_dir():
 
 
 def _background_files(skin_id=""):
-    """背景图文件列表。
+    """背景图文件列表 (**每次调用都随机打乱顺序**)。
 
     皮肤提供了 background 目录时**整体接管** —— 默认 assets/images/background 立刻弃用,
     这正是"皮肤替换启动器基础资源"的规则。
+
+    2026-10-xx 修: 以前 _image_files_in 一律 sorted() —— 首页那张图永远固定是文件名
+    最靠前的一张 (CingTan.jpg)。现在在这里打乱一次, get_backgrounds() / 背景池
+    都以随机顺序下发, 启动初始化拿到的就是随机图。单张来源不排序没错 (数量少),
+    但"启动永远同一张"确实就是排序造成的, 所以统一在这里做随机。
     """
+    import random
     d = _skin_background_dir(skin_id)
-    if d:
-        return _image_files_in(d)
-    return _image_files_in(_default_background_dir())
+    files = _image_files_in(d) if d else _image_files_in(_default_background_dir())
+    random.shuffle(files)
+    return files
 
 
 def _launcher_asset_file(skin_id, *rel):
@@ -1249,6 +1259,10 @@ class AppApi:
         25 秒在这 4 张里换, 看着就是"轮询"。现在每次调用都从 background 目录的**全部**
         图片里随机抽 1 张 (顺带省掉 3/4 的编码开销与传输量)。
 
+        2026-10-xx 修: 光靠 random.shuffle 还不够 —— 候选图很少时它仍可能连着给出同一张
+        (用户看到的"每次启动背景板都是同一张")。现在记住上一次真正下发的那张, 下一轮
+        先把它排到最后, 保证**连着两次启动不会重复**(图 ≥2 张时必然换图)。
+
         分工: 本方法只负责**首屏快速出图** (只编码 1 张)。整池之后由
         get_background_pool() 一次性下发, 前端在本地随机轮换, 不再反复调本方法。
         """
@@ -1258,6 +1272,10 @@ class AppApi:
             blur = _bg_blur_setting()
             # 背景来源跟随当前皮肤: 皮肤提供 background 目录就整体接管, 否则用默认目录
             paths = _background_files(_active_skin_id())
+            last = _LAST_BG_PATH.get("path")
+            if last and len(paths) > 1 and last in paths:
+                paths.remove(last)
+                paths.append(last)     # 上次那张排到最后 -> 下次启动必定不是它
             random.shuffle(paths)
             for path in paths:
                 if uris:
@@ -1265,6 +1283,7 @@ class AppApi:
                 u = _bg_encode(path, blur)
                 if u:
                     uris.append(u)
+                    _LAST_BG_PATH["path"] = path     # 记住这次真正下发的图
         except Exception:
             pass
         return uris
@@ -2305,6 +2324,18 @@ class AppApi:
                 self.core._on_reload_addons()
             except Exception as e:
                 print(f"重载插件失败: {e}")
+            finally:
+                # 2026-10-xx 修: 重载完成后必须通知前端重新取"汉化源"名字。
+                # 以前这里只重载不通知 —— 插件被禁用/卸载后它注册的自定义汉化源已经
+                # 从 extend_translate_source 里清掉了 (后端 get_translate_source_name()
+                # 返回的是内置平台名), 但主页芯片没人去重新拉, 一直显示插件的自定义
+                # 汉化源, 看起来就是"没回退到默认加载源"。
+                # 必须放在重载**之后**: 放在之前的话前端来取时插件还没加载完,
+                # 又会读到旧的自定义汉化源。
+                try:
+                    self._notify_res_changed('addon')
+                except Exception as e:
+                    print(f"重载插件后通知前端失败: {e}")
         threading.Thread(target=_run, daemon=True).start()
 
     def _fire_addon_disabled(self, name):
@@ -2425,14 +2456,10 @@ class AppApi:
                     ok = True
             if not ok:
                 return {'error': f'插件 {name} 删除失败'}
-            # 卸载后重载插件 (含托盘菜单更新), 后台线程执行
-            def _reload():
-                try:
-                    self.core._on_reload_addons()
-                except Exception as e:
-                    print(f"卸载后重载插件失败: {e}")
-            threading.Thread(target=_reload, daemon=True).start()
-            self._notify_res_changed('addon')
+            # 卸载后重载插件 (含托盘菜单更新 + 前端刷新), 统一交给 _reload_addons_async:
+            # 它会在重载**完成后**通知前端 —— 汉化源芯片必须在重载后取, 早一步拿到的
+            # 都是旧的自定义汉化源 (详见该方法内的说明)
+            self._reload_addons_async()
             return {'error': None}
         except Exception as e:
             return {'error': str(e)}
