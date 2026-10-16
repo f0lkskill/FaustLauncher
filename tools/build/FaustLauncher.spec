@@ -163,7 +163,8 @@ exe = EXE(
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=True,
+    # UPX 加壳会显著抬高杀软误报率（本仓库并未依赖 upx，这里显式关掉）
+    upx=False,
     console=False,
     disable_windowed_traceback=False,
     argv_emulation=False,
@@ -177,7 +178,7 @@ coll = COLLECT(
     a.binaries,
     a.datas,
     strip=False,
-    upx=True,
-    upx_exclude=[],
+    # UPX 加壳会显著抬高杀软误报率（本仓库并未依赖 upx，这里显式关掉）
+    upx=False,
     name='FaustLauncher',
 )
