@@ -227,6 +227,17 @@ web/app_skins/*/profile.*
 !tools/build/*
 # 版本资源是构建中间产物（每次打包按当前 version_info 重新生成），不入库
 /tools/build/version_info.txt
+
+# 例外中的例外: 代码签名私钥绝不入库。
+# 上面 !tools/build/* 把 tools/build/ 下的文件整体放行了，所以这里必须显式挡住：
+# 证书私钥、含明文密码的 signing.json，以及本机拷来的 signtool 二进制（3.4 MB）。
+# tools/build/code_sign.py 与 signing/README.md 是源码/说明，照常入库。
+/tools/build/signing/*.pfx
+/tools/build/signing/*.p12
+/tools/build/signing/*.key
+/tools/build/signing/*.cer
+/tools/build/signing/signing.json
+/tools/build/signing/signtool/
 /defender-appeal.txt
 # 例外: functions/pages/tools/ 是启动器源码（工具类子窗口），不是本地脚手架。
 # 少了这两行，往该目录新增 .py 会被 `**/tools/` 静默忽略、提交时丢失。

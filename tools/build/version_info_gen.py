@@ -21,7 +21,7 @@ _ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)),
 SETTINGS_PATH = os.path.join(_ROOT, "config", "settings.json")
 OUT_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "version_info.txt")
 
-FILE_DESCRIPTION = "FaustLauncher - Limbus Company launcher and localization tool"
+FILE_DESCRIPTION = "FaustLauncher - 边狱公司浮士德启动器"
 COMPANY_NAME = "folkskill"
 PRODUCT_NAME = "FaustLauncher"
 LEGAL_COPYRIGHT = "Copyright (c) 2025 folkskill. MIT License."
