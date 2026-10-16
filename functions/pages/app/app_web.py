@@ -3594,40 +3594,16 @@ def _start_tray(core, window, win32_show):
                 _terminate_now()
         threading.Thread(target=_quit, daemon=True).start()
 
-    def build_addon_menu():
-        items = []
-        try:
-            for addon in core.addon_manager.get_all_addons():
-                name = addon["name"]
-                try:
-                    enabled = bool(addon.get("info", {}).get("settings", {}).get("enable", True))
-                except Exception:
-                    enabled = True
-
-                def _make_runner(n):
-                    def _run(icon=None, item=None):
-                        try:
-                            core.addon_manager.run_addon(n)
-                        except Exception as e:
-                            print(f"手动运行插件 {n} 失败: {e}")
-                    return _run
-
-                label = f"🔧 {name}" if enabled else f"⚙️ {name} (已禁用)"
-                items.append(pystray.MenuItem(label, _make_runner(name)))
-        except Exception:
-            pass
-        if not items:
-            items.append(pystray.MenuItem("（暂无可用插件）", None, enabled=False))
-        return pystray.Menu(*items)
-
     menu = pystray.Menu(
         pystray.MenuItem("显示窗口", show_win, default=True),
         pystray.MenuItem("隐藏", hide_win),
-        pystray.MenuItem("插件", lambda icon, item: build_addon_menu()),
+        pystray.MenuItem("插件", pystray.Menu(
+            lambda: core.addon_manager.build_tray_menu_items())),
         pystray.MenuItem("重载插件", lambda icon=None, item=None: core._on_reload_addons()),
         pystray.MenuItem("退出", when_exit),
     )
     tray = pystray.Icon("FaustLauncher", ico, "浮士德启动器", menu)
+    core.addon_manager.app.tray = tray
     tray.on_activate = show_win   # type: ignore # 单击/双击托盘图标时显示窗口
     threading.Thread(target=tray.run, daemon=True).start()
     return tray

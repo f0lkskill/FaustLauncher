@@ -90,6 +90,7 @@ class AddonManager:
         self.custom_tray_items.clear()
         # 清空向后兼容的 menu_items
         self.menu_items.clear()
+        self._refresh_tray_menu()
 
     def get_custom_tray_items(self) -> List[Any]:
         """返回所有插件注册的自定义托盘菜单项"""
@@ -340,6 +341,8 @@ class AddonManager:
             for f in self.gamestart_funcs[_gs_before:]:
                 self.gamestart_owners[id(f)] = addon_name
 
+            # Legacy addons append directly to menu_items; refresh after loading too.
+            self._refresh_tray_menu()
             print(f"插件 {addon_name} 初始化完成!")
             return True
         except Exception as e:
@@ -414,6 +417,7 @@ class AddonManager:
             self.unload_all_addons()
             self.scan_addons()
             self.run_all_addon(ADDON_ARG)
+            self._refresh_tray_menu()
             print("✅ 插件重载完成")
             return True
         except Exception as e:
