@@ -48,6 +48,7 @@ class TerminalRedirector:
     }
 
     _ANSI_RE = re.compile(r'(\x1b\[[0-9;]*m|\033\[[0-9;]*m)')
+    _LEVEL_RE = re.compile(r'\[(ERROR|WARN|DEBUG|INFO)\]')
     _ANSI_CODE_RE = re.compile(r'\[([0-9;]+)m')
 
     def __init__(self, text_widget):
@@ -190,18 +191,14 @@ class TerminalRedirector:
     def _tag_of(text):
         """把一段文本映射到控件预定义的颜色标签上。
 
-        这些符号一律用 ``\\uXXXX`` 转义写：字面量里的变体选择符（U+FE0F）在某些
-        工具链保存文件时会被悄悄剥掉，变成无法匹配的裸字符；转义写法不依赖编辑器
-        怎么存盘。
+        级别取自后端写进行里的 ``[LEVEL]`` 标记 —— 和 cmd 窗口、日志文件、Web 终端
+        用的是同一个判定点。这里不再从正文里找符号猜级别：正文删掉装饰符合后，猜测
+        只会把普通句子误判成错误。
         """
-        if "\u274c" in text:                                  # ❌
-            return "error"
-        if "\u2705" in text:                                  # ✅
-            return "success"
-        if "\u26a0" in text or "\ufe0f" in text:              # ⚠ / 残缺的变体选择符
-            return "warning"
-        if "\U0001f504" in text or "\U0001f4e6" in text:      # 🔄 / 📦
-            return "wait"
+        m = TerminalRedirect._LEVEL_RE.search(text)
+        if m:
+            return {"ERROR": "error", "WARN": "warning",
+                    "DEBUG": "wait"}.get(m.group(1), "info")
         return "info"
 
     def _type_next_char(self, parts, part_idx, char_idx, delay):

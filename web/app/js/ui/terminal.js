@@ -25,10 +25,11 @@ const ANSI_COLORS = {
   94: '#60a5fa', 95: '#d8b4fe', 96: '#67e8f9', 97: '#ffffff',
 };
 
-// 级别直接读后端行里的 [INFO] / [WARN] / [ERROR] 标记(后端是唯一的判定点)
+// 级别直接读后端行里的 [INFO] / [WARN] / [ERROR] / [DEBUG] 标记(后端是唯一的判定点)
 function levelClass(text) {
   if (/\[ERROR\]/.test(text)) return 'error';
   if (/\[WARN\s*\]/.test(text)) return 'warning';
+  if (/\[DEBUG\]/.test(text)) return 'debug';
   return 'info';
 }
 

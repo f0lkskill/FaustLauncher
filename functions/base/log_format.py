@@ -46,6 +46,7 @@ SKIP_FRAMES = {
     ("console_log.py", None),
     ("terminal_redirect.py", None),
     ("log_manager.py", None),
+    ("logger.py", None),
     ("stdio.py", None),
     # traceback.print_exc() 的栈帧来自标准库 traceback 模块。不跳过它的话，
     # 每个回溯行都会被算到 `[traceback.py:1574]` 上，真正的出错位置就丢了。
@@ -61,6 +62,7 @@ PALETTE = {
     "reset": "\x1b[0m",
     "time": "\x1b[90m",
     "area": "\x1b[96m",
+    "DEBUG": "\x1b[90m",
     "INFO": "\x1b[94m",
     "WARN": "\x1b[93m",
     "ERROR": "\x1b[91m",
@@ -71,17 +73,20 @@ AREA_COLORS = ("\x1b[96m", "\x1b[92m", "\x1b[95m", "\x1b[93m", "\x1b[94m", "\x1b
 
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 
-# 日志级别由正文推断。顺序有意义：先匹配到的组生效，所以宽泛的词要放在后面。
-# 表情符号用 \uXXXX 转义写：字面量里的变体选择符（U+FE0F）会在某些工具链保存
-# 文件时被剥掉，转义写法不依赖编辑器怎么存盘。
+# 日志级别由正文推断 —— **仅**用于那些没有显式级别的旧调用点 (print)。
+# 新代码请直接用 functions.base.logger 的 debug/info/warn/error。
+# 顺序有意义：先匹配到的组生效，所以宽泛的词要放在后面。
 LEVEL_RULES = (
     ("ERROR", ("失败", "错误", "异常", "无法", "不存在", "崩溃", "error", "failed",
-               "traceback", "\u274c", "\u26d4")),           # ❌ ⛔
+               "traceback")),
     # 这里不要放短的常用词（"注意" 也会命中 "注意力"，把整行误标并改色）。
     ("WARN", ("警告", "跳过", "未找到", "缺少", "不完整", "已禁用", "回退",
-              "failed", "warning", "warn", "\u26a0")),      # ⚠
+              "failed", "warning", "warn")),
+    ("DEBUG", ("debug", "调试", "明细", "trace")),
 )
-LEVELS = ("INFO", "WARN", "ERROR")
+LEVELS = ("DEBUG", "INFO", "WARN", "ERROR")
+# 级别的严重度顺序 (小 -> 大)，供过滤与排序使用。
+LEVEL_ORDER = {"DEBUG": 10, "INFO": 20, "WARN": 30, "ERROR": 40}
 
 _ANSI_OK = True
 
@@ -160,8 +165,14 @@ def _mentions(message: str, word: str) -> bool:
         start = idx + len(word)
 
 
-def _level_of(message: str) -> str:
-    """按正文关键字推断级别，未命中即 INFO。"""
+def _level_of(message) -> str:
+    """按正文关键字推断级别，未命中即 INFO。
+
+    **只用于没有显式级别的旧调用点**（例如 ``print``）。新代码走
+    :mod:`functions.base.logger`，级别由调用方决定，不再依赖这套猜测规则。
+    """
+    if not isinstance(message, str):
+        message = str(message)
     lowered = message.lower()
     for level, words in LEVEL_RULES:
         if any(_mentions(message, word) or _mentions(lowered, word)

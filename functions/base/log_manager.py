@@ -7,6 +7,12 @@
 布局）。因此文件 handler **不再**添加任何前缀——再加一次就会打印两遍时间戳，并让
 ``logs/*.log`` 与 cmd 窗口对不上，而这正是本模块以前造成的问题。
 
+按级别归档
+----------
+运行日志 ``logs/YYYY-MM-DD_HH-MM-SS.log`` 保留**全部**级别，回溯问题时按时间顺序
+读它；WARN / ERROR / DEBUG 另外按级别抄一份到 ``logs/<级别>/``，方便只看"这次运行
+都报了哪些错"。子目录里的文件是同一份文本，不是独立时间线。
+
 命名与保留策略：
 
 - 每次运行一个文件：``logs/YYYY-MM-DD_HH-MM-SS.log``
@@ -21,6 +27,7 @@ import logging
 LOG_DIR = "logs"
 MAX_KEEP_DAYS = 3
 MAX_KEEP_PER_DAY = 7
+LEVEL_DIRS = ("DEBUG", "WARN", "ERROR")
 
 _logger = None
 
@@ -30,39 +37,49 @@ def _ensure_dir():
 
 
 def _cleanup_logs():
-    """删除超过 MAX_KEEP_DAYS 天的日志，并把每天的文件数压到 MAX_KEEP_PER_DAY。"""
+    """删除超过 MAX_KEEP_DAYS 天的日志，并把每天的文件数压到 MAX_KEEP_PER_DAY。
+
+    运行日志与按级别归档的子目录用同一套规则。
+    """
     try:
         today = datetime.date.today()
         cutoff = today - datetime.timedelta(days=MAX_KEEP_DAYS - 1)
-        by_day = {}
-        for fname in os.listdir(LOG_DIR):
-            path = os.path.join(LOG_DIR, fname)
-            if not fname.endswith(".log") or not os.path.isfile(path):
+        for folder in [LOG_DIR] + [os.path.join(LOG_DIR, d) for d in LEVEL_DIRS]:
+            if not os.path.isdir(folder):
                 continue
-            m = re.match(r"(\d{4}-\d{2}-\d{2})_", fname)
-            if not m:
-                continue
-            try:
-                day = datetime.datetime.strptime(m.group(1), "%Y-%m-%d").date()
-            except ValueError:
-                continue
-            if day < cutoff:
-                try:
-                    os.remove(path)
-                except OSError:
-                    pass
-                continue
-            by_day.setdefault(day, []).append(fname)
-        for day, files in by_day.items():
-            if len(files) > MAX_KEEP_PER_DAY:
-                files.sort()
-                for fname in files[: len(files) - MAX_KEEP_PER_DAY]:
-                    try:
-                        os.remove(os.path.join(LOG_DIR, fname))
-                    except OSError:
-                        pass
+            _cleanup_folder(folder, cutoff)
     except Exception:
         pass
+
+
+def _cleanup_folder(folder: str, cutoff: datetime.date) -> None:
+    by_day = {}
+    for fname in os.listdir(folder):
+        path = os.path.join(folder, fname)
+        if not fname.endswith(".log") or not os.path.isfile(path):
+            continue
+        m = re.match(r"(\d{4}-\d{2}-\d{2})_", fname)
+        if not m:
+            continue
+        try:
+            day = datetime.datetime.strptime(m.group(1), "%Y-%m-%d").date()
+        except ValueError:
+            continue
+        if day < cutoff:
+            try:
+                os.remove(path)
+            except OSError:
+                pass
+            continue
+        by_day.setdefault(day, []).append(fname)
+    for day, files in by_day.items():
+        if len(files) > MAX_KEEP_PER_DAY:
+            files.sort()
+            for fname in files[: len(files) - MAX_KEEP_PER_DAY]:
+                try:
+                    os.remove(os.path.join(folder, fname))
+                except OSError:
+                    pass
 
 
 def init_logger():
@@ -120,17 +137,57 @@ def get_logger():
     return _logger
 
 
+def _current_log_file() -> str:
+    """本次运行的运行日志文件路径 (尚未初始化时返回空串)。"""
+    if _logger is None:
+        return ""
+    for handler in list(_logger.handlers):
+        base = getattr(handler, "baseFilename", "")
+        if base:
+            return base
+    return ""
+
+
+def _mirror_level(line: str) -> None:
+    """把整行按级别抄进 ``logs/<级别>/``，文件与运行日志同名。"""
+    level = parse_level(line)
+    if level == "INFO" or level not in LEVEL_DIRS:
+        return
+    main = _current_log_file()
+    if not main:
+        return
+    folder = os.path.join(LOG_DIR, level)
+    os.makedirs(folder, exist_ok=True)
+    path = os.path.join(folder, os.path.basename(main))
+    with open(path, "a", encoding="utf-8") as fp:
+        fp.write(re.sub(r"\x1b\[[0-9;]*m", "", line).rstrip("\r\n") + "\n")
+
+
+def parse_level(line: str) -> str:
+    """从一条已渲染的日志行里认出级别；认不出就当 INFO。"""
+    try:
+        text = re.sub(r"\x1b\[[0-9;]*m", "", line)
+        for level in ("ERROR", "WARN", "DEBUG", "INFO"):
+            if "] [" + level + "]" in text:
+                return level
+    except Exception:
+        pass
+    return "INFO"
+
+
 def write_line(line: str) -> None:
     """把一条**已格式化**的行原样追加到日志文件。
 
     :mod:`functions.base.console_log` 用它写入与控制台完全相同的那份文本，这也是
     ``logs/*.log`` 能与 cmd 窗口逐字节一致的原因。文件要当纯文本读，所以 ANSI 颜色
-    会被剥掉。
+    会被剥掉。WARN 及以上的行另外抄进 ``logs/<级别>/`` 归档。
     """
     try:
         text = re.sub(r"\x1b\[[0-9;]*m", "", line).rstrip("\r\n")
-        if text:
-            get_logger().info("%s", text) # type: ignore
+        if not text:
+            return
+        get_logger().info("%s", text)  # type: ignore
+        _mirror_level(text)
     except Exception:
         pass
 

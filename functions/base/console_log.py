@@ -40,6 +40,16 @@ _lock = threading.RLock()
 _color_ok = False
 _line_hooks: list = []
 _hooks_lock = threading.RLock()
+# 显式级别通道: functions.base.logger 在写正文前往这里放一个级别，
+# _format() 取用后立刻清空。级别走带内信号，正文保持纯净。
+_explicit = threading.local()
+
+
+def _take_level():
+    """取出并清空当前线程挂起的显式级别 (没有则返回 None)。"""
+    level = getattr(_explicit, "level", None)
+    _explicit.level = None
+    return level
 
 
 def add_line_hook(hook) -> None:
@@ -209,8 +219,16 @@ class _ConsoleStream:
             # 空白行（``print("")`` 之类）不进日志、也不上报 UI：生成一条只有前缀、
             # 没有内容的记录毫无意义。三处都按普通空行处理，才谈得上一致。
             return "\n"
+        level = _take_level()
+        if level is None and getattr(_explicit, "rendered", False):
+            # functions.base.logger 已经渲染过整行: 再套一次前缀会得到两份时间戳。
+            _explicit.rendered = False
+            _mirror_to_log(line)
+            if not line.startswith("|"):
+                _emit_line(line)
+            return line + "\n"
         rendered = log_format.build_line(
-            line, palette_map=log_format.palette(_color_ok))
+            line, level=level, palette_map=log_format.palette(_color_ok))
         _mirror_to_log(rendered)
         # UI 终端拿到的是 cmd 打印的同一份文本，**连颜色一起**：着色只在 log_format
         # 里决定一次，前端与 Tk 各自把转义序列解析成自己的颜色，这样就不会出现
