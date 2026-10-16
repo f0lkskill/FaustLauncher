@@ -1,14 +1,3 @@
-"""成就监测Hook - 监控游戏日志以触发成就解锁。
-
-此模块负责：
-- 读取并监控 Player.log 文件的变化
-- 解析游戏日志行，识别关键事件（战斗、物品、背包等）
-- 触发成就检查和自动解锁
-- 在后台进程/线程中持续运行
-
-使用方式（独立进程）:
-    python main.py --achievement-hook --log "C:/path/to/Player.log"
-"""
 
 import os
 import re
@@ -27,33 +16,16 @@ from functions.achievement.achievements import (
 )
 from functions.achievement import log_sink
 
-
 def _writable_root() -> str:
-    """**可写**的应用根目录（cache/、logs/ 都该落在这里）。
-
-    ⚠ 不能用 ``__file__`` 上溯三级：打包后 ``__file__`` 在 PyInstaller 的 ``_MEIPASS``
-    （onedir 布局就是 ``_internal\\``）里 —— 单实例 pid 文件写进去之后，父进程按 exe
-    目录算出来的路径是另一份，两边永远对不上（现场：``_internal\\cache\\achievement``
-    里有 hook.pid/hook_boot.log，exe 目录的 cache 里却是空的）。见 path_utils.get_app_root。
-    """
     try:
         from functions.base.common.path_utils import get_app_root
         return get_app_root()
     except Exception:  # noqa: BLE001
         return os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-# 成就轮询间隔（独立线程；弹窗动画不受影响）
 ACHIEVEMENT_POLL_SEC = 1.0
 
-
-# ============ 日志读取器 ============
 class LogReader:
-    """游戏日志读取器 (纯字节 offset 续读)。
-
-    直接对原文件按字节偏移续读, 不做临时复制。
-    检测文件截断 (Unity 新会话会清空重写): 若当前尺寸 < 已读偏移,
-    则重置偏移为 0 从头重读。
-    """
 
     def __init__(self, log_path: str):
         self.log_path = log_path
@@ -62,7 +34,6 @@ class LogReader:
         self.last_size = 0
 
     def _get_file_size(self) -> int:
-        """获取文件大小, 带重试。"""
         for _ in range(RETRY_COUNT):
             try:
                 return os.path.getsize(self.log_path)
@@ -71,13 +42,11 @@ class LogReader:
         return self.last_size
 
     def read_new_lines(self) -> list[str]:
-        """读取从上次位置到当前末尾的新增行 (二进制安全)。"""
         with self.lock:
             current_size = self._get_file_size()
             if current_size == self.last_size:
                 return []
 
-            # 截断检测: 文件变小 → 新会话清空重写, 从头读
             if current_size < self.last_position:
                 self.last_position = 0
 
@@ -92,70 +61,39 @@ class LogReader:
                 self.last_size = current_size
                 return []
 
-            # 解码 + 按行拆分 (统一换行)
             text = data.decode('utf-8', errors='replace')
             text = text.replace('\r\n', '\n').replace('\r', '\n')
             lines = text.split('\n')
             last_size = current_size
 
             if text.endswith('\n'):
-                # 完整结束: 全部行有效, 推进偏移
                 self.last_position = self.last_position + len(data)
                 self.last_size = last_size
                 if lines and lines[-1] == '':
                     lines.pop()
                 return lines
 
-            # 末尾半行: 只返回完整行; 偏移回退到最后一个完整行之后,
-            # 使下一轮能重新读到这半行直到它补齐
             if len(lines) > 1:
                 complete = lines[:-1]
                 partial_len = len(lines[-1].encode('utf-8'))
                 self.last_position = self.last_position + len(data) - partial_len
                 self.last_size = last_size
                 return complete
-            # 整块都是半行: 偏移不动, 等补齐
             self.last_size = last_size
             return []
 
     def sync_to_end(self):
-        """把读取偏移同步到文件末尾 (跳过历史内容, 仅从当前位置开始)。"""
         size = self._get_file_size()
         self.last_position = size
         self.last_size = size
 
-
-# ============ 日志时间轴 ============
-# 前缀格式的唯一实现在 functions/achievement/log_sink.py（成就日志只有一种格式）。
-# 这里以前有一条 ``_TS_PREFIX_RE`` 用来避免重复加时间戳 —— 现在由 format_line 负责，
-# 它会把旧式 ``[HH:MM:SS]`` / ``HH:MM:SS.mmm`` 前缀先剥掉再统一渲染。
-
-
 def with_timestamp(message: str) -> str:
-    """给日志行加统一前缀 ``[时:分:秒.毫秒] [区域] [级别]``。
-
-    格式的**唯一实现**在 :mod:`functions.achievement.log_sink`（成就日志只此一种格式），
-    这里保留函数名是因为它被几处当公共入口调用。
-    """
     return log_sink.format_line(message)
 
-
-# ============ 解锁日志（统一出口）============
 _logged_unlocks: set[str] = set()
 _unlock_log_lock = threading.Lock()
 
-
 def _report_unlocks(log_callback, unlocked, header: str = "") -> list:
-    """把“新解锁的成就”写进成就日志（**同一个成就只写一次**）。
-
-    为什么要统一出口：成就检查有好几条路径（Player.log 事件 / 输入计数 / 内存 /
-    战斗观测），它们跑在不同线程上，谁先跑到谁就把它置成 ``unlocked``。
-    以前其中一条（主循环的输入计数）只 ``print``（子进程 stdout 是 DEVNULL），
-    于是“成就确实解锁了（弹窗也弹了），但成就日志里看不到”——这里用已写集合
-    保证无论哪条路径先解锁，成就日志里都会有且只有一行。
-
-    返回真正新写进日志的成就列表。
-    """
     if not unlocked:
         return []
     fresh = []
@@ -167,14 +105,9 @@ def _report_unlocks(log_callback, unlocked, header: str = "") -> list:
                 fresh.append(ach)
     if not fresh:
         return []
-    # 本地落盘: 完成的成就 id 追加进用户文件 (与皮肤同一份, 见 user_system)。
-    # 成就页据此判定完成 —— 只有这里记下来, 启动器才知道"这条已经完成"。
-    # 任何异常都不许影响播报（写不进去最多是成就页少显示一条）。
     try:
         from functions.base.user_system import (record_achievements,
                                                 record_plugin_achievements)
-        # 内置成就 → settings.json；插件成就 → 独立的 plugin_achievements.json
-        # （插件那份**不进云端**，插件删掉也不影响内置记录）
         builtin = [getattr(a, "id", "") or "" for a in fresh
                    if not getattr(a, "plugin", False)]
         if builtin:
@@ -187,14 +120,6 @@ def _report_unlocks(log_callback, unlocked, header: str = "") -> list:
     except Exception as exc:  # noqa: BLE001
         log_callback(f"  [Achievement] 本地记录写入失败（不影响解锁）: {type(exc).__name__}: {exc}")
 
-    # 解锁后**立刻**把成就推回云端（不等下一次启动/手动同步）。
-    #
-    # 用**单条 add** 接口（POST /api/achievements/add）而不是整份列表覆盖：
-    #   · 服务端语义是"加一条"，**幂等**（已有则 added:false），不需要客户端算增量；
-    #   · 只改服务端那一行 → 两台机器各玩各的也不会互相覆盖（整表覆盖会）；
-    #   · 只传一个 ID，不用把整个列表回传。
-    # 放后台线程：网络请求不能拖住播报与日志。失败也不要紧 —— 下次启动的
-    # sync_user 会按并集把本地整份补上去（只增不减）。
     _builtin_ids = [i for i in
                     ([getattr(a, "id", "") or "" for a in fresh
                       if not getattr(a, "plugin", False)]) if i]
@@ -221,25 +146,7 @@ def _report_unlocks(log_callback, unlocked, header: str = "") -> list:
                      + (f"\n     判定依据: {detail}" if detail else ""))
     return fresh
 
-
 class _LogSink:
-    """成就日志写入器：**O_APPEND + 每行一次 os.write + 线程锁**。
-
-    为什么要这么写（本次日志损坏的根因）：
-
-    - 旧实现用 ``open(path, 'w')`` + ``write``：句柄自带固定偏移，一旦有第二个实例
-      （或上次没退干净的残留实例）也在写同一个文件，两者就各按自己的偏移覆写 →
-      错位、中间夹 NUL 空洞的“损坏”文件；
-    - 中途被清空（truncate）时，正在写的旧句柄还会在旧偏移继续写，留下更长的空洞。
-
-    现在：启动时显式清空一次（可关），之后用 ``O_APPEND`` 打开 —— 每次写入都追加到
-    文件末尾，不可能再有偏移错位/空洞；一行一次 ``os.write`` + 一把锁，保证多线程
-    （监控线程 / 战斗观测线程 / 主线程）写出来的行不会互相插队。
-
-    另外文件头和每行都是 **UTF-8（带 BOM）**：没有 BOM 时，Windows 记事本／
-    PowerShell 5.1 的 ``Get-Content`` 会按系统 ANSI(GBK) 解码，中文全变“乱码”
-    （实测踩到过）。
-    """
 
     _BOM = b"\xef\xbb\xbf"
 
@@ -247,22 +154,19 @@ class _LogSink:
         self.path = path
         self._lock = threading.Lock()
         self._fd: int | None = None
-        self.failures = 0            # 写不进去的次数（不再静默吞掉，见 _report_failure）
+        self.failures = 0
         directory = os.path.dirname(path)
         if directory:
             os.makedirs(directory, exist_ok=True)
         if truncate:
             try:
-                with open(path, "wb") as fh:  # 每次实例运行只留本次运行
-                    fh.write(self._BOM)       # 顺手写 BOM，让记事本/PowerShell 认得编码
+                with open(path, "wb") as fh:
+                    fh.write(self._BOM)
             except OSError:
                 pass
         self._open()
 
     def _report_failure(self, message: str) -> None:
-        """日志写不进去时**必须留痕**：以前这里静默 return／吞 OSError，
-        现象就是“成就日志只有 3 字节（BOM）却毫无提示”。
-        """
         self.failures += 1
         if self.failures <= 3 or self.failures % 100 == 0:
             try:
@@ -277,7 +181,6 @@ class _LogSink:
             flags |= os.O_BINARY
         try:
             self._fd = os.open(self.path, flags, 0o666)
-            # 文件是空的（首次创建 / 被清空）→ 补上 BOM
             if self._fd is not None and os.fstat(self._fd).st_size == 0:
                 os.write(self._fd, self._BOM)
         except OSError as exc:
@@ -286,7 +189,6 @@ class _LogSink:
 
     def write_line(self, message: str, area: str | None = None) -> None:
         text = log_sink.format_line(message, area=area)
-        # 空行保持空行：以前这里会写出一条"只有时间戳、没有内容"的孤儿行
         data = b"\n" if not text else (text + "\n").encode("utf-8", "replace")
         with self._lock:
             if self._fd is None:
@@ -294,7 +196,7 @@ class _LogSink:
             if self._fd is None:
                 return
             try:
-                os.write(self._fd, data)       # 单行一次写入（append）
+                os.write(self._fd, data)
             except OSError as exc:
                 try:
                     os.close(self._fd)
@@ -320,21 +222,7 @@ class _LogSink:
                     pass
                 self._fd = None
 
-
 def _self_image_paths() -> set[str]:
-    """本解释器的“可接受映像路径”集合（已 normcase + 绝对化）。
-
-    ⚠ **不能只比 ``sys.executable``**：venv 里的 ``python.exe`` 有可能是个
-    **py.exe launcher**（实测本机 ``venv\\Scripts\\python.exe`` 的 InternalName 就是
-    “Python Launcher”、大小 255200），它会把真解释器当**子进程**拉起来 —— 于是子进程里
-    ``sys.executable`` 指向 launcher，而**进程映像**是 base python.exe，两边永远不相等：
-
-    - ``_other_hook_running`` 认不出旧实例 → 新实例报“拿不到 PID”直接退出；
-    - ``_terminate_pid`` 收不掉旧实例 → 两个实例可能并存（抢共享内存 / 覆盖 buff 关注表）。
-
-    所以把 “executable / _base_executable / 本进程真实映像(GetModuleFileNameW)” 全部
-    当成自己人。
-    """
     import sys as _sys
     cand = {getattr(_sys, "executable", "") or "",
             getattr(_sys, "_base_executable", "") or ""}
@@ -347,7 +235,7 @@ def _self_image_paths() -> set[str]:
         kernel32.GetModuleFileNameW.restype = wintypes.DWORD
         buf = ctypes.create_unicode_buffer(1024)
         if kernel32.GetModuleFileNameW(None, buf, wintypes.DWORD(len(buf))):
-            cand.add(buf.value)                      # 本进程真正跑的那个 python.exe
+            cand.add(buf.value)
     except Exception:  # noqa: BLE001
         pass
     out: set[str] = set()
@@ -359,17 +247,7 @@ def _self_image_paths() -> set[str]:
                 continue
     return out
 
-
 def _self_and_ancestors() -> set[int]:
-    """本进程 + 它的**父进程**（py.exe launcher 那一层）。
-
-    ⚠ 绝不能拿这个集合里的 PID 去“收旧实例”：venv 的 ``python.exe`` 是 py.exe
-    launcher，真解释器是它拉起的子进程 —— 也就是说**子进程的父进程就是一个名字跟
-    自己一模一样的解释器**。如果 pid 文件里存的是 launcher 的 PID（启动器以前就是
-    这么写的：``open(pid_file).write(str(proc.pid))``），新实例的“接管”就会把
-    **自己的父进程**杀掉 → 子进程随即一起死（实测：boot 日志停在
-    “已收掉旧实例 PID …”，成就日志 0 字节，启动器报“子进程已退出（exit=0）”）。
-    """
     pids = {os.getpid()}
     try:
         ppid = os.getppid()
@@ -379,9 +257,7 @@ def _self_and_ancestors() -> set[int]:
         pids.add(ppid)
     return pids
 
-
 def _is_self_image(image: str) -> bool:
-    """远端进程映像是不是“我们自己这类解释器”（见 ``_self_image_paths``）。"""
     if not image:
         return False
     try:
@@ -390,13 +266,7 @@ def _is_self_image(image: str) -> bool:
         return False
     return image in _self_image_paths()
 
-
 def _other_hook_running(pid_file: str = "") -> int:
-    """返回另一个还活着的成就监测子进程 PID（没有则 0）。
-
-    只认“记录的 PID 存在且进程映像 == 本解释器”—— 避免误导（PID 会复用）。
-    映像比对走 ``_is_self_image``（兼容 venv 的 launcher 子进程，见那里说明）。
-    """
     import ctypes
     try:
         with open(pid_file or _default_pid_file(), "r", encoding="utf-8") as fh:
@@ -407,7 +277,7 @@ def _other_hook_running(pid_file: str = "") -> int:
         return 0
     try:
         kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-        handle = kernel32.OpenProcess(0x1000, False, pid)      # QUERY_LIMITED_INFORMATION
+        handle = kernel32.OpenProcess(0x1000, False, pid)
         if not handle:
             return 0
         try:
@@ -426,25 +296,16 @@ def _other_hook_running(pid_file: str = "") -> int:
         return 0
     return pid
 
-
 def _default_pid_file() -> str:
     return os.path.join(_writable_root(), "cache", "achievement", "hook.pid")
 
-# ============ 单实例策略（2026-09-25）========================================
-# 以前的做法只是“别打架”：发现另一个实例就不清空日志、继续并存 → 两个进程重复解锁成就、
-# 抢共享内存、日志交替追加。现在改成**新的接管**：
-#   1) 用命名互斥体判断有没有活着的实例（进程一死内核自动释放，比 pid 文件可靠）；
-#   2) 有 → 从 pid 文件拿它的 PID，校验映像 == 本解释器（防 PID 复用误杀）后收掉它；
-#   3) 收不掉 / 等不到互斥体 → **本次自己退出**，绝不让两个实例并存。
 HOOK_MUTEX_NAME = "Local\\FaustLauncher_AchievementHook"
 WAIT_OBJECT_0 = 0x00000000
 WAIT_ABANDONED = 0x00000080
 WAIT_TIMEOUT = 0x00000102
 ERROR_ALREADY_EXISTS = 183
 
-
 def _write_own_pid(pid_file: str = "") -> None:
-    """把本进程 PID 写进 hook.pid —— 这样**任何**实例（哪怕手工启动的）都能被下一个收掉。"""
     try:
         path = pid_file or _default_pid_file()
         os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -453,9 +314,7 @@ def _write_own_pid(pid_file: str = "") -> None:
     except OSError:
         pass
 
-
 def _terminate_pid(pid: int, on_log=None) -> bool:
-    """终止另一个监测进程（只认映像 == ``sys.executable`` 的，防 PID 复用误杀）。"""
     import ctypes
     from ctypes import wintypes
     log = on_log or (lambda _m: None)
@@ -493,10 +352,8 @@ def _terminate_pid(pid: int, on_log=None) -> bool:
     finally:
         kernel32.CloseHandle(handle)
 
-
 def _acquire_single_instance(pid_file: str = "", on_log=None,
                              timeout: float = 8.0) -> tuple[bool, str]:
-    """保证同一时刻只有一个成就监测实例。返回 ``(是否继续, 说明)``。"""
     import ctypes
     from ctypes import wintypes
     log = on_log or (lambda _m: None)
@@ -508,16 +365,13 @@ def _acquire_single_instance(pid_file: str = "", on_log=None,
     if not handle:
         log("[AchMonitor] 创建单实例互斥体失败 → 按老行为继续（可能并存）")
         return True, "互斥体不可用"
-    globals()["_hook_mutex"] = handle          # 持有到进程结束（内核自动释放）
+    globals()["_hook_mutex"] = handle
 
     def _try_take(seconds: float) -> bool:
         rc = kernel32.WaitForSingleObject(handle, int(seconds * 1000))
         return rc in (WAIT_OBJECT_0, WAIT_ABANDONED)
 
     if _try_take(0):
-        # 互斥体虽然给了我们，pid 文件里却还活着另一个监测进程 —— 那说明互斥体没拦住它
-        # （实测出现过两个实例都自称“唯一实例”，后开的把 buff 关注表覆盖成 0）。
-        # 这里再兜一道：按“新的接管”策略收掉它，然后才认领。
         stale = _other_hook_running(pid_file)
         if stale:
             log(f"[AchMonitor] 互斥体给了本进程，但 pid 文件里还有一个活着的监测进程 "
@@ -532,8 +386,6 @@ def _acquire_single_instance(pid_file: str = "", on_log=None,
 
     other = _other_hook_running(pid_file)
     if not other:
-        # 认不出持有者（手工启动 / 记录坏了 / 它刚好要退出）——先给它一点时间放开
-        # 互斥体，能拿到就接管；拿不到才退出（绝不让两个实例并存）。
         log("[AchMonitor] 互斥体被占用，但 pid 文件里没有可用的 PID"
             "（手工启动 / 记录坏了）→ 等它放开互斥体…")
         deadline = time.time() + max(1.0, timeout)
@@ -556,11 +408,7 @@ def _acquire_single_instance(pid_file: str = "", on_log=None,
         "→ 本次直接退出")
     return False, f"旧实例 PID {other} 未退出"
 
-
-
-# ============ 成就弹窗辅助 ============
 def _notify_toast(unlocked):
-    """解锁通知: 播放音效 + 推送 GUI 弹窗 (失败自动降级)。"""
     if not unlocked:
         return
     try:
@@ -571,29 +419,16 @@ def _notify_toast(unlocked):
     try:
         from functions.achievement.toast import show_toast_async
         for ach in unlocked:
-            # 带上成就 id → 弹窗用该成就自己的徽标素材（没有才回退项目图标）
             show_toast_async(ach.name, ach.description,
                              getattr(ach, 'rarity', 'common'),
                              getattr(ach, 'id', '') or '')
     except Exception:
         pass
 
-
-# ============ 日志处理器 ============
 class LogProcessor:
-    """日志处理器。
-
-    负责解析游戏日志行，识别关键事件，
-    并更新全局状态和触发成就检查。
-    """
 
     def __init__(self, log_callback):
         self.log_callback = log_callback
-        # 战斗完成信号 (真实日志验证):
-        #   [1991] StageModel:SetStageResult(...)
-        #   [1992] StageController:EndStage()   ← 唯一且每场一次
-        # 日志中不存在可靠的"战斗开始"标记 (InitStage/PlayVideo 命中 0),
-        # 因此以 EndStage() 为完成计数信号, 不用 is_in_battle 门控。
         self._battle_end_marker = "StageController:EndStage()"
         self._game_quit_patterns = [
             "Quit Local Save...",
@@ -604,22 +439,12 @@ class LogProcessor:
 
     @staticmethod
     def _ts() -> str:
-        """返回当前时间字符串 (HH:MM:SS)。"""
         return datetime.now().strftime('%H:%M:%S')
 
     def process_log_line(self, line: str) -> bool:
-        """处理单行日志。
-
-        参数:
-            line: 日志行内容
-
-        返回:
-            True 表示检测到游戏退出 (应结束监控)
-        """
         s = get_state()
         quit_seen = False
 
-        # ── 1. Steam 登录检测 ──
         if "SetLoginInfo : STEAM" in line and not s.steam_logged:
             s.steam_logged = True
             self.log_callback(f"[{self._ts()}] [Login] Steam 登录成功")
@@ -628,32 +453,23 @@ class LogProcessor:
                 _report_unlocks(self.log_callback, unlocked)
                 _notify_toast(unlocked)
 
-        # ── 2. 0 物品日志 → 视为一次背包/兑换页检视 ──
-        # 真实日志: 每次浏览该页会对每个缺货槽连续打印(8连发, 间隔极短);
-        # 由主循环的滑动窗口把一簇归并为一次浏览。
         if "아이템 ID:" in line and "갯수가 0입니다." in line:
             match = re.search(r'아이템 ID:\s*(\d+)', line)
             if match:
                 item_id = int(match.group(1))
                 if item_id in RARE_ITEM_IDS:
-                    record_zero_item(item_id)   # 加入滑动窗口 (窗口结束=一次浏览)
+                    record_zero_item(item_id)
                     if item_id in TEN_PULL_IDS:
                         self.log_callback(f"  [Inventory] {RARE_ITEM_IDS[item_id]} = 0 (无此物品)")
 
-        # ── 3. (浏览归并见主循环 poll_inventory_window) ──
-
-        # ── 4. 战斗完成 (真实日志: 每场结束仅一次 EndStage()) ──
         if self._battle_end_marker in line:
             s.battle_count += 1
             self.log_callback(
                 f"[{self._ts()}] [Battle] 完成关卡 (总计: {s.battle_count})"
             )
-            # 战斗结束也当作一次回合结算：避免最后那个回合的技能事件被浪费
             try:
                 from functions.achievement import battle_watch as _bw
                 _bw.settle_turn("战斗结束")
-                # 告诉观测器这场结束了 → 下一个回合边界按新战斗的第 1 回合算，
-                # 否则 max_round=1("首个回合")这类判定在第二场之后就永远匹配不上
                 _bw.mark_battle_end()
             except Exception:
                 pass
@@ -662,21 +478,13 @@ class LogProcessor:
                 _report_unlocks(self.log_callback, unlocked)
                 _notify_toast(unlocked)
 
-        # ── 5. 游戏退出检测 (参考日志: Quit Local Save → Cleanup → Shutdown) ──
         if any(p in line for p in self._game_quit_patterns):
             self.log_callback(f"[{self._ts()}] [Exit] 检测到游戏退出信号")
             quit_seen = True
 
         return quit_seen
 
-
-# ============ 成就监测主循环 ============
 class AchievementHook:
-    """成就监测Hook主类。
-
-    在后台线程中持续监控游戏日志，
-    检测到关键事件时触发成就检查。
-    """
 
     def __init__(self, log_path: str, log_callback):
         self.log_path = log_path
@@ -688,13 +496,11 @@ class AchievementHook:
         self.battle_watch = None
 
     def start_monitoring(self):
-        """启动后台线程监控日志文件。"""
         self.monitor_thread = threading.Thread(
             target=self._monitor_logs,
-            daemon=False,  # 非 daemon，确保主进程等待此线程
+            daemon=False,
         )
         self.monitor_thread.start()
-        # 战斗事件观测（注入 battle_watch.dll）：与日志监控并行，失败不影响成就监测
         self.battle_watch = None
         try:
             from functions.achievement import battle_watch as bw
@@ -703,12 +509,6 @@ class AchievementHook:
             self.log_callback(f"[AchMonitor] 战斗事件观测不可用（仅日志成就生效）: {exc}")
 
     def _prepare_tail(self):
-        """启动准备: 同步读取偏移到当前文件末尾。
-
-        不做历史收割/推断: 物品拥有完全由**实时日志**驱动——
-        每轮背包浏览产生的 0 记录经滑动窗口结算推断, 避免旧日志
-        残留缺货记录导致误解锁 (如玩家已抽到但旧文件仍显示曾缺货)。
-        """
         log_path = self.log_path
         try:
             base_size = os.path.getsize(log_path)
@@ -718,11 +518,8 @@ class AchievementHook:
         self.log_callback(f"[AchMonitor] 已同步日志偏移 ({base_size} B), 开始实时监控")
 
     def _monitor_logs(self):
-        """后台线程函数：监控日志文件。"""
-        # 启动准备: 同步到末尾 (不收割历史, 不推断物品)
         self._prepare_tail()
 
-        # 持续监控循环
         while self.running:
             try:
                 new_lines = self.log_reader.read_new_lines()
@@ -734,16 +531,12 @@ class AchievementHook:
                             self.running = False
                             break
 
-                # 浏览归并: 0 记录簇空闲 → 记一次背包/兑换页浏览并查成就
                 if self.running:
                     zero_ids = poll_inventory_window()
                     if zero_ids is not None:
                         self._settle_inventory_browse(zero_ids)
-                    # 内存成就按轮询周期检查；读取失败时 MemoryAchievement 保持未解锁。
                     self._check_memory_achievements()
-                    # 战斗事件成就（注入 DLL 观测：技能/速度/血量/理智）
                     self._check_battle_achievements()
-                    # 兜底：不管是哪条路径解锁的，都保证成就日志里有一行
                     _report_unlocks(self.log_callback,
                                     [a for a in achievements if a.unlocked])
 
@@ -753,7 +546,6 @@ class AchievementHook:
                 time.sleep(1)
 
     def _check_memory_achievements(self):
-        """检查基于进程内存的成就（按 ``memory_driven`` 标记，不认具体类名）。"""
         unlocked = []
         for ach in achievements:
             if ach.unlocked or not getattr(ach, "memory_driven", False):
@@ -768,17 +560,12 @@ class AchievementHook:
             _notify_toast(unlocked)
 
     def _check_battle_achievements(self):
-        """检查战斗事件类成就（battle_watch 观测到的技能 / 速度 / 血量 / 理智）。
-
-        这些成就自带 ``battle_driven`` 标记，``check()`` 只读 battle_watch 的结果，
-        所以轮询代价极低（判定由注入 DLL 的事件驱动）。
-        """
         unlocked = []
         for ach in achievements:
             if ach.unlocked or not getattr(ach, "battle_driven", False):
                 continue
             if getattr(ach, "wip", False):
-                continue      # 开发中（数据源还没定位成功）：不判定、不刷日志
+                continue
             try:
                 if ach.check():  # type: ignore[attr-defined]
                     unlocked.append(ach)
@@ -789,7 +576,6 @@ class AchievementHook:
             _notify_toast(unlocked)
 
     def _settle_inventory_browse(self, zero_ids: set[int]):
-        """一轮背包/兑换页浏览结束: 反向检测物品并触发成就检查。"""
         try:
             newly = detect_owned_items(zero_ids)
             register_inventory_open()
@@ -804,7 +590,6 @@ class AchievementHook:
             self.log_callback(f"[AchievementHook] 浏览结算错误: {e}")
 
     def stop_monitoring(self):
-        """停止监控。"""
         self.running = False
         if self.monitor_thread:
             self.monitor_thread.join(timeout=5)
@@ -815,7 +600,6 @@ class AchievementHook:
             pass
 
     def get_status(self) -> dict:
-        """获取当前成就监测状态。"""
         s = get_state()
         return {
             "running": self.running,
@@ -828,25 +612,11 @@ class AchievementHook:
             "death_detected": s.death_detected,
         }
 
-
-
 def _hook_boot_path() -> str:
-    """子进程启动面包屑日志（cache/achievement/hook_boot.log）。
-
-    成就子进程的 stdout/stderr 以前是 DEVNULL：一旦它在写出第一行成就日志之前出事
-    （被重复启动的实例杀掉 / 导入期异常 / 原生崩溃），就什么都看不到——只剩“日志只有 3
-    字节（BOM）”这个现象。这里把每一步都落到盘上，并开 faulthandler，把“静默死亡”变成可定位记录。
-    """
     base = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     return os.path.join(base, "cache", "achievement", "hook_boot.log")
 
-
 def _boot(message: str) -> None:
-    """面包屑：写 cache/achievement/hook_boot.log；统一日志就绪后它带头进成就日志。
-
-    两条路径的**格式一致**：sink 就绪时走 sink（区域 ``[AchLog]``）；没就绪时退回 stderr，
-    父进程会把子进程 stderr 逐行按同一格式追加进成就日志（见 game_launcher）。
-    """
     line = f"[{time.strftime('%H:%M:%S')}] pid={os.getpid()} {message}"
     try:
         path = _hook_boot_path()
@@ -862,16 +632,14 @@ def _boot(message: str) -> None:
     except Exception:  # noqa: BLE001
         pass
 
-
 def _install_child_diagnostics() -> None:
-    """子进程级诊断：faulthandler（原生崩溃/卡死留堆栈）+ excepthook + 启动面包屑。"""
     try:
         import faulthandler
         import threading as _threading
         import traceback as _tb
         path = os.path.join(os.path.dirname(_hook_boot_path()), "hook_fatal.log")
         os.makedirs(os.path.dirname(path), exist_ok=True)
-        _fatal_fh = open(path, "a", encoding="utf-8", errors="replace")   # 进程结束才关闭
+        _fatal_fh = open(path, "a", encoding="utf-8", errors="replace")
         faulthandler.enable(file=_fatal_fh, all_threads=True)
         globals()["_fatal_handle"] = _fatal_fh
 
@@ -892,22 +660,13 @@ def _install_child_diagnostics() -> None:
     except Exception:  # noqa: BLE001
         pass
 
-
-# ============ 独立进程入口 ============
 _hook_instance: AchievementHook | None = None
 
-
 def run_achievement_hook(debug = False):
-    """成就监测独立进程入口。
-
-    在当前进程中启动成就监测循环（阻塞），
-    用于 subprocess 启动时调用。
-    """
     global _hook_instance
     _install_child_diagnostics()
     _boot("进入成就监测主流程")
 
-    # 解析命令行参数
     parser = argparse.ArgumentParser(description="Limbus Company 成就追踪器")
     parser.add_argument(
         "--log",
@@ -927,25 +686,19 @@ def run_achievement_hook(debug = False):
     )
     args, _ = parser.parse_known_args()
 
-    # ---- 单实例：先解决“有没有别的实例”，再开日志（保证只有一个实例在写日志）
     pid_file = _default_pid_file()
     sole, sole_note = _acquire_single_instance(pid_file, on_log=_boot)
     _boot(f"单实例检查：{sole_note}")
     if not sole:
-        # 拿不到唯一身份 → 直接退出（绝不让两个实例并存：会重复解锁成就 + 抢共享内存）
         raise SystemExit(0)
     try:
         from functions.achievement import battle_watch as _bw_mod
-        _bw_mod.set_sole_instance(True)      # 允许接管上次遗留的共享内存（DLL 还挂在游戏里）
+        _bw_mod.set_sole_instance(True)
     except Exception:  # noqa: BLE001
         pass
 
     if args.output:
         import atexit as _atexit
-        # 到这里已经确认自己是唯一实例 → 放心清空日志（不会再有第二个写者）。
-        # ⚠ 父进程已经把这份日志清空并写好 BOM、还把子进程的 stdout/stderr 接到它上面，
-        #    所以那种情况下**不能再 truncate**（会把启动面包屑/早期 stderr 抹掉）——
-        #    父进程用 FAUST_ACH_TRUNCATED=1 告诉我们"清空已经做过了"。
         already_truncated = bool(os.environ.get("FAUST_ACH_TRUNCATED"))
         sink = _LogSink(args.output, truncate=not already_truncated)
 
@@ -953,8 +706,6 @@ def run_achievement_hook(debug = False):
             sink.write_line(msg, area)
 
         log_callback = _write
-        # 登记为**本进程统一的日志落点**：战斗观测(原 logs/battle_watch.log)也写这里，
-        # 于是成就生命周期 / 子进程 stdout+stderr / DLL 事件流全在一份文件里。
         log_sink.install(_write)
         log_callback(f"[AchMonitor] 单实例：{sole_note}")
 
@@ -967,7 +718,6 @@ def run_achievement_hook(debug = False):
         log_callback = lambda msg: print(with_timestamp(msg))  # noqa: E731
         _boot("未指定 --output，日志走 stdout")
 
-    # 确定游戏日志路径
     if not os.path.isabs(args.log):
         log_path = os.path.join(
             r"C:\Users\folkskill\AppData\LocalLow\ProjectMoon\LimbusCompany",
@@ -976,7 +726,6 @@ def run_achievement_hook(debug = False):
     else:
         log_path = args.log
 
-    # 等待日志文件出现（最多30秒）
     if not os.path.exists(log_path):
         log_callback(f"[AchMonitor] 等待日志文件: {log_path}")
         for _ in range(300):
@@ -984,24 +733,12 @@ def run_achievement_hook(debug = False):
                 break
             time.sleep(0.1)
 
-    # 不加载任何跨会话缓存: 物品/按键/点击状态均从本次日志实时重建
-
-    # 输出启动信息
-
     from functions.base.terminal_banner import get_banner_with_random_style
-    # 横幅可能因字体/排版抛错，绝不能因此拖死整个监测
     try:
         log_callback(f"{get_banner_with_random_style('Limbus Company')}")
     except Exception as exc:  # noqa: BLE001
         _boot(f"横幅渲染失败（不影响监测）: {type(exc).__name__}: {exc}")
     log_callback(f"监控日志: {log_path}")
-    # log_callback("=" * 60)
-    # log_callback("")
-    # log_callback("成就列表:")
-    # for ach in achievements:
-    #     status = "[已解锁]" if ach.unlocked else "[未解锁]"
-    #     log_callback(f"  {status} {ach.name}: {ach.description}")
-    # 启动时就已解锁的（比如从存档恢复）不再重复播报，只播本次运行新解锁的
     _logged_unlocks.update(
         getattr(a, "id", None) or getattr(a, "name", "") for a in achievements if a.unlocked)
     log_callback("")
@@ -1012,8 +749,6 @@ def run_achievement_hook(debug = False):
                  "状态 cache/achievement/battle_watch_status.json；"
                  "离线自查 python -m functions.achievement.battle_watch --probe/--status")
 
-    # 创建 Hook（先不要启动监控线程：偏移索引相关模块要先在主线程 import 完，
-    # 否则监控线程里的惰性 import 会与主线程撞上 Python 3.14 的 import 锁）
     _hook_instance = AchievementHook(log_path, log_callback)
     _boot("AchievementHook 构造完成")
     _start_hook_index_refresh(log_callback)
@@ -1021,7 +756,6 @@ def run_achievement_hook(debug = False):
     _hook_instance.start_monitoring()
     _boot("监控线程与战斗观测已启动")
 
-    # 启动全局输入统计 (P键/点击) - 失败不影响主监控
     input_ctrl = None
     try:
         from functions.achievement.input_hook import start_input_monitoring
@@ -1031,7 +765,6 @@ def run_achievement_hook(debug = False):
         input_ctrl = None
         log_callback("[AchMonitor] 输入统计不可用, 跳过按键/点击成就")
 
-    # 尝试启用 GUI 成就弹窗 (若环境无显示则自动降级为纯日志)
     toast_ctrl = None
     try:
         from functions.achievement.toast import ToastController
@@ -1040,10 +773,6 @@ def run_achievement_hook(debug = False):
         toast_ctrl = None
         log_callback("[AchMonitor] GUI 弹窗不可用, 仅输出日志")
 
-    # 成就轮询放**独立线程**：``check_achievements`` 里的内存成就要读游戏进程，
-    # 未附加时单次能到 ~400ms；以前它跑在驱动弹窗动画的主线程上，
-    # 结果就是弹窗“末尾卡顿/看着像卡死”（淡出阶段被 400ms 的读内存卡住）。
-    # 现在主线程只负责 pump 动画，轮询线程只负责判定 + 入队（都是线程安全的）。
     poll_stop = threading.Event()
 
     def _poll_loop():
@@ -1057,9 +786,6 @@ def run_achievement_hook(debug = False):
     poll_thread = threading.Thread(target=_poll_loop, name="achievement-poll", daemon=True)
     poll_thread.start()
 
-    # 保持运行直到被停止
-    # 主线程只做一件事：弹窗动画。**没有弹窗时不空转**（实测 60fps 空转约 1.3%，
-    # 有弹窗 2.6%；降到 20Hz 惰性轮询后空闲≈0，观测线程本身几乎不占 CPU）。
     try:
         while _hook_instance.running:
             if toast_ctrl is not None:
@@ -1089,16 +815,7 @@ def run_achievement_hook(debug = False):
             _hook_instance.stop_monitoring()
         log_callback("[AchMonitor] 已停止")
 
-
 def _start_hook_index_refresh(log_callback):
-    """启动时刷新偏移：只从云端拉一次偏移链（客户端不再本地重建索引）。
-
-    ★ 自动重建已按用户要求取消（2026-10）：不再调 ``auto_update_async`` —— 以前它会
-    在游戏起来之后后台重建索引。现在这里只做"云端偏移链刷新"这一件便宜的事。
-
-    依赖在主线程先导好（Python 3.14 的 import 锁下，后台线程承担首次导入会有
-    deadlock 风险）。
-    """
     refresh = None
     try:
         from functions.achievement.memory_reader import refresh_chain_from_cloud as refresh
@@ -1111,13 +828,7 @@ def _start_hook_index_refresh(log_callback):
         except Exception as exc:  # noqa: BLE001
             log_callback(f"[AchMonitor] 云端偏移链刷新不可用: {exc}")
 
-
 def _check_input_achievements(log_callback=None):
-    """检查 P键/点击 计数成就 (阈值达成即解锁)。
-
-    必须传 ``log_callback``（主循环的循环体）：以前这里用 ``print``，
-    子进程 stdout 是 DEVNULL，会出现“成就解锁了但成就日志里没有”的情况。
-    """
     try:
         get_state()
         unlocked = check_achievements(log_callback or (lambda m: None))
@@ -1127,22 +838,12 @@ def _check_input_achievements(log_callback=None):
     except Exception:
         pass
 
-
 def start_achievement_monitoring(log_path: str = LOG_FILE) -> AchievementHook:
-    """启动成就监测（后台线程模式）。
-
-    参数:
-        log_path: 游戏日志文件路径
-
-    返回:
-        AchievementHook 实例
-    """
     global _hook_instance
 
     def log_callback(msg: str):
         print(with_timestamp(msg))
 
-    # 内嵌模式也尝试启用输入统计 (失败不影响)
     try:
         from functions.achievement.input_hook import start_input_monitoring
         start_input_monitoring()
@@ -1153,14 +854,10 @@ def start_achievement_monitoring(log_path: str = LOG_FILE) -> AchievementHook:
     _hook_instance.start_monitoring()
     return _hook_instance
 
-
 def stop_achievement_monitoring():
-    """停止成就监测。"""
     global _hook_instance
     if _hook_instance:
         _hook_instance.stop_monitoring()
 
-
 def get_hook(log_path: str = LOG_FILE) -> AchievementHook | None:
-    """获取当前 Hook 实例。"""
     return _hook_instance

@@ -1,18 +1,10 @@
-# 新版本采用蓝奏云云端更新，而不是数据库，所以本集成库现在为纯粹的文件操作。
-# bubble_dow.py 更名为 bubble_transfer.py
 
 import glob
 import os
 import shutil
 import sys
 
-
 def _bubble_source_dir() -> str:
-    """气泡源目录 ``resources/bubble_speech``（不依赖当前工作目录）。
-
-    以前直接 ``glob("resources\\\\bubble_speech\\\\*.json")``：cwd 不是应用根时**一个都找不到**，
-    而且静默返回成功，现象就是"气泡美化没生效"。
-    """
     candidates = []
     try:
         from functions.base.common.path_utils import get_app_root
@@ -28,14 +20,7 @@ def _bubble_source_dir() -> str:
             return path
     return candidates[0]
 
-
 def transfer_bubble_files(config_path: str = "") -> bool:
-    """把 ``resources/bubble_speech/*.json`` 覆盖到目标汉化目录。
-
-    ``config_path`` 必须是**汉化包目录**（启动器侧 ``lang/<平台>`` 或游戏侧的
-    ``LimbusCompany_Data/Lang/<平台>``）—— 传到 ``lang`` 这种父目录就会在它下面漏一堆
-    气泡文件（曾经就是这么漏的）。
-    """
     if not config_path:
         print("[Cosmetic] 未指定气泡目标目录，跳过气泡文件转移")
         return False
@@ -59,13 +44,8 @@ def transfer_bubble_files(config_path: str = "") -> bool:
     print(f"[Cosmetic] 气泡文件已转移 {done}/{len(files)} 份 → {config_path}")
     return done > 0
 
-
 def main(config_path: str = ""):
-    """命令行入口点"""
     print(f"[Cosmetic] 开始转移气泡文件, 目标目录: {config_path}")
-    # 首次运行时 resources/bubble_speech 还没被资源更新下载下来, "一个文件都没有"
-    # 属于正常状态而不是失败 —— 早期这里会打印"气泡文件转移失败!", 既误导用户,
-    # 又让前端流水线(按日志文本判定失败)误以为流程挂了。
     source = _bubble_source_dir()
     if not glob.glob(os.path.join(source, "*.json")):
         print("[Cosmetic] 云端气泡资源尚未下载, 跳过气泡美化 (资源更新后会自动应用)")
@@ -76,7 +56,6 @@ def main(config_path: str = ""):
         print("[Cosmetic] 气泡文件转移完成!")
     else:
         print("[Cosmetic] 气泡文件转移失败!")
-
 
 if __name__ == "__main__":
     main()

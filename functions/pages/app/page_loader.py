@@ -8,42 +8,27 @@ import webbrowser
 from functions.base.color_scheme import C, lighten_color
 from functions.base.style_utils import RoundedFrame, RoundedButton
 
-
 downloading = False
 
-# 中止标志: 用户在流水线运行中点"中止启动/中止更新"时置位。
-# 采用协作式取消 (而非强杀线程): 下载/解压/合并各阶段在自己的循环与阶段边界
-# 检查该标志, 发现置位就尽快回退并清理。强杀线程无法安全释放文件句柄与临时目录,
-# 会让游戏目录里的汉化文件处于半写入状态。
 _cancel_requested = False
 
-
 def request_cancel():
-    """请求中止当前启动/汉化更新流程 (幂等)"""
     global _cancel_requested
     _cancel_requested = True
 
-
 def clear_cancel():
-    """清除中止标志 (每次流程开始前调用)"""
     global _cancel_requested
     _cancel_requested = False
 
-
 def is_cancel_requested():
-    """当前是否已被请求中止"""
     return _cancel_requested
 
-
 class _PipelineAborted(Exception):
-    """流程被用户主动中止 (用于从深层调用栈里快速跳出)"""
+    pass
 
-
-# 云端插件/Mod 列表缓存 (每次启动只获取一次, 同步/下载中心共用内存缓存)
 _cloud_sync_cache = {'addon': None, 'mod': None, 'ts': 0}
 
 class PageLoader:
-    """页面加载器 - 负责按需加载和初始化各个页面"""
     
     def __init__(self, app):
         self.app = app
@@ -60,7 +45,6 @@ class PageLoader:
         }
         
     def load_page(self, page_name: str) -> Optional[Any]:
-        """加载指定页面"""
         if page_name in self.pages:
             return self.pages[page_name]
             
@@ -79,16 +63,13 @@ class PageLoader:
             return None
             
     def load_all_pages(self):
-        """预加载所有页面"""
         for page_name in self.page_initializers.keys():
             self.load_page(page_name)
             
     def get_page(self, page_name: str) -> Optional[Any]:
-        """获取已加载的页面"""
         return self.pages.get(page_name)
         
     def _init_settings_page(self):
-        """初始化设置页面"""
         try:
             from functions.pages.setting.settings_page import init_settings_page
             return init_settings_page(
@@ -101,7 +82,6 @@ class PageLoader:
             return None
             
     def _init_mod_addon_page(self):
-        """初始化插件&mod管理页面"""
         try:
             from functions.pages.extension.mod_addon_info import init_mod_addon_manager
             return init_mod_addon_manager(
@@ -115,7 +95,6 @@ class PageLoader:
             return None
             
     def _init_download_center_page(self):
-        """初始化下载中心页面"""
         try:
             from functions.pages.download.download_center import init_download_center
             return init_download_center(
@@ -129,7 +108,6 @@ class PageLoader:
             return None
             
     def _init_tools_page(self):
-        """初始化工具页"""
         from functions.fancy.dialog_colorful import test_color_gradient_gui
         from functions.pages.tools.select_font import select_font_gui
         from functions.pages.tools.auto_translate_gui import show_auto_translate_gui
@@ -153,7 +131,6 @@ class PageLoader:
             target_path = get_translation_dir()
             return lambda: show_auto_translate_gui(self.app, source_path, target_path)
         
-        # 现代化配色方案
         accent_indigo = C.ACCENT
         accent_purple = C.PURPLE
         accent_blue = C.ACCENT_SECONDARY
@@ -193,7 +170,6 @@ class PageLoader:
              "color": accent_cyan, "command": launch_babel}
         ]
         
-        
         num_cols = 3
         num_rows = (len(tools) + num_cols - 1) // num_cols
         
@@ -201,7 +177,6 @@ class PageLoader:
             row = i // num_cols
             col = i % num_cols
             
-            # 现代化卡片 - 使用深色背景配合渐变效果
             card_bg = self.core.darken_color(tool['color'], 0.15)
             card_frame = tk.Frame(tools_container, 
                                 bg=card_bg,
@@ -230,7 +205,6 @@ class PageLoader:
                                 justify=tk.CENTER)
             desc_label.pack(pady=4)
             
-            # 现代化圆角按钮
             action_button = RoundedButton(card_inner, text="打开",
                                          command=tool['command'],
                                          width=80,                                          height=30,
@@ -249,7 +223,6 @@ class PageLoader:
         return tools_container
         
     def _init_home_page(self):
-        """初始化主页"""
         description = "欢迎使用 Faust Launcher - 您人生中绝无仅有的完美启动器！\n懒人化的一键操作，这就是浮士德大人的聪明才智口牙！"
         
         frost = self.app.tab_frost_canvases[0]
@@ -278,7 +251,6 @@ class PageLoader:
         
         from threading import Thread
         
-        # 现代化主按钮配色
         buttons_data = [
             {"text": "🚀 启动游戏", "command": lambda: Thread(target=download_and_launch, kwargs={"need_run_game": True, 'obj': self.app}).start(), "color": C.ACCENT_SECONDARY, "hover": C.INFO_HOVER},
             {"text": "🎯 汉化更新", "command": self.core.update_translation, "color": C.SUCCESS, "hover": C.SUCCESS_HOVER},
@@ -306,7 +278,6 @@ class PageLoader:
                                       radius=8)
         terminal_frame.pack(fill=tk.BOTH, expand=True, padx=30, pady=(0, 15))
         
-        # 终端顶部栏：标签在左，按钮在右
         terminal_header = tk.Frame(terminal_frame.inner, bg=self.core.lighten_bg_color)
         terminal_header.pack(fill=tk.X, padx=10, pady=(6, 0))
         
@@ -367,7 +338,6 @@ class PageLoader:
         return quick_actions_frame
         
     def _init_features_page(self):
-        """初始化功能页"""
         features_container = tk.Frame(self.app.page_frames['features'], bg=self.core.bg_color)
         features_container.pack(fill=tk.BOTH, expand=True, padx=20, pady=10)
         
@@ -376,7 +346,6 @@ class PageLoader:
         features_frost.lower(1)
         self.app.tab_frost_canvases.append(features_frost)
         
-        # 现代化功能卡片配色
         features = [
             {"name": "📁 游戏目录", "description": "边狱巴士的游戏目录", "color": C.ORANGE},
             {"name": "🔄 零协会", "description": "一个伟大的社区", "color": C.DANGER},
@@ -390,7 +359,6 @@ class PageLoader:
             row = i // 3
             col = i % 3
             
-            # 现代化卡片设计
             card_bg = self.core.darken_color(feature['color'], 0.12)
             card_frame = tk.Frame(features_container, 
                                 bg=card_bg,
@@ -418,7 +386,6 @@ class PageLoader:
                                 justify=tk.CENTER)
             desc_label.pack(pady=4)
             
-            # 现代化圆角按钮
             action_button = RoundedButton(card_frame, text="打开",
                                          command=lambda f=feature: self.core.open_feature(f),
                                          width=80,                                          height=30,
@@ -436,10 +403,8 @@ class PageLoader:
         return features_container
         
     def _init_about_page(self):
-        """初始化关于页面 - 使用程序主题色"""        
         frost = self.app.tab_frost_canvases[5]
         
-        # 使用程序主题色
         bg_color = self.core.bg_color
         lighten_bg = self.core.lighten_bg_color
         text_primary = C.TEXT_PRIMARY
@@ -449,7 +414,6 @@ class PageLoader:
         accent_green = C.SUCCESS
         accent_cyan = C.CYAN
         
-        # 贡献者数据
         contributors = [
             {
                 "name": "FolkSkill",
@@ -515,39 +479,32 @@ class PageLoader:
             }
         ]
         
-        # 主容器
         main_container = RoundedFrame(frost, bg=bg_color,
                                       border_color=lighten_color(bg_color, 22),
                                       radius=8, padx=4, pady=4)
         frost.create_window(340, 20, window=main_container, anchor=tk.N,
                             width=640, height=500, tags=("content_win",))
         
-        # 顶部标签栏
         tab_frame = tk.Frame(main_container.inner, bg=lighten_bg, height=38)
         tab_frame.pack(fill=tk.X, side=tk.TOP)
         tab_frame.pack_propagate(False)
         
-        # 内容区域
         content_frame = tk.Frame(main_container.inner, bg=bg_color)
         content_frame.pack(fill=tk.BOTH, expand=True)
         
-        # 当前选中的标签
         self._current_about_tab = tk.StringVar(value="contributors")
         
         def switch_tab(tab_name):
             self._current_about_tab.set(tab_name)
-            # 更新标签样式
             for tab_id, btn in tab_buttons.items():
                 if tab_id == tab_name:
                     btn.configure(bg=bg_color, fg=accent_blue)
                 else:
                     btn.configure(bg=lighten_bg, fg=text_secondary)
-            # 切换内容
             self._show_about_content(content_frame, tab_name, contributors, 
                                      bg_color, lighten_bg, text_primary, text_secondary, text_muted,
                                      accent_blue, accent_cyan, accent_green)
         
-        # 创建标签按钮
         tab_buttons = {}
         tabs = [
             ("program", "程序介绍"),
@@ -566,7 +523,6 @@ class PageLoader:
             btn.pack(side=tk.LEFT, padx=(15, 5), pady=8)
             tab_buttons[tab_id] = btn
             
-            # 悬停效果
             def on_enter(e, b=btn, tid=tab_id):
                 if self._current_about_tab.get() != tid:
                     b.configure(bg=self.core.darken_color(bg_color, 0.9))
@@ -577,7 +533,6 @@ class PageLoader:
             btn.bind("<Enter>", on_enter)
             btn.bind("<Leave>", on_leave)
         
-        # 初始显示贡献者
         self._show_about_content(content_frame, "contributors", contributors,
                                 bg_color, lighten_bg, text_primary, text_secondary, text_muted,
                                 accent_blue, accent_cyan, accent_green)
@@ -585,8 +540,6 @@ class PageLoader:
     def _show_about_content(self, parent, tab_name, contributors, bg_color, lighten_bg,
                            text_primary, text_secondary, text_muted,
                            accent_blue, accent_cyan, accent_green):
-        """显示关于页面的内容"""
-        # 清除现有内容
         for widget in parent.winfo_children():
             widget.destroy()
         
@@ -599,10 +552,8 @@ class PageLoader:
     
     def _show_program_info(self, parent, bg_color, lighten_bg, text_primary, text_secondary, 
                           text_muted, accent_blue, accent_cyan, accent_green):
-        """显示程序介绍 - 包含标题、版本、介绍和按钮"""
         from functions.web_update.sql_manager import notify_new_version
         
-        # 创建滚动区域
         canvas = tk.Canvas(parent, bg=bg_color, highlightthickness=0)
         scrollbar = ttk.Scrollbar(parent, orient="vertical", command=canvas.yview,
                                   style='App.Vertical.TScrollbar')
@@ -616,7 +567,6 @@ class PageLoader:
         canvas.create_window((0, 0), window=scrollable_frame, anchor="nw", width=600)
         canvas.configure(yscrollcommand=scrollbar.set)
         
-        # 绑定鼠标滚轮事件到画布及所有子控件
         def on_mousewheel(event):
             canvas.yview_scroll(int(-1*(event.delta/120)), "units")
         
@@ -633,19 +583,16 @@ class PageLoader:
         canvas.pack(side="left", fill="both", expand=True, padx=10, pady=10)
         scrollbar.pack(side="right", fill="y")
         
-        # 标题 - 居中
         title_frame = tk.Frame(scrollable_frame, bg=bg_color)
         title_frame.pack(fill=tk.X, pady=(10, 5))
         tk.Label(title_frame, text="关于 Faust Launcher", bg=bg_color, fg=text_primary,
                 font=('Microsoft YaHei UI', 20, 'bold')).pack()
         
-        # 版本标签 - 居中
         ver_frame = tk.Frame(scrollable_frame, bg=accent_blue, padx=12, pady=3)
         ver_frame.pack(pady=(0, 15))
         tk.Label(ver_frame, text=f"v{self.core.version_info}", bg=accent_blue, fg=text_primary,
                 font=('Microsoft YaHei UI', 9, 'bold')).pack()
         
-        # 版本信息区域
         info_frame = tk.Frame(scrollable_frame, bg=lighten_bg, padx=15, pady=12)
         info_frame.pack(fill=tk.X, pady=(0, 15))
         
@@ -657,7 +604,6 @@ class PageLoader:
         tk.Label(info_frame, text="  开发者: FolkSkill", bg=lighten_bg, fg=text_secondary,
                 font=('Microsoft YaHei UI', 10)).pack(anchor='w', pady=3)
         
-        # 应用介绍区域
         desc_frame = tk.Frame(scrollable_frame, bg=lighten_bg, padx=15, pady=12)
         desc_frame.pack(fill=tk.X, pady=(0, 15))
         
@@ -670,7 +616,6 @@ class PageLoader:
                             highlightthickness=0, height=8)
         desc_text.pack(fill=tk.X)
         
-        # 文本标签样式
         desc_text.tag_configure("h2", font=('Microsoft YaHei UI', 11, 'bold'),
                             foreground=C.MARKDOWN_H2_COLOR, spacing1=6, spacing3=3)
         desc_text.tag_configure("h3", font=('Microsoft YaHei UI', 10, 'bold'),
@@ -693,11 +638,9 @@ class PageLoader:
         desc_text.insert(tk.END, "© 2025 Faust Launcher. 版权所有。", "muted")
         desc_text.config(state=tk.DISABLED)
         
-        # 按钮区域 - 居中对齐，减小间距
         btn_frame = tk.Frame(scrollable_frame, bg=bg_color)
         btn_frame.pack(fill=tk.X, pady=(0, 15))
         
-        # 内部容器用于居中
         btn_inner_frame = tk.Frame(btn_frame, bg=bg_color)
         btn_inner_frame.pack(expand=True)
         
@@ -719,8 +662,6 @@ class PageLoader:
     
     def _show_contributors(self, parent, contributors, bg_color, lighten_bg, text_primary, 
                           text_secondary, text_muted, accent_blue):
-        """显示贡献者列表"""
-        # 左侧列表
         list_frame = tk.Frame(parent, bg=bg_color, width=200)
         list_frame.pack(side=tk.LEFT, fill=tk.Y, padx=(15, 0), pady=15)
         list_frame.pack_propagate(False)
@@ -728,12 +669,10 @@ class PageLoader:
         tk.Label(list_frame, text="贡献者列表", bg=bg_color, fg=text_primary,
                 font=('Microsoft YaHei UI', 11, 'bold')).pack(anchor='w', pady=(0, 10))
         
-        # 贡献者列表
         self._selected_contributor = tk.IntVar(value=0)
-        self._contributor_list_buttons = []  # 保存按钮引用
+        self._contributor_list_buttons = []
         
         for i, contributor in enumerate(contributors):
-            # 创建贡献者项容器
             item_frame = tk.Frame(list_frame, bg=self.core.darken_color(bg_color, 0.9) if i == 0 else bg_color,
                                   cursor='hand2')
             item_frame.pack(fill=tk.X, pady=2)
@@ -743,7 +682,6 @@ class PageLoader:
                                                                         text_secondary, text_muted,
                                                                         accent_blue))
             
-            # 左侧缩略图
             thumb_frame = tk.Frame(item_frame, bg=item_frame.cget('bg'), width=36, height=36)
             thumb_frame.pack(side=tk.LEFT, padx=8, pady=6)
             thumb_frame.pack_propagate(False)
@@ -758,19 +696,16 @@ class PageLoader:
                     thumb_label.image = photo  # type: ignore # 保持引用
                     thumb_label.pack(expand=True)
                 else:
-                    # 默认缩略图 - 显示首字母
                     thumb_label = tk.Label(thumb_frame, text=contributor["name"][0], 
                                           bg=lighten_bg, fg=text_primary,
                                           font=('Microsoft YaHei UI', 14, 'bold'))
                     thumb_label.place(relx=0.5, rely=0.5, anchor='center')
             except Exception:
-                # 默认缩略图
                 thumb_label = tk.Label(thumb_frame, text=contributor["name"][0], 
                                       bg=lighten_bg, fg=text_primary,
                                       font=('Microsoft YaHei UI', 14, 'bold'))
                 thumb_label.place(relx=0.5, rely=0.5, anchor='center')
             
-            # 右侧姓名
             name_label = tk.Label(item_frame, text=contributor["name"],
                                 bg=item_frame.cget('bg'),
                                 fg=accent_blue if i == 0 else text_secondary,
@@ -790,10 +725,8 @@ class PageLoader:
                 'thumb_label': thumb_label if 'thumb_label' in dir() else None
             })
         
-        # 分隔线
         tk.Frame(parent, bg=self.core.lighten_color(bg_color, 20), width=1).pack(side=tk.LEFT, fill=tk.Y, padx=10, pady=15)
         
-        # 右侧详情
         detail_frame = tk.Frame(parent, bg=bg_color)
         detail_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 15), pady=15)
         
@@ -802,10 +735,8 @@ class PageLoader:
     
     def _select_contributor(self, index, contributors, list_frame, detail_frame,
                            bg_color, lighten_bg, text_primary, text_secondary, text_muted, accent_blue):
-        """选择贡献者"""
         self._selected_contributor.set(index)
         
-        # 更新列表样式
         for i, item in enumerate(self._contributor_list_buttons):
             is_selected = (i == index)
             new_bg = self.core.darken_color(bg_color, 0.9) if is_selected else bg_color
@@ -816,12 +747,10 @@ class PageLoader:
                 fg=accent_blue if is_selected else text_secondary,
                 font=('Microsoft YaHei UI', 10, 'bold' if is_selected else 'normal')
             )
-            # 更新缩略图背景
             if item['thumb_label'] and isinstance(item['thumb_label'], tk.Label):
                 if not hasattr(item['thumb_label'], 'image') or item['thumb_label'].image is None:
                     item['thumb_label'].configure(bg=lighten_bg)
         
-        # 更新详情
         for widget in detail_frame.winfo_children():
             widget.destroy()
         self._update_contributor_detail(detail_frame, contributors[index], bg_color, lighten_bg,
@@ -829,12 +758,9 @@ class PageLoader:
     
     def _update_contributor_detail(self, parent, contributor, bg_color, lighten_bg,
                                    text_primary, text_secondary, text_muted, accent_blue):
-        """更新贡献者详情"""
-        # 头像区域
         avatar_frame = tk.Frame(parent, bg=bg_color)
         avatar_frame.pack(fill=tk.X, pady=(10, 15))
         
-        # 尝试加载头像
         try:
             if os.path.exists(contributor["icon"]):
                 from PIL import Image, ImageTk
@@ -845,7 +771,6 @@ class PageLoader:
                 avatar_label.image = photo  # type: ignore # 保持引用
                 avatar_label.pack()
             else:
-                # 默认头像占位
                 default_avatar = tk.Frame(avatar_frame, bg=lighten_bg,
                                          width=80, height=80)
                 default_avatar.pack()
@@ -853,7 +778,6 @@ class PageLoader:
                         bg=lighten_bg,
                         fg=text_primary, font=('Microsoft YaHei UI', 24, 'bold')).place(relx=0.5, rely=0.5, anchor='center')
         except Exception:
-            # 默认头像占位
             default_avatar = tk.Frame(avatar_frame, bg=lighten_bg,
                                      width=80, height=80)
             default_avatar.pack()
@@ -861,19 +785,15 @@ class PageLoader:
                     bg=lighten_bg,
                     fg=text_primary, font=('Microsoft YaHei UI', 24, 'bold')).place(relx=0.5, rely=0.5, anchor='center')
         
-        # 姓名
         tk.Label(parent, text=contributor["name"], bg=bg_color, fg=text_primary,
                 font=('Microsoft YaHei UI', 16, 'bold')).pack(anchor='w')
         
-        # 职位标签
         role_label = tk.Label(parent, text=contributor["role"], bg=accent_blue, fg=text_primary,
                              font=('Microsoft YaHei UI', 9, 'bold'), padx=10, pady=2)
         role_label.pack(anchor='w', pady=(8, 15))
         
-        # 分隔线
         tk.Frame(parent, bg=self.core.lighten_color(bg_color, 20), height=1).pack(fill=tk.X, pady=(0, 15))
         
-        # 介绍
         tk.Label(parent, text="简介", bg=bg_color, fg=text_secondary,
                 font=('Microsoft YaHei UI', 10, 'bold')).pack(anchor='w', pady=(0, 8))
         
@@ -885,7 +805,6 @@ class PageLoader:
         desc_text.insert(tk.END, contributor["description"])
         desc_text.config(state=tk.DISABLED)
         
-        # 链接按钮
         if "links" in contributor and contributor["links"]:
             tk.Frame(parent, bg=self.core.lighten_color(bg_color, 20), height=1).pack(fill=tk.X, pady=(15, 10))
             
@@ -920,7 +839,6 @@ class PageLoader:
                 btn.pack(side=tk.LEFT, padx=(0, 8))
         
     def _show_page_error(self, frame, page_name: str, error: Exception):
-        """显示页面加载错误"""
         error_label = tk.Label(frame, 
                             text=f"❌ {page_name}加载失败",
                             font=('Microsoft YaHei UI', 16),
@@ -933,10 +851,7 @@ class PageLoader:
                                 bg=self.core.bg_color, fg=C.TEXT_SECONDARY)
         detail_label.pack()
 
-
 def download_and_launch(obj=None, need_run_game=False, manual=False):
-    """下载翻译资源，然后可选地启动游戏。
-    manual=True 表示用户手动更新 (不受 check_translate_update 禁用限制)。"""
     from functions.base.game_launcher import GameLauncher
     from functions.web_update.zeroasso_download import main_gui as download_translation, DownloadGUI, download_and_extract_gui
     from functions.web_update.update_resource import check_resource_update
@@ -948,8 +863,6 @@ def download_and_launch(obj=None, need_run_game=False, manual=False):
     from threading import Thread
     from time import sleep
     
-    # 游戏路径硬校验: 目录里必须有 LimbusCompany.exe, 否则整个流程没有意义
-    # (拿不到 exe 说明路径无效: 未配置 / 选错目录 / 游戏被卸载或移动)
     try:
         from functions.base.settings_manager import get_settings_manager as _get_sm
         from functions.base.steam_locator import resolve_game_dir as _resolve_game_dir
@@ -974,36 +887,26 @@ def download_and_launch(obj=None, need_run_game=False, manual=False):
     if downloading:
         return
     downloading = True
-    aborted = False   # 本次流程是否因用户中止而结束 (finally 据此通知前端)
-    error_text = ''   # 本次流程是否因异常而失败 (finally 据此通知前端)
-    # 注意: 这里**不要**清中止标志。清理动作放在用户发起流程的 API 入口
-    # (app_web 的 launch_game / update_translation) 里同步完成。
-    # 若在这里清, 用户点了启动后很快再点中止时, 标志会先被设置、再被这行抹掉,
-    # 表现为"点了中止却毫无反应"——中止请求全部丢失, 流程照常一路跑完。
+    aborted = False
+    error_text = ''
     
     try:
         from functions.web_update.translation_source import (
             get_translation_dir, get_translation_dir_name, is_ourplay_source,
-            # 内置汉化包的下载/合并一律用内置目录名: 插件自定义汉化源不该影响这一步
             get_builtin_translation_dir, get_builtin_dir_name,
         )
-        # 本次流程属于哪条流水线: 决定前端渲染 7 步启动表还是 5 步汉化更新表
         pipe_kind = 'launch' if (need_run_game or obj is not None) else 'translate'
 
         def _push_step(step):
-            """推送流水线步骤事件 (web 模式经 _web_progress 钩子实时到前端)"""
             try:
                 from functions.web_update import zeroasso_download as _zd
                 _push = getattr(_zd, '_web_progress', None)
                 if _push:
-                    # 带上 kind: 前端若还没建好流水线, 据此选对步骤表, 不再靠猜测
-                    # (猜错就会出现"点启动游戏却显示汉化更新列表")
                     _push('step', {'step': step, 'kind': pipe_kind})
             except Exception:
                 pass
 
         def _push_status(task, text):
-            """推送状态文本 (带 task, 前端流水线 mods 阶段逐项显示)"""
             try:
                 from functions.web_update import zeroasso_download as _zd
                 _push = getattr(_zd, '_web_progress', None)
@@ -1013,7 +916,6 @@ def download_and_launch(obj=None, need_run_game=False, manual=False):
                 pass
 
         def _sync_cloud_items():
-            """启动流程: 对比云端插件/Mod 版本并自动更新 (使用缓存云端列表, 不重复爬取)"""
             try:
                 from functions.web_update import zeroasso_download as zd
                 from functions.web_update.web_trigger import WebTrigger
@@ -1028,7 +930,6 @@ def download_and_launch(obj=None, need_run_game=False, manual=False):
                     except Exception:
                         return [0]
 
-                # 云端列表: 每次启动只获取一次, 内存缓存复用 (同步/下载中心共享, 不重复爬取)
                 wt = WebTrigger()
                 if _cloud_sync_cache['addon'] is not None and _cloud_sync_cache['mod'] is not None:
                     cloud_addons = _cloud_sync_cache['addon']
@@ -1051,7 +952,6 @@ def download_and_launch(obj=None, need_run_game=False, manual=False):
                     _cloud_sync_cache['ts'] = _time.time()
                     print(f"[PluginSync] 云端列表: {len(cloud_addons)} 插件 / {len(cloud_mods)} Mod")
 
-                # 本地已安装
                 local_addons = {}
                 try:
                     assert obj is not None
@@ -1066,7 +966,6 @@ def download_and_launch(obj=None, need_run_game=False, manual=False):
                 except Exception:
                     pass
 
-                # 版本对比 (仅已安装项, 云端版本更高才更新)
                 jobs = []
                 try:
                     for page in cloud_addons:
@@ -1113,7 +1012,6 @@ def download_and_launch(obj=None, need_run_game=False, manual=False):
                         print(f"{label} {name} 更新完成" if ok else f"{label} {name} 更新失败")
                     except Exception as e:
                         print(f"更新 {label} {name} 失败: {e}")
-                # 更新后重载插件
                 try:
                     if obj is not None and obj.core is not None:
                         obj.core.addon_manager.reload_all_addons()
@@ -1122,7 +1020,6 @@ def download_and_launch(obj=None, need_run_game=False, manual=False):
             except Exception as e:
                 print(f"同步云端插件/Mod 失败: {e}")
 
-        # 汉化更新受 check_translate_update 设置控制; 显式版本检查避免无脑下载
         from functions.base.settings_manager import get_settings_manager as _gsm
         try:
             _check_tu = bool(_gsm().get_setting("check_translate_update"))
@@ -1132,11 +1029,8 @@ def download_and_launch(obj=None, need_run_game=False, manual=False):
             _need_translate = False
             print("已禁用启动前检查汉化更新, 跳过汉化流程")
         else:
-            # 设置允许(或手动)时进入下载流程, 由 download_and_extract_gui 内部与云端版本对比决定是否下载,
-            # 避免 need_up() 无参调用(汉化存在即返回 False)误判已是最新
             _need_translate = True
 
-        # 内置汉化包的落地目录 (零协会 LLC_zh-CN / OurPlay OurPlayHanHua)
         lang_path = get_builtin_translation_dir()
         download_path = 'lang'
         is_ourplay = is_ourplay_source()
@@ -1147,13 +1041,11 @@ def download_and_launch(obj=None, need_run_game=False, manual=False):
             print(f"开始下载汉化包 (平台: {'OurPlay' if is_ourplay else '零协会'})...")
             sys.path.append('functions')
         
-        
             _push_step('download')
             gui = download_translation(main_root, download_path)
 
             while gui.is_downloading:
                 if is_cancel_requested():
-                    # 停掉下载 GUI 自身的循环, 让下载线程尽快收尾
                     try:
                         gui.is_downloading = False
                     except Exception:
@@ -1165,14 +1057,11 @@ def download_and_launch(obj=None, need_run_game=False, manual=False):
 
             print("开始核对汉化版本...")
 
-            # 汉化包已下载解压: 以解压产物 src_lang 是否存在判断是否需要安装,
-            # 不再依赖 need_up() (无参调用永远返回 False, 会导致合并被跳过, 完整汉化被清理)
             src_lang = os.path.join(download_path, 'LimbusCompany_Data', 'Lang', get_builtin_dir_name())
 
             if os.path.exists(src_lang) or (is_ourplay and os.path.isdir(lang_path)):
                 print("检测到新的汉化版本，准备更新汉化文件...")
                 if is_ourplay:
-                    # OurPlay 平台: 下载流程已直接安装到 lang/<平台目录名>, 无需再合并
                     if os.path.isdir(lang_path) and os.path.isfile(os.path.join(lang_path, 'info', 'version.json')):
                         print(f"OurPlay 汉化包已安装到 {lang_path}")
                     else:
@@ -1199,21 +1088,13 @@ def download_and_launch(obj=None, need_run_game=False, manual=False):
                         except Exception as e:
                             print(f"复制汉化文件时出错: {e}")
                             traceback.print_exc()
-                        # 汉化包自带 info/version.json (含正确版本号), 合并后自然保留, 不覆写
-                        # 合并 rmtree 会清掉之前复制的有色气泡, 这里重新覆盖回云端有色版。
-                        # ⚠ 目标必须是**汉化包目录 lang_path**（之前传的是 'lang' 父目录，
-                        #    结果每次都在 lang/ 根下漏一堆 BattleSpeechBubbleDlg*.json）。
                         try:
                             transfer_bubble(lang_path)
                         except Exception as e:
                             print(f"重新应用有色气泡失败: {e}")
-                        # 注意: 这里属于"下载汉化包"这一步, 不要推 _push_step('mods')。
-                        # 步骤表里 mods 排在 install 之后(第 6 步), 提前推会直接跳步,
-                        # 并把后续 resource / install 的推送全部变成回退而被忽略。
                     else:
                         print(f"错误: 未找到 lang 下的 {get_builtin_dir_name()} 文件夹")
             else:
-                # 版本检查说"已是最新"时不会有新解压产物; 这里说明清楚, 免得看起来像白下载
                 print(f"没有新解压的汉化包 ({src_lang}), 跳过合并 (本地已是最新版本)")
 
             if not is_ourplay and not os.path.exists('assets/Font/Context/ChineseFont.ttf'):
@@ -1224,8 +1105,6 @@ def download_and_launch(obj=None, need_run_game=False, manual=False):
                 else:
                     print("未找到字体资源 (lang/Font 或 assets/Font), 跳过字体更新")
 
-            # 零协 7z 解压到 lang/ 时会产生中间产物 lang/LimbusCompany_Data,
-            # 无论当前平台都必须清理 (平台切换后残留不会被旧逻辑清除)
             if os.path.exists(os.path.join(download_path, 'LimbusCompany_Data')):
                 print("正在清理下载缓存...")
                 try:
@@ -1238,7 +1117,6 @@ def download_and_launch(obj=None, need_run_game=False, manual=False):
 
             print("汉化下载及处理全部完成！")
 
-        # 启动流程: 同步云端插件/Mod 更新 (仅启动游戏时执行; 进度推送到流水线)
         _push_step('resource')
 
         sleep(1.5)
@@ -1259,9 +1137,6 @@ def download_and_launch(obj=None, need_run_game=False, manual=False):
 
         gui_res.root.destroy()
 
-        # 资源步骤可能刚下载完 resources/bubble_speech。首次运行时这个源目录还不存在,
-        # 上面"合并汉化文件"阶段的 transfer_bubble 只能跳过; 在这里补一次,
-        # 否则本次流程装出来的气泡美化要等下一次启动才生效。
         try:
             if os.path.isdir(lang_path):
                 transfer_bubble(lang_path)
@@ -1270,7 +1145,6 @@ def download_and_launch(obj=None, need_run_game=False, manual=False):
 
         _push_step('install')
 
-        # 合并/安装汉化之前再查一次: 上面资源轮询可能刚结束, 不想在做破坏性写入前才开始处理中止
         if is_cancel_requested():
             raise _PipelineAborted()
 
@@ -1286,7 +1160,6 @@ def download_and_launch(obj=None, need_run_game=False, manual=False):
             pass
         else:
             downloading = False
-            # 汉化更新/资源更新流程完成 (非启动游戏): 通知前端流水线恢复
             try:
                 from functions.web_update import zeroasso_download as _zd
                 _push = getattr(_zd, '_web_progress', None)
@@ -1297,7 +1170,6 @@ def download_and_launch(obj=None, need_run_game=False, manual=False):
             return
         
         def _launch_progress(text, icon=None):
-            """启动子步骤进度: 推送到前端流水线详情 (图标+文本)"""
             try:
                 from functions.web_update import zeroasso_download as _zd
                 _push = getattr(_zd, '_web_progress', None)
@@ -1309,9 +1181,6 @@ def download_and_launch(obj=None, need_run_game=False, manual=False):
             except Exception:
                 pass
 
-        # 启动游戏前最后一道关: 本阶段耗时较长 (重载插件 / 复制 Mod / 跑 Installer),
-        # 之后就没有任何检查点了, 必须在这里再确认一次, 否则会出现
-        # "明明点了中止, 游戏还是被拉起来了"
         if is_cancel_requested():
             raise _PipelineAborted()
 
@@ -1326,24 +1195,16 @@ def download_and_launch(obj=None, need_run_game=False, manual=False):
         launcher.launch()
         
     except _PipelineAborted:
-        # 用户主动中止: 不是错误, 不计入异常日志。
-        # 通知前端推迟到 finally 里做 (原因见 finally 的说明), 这里只记标记。
         print("[Startup] 已被用户中止")
         aborted = True
         return
     except Exception as e:
         print(f"下载过程中出错: {e}")
         traceback.print_exception(*sys.exc_info())
-        # 真正的失败只有这一条路径: 先记下来, 等 finally 里 downloading 归位后再通知前端
-        # (提前通知的话, 前端回读 get_launch_state 会看到 running 仍为 True, 按钮卡在"中止")
         error_text = str(e) or e.__class__.__name__
         return
     finally:
         downloading = False
-        # 中止通知必须放在这里 (downloading 已置 False 之后), 不能放在 except 分支:
-        # 前端收到 pipeline_aborted 会立刻回读 get_launch_state 确认状态, 若此时
-        # downloading 还是 True, 它会把刚清掉的流程标记又设回去, 按钮于是卡在
-        # "中止启动" —— 表现为"再点一次(那时流程早结束了)才瞬间恢复"。
         if aborted:
             try:
                 from functions.web_update import zeroasso_download as _zd
@@ -1353,7 +1214,6 @@ def download_and_launch(obj=None, need_run_game=False, manual=False):
             except Exception:
                 pass
         elif error_text:
-            # 显式失败事件: 前端据此在详情面板显示错误并收尾, 不再靠扫日志文本猜
             try:
                 from functions.web_update import zeroasso_download as _zd
                 _push = getattr(_zd, '_web_progress', None)
@@ -1361,5 +1221,4 @@ def download_and_launch(obj=None, need_run_game=False, manual=False):
                     _push('pipeline_error', {'message': error_text})
             except Exception:
                 pass
-        # 流程结束(无论正常/中止/出错)一律清掉中止标志, 避免影响下一次操作
         clear_cancel()

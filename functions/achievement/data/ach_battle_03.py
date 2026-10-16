@@ -1,13 +1,7 @@
-"""战斗大师成就。"""
 
 from functions.achievement.base_achievement import BattleAchievement
 
-
 class AchBattle03(BattleAchievement):
-    """渐入佳境 - 完成100场战斗。
-    
-    追踪玩家完成的战斗次数，当达到100场时解锁此成就。
-    """
 
     def __init__(self):
         super().__init__(

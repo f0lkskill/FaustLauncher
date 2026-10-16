@@ -1,10 +1,5 @@
-"""
-自定义标签页组件 — 不依赖 ttk 主题，纯 tk 实现
-所有机器外观一致，支持完整的现代化样式定制
-"""
 import tkinter as tk
 from functions.base.color_scheme import C
-
 
 class CustomNotebook(tk.Frame):
     def __init__(self, master, *, bg=None, accent=None, **kwargs):
@@ -36,7 +31,6 @@ class CustomNotebook(tk.Frame):
         self._indicator = tk.Frame(self._tab_center, bg=self._accent, height=3, bd=0)
     
     def _blend(self, bg: str, fg: str, ratio: float) -> str:
-        """在两色之间混合"""
         try:
             br = int(bg[1:3], 16); bg_r = int(bg[3:5], 16); bb = int(bg[5:7], 16)
             fr = int(fg[1:3], 16); fg_g = int(fg[3:5], 16); fb = int(fg[5:7], 16)

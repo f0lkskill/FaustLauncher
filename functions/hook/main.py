@@ -1,22 +1,3 @@
-"""hook 子系统的命令行入口。
-
-用法（在项目根目录）::
-
-    python -m functions.hook.main status                 # 看当前索引/游戏文件是否匹配
-    python -m functions.hook.main update                 # 完整更新（解密 → dump → 索引 → 上传）
-    python -m functions.hook.main update --force         # 忽略缓存强制重建
-    python -m functions.hook.main update --dry-run       # 只生成不上传
-    python -m functions.hook.main decrypt                # 只解出明文 metadata（不跑 dumper）
-    python -m functions.hook.main dump                   # 只跑 Il2CppDumper（复用已解密 metadata）
-    python -m functions.hook.main show                   # 打印本地缓存里的索引 JSON
-    python -m functions.hook.main gen-header --out hook_index.h
-    python -m functions.hook.main pull / push            # 云端笔记 ↔ 本地缓存
-    python -m functions.hook.main locate --key enkephalin
-    python -m functions.hook.main locate --class BattleUnitModel   # 按类名找模块槽位
-
-``status``/``update`` 都会把每一步打到 stdout；在启动器里调用时把 ``on_log``
-换成界面终端/日志文件的写函数即可。
-"""
 
 from __future__ import annotations
 
@@ -34,13 +15,8 @@ from . import targets as targets_mod
 from . import updater
 from .memory import ProcessMemoryReader
 
-
 def _print(message: str) -> None:
     print(message, flush=True)
-
-
-# --------------------------------------------------------------------------- 子命令
-
 
 def cmd_status(args) -> int:
     info = updater.status(args.game)
@@ -53,7 +29,6 @@ def cmd_status(args) -> int:
     if not info.get("game_files_ok"):
         _print(f"\n游戏文件不完整: {info.get('missing')}")
     return 0
-
 
 def cmd_update(args) -> int:
     result = updater.update_hook_index(
@@ -69,7 +44,6 @@ def cmd_update(args) -> int:
     _print(result.summary())
     return 0 if result.status in ("updated", "up-to-date", "partial", "dry-run") else 1
 
-
 def cmd_pull(args) -> int:
     index = index_mod.refresh_local_from_cloud(allow_refresh=True, on_log=_print)
     if index is None:
@@ -77,7 +51,6 @@ def cmd_pull(args) -> int:
         return 1
     _print(index.describe())
     return 0
-
 
 def cmd_push(args) -> int:
     index = index_mod.load_local()
@@ -87,7 +60,6 @@ def cmd_push(args) -> int:
     result = index_mod.push_cloud(index, on_log=_print)
     return 0 if result.get("ok") else 1
 
-
 def cmd_show(args) -> int:
     index = index_mod.load_local()
     if index is None:
@@ -95,7 +67,6 @@ def cmd_show(args) -> int:
         return 1
     _print(index.to_json(compact=not args.full))
     return 0
-
 
 def cmd_gen_header(args) -> int:
     index = index_mod.load_local()
@@ -110,7 +81,6 @@ def cmd_gen_header(args) -> int:
     else:
         _print(text)
     return 0
-
 
 def cmd_decrypt(args) -> int:
     paths = paths_mod.game_paths(args.game)
@@ -131,7 +101,6 @@ def cmd_decrypt(args) -> int:
     result = metadata_source.dump_from_memory(paths.metadata, on_log=_print)
     _print(result.describe())
     return 0 if result.ok else 1
-
 
 def cmd_dump(args) -> int:
     paths = paths_mod.game_paths(args.game)
@@ -157,7 +126,6 @@ def cmd_dump(args) -> int:
     result = dumper_mod.run_dumper(exe, paths.gameassembly, metadata, out_dir, on_log=_print)
     _print(result.detail)
     return 0 if result.ok else 1
-
 
 def cmd_locate(args) -> int:
     paths = paths_mod.game_paths(args.game)
@@ -193,9 +161,7 @@ def cmd_locate(args) -> int:
     finally:
         reader.detach()
 
-
 def cmd_symbols(args) -> int:
-    """按名字查 dump.cs 里的 RVA / 字段偏移（临时用，不依赖索引）。"""
     paths = paths_mod.game_paths(args.game)
     dump_cs_path = args.dump_cs
     if not dump_cs_path:
@@ -213,10 +179,6 @@ def cmd_symbols(args) -> int:
     for name in args.name or ():
         _print(f"{name} → 方法 {symbols.find_method(name)} / 字段 {symbols.find_field('', name)}")
     return 0
-
-
-# --------------------------------------------------------------------------- 解析
-
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
@@ -273,12 +235,10 @@ def build_parser() -> argparse.ArgumentParser:
     symbols.set_defaults(func=cmd_symbols)
     return parser
 
-
 def main(argv=None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     return int(args.func(args) or 0)
-
 
 if __name__ == "__main__":
     raise SystemExit(main())

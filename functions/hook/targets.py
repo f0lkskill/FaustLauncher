@@ -1,51 +1,18 @@
-"""hook 目标定义 —— "要盯住哪些东西"的声明式清单。
-
-这里只放**跨版本稳定的描述**（符号名 / 类名 / 值域），不放易变的数字：
-具体偏移由 dump 流水线每次重新解出来，写进云端笔记 ``FaustLauncher.hook_index``。
-游戏更新后，只要这些名字还在（Project Moon 基本不会改类名），偏移就能自动复原。
-
-目标分两类：
-
-``HOOK_TARGETS``（代码偏移）
-    要给 DLL detour 的函数。索引里给的是 ``rva`` + ``prologue``（目标函数前 16 字节），
-    两者配对使用：DLL 装钩前先比对 prologue，与本机 DLL 不一致就不装钩 —— 这是
-    防"旧偏移打到新版本"的最后一道闸。
-
-``CHAIN_TARGETS``（数据偏移）
-    外部进程读游戏数值用的多级指针链。首级是模块内的一个槽位（
-    ``GameAssembly.dll + base_offset``，Cheat Engine 里看到的那个地址）；
-    ``offsets`` 是随后的逐级偏移（最后一级是值的字段偏移）。
-
-    这类链的**根槽位**（``base_offset``）会随构建变化，但它指向的是 IL2CPP 的
-    ``Il2CppClass*`` —— 所以只要知道类名，就能在模块的数据节里重新把它扫出来
-    （见 ``locator.py``）。类名一旦被自动发现就会写进索引的 ``root_class``，
-    以后每次更新都是"按名字重定位"，不再需要人工找偏移。
-"""
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-
-# --------------------------------------------------------------------------- 代码钩子
-
-
 @dataclass(frozen=True)
 class HookTarget:
-    """一个要 detour 的函数。"""
 
-    key: str                     # 索引里的键（英文小写下划线）
-    symbol: str                  # dump.cs 里的方法名：``类::方法`` 或 ``类$$方法``
+    key: str
+    symbol: str
     description: str
-    compat_field: str = ""       # 写进 cheat_damage 兼容块的字段名（空则不入兼容块）
-    required: bool = True        # 解不出来时是否算失败
-    group: str = "damage"        # 分组：damage（伤害/阵营）/ battle（回合、技能、速度）
+    compat_field: str = ""
+    required: bool = True
+    group: str = "damage"
 
-
-# 默认盯住的两个目标：与 test/damage_log.* 和 web.lcta.top/cheat_damage.json 完全对齐，
-# 名字取自 Il2CppDumper 的 ``类$$方法`` 写法（BattleUnitModel 在空命名空间下）。
-# 注意同名方法在多处重载（BattleUnitModel 是 4 参数版本、BuffAbility 是 6 参数版本），
-# 索引按"名字精确匹配取第一处"，与官方 payload 的做法一致（已实测一致）。
 HOOK_TARGETS: tuple[HookTarget, ...] = (
     HookTarget(
         key="take_attack_dmg_multiplier",
@@ -59,9 +26,6 @@ HOOK_TARGETS: tuple[HookTarget, ...] = (
         description="战斗单位敌对阵营判定（判断敌我，配合上面的倍率做方向过滤）",
         compat_field="rva_get_opponent_faction",
     ),
-    # ---- 战斗事件类钩子（成就监测用：回合边界 / 技能使用 / 速度初始化）
-    # 实测 RVA（build 2026-09-17）：RefreshSpeed=0x11C89D0、
-    # DoneWithAction=0x11AD140、BattleActionModelManager::OnRoundStart_Before=0xB63FA0
     HookTarget(
         key="unit_refresh_speed",
         symbol="BattleUnitModel::RefreshSpeed",
@@ -82,17 +46,8 @@ HOOK_TARGETS: tuple[HookTarget, ...] = (
     ),
 )
 
-
-# --------------------------------------------------------------------------- 数据链
-
-
 @dataclass
 class ChainTarget:
-    """一条"模块槽 → 多级指针 → 值"的读取链。
-
-    ``base_offset`` / ``offsets`` 是**上次已知**的数字，只作为回退默认值；
-    每次更新都会尝试用 ``root_class`` / ``field_refs`` 重新解析一遍。
-    """
 
     key: str
     description: str
@@ -100,11 +55,11 @@ class ChainTarget:
     offsets: tuple[int, ...]
     module: str = "GameAssembly.dll"
     value_type: str = "int32"
-    root_class: str = ""                       # 根槽位指向的 Il2CppClass 名（可自动发现）
-    static_fields_offset: int = 0xB8           # Il2CppClass::static_fields 的成员偏移
-    field_refs: tuple[tuple[str, str], ...] = ()   # ((类, 字段), ...) 用于按名字刷新 offsets
-    value_range: tuple[int, int] | None = None  # 合理值域（用于校验/发现）
-    step_classes: tuple[str, ...] = ()         # 每级目标对象的类名（发现后填充，便于排障）
+    root_class: str = ""
+    static_fields_offset: int = 0xB8
+    field_refs: tuple[tuple[str, str], ...] = ()
+    value_range: tuple[int, int] | None = None
+    step_classes: tuple[str, ...] = ()
 
     def as_dict(self, **extra) -> dict:
         data = {
@@ -122,9 +77,6 @@ class ChainTarget:
         data.update(extra)
         return data
 
-
-# 脑啡肽容量：链来自用户桌面 ok.py 的 CE 结果（首级 0x07BB4F90 + 0xB8/0x80/0x18/0x28）。
-# root_class 留空 —— 第一次跑会由结构性扫描自动认出类名并回填。
 ENKEPHALIN_CHAIN = ChainTarget(
     key="enkephalin",
     description="脑啡肽容量（不是狂气；成就「满分脑啡肽」用它）",
@@ -136,32 +88,15 @@ ENKEPHALIN_CHAIN = ChainTarget(
 
 CHAIN_TARGETS: tuple[ChainTarget, ...] = (ENKEPHALIN_CHAIN,)
 
-
-# --------------------------------------------------------------------------- 战斗事件观测点
-
-
 @dataclass(frozen=True)
 class ObserveTarget:
-    """成就战斗观测点（注入 battle_watch.dll 的钩子表条目）。
 
-    与 ``HookTarget`` 的区别：这是**给观测 DLL 用的事件源**，除了 RVA/prologue 还要带
-    ``kind``（detour 的签名与事件内容）与“是否解掉尾调用桩”。
-
-    实测教训（2026-09-23）：dump.cs 里给的 RVA 有不少是 IL2CPP 尾调用桩
-    （``33 D2 E9 rel32`` = ``xor edx,edx; jmp 真实实现``），例如
-    ``BattleUnitModel::RefreshSpeed`` 实际是 ``jmp SetRandomSpeed``、
-    ``BattleActionModelManager::OnRoundStart_Before`` 实际是 ``jmp Init``。
-    钩在桩上、而调用方直接调真实实现 → 整场战斗 0 事件。所以默认 ``resolve_stub=True``，
-    由驱动静态解引用到真实实现再下发。
-    """
-
-    key: str                 # 索引里的键
-    symbol: str              # dump.cs 里的方法名（``类::方法`` 或 ``类$$方法``）
-    kind: str                # 见 battle_watch.py 的 KIND_*（detour 签名与事件内容）
-    fallback_rva: int        # 拿不到索引时的回退 RVA
+    key: str
+    symbol: str
+    kind: str
+    fallback_rva: int
     description: str = ""
     resolve_stub: bool = True
-
 
 OBSERVE_TARGETS: tuple[ObserveTarget, ...] = (
     ObserveTarget(
@@ -203,11 +138,6 @@ OBSERVE_TARGETS: tuple[ObserveTarget, ...] = (
         key="action_done_with_action", symbol="BattleActionModel::DoneWithAction", kind="action_int",
         fallback_rva=0x11AD140, description="行动完成（实测普通战斗不触发，留作对照）",
     ),
-    # ---- 表现层（动画相位）-----------------------------------------------
-    # 这游戏的战斗是"先算完整回合、再播动画"：结算阶段（伤害/收尾回调）全挤在回合刚开始的
-    # 一瞬间，所以"动画播到哪"只能看表现层。BattleSkillViewBase 的这三个回调是技能动画的
-    # 开始 / 完成 / 结束，驱动拿它们当"动画 tick"。kind="skv"：DLL 除了发 RND tag=skv_*，
-    # 还读 self->_attackerInstanceID 带上 iid —— 判定要“跟着动画走”就必须知道这手是谁在打。
     ObserveTarget(
         key="skv_start", symbol="BattleSkillViewBase::Skill_Start", kind="skv",
         fallback_rva=0x9B4D80, description="技能动画开始（表现层，事件带 iid）"),
@@ -223,20 +153,12 @@ OBSERVE_TARGETS: tuple[ObserveTarget, ...] = (
         description="受击伤害倍率（已证实会被调用：拿 attacker 身份 + action 技能）",
         resolve_stub=False,
     ),
-    # ---- 关卡结算统计（折射铁路）------------------------------------------
-    # 「六号线 <100T 通关」这类成就的**唯一**数据源：铁路的通关回合数只在内存里，
-    # Player.log 里完全没有（Railway/Turn 一个都搜不到）。这里挂钩结算统计对象的
-    # 构造函数，从每个 slot 读 _clearTurn（通关回合数）与 _uid（判断是哪条线）。
-    # 字段见 dump.cs: StageStatisticPopupSlotData / StageStatisticPopupData。
     ObserveTarget(
         key="stage_statistic", symbol="StageStatisticPopupData::.ctor", kind="stage_stat",
         fallback_rva=0x13C8DE0,
         description="关卡结算统计（通关回合数 + 关卡 uid；铁路成就靠它）",
         resolve_stub=False,
     ),
-    # ---- 折射铁路整条线的最好回合数 ---------------------------------------
-    # 进线路前显示的那个"你的最好回合数"：无参返回 int，宿主对象上的 _collectionId
-    # 是线路号。结算事件只给单关回合，**整条线的总回合只有这里**。
     ObserveTarget(
         key="railway_total",
         symbol="RailwayDungeonHistoryDataByCollection::GetTotalClearTurn",
@@ -244,23 +166,12 @@ OBSERVE_TARGETS: tuple[ObserveTarget, ...] = (
         description="折射铁路整条线总回合（进线路前显示的最好回合数）",
         resolve_stub=False,
     ),
-    # ---- 存档：已通关关卡记录（回溯判定用）--------------------------------
-    # 挂钩 UpdateData（存档载入时必调），只缓存对象指针；采样线程随后轮询它里面的
-    # "已通关关卡列表"，于是**以前打过的关卡也能判定**，不需要用户再打一遍。
-    # 不用静态字段链：那条路靠静态块基址解析，而现有 enkephalin 链重定位本来就是失败的。
     ObserveTarget(
         key="stage_clear_info", symbol="UserStageClearInfoData::UpdateData",
         kind="cache_self", fallback_rva=0x18E62D0,
         description="存档已通关关卡记录（挂 UpdateData 抓对象，供采样线程轮询）",
         resolve_stub=False,
     ),
-    # ---- 存档：已通关关卡记录（UI 查询路径）--------------------------------
-    # ⚠ 2026-10-09 补进索引：这三条以前**只在 battle_watch.FALLBACK_HOOKS 里写死 RVA**
-    # （来自 2026-09-17 的构建），索引里没有它们 → build_hook_table 只能沿用写死的旧
-    # RVA，而它们的 prologue 是用本机 DLL 在同一个旧地址上现读的 → DLL 侧自检**必然通过**，
-    # 于是"钩到别的函数中间"这件事没有任何一层能拦下来。实战现场（2026-10-09 13:31）
-    # 就是这么崩的：注入后 10 秒、登录载入存档时游戏直接挂掉。
-    # 现在它们和别的观测点一样进索引：RVA/prologue 都来自当前 dump，预检能校验。
     ObserveTarget(
         key="stage_clear_query", symbol="UserStageClearInfoData::GetData",
         kind="cache_self", fallback_rva=0x18E6300,
@@ -273,8 +184,6 @@ OBSERVE_TARGETS: tuple[ObserveTarget, ...] = (
         description="UI 查询最后一次通关记录（抓对象指针）",
         resolve_stub=False,
     ),
-    # ---- 关卡通关状态查询（当前 UI 真正在用的那条路）------------------------
-    # 关卡列表每次渲染都会问 UserStageNodeStateData"这关通了没"，章节号/节点号是入参。
     ObserveTarget(
         key="node_cleared", symbol="UserStageNodeStateData::IsNodeCleared",
         kind="node_state", fallback_rva=0x18B0A30,
@@ -287,38 +196,30 @@ OBSERVE_TARGETS: tuple[ObserveTarget, ...] = (
         description="关卡通关状态（含难度/次数）",
         resolve_stub=False,
     ),
-    # ---- 存档全量进度树（不用点任何界面的正解）------------------------------
-    # 登录时服务端把整棵 章→小节→节点 树下发到这里；a1 就是列表根。
     ObserveTarget(
         key="stage_progress", symbol="UserStageNodeStateData::UpdateData",
         kind="cache_arg1", fallback_rva=0x18AFFE0,
         description="存档全量进度树（登录时下发，采样线程遍历即可全量判定）",
         resolve_stub=False,
     ),
-    # ---- 折射铁路：每节点通关回合（存档重建时逐个构造）----------------------
     ObserveTarget(
         key="railway_node", symbol="RailwayDungeonFormerSaveData::.ctor",
         kind="railway_node", fallback_rva=0x18B38D0,
         description="折射铁路每节点通关回合（填 nodeId/clearTurn）",
         resolve_stub=False,
     ),
-    # ---- 折射铁路：历史记录（界面上"你最好的回合数"）------------------------
-    # 9 参构造函数：arg1 = 线路号，arg4 = IList<int> 各节点回合；求和得到整条线总回合。
     ObserveTarget(
         key="railway_hist", symbol="RailwayDungeonHistoryDataByCollection::.ctor",
         kind="railway_hist", fallback_rva=0x1A83860,
         description="折射铁路历史记录（各节点回合列表 → 整条线总回合）",
         resolve_stub=False,
     ),
-    # ---- 关卡身份（界面上的 "10-4"）----------------------------------------
-    # SetData(partId, chapterId, nodeId, stageId, clearState)：入参就是官方口径。
     ObserveTarget(
         key="stage_node_id", symbol="StageNodeIdInfo::SetData", kind="stage_node_id",
         fallback_rva=0x12636F0,
         description="关卡身份（章 + 第几关 + 关卡id + 通关状态）→ 界面上的 10-4",
         resolve_stub=False,
     ),
-    # ---- 铁路总回合的**界面显示值** ---------------------------------------
     ObserveTarget(
         key="railway_ui_text",
         symbol="RailwayDungeonMapUpperUILine1002::UpdateUI", kind="railway_ui_text",
@@ -328,80 +229,43 @@ OBSERVE_TARGETS: tuple[ObserveTarget, ...] = (
     ),
 )
 
-
 def hook_symbol_entries() -> list[tuple[str, str, str, str]]:
-    """给 updater 用：``(key, symbol, description, compat_field)``（含观测点）。"""
     entries = [(t.key, t.symbol, t.description, t.compat_field) for t in HOOK_TARGETS]
     entries += [(t.key, t.symbol, t.description, "") for t in OBSERVE_TARGETS]
     return entries
 
-
-# --------------------------------------------------------------------------- 结构体字段
-
-# 事件钩子里要读的字段（key → (类, 字段, 上次已知偏移)）。
-# 这些名字会被 dump 流水线解析成偏移，写进索引的 ``fields`` 段；
-# 注入 DLL 直接读索引里的偏移（不写死），拿不到索引时才用这里的回退值。
-#
-# 偏移来源：dump.cs（build 2026-09-17）实测。
 BATTLE_FIELDS: dict[str, tuple[str, str, int]] = {
-    # ---- BattleUnitModel ----
     "unit_instance_id": ("BattleUnitModel", "_instanceID", 0x60),
     "unit_origin_id": ("BattleUnitModel", "_originID", 0x64),
     "unit_origin_speed": ("BattleUnitModel", "_originSpeed", 0xCC),
     "unit_overwrited_speed": ("BattleUnitModel", "_overwritedSpeed", 0xD0),
     "unit_int_speed_turn": ("BattleUnitModel", "_thisTurnIntSpeedOnCmdPhase", 0x184),
-    # ---- CharacterState（BattleUnitModel._state 指向它；HP / 理智都在这里）----
-    # ``_mp`` 就是界面上的理智(SP)：同类的 ``_maxMp = 45`` / ``_minMp = -45``
-    # 常量正好就是 SP 的上下限（负数理智 = 陷入恐慌、魔法少女成就用）。
-    # 三个值都是 ACTk ``ObscuredInt``（value = hiddenValue ^ currentCryptoKey）。
     "unit_state": ("BattleUnitModel", "_state", 0x148),    "state_hp": ("CharacterState", "_hp", 0x148),
     "state_max_hp": ("CharacterState", "_maxHp", 0x11C),
     "state_mp": ("CharacterState", "_mp", 0x158),
-    # ---- buff 链（buff 名是字符串，如 HanafudaTwo / FutureEyeOnRodion）----
-    # unit[0xE0] → BuffDetail[0x10] : List<BuffModel>
-    #   → BuffModel[0x68] → BuffStaticData[0x18] : string（id 与 Lang/Bufs.json 的 id 一致）
-    # 驱动把成就用到的 buff 名做 FNV-1a 64 写进关注表，DLL 只在命中关注表时上报。
     "unit_buff_detail": ("BattleUnitModel", "_buffDetail", 0xE0),
     "buff_detail_list": ("BuffDetail", "_grantedBuffList", 0x10),
     "buff_model_data": ("BuffModel", "_buffData", 0x68),
     "buff_static_id": ("BuffStaticData", "id", 0x18),
-    # ---- BattleActionModel ----
     "action_skill": ("BattleActionModel", "_skill", 0x20),
     "action_commander_id": ("BattleActionModel", "_commanderInstanceID", 0xB4),
     "action_actor_id": ("BattleActionModel", "_orderedActionActorInstanceId", 0xBC),
-    # ---- SkillModel / SkillDataModel ----
     "skill_data": ("SkillModel", "_skillData", 0x10),
-    "skill_id": ("SkillDataModel", "id", 0x10),          # ObscuredInt：<身份5位><槽位2位>
-    "skill_tier": ("SkillDataModel", "skillTier", 0x40),  # ObscuredInt：1/2/3 = 技能一/二/三
-    # ---- 关卡结算统计（折射铁路的通关回合数）----
-    # StageStatisticPopupData[0x10] → List<StageStatisticPopupSlotData>（引用类型 List:
-    #   _items 在 +0x20、_size 在 +0x18）→ slot[0x18] = 通关回合数。
-    # ``_uid`` 是关卡 uid：铁路关卡形如 1095x（六号线）→ 用它判断是哪条线。
+    "skill_id": ("SkillDataModel", "id", 0x10),
+    "skill_tier": ("SkillDataModel", "skillTier", 0x40),
     "stage_slot_list": ("StageStatisticPopupData", "_slotDataList", 0x10),
     "slot_uid": ("StageStatisticPopupSlotData", "_uid", 0x10),
     "slot_clear_turn": ("StageStatisticPopupSlotData", "_clearTurn", 0x18),
     "slot_dead_count": ("StageStatisticPopupSlotData", "_deadUnitCount", 0x1C),
     "slot_ex_cleared": ("StageStatisticPopupSlotData", "_exCleared", 0x20),
-    # ---- 折射铁路整条线的总回合 ----
-    # RailwayDungeonHistoryDataByCollection._collectionId（线路号）
     "railway_collection_id": ("RailwayDungeonHistoryDataByCollection", "_collectionId", 0x10),
-    # ---- 存档：已通关关卡记录 ----
-    # UserStageClearInfoData[0x18] → StageClearInfoList[0x10] → List<StageClearInfo>
-    #   → 每项 [0x10] = 关卡 id
     "stage_clear_list": ("UserStageClearInfoData", "_stageClearInfoList", 0x18),
     "clear_info_list": ("StageClearInfoList", "_list", 0x10),
     "clear_info_id": ("StageClearInfo", "_id", 0x10),
-    # 铁路总回合的显示文本：RailwayDungeonMapUpperUILine1002.tmp_totalTurn → TMP_Text.m_text
     "railway_ui_text": ("RailwayDungeonMapUpperUILine1002", "tmp_totalTurn", 0x28),
     "tmp_text": ("TMP_Text", "m_text", 0xE0),
 }
 
-
-# --------------------------------------------------------------------------- 符号保留范围
-
-# 只有命中这些模式的类，其方法/字段才会进索引（否则索引会有几十 MB）。
-# 这些是"钩子/读值最可能用到"的类；需要更多时在这里加即可，或临时用 CLI 的
-# ``--focus`` 覆盖。
 FOCUS_PATTERNS: tuple[str, ...] = (
     "BattleUnitModel",
     "BattleActionModel",
@@ -426,18 +290,13 @@ FOCUS_PATTERNS: tuple[str, ...] = (
     "PassiveAbility",
 )
 
-# 索引里最多保留多少符号（防止 focus 写太宽导致本地缓存过大；
-# 发布到云端时还会再裁剪一次，见 index.MAX_PUBLISH_METHODS）
 MAX_METHODS = 40000
 MAX_FIELDS = 20000
-
 
 def all_targets() -> tuple[tuple[HookTarget, ...], tuple[ChainTarget, ...]]:
     return HOOK_TARGETS, CHAIN_TARGETS
 
-
 def required_symbols() -> list[str]:
-    """所有必须在 dump.cs 里找到的符号名（用于 dump 时的白名单保留）。"""
     names = [t.symbol for t in HOOK_TARGETS]
     names += [t.symbol for t in OBSERVE_TARGETS]
     for chain in CHAIN_TARGETS:
@@ -449,7 +308,5 @@ def required_symbols() -> list[str]:
         names.append(f"{cls}::{fld}")
     return names
 
-
 def battle_field_keys() -> tuple[str, ...]:
-    """事件类字段的键名（顺序稳定，便于日志/调试）。"""
     return tuple(BATTLE_FIELDS.keys())

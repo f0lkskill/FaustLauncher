@@ -1,6 +1,4 @@
 #! 今日指令?
-#? 词库来源: config/nyos_prescript.json
-#? 使用 pywebview 展示: web/nyos_prescript/index.html
 
 import difflib
 import os
@@ -9,7 +7,6 @@ import subprocess
 import sys
 
 if getattr(sys, "frozen", False):
-    # 打包环境下模块在临时解压目录, 以 exe 所在目录为项目根目录 (config/assets 在 exe 旁)
     _PROJECT_ROOT = os.path.dirname(os.path.abspath(sys.executable))
 else:
     _PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", ".."))
@@ -24,9 +21,7 @@ from functions.base.window_chrome import (  # noqa: E402
     window_icon_path,
 )
 
-
 def _center_xy(width, height):
-    """计算窗口居中的屏幕坐标 (Windows)"""
     try:
         import ctypes
 
@@ -43,7 +38,6 @@ except ImportError:
     import json
 
     def read_json(path):
-        # 兜底实现同样容忍 UTF-8 BOM/UTF-16
         with open(path, 'r', encoding='utf-8-sig') as f:
             return json.load(f)
 
@@ -73,11 +67,7 @@ DEFAULT_DATA = {
     "color": ["红", "蓝", "白", "你难以定义的颜色"],
 }
 
-
 class NyosPrescript:
-    """
-    今日指令
-    """
     do = []
     where = []
     people = []
@@ -100,9 +90,6 @@ class NyosPrescript:
 
     @staticmethod
     def reload_data():
-        """
-        从 config/nyos_prescript.json 重新加载词库
-        """
         keys = ["do", "where", "people", "when", "actions", "drinks",
                 "foods", "objects", "songs", "words", "creatures",
                 "direction", "turn", "color"]
@@ -120,11 +107,6 @@ class NyosPrescript:
 
     @staticmethod
     def spawn_prescript_steps():
-        """
-        生成今日指令, 并返回每一步的解析过程
-
-        :return: (steps:list[str], final:str)
-        """
         NyosPrescript.mems.clear()
         NyosPrescript.where_flag = False
 
@@ -150,12 +132,6 @@ class NyosPrescript:
 
     @staticmethod
     def compute_birth(steps):
-        """
-        根据解析步骤, 计算最终文本每个字符在第几步被解析出来
-
-        :param steps: 解析过程中的文本列表 (steps[-1] 为最终文本)
-        :return: list[int], 与最终文本等长
-        """
         if not steps:
             return []
         final = steps[-1]
@@ -182,23 +158,11 @@ class NyosPrescript:
 
     @staticmethod
     def spawn_prescript():
-        """
-        今日指令的预脚本
-        生成今日指令的预脚本
-
-        :return: 指令 str
-        """
         steps, final = NyosPrescript.spawn_prescript_steps()
         return final
 
     @staticmethod
     def check_text(text: str):
-        """
-        _检查文本是否符合指令的格式_
-        
-        Args:
-            text (str): _需要检查的文本_
-        """
         key_words = ["&time&", "&pepople&", "&where&", "&do&", "&drink&", "&food&", "&count&", "&action&", "&object&", "&song&", "&word&", "&creature&", "&direction&", "&turn&", "&color&"]
         for word in key_words:
             if word not in text:
@@ -242,10 +206,6 @@ class NyosPrescript:
     @staticmethod
     def replace_text(text: str, old: str, new: str):
 
-        # for m in NyosPrescript.mems:
-        #     if new in m:
-        #         return text
-
         if new in NyosPrescript.mems:
             return text
 
@@ -260,9 +220,6 @@ class NyosPrescript:
 
     @staticmethod
     def resolve_tail(text: str):
-        """
-        递归过深时的兜底, 把残留的占位符一次性替换为最终值, 防止死循环
-        """
         finals = {
             "&time&": "现在",
             "&do&": "做一件平常的小事",
@@ -284,19 +241,9 @@ class NyosPrescript:
             text = text.replace(key, value)
         return text
 
-
 class NyosPrescriptApi(WindowChromeBridge):
-    """
-    pywebview js_api
-    供前端调用的指令生成接口
-    """
 
     def generate(self):
-        """
-        生成今日指令, 返回解析步骤、最终文本与每字符的解析时序
-
-        :return: {"steps": [...], "final": "...", "birth": [0,1,...]}
-        """
         NyosPrescript.reload_data()
         steps, final = NyosPrescript.spawn_prescript_steps()
         birth = NyosPrescript.compute_birth(steps)
@@ -304,11 +251,6 @@ class NyosPrescriptApi(WindowChromeBridge):
 
     @staticmethod
     def assets():
-        """
-        返回背景装饰图与解析音效的 base64 data URI
-
-        :return: {"bg": "data:image/png;base64,...", "sfx": "data:audio/mp3;base64,..."}
-        """
         import base64
 
         def data_uri(rel_path, mime):
@@ -325,27 +267,14 @@ class NyosPrescriptApi(WindowChromeBridge):
             "sfx2": data_uri(os.path.join("assets", "voices", "beepstart.mp3"), "audio/mp3"),
         }
 
-
 def _msgbox(title, text, is_error=True):
-    """
-    原生消息框 (ctypes MessageBoxW), 不依赖 tkinter:
-    打包子进程里 tkinter messagebox 可能触发 0x80010108 崩溃
-    """
     try:
         import ctypes
         ctypes.windll.user32.MessageBoxW(None, text, title, 0x10 if is_error else 0x40)
     except Exception:
         pass
 
-
 def run_prescript_window(debug: bool = False):
-    """
-    在当前进程内启动今日指令 pywebview 窗口
-
-    源码模式: pythonw 子进程运行本脚本时调用; 打包模式: 主程序以
-    --nyos-window 参数重新拉起自身 exe 后, main() 再调用本函数,
-    不依赖外部 pythonw/解释器。
-    """
     try:
         import webview
     except BaseException as e:
@@ -365,7 +294,7 @@ def run_prescript_window(debug: bool = False):
         raise SystemExit(1)
 
     try:
-        width, height = child_window_size(640, 540)   # 内容区 640x540 + 40px 自绘标题栏
+        width, height = child_window_size(640, 540)
         min_w, min_h = child_window_size(480, 400)
         x, y = _center_xy(width, height)
         window = webview.create_window(
@@ -378,12 +307,12 @@ def run_prescript_window(debug: bool = False):
             y=y,
             min_size=(min_w, min_h),
             background_color=window_background("#060f22"),
-            frameless=True,    # 去掉系统标题栏, 改用与主界面同款的自绘标题栏
-            easy_drag=False,   # 只允许拖标题栏
+            frameless=True,
+            easy_drag=False,
             shadow=False,
-            hidden=True,     # 先隐藏, 注入主题+标题栏后淡入
+            hidden=True,
         )
-        apply_window_chrome(window, show_when_ready=True)   # 共享主题层 + 当前皮肤 + 统一标题栏 (注入完再淡入)
+        apply_window_chrome(window, show_when_ready=True)
         webview.start(debug=debug, icon=window_icon_path())
     except BaseException as e:
         import traceback
@@ -396,19 +325,7 @@ def run_prescript_window(debug: bool = False):
         _msgbox("今日指令", f"无法启动窗口:\n{type(e).__name__}: {e}")
         raise SystemExit(1)
 
-
 def open_prescript_window(debug: bool = False):
-    """
-    打开今日指令窗口
-
-    说明: pywebview 6 要求 webview.start() 运行在主线程, 与 tkinter 主循环互斥,
-    故以独立子进程方式拉起窗口, 与启动器完全解耦:
-    - 源码模式: 用 pythonw 运行 nyos_prescript.py 子进程
-    - 打包模式 (sys.frozen): 用自身 exe 以 --nyos-window 参数二次启动原生子进程
-
-    Args:
-        debug (bool): 是否开启 pywebview 调试
-    """
     if getattr(sys, "frozen", False):
         cmd = [os.path.abspath(sys.executable), "--nyos-window"]
     else:
@@ -430,9 +347,7 @@ def open_prescript_window(debug: bool = False):
     except Exception as e:
         _msgbox("今日指令", f"无法启动窗口进程:\n{e}")
 
-
 NyosPrescript.reload_data()
 
 if __name__ == "__main__":
-    # 源码模式启动方式: 本脚本被 pythonw 子进程运行
     run_prescript_window(debug="--debug" in sys.argv)

@@ -1,15 +1,10 @@
-"""
-统一 UI 样式工具 — 滚动条、圆角卡片、现代化按钮
-"""
 import tkinter as tk
 from tkinter import ttk
 from functions.base.color_scheme import C, darken_color, lighten_color
 
-
 def apply_scrollbar_style(style_name='App.Vertical.TScrollbar',
                           bg_color='#1a1a1a',
                           accent=C.ACCENT):
-    """创建并返回统一的自定义滚动条样式名"""
     style = ttk.Style()
     thumb = darken_color(lighten_color(bg_color, 8), 0.75)
     trough = darken_color(bg_color, 0.7)
@@ -28,13 +23,10 @@ def apply_scrollbar_style(style_name='App.Vertical.TScrollbar',
             pass
     return v_name
 
-
 def make_scrollbar(parent, orient='vertical', style_name='App.Vertical.TScrollbar', **kw):
     return ttk.Scrollbar(parent, orient=orient, style=style_name, **kw) # type: ignore
 
-
 class RoundedFrame(tk.Canvas):
-    """圆角卡片容器 — 填充和描边都是圆角"""
     
     def __init__(self, master, *, bg=None, border_color=None, radius=10,
                  padx=10, pady=10, **kwargs):
@@ -58,7 +50,6 @@ class RoundedFrame(tk.Canvas):
         d = r * 2
         t = 'rf'
         
-        # 圆角填充（pieslice 会被 canvas 自动裁剪，无需偏移）
         self.create_arc(0, 0, d, d, start=90, extent=90, style='pieslice',
                        fill=self._bg, outline='', width=0, tags=t)
         self.create_arc(w - d, 0, w, d, start=0, extent=90, style='pieslice',
@@ -70,7 +61,6 @@ class RoundedFrame(tk.Canvas):
         self.create_rectangle(r, 0, w - r, h, fill=self._bg, outline='', width=0, tags=t)
         self.create_rectangle(0, r, w, h - r, fill=self._bg, outline='', width=0, tags=t)
         
-        # 圆角描边（右/下边缘向内缩 1px，避免被父容器裁剪导致描边消失）
         if self._border:
             bw = w - 1
             bh = h - 1
@@ -95,9 +85,7 @@ class RoundedFrame(tk.Canvas):
         needed = self.inner.winfo_reqheight() + self._pady * 2
         self.configure(height=needed)
 
-
 class RoundedButton(tk.Canvas):
-    """圆角按钮 — 纯 Canvas 实现，自带 hover"""
     
     def __init__(self, master, text='', command=None, *,
                  width=120, height=36, bg=C.ACCENT, fg=C.TEXT_WHITE,
@@ -191,9 +179,7 @@ class RoundedButton(tk.Canvas):
         super().pack(**kwargs)
         return self
 
-
 class ModernButton(tk.Button):
-    """扁平 tk.Button — 自带 hover"""
     
     def __init__(self, master, text='', command=None,
                  bg=None, fg=C.TEXT_WHITE, hover_bg=None,

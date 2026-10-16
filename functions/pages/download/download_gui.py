@@ -9,11 +9,9 @@ BG_COLOR: str = get_settings_manager().get_setting("bg_color") # type: ignore
 _bg_blur_raw: int = get_settings_manager().get_setting("bg_gaussian_blur") # type: ignore
 BG_GAUSSIAN_BLUR: int = _bg_blur_raw + 5
 
-
 def _parse_rgb(hex_color: str):
     h = hex_color.lstrip('#')
     return tuple(int(h[i:i + 2], 16) for i in (0, 2, 4))
-
 
 TRANSPARENT = C.TRANSPARENT
 ACCENT = C.DOWNLOAD_ACCENT
@@ -21,7 +19,6 @@ TEXT_PRIMARY = C.TEXT_PRIMARY
 TEXT_SECONDARY = C.TEXT_WHITE
 TEXT_MUTED = "#c2dcff"
 BAR_BG = C.DOWNLOAD_BAR_BG
-
 
 class DownloadGUI:
     def __init__(self, parent, config_path: str = "", auto_start: bool = True,
@@ -37,7 +34,6 @@ class DownloadGUI:
         self.root.overrideredirect(True)
         self.root.wm_attributes('-transparentcolor', TRANSPARENT)
         
-        #TODO 计划修复
         self.root.attributes('-topmost', True)
         
         self.root.configure(bg=TRANSPARENT)
@@ -50,7 +46,6 @@ class DownloadGUI:
 
         self.canvas.bind('<Button-1>', self._start_drag)
         self.canvas.bind('<B1-Motion>', self._do_drag)
-
 
         self.config_path = config_path
         self.is_downloading = True
@@ -186,7 +181,6 @@ class DownloadGUI:
             cx, 215, text="准备开始下载...",
             font=('Microsoft YaHei UI', 12), fill=ACCENT)
 
-    # ── 拖拽支持 ──
     def _start_drag(self, event):
         self._drag_x = event.x
         self._drag_y = event.y
@@ -198,7 +192,6 @@ class DownloadGUI:
         y = self.root.winfo_y() + dy
         self.root.geometry(f'+{x}+{y}')
 
-    # ── 淡出动画 ──
     def fade_out(self):
         def animate(alpha=1.0):
             if alpha > 0.0:

@@ -1,13 +1,4 @@
 #!/usr/bin/env python3
-"""verify_structural.py - 解密参数验证（无参考文件，纯结构门）。
-
-验证内容（复用 gen1 candidate_verify 语义）：
-1. header 用 header_seed+table 解密 → 6 排列布局自动判定（≥0.7 门）
-2. 每个节块：范围校验 + 用其 seed 解密 + 结构门（text/index/binary）
-3. 至少一个 text/index 节段（证明 seed 真实有效）
-
-判定：PASS / PASS_WITH_REVIEW / FAIL。
-"""
 
 from __future__ import annotations
 
@@ -19,9 +10,7 @@ VERDICT_PASS = "PASS"
 VERDICT_PASS_WITH_REVIEW = "PASS_WITH_REVIEW"
 VERDICT_FAIL = "FAIL"
 
-
 def classify_section(data: bytes) -> tuple[str, dict]:
-    """结构分类：text / index / binary，附证据。"""
     n = len(data)
     printable = sum(1 for b in data if 0x20 <= b <= 0x7E or b in (0x09, 0x0A, 0x0D)) / max(n, 1)
     monotonic = 0.0
@@ -35,9 +24,7 @@ def classify_section(data: bytes) -> tuple[str, dict]:
         return "index", {"printable": round(printable, 3), "monotonic": round(monotonic, 3)}
     return "binary", {"printable": round(printable, 3), "monotonic": round(monotonic, 3)}
 
-
 def verify(metadata: bytes, profile: dict) -> dict:
-    """返回 {verdict, gates, sections, layout}。"""
     gates: list[dict] = []
     result: dict = {"verdict": VERDICT_PASS, "gates": gates}
 
@@ -73,8 +60,6 @@ def verify(metadata: bytes, profile: dict) -> dict:
         offset_off = sec.get("offset_off")
         adj = sec.get("adj", 0)
         seed = sec.get("seed")
-        # 二进制 memmove 语义：直接按 profile 显式偏移读字段（08-13 起
-        # 字段不再对齐 entry 起点；offset 为有符号）
         if size_off is not None and offset_off is not None:
             size = struct.unpack_from("<i", header, size_off)[0]
             logical = struct.unpack_from("<i", header, offset_off)[0]

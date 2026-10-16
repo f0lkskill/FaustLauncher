@@ -1,5 +1,4 @@
 # -*- coding: utf-8 -*-
-"""统计: 注释/文档串规模, 以及 print/日志调用分布 (只读)。"""
 import ast
 import io
 import os

@@ -1,23 +1,3 @@
-"""示例：**一个文件里写多个成就派生类**（注册时按定义顺序自动全部实例化）。
-
-这里的两个成就就是按需求做的实例，也顺带演示了三种“检测类型”的基类怎么用：
-
-1. 「这他妈的烂牌！」—— ``BuffPresentAchievement``：
-   以实玛利（定事务所 代表，``10813``）在**首个回合**身上是否带着 buff
-   「组札-芒上月」（Bufs.json 的 id：``HanafudaTwo``）。
-2. 「心脏，心脏！」—— 复合成就主类 ``CompositeAchievement``：
-   拇指 父辈 罗佳（``10916``）使用**任意**技能 → 她身上有「预知眼」
-   （``FutureEyeOnRodion``）→ 场上存在 拇指 子辈 希斯克里夫（``10716``）。
-
-补充说明：
-
-* buff 的名字来自游戏 ``Lang/LLC_zh-CN/Bufs.json`` 的 ``id``（字符串，不是数字）；
-* 技能类条件在**技能动画结束**时结算（表现层 skv_end tick；静默期与回合边界只做兜底），
-  不是回合边界 —— 实测 ``action_done_with_action`` 这类收尾回调全在动画开播**之前**的
-  结算瞬间到齐，拿它当“动画结束”会变成“回合一开始就解锁”；
-* 「场上是否存在某身份」用 ``state_only=True`` 的条件：他在场是**状态**，
-  从第一回合就在场，不能因为“记录得早”而算顺序不对。
-"""
 
 from __future__ import annotations
 
@@ -28,16 +8,13 @@ from functions.achievement.battle_achievements import (
     Condition,
 )
 
-# ---- 业务常量（游戏数据；驱动不认识它们）----
-IDENTITY_ISHMAEL_TING_REP = 10813       # 以实玛利 · 定事务所 代表
-IDENTITY_RODION_THUMB_CAPO = 10916      # 罗佳 · 蜘蛛巢 拇指 父辈
-IDENTITY_HEATHCLIFF_THUMB_PROXY = 10716  # 希斯克里夫 · 蜘蛛巢 拇指 子辈
-BUFF_HANAFUDA_TWO = "HanafudaTwo"       # 组札-芒上月
-BUFF_FUTURE_EYE = "FutureEyeOnRodion"   # 预知眼
-
+IDENTITY_ISHMAEL_TING_REP = 10813
+IDENTITY_RODION_THUMB_CAPO = 10916
+IDENTITY_HEATHCLIFF_THUMB_PROXY = 10716
+BUFF_HANAFUDA_TWO = "HanafudaTwo"
+BUFF_FUTURE_EYE = "FutureEyeOnRodion"
 
 class DeadHandAchievement(BuffPresentAchievement):
-    """这他妈的烂牌！—— 定事务所代表以实玛利 首个回合带着「组札-芒上月」。"""
 
     def __init__(self) -> None:
         super().__init__(
@@ -46,14 +23,12 @@ class DeadHandAchievement(BuffPresentAchievement):
             description="定事务所代表-以实玛利 在战斗的首个回合抽到「组札-芒上月」。",
             identity_ids=(IDENTITY_ISHMAEL_TING_REP,),
             buffs=(BUFF_HANAFUDA_TWO,),
-            max_round=1,                     # 只在首个回合（及之前）出现才算
+            max_round=1,
             label="定事务所代表 以实玛利",
             rarity="uncommon",
         )
 
-
 class HeartHeartAchievement(CompositeAchievement):
-    """心脏，心脏！—— 复合成就：用技能 → 带预知眼 → 场上有拇指子辈希斯克里夫。"""
 
     def __init__(self) -> None:
         skill = Condition(
@@ -84,17 +59,13 @@ class HeartHeartAchievement(CompositeAchievement):
                 kind=battle_watch.RULE_KIND_PRESENCE,
                 identity_ids=(IDENTITY_HEATHCLIFF_THUMB_PROXY,),
             ),
-            state_only=True,                 # 在场是状态，不参与先后顺序
+            state_only=True,
         )
         super().__init__(
             ach_id="ach_heart_heart",
             name="心脏，心脏！",
             description="让 拇指子辈，希斯克里夫 触发一次追击。",
             conditions=(skill, eyebuff, ally),
-            # ⚠ 顺序必须是「先有预知眼，再出手」：预知眼是她开局就带着的常驻 buff，
-            # 第一次被采样必然早于她出手 —— 写成 ("skill", "eyebuff") 的话
-            # rule_order(skill) 永远大于 rule_order(eyebuff)，链永远不成立、成就永不触发。
-            # 这正好也是想要的语义：“带着预知眼出手”。
             chain=("eyebuff", "skill"),
             require="skill and eyebuff and ally",
             label="心脏，心脏！",

@@ -1,8 +1,3 @@
-"""临时诊断：列出 GameAssembly.dll 的导出表，重点看有没有 il2cpp_* API。
-
-不加载 DLL（游戏占着它），纯文件解析 PE 导出目录。
-用法: python tools/diag/_exports_check.py [可选: dll 路径]
-"""
 from __future__ import annotations
 
 import json
@@ -13,9 +8,7 @@ import sys
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 DEFAULT_DLL = r"D:\steam\steamapps\common\Limbus Company\GameAssembly.dll"
 
-
 def dll_from_index() -> str:
-    """从 hook_index.json 的 game.path 取 DLL 路径（取不到就返回空串）。"""
     p = os.path.join(REPO, "cache", "hook", "hook_index.json")
     try:
         with open(p, "r", encoding="utf-8") as fh:
@@ -23,7 +16,6 @@ def dll_from_index() -> str:
         return game.get("path") or ""
     except Exception:
         return ""
-
 
 def parse_exports(path: str) -> list[str]:
     with open(path, "rb") as fh:
@@ -39,7 +31,6 @@ def parse_exports(path: str) -> list[str]:
     magic = struct.unpack_from("<H", data, opt)[0]
     pe32plus = magic == 0x20B
 
-    # DataDirectory[0] = Export Table
     dd = opt + (112 if pe32plus else 96)
     exp_rva = struct.unpack_from("<I", data, dd)[0]
 
@@ -76,7 +67,6 @@ def parse_exports(path: str) -> list[str]:
         out.append(data[o:end].decode("latin1"))
     return out
 
-
 def main() -> int:
     path = sys.argv[1] if len(sys.argv) > 1 else (dll_from_index() or DEFAULT_DLL)
     if path and os.path.isdir(path):
@@ -98,7 +88,6 @@ def main() -> int:
     if not il2:
         print("   (无 —— 引擎 API 未导出，只能走内存扫描)")
 
-    # 关心的几个关键 API
     want = [
         "il2cpp_domain_get", "il2cpp_domain_get_assemblies",
         "il2cpp_class_from_name", "il2cpp_class_get_static_field_data",
@@ -116,7 +105,6 @@ def main() -> int:
     for n in other[:40]:
         print(f"   {n}")
     return 0
-
 
 if __name__ == "__main__":
     raise SystemExit(main())

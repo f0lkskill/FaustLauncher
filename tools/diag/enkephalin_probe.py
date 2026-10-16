@@ -1,25 +1,3 @@
-"""脑啡肽（Enkephalin）内存读取独立自检脚本。
-
-用途: 成就系统的脑啡肽读取失败时, 日志里**什么都看不到** —— ``read_enkephalin``
-每条失败路径都只 ``return None``, ``MemoryAchievement.check`` 还把异常整个吞掉
-（见 ``functions/achievement/base_achievement.py``）。本脚本把那条链拆开逐步打印,
-一眼看出卡在哪一环, 且**不依赖启动器**: 游戏跑着就能单独跑它。
-
-    python tools/diag/enkephalin_probe.py              # 读一次, 全程诊断
-    python tools/diag/enkephalin_probe.py --watch      # 每 1s 读一次, Ctrl+C 停
-    python tools/diag/enkephalin_probe.py --raw        # 只输出数字(适合塞进批处理)
-    python tools/diag/enkephalin_probe.py --json       # 机器可读
-
-它检查的环节（与生产代码**同一条路径**, 所以结论可直接采信）:
-  1. 运行环境: 位数 / 是否管理员 —— 权限是 ``OpenProcess`` 最常见的失败原因
-  2. 找进程: ``battle_watch.find_process_id`` → PID + 映像路径
-  3. 开句柄: ``OpenProcess(PROCESS_VM_READ|PROCESS_QUERY_INFORMATION)`` + 错误码
-  4. 定位模块: ``GameAssembly.dll`` 基址与大小（大小还能顺带看出索引版本是否匹配）
-  5. 逐级指针: 每一跳的地址与读出的值, 断在哪一跳一目了然
-  6. 最终值: int32, 并给出合理性判断与成就阈值提示
-
-退出码: 0 成功 / 1 游戏没开 / 2 权限被拒 / 3 找不到模块 / 4 指针链断 / 5 其它
-"""
 
 from __future__ import annotations
 
@@ -33,16 +11,11 @@ import os
 import sys
 import time
 
-# tools/diag/ -> 仓库根。必须把**仓库根**放进 sys.path 才能 import functions.*
-# （与 tools/diag/webnote_diag.py 同一套处理）。
 _ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                      "..", ".."))
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
-# 导入 functions.achievement.memory_reader 会连带执行 functions/achievement/__init__.py
-# → achievements.py 的**模块级**注册, 那里有几句裸 print（"本地已完成 N 条"等）。
-# --raw / --json 要求 stdout 干净, 所以在这些模式下把导入期的输出直接吞掉。
 _SILENT = ("--raw" in sys.argv or "--json" in sys.argv)
 with (contextlib.redirect_stdout(io.StringIO()) if _SILENT
       else contextlib.nullcontext()):
@@ -61,9 +34,7 @@ with (contextlib.redirect_stdout(io.StringIO()) if _SILENT
 TARGET_PROCESS = "LimbusCompany.exe"
 PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
 
-# 成就阈值: FullEnkephalinAchievement 要求 >= 100（data/ach_enkephalin_100.py）
 ENKEPHALIN_ACH_THRESHOLD = 100
-# 超过这个数基本可以断定读到的是错链/错版本, 而不是真的脑啡肽
 ENKEPHALIN_SANE_MAX = 100000
 
 EXIT_OK = 0
@@ -73,7 +44,6 @@ EXIT_NO_MODULE = 3
 EXIT_CHAIN_BROKEN = 4
 EXIT_OTHER = 5
 
-# OpenProcess 常见错误码（只说人话）
 _WINERR_HINT = {
     5: "拒绝访问 —— 游戏以管理员身份运行而本进程不是（或被安全软件拦了）。"
        "请用管理员权限重跑本脚本，或让启动器也以管理员身份运行。",
@@ -83,39 +53,30 @@ _WINERR_HINT = {
 
 WIDTH = 74
 
-
 def line(ch: str = "─") -> None:
     print(ch * WIDTH)
-
 
 def head(title: str) -> None:
     line()
     print(title)
     line()
 
-
 def ok(msg: str) -> None:
     print(f"  [ OK ] {msg}")
-
 
 def bad(msg: str) -> None:
     print(f"  [FAIL] {msg}")
 
-
 def info(msg: str) -> None:
     print(f"         {msg}")
 
-
 def _is_admin() -> bool:
-    """当前进程是否已提权。拿不到 API 就返回 False（不当成致命错误）。"""
     try:
         return bool(ctypes.windll.shell32.IsUserAnAdmin())
     except Exception:  # noqa: BLE001
         return False
 
-
 def _image_path(kernel32, pid: int) -> str:
-    """进程的映像全路径（拿不到返回空串）。"""
     handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
     if not handle:
         return ""
@@ -131,14 +92,7 @@ def _image_path(kernel32, pid: int) -> str:
         kernel32.CloseHandle(handle)
     return ""
 
-
 def _module_info(kernel32, pid: int, module_name: str) -> tuple[int, int] | None:
-    """``(基址, 大小)``；找不到模块返回 None。
-
-    与 ``LimbusMemoryReader._find_module`` 同一套快照枚举, 只是把 ``modBaseSize``
-    也带出来 —— 这个大小可以直接和钩子索引里记的 ``gameassembly_size`` 对比,
-    判断索引是不是对应另一个游戏版本。
-    """
     snapshot = kernel32.CreateToolhelp32Snapshot(TH32CS_SNAPMODULE, pid)
     if snapshot in (None, INVALID_HANDLE_VALUE):
         return None
@@ -158,9 +112,7 @@ def _module_info(kernel32, pid: int, module_name: str) -> tuple[int, int] | None
         kernel32.CloseHandle(snapshot)
     return None
 
-
 def _configure_extra_api(kernel32) -> None:
-    """补上 memory_reader 没配的那几个 API 的签名。"""
     try:
         kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL,
                                          wintypes.DWORD]
@@ -174,31 +126,15 @@ def _configure_extra_api(kernel32) -> None:
     except Exception:  # noqa: BLE001
         pass
 
-
 def _harden_stdout() -> None:
-    """放宽 stdout 的编码错误策略。
-
-    输出被重定向到管道/文件时, Python 用系统 ANSI 编码(简体中文机器上是 GBK)写,
-    而 "⚠ / ✅" 这类字符不在 GBK 里 —— 默认的 strict 策略会直接 UnicodeEncodeError
-    崩掉整个脚本, 而不是少打一个符号。
-    """
     try:
         sys.stdout.reconfigure(errors="replace")
     except Exception:  # noqa: BLE001
         pass
 
-
-# x64 Windows 用户态地址上限大致 0x7FFFFFFEFFFF，取上一档做粗判
 _PTR_MAX = 0x0000800000000000
 
-
 def _pointer_verdict(pointer: int) -> str:
-    """给"解引用出来的指针"一个直白判断。
-
-    **这是本次排障的关键**：如果某一跳读出来的值不是 8 字节对齐、或者超出用户态
-    范围，那它压根不是指针 —— 说明链已经失效（游戏更新后静态槽位/结构偏移变了），
-    而不是"游戏还没进主界面"。两种情况的处置完全不同。
-    """
     if pointer == 0:
         return "NULL"
     if pointer % 8:
@@ -207,13 +143,7 @@ def _pointer_verdict(pointer: int) -> str:
         return "OUTRANGE"
     return "OK"
 
-
 def _index_target_meta(key: str) -> dict:
-    """本地钩子索引里这条链的元信息（source / verified / value_range / 游戏 DLL 大小）。
-
-    索引自己会记"这条链校验过没有"：``source="carried-over"`` + ``verified=False``
-    意思就是**它只在生成索引时被照抄了一遍，从没在运行时验证过**。
-    """
     try:
         from functions.hook import paths as paths_mod
         path = str(paths_mod.local_index_path())
@@ -226,13 +156,7 @@ def _index_target_meta(key: str) -> dict:
     except Exception:  # noqa: BLE001
         return {}
 
-
 def _disk_module_size() -> int:
-    """磁盘上 GameAssembly.dll 的字节数。
-
-    索引里的 ``gameassembly_size`` 记的**就是这个量纲**（磁盘文件大小），
-    而进程内的模块大小是内存映像大小（节对齐后更大）—— 两者不可直接比较。
-    """
     try:
         from functions.hook import paths as paths_mod
         path = str(getattr(paths_mod.game_paths(), "gameassembly", "") or "")
@@ -240,9 +164,7 @@ def _disk_module_size() -> int:
     except Exception:  # noqa: BLE001
         return 0
 
-
 def _explain_break(bad_hops: list[int]) -> None:
-    """链断掉之后，把"为什么断"和"下一步做什么"说清楚。"""
     if bad_hops:
         where = "、".join(str(i + 1) for i in bad_hops)
         info(f"⚠ 第 {where} 跳读出的值不是合法指针（未 8 字节对齐 / 超出用户态范围）")
@@ -254,17 +176,9 @@ def _explain_break(bad_hops: list[int]) -> None:
         info("指针为 NULL = 那一级结构还没建立（在标题界面 / 没进镜像迷宫）。")
         info("请进到能看到脑啡肽的界面再跑一次；若任何界面都读不到，见上一条。")
 
-
 def probe(reader: LimbusMemoryReader, target, *, key: str = "enkephalin",
           process: str = TARGET_PROCESS, verbose: bool = True,
           resolve: bool = True) -> dict:
-    """完整走一遍读取路径, 把每一步的结果都收集起来。
-
-    返回 dict（键见下方 ``result`` 初始化）。**任何一步失败都只记录、不抛异常**,
-    因为本脚本的全部价值就是把失败原因原样带出来。
-
-    ``resolve=False`` 时不查钩子索引, 直接用传入的 ``target``（自检/调试用）。
-    """
     k = reader.kernel32
     result: dict = {
         "process": process, "pid": 0, "image": "",
@@ -280,7 +194,6 @@ def probe(reader: LimbusMemoryReader, target, *, key: str = "enkephalin",
     if verbose:
         head(f"脑啡肽内存读取自检  ({time.strftime('%Y-%m-%d %H:%M:%S')})")
 
-    # ---- 1. 运行环境 ---------------------------------------------------
     if verbose:
         line()
         print("1) 运行环境")
@@ -290,7 +203,6 @@ def probe(reader: LimbusMemoryReader, target, *, key: str = "enkephalin",
         if not _is_admin():
             info("提示: 游戏若以管理员身份运行, 非管理员的脚本 OpenProcess 会被拒。")
 
-    # ---- 2. 找进程 -----------------------------------------------------
     from functions.achievement.memory_reader import _fast_find_process
     pid = int(_fast_find_process(process) or 0)
     if verbose:
@@ -310,7 +222,6 @@ def probe(reader: LimbusMemoryReader, target, *, key: str = "enkephalin",
         ok(f"PID = {pid}")
         info(f"映像: {image or '（取不到，可能需要更高权限）'}")
 
-    # ---- 3. 目标链 -----------------------------------------------------
     if verbose:
         line()
         print("3) 解析指针链配置")
@@ -346,7 +257,6 @@ def probe(reader: LimbusMemoryReader, target, *, key: str = "enkephalin",
                 info("⚠ 索引里这条链标记 verified=false —— 它从未在运行时校验过,")
                 info("  只在生成索引时被原样抄录。这类链极可能已经失效。")
 
-    # ---- 4. 开句柄（权限）---------------------------------------------
     if verbose:
         line()
         print("4) 打开进程句柄 (PROCESS_VM_READ | PROCESS_QUERY_INFORMATION)")
@@ -367,7 +277,6 @@ def probe(reader: LimbusMemoryReader, target, *, key: str = "enkephalin",
         ok(f"句柄 = {int(handle)}")
 
     try:
-        # ---- 5. 定位模块 ----------------------------------------------
         if verbose:
             line()
             print("5) 定位模块")
@@ -400,7 +309,6 @@ def probe(reader: LimbusMemoryReader, target, *, key: str = "enkephalin",
                     verdict = "不一致 → 索引是另一个版本, 读出的值必然是垃圾"
                 info(f"索引 gameassembly_size = {index_size} → {verdict}")
 
-        # ---- 6. 逐级指针 ----------------------------------------------
         if verbose:
             line()
             print("6) 逐级解引用（Cheat Engine 语义: 读 → 加偏移, 最后再读值）")
@@ -456,7 +364,6 @@ def probe(reader: LimbusMemoryReader, target, *, key: str = "enkephalin",
 
         result["final_addr"] = address
 
-        # ---- 7. 最终值 -------------------------------------------------
         if verbose:
             line()
             print("7) 读取最终值")
@@ -490,25 +397,18 @@ def probe(reader: LimbusMemoryReader, target, *, key: str = "enkephalin",
         return result
     finally:
         k.CloseHandle(handle)
-        # 这里必须把 reader 的状态复原: 上面的赋值是为了复用它的读函数,
-        # 但句柄已经关掉了, 留着会让 reader 以为还 attach 着。
         reader.handle = None
         reader.pid = None
         reader.module_base = None
 
-
 def _run_probe(reader: LimbusMemoryReader, key: str, *, verbose: bool,
                quiet: bool, process: str = TARGET_PROCESS) -> dict:
-    """跑一次 ``probe``；``quiet=True`` 时把 ``memory_target`` 自己那句 print
-    也一起吞掉 —— 否则它会污染 ``--raw`` 的数字和 ``--json`` 的 JSON。
-    """
     if not quiet:
         return probe(reader, memory_target(key), key=key, process=process,
                      verbose=verbose)
     with contextlib.redirect_stdout(io.StringIO()):
         return probe(reader, memory_target(key), key=key, process=process,
                      verbose=False)
-
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
@@ -532,7 +432,6 @@ def main(argv: list[str] | None = None) -> int:
     _configure_extra_api(reader.kernel32)
 
     if args.raw:
-        # 静默模式: 连 memory_reader 里那些 print 一起压掉, 保证 stdout 只有一个数字
         res = _run_probe(reader, args.key, verbose=False, quiet=True,
                          process=args.process)
         val = res.get("value")
@@ -562,11 +461,9 @@ def main(argv: list[str] | None = None) -> int:
     except KeyboardInterrupt:
         print("\n已停止。")
 
-    # 单次运行: 用本次的退出码; watch 模式: 只要成功过一次就算成功
     if not args.watch:
         return int(codes[-1]) if codes else EXIT_OTHER
     return EXIT_OK if EXIT_OK in codes else (codes[-1] if codes else EXIT_OTHER)
-
 
 if __name__ == "__main__":
     raise SystemExit(main())

@@ -1,27 +1,3 @@
-"""控制台输出管道：给 cmd 的每行加统一前缀，并原样镜像进日志文件。
-
-为什么包 ``sys.stdout`` 而不是去改几百处 ``print``：启动器的输出散落在
-``print`` / ``rich`` / 第三方库 / 子模块里，逐个调用点改既不现实也改不全。
-包一层就能让每一行都套上统一布局，而不用动任何调用点。
-
-布局本身在 :mod:`functions.base.log_format`，这里只负责搬运字节：
-
-    [2026-10-11 11:21:28.291] [hook] [INFO] [updater.py:314]: offset index up to date
-
-本模块保留的职责：
-
-* 包装 ``sys.stdout`` / ``sys.stderr``，让控制台的行都经过
-  :func:`functions.base.log_format.build_line`；
-* 把**同一份**文本镜像进滚动日志文件，这正是日志文件和控制台能对上的原因
-  （见 :mod:`functions.base.log_manager`）；
-* 多行写入保持原样。带内嵌换行的 ``print``（启动横幅、ASCII 图、回溯）只有首行
-  会加前缀，``print`` 随后单独写出的换行直接透传，于是图案排版不被破坏；含 ``\\r``
-  的写入（进度条）也原样转发。
-
-与 UI 终端的关系：日志文件归本模块所有，一行文本也只在这里渲染一次。Tk 终端和 Web
-终端通过 :func:`add_line_hook` 订阅，直接绘制拿到的文本（连 ANSI 颜色一起，由各自的
-解析器上色），因此任何 UI 都不再自己加前缀、加时间戳或另写一遍日志文件。
-"""
 
 from __future__ import annotations
 
@@ -40,42 +16,26 @@ _lock = threading.RLock()
 _color_ok = False
 _line_hooks: list = []
 _hooks_lock = threading.RLock()
-# 显式级别通道: functions.base.logger 在写正文前往这里放一个级别，
-# _format() 取用后立刻清空。级别走带内信号，正文保持纯净。
 _explicit = threading.local()
 
-
 def _take_level():
-    """取出并清空当前线程挂起的显式级别 (没有则返回 None)。"""
     level = getattr(_explicit, "level", None)
     _explicit.level = None
     return level
 
-
 def add_line_hook(hook) -> None:
-    """注册 ``hook(text)``，接收控制台每一条完整的行。
-
-    ``text`` 不含结尾换行，但**带 ANSI 颜色**——用什么颜色由
-    :mod:`functions.base.log_format` 一次定好，钩子拿到的就是 cmd 上显示的那一份。
-    钩子调用时不持有调用方可见的锁；钩子内部抛异常会被吞掉，坏掉的 UI 绝不能拖垮
-    控制台。
-    """
     with _hooks_lock:
         if hook not in _line_hooks:
             _line_hooks.append(hook)
 
-
 def remove_line_hook(hook) -> None:
-    """撤销 :func:`add_line_hook`；未知的钩子直接忽略。"""
     with _hooks_lock:
         try:
             _line_hooks.remove(hook)
         except ValueError:
             pass
 
-
 def _emit_line(line: str) -> None:
-    """把一条完成的行分发给所有已注册的 UI 钩子。"""
     with _hooks_lock:
         hooks = list(_line_hooks)
     for hook in hooks:
@@ -84,15 +44,11 @@ def _emit_line(line: str) -> None:
         except Exception:
             pass
 
-
-# --------------------------------------------------------------------------- 颜色
-
 def _enable_ansi() -> bool:
-    """尽力为经典 cmd 打开 ANSI 支持；返回 False 表示放弃着色。"""
     if os.name != "nt":
         return True
     try:
-        import colorama                                   # requirements 里已声明
+        import colorama
         colorama.just_fix_windows_console()
         return True
     except Exception:
@@ -100,7 +56,7 @@ def _enable_ansi() -> bool:
     try:
         import ctypes
         kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-        for handle_id in (-11, -12):                      # stdout / stderr
+        for handle_id in (-11, -12):
             handle = kernel32.GetStdHandle(handle_id)
             mode = ctypes.c_uint32()
             if kernel32.GetConsoleMode(handle, ctypes.byref(mode)):
@@ -109,32 +65,14 @@ def _enable_ansi() -> bool:
     except Exception:
         return False
 
-
 def _mirror_to_log(line: str) -> None:
-    """把一条已格式化的行抄进滚动日志文件。
-
-    文本原样写入：时间戳、区域、级别、来源它都已经带了，日志文件不需要自己的
-    formatter。写失败绝不能影响调用方的 print，所以整个函数被兜底保护。
-    """
     try:
         from functions.base.log_manager import write_line
         write_line(line)
     except Exception:
         pass
 
-
-# --------------------------------------------------------------------------- 输出流代理
-
 class _ConsoleStream:
-    """给写进控制台流的行加前缀，并把它们镜像到日志文件。
-
-    ``print("a\\nb\\nc")`` 会以两次写入到达这里（正文、然后是结尾换行），所以规则是：
-    **单行走正常前缀流程；一次写入里带后续行的，按“自带排版的整块”整块放行**——
-    横幅艺术字、异常回溯、打印块都靠自己的缩进和图案排版，给它们逐行加前缀会把
-    图案拼不回去。整块同样进日志文件和 UI，只是不加前缀。``_raw_tail`` 记住上一次
-    写入没有以换行结束，于是紧随其后的那个换行会被直接转发，而不是给整块的最后
-    一行加上前缀。
-    """
 
     def __init__(self, raw, name: str):
         self._raw = raw
@@ -143,7 +81,6 @@ class _ConsoleStream:
         self._raw_tail = False
         self._lock = threading.RLock()
 
-    # ---- 第三方库会探测这些属性，缺一个就可能把它们弄崩
     def __getattr__(self, item):
         return getattr(self._raw, item)
 
@@ -175,17 +112,15 @@ class _ConsoleStream:
         if func:
             func(**kwargs)
 
-    # ---- 真正的写入
     def write(self, text):
         if not text:
             return 0
         if not isinstance(text, str):
             text = str(text)
-        if "\r" in text:                                  # 进度条：原样透传
+        if "\r" in text:
             return self._raw.write(text)
         with self._lock:
             if self._raw_tail and text.startswith("\n"):
-                # 上一次写入停在一行中途（多行块的尾部），这个换行只是收尾。
                 self._raw_tail = False
                 return self._raw.write(text)
             self._buf += text
@@ -194,10 +129,6 @@ class _ConsoleStream:
             first, rest = self._buf.split("\n", 1)
             self._buf = ""
         if rest:
-            # 一次写入里还有后续行：这是一整块“自带排版”的内容（艺术字横幅、异常
-            # 回溯、打印块）。整块原样放行——连第一行也不加前缀，否则横幅的第一行
-            # 会被前缀推歪，图案就拼不回原形了。整块照旧进日志文件、照旧上报 UI：
-            # 先前只把首行当日志行，于是日志里只剩下横幅的第一行、回溯也只有一行。
             block = first + "\n" + rest
             self._raw_tail = not rest.endswith("\n")
             self._mirror_block(block)
@@ -206,22 +137,18 @@ class _ConsoleStream:
         return self._raw.write(out)
 
     def _mirror_block(self, block: str) -> None:
-        """把整块的每一行原样送进日志文件与 UI（不加前缀、不剥颜色）。"""
         for line in block.split("\n"):
             if not line.strip():
                 continue
             _mirror_to_log(line)
-            if not line.startswith("|"):                  # 启动器内部管道标记
+            if not line.startswith("|"):
                 _emit_line(line)
 
     def _format(self, line: str) -> str:
         if not line.strip():
-            # 空白行（``print("")`` 之类）不进日志、也不上报 UI：生成一条只有前缀、
-            # 没有内容的记录毫无意义。三处都按普通空行处理，才谈得上一致。
             return "\n"
         level = _take_level()
         if level is None and getattr(_explicit, "rendered", False):
-            # functions.base.logger 已经渲染过整行: 再套一次前缀会得到两份时间戳。
             _explicit.rendered = False
             _mirror_to_log(line)
             if not line.startswith("|"):
@@ -230,10 +157,6 @@ class _ConsoleStream:
         rendered = log_format.build_line(
             line, level=level, palette_map=log_format.palette(_color_ok))
         _mirror_to_log(rendered)
-        # UI 终端拿到的是 cmd 打印的同一份文本，**连颜色一起**：着色只在 log_format
-        # 里决定一次，前端与 Tk 各自把转义序列解析成自己的颜色，这样就不会出现
-        # “cmd 有颜色、面板没颜色”的偏差。以 `|` 开头的是启动器的“内部管道”标记，
-        # 屏幕终端一律过滤掉。
         if not line.startswith("|"):
             _emit_line(rendered)
         return rendered + "\n"
@@ -244,19 +167,10 @@ class _ConsoleStream:
         except Exception:
             pass
 
-
-# --------------------------------------------------------------------------- 安装
-
 def is_installed() -> bool:
     return _installed
 
-
 def install() -> bool:
-    """用带前缀的代理包住 ``sys.stdout`` / ``sys.stderr``（幂等）。
-
-    只在真正拥有用户可见控制台的入口调用：成就监测子进程的 stdout 被父进程接到
-    成就日志文件上，那里不该出现这个前缀。
-    """
     global _installed, _color_ok
     with _lock:
         if _installed:
@@ -267,13 +181,10 @@ def install() -> bool:
         if err is None or isinstance(err, _ConsoleStream):
             return False
         _color_ok = _enable_ansi()
-        # 顺序有讲究：先让 colorama/SetConsoleMode 把真实流准备好，再抓住它作为
-        # 落点。不支持 ANSI 的主机上，转义序列随后会被翻译或剥掉，而不是原样打印。
         sys.stdout = _ConsoleStream(sys.stdout, "stdout")
         sys.stderr = _ConsoleStream(sys.stderr, "stderr")
         _installed = True
         return True
-
 
 def uninstall() -> None:
     global _installed

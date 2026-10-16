@@ -1,18 +1,3 @@
-"""Limbus Company 进程内存读取器。
-
-当前支持读取脑啡肽容量。指针链有两个来源：
-
-1. **云端笔记** ``FaustLauncher.hook_index``（由 functions.hook 自动生成，
-   ``targets.enkephalin`` 字段；本地 ``cache/hook/hook_index.json`` 缓存优先，
-   不阻塞读取）—— 游戏更新后偏移会自动跟着变，不需要改代码；
-2. 代码里的内置默认值（下面的 ``ENKEPHALIN_TARGET``，来自桌面 ok.py 的 CE 结果），
-   作为拿不到索引时的兜底。
-
-索引里的链只在 ``gameassembly_size`` 与本地 GameAssembly.dll 一致时才会被采用
-（大小不一致 = 索引对应的是另一个游戏版本，用了只会读出垃圾）。
-
-读不到索引时会在后台线程拉一次云端笔记（一次启动只拉一次），不影响读取。
-"""
 
 from __future__ import annotations
 
@@ -22,21 +7,15 @@ import os
 import threading
 from dataclasses import dataclass
 
-# 注意：``functions.hook`` 在**模块级**导入（不在读取路径里惰性 import）。
-# 成就监测是“监控线程 + 主线程”并发结构，而 Python 3.14 的 import 锁在“一个线程正在
-# 导入某模块时另一个线程也去 import 同一模块”会抛 DeadlockError —— 实测就是这么踩到的。
-# 这里在主线程 import 期间就把依赖解析完，读取路径上只剩纯计算。
 try:
     from functions.hook import index as _hook_index_mod
-except Exception:            # 打包环境缺模块时仍要能用内置偏移
+except Exception:
     _hook_index_mod = None  # type: ignore[assignment]
-
 
 PROCESS_VM_READ = 0x0010
 PROCESS_QUERY_INFORMATION = 0x0400
 TH32CS_SNAPMODULE = 0x00000008
 INVALID_HANDLE_VALUE = ctypes.c_void_p(-1).value
-
 
 class MODULEENTRY32(ctypes.Structure):
     _fields_ = [
@@ -52,16 +31,13 @@ class MODULEENTRY32(ctypes.Structure):
         ("szExePath", ctypes.c_char * 260),
     ]
 
-
 @dataclass(frozen=True)
 class MemoryTarget:
-    """一个内存目标的指针链配置。"""
 
     module_name: str
     base_offset: int
     offsets: tuple[int, ...]
     value_type: str = "int32"
-
 
 ENKEPHALIN_TARGET = MemoryTarget(
     module_name="GameAssembly.dll",
@@ -69,7 +45,6 @@ ENKEPHALIN_TARGET = MemoryTarget(
     offsets=(0xB8, 0x80, 0x18, 0x28),
 )
 
-# 笔记里允许拿到的目标名（键名 → 默认链）
 _KNOWN_TARGETS = {"enkephalin": ENKEPHALIN_TARGET}
 _CHAIN_LOCK = threading.Lock()
 _RESOLVED: dict[str, MemoryTarget] = {}
@@ -77,9 +52,7 @@ _CHAIN_SOURCE: dict[str, str] = {}
 _CLOUD_REFRESHED = False
 _CLOUD_REFRESHING = False
 
-
 def _local_gameassembly_size() -> int:
-    """本地 GameAssembly.dll 大小（拿不到返回 0；只用来校验索引是否配套）。"""
     try:
         from functions.hook.paths import game_paths
         paths = game_paths()
@@ -89,9 +62,7 @@ def _local_gameassembly_size() -> int:
         pass
     return 0
 
-
 def _target_from_dict(item: dict, default: MemoryTarget) -> MemoryTarget | None:
-    """把索引里的 target 字典转成 MemoryTarget（校验不通过返回 None）。"""
     try:
         base_offset = int(item.get("base_offset")) # type: ignore
         offsets = tuple(int(x) for x in item.get("offsets") or [])
@@ -106,9 +77,7 @@ def _target_from_dict(item: dict, default: MemoryTarget) -> MemoryTarget | None:
         value_type=str(item.get("value_type") or default.value_type),
     )
 
-
 def memory_target(key: str = "enkephalin") -> MemoryTarget:
-    """取某条链的当前可用参数（索引优先，回退内置默认值）。"""
     default = _KNOWN_TARGETS.get(key, ENKEPHALIN_TARGET)
     with _CHAIN_LOCK:
         cached = _RESOLVED.get(key)
@@ -140,20 +109,12 @@ def memory_target(key: str = "enkephalin") -> MemoryTarget:
           f"0x{resolved.base_offset:X}+{[hex(x) for x in resolved.offsets]}")
     return resolved
 
-
 def chain_source(key: str = "enkephalin") -> str:
-    """当前链的来源描述（诊断用）。"""
     memory_target(key)
     with _CHAIN_LOCK:
         return _CHAIN_SOURCE.get(key, "unknown")
 
-
 def _local_index_matches_game() -> bool:
-    """本地索引是否已经对得上本机 GameAssembly.dll（对得上就不用联网拉云端）。
-
-    直接复用注入前预检的判据（``functions/hook/preflight.prologue_check``）：
-    逐条扝索引里的 prologue 与本机 DLL 字节比对，读不到/对不上都算 False。
-    """
     try:
         from functions.hook import index as index_mod
         from functions.hook import paths as paths_mod
@@ -168,17 +129,7 @@ def _local_index_matches_game() -> bool:
     except Exception:  # noqa: BLE001
         return False
 
-
 def refresh_chain_from_cloud(background: bool = True, on_log=print) -> bool:
-    """从云端笔记拉一次 hook_index 并刷新本地缓存（一次启动只自动拉一次）。
-
-    成就监测进程启动时调一次即可：拿到新偏移后，下一次 ``memory_target()``
-    就会用新的链（读取过程中不会因此阻塞）。
-
-    注意：依赖模块在**调用线程**（主线程）里先导入好。Python 3.14 的 import 锁
-    在“主线程正在导入某模块时、后台线程再去 import 同一模块”会直接抛
-    ``_DeadlockError``（实测过），所以不能让工作线程承担首次导入。
-    """
     global _CLOUD_REFRESHED, _CLOUD_REFRESHING
     hook_index = _hook_index_mod
     if hook_index is None:
@@ -193,9 +144,6 @@ def refresh_chain_from_cloud(background: bool = True, on_log=print) -> bool:
     def worker() -> None:
         global _CLOUD_REFRESHED, _CLOUD_REFRESHING
         try:
-            # 本地偏移索引已经对得上本机游戏 DLL 时**不联网**：
-            # 以前这里无条件拉云端，日志里就会出现“本地已是最新却还从云端刷新”。
-            # 判据与 battle_watch 的注入前预检同一套（prologue 逐条比本机 DLL）。
             if _local_index_matches_game():
                 with _CHAIN_LOCK:
                     _RESOLVED.clear()
@@ -204,7 +152,7 @@ def refresh_chain_from_cloud(background: bool = True, on_log=print) -> bool:
                 return
             got = hook_index.refresh_local_from_cloud(allow_refresh=True, on_log=on_log)
             with _CHAIN_LOCK:
-                _RESOLVED.clear()          # 让下次读取重新解析
+                _RESOLVED.clear()
             if got is not None and on_log:
                 on_log(f"[Achievement] 已从云端刷新偏移索引（游戏 sha256 "
                        f"{str(got.game.get('gameassembly_sha256') or '')[:12]}...）")
@@ -223,22 +171,14 @@ def refresh_chain_from_cloud(background: bool = True, on_log=print) -> bool:
     threading.Thread(target=worker, name="ach-hook-index-refresh", daemon=True).start()
     return True
 
-
 def _fast_find_process(process_name: str = "LimbusCompany.exe") -> int:
-    """用 ctypes 枚举进程（~7ms），拿不到返回 0。
-
-    内部复用 ``battle_watch.find_process_id``（同一套 CreateToolhelp32Snapshot 枚举），
-    避免每个模块各自实现一份；导入失败时返回 0，调用处会回退 tasklist。
-    """
     try:
         from functions.achievement.battle_watch import find_process_id
         return int(find_process_id(process_name) or 0)
     except Exception:
         return 0
 
-
 class LimbusMemoryReader:
-    """读取游戏进程内存的轻量封装。"""
 
     def __init__(self, process_name: str = "LimbusCompany.exe") -> None:
         self.process_name = process_name.lower()
@@ -272,13 +212,6 @@ class LimbusMemoryReader:
         k.Module32Next.restype = wintypes.BOOL
 
     def _find_process(self) -> tuple[int, int] | None:
-        """查找游戏进程（ctypes 枚举，~7ms）。
-
-        以前每次都 ``subprocess.run(["tasklist", ...])`` → 单次 ~400ms，而这个读取会被
-        成就轮询频繁问到（以前它还跑在弹窗动画的线程上，所以弹窗末尾卡顿/看着像卡死）。
-        现在只走 ctypes；游戏没开就是 ~7ms 返回 ``None``（不再回退去 spawn tasklist——
-        那才是那 400ms 的元凶）。
-        """
         pid = _fast_find_process(self.process_name)
         return (pid, 0) if pid else None
 
@@ -304,7 +237,6 @@ class LimbusMemoryReader:
         return None
 
     def attach(self, target: MemoryTarget = ENKEPHALIN_TARGET) -> bool:
-        """附加游戏并定位目标模块。"""
         if self.is_attached:
             return True
         found = self._find_process()
@@ -347,7 +279,6 @@ class LimbusMemoryReader:
         return buffer.raw[:size]
 
     def read_pointer(self, target: MemoryTarget) -> int | None:
-        """沿用 ok.py 的多级指针语义读取最终地址。"""
         if not self.is_attached or self.module_base is None:
             return None
         address = self.module_base + target.base_offset
@@ -362,13 +293,11 @@ class LimbusMemoryReader:
         return address
 
     def read_int32(self, target: MemoryTarget = ENKEPHALIN_TARGET) -> int | None:
-        """读取目标的 32 位整数值。"""
         address = self.read_pointer(target)
         raw = self._read_bytes(address, 4) if address else None
         return int.from_bytes(raw, "little", signed=True) if raw else None
 
     def read_enkephalin(self) -> int | None:
-        """读取脑啡肽容量，不是狂气。"""
         target = memory_target("enkephalin")
         if not self.is_attached and not self.attach(target):
             return None

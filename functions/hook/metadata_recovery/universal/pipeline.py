@@ -1,20 +1,4 @@
 #!/usr/bin/env python3
-"""pipeline.py - universal 解密管线编排（版本无关，无参考文件）。
-
-LCTA 副本：在 upstream universal 基础上增加 on_log / cancel_check
-回调钩子（WebUI 模态进度与取消支持），逻辑与上游一致。
-
-用法：
-  python -m webutils.metadata_recovery.universal.pipeline --dll <GameAssembly.dll>
-      --metadata <global-metadata.dat> [--version 39] [--out-dir out] [--name steam]
-
-阶段：
-  1. locate   ：xorshift 字节模板扫描 + 反汇编特征评分（无 IDA）
-  2. extract  ：指令级参数提取（header_size/seed/表/7 节，无文本正则）
-  3. verify   ：无参考结构验证（布局自动判定 + 解密结构门）
-  4. solve    ：无参考 31 节映射（锚点间隙链拼装 + 内容签名）
-  5. rebuild  ：标准文件重建 + 四重自验证
-"""
 
 from __future__ import annotations
 
@@ -32,17 +16,11 @@ from .solve_versioned import solve
 from .verify_structural import verify
 from .xorshift_scan import scan_pe
 
-TRUTH_INIT = 0x18069C5E0  # 07-30/08-06/08-13 三版实测 init 地址（仅测试断言用）
-
+TRUTH_INIT = 0x18069C5E0
 
 def run(dll_path: str, metadata_path: str, version: int = 39,
         out_dir: Path = Path("out"), name: str = "universal",
         on_log=None, cancel_check=None) -> dict:
-    """运行管线。
-
-    on_log(msg)      阶段日志回调（默认 print）
-    cancel_check()   阶段边界取消检查（抛异常即中止）
-    """
     if on_log is None:
         on_log = lambda msg: print(msg, flush=True)  # noqa: E731
     if cancel_check is None:
@@ -51,7 +29,6 @@ def run(dll_path: str, metadata_path: str, version: int = 39,
     report: dict = {"version": version, "stages": {}, "verdicts": {}}
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    # ---- 1. 定位 -----------------------------------------------------------
     on_log("阶段 1/5（定位）：xorshift 字节模板扫描 + 反汇编特征评分 ...")
     cancel_check()
     image = load_pe(dll_path)
@@ -69,7 +46,6 @@ def run(dll_path: str, metadata_path: str, version: int = 39,
         return report
     init_va = cands[0]["ea"]
 
-    # ---- 2. 提取 -----------------------------------------------------------
     on_log(f"阶段 2/5（提取）：对 0x{init_va:X} 指令级参数提取 ...")
     cancel_check()
     ext = extract_from_disasm(image, init_va)
@@ -89,7 +65,6 @@ def run(dll_path: str, metadata_path: str, version: int = 39,
     if ext.errors:
         return report
 
-    # ---- 3. 验证 -----------------------------------------------------------
     on_log("阶段 3/5（验证）：header 解密 + 布局自动判定 + 节段结构门 ...")
     cancel_check()
     metadata = Path(metadata_path).read_bytes()
@@ -101,7 +76,6 @@ def run(dll_path: str, metadata_path: str, version: int = 39,
     report["verdicts"]["verify"] = vres["verdict"]
     on_log(f"  验证：布局={report['stages']['verify']['layout']} 裁决={vres['verdict']}")
 
-    # ---- 4. 求解 -----------------------------------------------------------
     on_log("阶段 4/5（求解）：31 节锚点间隙链拼装 ...")
     cancel_check()
     try:
@@ -121,7 +95,6 @@ def run(dll_path: str, metadata_path: str, version: int = 39,
     on_log(f"  求解：布局={solution.get('layout')} 受保护节={len(solution.get('protected', {}))} "
            f"review={report['stages']['solve']['review'] or '无'}")
 
-    # ---- 5. 重建 + 自验证 --------------------------------------------------
     on_log("阶段 5/5（重建）：标准文件重建 + 四重自验证 ...")
     cancel_check()
     std = rebuild_standard(metadata, solution, profile["table_hex"], version=version)
@@ -147,7 +120,6 @@ def run(dll_path: str, metadata_path: str, version: int = 39,
     cancel_check()
     return report
 
-
 def main() -> int:
     parser = argparse.ArgumentParser(description="universal metadata 解密管线")
     parser.add_argument("--dll", required=True, help="GameAssembly.dll 路径")
@@ -162,7 +134,6 @@ def main() -> int:
     verdicts = report.get("verdicts", {})
     ok = all(v in ("PASS", "REVIEW") for v in verdicts.values()) and bool(verdicts)
     return 0 if ok else 1
-
 
 if __name__ == "__main__":
     sys.exit(main())

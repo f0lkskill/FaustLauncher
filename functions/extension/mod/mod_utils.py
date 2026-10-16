@@ -11,21 +11,15 @@ from functions.web_update.translation_source import get_translation_dir_name as 
 from subprocess import run, CREATE_NO_WINDOW
 from functions.base.common.json_io import read_json
 
-
 def _strip_suffix_number(name: str) -> str:
-    """去掉名字末尾的数字（同名 mod 的 1,2,3... 序列后缀）"""
     m = re.match(r"^(.*?)(\d+)$", name)
     return m.group(1) if m else name
 
-
 def _suffix_number(name: str) -> int:
-    """名字末尾的数字；没有数字的按 0"""
     m = re.match(r"^(.*?)(\d+)$", name)
     return int(m.group(2)) if m else 0
 
-
 def _decode_output(data):
-    """bat 输出解码: cmd 默认用系统 ANSI/OEM 编码 (中文系统 GBK), 先试 UTF-8, 失败回落 GBK"""
     if not data:
         return ''
     for enc in ('utf-8', 'gbk'):
@@ -35,18 +29,14 @@ def _decode_output(data):
             continue
     return data.decode('utf-8', errors='replace')
 
-
-MANIFEST_NAME = "launcher_manifest.json"   # 与 mod 加载器 (sound.py) 约定一致的清单文件
-ORPHAN_DIR_NAME = "_orphan"                # 已删除 mod 的残留附属文件移到这个子目录 (可拖回)
-STAMP_SUFFIX = ".src"                      # <目标rebank>.src 记录源 bank 的 md5
-
+MANIFEST_NAME = "launcher_manifest.json"
+ORPHAN_DIR_NAME = "_orphan"
+STAMP_SUFFIX = ".src"
 
 def _manifest_path(mod_root: str) -> str:
     return os.path.join(mod_root, MANIFEST_NAME)
 
-
 def _read_manifest(mod_root: str) -> Dict[str, Any]:
-    """读取 mod 清单 {package: [...], manual: [...]}; 不存在/损坏时返回空 dict"""
     try:
         with open(_manifest_path(mod_root), "r", encoding="utf-8") as f:
             data = json.load(f)
@@ -54,9 +44,7 @@ def _read_manifest(mod_root: str) -> Dict[str, Any]:
     except (OSError, ValueError):
         return {}
 
-
 def _write_manifest(mod_root: str, data: Dict[str, Any]) -> None:
-    """原子写清单 (先写 .tmp 再替换), 避免加载器读到半个文件"""
     try:
         payload = dict(data)
         payload["version"] = 1
@@ -68,15 +56,12 @@ def _write_manifest(mod_root: str, data: Dict[str, Any]) -> None:
     except OSError as e:
         print(f"写入 mod 清单失败: {e}", flush=True)
 
-
 def _read_stamp(path: str) -> str:
-    """读取 bank 版本标记 (源 bank 的 md5); 没有返回空串"""
     try:
         with open(path, "r", encoding="utf-8") as f:
             return f.read().strip()
     except OSError:
         return ""
-
 
 def _write_stamp(path: str, digest: str) -> None:
     try:
@@ -85,9 +70,7 @@ def _write_stamp(path: str, digest: str) -> None:
     except OSError as e:
         print(f"写入版本标记失败 {path}: {e}", flush=True)
 
-
 def _remove_quietly(path: str, label: str = "文件") -> None:
-    """删除文件 (不存在就忽略), 用于清理旧差分/版本标记"""
     try:
         if os.path.isfile(path):
             os.remove(path)
@@ -95,29 +78,13 @@ def _remove_quietly(path: str, label: str = "文件") -> None:
     except OSError as e:
         print(f"删除{label} {path} 失败: {e}", flush=True)
 
-
 def _listdir_safe(path: str) -> List[str]:
-    """列出目录内容; 目录不存在或不可读时返回空列表。
-
-    以前三处都直接写 os.listdir('mods'): 只要 mods/ 不存在 (用户删了、或首次运行
-    还没创建), 就会抛 FileNotFoundError, 而且在 load_all_mods 里这句在 try 之外,
-    会一路冒到"启动游戏"流程, 让整个 mod 加载中断 (而不是正常地"没有 mod")。
-    """
     try:
         return os.listdir(path)
     except OSError:
         return []
 
-
 def _target_belongs_to(target_name: str, prefix: str) -> bool:
-    """判断目标目录里的文件名是否属于某个 mod 的某个源文件 (卸载时据此删除)。
-
-    必须覆盖三种形态, 否则会留下删不掉的残留:
-      <prefix>.<ext>          普通复制的文件
-      <prefix><数字>.<ext>    同名文件的历史编号产物 (旧 _unique_bank_name 留下的)
-      <prefix>.rebank.src     bank 差分的版本标记 (双扩展名)
-    额外部分只认"纯数字", 免得把 modA_Xtra 误判成属于 modA_X。
-    """
     name = target_name
     if name.lower().endswith(STAMP_SUFFIX):
         name = name[:-len(STAMP_SUFFIX)]
@@ -128,13 +95,7 @@ def _target_belongs_to(target_name: str, prefix: str) -> bool:
         return stem[len(prefix):].isdigit()
     return False
 
-
 def _move_orphans(target_dir: str, stale_names: List[str]) -> None:
-    """把"上一轮清单登记过、这一轮不再管理"的附属文件移到 _orphan/ (不删除, 可拖回)
-
-    只动清单里登记过的名字; Mod管理器手工放入的文件、加载器备份 (*.orig)、
-    日志和清单本身都不动。
-    """
     moved = []
     orphan_dir = None
     for name in stale_names:
@@ -155,10 +116,7 @@ def _move_orphans(target_dir: str, stale_names: List[str]) -> None:
         print(f"已把 {len(moved)} 个不再使用的附属文件移到 {ORPHAN_DIR_NAME}\\ "
               f"(需要可拖回上一级): {', '.join(moved)}", flush=True)
 
-
 def _run_mod_bat(mod_path, bat_name, mod_name, timeout=None):
-    """运行 mod 的 bat 脚本 (cwd=mod 目录绝对路径), 捕获并打印其 echo 输出。
-    运行前移除 bat 内的 pause 命令 (pause 会阻塞等待按键导致超时)。"""
     try:
         abs_path = os.path.abspath(mod_path)
         bat_file = os.path.join(abs_path, bat_name)
@@ -166,7 +124,6 @@ def _run_mod_bat(mod_path, bat_name, mod_name, timeout=None):
             print(f"[{mod_name}] 未找到 {bat_file}, 跳过", flush=True)
             return
         print(f"[{mod_name}] 运行 {bat_name} (cwd={abs_path})", flush=True)
-        # 生成去掉 pause 的临时 bat (pause 阻塞等待按键, 无交互环境必超时)
         tmp_bat = os.path.join(abs_path, '_no_pause_' + bat_name)
         try:
             with open(bat_file, 'r', encoding='utf-8', errors='replace') as f:
@@ -196,21 +153,17 @@ def _run_mod_bat(mod_path, bat_name, mod_name, timeout=None):
     except Exception as e:
         print(f"执行 {mod_name} {bat_name} 失败: {e}", flush=True)
 
-
 class ModManager:
     mod_dir = 'mods'
      
     def __init__(self):
-        """初始化Mod工具类"""
         pass
 
     def get_mod_directory(self):
-        """获取Mod目录路径"""
         return get_mod_root_dir()
     
     @staticmethod
     def get_mod_info(mod_name: str) -> Dict[str, Any]:
-        """获取Mod信息"""
         mod_info_path = os.path.join(
             'mods', 
             mod_name, 
@@ -227,41 +180,26 @@ class ModManager:
         mods_dir = 'mods'
         mod_paths = []
         
-        # 遍历所有mod目录 (mods/ 不存在时按"没有 mod"处理, 不抛异常)
         for mod_name in _listdir_safe(mods_dir):
             mod_path = os.path.join(mods_dir, mod_name)
             
-            # 检查是否是目录且存在mod_info.json
             if os.path.isdir(mod_path) and os.path.exists(os.path.join(mod_path, 'mod_info.json')):
                 mod_paths.append(mod_path)
 
         return mod_paths
     
     def load_all_mods(self) -> List[str]:
-        """
-        装载所有mod
-        读取每个mod_info.json里的settings键值来决定是否加载
-        """
         loaded_mods = []
-        used = {}  # 本次装载已占用的目标文件名 -> 源文件 md5 (同名 .bank 编号用)
+        used = {}
 
-        # mod 清单: 记录本次装载管理的附属文件, 供加载器决定同名音频的应用优先级,
-        # 也用于把"已删除 mod 留下的残留附属文件"移走 (否则会一直覆盖新加的 mod)
         manifest_root = self.get_mod_directory()
         old_manifest = _read_manifest(manifest_root)
         new_pkg_names: List[str] = []
 
-        # 遍历所有mod目录
         all_mod_paths = self.get_mod_path()
         if not all_mod_paths:
-            # mods/ 为空或读取不到时, 绝不能继续做残留清理:
-            # 下面的 stale 是按"清单里有、本轮没人再登记"算的, 此时清单里所有文件
-            # 都会被判定成残留, 于是一整批正在使用的 mod 文件被搬进 _orphan/,
-            # 用户看到的就是"所有 mod 突然全部失效"(且 _orphan 只能手动拖回)。
             print("mods 目录下没有可处理的 mod, 跳过本轮残留清理")
             return loaded_mods
-        # 本轮仍然存在的 mod 名前缀 (无论最终是否启用), 供末尾区分
-        # "已删除 mod 的残留" 与 "仍在用但本轮没登记的文件"
         alive_prefixes = {os.path.basename(p) + '_' for p in all_mod_paths}
 
         for mod_path in all_mod_paths:
@@ -269,65 +207,30 @@ class ModManager:
             mod_name = os.path.basename(mod_path)
             
             try:
-                # 只探测安装/卸载脚本是否存在, 不改写它们。
-                # 这里以前会原地改写 mod 目录里的 Installer.bat / Uninstaller.bat 来去掉
-                # pause, 属于重复且破坏性的做法:
-                #   · 去掉 pause 的职责已由 _run_mod_bat 承担 —— 它生成临时副本再运行,
-                #     跑完即删, 只影响本次执行、绝不碰源文件, 且所有 bat 执行路径都走它;
-                #   · 原地改写的是用户的 mod 文件本身, 不可逆 (校验失败、无法还原);
-                #   · content.replace('pause','') 会误伤名字里含 pause 的合法内容
-                #     (如 pause_flag、含 pause 的路径);
-                #   · 用 utf-8 打开 GBK 编码的 bat 会解码失败, 可能留下半个文件。
                 has_installer = os.path.exists(os.path.join(mod_path, 'Installer.bat'))
                     
-                # 获取mod信息
                 mod_info = self.get_mod_info(mod_name)
                 if mod_info.get('settings', {}).get('enable', False) and has_installer:
-                    # 启用mod，载入文件
-                    # 执行安装脚本 (cwd=mod_path: bat 内相对路径基于 mod 目录), 输出 echo 内容
-                    # timeout 必传: 少了它, Installer.bat 一旦卡住 (等输入/网络/文件被占用)
-                    # 就会永久阻塞整个启动流程。超时由 _run_mod_bat 捕获并结束子进程, 流程继续。
-                    # 取值宽松些, 避免误杀正常的大体积贴图安装。
                     _run_mod_bat(mod_path, 'Installer.bat', mod_name, timeout=300)
                     print(f"成功加载Mod贴图资源: {mod_name}")
-                # 这里原本还有一个 elif 分支: "enable=True 且只有 Uninstaller.bat" 时
-                # 运行 Uninstaller.bat —— 那是错的, 已删除:
-                #   · 条件用的是 enable=True (启用中), 执行的却是卸载脚本, 与它自己的
-                #     注释 "# 禁用mod" 正好相反;
-                #   · 后果: 一个"有 Uninstaller.bat 但没有 Installer.bat"的 mod, 一旦启用
-                #     就会被当场卸载 —— 表现为 mod 明明是开着的却完全不生效;
-                #   · 而且禁用 mod 的卸载根本不依赖这里: 走下面 else 分支的 unload_mod,
-                #     它自己会执行 Uninstaller.bat + 清理附属文件。
             
-                # 获取mod信息
                 mod_info = self.get_mod_info(mod_name)
                 
-                # 获取file_names，确保变量在任何分支中都已定义
                 file_names = mod_info.get('file_names', [])
                     
-                # 检查settings键值
-                # 必须用 .get 取 settings: mod_info.json 缺这个键时硬下标会抛 KeyError,
-                # 被外层 except 吞成一句"处理Mod失败", 结果是这个 mod 既不复制文件、
-                # 也不加载语言文件, 等于完全失效 (手工编写的 mod_info.json 很容易少写它)。
                 if mod_info.get("settings", {}).get("enable", False):
-                    # 获取目标目录
                     target_dir = self.get_mod_directory()
 
-                    # 复制文件
                     for file_name in file_names:
                         source_file = os.path.join(mod_path, file_name)
                         if not os.path.isfile(source_file):
                             print(f"跳过缺失文件: {source_file}")
                             continue
-                        # 目标文件名加 mod 包名前缀 (mod名_文件名), 不同 mod 的同名文件互不冲突
                         target_name = f"{mod_name}_{file_name}"
                         target_file = os.path.join(target_dir, target_name)
                         new_pkg_names.append(target_name)
 
                         if file_name.lower().endswith('.bank'):
-                            # 加载器会把 bank 转成 rebank: 用源 bank 的 md5 作为版本标记,
-                            # 只有源 bank 变了才重新复制/转换。旧版只判断"差分是否存在",
-                            # 于是 mod 更新后加载器会一直复用旧差分 (新版本永远不生效)。
                             stem = os.path.splitext(file_name)[0]
                             rebank_name = f"{mod_name}_{stem}.rebank"
                             rebank_path = os.path.join(target_dir, rebank_name)
@@ -335,13 +238,6 @@ class ModManager:
                             new_pkg_names.append(rebank_name)
                             new_pkg_names.append(rebank_name + STAMP_SUFFIX)
                             src_md5 = self._file_md5(source_file)
-                            # 判定能否跳过, 关键看**差分还在不在**, 而不是源 bank 在不在:
-                            # sound.py 生成差分成功后会主动删掉源 bank
-                            # (write_source_stamp(...) + os.remove(mod_bank)), 所以
-                            # "bank 没了、差分在、标记在"是正常稳态, 加载器直接应用已有差分
-                            # 即可 —— 若按 bank 判定, 这里会每次启动都白复制一遍 bank。
-                            # 反过来, 差分不在(用户清理/生成失败)而标记仍匹配时, 必须重新
-                            # 复制 bank, 否则加载器既无差分也无源 bank, mod 会静默失效。
                             if os.path.isfile(rebank_path) and _read_stamp(stamp_path) == src_md5:
                                 print(f"跳过 {file_name}: 差分已是最新 (源 bank 未变化)")
                                 continue
@@ -354,33 +250,24 @@ class ModManager:
                             print(f"复制 Mod 文件: {source_file} -> {target_file}")
                             continue
 
-                        # 确保目标目录存在
                         os.makedirs(os.path.dirname(target_file), exist_ok=True)
 
-                        # 复制文件
                         shutil.copy2(source_file, target_file)
                         print(f"复制 Mod 文件: {source_file} -> {target_file}")
 
-                    # 装载语言文件
                     self.load_language(mod_name, self.mod_dir)
                     
                     loaded_mods.append(mod_name)
                     print(f"成功加载Mod: {mod_name}")
                 else:
                     print(f"跳过Mod {mod_name}: 没有启用")
-                    # 清理已复制文件/转换缓存/语言文件 (含 Uninstaller.bat)
                     self.unload_mod(mod_name)
 
             except Exception as e:
                 print(f"处理Mod {mod_name} 失败: {e}")
         
-        # 清理: 只有"对应 mod 目录已经不存在"的残留附属文件才移到 _orphan/
         try:
             target_root = self.get_mod_directory()
-            # 不能简单按"本轮没登记"来算残留: 一个 mod 本轮处理失败 (异常)、或它处于
-            # 禁用状态时, 它的文件不会进 new_pkg_names, 但 mod 目录还在、文件也可能
-            # 仍在使用 —— 把它们移进 _orphan 等于直接弄坏正在生效的 mod。
-            # 因此只清理 mod 目录确实已经消失的那些 (alive_prefixes 之外的)。
             stale = [n for n in (old_manifest.get("package") or [])
                      if n not in set(new_pkg_names)
                      and not any(n.startswith(p) for p in alive_prefixes)]
@@ -395,7 +282,6 @@ class ModManager:
         
     @staticmethod
     def _file_md5(path: str, chunk: int = 1 << 20) -> str:
-        """计算文件 md5（用于区分同名文件是否同一内容）"""
         h = hashlib.md5()
         with open(path, "rb") as f:
             while True:
@@ -407,11 +293,6 @@ class ModManager:
 
     @staticmethod
     def _rebank_max_index(target_dir: str, base: str) -> int:
-        """目标目录中针对同一原版 bank 的 rebank 最大序号（无则 -1）。
-
-        家族 = 去掉末尾数字的 stem（X.assets1.rebank / X.assets.rebank -> X.assets）。
-        只统计启用状态的 .rebank（不含 .disabled）。
-        """
         max_idx = -1
         try:
             for f in os.listdir(target_dir):
@@ -427,16 +308,6 @@ class ModManager:
     @classmethod
     def _unique_bank_name(cls, target_dir: str, source_file: str, file_name: str,
                           used: Dict[str, str]):
-        """同名声音 mod 文件 → 名字末尾添加 1,2,3... 序列后缀。
-
-        规则（针对同一原版 bank 的多个 mod）：
-        - 目标目录已有同家族 rebank（如 X.assets1.rebank）时，新复制 bank 延续其
-          最大序号 +1（如 -> X.assets2.bank），保证应用顺序正确、不被旧 rebank 遮蔽；
-        - 自身序号已大于已有 rebank 最大序号则保留原名；
-        - 无 rebank 家族时：内容相同的同名文件原地覆盖（保持原名，避免每次启动都
-          累加编号），不同内容的同名文件在名字末尾加数字。
-        返回 (目标路径, 最终文件名)。
-        """
         stem, ext = os.path.splitext(file_name)
         src_md5 = cls._file_md5(source_file)
 
@@ -445,7 +316,6 @@ class ModManager:
         max_rebank_idx = cls._rebank_max_index(target_dir, base)
 
         if max_rebank_idx >= 0 and own_idx <= max_rebank_idx:
-            # 与既有 rebank 针对同一原版: 延续索引, 新 bank 排到既有差分之后
             num = 0
             while True:
                 candidate = "%s%d%s" % (base, max_rebank_idx + 1 + num, ext)
@@ -456,7 +326,7 @@ class ModManager:
                 if os.path.exists(target):
                     try:
                         if cls._file_md5(target) == src_md5:
-                            break  # 目标已存在且内容相同
+                            break
                     except OSError:
                         pass
                     num += 1
@@ -470,13 +340,13 @@ class ModManager:
         while True:
             if candidate in used:
                 if used[candidate] == src_md5:
-                    break  # 同一份文件再次复制，原地覆盖
+                    break
             else:
                 target = os.path.join(target_dir, candidate)
                 if os.path.exists(target):
                     try:
                         if cls._file_md5(target) == src_md5:
-                            break  # 目标已存在且内容相同，原地覆盖
+                            break
                     except OSError:
                         pass
                 else:
@@ -488,36 +358,26 @@ class ModManager:
         
     @staticmethod
     def load_language(name: str, dir: str) -> None:
-        """
-        装载语言文件到游戏目录下的 lang 文件夹下
-        """
         try:
             game_path: str = SettingsManager().get_setting('game_path') # type: ignore
             
-            # 检查游戏路径是否存在
             if not os.path.exists(game_path):
                 print(f"错误: 游戏路径不存在: {game_path}")
                 return
             
-            # 确定源目录
             if name != '':
                 lang_dir = os.path.join(dir, name, 'extra_files')
             else:
                 lang_dir = dir + '/extra_files'
             
-            # 检查源目录是否存在
             if not os.path.exists(lang_dir):
-                # print(f"{name} 没有额外的语言文件, 跳过复制语言文件。")
                 return
             
-            # 汉化目录名跟随当前平台 (零协会 LLC_zh-CN / OurPlay OurPlayHanHua / 插件自定义), 不再写死
             target_lang_dir = os.path.join(game_path, 'LimbusCompany_Data', 'lang',
                                            _translation_dir_name())
             
-            # 创建目标目录（如果不存在）
             os.makedirs(target_lang_dir, exist_ok=True)
             
-            # 复制整个目录结构，使用 dirs_exist_ok=True 允许目标目录存在
             shutil.copytree(lang_dir, target_lang_dir, dirs_exist_ok=True)
             print(f"语言文件复制成功: {lang_dir} -> {target_lang_dir}/")
             
@@ -525,14 +385,9 @@ class ModManager:
             print(f"复制语言文件失败: {e}")
     
     def unload_all_mods(self) -> List[str]:
-        """
-        卸载所有mod
-        删除所有mod的文件
-        """
         unloaded_mods = []
         mods_dir = self.mod_dir
         
-        # 遍历所有mod目录 (mods/ 不存在时按"没有 mod"处理, 不抛异常)
         for mod_name in _listdir_safe(mods_dir):
             result = self.unload_mod(mod_name)
             if result:
@@ -541,27 +396,16 @@ class ModManager:
         return unloaded_mods
 
     def unload_mod(self, mod_name:str, run_bat: bool = True):
-        """
-        卸载指定mod
-        Args:
-            mod_name (str): mod名称
-            run_bat (bool): 是否执行 Uninstaller.bat (默认运行, 输出 echo 日志;
-                            若 bat 派生进程占用 mods 目录导致删除失败, 可设为 False 跳过)
-        """
         mod_path = os.path.join(self.mod_dir, mod_name)
 
-        # 检查是否是目录且存在mod_info.json
         if os.path.isdir(mod_path) and os.path.exists(os.path.join(mod_path, 'mod_info.json')):
             try:
-                # 获取mod信息
                 mod_info = self.get_mod_info(mod_name)
                 file_names = mod_info.get('file_names', [])
                 do_flag = False
                 
-                # 获取目标目录
                 target_dir = self.get_mod_directory()
 
-                # 1) 先执行卸载脚本 (清理 Installer.bat 复制到游戏目录的缓存), 带超时防阻塞, 输出 echo 内容
                 if run_bat and os.path.exists(
                     os.path.join(mod_path, 'Uninstaller.bat')):
                     try:
@@ -570,14 +414,9 @@ class ModManager:
                     except Exception as e:
                         print(f"执行 {mod_name} Uninstaller.bat 失败(超时或异常): {e}", flush=True)
 
-                # 2) 删除复制到目标目录的文件:
-                #    转移文件名带 mod 包名前缀 (mod名_文件名), 加载器会把 .bank 转成 .rebank,
-                #    因此按"前缀 + stem"匹配, 删除该 mod 的所有目标文件 (含 .bank/.rebank/.dll 等)
-
                 for file_name in file_names:
                     stem, _ = os.path.splitext(file_name)
                     prefix = mod_name + '_' + stem
-                    # print(prefix)
                     try:
                         targets = os.listdir(target_dir)
                     except OSError:
@@ -585,7 +424,6 @@ class ModManager:
                         continue
                     for target_name in targets:
                         if not _target_belongs_to(target_name, prefix):
-                            # print(f"跳过删除非目标文件: {target_name}")
                             continue
                         chosen_file = os.path.join(target_dir, target_name)
                         try:
@@ -594,7 +432,6 @@ class ModManager:
                             do_flag = True
                         except OSError as e:
                             print(f"删除附属文件 {chosen_file} 失败: {e}", flush=True)
-                        # bank 转换遗留的差分缓存 + 版本标记一并清理 (转换命名 = bank 同名)
                         if os.path.splitext(target_name)[1].lower() == ".bank":
                             cache = os.path.join(
                                 target_dir, os.path.splitext(target_name)[0] + ".rebank")
@@ -606,7 +443,6 @@ class ModManager:
                                     print(f"删除缓存 {cache} 失败: {e}", flush=True)
                             _remove_quietly(cache + STAMP_SUFFIX, "版本标记")
 
-                # 3) 清理 extra_files 合并进游戏汉化目录的语言文件 (内容一致才删)
                 lang_dir = os.path.join(mod_path, 'extra_files')
                 if os.path.isdir(lang_dir):
                     try:
@@ -634,15 +470,12 @@ class ModManager:
                 print(f"卸载Mod {mod_name} 失败: {e}")
     
     def get_all_mods(self) -> List[Dict[str, Any]]:
-        """获取所有可用的mod信息"""
         mods = []
         mods_dir = 'mods'
         
-        # 遍历所有mod目录 (mods/ 不存在时返回空列表, 不抛异常)
         for mod_name in _listdir_safe(mods_dir):
             mod_path = os.path.join(mods_dir, mod_name)
             
-            # 检查是否是目录且存在mod_info.json
             if os.path.isdir(mod_path) and os.path.exists(os.path.join(mod_path, 'mod_info.json')):
                 try:
                     mod_info = self.get_mod_info(mod_name)

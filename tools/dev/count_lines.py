@@ -1,25 +1,11 @@
-"""统计项目里 .py / .js / .html 的行数（按行数排行）。
-
-用法::
-
-    python tools/dev/count_lines.py            # 统计整个项目（默认从仓库根开始）
-    python tools/dev/count_lines.py <目录>      # 只统计指定目录
-
-⚠ 默认目录不能用 ``os.getcwd()``：本脚本以前放在仓库根，双击或从别处调用时 cwd 会变，
-统计出来的是"运行目录"而不是项目（挪进 tools/dev 后双击只会统计自己这一层）。
-现在按脚本位置推出仓库根。
-"""
 
 import os
 import sys
 
-# tools/dev/ -> 仓库根
 _PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                              "..", ".."))
 
-
 def count_lines_in_file(file_path):
-    """统计单个文件的行数"""
     try:
         with open(file_path, 'r', encoding='utf-8') as f:
             return len(f.readlines())
@@ -28,10 +14,8 @@ def count_lines_in_file(file_path):
         return 0
 
 def find_py_files(directory):
-    """递归查找所有.py文件"""
     py_files = []
     for root, dirs, files in os.walk(directory):
-        # 排除一些不需要的目录
         dirs[:] = [d for d in dirs if d not in ['_internal', '__pycache__', '.git', 'build', 'dist', 'temp','venv', '.venv']]
         
         for file in files:
@@ -68,17 +52,14 @@ def main():
     print("-" * 50)
     print(f"总计: {len(py_files)} 个文件, {total_lines} 行代码")
     
-    # 按行数排序显示前10个最大的文件
     file_stats.sort(key=lambda x: x[1], reverse=True)
     print("\n文件大小排行 (前10名):")
     for i, (file_path, lines) in enumerate(file_stats[:10], 1):
         rel_path = os.path.relpath(file_path, current_dir)
         print(f"{i:2d}. {rel_path}: {lines} 行")
     
-    # 显示平均行数
     avg_lines = total_lines / len(py_files) if py_files else 0
     print(f"\n平均每个文件: {avg_lines:.1f} 行")
-    # 双击运行时留住窗口；被管道/脚本调用时 stdin 不是终端，pause 会白等
     if sys.stdin is not None and sys.stdin.isatty():
         os.system("pause")
 

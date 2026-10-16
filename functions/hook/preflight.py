@@ -1,33 +1,3 @@
-"""注入前的偏移量预检：**先和本机 DLL 对，对不上再动云端 / 重建**。
-
-顺序（用户约定，2026-09-24；2026-10-09 重写为"云端优先 + 重建搬离启动窗口"）：
-
-1. **先看手头能用的，都不联网**：本地完整版索引 + 本地缓存的云端索引，把每条钩子的
-   ``prologue`` 逐字节与 ``GameAssembly.dll`` 的实际字节比对，并核对游戏指纹
-   （size / PE 时间戳）。有**任何一份**能对上就直接用。
-   两份都能对上时按 :func:`_candidate_score` 择优 —— **云端优先**（用户约定：云端那份
-   对得上本机 DLL 就承认它是最新的，不再"只认本地对不对得上"）。
-2. **都对不上才找云端**：强制联网拉一次云端索引；若云端这份能对上本机 DLL
-   （说明"本地偏移量是旧版本，云端已经有新版"）→ 采用云端（写进云端缓存文件，
-   **不覆盖**本地完整版索引），后续所有消费者都用它。
-3. **都对不上**：就此收手（``VERDICT_STALE``）—— 不联网、不重建。调用方照常继续，
-   用现有索引 / 内置回退偏移，只是本次观测可能不完整。
-
-   ★ 按用户要求（2026-10）**彻底取消**了"偏移量对不上就本地破译"的行为：以前第 3 步
-   会在游戏没跑时同步跑一次本地重建（静态解密 → Il2CppDumper → 解析 → 四重校验），
-   游戏在跑时则排一个后台任务等它退出再以低优先级重建；启动器的空闲补建、成就监测
-   启动时的自动刷新也属于同一套自动重建。现在这些全部移除 —— 客户端永远不再自行解密
-   metadata / 重建偏移索引。需要新偏移时靠云端索引，或由人手动跑
-   ``python -m functions.hook.main update``。
-
-判定"对得上"的为什么是 prologue 而不是指纹：真正决定能不能装钩的是
-"索引里的 RVA 处、本机 DLL 的字节是不是我们记下的那几条指令"（DLL 装钩前也会再比一次）。
-指纹（size / sha256 / PE 时间戳）只用来解释"为什么对不上"，两个信号都会记进日志。
-
-另外多了一个**版本信号**（:func:`index_stale_for_game`）：索引里记着生成它的那份游戏的
-Steam buildid / 更新时间，与当前 appmanifest 一比就知道这份索引是不是当前游戏版本生成的。
-prologue 只覆盖代码钩子，结构体字段 / 数据链偏移过期它看不出来，版本信号补上这一块。
-"""
 
 from __future__ import annotations
 
@@ -36,22 +6,16 @@ import os
 from . import index as index_mod
 from . import paths as paths_mod
 
-VERDICT_LOCAL_OK = "local-ok"            # 本地索引就能对上本机 DLL（未联网）
-VERDICT_CLOUD_CACHED = "cloud-cached"    # 用本地缓存的云端索引（未联网）
-VERDICT_CLOUD_UPDATED = "cloud-updated"  # 本地旧了，已采用云端索引
-VERDICT_REBUILT = "rebuilt"              # 历史值：本地重建曾产生过，现已不再出现
-VERDICT_STALE = "stale"                  # 对不上（不再重建；默认也不联网重试）
-VERDICT_NO_INDEX = "no-index"            # 本地/云端都没有索引
-VERDICT_NO_GAME_DLL = "no-game-dll"      # 找不到 GameAssembly.dll
+VERDICT_LOCAL_OK = "local-ok"
+VERDICT_CLOUD_CACHED = "cloud-cached"
+VERDICT_CLOUD_UPDATED = "cloud-updated"
+VERDICT_REBUILT = "rebuilt"
+VERDICT_STALE = "stale"
+VERDICT_NO_INDEX = "no-index"
+VERDICT_NO_GAME_DLL = "no-game-dll"
 VERDICT_ERROR = "error"
 
-
 def prologue_check(index, gameassembly: str, on_log=None) -> dict:
-    """把索引里的每条钩子 prologue 与本机 DLL 字节比对。
-
-    返回 ``{"ok", "checked", "matched", "mismatch", "skipped", "detail",
-    "fingerprint_ok", "disk_size", "disk_timestamp", ...}``。
-    """
     log = on_log or (lambda _m: None)
     out = {"ok": False, "checked": 0, "matched": 0, "mismatch": [], "skipped": [],
            "detail": "", "fingerprint_ok": False, "disk_size": 0, "disk_timestamp": 0}
@@ -101,8 +65,6 @@ def prologue_check(index, gameassembly: str, on_log=None) -> dict:
                          + ("（指纹也一致）" if out["fingerprint_ok"] else "（⚠ 指纹不一致）")
                          + (f"；{len(out['skipped'])} 条无 prologue 跳过" if out["skipped"] else ""))
     else:
-        # 摘要只放前几条：完整清单一律另起多行（见下面的 log），
-        # 否则这一行会长到几千字符，谁也没法读（用户反馈过日志"没法看"）。
         brief = "; ".join(out["mismatch"][:3])
         more = f" …等共 {len(out['mismatch'])} 条" if len(out["mismatch"]) > 3 else ""
         out["detail"] = (f"{out['matched']}/{out['checked']} 条一致"
@@ -114,21 +76,7 @@ def prologue_check(index, gameassembly: str, on_log=None) -> dict:
             log(f"[OffsetProbe]   不一致: {item}")
     return out
 
-
-# --------------------------------------------------------------------------- 版本信号
-
-
 def index_stale_for_game(index, paths) -> tuple[bool, str]:
-    """这份索引是不是**当前这个游戏版本**生成的。
-
-    prologue 只能证明"代码钩子那几条指令还在原处"；游戏更新常常只挪结构体字段、
-    不动那几个函数 —— 那种情况下 prologue 全绿，但 ``fields`` / ``targets`` 里的偏移
-    已经过期，继续用就会读出垃圾甚至崩游戏。这里用索引里记下的 Steam buildid /
-    更新时间与本机 appmanifest 对比，把这种情况直接判成"过期"。
-
-    只有索引**确实记了**版本才判断：老索引没有这些字段时返回 ``False`` + 说明，
-    不拿它当否决理由（那时只能靠 prologue）。
-    """
     game = (index.game or {}) if index is not None else {}
     recorded_id = str(game.get("game_build_id") or "")
     recorded_at = str(game.get("game_updated_at") or "")
@@ -146,18 +94,7 @@ def index_stale_for_game(index, paths) -> tuple[bool, str]:
         return True, (f"索引记的更新时间 {recorded_at} 与本机 {current['updated_at']} 不一致")
     return False, "索引版本与本机一致"
 
-
 def _candidate_score(entry: dict, paths) -> tuple:
-    """候选索引的择优键（越大越优先）。
-
-    1) **版本对得上本机当前游戏** > 版本对不上（:func:`index_stale_for_game`）；
-    2) **能证明自己是当前版本**（索引里记了 buildid / 更新时间且与本机一致）> 证明不了
-       —— 老索引没有版本字段，prologue 全绿也可能带着过期的结构体字段 / 数据链偏移，
-       这时候宁可先用那份能自证的（本地完整版通常是本机刚构建的）；
-    3) 同档里 **云端优先** —— 用户约定：云端那份能证明自己是当前版本、又对得上本机 DLL，
-       就承认它是最新的，不再像以前那样"只看本地 RVA 处的 16 字节对不对"；
-    4) 再同档则 prologue 命中条数多的优先（信息更全）。
-    """
     game = (entry.get("index").game or {}) if entry.get("index") is not None else {}
     has_version = bool(str(game.get("game_build_id") or "")
                        or str(game.get("game_updated_at") or ""))
@@ -168,19 +105,8 @@ def _candidate_score(entry: dict, paths) -> tuple:
             1 if is_cloud else 0,
             int(entry["check"].get("matched") or 0))
 
-
 def ensure_offsets_ready(on_log=None, game_path: str = "",
                          allow_cloud: bool = True, local_index=None) -> dict:
-    """注入前的偏移量预检（只读文件 / 最多下几十 KB，很快）。
-
-    返回 ``{"verdict", "source", "index", "check", "cloud_check", "detail"}``；
-    选定索引时会把进程内记忆一并固定（``index_mod.use_index``），保证后面钩子表 / 字段偏移 /
-    数据链全用同一份。
-
-    **本函数永远不会重建索引**（客户端已彻底取消本地破译）：本地与云端都比不上本机 DLL
-    时返回 ``VERDICT_STALE``，调用方照常继续（用现有索引 / 内置回退偏移），只是本次观测
-    可能不完整。
-    """
     log = on_log or (lambda _m: None)
 
     paths = paths_mod.game_paths(game_path)
@@ -193,7 +119,6 @@ def ensure_offsets_ready(on_log=None, game_path: str = "",
         log(f"[OffsetProbe] {result['detail']}：跳过校验")
         return result
 
-    # ---- 1) 手头能用的两份（本地完整版 + 本地缓存的云端索引）：都不联网
     entries: list[dict] = []
     local = local_index if local_index is not None else index_mod.get_index()[0]
     if local is not None:
@@ -229,7 +154,6 @@ def ensure_offsets_ready(on_log=None, game_path: str = "",
             + " → 不联网、不重建")
         return result
 
-    # ---- 2) 两份都对不上 → 和云端对照（这一步才联网）
     if not allow_cloud:
         result["verdict"] = VERDICT_STALE
         log("[OffsetProbe] 已按要求跳过云端对照")
@@ -252,7 +176,6 @@ def ensure_offsets_ready(on_log=None, game_path: str = "",
     else:
         log("[OffsetProbe] 云端没有可用索引（首次使用/读取失败）")
 
-    # ---- 3) 都对不上 → 就此收手（客户端不再本地重建）
     result["verdict"] = VERDICT_STALE
     result["detail"] = "偏移量与本机 GameAssembly.dll 对不上，且客户端已取消本地重建"
     log("[OffsetProbe] 本地与云端都对不上本机 DLL → 不再本地重建（客户端已取消该行为）。"

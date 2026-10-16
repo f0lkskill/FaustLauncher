@@ -1,24 +1,4 @@
 # -*- coding: utf-8 -*-
-"""webutils.metadata_recovery - Limbus Company IL2CPP metadata 解密恢复工具。
-
-移植自 upstream metadata-recovery 仓库（v2 universal 管线）：
-
-    定位 → 提取 → 验证 → 求解 → 重建
-
-- 输入仅需 GameAssembly.dll + 加密 global-metadata.dat，无需 IDA、
-  无需参考标准文件、无需反编译文本（版本无关，v39 系列跨版本适用）。
-- 核心逻辑在 `universal/` 子包（pe_loader / xorshift_scan / init_locator /
-  extract_disasm / layouts / versions / verify_structural / solve_versioned /
-  rebuild_validate / pipeline）。
-- 依赖 capstone（x86-64 反汇编），缺失时页面可一键 pip 安装。
-
-公共 API：
-    run_recovery()            完整离线流水线（页面/CLI/测试入口）
-    capstone_available()      capstone 是否可用
-    install_capstone(on_log)  用当前解释器 pip 安装 capstone
-    derive_game_files()       从游戏根目录推导 metadata 与 DLL 路径
-    output_dir() / new_run_dir()  运行产物目录（<path_>/metadata_recovery/）
-"""
 
 from __future__ import annotations
 
@@ -47,12 +27,7 @@ __all__ = [
     "run_universal",
 ]
 
-
 def install_capstone(on_log: Callable = None) -> dict:
-    """用当前 Python 解释器安装 capstone（pip），实时回传日志。
-
-    返回 {"success", "message"}。失败时 message 含 pip 输出片段。
-    """
     if on_log is None:
         on_log = lambda msg: print(msg, flush=True)  # noqa: E731
     on_log("正在安装 capstone（pip install capstone）...")
@@ -82,16 +57,7 @@ def install_capstone(on_log: Callable = None) -> dict:
     on_log("capstone 安装完成")
     return {"success": True, "message": "capstone 安装完成"}
 
-
 def derive_game_files(game_path: str = "") -> dict:
-    """从游戏根目录推导加密 metadata 与 GameAssembly.dll 的路径。
-
-    标准布局（Steam 版）：
-    - <game>/LimbusCompany_Data/il2cpp_data/Metadata/global-metadata.dat
-    - <game>/GameAssembly.dll
-
-    返回 dict 含 exists 标记（路径即使不存在也返回，便于 UI 提示位置）。
-    """
     if not game_path:
         return {"game_path": "", "derived": False,
                 "metadata_path": "", "metadata_exists": False,

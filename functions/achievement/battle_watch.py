@@ -1,69 +1,3 @@
-"""战斗事件观测驱动 v2 —— 注入 ``hook_dll/battle_watch.dll`` 并解析事件（成就用）。
-
-与 v1 的区别（v1 的教训：钩到了 IL2CPP 尾调用桩，整场战斗 0 事件）：
-
-1. **尾调用桩解引用**：dump.cs 的 RVA 可能是 ``33 D2 E9 rel32``（``xor edx,edx;
-   jmp 真实实现``）。驱动静态读本机 ``GameAssembly.dll``，遇到桩就顺着跳过去，
-   钩真实实现，并在日志里写明"0x… (RefreshSpeed) 是尾调用桩 → 改钩 0x… (SetRandomSpeed)"；
-2. **通用钩子表**：要钩什么、什么签名（kind）、prologue、字段偏移，全部写进共享内存，
-   DLL 不写死任何数字；同一地址会被自动合并（去重）；
-3. **命中计数**：DLL 累加每个钩子的调用次数（``hook_hits[]``），驱动轮询后报出
-   "哪个钩子被调了多少次" —— 装钩成功但 0 次调用一眼可见；
-4. **可见性**：事件流写进统一的 ``logs/achievement_hook.log``（不刷屏、不被截断）；
-   状态文件 ``cache/achievement/battle_watch_status.json``、每 20 秒一条心跳日志、
-   全事件记录（不再只记两个成就相关的），并支持 ``--status`` / ``--probe`` 离线自查。
-
-事件行（DLL → 环形缓冲）::
-
-    RND tag=<钩子名>                                                        回合边界
-    SPD tag=<钩子名> iid=.. oid=.. os=.. osi=.. ow=.. owi=.. its=.. [eff=..]  速度
-    VAL tag=<钩子名> iid=.. oid=.. hp=.. mhp=.. mp=..                        血量 / 理智
-    ACT tag=<钩子名> actor=.. cmd=.. skid=.. slot=.. tier=.. aoid=..         行动/技能
-
-``os``/``ow`` 是「速度 ×1000」的**定点原始值**，``osi``/``owi`` 是换算后的**整数速度**
-（见下面 ``SPEED_SCALE``）。驱动侧两条路都认：DLL 给了 ``osi``/``owi`` 就直接用，
-没给（v2 DLL / 老日志）就自己按 ``SPEED_SCALE`` 换算。
-
-``hp``/``mhp``/``mp`` 来自 ``unit[0x148] → CharacterState``（0x148 / 0x11C / 0x158，
-都是 ACTk ``ObscuredInt``）；``mp`` 就是界面上的**理智(SP)**：同类常量 ``_minMp = -45`` /
-``_maxMp = 45`` 正是它的上下限，负数理智 = 陷入恐慌。
-
-日志（**只有一份**）::
-
-    logs/achievement_hook.log  成就生命周期 / 子进程 stdout+stderr /
-                               全量事件流（RND/SPD/VAL/ACT 每行都写，带毫秒）
-                               —— 每次实例启动时清空重写，只保留本次运行
-
-事件流以前单独写在 ``logs/battle_watch.log``，实际排查时要在三份日志之间对时间，
-现在统一登记到 ``log_sink``（见 ``functions/achievement/log_sink.py``）。
-``verbose=True`` 或设置项 ``achievement_log_verbose`` 只影响事件行**是否也打一份到
-成就日志的即时输出流**，全量事件行本身一直写在这份文件里。
-离线自查（``python -m functions.achievement.battle_watch``）没有登记 sink 时，
-仍然退回写自己的 ``logs/battle_watch.log``。
-
-本模块**不认识任何具体成就**：身份 ID / 技能 ID / 阈值这些业务常量全部写在成就模块里
-（``functions/achievement/data/*.py``），通过 ``BattleRule`` 登记进来。驱动只提供
-「事件字段解释」与下面这张规则表——加新成就不需要改本文件。
-
-判定规则（``BattleRule``）—— 一次登记，驱动按类型统一求值（**没有针对具体成就的分支**）::
-
-使用示例（id 均为占位值——真实身份/技能常量只存在于成就模块里）::
-
-    BattleRule(key="ach_demo_skill",  kind="skill",  identity_ids=(10001,), skill_ids=(1000101,))
-    BattleRule(key="ach_demo_speed",  kind="speed",  identity_ids=(10002,), threshold=9)
-    BattleRule(key="ach_demo_mental", kind="mental", identity_ids=(10003,), threshold=0)
-    BattleRule(key="ach_demo_hp",     kind="hp",     identity_ids=(10004,), ratio=1.0)
-
-| kind | 看的事件 | 命中条件 | 何时置位 |
-|---|---|---|---|
-| ``skill`` | ``ACT`` | ``skill_ids`` 命中，或（``identity_ids``+``tiers``）拼出的技能 ID 命中，或（``gated_skill_ids`` 且 actor 身份在 ``identity_ids`` 里） | 回合边界结算 |
-| ``speed`` | ``SPD`` | 身份命中且 ``fields``（默认全部速度字段）里任一 == ``threshold`` | 立刻（回合边界兜底） |
-| ``mental`` | ``VAL`` | 身份命中且 ``mp < threshold`` | 立刻（回合边界兜底） |
-| ``hp`` | ``VAL`` | 身份命中且 ``hp < mhp * ratio`` | 立刻（回合边界兜底） |
-
-“立刻”类都走同一个求值器（``BattleWatch._eval_immediate_locked``）：加新类型 = 在
-``BattleRule`` 里加一个 ``match_*`` + 一个 ``RULE_KIND_*``，调用处不用 if/else。
-"""
 
 from __future__ import annotations
 
@@ -79,31 +13,20 @@ from dataclasses import dataclass, field
 
 from functions.achievement import log_sink
 
-# --------------------------------------------------------------------------- 协议常量
-
-BW_MAGIC_V5 = 0x34574246         # "FBW4"：旧协议（v5）
-# 2026-09-25 v6 / "FBW5"：多了 off_skv_attacker_iid（动画 tick 带 iid，判定才能按行动对齐）。
-# 魔数不一致时 DLL 会拒收配置并报版本不符，所以“Python/DLL 不同版”不会静默错位。
-BW_MAGIC = 0x36574246            # "FBW6"（v6: 关卡结算统计 + 钩子槽 12→16）
+BW_MAGIC_V5 = 0x34574246
+BW_MAGIC = 0x36574246
 MAP_NAME = "Local\\FaustLauncher_BattleWatch"
 LOG_RING_CAP = 512
 LOG_LINE_MAX = 255
-MAX_HOOKS = 40                   # 与 DLL 的 BW_MAX_HOOKS 一致（24 已占满，抬到 40 留余量）
-STAGE_WATCH_MAX = 32             # 关注关卡上限（与 DLL 的 BW_STAGE_WATCH_MAX 一致）
-NCL_SEEN_MAX = 96                # NCL 去重表（与 DLL 的 BW_NCL_SEEN_MAX 一致）
+MAX_HOOKS = 40
+STAGE_WATCH_MAX = 32
+NCL_SEEN_MAX = 96
 HOOK_NAME_LEN = 40
 TARGET_PROCESS = "LimbusCompany.exe"
 
-# 关注 buff 表大小（与 C 端 BW_BUFF_WATCH_MAX 一致）
 BUFF_WATCH_MAX = 32
 
-
 def fnv1a64(text) -> int:
-    """FNV-1a 64 哈希（与 C 端 fnv1a64 逐位一致）—— 用于把 buff 名写进关注表。
-
-    buff 的 id 是字符串（如 ``HanafudaTwo`` / ``FutureEyeOnRodion``），
-    跨进程传名字太占空间，所以两边用同一个哈希对身份。
-    """
     data = text.encode("utf-8", "replace") if isinstance(text, str) else bytes(text)
     h = 0xCBF29CE484222325
     for byte in data:
@@ -111,24 +34,22 @@ def fnv1a64(text) -> int:
         h = (h * 0x100000001B3) & 0xFFFFFFFFFFFFFFFF
     return h
 
-# 钩子 kind（必须与 battle_watch.c 的 BWK_* 一致）
-KIND_PLAIN = 0        # void (self, mi)                                   → RND
-KIND_UNIT = 1         # void (self, mi)                                   → SPD
-KIND_UNIT_INT_BOOL = 2  # void (self, int value, bool checkMinMax, mi)     → SPD
-KIND_UNIT_GET_INT = 3   # int (self, mi)                                  → SPD（去重）
-KIND_ACTION_INT = 4     # void (self, int timing, mi)                     → ACT
-KIND_DAMAGE_ACTION = 5  # float(self, action, coin, attacker, bool, mi)    → ACT
-KIND_SKV = 6            # void (self, mi)：表现层动画 → RND + iid（self->_attackerInstanceID）
-KIND_STAGE_STAT = 7     # void (self, a1, a2, mi)：关卡结算统计 → STG uid=/turn=/dead=/ex=
-KIND_RAILWAY_TOTAL = 8  # int  (self, mi)：折射铁路整条线的总回合 → RWT line=/total=
-KIND_CACHE_SELF = 9     # void (self, a1, mi)：只缓存 self（抓存档对象给采样线程轮询）
-KIND_NODE_STATE = 10    # int  (self, main, sub, node, mi)：关卡通关状态查询 → NCL
-KIND_CACHE_ARG1 = 11    # void (self, a1, mi)：缓存第一个参数（抓全量进度树）
-KIND_RAILWAY_NODE = 12  # void (self, a1, mi)：铁路每节点通关回合 → RWT node=/turn=
-KIND_RAILWAY_HIST = 13  # void (self, cid, ..7 args.., mi)：铁路历史记录 → RWT line=/total=
-KIND_STAGE_NODE_ID = 14  # void (self, part, chapter, node, stage, state, mi)：关卡身份 → SNI
-KIND_RAILWAY_UI_TEXT = 15  # void (self, a1, mi)：铁路 UI 显示文本 → RUT text=
-                        #   动画 tick 带身份，判定才能“按行动”对齐（否则只能一股脑延后）
+KIND_PLAIN = 0
+KIND_UNIT = 1
+KIND_UNIT_INT_BOOL = 2
+KIND_UNIT_GET_INT = 3
+KIND_ACTION_INT = 4
+KIND_DAMAGE_ACTION = 5
+KIND_SKV = 6
+KIND_STAGE_STAT = 7
+KIND_RAILWAY_TOTAL = 8
+KIND_CACHE_SELF = 9
+KIND_NODE_STATE = 10
+KIND_CACHE_ARG1 = 11
+KIND_RAILWAY_NODE = 12
+KIND_RAILWAY_HIST = 13
+KIND_STAGE_NODE_ID = 14
+KIND_RAILWAY_UI_TEXT = 15
 KIND_NUMBERS = {"plain": KIND_PLAIN, "unit": KIND_UNIT,
                 "unit_int_bool": KIND_UNIT_INT_BOOL, "unit_get_int": KIND_UNIT_GET_INT,
                 "action_int": KIND_ACTION_INT, "damage_action": KIND_DAMAGE_ACTION,
@@ -139,105 +60,53 @@ KIND_NUMBERS = {"plain": KIND_PLAIN, "unit": KIND_UNIT,
                 "stage_node_id": KIND_STAGE_NODE_ID,
                 "railway_ui_text": KIND_RAILWAY_UI_TEXT}
 
-# --------------------------------------------------------------------------- 字段语义
-
-# 驱动只负责解释「事件里的字节」，不认识任何具体成就：
-# 具体身份/技能/阈值全部是成就侧登记的 ``BattleRule`` 数据（见本文件末尾的规则表章节）。
-
-# 速度字段的单位（**关键**，2026-09-17 build 实测）：
-# ``_originSpeed``(0xCC) / ``_overwritedSpeed``(0xD0) 存的是「速度 ×1000」的定点数，
-# 小数部分是隐藏的同速排序值（同速单位靠它决定先后）。直接当成速度看会得到 14518 这种怪值。
-# 证据（反汇编本机 GameAssembly.dll）：
-#   GetIntegerOfPureOriginalSpeed = 带符号 /1000（魔数 0x10624DD3 的 idiv 序列）
-#   GetIntegerOfOverwritedSpeed   = 同上（<=0 原样返回）
-#   ChangeIntegerPartOfSpeed      = 只改整数部分、保留小数（差值 ×1000 加回 _originSpeed）
-#   SetRandomSpeed                = Random.Range(lower*1000, upper*1000+1000) 后写 0xCC
-#   GetSpeedLowerLimit/UpperLimit = 返回*整数*速度（内部 Math.Round + 下限 1）
-#   常量 _CORRECTION_FOR_SPEED = 1000、_MIN_SPEED = 1000
-# 结论：**界面/逻辑上的速度 = trunc(字段 / 1000)**（setter 保证 >= 0，负值只可能是未初始化）。
 SPEED_SCALE = 1000
 
-# 血量/理智读不出来时 DLL 会发这个哨兵（HP 不可能为负、理智只有 ±45）——
-# 避免把“读失败”当成“理智负数”误触发成就。
 VITAL_UNREAD = -1000
 
-# SPD 事件的字段清单（驱动知道事件里有什么，成就只用 ``fields`` 选自己要看的那几个），
-# 值都是**整数速度**：os/ow/eff 已归一化，its 本来就是整数。
-# os=_originSpeed（本回合掷出的速度）、ow=_overwritedSpeed（被技能覆盖后的速度）、
-# its=_thisTurnIntSpeedOnCmdPhase（命令阶段快照，回合开始那一刻还是上一回合的值）、
-# eff=有效速度（游戏 GetIntegerOfOriginSpeed 语义：ow>=0 用 ow，否则用 os）。
 SPEED_FIELD_ORDER = ("os", "ow", "its", "eff")
 
-
 def speed_int(raw: int) -> int:
-    """把「速度 ×1000」定点值还原成整数速度（向零取整，与游戏 ``GetIntegerOf*Speed`` 一致）。
-
-    负值（-1）是「本回合还没掷速度」的哨兵，原样返回 -1（游戏侧会算成 0，但 0 会误导排查）。
-    """
     if raw is None:
         return -1
     if raw < 0:
         return -1
     return raw // SPEED_SCALE
 
-
 def speed_text(value: int, raw: int) -> str:
-    """速度的日志写法：未掷（原始值为负哨兵）时写“未掷”，否则“整数(原始)”方便对照。"""
     if raw is None or raw < 0:
         return "未掷"
     return f"{value}(raw {raw})"
 
-
-# --------------------------------------------------------------------------- 判定规则
-
-# 成就侧只登记「数据」，具体判定全在驱动里（见模块头部说明）。
-# 加新类型 = 在 ``BattleRule`` 里加一个 ``match_*`` + 一个 ``RULE_KIND_*``，调用处不需要 if：
-#   skill  → ACT 里出现目标技能（回合边界结算）
-#   speed  → SPD 里目标身份的速度命中某值（立刻）
-#   mental → VAL 里目标身份的理智(SP) 低于阈值（立刻）
-#   hp     → VAL 里目标身份的血量低于最大血量的比例（立刻）
 RULE_KIND_SKILL = "skill"
 RULE_KIND_SPEED = "speed"
 RULE_KIND_MENTAL = "mental"
 RULE_KIND_HP = "hp"
-RULE_KIND_BUFF = "buff"        # 目标身份身上有指定 buff（BUF 事件，立刻）
-RULE_KIND_PRESENCE = "presence"  # 目标身份在场上（由单位表推出，立刻）
+RULE_KIND_BUFF = "buff"
+RULE_KIND_PRESENCE = "presence"
 RULE_KINDS = (RULE_KIND_SKILL, RULE_KIND_SPEED, RULE_KIND_MENTAL, RULE_KIND_HP,
               RULE_KIND_BUFF, RULE_KIND_PRESENCE)
-# “观测到就立刻置位”的类型（skill 类走「技能动画结束」结算，单独一条路）
 RULE_KINDS_IMMEDIATE = (RULE_KIND_SPEED, RULE_KIND_MENTAL, RULE_KIND_HP,
                         RULE_KIND_BUFF, RULE_KIND_PRESENCE)
 
-
 @dataclass(frozen=True)
 class BattleRule:
-    """一条可数据化的战斗判定规则（成就基类构造时登记，驱动每帧拿它比对事件）。
 
-    匹配技能（``kind="skill"``）有三种写法，任一命中即可：
-
-    1. ``skill_ids``：完整技能 ID（自带身份，最硬，如 ``1000101``）；
-    2. ``identity_ids`` + ``tiers``：按「技能 ID = 身份×100 + 槽位」拼，
-       例如 ``identity_ids=(10001,), tiers=(3,)`` 就是「10001 的三技能」；
-    3. ``gated_skill_ids``：ID 里不带身份的技能（例如被转化后的技能），
-       此时额外要求 actor 身份在 ``identity_ids`` 里，避免敌人用同名技能误触发。
-    """
-
-    key: str                                  # 规则名（= 成就 id，成就侧按它取结果）
-    label: str = ""                           # 日志里显示的可读名（由成就侧提供）
+    key: str
+    label: str = ""
     kind: str = RULE_KIND_SKILL
-    identity_ids: tuple[int, ...] = ()        # 目标身份（5 位身份 ID）
-    skill_ids: tuple[int, ...] = ()           # kind=skill：完整技能 ID
-    tiers: tuple[int, ...] = ()               # kind=skill：技能槽位（1/2/3/4）
-    gated_skill_ids: tuple[int, ...] = ()     # kind=skill：需 actor 身份匹配的技能 ID
-    threshold: int = 0                        # mental：mp < threshold；speed：速度 == threshold
-    ratio: float = 1.0                        # hp：hp < mhp * ratio
-    fields: tuple[str, ...] = ()              # speed：看哪几个速度字段（空 = SPEED_FIELD_ORDER）
-    buffs: tuple[str, ...] = ()               # buff：要看的 buff 名（Bufs.json 的 id，如 "HanafudaTwo"）
-    any_skill: bool = False                   # skill："用了任意技能"（只看身份，不看具体技能）
-    max_round: int = 0                        # 只在第 max_round 回合及以前生效（0 = 不限）
-    min_round: int = 0                        # 从第 min_round 回合开始生效（0 = 不限）
+    identity_ids: tuple[int, ...] = ()
+    skill_ids: tuple[int, ...] = ()
+    tiers: tuple[int, ...] = ()
+    gated_skill_ids: tuple[int, ...] = ()
+    threshold: int = 0
+    ratio: float = 1.0
+    fields: tuple[str, ...] = ()
+    buffs: tuple[str, ...] = ()
+    any_skill: bool = False
+    max_round: int = 0
+    min_round: int = 0
 
-    # 回合窗口（0 = 不限制）。"首个回合"就用 max_round=1。
     def round_ok(self, round_seq: int) -> bool:
         if self.max_round and round_seq > self.max_round:
             return False
@@ -245,9 +114,7 @@ class BattleRule:
             return False
         return True
 
-    # 匹配
     def match_skill(self, skid: int, actor_oid: int, round_seq: int = 0) -> bool:
-        """技能命中：``skill_ids`` / 身份+槽位 / 受控 ID / ``any_skill`` 任一。"""
         if not self.round_ok(round_seq):
             return False
         if self.any_skill:
@@ -264,11 +131,6 @@ class BattleRule:
         return False
 
     def match_buff(self, oid: int, names: set, round_seq: int = 0) -> tuple:
-        """buff 命中：返回 ``(是否命中, 命中的 buff 名)``。
-
-        ``names`` 是该单位当前身上（且在关注表里的）buff 名集合；
-        ``max_round`` 可实现"首个回合开始时是否带某 buff"这类需求。
-        """
         if self.kind != RULE_KIND_BUFF or oid not in self.identity_ids:
             return False, ()
         if not self.round_ok(round_seq):
@@ -277,15 +139,10 @@ class BattleRule:
         return bool(hit), hit
 
     def match_presence(self, oid: int, round_seq: int = 0) -> bool:
-        """场上存在该身份（``kind="presence"``）。"""
         return (self.kind == RULE_KIND_PRESENCE and oid in self.identity_ids
                 and self.round_ok(round_seq))
 
     def match_vitals(self, oid: int, hp: int, mhp: int, mp: int) -> bool:
-        """血量/理智类的命中判定（``oid`` 不在目标身份里一律不命中）。
-
-        读失败（``VITAL_UNREAD``）一律不命中，宁可漏也不能误判。
-        """
         if oid not in self.identity_ids:
             return False
         if self.kind == RULE_KIND_MENTAL:
@@ -297,11 +154,6 @@ class BattleRule:
         return False
 
     def match_speed(self, oid: int, speeds: dict) -> tuple[bool, tuple[str, ...]]:
-        """速度命中判定：返回 ``(是否命中, 命中的字段名)``。
-
-        ``speeds`` 是驱动归一化后的 SPD 字段（``os``/``ow``/``its``/``eff``）。
-        ``fields`` 为空时看全部字段；未掷速度（-1 哨兵）不会等于任何非负阈值。
-        """
         if self.kind != RULE_KIND_SPEED or oid not in self.identity_ids:
             return False, ()
         names = self.fields or SPEED_FIELD_ORDER
@@ -309,7 +161,6 @@ class BattleRule:
         return bool(hit), hit
 
     def threshold_text(self) -> str:
-        """阈值的人类可读写法（写进成就详情/日志）。"""
         if self.kind == RULE_KIND_MENTAL:
             return f"理智 < {self.threshold}"
         if self.kind == RULE_KIND_HP:
@@ -324,17 +175,10 @@ class BattleRule:
             return "使用了任意技能"
         return "技能命中"
 
-
 _rules: dict[str, BattleRule] = {}
 _rules_lock = threading.Lock()
 
-
 def register_rule(rule) -> BattleRule:
-    """登记一条判定规则（重复 key 以最后一次为准）。支持传 dict。
-
-    登记后会把「buff 类规则用到的 buff 名」同步到关注表（驱动侧读它决定要不要
-    去看 buff 链）—— 所以成就构造完就不需要额外操作。
-    """
     if isinstance(rule, dict):
         rule = BattleRule(**rule)
     with _rules_lock:
@@ -345,19 +189,15 @@ def register_rule(rule) -> BattleRule:
         pass
     return rule
 
-
 def registered_rules() -> dict[str, BattleRule]:
     with _rules_lock:
         return dict(_rules)
-
 
 def clear_rules() -> None:
     with _rules_lock:
         _rules.clear()
 
-
 def watched_identities() -> set[int]:
-    """所有规则里出现过的目标身份（状态文件只保留这些单位的血量/理智/buff）。"""
     with _rules_lock:
         rules = list(_rules.values())
     ids: set[int] = set()
@@ -365,12 +205,7 @@ def watched_identities() -> set[int]:
         ids.update(rule.identity_ids)
     return ids
 
-
 def watched_buff_names() -> tuple[str, ...]:
-    """所有 buff 类规则用到的 buff 名（稳定排序）。
-
-    关注表的第 i 位就是这个 tuple 的第 i 项 → DLL 发的位掩码能直接映射回名字。
-    """
     with _rules_lock:
         rules = list(_rules.values())
     names: list[str] = []
@@ -382,9 +217,7 @@ def watched_buff_names() -> tuple[str, ...]:
     names.sort()
     return tuple(names[:BUFF_WATCH_MAX])
 
-
 def _sync_buff_watch() -> tuple[str, ...]:
-    """把关注 buff 名（FNV-1a 64）写进共享内存关注表；没配就写 0。"""
     names = watched_buff_names()
     with _watch_lock:
         watch = _watch
@@ -392,62 +225,37 @@ def _sync_buff_watch() -> tuple[str, ...]:
         watch.sync_buff_watch(names)
     return names
 
-
 def rule_hit(key: str) -> str | None:
-    """规则是否命中过；命中返回详情文本（未命中/没观测到返回 None）。"""
     with _watch_lock:
         watch = _watch
     if watch is None:
         return None
     return watch.rule_detail(key)
 
-
 def rule_order(key: str) -> int:
-    """规则命中的先后序号（越小越早；未命中返回 0）。"""
     with _watch_lock:
         watch = _watch
     if watch is None:
         return 0
     return watch.rule_order(key)
 
-
 def rule_live(key: str) -> bool:
-    """按当前观测重新判一次规则（不置位；给复合成就的“状态条件”用）。"""
     with _watch_lock:
         watch = _watch
     if watch is None:
         return False
     return watch.rule_live(key)
 
-# 回合边界信号：这些钩子的命中计数增加 = 新回合（或每单位回合开始的第一次）
 BOUNDARY_PREFERRED = ("manager_init", "manager_on_round_start_before")
 BOUNDARY_FALLBACK = ("unit_round_start",)
 
-# 表现层动画 tick（DLL 用 plain kind 发 ``RND tag=skv_*``）：它们**不是**回合边界，
-# 只用来推进"动画相位"。见 BattleSkillViewBase（Skill_Start / Skill_Complete / Skill_End）。
 ANIM_TICK_TAGS = ("skv_start", "skv_complete", "skv_end")
-# 只有 ``skv_end``（BattleSkillViewBase::Skill_End）才算"这手动画播完了"，才放行判定；
-# ``skv_start`` / ``skv_complete`` 只用来证明"动画在跑"（心跳里的 tick 计数）。
 ANIM_RELEASE_TAGS = ("skv_end",)
-# 注：同一次"动画结束"有时会被多份技能视图各发一条（实测同一毫秒收到两条 skv_end），
-# 那就是一次放行两条判定 —— 无害（比卡住不放行好），所以不做时间去重。
-# 一个回合实测有 5 组以上的 skv_end（= 至少 10 次放行），远多于待放行条数。
 
-# 要"等动画"的规则类型：命中后先进待放行队列，由动画 tick 逐个放行。
-# 技能类本来就走待结算（pending_flags）；hp/理智/buff 之前是立刻置位，而这游戏的值变化
-# 全在回合开头的结算瞬间 → 立刻置位 = "回合开始立刻结算"，所以一起改成等动画。
 RULE_KINDS_ANIM_WAIT = ("hp", "mental", "buff")
-# 挂起项详情里的占位符：放行时会被换成真实原因（"动画结束" / "回合边界兜底"）。
 PENDING_REASON = "待动画结束"
 
-
 def _stamp_reason(detail: str, reason: str) -> str:
-    """把“为什么现在才放行”写进详情（解锁依据/日志都要能一眼看出）。
-
-    技能类详情里本来就有占位符 ``（待动画结束）``，直接替掉；
-    hp/理智/buff 那种没占位符的就在末尾补一个 ``（动画结束…）``，
-    否则日志里会看不出它是被动画放行的还是被回合边界兜底的。
-    """
     if not reason:
         return detail
     if PENDING_REASON in detail:
@@ -456,36 +264,12 @@ def _stamp_reason(detail: str, reason: str) -> str:
         return detail
     return f"{detail}（{reason}）"
 
-# ⚠ 结算阶段钩子**不能**当"技能动画结束"用（常量保留只为兼容旧引用，不再触发结算）。
-# 实测 2026-09-25 11:04:49（logs/battle_watch.log 带毫秒）：
-#   11:04:49.165~.170 一整个回合的全部 ACT/VAL（伤害、收尾回调 action_on_end_turn /
-#                     action_done_with_action）在 5ms 内算完 ← 这是**结算瞬间**
-#   11:04:49.9 起      表现层才慢慢播 skv_start / skv_complete / skv_end
-# 所以拿 done_with_action 结算 = "回合一开始就解锁"（用户反馈的现象）。
-# 真动画进度只认表现层 tick，见 ANIM_RELEASE_TAGS。
 ACTION_END_TAGS: tuple[str, ...] = ()
-# 回合边界去重：实测同一回合会收到**两次**边界钩子（OnRoundStart_Before 在命令阶段与
-# 战斗阶段各调一次，间隔 2~3 秒）→ 不去重 round_seq 会翻倍，max_round/min_round 全错。
-# 真回合之间相隔 20s 以上，4s 窗口很安全。
 ROUND_BOUNDARY_DEDUPE_SEC = 4.0
-# 两场战斗之间的空档兜底：万一没等到 EndStage 信号（日志没读到/中途接管），
-# 回合边界间隔超过这个值也按"新战斗"处理。取 120s 是故意的 ——
-# 实测**同一场战斗内**两个回合边界也能差 60s，间隔小了会误判成新战斗。
 NEW_BATTLE_GAP_SEC = 120.0
-# 静默期兜底（**只在从未见过 skv tick 时用**）：表现层钩子没命中时，事件停这么久
-# 就当作动画放完（否则挂起判定要一直等到回合边界）。
 SKILL_SETTLE_QUIET_SEC = 2.5
-# 见过 skv tick（说明能看见动画进度）→ 只用这个很长的阈值（以最后一次 tick 计时）。
-# 而**同一个回合内**两段动画之间 tick 最长能空 10.5s（回合之间是 26s+）→ 阈值必须
-# 明显大于 10.5s，否则会在动画中途放行（曾用 2.5/6/8s，现象就是用户反馈的
-# “回合开始就结算”）。
 SKILL_SETTLE_QUIET_TICKED_SEC = 15.0
-# 本回合**还没出现过任何 skv tick** 时的最短等待：结算阶段天生比第一手动画早几秒
-# （实测伤害结算 25.5s → 第一手动画 28.8s，差 3.3s）。此时若用短兜底，会在动画开播
-# **之前**就把血量/理智/buff 判定整批放行 —— 正是「回合开始没多久就误判」的来源。
-# 这里要么等到第一手动画出现（之后由 skv_end 按行动组放行），要么至少等满这个宽限期。
 FIRST_ANIM_GRACE_SEC = 10.0
-# DLL 采样线程的事件 tag（每 250ms 重读一次 hp/sp/buff）。
 SAMPLER_TAG = "sampler"
 
 HEARTBEAT_SEC = 20.0
@@ -502,11 +286,7 @@ ERROR_TEXT = {
     6: "MinHook 启用钩子失败",
 }
 
-# --------------------------------------------------------------------------- 回退值
-
-# 拿不到 hook_index 时的兜底（RVA 来自 build 2026-09-17 实测）
 FALLBACK_HOOKS: dict[str, tuple[str, int, str]] = {
-    # key: (symbol, rva, kind)
     "unit_refresh_speed": ("BattleUnitModel::RefreshSpeed", 0x11C89D0, "unit"),
     "unit_set_random_speed": ("BattleUnitModel::SetRandomSpeed", 0x11C8490, "unit"),
     "unit_set_speed": ("BattleUnitModel::SetSpeed", 0x11C7970, "unit_int_bool"),
@@ -520,60 +300,22 @@ FALLBACK_HOOKS: dict[str, tuple[str, int, str]] = {
     "action_done_with_action": ("BattleActionModel::DoneWithAction", 0x11AD140, "action_int"),
     "take_attack_dmg_multiplier": ("BattleUnitModel::GetTakeAttackDmgMultiplier", 0x11E1D10,
                                   "damage_action"),
-    # ---- 表现层（动画相位）-----------------------------------------------
-    # ⚠ 这游戏的战斗是"**先算完整回合、再播动画**"：结算阶段（伤害/收尾回调）全挤在回合
-    # 刚开始的一瞬间，拿它们当"动画结束"必然变成"回合一开始就解锁"。只有表现层的
-    # BattleSkillViewBase 回调能反映动画进度（RVA 来自 dump.cs，build 34E76109）。
-    # 它们走 ``skv`` kind：DLL 发 ``RND tag=<钩子名> iid=<attackerInstanceID>``，
-    # 驱动按 tag 前缀 ``skv_`` 区分相位，按 iid 把判定对齐到具体行动。
     "skv_start": ("BattleSkillViewBase::Skill_Start", 0x9B4D80, "skv"),
     "skv_complete": ("BattleSkillViewBase::Skill_Complete", 0x9BD810, "skv"),
     "skv_end": ("BattleSkillViewBase::Skill_End", 0x9475C0, "skv"),
-    # ---- 关卡结算统计（折射铁路的通关回合数）-----------------------------
-    # 「六号线 <100T 通关」这类成就的**唯一**数据源：铁路回合数只在内存里，
-    # Player.log 完全没有。挂钩结算统计对象的构造函数，读每个 slot 的 _clearTurn。
-    # （RVA/字段来自 dump.cs，索引里也有同一条，这里只是回退值。）
     "stage_statistic": ("StageStatisticPopupData::.ctor", 0x13C8DE0, "stage_stat"),
-    # ---- 折射铁路整条线的最好回合数 ---------------------------------------
-    # 进线路前游戏显示的那个"你的最好回合数"就是它：GetTotalClearTurn() 无参返回 int，
-    # 宿主对象上的 _collectionId(0x10) 是线路号。结算事件只能给单关回合，总回合只在这儿。
     "railway_total": ("RailwayDungeonHistoryDataByCollection::GetTotalClearTurn",
                       0x1A83AF0, "railway_total"),
-    # ---- 存档：已通关关卡记录 ---------------------------------------------
-    # 挂钩 UpdateData —— 存档载入时必调；它只把对象指针缓存下来（cache_self），
-    # 之后由采样线程轮询里面的"已通关关卡列表"，于是**以前打过的关卡也能判定**。
     "stage_clear_info": ("UserStageClearInfoData::UpdateData", 0x18E62D0, "cache_self"),
-    # 上面那条只有"载入存档"时才调 —— 实测注入常比存档载入晚，一次都不命中。
-    # 这两条是 **UI 查询**路径：玩家在关卡列表里点选时游戏就会问"这关通了没"，
-    # 一样能把对象指针抓下来（多头挂点，谁先命中算谁）。
     "stage_clear_query": ("UserStageClearInfoData::GetData", 0x18E6300, "cache_self"),
     "stage_clear_last": ("UserStageClearInfoData::GetLastClearData", 0x18E63E0, "cache_self"),
-    # ---- 关卡通关状态查询（当前 UI 真正在用的那条路）------------------------
-    # 关卡列表每次渲染都会问 UserStageNodeStateData"这关通了没"，而且**章节号/节点号是入参**
-    # ——所以不需要猜关卡 id 格式，也不需要解析存档结构。实测旧类 UserStageClearInfoData
-    # 三条挂点全程 0 命中，所以必须挂这个。
     "node_cleared": ("UserStageNodeStateData::IsNodeCleared", 0x18B0A30, "node_state"),
     "node_clear_state": ("UserStageNodeStateData::GetClearNodeState", 0x18B0630, "node_state"),
     "node_cleared_short": ("UserStageNodeStateData::IsNodeCleared", 0x18B0AB0, "cache_self"),
-    # ---- 存档全量进度树（**不用点任何界面**的正解）----------------------------
-    # 登录时服务端把整棵 章→小节→节点 树下发到这里；a1 就是列表根。
-    # 采样线程遍历它即可全量判定（界面查询那条路实测连第十章都没查过）。
     "stage_progress": ("UserStageNodeStateData::UpdateData", 0x18AFFE0, "cache_arg1"),
-    # ---- 折射铁路：每节点通关回合（存档重建时逐个构造，不依赖界面）------------
-    # 挂钩 RailwayDungeonFormerSaveData::.ctor(RailwayNodeDataFormat) —— 它填
-    # nodeId(0x10)/clearTurn(0x14)。之前挂的 GetTotalClearTurn 实测 0 命中（只在线路界面调）。
     "railway_node": ("RailwayDungeonFormerSaveData::.ctor", 0x18B38D0, "railway_node"),
-    # ---- 折射铁路：历史记录（界面上的"你最好的回合数"）------------------------
-    # 9 个参数的构造函数（签名已从 dump.cs 确认）：arg1 = 线路号，arg4 = IList<int> 各节点回合。
-    # 求和直接得到整条线的总回合 —— 这才是六号线成就该用的数据（前者只是本次行程，没打就是 0）。
     "railway_hist": ("RailwayDungeonHistoryDataByCollection::.ctor", 0x1A83860, "railway_hist"),
-    # ---- 关卡身份（"10-4"的官方口径）----------------------------------------
-    # StageNodeIdInfo::SetData(partId, chapterId, nodeId, stageId, clearState) ——
-    # 关卡地图渲染时逐个节点调。存档里的 id（10438）不编码"第几关"，只有这里给的
-    # chapter + node 才是界面上的 "10-4"。
     "stage_node_id": ("StageNodeIdInfo::SetData", 0x12636F0, "stage_node_id"),
-    # ---- 铁路"总回合"**界面显示值**（读事实，不猜聚合）------------------------
-    # 之前从存档结构求和得 33、界面显示 86 → 聚合口径未知。游戏已经算好写进 UI 了，直接读。
     "railway_ui_text": ("RailwayDungeonMapUpperUILine1002::UpdateUI", 0x1A4E500,
                         "railway_ui_text"),
 }
@@ -583,64 +325,43 @@ FALLBACK_FIELDS: dict[str, int] = {
     "unit_origin_speed": 0xCC,
     "unit_overwrited_speed": 0xD0,
     "unit_int_speed_turn": 0x184,
-    # CharacterState 链（HP / 理智，都是 ObscuredInt）
-    "unit_state": 0x148,          # BattleUnitModel::_state → CharacterState*
-    "state_hp": 0x148,            # CharacterState::_hp
-    "state_max_hp": 0x11C,        # CharacterState::_maxHp
-    "state_mp": 0x158,            # CharacterState::_mp（理智/SP，±45）
-    # buff 链（buff 的 id 是字符串，如 HanafudaTwo / FutureEyeOnRodion，与 Lang/Bufs.json 一致）
-    "unit_buff_detail": 0xE0,     # BattleUnitModel::_buffDetail → BuffDetail*
-    "buff_detail_list": 0x10,     # BuffDetail::_grantedBuffList : List<BuffModel>
-    "buff_model_data": 0x68,      # BuffModel::_buffData → BuffStaticData*
-    "buff_static_id": 0x18,       # BuffStaticData::id : string
+    "unit_state": 0x148,
+    "state_hp": 0x148,
+    "state_max_hp": 0x11C,
+    "state_mp": 0x158,
+    "unit_buff_detail": 0xE0,
+    "buff_detail_list": 0x10,
+    "buff_model_data": 0x68,
+    "buff_static_id": 0x18,
     "action_skill": 0x20,
     "action_commander_id": 0xB4,
     "action_actor_id": 0xBC,
     "skill_data": 0x10,
     "skill_id": 0x10,
     "skill_tier": 0x40,
-    # 表现层 BattleSkillViewBase::_attackerInstanceID（动画 tick 的身份）
     "skv_attacker_iid": 0x120,
-    # 关卡结算统计（折射铁路的通关回合数）——
-    # StageStatisticPopupData[0x10] → List<slot>（引用类型 List: _items 0x20 / _size 0x18）
-    #   → slot[0x18] = _clearTurn（通关回合数）, slot[0x10] = _uid（关卡 uid）
-    # 偏移来自 dump.cs: StageStatisticPopupData / StageStatisticPopupSlotData。
     "stage_slot_list": 0x10,
     "slot_uid": 0x10,
     "slot_clear_turn": 0x18,
     "slot_dead_count": 0x1C,
     "slot_ex_cleared": 0x20,
-    # 折射铁路总回合：RailwayDungeonHistoryDataByCollection._collectionId（线路号）
     "railway_collection_id": 0x10,
-    # 已通关关卡记录链（UserStageClearInfoData → 列表 → 关卡 id）
     "stage_clear_list": 0x18,
     "clear_info_list": 0x10,
     "clear_info_id": 0x10,
-    # 存档全量进度树：章[id 0x10][小节 0x18] → 小节[id 0x10][节点 0x18]
-    #   → 节点[id 0x10][clearType 0x14][clearNumber 0x18]
     "chapter_subs": 0x18,
     "sub_nodes": 0x18,
     "node_id": 0x10,
     "node_clear_type": 0x14,
     "node_clear_number": 0x18,
-    # 折射铁路每节点记录：nodeId 0x10 / clearTurn 0x14
     "railway_node_id": 0x10,
     "railway_node_turn": 0x14,
-    # 铁路 UI 显示文本：RailwayDungeonMapUpperUILine1002.tmp_totalTurn(0x28) → TMP_Text.m_text(0xE0)
     "railway_ui_text": 0x28,
     "tmp_text": 0xE0,
 }
-# 该候选不做桩解引用（本身就是真实实现/已验证可用）
 NO_STUB_RESOLVE = {"take_attack_dmg_multiplier"}
 
-# --------------------------------------------------------------------------- 共享内存结构
-
-
 class BWConfig(ctypes.Structure):
-    """与 ``hook_dll/battle_watch.c`` 的 ``BW_CONFIG``（v2）一一对应。
-
-    DLL 启动后会回写 ``ring_offset`` / ``struct_size``，本模块会核对。
-    """
 
     _fields_ = [
         ("magic", ctypes.c_int32),
@@ -672,7 +393,6 @@ class BWConfig(ctypes.Structure):
         ("off_skill_data", ctypes.c_int32),
         ("off_skill_id", ctypes.c_int32),
         ("off_skill_tier", ctypes.c_int32),
-        # 表现层动画 tick 的身份：BattleSkillViewBase::_attackerInstanceID
         ("off_skv_attacker_iid", ctypes.c_int32),
         ("gameassembly_found", ctypes.c_int32),
         ("verified", ctypes.c_int32),
@@ -685,47 +405,35 @@ class BWConfig(ctypes.Structure):
         ("last_log", ctypes.c_char * 128),
         ("log_head", ctypes.c_int32),
         ("log_ring", (ctypes.c_char * (LOG_LINE_MAX + 1)) * LOG_RING_CAP),
-        # 关注 buff 表（在结构体末尾：ring 偏移不变，只让总大小变）
         ("buff_watch_count", ctypes.c_int32),
         ("buff_watch_hashes", ctypes.c_uint64 * BUFF_WATCH_MAX),
-        # 关卡结算统计字段偏移（同样放末尾，ring 偏移不变）——
-        # 必须与 battle_watch.c 的 BW_CONFIG 尾部一一对应。
         ("off_stage_slot_list", ctypes.c_int32),
         ("off_slot_uid", ctypes.c_int32),
         ("off_slot_clear_turn", ctypes.c_int32),
         ("off_slot_dead_count", ctypes.c_int32),
         ("off_slot_ex_cleared", ctypes.c_int32),
-        # 折射铁路整条线的总回合（BWK_RAILWAY_TOTAL）：线路号字段偏移
         ("off_railway_collection_id", ctypes.c_int32),
-        # 存档：已通关关卡记录（BWK_CACHE_SELF 抓对象 + 采样线程轮询）
-        # UserStageClearInfoData[0x18] → StageClearInfoList[0x10] → List<StageClearInfo>
-        #   → 每项 [0x10] = 关卡 id
         ("off_stage_clear_list", ctypes.c_int32),
         ("off_clear_info_list", ctypes.c_int32),
         ("off_clear_info_id", ctypes.c_int32),
         ("stage_watch_count", ctypes.c_int32),
         ("stage_watch_ids", ctypes.c_int32 * STAGE_WATCH_MAX),
-        ("stage_clear_data", ctypes.c_int64),   # DLL 自己写：抓到的对象指针
-        ("stage_seen_mask", ctypes.c_int32),    # DLL 自己写：已上报槽位图
-        ("stage_diag_done", ctypes.c_int32),    # DLL 自己写：一次性诊断是否已发
-        # NCL 去重表（DLL 自己写）
+        ("stage_clear_data", ctypes.c_int64),
+        ("stage_seen_mask", ctypes.c_int32),
+        ("stage_diag_done", ctypes.c_int32),
         ("ncl_seen", ctypes.c_int32 * NCL_SEEN_MAX),
         ("ncl_seen_count", ctypes.c_int32),
-        # 存档全量进度树（BWK_CACHE_ARG1 抓列表参数 → 采样线程遍历）
         ("stage_progress_list", ctypes.c_int64),
         ("off_chapter_subs", ctypes.c_int32),
         ("off_sub_nodes", ctypes.c_int32),
         ("off_node_id", ctypes.c_int32),
         ("off_node_clear_type", ctypes.c_int32),
         ("off_node_clear_number", ctypes.c_int32),
-        # 折射铁路每节点记录（BWK_RAILWAY_NODE 读 self 上的字段）
         ("off_railway_node_id", ctypes.c_int32),
         ("off_railway_node_turn", ctypes.c_int32),
-        # 铁路 UI 显示文本（BWK_RAILWAY_UI_TEXT 读）
         ("off_railway_ui_text", ctypes.c_int32),
         ("off_tmp_text", ctypes.c_int32),
     ]
-
 
 CONFIG_SIZE = ctypes.sizeof(BWConfig)
 RING_OFFSET = BWConfig.log_ring.offset
@@ -763,7 +471,6 @@ _kernel32.GetProcAddress.argtypes = [_HANDLE, ctypes.c_char_p]
 PROCESS_ACCESS = 0x0002 | 0x0400 | 0x0008 | 0x0020 | 0x0010
 TH32CS_SNAPPROCESS = 0x00000002
 
-
 class PROCESSENTRY32W(ctypes.Structure):
     _fields_ = [
         ("dwSize", wt.DWORD),
@@ -778,28 +485,11 @@ class PROCESSENTRY32W(ctypes.Structure):
         ("szExeFile", ctypes.c_wchar * 260),
     ]
 
-
 _kernel32.CreateToolhelp32Snapshot.argtypes = [wt.DWORD, wt.DWORD]
 _kernel32.CreateToolhelp32Snapshot.restype = _HANDLE
 _kernel32.Process32FirstW.argtypes = [_HANDLE, ctypes.POINTER(PROCESSENTRY32W)]
 _kernel32.Process32NextW.argtypes = [_HANDLE, ctypes.POINTER(PROCESSENTRY32W)]
 
-
-# ============================================================================
-# 注入流程的基础设施：身份校验 / 挂起窗口 / 远端模块与 PE 身份回读
-# ============================================================================
-# 注入要同时保证三件事，任何一件不成立都会表现成“钩子没装上 / 事件全 0”：
-#   1) **注对进程**：这个 PID 的映像路径必须是配置里的 ``game_path\LimbusCompany.exe``
-#      （同名残留进程、别的副本、Steam 拉起的短命引导进程都要排除）；
-#   2) **注对时机**：在“进程线程挂起 / 游戏还没跑起来”的窗口里注入。进程本来就处于挂起态
-#      就直接借用；否则临时挂起它的全部线程，注入完只恢复我们自己加的那次挂起
-#      —— 这样注入是原子的，不可能因为“游戏已经跑起来”而漏掉早期观测点；
-#   3) **注对文件**：注入后回读远端模块表，确认加载的是这份 DLL 的完整路径
-#      （``LoadLibraryW`` 遇到同名已加载模块只会返回旧句柄，不会重新加载）。
-# 另外把“偏移量还能不能用”在**注入前**就查清楚（``_run_preflight`` →
-# ``functions/hook/preflight.py``）：先用偏移量对**本机 GameAssembly.dll** 逐条比 prologue
-# （不联网）；对不上才与云端对照（采用云端新版）；仍对不上就报 stale 继续用现有索引。
-# 注入之后再比一次**进程内**的 GameAssembly.dll（``_verify_gameassembly``）作为收尾。
 TH32CS_SNAPTHREAD = 0x00000004
 TH32CS_SNAPMODULE = 0x00000008
 TH32CS_SNAPMODULE32 = 0x00000010
@@ -807,16 +497,11 @@ THREAD_SUSPEND_RESUME = 0x0002
 PROCESS_QUERY_LIMITED = 0x1000
 SYNCHRONIZE = 0x00100000
 SUSPEND_FAILED = 0xFFFFFFFF
-GAME_STABLE_SECONDS = 1.0        # 与 resources/mod_loader/_internal/main.py 的判定约定一致
-# 注入前等待「游戏进程完全挂起」窗口的上限 (秒)。
-# 进程整体挂起时内存是静止的, 是校验偏移与注入最干净的时机 (Steam 更新收尾 / 引导进程
-# 常见)。但游戏正常跑起来之后线程不会再挂起, 所以**必须有上限** —— 超时就按常规方式注入
-# (由 SuspendWindow 自己临时挂起全部线程建立窗口), 绝不无限等。
+GAME_STABLE_SECONDS = 1.0
 SUSPEND_WAIT_SECONDS = 15.0
-MODULE_VERIFY_SECONDS = 5.0      # 注入后回读远端模块的上限
-GA_VERIFY_RETRY = 3              # 进程内 GameAssembly.dll 没枚举到时的重试次数
+MODULE_VERIFY_SECONDS = 5.0
+GA_VERIFY_RETRY = 3
 PE_HEADER_BYTES = 0x400
-
 
 class THREADENTRY32(ctypes.Structure):
     _fields_ = [
@@ -828,7 +513,6 @@ class THREADENTRY32(ctypes.Structure):
         ("tpDeltaPri", ctypes.c_long),
         ("dwFlags", wt.DWORD),
     ]
-
 
 class MODULEENTRY32W(ctypes.Structure):
     _fields_ = [
@@ -843,7 +527,6 @@ class MODULEENTRY32W(ctypes.Structure):
         ("szModule", ctypes.c_wchar * 256),
         ("szExePath", ctypes.c_wchar * 260),
     ]
-
 
 _kernel32.Thread32First.argtypes = [_HANDLE, ctypes.POINTER(THREADENTRY32)]
 _kernel32.Thread32Next.argtypes = [_HANDLE, ctypes.POINTER(THREADENTRY32)]
@@ -864,13 +547,9 @@ _kernel32.GetProcessTimes.argtypes = [_HANDLE, ctypes.POINTER(wt.FILETIME),
                                       ctypes.POINTER(wt.FILETIME),
                                       ctypes.POINTER(wt.FILETIME)]
 
-
-# 最近一次 dll_path() 的选择说明（多份候选同时存在时用来说清楚“注的是哪一份”）
 _DLL_CHOICE_NOTE = ""
 
-
 def _process_image_path(pid: int) -> str:
-    """进程映像的完整路径（不是命令行，也不受工作目录影响）。"""
     proc = _kernel32.OpenProcess(PROCESS_QUERY_LIMITED, False, pid)
     if not proc:
         return ""
@@ -885,9 +564,7 @@ def _process_image_path(pid: int) -> str:
         _kernel32.CloseHandle(proc)
     return ""
 
-
 def _process_start_time(pid: int) -> int:
-    """进程创建时间（FILETIME 合成长整数；拿不到返回 0）。同名多进程时用它挑最新的。"""
     proc = _kernel32.OpenProcess(PROCESS_QUERY_LIMITED, False, pid)
     if not proc:
         return 0
@@ -903,9 +580,7 @@ def _process_start_time(pid: int) -> int:
         _kernel32.CloseHandle(proc)
     return 0
 
-
 def _expected_game_exe() -> str:
-    """配置里那台游戏的可执行文件完整路径（拿不到返回空串 → 跳过身份校验）。"""
     try:
         from functions.hook.paths import game_paths
         paths = game_paths()
@@ -916,15 +591,12 @@ def _expected_game_exe() -> str:
         pass
     return ""
 
-
 def _expected_gameassembly() -> str:
-    """配置里那台游戏的 GameAssembly.dll 路径（拿不到返回空串）。"""
     try:
         from functions.hook.paths import game_paths
         return str(getattr(game_paths(), "gameassembly", "") or "")
     except Exception:  # noqa: BLE001
         return ""
-
 
 def _same_file(a: str, b: str) -> bool:
     if not a or not b:
@@ -934,9 +606,7 @@ def _same_file(a: str, b: str) -> bool:
     except Exception:  # noqa: BLE001
         return False
 
-
 def find_process_candidates(process_name: str = TARGET_PROCESS) -> list[tuple[int, str]]:
-    """所有同名进程的 ``(pid, 映像完整路径)`` 列表（不保证顺序）。"""
     wanted = process_name.lower()
     if not wanted.endswith(".exe"):
         wanted += ".exe"
@@ -957,12 +627,7 @@ def find_process_candidates(process_name: str = TARGET_PROCESS) -> list[tuple[in
         _kernel32.CloseHandle(snapshot)
     return out
 
-
 def select_game_process(process_name: str = TARGET_PROCESS) -> tuple[int | None, str, str]:
-    """挑出真正要注入的游戏进程。返回 ``(pid, 映像路径, 说明)``。
-
-    优先级：映像路径 == 配置的游戏 exe；同名多进程时取创建时间最新的那个。
-    """
     expected = _expected_game_exe()
     candidates = find_process_candidates(process_name)
     if not candidates:
@@ -981,30 +646,20 @@ def select_game_process(process_name: str = TARGET_PROCESS) -> tuple[int | None,
         return pid, image, f"映像 {image} 与配置 {expected} 不一致（唯一同名进程，仍尝试注入）"
     return pid, image, ""
 
-
-# 是否已确认“本进程是唯一的成就监测实例”（由 hook.py 拿到单实例互斥体后置位）。
-# 只有它为真时，_open_map 才允许**接管**上次遗留的共享内存 —— 否则两实例会双钩。
 _SOLE_INSTANCE = False
 
-
 def set_sole_instance(value: bool = True) -> None:
-    """由 hook.py 在拿到单实例互斥体后调用。"""
     global _SOLE_INSTANCE
     _SOLE_INSTANCE = bool(value)
-
 
 def sole_instance() -> bool:
     return _SOLE_INSTANCE
 
-
 def find_process_id(process_name: str = TARGET_PROCESS) -> int | None:
-    """兼容旧入口：返回第一个同名进程 PID（``--probe``/``--status`` 用）。"""
     candidates = find_process_candidates(process_name)
     return candidates[0][0] if candidates else None
 
-
 def pid_alive_for(pid: int, seconds: float) -> bool:
-    """进程在 ``seconds`` 秒内是否一直存活（句柄判定，不受 PID 复用影响）。"""
     handle = _kernel32.OpenProcess(SYNCHRONIZE, False, pid)
     if not handle:
         return False
@@ -1013,9 +668,7 @@ def pid_alive_for(pid: int, seconds: float) -> bool:
     finally:
         _kernel32.CloseHandle(handle)
 
-
 def remote_modules(pid: int) -> list[tuple[str, str, int]]:
-    """目标进程已加载模块的 ``(模块名, 完整路径, 基址)``（失败返回空列表）。"""
     snapshot = _kernel32.CreateToolhelp32Snapshot(TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32,
                                                   pid)
     out: list[tuple[str, str, int]] = []
@@ -1033,9 +686,7 @@ def remote_modules(pid: int) -> list[tuple[str, str, int]]:
         _kernel32.CloseHandle(snapshot)
     return out
 
-
 def read_remote(pid: int, address: int, size: int) -> bytes:
-    """读目标进程内存（只读，读不到返回空串）。"""
     proc = _kernel32.OpenProcess(PROCESS_QUERY_LIMITED | 0x0010, False, pid)
     if not proc:
         return b""
@@ -1051,14 +702,7 @@ def read_remote(pid: int, address: int, size: int) -> bytes:
         _kernel32.CloseHandle(proc)
     return b""
 
-
 def _parse_pe_header(head: bytes) -> dict:
-    """从 PE 头部字节里取身份字段（时间戳 / 映像大小 / 入口 RVA）。
-
-    ⚠ 不要拿整段头部哈希当判据：加载器会往头部写几个字节（实测 python.exe 偏移
-    0x13A 处存的是模块基址），磁盘文件与内存映像的头部并不逐字节相等；
-    ``header_sha256`` 只当诊断信息保留。
-    """
     import hashlib
     import struct as _struct
     info = {"timestamp": 0, "size_of_image": 0, "entry_rva": 0, "header_sha256": ""}
@@ -1074,9 +718,7 @@ def _parse_pe_header(head: bytes) -> dict:
     info["header_sha256"] = hashlib.sha256(head).hexdigest().upper()
     return info
 
-
 def pe_identity_same(a: dict, b: dict) -> bool:
-    """两份 PE 身份是不是同一份构建：时间戳 + 映像大小 + 入口 RVA。"""
     if not a or not b:
         return False
     for key in ("timestamp", "size_of_image", "entry_rva"):
@@ -1084,18 +726,14 @@ def pe_identity_same(a: dict, b: dict) -> bool:
             return False
     return True
 
-
 def local_pe_identity(path: str) -> dict:
-    """磁盘上某个 PE 文件的身份字段（前 0x400 字节就够）。"""
     try:
         with open(path, "rb") as fh:
             return _parse_pe_header(fh.read(PE_HEADER_BYTES))
     except OSError:
         return {"timestamp": 0, "size_of_image": 0, "entry_rva": 0, "header_sha256": ""}
 
-
 def remote_pe_identity(pid: int, module_name: str = "gameassembly.dll") -> dict:
-    """进程内某个模块的 PE 身份（含基址/路径）；没加载时返回空 dict。"""
     wanted = module_name.lower()
     for name, path, base in remote_modules(pid):
         if name.lower() != wanted or not base:
@@ -1107,9 +745,7 @@ def remote_pe_identity(pid: int, module_name: str = "gameassembly.dll") -> dict:
         return info
     return {}
 
-
 def dll_info(path: str) -> dict:
-    """要注入的那份 DLL 的文件身份（大小 / 修改时间 / 哈希），用于日志自证“注的是哪份”。"""
     import hashlib
     out = {"path": path, "size": 0, "mtime": "", "sha256": ""}
     try:
@@ -1122,9 +758,7 @@ def dll_info(path: str) -> dict:
         pass
     return out
 
-
 def _process_thread_ids(pid: int) -> list[int]:
-    """枚举某个进程的全部线程 ID（快照失败返回空列表）。"""
     snapshot = _kernel32.CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0)
     if not snapshot or snapshot == -1:
         return []
@@ -1141,17 +775,7 @@ def _process_thread_ids(pid: int) -> list[int]:
         _kernel32.CloseHandle(snapshot)
     return out
 
-
 def process_thread_suspend_state(pid: int) -> tuple[int, int]:
-    """探测进程的挂起情况，返回 ``(可探测线程数, 其中处于挂起态的线程数)``。
-
-    探测手法: ``SuspendThread`` 的**返回值**是调用前的挂起计数 —— >0 就说明该线程本来
-    就是挂起的；紧接着 ``ResumeThread`` 把这次探测加的计数回滚，进程状态原样不变，
-    所以可以安全地反复轮询（不会替游戏恢复或改变它自己的挂起状态）。
-
-    ⚠ 必须跳过**调用方自己的线程**: 对自己 SuspendThread 会当场把本线程冻住, 后面的
-    ResumeThread 根本没机会执行 —— 那就是死锁 (自查自身进程时踩过)。
-    """
     own_tid = int(_kernel32.GetCurrentThreadId())
     total = 0
     suspended = 0
@@ -1168,29 +792,20 @@ def process_thread_suspend_state(pid: int) -> tuple[int, int]:
             total += 1
             if prev > 0:
                 suspended += 1
-            _kernel32.ResumeThread(handle)      # 回滚本次探测
+            _kernel32.ResumeThread(handle)
         finally:
             _kernel32.CloseHandle(handle)
     return total, suspended
 
-
 class SuspendWindow:
-    """注入窗口：在“进程线程挂起”的状态下做注入，退出时精确恢复。
-
-    - 逐线程把 ``SuspendThread`` 的返回值当“既有挂起计数”：返回 0 = 这次挂起是我们加的
-      （退出时恢复一次）；返回 >0 = 线程本来就挂起，立刻回滚，**不替游戏恢复它自己的挂起**。
-    - 全部线程在进入前就已挂起 → 说明进程当前处于挂起态，直接借用这个窗口（这正是
-      “检测到进程挂起再注入”想要的效果；Steam 拉起的进程通常不会挂起，所以更多时候
-      是我们自己建立窗口）。
-    """
 
     def __init__(self, pid: int, log=None) -> None:
         self.pid = pid
         self.log = log or (lambda _m: None)
         self.thread_ids: list[int] = []
-        self.owned: list[int] = []      # 我们加了挂起的线程 id
-        self.already = 0                # 进入前就已挂起的线程数
-        self.was_suspended = False      # 进入前整个进程是否已挂起
+        self.owned: list[int] = []
+        self.already = 0
+        self.was_suspended = False
 
     def _enumerate_threads(self) -> list[int]:
         return _process_thread_ids(self.pid)
@@ -1209,7 +824,7 @@ class SuspendWindow:
                     self.owned.append(tid)
                 else:
                     self.already += 1
-                    _kernel32.ResumeThread(handle)      # 回滚，保持它原本的挂起状态
+                    _kernel32.ResumeThread(handle)
             finally:
                 _kernel32.CloseHandle(handle)
         total = len(self.thread_ids)
@@ -1238,13 +853,7 @@ class SuspendWindow:
         self.owned = []
         return False
 
-
 def _project_root() -> str:
-    """**可写**的应用根（logs/、cache/ 落在这里）。
-
-    不能用 ``__file__`` 上溯：打包后它在 PyInstaller 的临时目录 ``_MEIPASS`` 里，
-    日志写进去等于丢（实测"打包版 hook 日志不在 logs 下"）。见 path_utils.get_app_root。
-    """
     try:
         from functions.base.common.path_utils import get_app_root
         return get_app_root()
@@ -1252,9 +861,7 @@ def _project_root() -> str:
         here = os.path.dirname(os.path.abspath(__file__))
         return os.path.abspath(os.path.join(here, "..", ".."))
 
-
 def _pick_newest_dll(candidates: list[str]) -> tuple[str, str]:
-    """从候选路径里取 mtime 最新的一份。返回 ``(路径, 说明)``（说明为空 = 只有一份）。"""
     found: list[tuple[str, float]] = []
     seen: set[str] = set()
     for path in candidates:
@@ -1279,15 +886,7 @@ def _pick_newest_dll(candidates: list[str]) -> tuple[str, str]:
             f"忽略: {others}")
     return found[0][0], note
 
-
 def dll_path() -> str:
-    """要注入的 battle_watch.dll（发布包里就是编译好的那份，**不会**在注入前现编译）。
-
-    候选里可能同时存在多份（``_MEIPASS`` 打包副本 / 开发目录刚编译的 / ``_internal`` 部署的），
-    此时取 **mtime 最新** 的一份 —— 否则开发目录里重新 build 之后，打包版会一直注入包里那份旧
-    DLL，表现就是“改了代码/新功能没生效，因为注进去的还是旧 DLL”。选择结果记在
-    ``_DLL_CHOICE_NOTE`` 里，由驱动与 ``--probe`` 输出出来。
-    """
     global _DLL_CHOICE_NOTE
     here = os.path.dirname(os.path.abspath(__file__))
     root = _project_root()
@@ -1304,20 +903,13 @@ def dll_path() -> str:
     chosen, _DLL_CHOICE_NOTE = _pick_newest_dll(candidates)
     return chosen
 
-
 def event_log_path() -> str:
     return os.path.join(_project_root(), "logs", "battle_watch.log")
-
 
 def status_path() -> str:
     return os.path.join(_project_root(), "cache", "achievement", "battle_watch_status.json")
 
-
-# --------------------------------------------------------------------------- 事件 / 状态
-
-# 值取到**空白为止**（不能只匹配数字：`vals=2|3|1` 这种带 `|` 的会被截成 `2`）
 _KV_RE = re.compile(r"([A-Za-z_][A-Za-z0-9_]*)=(\S+)")
-
 
 @dataclass
 class BattleEvent:
@@ -1334,7 +926,6 @@ class BattleEvent:
             return default
 
     def opt(self, key: str):
-        """取不到就返回 ``None``（区别于 ``get`` 的 0 兜底）——用于「DLL 可选附加字段」。"""
         if key not in self.values:
             return None
         try:
@@ -1343,64 +934,55 @@ class BattleEvent:
             return None
 
     def text(self, key: str, default: str = "") -> str:
-        """取**原样字符串**（uid 这类非数字字段；``get`` 只会返回 int）。"""
         value = self.values.get(key, default)
         return default if value is None else str(value)
-
 
 @dataclass
 class BattleState:
     round_seq: int = 0
-    units: dict = field(default_factory=dict)        # instanceID → originID
-    speeds: dict = field(default_factory=dict)       # instanceID → {oid,os,ow,its,eff,os_raw,ow_raw}
-    vitals: dict = field(default_factory=dict)       # instanceID → {oid,hp,mhp,mp,tag,round}
-    buffs: dict = field(default_factory=dict)        # instanceID → {oid,mask,names,tag,round}
-    skills: list = field(default_factory=list)       # 本回合 ACTION 事件（未结算）
-    flags: dict = field(default_factory=dict)        # 规则 key → 命中详情（含本回合已结算的）
-    flag_seq: dict = field(default_factory=dict)     # 规则 key → 命中序号（复合成就判“先后顺序”用）
-    pending_flags: dict = field(default_factory=dict)  # 技能类规则本回合待结算：key → 详情
-    pending_immediate: dict = field(default_factory=dict)  # hp/理智/buff 待动画放行：key → 详情
-    pending_seqs: dict = field(default_factory=dict)   # key → 入队序号（跨类型按先后放行）
-    pending_seq: int = 0                               # 入队计数器
-    pending_group: dict = field(default_factory=dict)   # key → 行动组号（决定跟哪段动画一起放）
-    # 行动组：gid → {oid, keys, open}（组 0 = 不属于任何行动的判定）
+    units: dict = field(default_factory=dict)
+    speeds: dict = field(default_factory=dict)
+    vitals: dict = field(default_factory=dict)
+    buffs: dict = field(default_factory=dict)
+    skills: list = field(default_factory=list)
+    flags: dict = field(default_factory=dict)
+    flag_seq: dict = field(default_factory=dict)
+    pending_flags: dict = field(default_factory=dict)
+    pending_immediate: dict = field(default_factory=dict)
+    pending_seqs: dict = field(default_factory=dict)
+    pending_seq: int = 0
+    pending_group: dict = field(default_factory=dict)
     groups: dict = field(default_factory=lambda: {0: {"oid": -1, "keys": [], "open": True}})
-    released_groups: set = field(default_factory=set)   # 已放行的组号
-    cur_group: int = 0                                  # 当前正在入队的组号
-    next_group: int = 1                                 # 下一个可分配的组号
-    # oid → 结算阶段「动到这个单位」的行动组号。采样线程比结算晚 ~250ms 才报出血量/理智，
-    # 那时行动早已切段；靠这张表把迟到的命中回填到它真正属于的那一组（跟对动画）。
+    released_groups: set = field(default_factory=set)
+    cur_group: int = 0
+    next_group: int = 1
     unit_group: dict = field(default_factory=dict)
-    round_anim_seen: bool = False                       # 本回合是否已经出现过动画 tick
-    group_binding: int = -1                             # 当前正在播的动画绑定的组号（-1 = 无）
-    bound_iid: int = -1                                 # 绑定时动画 tick 带的 iid
-    group_flushes: int = 0                              # 因“动画结束”而放行的组数（诊断用）
-    anim_open: bool = False                             # 是否有一手动画已开播（skv_start/complete 置位，skv_end 复位）
-    stray_anim_ends: int = 0                            # 被忽略的游离/重复 skv_end 数（诊断用）
-    anim_ticks_total: int = 0                          # 收到的动画 tick 数（skv_*）
-    anim_ticks_with_iid: int = 0                        # 其中带了可用 iid 的（说明新 DLL 生效）
-    anim_last_tag: str = ""                            # 最近一次 tick 的钩子名
+    round_anim_seen: bool = False
+    group_binding: int = -1
+    bound_iid: int = -1
+    group_flushes: int = 0
+    anim_open: bool = False
+    stray_anim_ends: int = 0
+    anim_ticks_total: int = 0
+    anim_ticks_with_iid: int = 0
+    anim_last_tag: str = ""
     acts_total: int = 0
     spd_total: int = 0
     vitals_total: int = 0
     buff_total: int = 0
-    # 关卡结算统计（DLL 的 STG 事件）：铁路的通关回合数只在内存里，Player.log 没有，
-    # "六号线 <100T 通关"这类成就只认这里。uid → {uid,turn,dead,ex,ts}
     stage_clears: dict = field(default_factory=dict)
     stage_last: dict = field(default_factory=dict)
     stage_total: int = 0
-    # 折射铁路整条线的最好回合数：线路号 → 总回合（DLL 的 RWT 事件）
     railway_totals: dict = field(default_factory=dict)
     railway_last: dict = field(default_factory=dict)
-    railway_nodes: dict = field(default_factory=dict)   # 节点 id → 通关回合（存档重建时上报）
-    stage_labels: dict = field(default_factory=dict)    # "10-4" → {stage, chapter, node}（游戏官方口径）
-    railway_ui_text: dict = field(default_factory=dict)  # 铁路 UI 显示文本（总回合的显示值）
+    railway_nodes: dict = field(default_factory=dict)
+    stage_labels: dict = field(default_factory=dict)
+    railway_ui_text: dict = field(default_factory=dict)
     rnd_total: int = 0
     settled_by: str = ""
     flag_counter: int = 0
 
     def snapshot(self) -> dict:
-        """状态文件内容：全部由规则表驱动，不含任何成就专属字段。"""
         watched = watched_identities()
         speeds = {iid: info for iid, info in self.speeds.items()
                   if not watched or info.get("oid") in watched}
@@ -1447,23 +1029,14 @@ class BattleState:
             "buff_total": self.buff_total,
         }
 
-
-# --------------------------------------------------------------------------- 静态解析
-
-
 def _read_at_rva(pe, rva: int, size: int) -> bytes:
     try:
         return pe.read_at_rva(rva, size)
     except Exception:
         return b""
 
-
 def resolve_stub(pe, rva: int, names: dict, max_hops: int = 4,
                  on_log=None) -> tuple[int, list]:
-    """跟随 IL2CPP 尾调用桩（``33 D2 E9 rel32`` / ``E9 rel32``），返回真实 RVA。
-
-    返回 ``(最终 RVA, 跳转链 [(rva, name, 说明), ...])``。
-    """
     import struct
     log = on_log or (lambda _m: None)
     hops = []
@@ -1487,24 +1060,15 @@ def resolve_stub(pe, rva: int, names: dict, max_hops: int = 4,
         current = target
     return current, hops
 
-
 def build_hook_table(on_log=None, pe_path: str = "") -> dict:
-    """构造要下发给 DLL 的钩子表（RVA/prologue/kind/名字）。
-
-    - RVA 优先取 hook_index（云端/本地缓存），缺失用内置回退值；
-    - 遇到尾调用桩就解引用到真实实现；
-    - 同一地址自动合并（保留第一个，日志记录被合并的键）。
-    """
     log = on_log or (lambda _m: None)
     entries: dict[str, dict] = {}
     source = "fallback"
 
-    # 1) 默认：内置回退
     for key, (symbol, rva, kind) in FALLBACK_HOOKS.items():
         entries[key] = {"key": key, "symbol": symbol, "rva": rva, "kind": kind,
                         "prologue": "", "source": "fallback"}
 
-    # 2) 索引覆盖（RVA + prologue）
     index = None
     try:
         from functions.hook.index import get_index
@@ -1525,7 +1089,6 @@ def build_hook_table(on_log=None, pe_path: str = "") -> dict:
     except Exception as exc:  # noqa: BLE001
         log(f"[BattleWatch] hook_index 不可用，使用内置回退偏移: {exc}")
 
-    # 3) 符号名 → RVA 反查表（把解引用结果翻译成可读名字）
     names: dict[int, str] = {}
     if index is not None:
         for key, item in (index.symbols.get("methods") or {}).items():
@@ -1533,7 +1096,6 @@ def build_hook_table(on_log=None, pe_path: str = "") -> dict:
             if rva:
                 names.setdefault(rva, key)
 
-    # 4) 尾调用桩解引用 + prologue 重算（用本机 DLL 文件的字节）
     pe = None
     if pe_path and os.path.isfile(pe_path):
         try:
@@ -1543,9 +1105,6 @@ def build_hook_table(on_log=None, pe_path: str = "") -> dict:
             log(f"[BattleWatch] 读取 GameAssembly.dll 节表失败（跳过桩解引用）: {exc}")
     resolved: dict[str, dict] = {}
     used_rva: dict[int, str] = {}
-    # 所有"索引里明确配置过"的钩子 RVA：用来识别"尾调用桩解引用把**两个不同的观测点**
-    # 并到了同一个地址"这种情况（实战：unit_refresh_speed 的桩指向 unit_set_random_speed、
-    # manager_on_round_start_before 的桩指向 manager_init）。
     configured_rva = {int(item["rva"]): key for key, item in entries.items()}
     for key, item in entries.items():
         rva = int(item["rva"])
@@ -1554,17 +1113,11 @@ def build_hook_table(on_log=None, pe_path: str = "") -> dict:
             if final != rva:
                 other = configured_rva.get(final)
                 if other and other != key:
-                    # 跟随就会把 other 这个观测点并掉（后面 used_rva 会把它合并进本项），
-                    # 而且本项带着自己的 detour 类型去跑别的函数 —— 事件语义全错。
-                    # 直接钩桩本身：桩就是该方法的入口，prologue 还是索引里那份（可被 DLL 校验）。
                     log(f"[BattleWatch] {key} 的尾调用桩指向 {other} 的地址 0x{final:X} —— 不跟随"
                         f"（跟随会吃掉 {other} 这个观测点，且两者 detour 类型不同），"
                         f"改为直接钩桩本身 0x{rva:X}")
                     final, hops = rva, []
                 elif not names.get(final):
-                    # 符号表里查不到落脚点：连"钩的是哪个函数"都说不清。
-                    # 这时 DLL 侧的 prologue 自检是**自证**的（prologue 就是用本机 DLL
-                    # 在同一个地址上重新读的），等于没有自检 —— 风险太高，不跟随。
                     log(f"[BattleWatch] {key} 的尾调用桩指向未知地址 0x{final:X}"
                         f"（符号表里查不到该符号）—— 不跟随，改为直接钩桩本身 0x{rva:X}")
                     final, hops = rva, []
@@ -1575,11 +1128,6 @@ def build_hook_table(on_log=None, pe_path: str = "") -> dict:
             data = pe.prologue(rva, 16)
             if data and len(data) == 16:
                 item["prologue"] = data
-                # ⚠ 这份 prologue 是**用本机 DLL 在同一个地址上现读的** —— DLL 侧的
-                #    verify_prologue 拿同一次读出来的字节与自己比，**必然通过**。
-                #    也就是说这一条的自检等于没有：RVA 哪怕指向别的函数、甚至是函数中间，
-                #    也照样会被 MinHook 打上 5 字节 jmp（直接把宿主函数的指令流改坏 → 崩游戏）。
-                #    标记出来，下面按"索引在不在"决定要不要放行。
                 item["prologue_self_read"] = True
         key_owner = used_rva.get(rva)
         if key_owner is not None:
@@ -1590,13 +1138,6 @@ def build_hook_table(on_log=None, pe_path: str = "") -> dict:
         used_rva[rva] = key
         resolved[key] = item
 
-    # 4b) 兜底：**有索引时，拒绝下发"自证 prologue"的观测点**
-    #
-    # 索引里没有这个 key，就只能沿用代码里写死的 fallback RVA（注释写着"RVA 来自 build
-    # 2026-09-17 实测"）。游戏一更新这些 RVA 就整体平移 —— 落在别的函数甚至函数中间，
-    # 而上面那条自证 prologue 又让 DLL 拦不住。实战现场（2026-10-09 13:31）：
-    # 24 个观测点里有 8 个是这种，注入后 10 秒登录载入存档时游戏直接崩。
-    # 宁可这次少观测几个点（成就降级），也不能拿钩子去改坏游戏的指令流。
     dropped: list[str] = []
     if index is not None:
         dropped = [k for k, v in resolved.items() if v.get("prologue_self_read")]
@@ -1616,7 +1157,6 @@ def build_hook_table(on_log=None, pe_path: str = "") -> dict:
             "index_available": index is not None,
             "dropped_self_read": dropped}
 
-
 def describe_hook_table(table: dict) -> str:
     lines = []
     for i, (key, item) in enumerate(table["entries"].items()):
@@ -1626,12 +1166,7 @@ def describe_hook_table(table: dict) -> str:
                      + (f"  已合并: {item['merged_keys']}" if item.get("merged_keys") else ""))
     return "\n" + "\n".join(lines)
 
-
-# --------------------------------------------------------------------------- 驱动
-
-
 class BattleWatch:
-    """注入 DLL + 抽事件 + 维护 ``BattleState``（后台线程）。"""
 
     def __init__(self, log_callback=None, poll_interval: float = 0.25,
                  process_name: str = TARGET_PROCESS, verbose: bool = False) -> None:
@@ -1657,25 +1192,21 @@ class BattleWatch:
         self._last_heartbeat = 0.0
         self._last_status_write = 0.0
         self._last_boundary_ts = 0.0
-        # 动画相位辅助：最后一次表现层 tick / 最后一次"动画结束"放行 / 最后一次回合边界
         self._last_anim_tick_ts = 0.0
         self._last_anim_release_ts = 0.0
         self._last_round_boundary_ts = 0.0
-        self._battle_ended = False       # 见过 EndStage 后, 下一个回合边界 = 新战斗第 1 回合
+        self._battle_ended = False
         self._event_file = None
-        self._event_to_sink = False      # 事件流写进统一日志(achievement_hook.log)而非单独文件
+        self._event_to_sink = False
         self._phase = "未启动"
-        # 注入现场（状态文件里能直接看到“注的是哪个进程/哪份 DLL”）
         self._injected_image = ""
         self._injected_dll = ""
-        # 游戏 DLL（GameAssembly.dll）新鲜度校验结果
         self._ga_verified = False
         self._ga_retry = 0
         self._ga_note: dict = {}
         self._index_game_note: dict = {}
         self._preflight: dict = {}
 
-    # ---------------------------------------------------------------- 对外
     def start(self) -> bool:
         if self._thread and self._thread.is_alive():
             return True
@@ -1699,31 +1230,18 @@ class BattleWatch:
 
     def settle_turn(self, reason: str = "", fallback_immediate: bool = True,
                     only_skills: bool = False) -> list:
-        """结算：技能类规则置位（+ 立刻类规则拿最后观测值兜底复核）。
-
-        调用时机：
-
-        - **技能动画结束**（表现层 ``skv_end`` tick，见 ``_apply_anim_tick``）
-          以及一段静默期之后 —— 由驱动内部逐条/一次性放行；
-        - **回合边界** —— 全量结算（含立刻类兜底复核）。
-
-        返回本回合已结算的技能事件列表。注意：``_write_status`` 必须在**锁外**调用
-        （它内部会 ``snapshot()`` 再拿同一把非重入锁）。
-        """
         settled: list[str] = []
         with self._lock:
             pending = list(self.state.skills)
             self.state.skills.clear()
             if pending:
                 self.state.settled_by = reason
-            # 挂起的判定（技能 + 等动画的 hp/理智/buff）按先后顺序全部放行
             flushed = self._flush_all_pending_locked(reason or "回合边界")
             if flushed:
                 self.state.settled_by = reason
                 settled.extend(flushed)
             if fallback_immediate:
                 suffix = f"{reason or '回合边界'}兜底"
-                # 立刻类规则（速度/理智/血量/buff）：统一拿最后一次观测复核
                 for info in list(self.state.vitals.values()):
                     settled += self._eval_immediate_locked(
                         lambda rule, i=info: rule.match_vitals(
@@ -1742,7 +1260,6 @@ class BattleWatch:
                             i.get("oid", -1), n, self.state.round_seq)[0],
                         lambda rule, i=info, n=names: self._buff_detail(rule, i, suffix, n))
                 settled += self._eval_presence_locked()
-                # 兜底复核可能刚刚挂起新的判定（例：规则是后登记的）→ 一并放行
                 more = self._flush_all_pending_locked(suffix)
                 if more:
                     settled.extend(more)
@@ -1754,25 +1271,14 @@ class BattleWatch:
         return pending
 
     def settle_skills_if_quiet(self, reason: str = "动画结束（静默兜底）") -> bool:
-        """兜底：表现层 tick 没装钩 / 没命中时，停这么久就当作"动画放完了"。
-
-        兜底路径：表现层 tick 没装钩 / 没命中时（例如战斗视图换了实现），
-        主循环每隔一小段就来看一眼：表现层停下来就当作"动画放完了"。
-        """
         with self._lock:
             if not self.state.pending_flags and not self.state.pending_immediate:
                 return False
-            # 有 tick → 阈值 15s（实测同一回合内两段动画之间 tick 最长空 10.5s）；
-            # 从未见过 tick（表现层钩子没命中）→ 只能用短阈值，否则要等到回合边界。
             ts = max(self._last_event_ts, self._last_anim_tick_ts)
             quiet = time.time() - ts
             ticked = self.state.anim_ticks_total > 0
             round_ticked = self.state.round_anim_seen
-        # 正常路径是 skv_end 逐条放行 + 回合边界清场，这里只防万一
         limit = SKILL_SETTLE_QUIET_TICKED_SEC if ticked else SKILL_SETTLE_QUIET_SEC
-        # ⚠ 本回合还没出现任何动画 tick → 结算阶段必然早于第一手动画，用短兜底就会在
-        #   动画开播前整批放行（「回合开始没多久就误判」）。放宽到 FIRST_ANIM_GRACE_SEC：
-        #   第一手动画通常 2~5 秒内就到，到了就交给按行动组放行的那条正路。
         if not round_ticked:
             limit = max(limit, FIRST_ANIM_GRACE_SEC)
         if quiet < limit:
@@ -1781,32 +1287,19 @@ class BattleWatch:
                                      only_skills=True))
 
     def mark_battle_end(self) -> None:
-        """标记"这一场打完了"（Player.log 的 EndStage() 触发）。
-
-        下一个回合边界会被当作**新战斗的第 1 回合**，让 max_round / min_round
-        这类回合窗口按"每场战斗"而不是"整个会话"来算。
-        """
         with self._lock:
             self._battle_ended = True
 
     def rule_detail(self, key: str) -> str | None:
-        """规则是否命中；命中返回详情文本（未命中返回 None）。"""
         with self._lock:
             detail = self.state.flags.get(key)
         return detail or None
 
     def rule_order(self, key: str) -> int:
-        """规则命中的先后序号（越小越早；未命中返回 0）—— 复合成就判顺序用。"""
         with self._lock:
             return int(self.state.flag_seq.get(key, 0))
 
     def rule_live(self, key: str) -> bool:
-        """按**当前观测**重新判一次规则（不置位）—— 给复合成就的“状态条件”用。
-
-        例如“满足前面两步后，现在场上是否存在拇指子辈希斯克里夫”：这是一条**状态**
-        而不是事件顺序（他从第一回合就在场，不能因为记录得早而算顺序不对），
-        所以要在检查的那一刻拿单位表/观测快照来判。
-        """
         rule = registered_rules().get(key)
         if rule is None:
             return False
@@ -1855,15 +1348,7 @@ class BattleWatch:
             snap["gameassembly_check"] = dict(self._ga_note)
         return snap
 
-    # ---------------------------------------------------------------- 事件日志
     def _open_event_file(self) -> None:
-        """全量事件日志。
-
-        **默认写进统一日志**（``logs/achievement_hook.log``，见 log_sink）—— 以前这里是
-        独立的一份 ``logs/battle_watch.log``：一次排查要看三个文件（成就日志 / 子进程
-        stdout / 事件流），时间还得自己对。只有离线自查（``python -m
-        functions.achievement.battle_watch``）没有登记 sink 时才退回自己的文件。
-        """
         if self._event_file is not None or self._event_to_sink:
             return
         if log_sink.installed():
@@ -1873,8 +1358,6 @@ class BattleWatch:
         path = event_log_path()
         try:
             os.makedirs(os.path.dirname(path), exist_ok=True)
-            # utf-8-sig = 带 BOM 的 UTF-8：记事本 / PowerShell 5.1 的 Get-Content
-            # 才能正确识别编码（无 BOM 会被当成 GBK 读成“乱码”）
             self._event_file = open(path, "w", encoding="utf-8-sig", buffering=1)
             self._event_file.write(f"==== 会话开始 {time.strftime('%Y-%m-%d %H:%M:%S')} "
                                    f"====\n")
@@ -1890,11 +1373,6 @@ class BattleWatch:
             self._event_file = None
 
     def _event(self, message: str) -> None:
-        """全量事件记录：优先写统一日志，没登记时退回自己的事件文件。
-
-        时间戳 / 区域 / 级别一律交给 :func:`log_sink.format_line`（带毫秒：结算阶段一回合的
-        伤害/收尾全挤在同一秒里，只有毫秒能看清先后），这里只提供正文。
-        """
         if self._event_to_sink or log_sink.installed():
             self._event_to_sink = True
             if log_sink.write(message, "BattleWatch"):
@@ -1906,7 +1384,6 @@ class BattleWatch:
             except OSError:
                 pass
 
-    # ---------------------------------------------------------------- 状态文件
     def _write_status(self, force: bool = False) -> None:
         now = time.time()
         if not force and now - self._last_status_write < STATUS_WRITE_SEC:
@@ -1929,7 +1406,6 @@ class BattleWatch:
         except OSError:
             pass
 
-    # ---------------------------------------------------------------- 共享内存
     def _open_map(self) -> bool:
         if self._map_view is not None:
             return True
@@ -1940,9 +1416,6 @@ class BattleWatch:
                 magic = ctypes.c_int32.from_address(view).value
                 if magic == BW_MAGIC:
                     if sole_instance():
-                        # 自己已经是唯一实例 → 这块内存只可能是上次遗留的（旧实例被杀，
-                        # 但它注入的 DLL 还挂在游戏里）。直接接管：接着用这块内存，
-                        # 下面的 _write_config 会把新配置覆盖进去，DLL 照新配置继续报事件。
                         self._map_handle = existing
                         self._map_view = view
                         self._log("[BattleWatch] 接管上次遗留的共享内存（本进程是唯一实例；"
@@ -1978,20 +1451,12 @@ class BattleWatch:
             self._map_handle = None
 
     def _config(self) -> BWConfig | None:
-        """共享内存配置的**活视图**（读写都直接作用于共享内存）。
-
-        ⚠ 这里以前是 ``BWConfig()`` + ``memmove`` 出来的**快照拷贝** —— 改它不会影响共享
-        内存。buff 关注表就因此永远写不进去：拷贝里写着 2、回读也是 2，DLL 那侧读到的却
-        一直是 0，于是整条 buff 链被跳过（"buff 检测一个都不生效"）。要快照请显式用
-        ``_config_snapshot()``。
-        """
         if self._map_view is None:
             return None
         cfg = BWConfig.from_address(self._map_view)
         return cfg if cfg.magic == BW_MAGIC else None
 
     def _config_snapshot(self) -> BWConfig | None:
-        """共享内存配置的一份**拷贝**（只读用途，或需要脱离共享内存时用）。"""
         if self._map_view is None:
             return None
         cfg = BWConfig()
@@ -2026,10 +1491,6 @@ class BattleWatch:
             attr = "off_" + key
             if hasattr(cfg, attr):
                 setattr(cfg, attr, int(field_off))
-        # ⚠ 关注 buff 表由 sync_buff_watch 维护，这里必须**原样保留**：
-        #    本函数是「拿一个全新的零值结构体整体覆盖共享内存」，不保留就会把关注表清零 ——
-        #    DLL 读到 buffwatch=0 会直接跳过整条 buff 链，表现就是「buff 钩子一个都抓不到」。
-        #    （实测踩过：注入前重写一次配置 → 关注表归零 → 整局没有任何 BUF 事件）
         prev = self._config()
         if prev is not None:
             cfg.buff_watch_count = int(prev.buff_watch_count)
@@ -2038,19 +1499,7 @@ class BattleWatch:
         ctypes.memmove(self._map_view, ctypes.byref(cfg), CONFIG_SIZE)
         return True
 
-    # ---------------------------------------------------------------- 注入
     def _inject(self, pid: int, path: str, expect_exe: str | None = None) -> bool:
-        """把 battle_watch.dll 注入游戏进程。
-
-        ``expect_exe=None`` → 用配置里的游戏 exe 做身份校验；传空串则跳过（离线自检用）。
-
-        流程（任何一步失败都只记日志、不改游戏状态）：
-          ① 身份校验：PID 的映像必须是 ``game_path\\LimbusCompany.exe``（排除同名残留进程）；
-          ② 检查进程里是否已有一份同名模块（``LoadLibraryW`` 对已加载模块只会返回旧句柄）；
-          ③ 在 **SuspendWindow**（进程本来就挂起则直接借用，否则临时挂起全部线程）里
-             VirtualAllocEx + WriteProcessMemory + CreateRemoteThread(LoadLibraryW)；
-          ④ 窗口关闭后回读远端模块表，确认加载的确实是我们注入的这个路径。
-        """
         expected = _expected_game_exe() if expect_exe is None else expect_exe
         image = _process_image_path(pid)
         if expected and image and not _same_file(image, expected):
@@ -2101,7 +1550,7 @@ class BattleWatch:
                 exit_code = wt.DWORD()
                 _kernel32.GetExitCodeThread(thread, ctypes.byref(exit_code))
                 _kernel32.CloseHandle(thread)
-                if waited == 0x00000102:                                   # WAIT_TIMEOUT
+                if waited == 0x00000102:
                     self._log("[BattleWatch] LoadLibraryW 超时（远程线程还没返回，可能撞上了"
                               "加载器锁；线程已恢复，下面按模块表实际结果判定）")
                 elif not exit_code.value:
@@ -2112,7 +1561,6 @@ class BattleWatch:
                     _kernel32.VirtualFreeEx(proc, remote, 0, 0x8000)
                 _kernel32.CloseHandle(proc)
 
-        # ④ 回读校验（窗口已关闭，进程正常跑）：确认加载的是“这份路径”的 DLL
         if not self._verify_remote_dll(pid, path):
             return False
         self._injected_pid = pid
@@ -2124,7 +1572,6 @@ class BattleWatch:
         return True
 
     def _verify_remote_dll(self, pid: int, path: str) -> bool:
-        """回读目标进程模块表，确认 battle_watch.dll 已加载且来自我们注入的路径。"""
         want_name = os.path.basename(path).lower()
         found: tuple[str, str, int] | None = None
         deadline = time.time() + MODULE_VERIFY_SECONDS
@@ -2150,10 +1597,6 @@ class BattleWatch:
                   + (f"（{mpath}）" if mpath else ""))
         return True
 
-    # ------------------------------------------------------- 偏移量预检（注入前）
-    # 顺序：先用偏移量对**本机 DLL** 校验（prologue 逐条比对，不联网）；
-    # 对不上 → 云端对照（采用云端新版）；云端也对不上 → 就此收手（客户端不重建）。
-    # 具体逻辑在 functions/hook/preflight.py（只读文件 / 最多下几十 KB）。
     _PREFLIGHT_TEXT = {
         "local-ok": "本地偏移量对得上本机 DLL（未联网、未重建）",
         "cloud-cached": "采用云端偏移量（本地缓存的那份对得上本机 DLL，未联网）",
@@ -2167,7 +1610,6 @@ class BattleWatch:
     }
 
     def _run_preflight(self) -> dict:
-        """注入前跑一遍偏移量预检，并把选定索引固定成进程内“本次就用它”。"""
         try:
             from functions.hook.preflight import ensure_offsets_ready
             info = ensure_offsets_ready(on_log=self._log)
@@ -2177,7 +1619,7 @@ class BattleWatch:
         verdict = str(info.get("verdict") or "")
         text = self._PREFLIGHT_TEXT.get(verdict, verdict)
         self._preflight = dict(info)
-        self._preflight.pop("index", None)          # 索引对象不进状态文件
+        self._preflight.pop("index", None)
         check = info.get("check") or {}
         self._log(f"[BattleWatch] 偏移预检结果: {verdict}（{text}）"
                   + (f"；{check['detail']}" if check.get("detail") else "")) # type: ignore
@@ -2187,7 +1629,6 @@ class BattleWatch:
             self._index_game_note = {
                 "size": int(game.get("gameassembly_size") or 0),
                 "pe_timestamp": int(game.get("pe_timestamp") or 0),
-                # 真正的游戏版本信号（Steam buildid / 更新时间），见 hook/updater._game_version_info
                 "game_version": str(game.get("game_version") or ""),
                 "game_build_id": str(game.get("game_build_id") or ""),
                 "game_updated_at": str(game.get("game_updated_at") or ""),
@@ -2197,13 +1638,6 @@ class BattleWatch:
         return info
 
     def _wait_fully_suspended(self, pid: int, timeout: float = SUSPEND_WAIT_SECONDS) -> bool:
-        """等游戏进程进入「全部线程挂起」的窗口：等到返回 True，超时返回 False。
-
-        为什么等: 进程整体挂起时内存是静止的，在这个窗口里做偏移校验与注入最干净，
-        不会撞上游戏正在初始化 GameAssembly 的瞬间。
-        为什么必须有上限: 游戏正常跑起来之后线程不会再挂起，无限等等于永不注入 ——
-        超时就返回 False，由 SuspendWindow 自己临时挂起全部线程建立窗口（原有行为）。
-        """
         deadline = time.time() + timeout
         announced = False
         while time.time() < deadline and not self._stop.is_set():
@@ -2222,13 +1656,6 @@ class BattleWatch:
         return False
 
     def _refresh_hook_table(self, log, pe_path: str) -> bool:
-        """注入前把偏移量与钩子表重新对齐到**当前**游戏版本，并写回共享内存配置。
-
-        顺序（用户约定）: 进程就位（最好处在完全挂起窗口）→ 校验本地 hook 缓存与游戏
-        版本 / 环境是否对得上（``ensure_offsets_ready``：对得上直接用；对不上 → 云端对照，
-        仍对不上就报 ``stale`` 并继续用现有索引）→ 用选定索引重建钩子表 → 写回共享内存，
-        保证 DLL 加载时读到的就是这一份。
-        """
         self._run_preflight()
         table = build_hook_table(on_log=log, pe_path=pe_path)
         self.table = table
@@ -2237,12 +1664,9 @@ class BattleWatch:
         if not self._write_config(table):
             log("[BattleWatch] 注入前写入钩子配置失败，本次注入跳过")
             return False
-        # 重写配置是整块覆盖共享内存 → 关注 buff 表跟着重新落一遍，
-        # 保证 DLL 一挂上就读到它（buffwatch=0 会让 DLL 完全跳过整条 buff 链）。
         names = _sync_buff_watch()
         if names:
             log(f"[BattleWatch] 注入前关注 buff 表已写入 {len(names)} 个: {'/'.join(names)}")
-        # 同理：关注关卡表（已通关记录轮询）也要在注入前落好，否则采样线程读到 0 条就跳过。
         watch = get_watch()
         stage_ids = observe_stage_ids()
         if stage_ids and watch is not None:
@@ -2250,11 +1674,6 @@ class BattleWatch:
         return True
 
     def _verify_gameassembly(self) -> None:
-        """游戏 DLL 新鲜度：进程里加载的 GameAssembly.dll 是不是磁盘上最新那份。
-
-        ``prologue`` 自检只是“装钩前”的最后一道闸；这里给的是**可读的判断**：
-        进程内模块的 PE 时间戳/映像大小/头部哈希 vs 磁盘文件。
-        """
         pid = self._injected_pid
         if not pid or self._ga_verified:
             return
@@ -2303,7 +1722,6 @@ class BattleWatch:
         self._injected_pid = None
         self._remote_module = None
 
-    # ---------------------------------------------------------------- 事件抽取
     def _ring_rows(self, cfg: BWConfig):
         head = int(cfg.log_head)
         if head < self._drained_head:
@@ -2327,14 +1745,7 @@ class BattleWatch:
             self._log(f"[BattleWatch] 抽取过慢，丢弃了 {dropped} 行事件（可调小轮询间隔）")
         return rows, head
 
-    # ---------------------------------------------------------- buff 关注表
     def sync_buff_watch(self, names=()) -> None:
-        """把关注 buff 名（FNV-1a 64）写进共享内存关注表，并**回读**确认写进去了。
-
-        关注表下标 = ``watched_buff_names()`` 的下标（两边同一份排序）；
-        写 0 条时 DLL 会完全跳过 buff 链读取 —— 所以"日志说有 N 个关注 buff"不等于
-        "DLL 那侧看到了"，这里写完后立刻回读一遍并返回结果，两头对得上才算数。
-        """
         cfg = self._config()
         if cfg is None:
             self._log("[BattleWatch] ⚠ 关注 buff 表没写进去：共享内存配置不可用（magic 不对？）")
@@ -2350,11 +1761,6 @@ class BattleWatch:
         return readback # type: ignore
 
     def sync_stage_watch(self, stage_ids=()) -> int:
-        """写"关注关卡"表（已通关记录轮询用），返回写入条数。
-
-        和关注 buff 表同一套路：DLL 只在命中关注表时上报，避免轮询刷爆事件环。
-        成就通过 ``stage_watch_ids()`` 声明自己要哪些关卡。
-        """
         cfg = self._config()
         if cfg is None:
             self._log("[BattleWatch] ⚠ 关注关卡表没写进去：共享内存配置不可用（magic 不对？）")
@@ -2363,16 +1769,14 @@ class BattleWatch:
         for i in range(STAGE_WATCH_MAX):
             cfg.stage_watch_ids[i] = ids[i] if i < len(ids) else 0
         cfg.stage_watch_count = len(ids)
-        cfg.stage_seen_mask = 0          # 新一轮：允许重新上报
+        cfg.stage_seen_mask = 0
         if ids:
             self._log(f"[BattleWatch] 关注关卡 {len(ids)} 个: "
                       f"{'/'.join(str(v) for v in ids[:8])}"
                       f"{'…' if len(ids) > 8 else ''}")
         return int(cfg.stage_watch_count)
 
-    # ---------------------------------------------------------- 事件处理
     def handle_line(self, line: str) -> BattleEvent | None:
-        """解析并应用一行事件（测试可直接调用）。"""
         if not line:
             return None
         parts = line.split(None, 1)
@@ -2381,8 +1785,6 @@ class BattleWatch:
         tag = ""
         if len(parts) > 1:
             for key, value in _KV_RE.findall(parts[1]):
-                # 数字照旧转 int；非数字（关卡 uid 这类）原样保留字符串，
-                # 用 event.text(key) 取 —— 以前只认数字，遇到 uid=xxx 会直接抛 ValueError。
                 try:
                     values[key] = int(value)
                 except ValueError:
@@ -2404,22 +1806,15 @@ class BattleWatch:
             self._log(f"[BattleWatch] 事件 {line}")
         if kind == "RND":
             if tag in ANIM_TICK_TAGS:
-                # 表现层动画 tick（不是回合边界！）：带 iid 的就按行动分组放行
                 self._apply_anim_tick(tag, event.get("iid", -1))
             else:
                 now = time.time()
                 with self._lock:
                     self.state.rnd_total += 1
-                    # 同一回合会收到两次边界钩子（命令阶段 + 战斗阶段）→ 只当一次，
-                    # 否则 round_seq 翻倍、max_round / min_round 的回合窗口全错位。
                     dup = (tag in BOUNDARY_PREFERRED
                            and now - self._last_round_boundary_ts
                            < ROUND_BOUNDARY_DEDUPE_SEC)
                     if not dup:
-                        # 新战斗判定: 见过 EndStage, 或两场之间空档极大（兜底）。
-                        # round_seq 必须**按战斗**从 1 起算 —— 以前它是整个会话一路累加,
-                        # 于是 max_round=1 这类"首个回合"的判定在第二场之后就永远匹配不上
-                        # （实测:「这他妈的烂牌！」该触发时没触发, 因为钩子眼里已经是第 9 回合）。
                         gap = now - self._last_round_boundary_ts
                         new_battle = (self._battle_ended
                                       or (self._last_round_boundary_ts > 0
@@ -2434,12 +1829,10 @@ class BattleWatch:
                             self.state.round_seq = event.get("seq", self.state.round_seq + 1)
                 if not dup:
                     self.settle_turn(f"回合边界({tag or 'hook'})")
-                    self._begin_action_batch()   # 上一回合的分组清空，新回合从组 0 开始
+                    self._begin_action_batch()
                 elif self.verbose:
                     self._log(f"[BattleWatch] 回合边界({tag}) 与上一次同回合（{ROUND_BOUNDARY_DEDUPE_SEC:.0f}s 内）→ 不重复计数")
         elif kind == "BUFDIAG":
-            # DLL 侧 buff 链现场（n=-1 链读不到 / n>0 但一个都没命中关注表时会打）
-            # self._log(f"[BattleWatch] buff 诊断（DLL）: {line}")
             self._event(f"DLL {line}")
         elif kind == "SPD":
             self._apply_spd(event)
@@ -2456,7 +1849,6 @@ class BattleWatch:
         elif kind == "CLR":
             self._apply_stage_clear(event)
         elif kind == "CLRD":
-            # 一次性诊断：关注表一个都没命中时，DLL 把扫到的前几个关卡 id 原样报上来
             ids = event.text("ids", "")
             count = event.get("n", 0)
             self._log(f"[BattleWatch] ★ 存档里的关卡 id 样本（关注表未命中，n={count}）: {ids}")
@@ -2469,17 +1861,6 @@ class BattleWatch:
         return event
 
     def _apply_anim_tick(self, tag: str, iid: int = -1) -> None:
-        """表现层动画 tick：放行**这一手动画对应的那个行动组**的判定。
-
-        ``iid`` 来自 DLL（``BattleSkillViewBase::_attackerInstanceID``）：
-
-        - **带 iid（新 DLL）**：先按身份把“正在播的动画”绑到一个行动组，到
-          ``skv_end`` 就把那一组的挂起判定**全部**放行 —— 这是“跟着动画走”的正路：
-          一个行动里的技能/血量/理智/buff 判定一起、在那手动画结束时落地。
-        - **不带 iid（旧 DLL / 读不到）**：退回“一次动画结束放一条”，总比卡住好。
-
-        ``skv_start`` / ``skv_complete`` 只用来绑定与计时（用它们放行 = 动画刚开播就解锁）。
-        """
         now = time.time()
         with self._lock:
             self.state.anim_ticks_total += 1
@@ -2489,16 +1870,11 @@ class BattleWatch:
             if iid >= 0:
                 self.state.anim_ticks_with_iid += 1
             if tag not in ANIM_RELEASE_TAGS:
-                # 动画开播/播完：把这一段绑到对应的行动组（skv_end 时才放行）
                 self.state.anim_open = True
                 if iid >= 0:
                     self._bind_group_locked(iid)
                 detail = None
             elif not self.state.anim_open:
-                # 游离/重复的 skv_end：没有「已开播的动画」就什么都不放行。
-                # ⚠ 这里以前会在 skv_end 上**现绑一个组**再放行 —— 同一手动画的 skv_end 实测
-                #   会来两条（同毫秒、同 iid），第二条于是把**下一个行动组**立刻放行，
-                #   表现就是技能 / 血量 / 理智判定「提前发放」。放行只认开播时绑好的那一个组。
                 self.state.stray_anim_ends += 1
                 detail = None
             elif iid >= 0:
@@ -2506,7 +1882,7 @@ class BattleWatch:
                 self.state.anim_open = False
                 gid = self.state.group_binding
                 if gid < 0:
-                    detail = None            # 这一手动画没绑到组（开播时还没有挂起项），只计数
+                    detail = None
                 else:
                     oid = self.state.groups.get(gid, {}).get("oid", -1)
                     reason = f"动画结束(oid={oid})" if oid > 0 else "动画结束"
@@ -2523,22 +1899,14 @@ class BattleWatch:
         self._write_status(force=True)
 
     def _apply_spd(self, event: BattleEvent) -> None:
-        """速度事件：先把字段归一成整数速度，再交给规则表（``kind="speed"``，立刻置位）。
-
-        驱动只管「SPD 事件里有什么字段、怎么把字节变成整数」；
-        「哪个身份、等于几、看哪几个字段」全部由成就登记的 ``BattleRule`` 提供。
-        """
         iid = event.get("iid", -1)
         oid = event.get("oid", -1)
-        # os/ow 是「速度 ×1000」的定点原始值 → 一律换成整数速度；DLL v3 会额外给 osi/owi，
-        # 有就优先信它（字段语义由 DLL 那边负责），没有就自己换算（v2 DLL / 老日志）。
         os_raw = event.get("os", -1)
         ow_raw = event.get("ow", -1)
         os_int = event.opt("osi")
         os_int = speed_int(os_raw) if os_int is None else os_int
         ow_int = event.opt("owi")
         ow_int = speed_int(ow_raw) if ow_int is None else ow_int
-        # 有效速度：游戏 GetIntegerOfOriginSpeed 的语义 —— _overwritedSpeed >= 0 就用它，否则用 _originSpeed。
         eff_int = event.opt("eff")
         if eff_int is None or eff_int < 0:
             eff_int = ow_int if ow_raw >= 0 else os_int
@@ -2558,10 +1926,8 @@ class BattleWatch:
         for detail in hits:
             self._log(f"[BattleWatch] ★ {detail}")
         if event.get("iid", -1) < 0 and event.get("oid", -1) < 0:
-            # 钩子命中了但不是单位对象（例如钩到了非单位函数）→ 提示
             self._log(f"[BattleWatch] 注意: {event.tag} 的 SPD 事件里没有单位字段，"
                       f"可能是钩子签名/偏移不对（原始: {event.raw}）")
-        # 兜底回合边界：首选边界钩子（manager_*）从未命中时，用“单位回合开始”当边界
         if event.tag == "unit_round_start" and not self._boundary_seen():
             now = time.time()
             if now - self._last_boundary_ts > 1.0:
@@ -2572,7 +1938,6 @@ class BattleWatch:
                 self._begin_action_batch()
 
     def _boundary_seen(self) -> bool:
-        """首选边界钩子是否至少命中过一次。"""
         return any(self._last_hits.get(k, 0) > 0 for k in BOUNDARY_PREFERRED)
 
     def _apply_act(self, event: BattleEvent) -> None:
@@ -2597,9 +1962,6 @@ class BattleWatch:
             self.state.skills.append(record)
             if len(self.state.skills) > 64:
                 self.state.skills = self.state.skills[-64:]
-            # 技能类规则：命中先记入待结算表；**不在这里置位** —— 立刻置位的话就是
-            # "回合一开始（结算瞬间）就解锁"。等到表现层 skv_end（动画结束）、静默期
-            # 或回合边界才逐条放行。
             round_seq = self.state.round_seq
             for key, rule in registered_rules().items():
                 if rule.kind != RULE_KIND_SKILL or key in self.state.flags:
@@ -2610,29 +1972,19 @@ class BattleWatch:
                         self.state.pending_seqs[key] = self.state.pending_seq
                         self.state.pending_flags[key] = self._skill_detail(
                             rule, record, PENDING_REASON)
-                        self._assign_group_locked(key)   # 归到“当前行动组”
-            # 行动分组：带 aoid 的事件告诉我们这一组是哪个身份在打（动画 tick 靠它对账）
+                        self._assign_group_locked(key)
             if event.tag in ("take_attack_dmg_multiplier", "action_on_end_turn"):
                 self._mark_group_actor_locked(actor_oid)
-            # 每个行动结束时收尾 → 封存本组（身份兜底用 skid//100）、开下一组
             if event.tag == "action_done_with_action":
                 skid = record["skid"]
                 if skid and skid > 0:
                     self._mark_group_actor_locked(skid // 100)
                 self._open_group_locked()
-        # ⚠ 结算阶段的收尾回调（action_done_with_action / action_on_end_turn）**不**结算：
-        # 实测它们在一整个回合的结算瞬间（动画开播之前）全部到齐，用它们结算 = 回合一开始就解锁。
-        # 挂起判定由动画 tick（skv_end + iid）按行动分组放行，兜底是静默期与回合边界。
         if ACTION_END_TAGS and event.tag in ACTION_END_TAGS:  # pragma: no cover - 默认空
             self.settle_turn(f"技能动画结束({event.tag})", fallback_immediate=False,
                              only_skills=True)
 
     def _apply_vitals(self, event: BattleEvent) -> None:
-        """血量 / 理智事件：交给规则表（``kind="mental"/"hp"``，立刻置位）。
-
-        日志只写在规则命中时（没命中就只落到全量事件流与状态文件里），
-        这样成就日志不会被每秒几十条的 VAL 事件刷屏。
-        """
         iid = event.get("iid", -1)
         oid = event.get("oid", -1)
         hp = event.get("hp", VITAL_UNREAD)
@@ -2648,9 +2000,6 @@ class BattleWatch:
                 if oid > 0:
                     self.state.units[iid] = oid
             if oid > 0 and event.tag != SAMPLER_TAG:
-                # 结算阶段（钩子直接报的 VAL）把单位记到当前行动组 —— 伤害就是在这一段落的。
-                # 采样线程要晚 ~250ms 才报出「掉血」，那时行动早已切段；命中靠这张表回填，
-                # 才能跟着真正打伤它的那一手动画放行，而不是落进一个空组被兜底提前放掉。
                 self.state.unit_group[oid] = self.state.cur_group
             hits = self._eval_immediate_locked(
                 lambda rule: rule.match_vitals(oid, hp, mhp, mp),
@@ -2660,27 +2009,14 @@ class BattleWatch:
         for detail in hits:
             self._log(f"[BattleWatch] ★ {detail}")
 
-    # ---------------------------------------------------------- 规则求值与详情文本
     def _set_flag_locked(self, key: str, detail: str) -> None:
-        """置位一条规则（已持有锁）。同时记下命中序号，供复合成就判先后顺序。"""
         if key in self.state.flags:
             return
         self.state.flag_counter += 1
         self.state.flags[key] = detail
         self.state.flag_seq[key] = self.state.flag_counter
 
-    # ------------------------------------------------- 行动分组（跟动画走）
     def _begin_action_batch(self) -> None:
-        """新回合：清空行动分组，开第一组（组 0 = 不属于任何行动的判定）。
-
-        **为什么需要分组**：这游戏先算完整回合、再播动画 —— 一整个回合的伤害/收尾事件全挤
-        在几毫秒里（实测 5ms），光看“第几次动画结束”无法把判定对齐到“哪个行动”，于是只能
-        一股脑延后几秒再全部解锁（用户反馈过：“延后之后依旧立刻全部解锁”）。
-
-        做法：结算阶段按 ``action_done_with_action``（每个行动末尾一次）切段，事件落在哪段
-        就属于哪个行动；动画 tick 带上 iid（DLL 读 ``BattleSkillViewBase::_attackerInstanceID``）
-        后，就能把“正在播的动画”与“对应那一段”绑起来 → 那一手动画结束时才放行它的判定。
-        """
         with self._lock:
             st = self.state
             st.groups = {0: {"oid": -1, "keys": [], "open": True}}
@@ -2695,7 +2031,6 @@ class BattleWatch:
             st.pending_group.clear()
 
     def _open_group_locked(self) -> int:
-        """开一个新的行动组并设为“当前组”（已持有锁）。"""
         st = self.state
         gid = st.next_group
         st.next_group += 1
@@ -2704,16 +2039,6 @@ class BattleWatch:
         return gid
 
     def _assign_group_locked(self, key: str, unit_oid: int = -1) -> int:
-        """把挂起项归到它所属的行动组（已持有锁）。
-
-        优先用 ``unit_group`` 回填：采样线程比结算晚 ~250ms，命中落地时结算早被
-        ``action_done_with_action`` 切成一段段了、``cur_group`` 已经是一个空组 ——
-        直接归到那里，判定就只能跟着**下一手**动画（或被静默兜底）提前放掉。
-        没有记录（例如整局第一次采样）时仍归当前组。
-
-        若当前组已经放行过了（例如动画播完后采样线程又报了个 buff），就开一个新组 ——
-        它会在下一个动画 tick 放行，而不是永远卡着。
-        """
         st = self.state
         gid = st.cur_group
         if unit_oid > 0:
@@ -2727,7 +2052,6 @@ class BattleWatch:
         return gid
 
     def _mark_group_actor_locked(self, oid: int) -> None:
-        """记下“当前行动组是哪个身份在打”（已持有锁）——动画 tick 用身份来对账。"""
         if oid <= 0:
             return
         st = self.state
@@ -2738,7 +2062,6 @@ class BattleWatch:
             group["oid"] = oid
 
     def _release_group_locked(self, gid: int, reason: str = "动画结束") -> list[str]:
-        """放行一个行动组的全部挂起项（已持有锁）。"""
         st = self.state
         group = st.groups.pop(gid, None)
         st.released_groups.add(gid)
@@ -2754,18 +2077,13 @@ class BattleWatch:
             st.pending_seqs.pop(key, None)
             st.pending_group.pop(key, None)
             if detail is None:
-                continue                      # 这一组里已经放行过了（去重）
+                continue
             detail = _stamp_reason(detail, reason)
             self._set_flag_locked(key, detail)
             out.append(detail)
         return out
 
     def _bind_group_locked(self, iid: int) -> int:
-        """把“正在播的动画”绑到最早还没放行的行动组（已持有锁）。
-
-        优先挑**身份对得上**的组（组里记着该行动的攻击者身份）；对不上（比如技能被转化、
-        读不出 iid）就按顺序挑最早那个 —— 动画本来就是按结算顺序播的。
-        """
         st = self.state
         if st.group_binding >= 0:
             return st.group_binding
@@ -2786,10 +2104,6 @@ class BattleWatch:
         return pick
 
     def _queue_pending_locked(self, key: str, detail: str, unit_oid: int = -1) -> None:
-        """把一条判定挂起（等动画 tick 放行），并记下先后序号。
-
-        ``unit_oid``: 这条判定是哪个单位身上的（采样线程迟到的血量/理智/buff 命中靠它回填行动组）。
-        """
         if key in self.state.flags or key in self.state.pending_immediate \
                 or key in self.state.pending_flags:
             return
@@ -2799,11 +2113,6 @@ class BattleWatch:
         self._assign_group_locked(key, unit_oid)
 
     def _flush_one_pending_locked(self, reason: str = "") -> str | None:
-        """放行**最早挂起的一条**判定（已持有锁）。返回详情文本。
-
-        ``reason`` 会被填进详情里的待放行标记（让日志/解锁依据写明到底是"动画结束"
-        还是"回合边界兜底"，而不是永远一句"待动画结束"）。
-        """
         best_key, best_seq = None, None
         for store in (self.state.pending_flags, self.state.pending_immediate):
             for key in store:
@@ -2822,10 +2131,6 @@ class BattleWatch:
         return detail
 
     def _flush_all_pending_locked(self, reason: str = "") -> list[str]:
-        """放行全部挂起项（已持有锁）——回合边界 / 静默期 / 战斗结束的兜底。
-
-        按行动组走（组序 = 结算顺序），再扫一遍漏网的（理论上不会漏）。
-        """
         st = self.state
         out: list[str] = []
         for gid in sorted(st.groups):
@@ -2838,13 +2143,6 @@ class BattleWatch:
         return out
 
     def _eval_immediate_locked(self, match_fn, detail_fn, unit_oid: int = -1) -> list[str]:
-        """非技能类规则的**统一求值器**（调用方必须已持有 ``self._lock``）。
-
-        ``match_fn(rule)`` 决定是否命中，``detail_fn(rule)`` 生成详情；
-        命中就写进 ``state.flags``（同一规则只置位一次）。
-        速度 / 理智 / 血量 / buff / 在场 都走这一条路——加新类型时不用改这里。
-        ``unit_oid`` 只是把「这条判定属于哪个单位」透传给挂起队列（用于回填行动组）。
-        """
         hits: list[str] = []
         for key, rule in registered_rules().items():
             if rule.kind not in RULE_KINDS_IMMEDIATE or key in self.state.flags:
@@ -2854,14 +2152,13 @@ class BattleWatch:
             if match_fn(rule):
                 detail = detail_fn(rule)
                 if rule.kind in RULE_KINDS_ANIM_WAIT:
-                    self._queue_pending_locked(key, detail, unit_oid)   # 等动画 tick 放行
+                    self._queue_pending_locked(key, detail, unit_oid)
                 else:
-                    self._set_flag_locked(key, detail)        # 速度/在场：本来就该立刻
+                    self._set_flag_locked(key, detail)
                 hits.append(detail)
         return hits
 
     def _eval_presence_locked(self) -> list[str]:
-        """presence 类规则：目标身份出现在已观测到的单位表里就算命中。"""
         if not self.state.units:
             return []
         round_seq = self.state.round_seq
@@ -2876,12 +2173,6 @@ class BattleWatch:
                 f"（oid={oid}，目标 {'/'.join(str(i) for i in rule.identity_ids)}）")
 
     def _apply_stage_stat(self, event: BattleEvent) -> None:
-        """关卡结算统计（DLL 的 ``STG`` 事件）：记下每关的通关回合数。
-
-        为什么只能靠内存：折射铁路（玩家口中的一号线/二号线/六号线…）的通关回合数
-        **Player.log 里没有**，所以"六号线 <100T 通关"这类成就只能读这里。
-        ``uid`` 是关卡 uid（铁路关卡形如 1095x → 六号线），``turn`` 是通关回合数。
-        """
         uid = event.text("uid", "")
         turn = event.get("turn", -1)
         dead = event.get("dead", -1)
@@ -2897,12 +2188,6 @@ class BattleWatch:
                   f"阵亡={dead} EX={1 if ex else 0}")
 
     def _apply_stage_clear(self, event: BattleEvent) -> None:
-        """已通关关卡记录（DLL 轮询存档得到的 ``CLR`` 事件）。
-
-        与 ``STG`` 的区别：``STG`` 是"刚刚结算了这一关"，``CLR`` 是"**存档里这关早就通关了**"
-        —— 所以它能回溯：以前打过的 10-4，一进游戏就会被报上来（不需要你再打一遍）。
-        回合数未知（存档那条记录里没有），用 -1 表示。
-        """
         stage = event.get("stage", 0)
         cleared = event.get("cleared", 0)
         if not stage or not cleared:
@@ -2916,33 +2201,20 @@ class BattleWatch:
         self._log(f"[BattleWatch] ★ 存档记录: 关卡 {stage} 已通关（回溯判定）")
 
     def _apply_node_state(self, event: BattleEvent) -> None:
-        """关卡通关状态查询（DLL 的 ``NCL`` 事件）——游戏自己在问"这关通了没"。
-
-        章节号 / 节点号是钩子的**入参**，返回值是通没通；所以这些记录不依赖任何
-        id 格式猜测。
-
-        ⚠ 入参是**内部 id**，不是界面上的"第几关"（实测：章1 的节点报的是
-        sub=101 / node=10101，即 ``sub = 章*100+小节``、``node = 章*10000+小节*100+节点``）。
-        所以这里存**原始 id 字符串**（`sub` / `node`），成就用前缀匹配即可命中 ——
-        第 10 章第 4 节 = ``1004``，其节点 = ``1004xx``。
-        另外附一个 ``章:小节:节点`` 组合键，方便排查。
-        """
         if not event.get("cleared", 0):
             return
         main = event.get("main", 0)
         sub = event.get("sub", 0)
         node = event.get("node", 0)
-        idx = event.get("idx", 0)        # 本章内第几个节点 = 界面上的 "10-4" 的 4
-        sidx = event.get("sidx", 0)      # 本章内第几个小节
+        idx = event.get("idx", 0)
+        sidx = event.get("sidx", 0)
         ts = time.time()
         keys = []
         if idx:
-            keys.append(f"{main}-{idx}")         # ← 界面口径（10-4 就是这个）
+            keys.append(f"{main}-{idx}")
         if sidx and idx:
             keys.append(f"{main}-{sidx}-{idx}")
-        keys += [str(sub), str(node), f"{main}:{sub}:{node}"]   # 原始 id（诊断/精确匹配用）
-        # 如果这个节点 id 已经在 SNI 里学到了"章-第几关"，顺带把官方口径的键也记上 ——
-        # 这样"看过一次地图"之后，纯存档遍历（不点界面）也能按 "10-4" 判定。
+        keys += [str(sub), str(node), f"{main}:{sub}:{node}"]
         with self._lock:
             for label, info in self.state.stage_labels.items():
                 if int(info.get("stage", 0)) == int(node):
@@ -2957,12 +2229,6 @@ class BattleWatch:
                   f"(小节id={sub} 节点id={node})")
 
     def _apply_stage_node_id(self, event: BattleEvent) -> None:
-        """关卡身份（DLL 的 ``SNI`` 事件）—— **"10-4"的官方口径**。
-
-        入参来自 ``StageNodeIdInfo::SetData(partId, chapterId, nodeId, stageId, state)``：
-        章 + 第几关 + 关卡 id + 通关状态。存档结构里的 id（10438）不编码"第几关"，
-        界面上的号只有在这里才能拿到，所以这条是主线关卡成就的唯一可靠来源。
-        """
         chapter = event.get("chapter", 0)
         node = event.get("node", 0)
         stage = event.get("stage", 0)
@@ -2983,11 +2249,6 @@ class BattleWatch:
                   + ("（已通关）" if state else ""))
 
     def _apply_railway_ui_text(self, event: BattleEvent) -> None:
-        """铁路地图上显示的"总回合"文本（DLL 的 ``RUT`` 事件）—— **读事实**。
-
-        游戏自己算好并写进 UI 的那个值（实测：存档结构求和得 33，界面显示 86）。
-        线路号取最近一次 ``RWT line=`` 看到的线路（打开线路界面时两者紧挨着发生）。
-        """
         raw = event.text("text", "").strip()
         if not raw:
             return
@@ -3000,18 +2261,12 @@ class BattleWatch:
             line = int(self.state.railway_last.get("line", -1) or -1)
             seen_at = float(self.state.railway_last.get("ts", 0) or 0)
             if line >= 0 and (now - seen_at) < 60.0:
-                self.state.railway_totals[line] = value      # 用界面显示值覆盖求和值
+                self.state.railway_totals[line] = value
             self.state.railway_ui_text = {"text": raw, "value": value, "line": line}
         line_text = f"{line}" if line >= 0 else "?"
         self._log(f"[BattleWatch] ★ 铁路界面显示: 「{raw}」→ {value}（线路={line_text}）")
 
     def _apply_railway_total(self, event: BattleEvent) -> None:
-        """折射铁路记录（DLL 的 ``RWT`` 事件）。两种形态：
-
-        - ``line=<线路号> total=<总回合>``：``GetTotalClearTurn()``（只在开线路界面时才被调）
-        - ``node=<节点id> turn=<回合>``：``RailwayDungeonFormerSaveData..ctor``（存档重建时
-          逐个节点报，**不依赖任何界面**）—— 这是六号线那条成就该用的数据。
-        """
         node = event.opt("node")
         if node is not None:
             turn = event.get("turn", -1)
@@ -3031,7 +2286,6 @@ class BattleWatch:
                   f"节点数={event.get('nodes', -1)}{extra}")
 
     def _apply_buffs(self, event: BattleEvent) -> None:
-        """buff 事件：位掩码 → 关注表里的 buff 名集合 → 交给规则表（立刻置位）。"""
         iid = event.get("iid", -1)
         oid = event.get("oid", -1)
         mask = event.get("m", 0)
@@ -3049,7 +2303,6 @@ class BattleWatch:
                 if oid > 0:
                     self.state.units[iid] = oid
             if oid > 0 and event.tag != SAMPLER_TAG:
-                # 同 _apply_vitals：结算阶段记下"这个单位这一段被谁动到"，供迟到的采样命中回填
                 self.state.unit_group[oid] = self.state.cur_group
             round_seq = self.state.round_seq
             hits = self._eval_immediate_locked(
@@ -3096,9 +2349,7 @@ class BattleWatch:
         return (f"第 {self.state.round_seq} 回合 {label} {rule.threshold_text()}"
                 f"（命中字段 {','.join(names)}；{fields}；oid={oid} via {reason}）")
 
-    # ---------------------------------------------------------------- 线程
     def _run_guarded(self) -> None:
-        """任何异常都要留下痕迹：观测线程不能静默死掉。"""
         try:
             self._run()
         except Exception as exc:  # noqa: BLE001
@@ -3116,14 +2367,12 @@ class BattleWatch:
                 "（可运行 functions/achievement/hook_dll/build.ps1 编译）")
             return
 
-        # 解析游戏 DLL 路径（用于静态读字节做桩解引用/prologue）
         pe_path = ""
         try:
             from functions.hook.paths import game_paths
             pe_path = game_paths().gameassembly
         except Exception:
             pe_path = ""
-        # 注入前的偏移量预检（先用偏移量对本地 DLL 校验；对不上才云端 / 重建）
         self._run_preflight()
         self.table = build_hook_table(on_log=log, pe_path=pe_path)
         table = self.table
@@ -3143,7 +2392,6 @@ class BattleWatch:
             self._phase = "写配置失败"
             log("[BattleWatch] 写入共享内存配置失败")
             return
-        # 关注 buff 表：成就侧登记了 buff 规则才写（没登记时 DLL 连 buff 链都不读）
         names = watched_buff_names()
         readback = self.sync_buff_watch(names)
         if names and readback is not None:
@@ -3177,31 +2425,22 @@ class BattleWatch:
                         starting_flag = False
                 if note:
                     log(f"[BattleWatch] 进程选择: PID {pid}（{image or '映像未知'}）；{note}")
-                # 稳定性：Steam 拉起的第一个同名进程可能几秒就退出（引导/闪退），
-                # 注进去只会白加载一份 DLL；与 mod loader 的判定约定保持一致。
                 if not pid_alive_for(pid, GAME_STABLE_SECONDS):
                     log(f"[BattleWatch] PID {pid} 存活不足 {GAME_STABLE_SECONDS:g}s"
                         "（疑似 Steam 引导进程/闪退），继续等真正的游戏进程")
                     pid = None
                     self._sleep(1.0)
                     continue
-                # ---- 注入前三步（顺序有讲究）----
-                # ① 先等进程进入「完全挂起」窗口: 内存静止时校验与注入最干净
-                #    （有上限 SUSPEND_WAIT_SECONDS，等不到就走常规挂起窗口）
                 self._wait_fully_suspended(pid)
-                # ② 进程就位之后，游戏版本 / 环境才算最终确定 → 校验本地 hook 缓存:
-                #    对得上直接注入；对不上 → 云端对照，仍对不上就用现有索引继续
                 if not self._refresh_hook_table(log, pe_path):
                     pid = None
                     self._sleep(5.0)
                     continue
-                # ③ 注入（SuspendWindow: 进程本来就挂起则直接借用该窗口，否则临时挂起全部线程）
                 if not self._inject(pid, path):
                     self._sleep(5.0)
                     continue
                 waited = 0.0
                 self._last_hits = {}
-                # 新进程 = 可能换了游戏构建，重新校一次游戏 DLL 新鲜度
                 self._ga_verified = False
                 self._ga_retry = 0
                 self._ga_note = {}
@@ -3217,7 +2456,6 @@ class BattleWatch:
                 except Exception as exc:  # noqa: BLE001
                     log(f"[BattleWatch] 事件解析失败: {line!r} {exc}")
             self._scan_hits(cfg)
-            # 技能类规则的“动画结束”兜底：事件停了 SKILL_SETTLE_QUIET_SEC 就结算
             self.settle_skills_if_quiet()
             self._heartbeat()
             self._write_status()
@@ -3237,11 +2475,6 @@ class BattleWatch:
         return True
 
     def _scan_hits(self, cfg: BWConfig) -> None:
-        """读取每个钩子的命中计数（只做可观测性：谁是活的、谁 0 次）。
-
-        回合边界**不**靠命中计数（会和 RND 事件重复计数），而是靠 RND 事件 /
-        单位回合开始事件——见 ``handle_line``。
-        """
         for i, (key, _item) in enumerate(list(self.table["entries"].items())[:MAX_HOOKS]):
             hits = int(cfg.hook_hits[i])
             prev = self._last_hits.get(key, 0)
@@ -3281,7 +2514,6 @@ class BattleWatch:
             self._status_logged.add("ga")
             self._phase = "GameAssembly 已加载"
             self._log("[BattleWatch] 游戏已加载 GameAssembly.dll，等待装钩")
-        # 游戏 DLL 新鲜度：进程内那份 vs 磁盘上最新那份（加载晚的话留着重试）
         if not self._ga_verified and int(cfg.gameassembly_found):
             self._verify_gameassembly()
         if int(cfg.verified) and "verified" not in self._status_logged:
@@ -3301,8 +2533,6 @@ class BattleWatch:
                           "重建偏移索引后再启动游戏")
 
     def _log(self, message: str) -> None:
-        # 开发中成就（10-4 / 六号线）的数据源还没定位成功，这几类事件先静音，
-        # 免得每局都往日志里刷一堆用不上的行；等数据源确认后再放开。
         for _mark in ("★ 关卡已通关", "★ 关卡身份", "★ 铁路界面显示",
                       "★ 铁路节点记录", "★ 铁路记录"):
             if _mark in message:
@@ -3312,15 +2542,8 @@ class BattleWatch:
         except Exception:
             pass
 
-
-# 速度日志去重集合在 __init__ 里初始化（不要用类属性，会被多个实例共享）
-
-
-# --------------------------------------------------------------------------- 单例入口
-
 _watch: BattleWatch | None = None
 _watch_lock = threading.Lock()
-
 
 def get_watch(log_callback=None) -> BattleWatch:
     global _watch
@@ -3331,26 +2554,21 @@ def get_watch(log_callback=None) -> BattleWatch:
             _watch.log_callback = log_callback
         return _watch
 
-
 def start_battle_watch(log_callback=None, process_name: str = TARGET_PROCESS,
                       verbose: bool | None = None) -> BattleWatch:
-    """启动观测。``verbose=None`` 时读设置项 ``achievement_log_verbose``（缺省 False）。"""
     watch = get_watch(log_callback)
     watch.process_name = process_name
     watch.verbose = log_verbose_enabled() if verbose is None else bool(verbose)
     watch.start()
     return watch
 
-
 def log_verbose_enabled() -> bool:
-    """事件行是否也写进成就日志（设置项 ``achievement_log_verbose``，缺省 false）。"""
     try:
         from functions.base.settings_manager import get_settings_manager
         value = get_settings_manager().get_setting("achievement_log_verbose")
         return bool(value) if value is not None else False
     except Exception:
         return False
-
 
 def stop_battle_watch() -> None:
     global _watch
@@ -3359,9 +2577,7 @@ def stop_battle_watch() -> None:
             _watch.stop()
             _watch = None
 
-
 def rule_hits() -> dict:
-    """所有命中过的规则（key → 详情文本；启动器界面/状态文件用）。"""
     with _watch_lock:
         watch = _watch
     if watch is None:
@@ -3369,28 +2585,16 @@ def rule_hits() -> dict:
     with watch._lock:
         return dict(watch.state.flags)
 
-
 def settle_turn(reason: str = "") -> list:
     with _watch_lock:
         return _watch.settle_turn(reason) if _watch else []
 
-
 def mark_battle_end() -> None:
-    """通知观测器"这一场打完了"（由 Player.log 的 EndStage() 调用）。
-
-    下一回合边界会被当成**新战斗的第一回合**，回合计数从 1 重新开始。
-    """
     with _watch_lock:
         if _watch is not None:
             _watch.mark_battle_end()
 
-
 def stage_clears() -> dict:
-    """本次观测到的**关卡结算统计**（uid → {uid,turn,dead,ex,ts}）。
-
-    折射铁路（一号线/二号线/六号线…）的通关回合数只在内存里，Player.log 没有 ——
-    "六号线 <100T 通关"这类成就只认这里。
-    """
     with _watch_lock:
         watch = _watch
     if watch is None:
@@ -3398,9 +2602,7 @@ def stage_clears() -> dict:
     with watch._lock:
         return {k: dict(v) for k, v in watch.state.stage_clears.items()}
 
-
 def stage_last() -> dict:
-    """最近一次关卡结算（没结算过返回空 dict）。"""
     with _watch_lock:
         watch = _watch
     if watch is None:
@@ -3408,13 +2610,7 @@ def stage_last() -> dict:
     with watch._lock:
         return dict(watch.state.stage_last)
 
-
 def railway_nodes() -> dict:
-    """折射铁路**每节点**的通关回合（节点 id → 回合数）。
-
-    来源：``RailwayDungeonFormerSaveData..ctor``（存档重建时逐个节点构造）——
-    不依赖玩家点开任何界面；整条线的总回合可由这些值求和得到。
-    """
     with _watch_lock:
         watch = _watch
     if watch is None:
@@ -3422,13 +2618,7 @@ def railway_nodes() -> dict:
     with watch._lock:
         return {int(k): int(v) for k, v in watch.state.railway_nodes.items()}
 
-
 def observe_stage_ids() -> tuple[int, ...]:
-    """所有成就声明要关注的关卡 id（已通关记录轮询用）。
-
-    成就通过 ``stage_watch_ids()`` 声明；这里惰性导入成就模块——battle_watch 本身
-    是被成就模块导入的，模块级导入会成环。
-    """
     ids: list[int] = []
     try:
         from functions.achievement.achievements import achievements
@@ -3447,13 +2637,7 @@ def observe_stage_ids() -> tuple[int, ...]:
             continue
     return tuple(ids[:STAGE_WATCH_MAX])
 
-
 def railway_totals() -> dict:
-    """折射铁路**整条线**的最好回合数（线路号 → 总回合）。
-
-    来源是 ``RailwayDungeonHistoryDataByCollection::GetTotalClearTurn()``——
-    进线路前游戏显示的那个"你的最好回合数"。
-    """
     with _watch_lock:
         watch = _watch
     if watch is None:
@@ -3461,30 +2645,21 @@ def railway_totals() -> dict:
     with watch._lock:
         return {int(k): int(v) for k, v in watch.state.railway_totals.items()}
 
-
 def state_snapshot() -> dict:
     with _watch_lock:
         return _watch.snapshot() if _watch else {}
 
-
 def load_status() -> dict:
-    """读状态文件（启动器界面/CLI 用；观测没跑过时返回空 dict）。"""
     try:
         with open(status_path(), "r", encoding="utf-8") as fh:
             return json.load(fh) or {}
     except (OSError, ValueError):
         return {}
 
-
-# --------------------------------------------------------------------------- CLI
-
-
 def _print(message: str) -> None:
     print(message, flush=True)
 
-
 def _probe_preflight() -> None:
-    """``--probe`` 用：只做本地校验（**不联网、不重建**），看偏移量对不对得上本机 DLL。"""
     try:
         from functions.hook.preflight import ensure_offsets_ready
         info = ensure_offsets_ready(on_log=_print, allow_cloud=False)
@@ -3501,9 +2676,7 @@ def _probe_preflight() -> None:
         _print(f"[OffsetProbe] {check.get('detail', '')}")
         _print("[OffsetProbe] （离线 --probe 不联网、不重建；云端对照只在游戏启动时按需发生）")
 
-
 def cmd_probe() -> int:
-    """离线自查：钩子表 + 将要注入的 DLL + 进程身份 + 游戏 DLL 新鲜度，不注入。"""
     from functions.hook.paths import game_paths
     paths = game_paths()
     _print(f"游戏目录: {paths.root or '（未找到）'}")
@@ -3520,10 +2693,8 @@ def cmd_probe() -> int:
                f"sha256 {info['sha256'][:16]}…")
     if _DLL_CHOICE_NOTE:
         _print(f"  {_DLL_CHOICE_NOTE}")
-    # 偏移量预检（**只做本地校验**：不联网、不重建，适合 --probe 离线看）/ 进程身份 / 注入用 DLL
     _print("")
     _probe_preflight()
-    # 进程身份：真正注入时按这张表挑 PID（映像路径优先）
     expected = _expected_game_exe()
     _print(f"\n期望的游戏进程: {expected or '（配置里没拿到游戏路径，将退化为同名第一个）'}")
     candidates = find_process_candidates(TARGET_PROCESS)
@@ -3535,7 +2706,6 @@ def cmd_probe() -> int:
     _print(f"\n事件日志: {event_log_path()}")
     _print(f"状态文件: {status_path()}")
     return 0
-
 
 def cmd_status() -> int:
     data = load_status()
@@ -3555,7 +2725,6 @@ def cmd_status() -> int:
         except OSError:
             pass
     return 0
-
 
 def main(argv=None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
@@ -3582,7 +2751,6 @@ def main(argv=None) -> int:
     finally:
         watch.stop()
     return 0
-
 
 if __name__ == "__main__":
     raise SystemExit(main())

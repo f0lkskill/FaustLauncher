@@ -1,11 +1,4 @@
 #! 版本更新提示统一出口
-#? Web 界面 (app_web) 下: 版本更新走"应用内二级模态窗口" (web/app, 样式与 App 完全一致),
-#? 检测到新版本时强制下载更新 (窗口不可取消/无关闭按钮), 并实时显示下载进度与速度。
-#? 旧版 TK 界面: 不注册 pusher, 这里直接返回 False, 调用方继续走独立 pywebview 窗口,
-#? 旧行为 (version_update_window.py) 完全不受影响。
-#?
-#? app_web.run_web_ui 启动时调用 register_web_pusher(AppApi.push_version_modal) 注册,
-#? 本模块只负责: 版本信息收集 / 模态数据构建 / 重复弹窗去重 / 新版本包下载。
 
 import json
 import os
@@ -20,69 +13,48 @@ else:
     _PROJECT_ROOT = os.path.abspath(
         os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", ".."))
 
-# 前端推送函数 (由 app_web 注册); None 表示当前不是 Web 界面模式
 _WEB_PUSHER = None
 
-# 最近一次版本窗口弹出记录, 用于去重 (更新询问窗口与详情窗口可能同时触发)
 _LAST_SHOWN = {"t": 0.0, "forced": False}
 _DEDUPE_SECONDS = 8.0
 
-# 更新包下载状态 (同一时间只允许一个下载任务)
 _DOWNLOAD_LOCK = Lock()
 _DOWNLOAD_STATE = {"running": False}
 
-# 本次启动已经抓到的版本信息 (内存缓存)
-#   主页版本卡"点开看版本信息"直接读这里, 不再为了打开一个窗口去请求云端;
-#   启动时的版本检查 (version_utils.check_version_update / 本模块 collect_version_info)
-#   拿到什么就在这里留一份。
 _MEM = {"info": None, "payload": None, "t": 0.0}
 
-
 def remember_version_info(info):
-    """把本次启动抓到的版本信息留在内存 (供手动打开版本窗口复用)"""
     if not isinstance(info, dict):
         return
     _MEM["info"] = dict(info)
     _MEM["t"] = time.time()
 
-
 def remember_version_payload(payload):
-    """把刚构建/推送过的版本窗口数据留在内存 (含渲染好的描述 HTML)"""
     if not isinstance(payload, dict):
         return
     _MEM["payload"] = dict(payload)
     _MEM["t"] = time.time()
 
-
 def cached_version_info():
-    """内存里的版本信息 (没有则 None)"""
     info = _MEM.get("info")
     return dict(info) if isinstance(info, dict) else None
 
-
 def cached_version_payload():
-    """内存里的版本窗口数据 (没有则 None)"""
     payload = _MEM.get("payload")
     return dict(payload) if isinstance(payload, dict) else None
 
-
 def register_web_pusher(pusher):
-    """注册 Web 前端推送函数 (callable(payload) -> bool), 返回 True 表示已接管"""
     global _WEB_PUSHER
     _WEB_PUSHER = pusher
-
 
 def unregister_web_pusher():
     global _WEB_PUSHER
     _WEB_PUSHER = None
 
-
 def get_web_pusher():
     return _WEB_PUSHER
 
-
 def _render_markdown_html(description):
-    """复用独立窗口的 Markdown 渲染器, 保证两端更新说明内容完全一致"""
     text = description or ""
     if not text.strip():
         return ""
@@ -94,19 +66,7 @@ def _render_markdown_html(description):
         import html as _html
         return "<p>" + _html.escape(text) + "</p>"
 
-
 def collect_version_info(allow_refresh=False):
-    """从云端 webnote 读取版本信息。
-
-    Returns:
-        dict: {
-            'current': 当前版本名称,
-            'latest': 云端标记的最新版本名称,
-            'has_update': 是否存在新版本 (含可下载链接判断留给 build_payload),
-            'entry': 最新版本的详细条目 (description/date/url),
-            'error': 错误信息或 None,
-        }
-    """
     from functions.base.settings_manager import get_settings_manager
     current = str(get_settings_manager().get_setting("version_info") or "")
     result = {"current": current, "latest": "", "has_update": False, "entry": {}, "error": None}
@@ -116,7 +76,6 @@ def collect_version_info(allow_refresh=False):
         from json import loads
 
         note = Note("version_info", get_webnote("version_info")[0])
-        # 手动“检查更新 / 打开版本窗口”时强制联网取最新
         note.fetch_note_info(allow_refresh=bool(allow_refresh))
         if not note.note_content.strip():
             result["error"] = "未配置版本信息 (云端不可用)"
@@ -126,29 +85,23 @@ def collect_version_info(allow_refresh=False):
         entry = info.get("versions", {}).get(latest, {}) if latest else {}
         result["latest"] = latest
         result["entry"] = entry if isinstance(entry, dict) else {}
-        # 版本号语义比较: 只看字符串不等会把"本地版本比云端新"也当成有更新,
-        # 进而弹出更新窗口甚至强制降级 (详见 functions/base/version_compare.py)
         from functions.base.version_compare import is_newer_version
         result["has_update"] = bool(latest and is_newer_version(latest, current))
-        remember_version_info(result)      # 留在内存: 手动打开版本窗口不再联网
+        remember_version_info(result)
     except Exception as e:
         result["error"] = str(e)
     return result
-
 
 def _fmt_date(value):
     if hasattr(value, "strftime"):
         return value.strftime("%Y-%m-%d %H:%M:%S")
     text = str(value or "").strip()
-    # 云端日期常见写法 2026-09-11-00:01:53, 统一为 2026-09-11 00:01:53
     if re.match(r"^\d{4}-\d{2}-\d{2}-\d{2}:\d{2}", text):
         text = text[:10] + " " + text[11:]
     return text
 
-
 def build_payload(current_version, latest_info, info="发现新版本",
                   has_new_version=False, forced=False):
-    """构建应用内版本更新模态窗口所需数据 (description 已渲染为 HTML)"""
     latest_info = latest_info or {}
     description = latest_info.get("description") or latest_info.get("version_description") or ""
     url = latest_info.get("bilibili_url") or latest_info.get("url") or ""
@@ -171,21 +124,13 @@ def build_payload(current_version, latest_info, info="发现新版本",
         "url": str(url or ""),
         "html": _render_markdown_html(description),
         "has_update": has_update,
-        # 强制模式: 窗口无关闭按钮、不可取消, 打开后自动开始下载
         "forced": bool(forced and has_update),
         "can_update": can_update,
         "auto_start": bool(forced and has_update),
     }
 
-
 def notify_version(current_version, latest_info, info="发现新版本", root=None,
                    has_new_version=False, forced=False):
-    """弹出应用内版本更新模态窗口 (Web 界面)。
-
-    Returns:
-        True  : 已由 Web 应用内模态窗口接管, 调用方不要再弹独立窗口
-        False : 当前不是 Web 界面 (或不支持), 调用方自行回退到独立窗口
-    """
     pusher = _WEB_PUSHER
     if pusher is None:
         return False
@@ -194,11 +139,10 @@ def notify_version(current_version, latest_info, info="发现新版本", root=No
                             has_new_version=has_new_version, forced=forced)
     now = time.time()
     if now - _LAST_SHOWN["t"] < _DEDUPE_SECONDS:
-        # 短时间内已弹过版本窗口: 强制更新优先, 其余忽略, 避免连弹两个窗口
         if (not payload["forced"]) or _LAST_SHOWN["forced"]:
             return True
 
-    remember_version_payload(payload)      # 留在内存: 手动打开版本窗口不再联网
+    remember_version_payload(payload)
     try:
         ok = bool(pusher(payload))
     except Exception as e:
@@ -209,13 +153,7 @@ def notify_version(current_version, latest_info, info="发现新版本", root=No
         _LAST_SHOWN["forced"] = payload["forced"]
     return ok
 
-
-# ============================================================
-# 新版本下载 / 安装 (应用内模态窗口的进度来源)
-# ============================================================
-
 class _TextVar:
-    """伪装 tkinter StringVar 的 set()/get()"""
 
     def __init__(self, on_set, initial=""):
         self._value = initial
@@ -231,13 +169,7 @@ class _TextVar:
     def get(self):
         return self._value
 
-
 class _ProgressGui:
-    """伪装启动器下载 GUI: 状态/进度全部回推给前端模态窗口。
-
-    仅需实现 download_file_with_gui 使用的鸭子类型接口:
-    current_file_var.set(text) / update_progress(...) / is_downloading
-    """
 
     def __init__(self, push, task="版本更新"):
         self.push = push
@@ -258,22 +190,11 @@ class _ProgressGui:
             "speed": speed,
         })
 
-
 def is_downloading():
-    """当前是否有更新包下载任务在运行"""
     with _DOWNLOAD_LOCK:
         return bool(_DOWNLOAD_STATE["running"])
 
-
 def start_version_download(version_name, url, push):
-    """后台下载并安装新版本 (立即返回)。
-
-    Args:
-        version_name: 新版本名称 (仅用于展示与文件名)
-        url: 新版本安装包下载地址
-        push: callable(dict) 向前端推送进度事件, stage 取值:
-              status / progress / ready / error
-    """
     with _DOWNLOAD_LOCK:
         if _DOWNLOAD_STATE["running"]:
             push({"stage": "error", "text": "更新包正在下载中, 请稍候"})
@@ -295,9 +216,7 @@ def start_version_download(version_name, url, push):
     Thread(target=_run, daemon=True).start()
     return True
 
-
 def _download_and_install(version_name, url, push):
-    """下载 → 校验 → 解压 → 同步设置 → 启动更新器并退出启动器"""
     import shutil
     import subprocess
 
@@ -336,7 +255,6 @@ def _download_and_install(version_name, url, push):
 
     new_dir = os.path.join(target_root, "FaustLauncher")
     if not os.path.isdir(new_dir):
-        # 个别安装包不带外层目录: 回退为整个解压目录
         sub = [d for d in os.listdir(target_root) if os.path.isdir(os.path.join(target_root, d))]
         if len(sub) == 1 and os.path.exists(os.path.join(target_root, sub[0], "FaustLauncher.exe")):
             new_dir = os.path.join(target_root, sub[0])
@@ -365,19 +283,9 @@ def _download_and_install(version_name, url, push):
     print("[Update] 新版本准备完成, 启动更新器并退出启动器", flush=True)
     time.sleep(1.2)
     subprocess.Popen(["wscript.exe", updater], cwd=new_dir, close_fds=True)
-    # 更新器需等待启动器完全退出 (WebView2 销毁) 才能覆盖文件, 这里立即结束进程
     os._exit(0)
 
-
-# 供 js_api 层使用的便捷构建 (手动打开版本窗口时调用)
 def manual_payload():
-    """手动打开版本窗口的数据 —— **只用本次启动已经在内存里的信息, 不再联网**。
-
-    ① 内存里有启动时推送过的窗口数据 (含渲染好的更新说明 HTML) -> 直接用;
-    ② 只有版本信息 (最新版本号 / 更新说明 / 链接) -> 现场拼一个窗口数据;
-    ③ 都还没有 (极端: 启动检查还没跑完) -> 读一次本地缓存补上 (也不强制刷新)。
-    手动打开一律非强制 (forced=False, 不会自动开始下载)。
-    """
     payload = cached_version_payload()
     if payload:
         payload["forced"] = False

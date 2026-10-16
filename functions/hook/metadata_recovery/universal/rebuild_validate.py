@@ -1,16 +1,4 @@
 #!/usr/bin/env python3
-"""rebuild_validate.py - 标准 metadata 重建 + 四重自验证（无参考文件）。
-
-重建：sanity + version + 31 节规范三元组 + 按规范序无缝拼接各节数据
-（受保护节用其 seed 解密）。
-
-自验证门：
-1. 输出以 0xFAB11BAF + version 开头
-2. header 三元组与拼接布局一致（每节 offset == 前节终点，零尺寸 offset=0）
-3. stringLiteral dataIndex 单调不减，且末项 ≤ stringLiteralData 大小
-4. 固定 rec 节 size == count × rec（版本表一致性）
-5. 受保护节解密后通过结构门（text/index/binary）
-"""
 
 from __future__ import annotations
 
@@ -23,10 +11,8 @@ from .verify_structural import classify_section
 
 METADATA_SANITY = 0xFAB11BAF
 
-
 def rebuild_standard(metadata: bytes, solution: dict, table_hex: str = "",
                      version: int = 39) -> bytes:
-    """按标准 v39 布局重建（语义与 gen1 solve_section_map.rebuild_standard 一致）。"""
     vt = version_table(version)
     names = vt["names"]
     entries = {e["index"]: e for e in solution["entries"]}
@@ -60,10 +46,8 @@ def rebuild_standard(metadata: bytes, solution: dict, table_hex: str = "",
             output_offset += size
     return bytes(output)
 
-
 def validate_standard(std: bytes, solution: dict, metadata: bytes | None = None,
                       table_hex: str = "", version: int = 39) -> list[dict]:
-    """四重自验证。返回 gates 列表。"""
     vt = version_table(version)
     names = vt["names"]
     rec = vt["rec"]
@@ -73,7 +57,6 @@ def validate_standard(std: bytes, solution: dict, metadata: bytes | None = None,
     gates.append({"name": "sanity/version", "passed": sanity == METADATA_SANITY and ver == version,
                   "evidence": f"sanity={sanity:#x} version={ver}（期望 {METADATA_SANITY:#x}/{version}）"})
 
-    # 2) 三元组布局一致性（从 sanity+version 之后的字节 8 解析）
     entries = [e for e in parse_triplets(std[8:8 + 31 * 12], ["offset", "size", "count"])]
     layout_ok = True
     expect = 8 + 31 * 12
@@ -89,7 +72,6 @@ def validate_standard(std: bytes, solution: dict, metadata: bytes | None = None,
     gates.append({"name": "31 节无缝拼接布局", "passed": layout_ok,
                   "evidence": f"end={expect} 总大小={len(std)}"})
 
-    # 3) stringLiteral dataIndex 单调 + 界内
     by_name = {n: entries[i] for i, n in enumerate(names)}
     sl_ent = by_name["stringLiteral"]
     sld_ent = by_name["stringLiteralData"]
@@ -106,7 +88,6 @@ def validate_standard(std: bytes, solution: dict, metadata: bytes | None = None,
                   "evidence": f"count={sl_ent['count']} max<={sld_ent['size']} "
                               f"mono={mono_ok} in_range={in_range}"})
 
-    # 4) 固定 rec 节一致性
     rec_bad = []
     for i, name in enumerate(names):
         r = rec[name]
@@ -118,7 +99,6 @@ def validate_standard(std: bytes, solution: dict, metadata: bytes | None = None,
     gates.append({"name": "固定 rec 节一致性", "passed": not rec_bad,
                   "evidence": "; ".join(rec_bad) or "全一致"})
 
-    # 5) 受保护节解密结构门（需源 metadata）
     if metadata is not None and "protected" in solution and table_hex:
         table = bytes.fromhex(table_hex)
         prot_ok = len(table) == 256

@@ -1,37 +1,13 @@
-"""成就「仿造的一生」—— 蜘蛛巢 食指 父辈 李箱 使用 Furioso-Replica。
-
-数据（``SkillUseAchievement`` 的构造参数，判定逻辑在 battle_watch 规则表）::
-
-    identity_id = 10115                # 蜘蛛巢 食指 父辈 李箱
-    skill_ids   = (1011505, )   # Furioso-Replica
-    gated_skill_ids = (134711, 138010, 955110)
-                                       # 转化后/敌方侧同名技能：必须 actor 身份 == 10115 才认，
-                                       # 免得故事里的敌方食指父辈用 Furioso 时误触发
-
-为什么带 ``tiers=(3,)``：`Lang/LLC_zh-CN/BattleSpeechBubbleDlg.json` 里有
-``battle_s3_10115_1_6`` → ``"“灼烧着的伤口”状态下使用 Furioso-Replica 后"``，
-而 ``Skills_personality-01.json``（罪人 1 = 李箱）里那个三技能写着
-「回合开始时，若自身的 [StackYisangSpecialSkill] 层数为 9 层，则使本技能转化为
-“Furioso-Replica”(每回合最多 1 次)」—— 两种上报形式都盖住。
-
-判定时机：技能类规则在这手技能的**动画结束**时结算 —— 看表现层 ``skv_end``
-（``BattleSkillViewBase::Skill_End``）tick，逐条放行；静默期与回合边界只做兜底。
-⚠ 不能用 ``action_done_with_action`` 这类收尾回调：实测它们全在一整个回合的
-结算瞬间（动画开播**之前**）到齐。
-"""
 
 from __future__ import annotations
 
 from functions.achievement.battle_achievements import SkillUseAchievement
 
-# ---- 业务常量（游戏数据；与偏移无关，驱动不认识它们）----
-IDENTITY_YISANG_INDEX_PROXY = 10115    # 蜘蛛巢 食指 父辈 李箱
-SKILL_YISANG_FURIOSO = 1011505         # Furioso-Replica 本体
-FURIOSO_REPLICA_IDS = (134711, 138010, 955110)  # 同名但 id 不带身份的技能
-
+IDENTITY_YISANG_INDEX_PROXY = 10115
+SKILL_YISANG_FURIOSO = 1011505
+FURIOSO_REPLICA_IDS = (134711, 138010, 955110)
 
 class IndexFuriosoReplicaAchievement(SkillUseAchievement):
-    """战斗事件类成就：观测 ACT 事件里的技能 ID。"""
 
     def __init__(self) -> None:
         super().__init__(

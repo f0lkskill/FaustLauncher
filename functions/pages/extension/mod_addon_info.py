@@ -39,16 +39,11 @@ class ModAddonManagerPage:
         self.notebook = CustomNotebook(content_frame.inner, bg=self.lighten_bg_color, accent=C.ACCENT)
         self.notebook.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
         
-        # 创建插件管理标签页
         self.create_addons_tab()
         
-        # 创建新Mod架构管理标签页
         self.create_new_mods_tab()
 
-        # self.notebook.add(tk.Frame(self.notebook), text="")
-    
     def create_addons_tab(self):
-        """创建插件管理标签页"""
         
         addons_frame = tk.Frame(self.notebook, bg=self.lighten_bg_color)
         self.notebook.add(addons_frame, text="🔌 插件管理")
@@ -60,7 +55,6 @@ class ModAddonManagerPage:
         self.show_addons()
     
     def create_new_mods_tab(self):
-        """创建新Mod架构管理标签页"""
         mods_frame = tk.Frame(self.notebook, bg=self.lighten_bg_color)
         self.notebook.add(mods_frame, text="🎮 Mod管理")
         self.mods_list_frame = tk.Frame(mods_frame, bg=self.bg_color)
@@ -71,9 +65,7 @@ class ModAddonManagerPage:
         self.show_mods()
     
     def create_styled_button(self, parent, text, command, color):
-        """创建现代化样式按钮"""
         
-        # 现代化配色映射
         color_map = {
             '#27ae60': C.LEGACY_GREEN_HOVER,
             '#2980b9': C.ACCENT_SECONDARY,
@@ -94,7 +86,6 @@ class ModAddonManagerPage:
                        padx=16, pady=8,
                        cursor='hand2')
         
-        # 添加悬停效果
         def on_enter(e):
             btn.config(bg=hover_color)
         def on_leave(e):
@@ -109,7 +100,6 @@ class ModAddonManagerPage:
         return darken_color(color, factor)
     
     def show_addons(self):
-        """显示插件管理列表"""
         
         self.addon_manager.scan_addons()
         self.all_addons = self.addon_manager.get_all_addons()
@@ -119,7 +109,6 @@ class ModAddonManagerPage:
                            self.all_addons, self.addon_page, self.addon_enabled, 'addon')
 
     def _show_detail(self, item, item_type):
-        """显示插件或Mod的详细信息"""
         
         info = item['info']
         display_name = info.get('name', item['name'])
@@ -193,14 +182,6 @@ class ModAddonManagerPage:
                 if aurl:
                     tk.Label(af, text=aurl, font=('微软雅黑', 8), bg=self.bg_color, fg=C.TEXT_MUTED).pack(side=tk.LEFT)
 
-        # 0.6.0-pre.6 取消显示文件列表
-        # if item_type == 'mod':
-        #     file_names = info.get('file_names', [])
-        #     if file_names:
-        #         tk.Label(scroll_frame, text="文件", **sep).pack(fill=tk.X, pady=(8, 3))
-        #         for fn in file_names:
-        #             tk.Label(scroll_frame, text=f"  • {fn}", **body).pack(fill=tk.X)
-        
         settings = info.get('settings', {})
 
         if settings:
@@ -229,7 +210,6 @@ class ModAddonManagerPage:
                         self.on_addon_setting_change(it, k, entr) if item_type == 'addon'
                         else self.on_mod_setting_change(it, k, entr))
                     
-        # 插件按钮
         if item_type == 'addon':
             run_btn = RoundedButton(title_frame, text="▶ 运行",
                                    command=lambda: self.run_addon(item['name']),
@@ -255,9 +235,7 @@ class ModAddonManagerPage:
         del_btn.pack(side=tk.RIGHT, padx=3)
 
     def on_addon_setting_change(self, addon, setting_key, value_var):
-        """插件设置变更事件"""
         try:
-            # 获取当前值
             if isinstance(value_var, tk.BooleanVar):
                 new_value = value_var.get()
             elif isinstance(value_var, tk.Entry):
@@ -265,7 +243,6 @@ class ModAddonManagerPage:
             else:
                 return
             
-            # 更新插件信息
             addon_info_path = os.path.join(addon['path'], 'addon_info.json')
             info = read_json(addon_info_path)
             
@@ -274,7 +251,6 @@ class ModAddonManagerPage:
             
             info['settings'][setting_key] = new_value
             
-            # print(addon)
             if info['settings'].get('enable'):
                 print(f"插件 {addon['name']} 已被启用，触发启用回调")
                 self.addon_manager.when_addon_enabled(addon['name'])
@@ -282,10 +258,8 @@ class ModAddonManagerPage:
                 print(f"插件 {addon['name']} 已被禁用，触发禁用回调")
                 self.addon_manager.when_addon_disabled(addon['name'])
             
-            # 保存更新后的信息
             write_json(addon_info_path, info, indent=4)
             
-            # 刷新插件列表
             self.refresh_addons_tab()
             
             self.app.core._on_reload_addons()
@@ -295,7 +269,6 @@ class ModAddonManagerPage:
             messagebox.showerror("错误", f"更新插件设置失败: {str(e)}")
     
     def run_addon(self, addon_name):
-        """运行插件"""
         try:
             self.addon_manager.run_addon(addon_name)
             messagebox.showinfo("成功", f"插件 {addon_name} 已运行")
@@ -304,7 +277,6 @@ class ModAddonManagerPage:
             messagebox.showerror("错误", f"运行插件失败: {str(e)}")
     
     def open_url(self, url):
-        """打开URL"""
         import webbrowser
         webbrowser.open(url)
     
@@ -426,10 +398,6 @@ class ModAddonManagerPage:
     def _create_compact_row(self, parent, item, item_type, enabled_dict):
         name_key = item['name']
 
-        # print(item)
-        # print(name_key)
-        # print(enabled_dict)
-
         enabled = enabled_dict.get(name_key, True)
 
         row = tk.Frame(parent, bg=self.bg_color, height=72, relief='groove', borderwidth=1)
@@ -477,9 +445,7 @@ class ModAddonManagerPage:
         detail_btn.pack(side=tk.RIGHT, padx=(0, 5))
     
     def on_mod_setting_change(self, mod, setting_key, value_var):
-        """Mod设置变更事件"""
         try:
-            # 获取当前值
             if isinstance(value_var, tk.BooleanVar):
                 new_value = value_var.get()
             elif isinstance(value_var, tk.Entry):
@@ -487,7 +453,6 @@ class ModAddonManagerPage:
             else:
                 return
             
-            # 更新Mod信息
             mod_info_path = os.path.join(mod['path'], 'mod_info.json')
             info = read_json(mod_info_path)
             
@@ -496,10 +461,8 @@ class ModAddonManagerPage:
             
             info['settings'][setting_key] = new_value
             
-            # 保存更新后的信息
             write_json(mod_info_path, info, indent=4)
             
-            # 刷新Mod列表
             self.refresh_mods_tab()
 
         except Exception as e:
@@ -507,7 +470,6 @@ class ModAddonManagerPage:
             messagebox.showerror("错误", f"更新Mod设置失败: {str(e)}")
     
     def delete_mod(self, mod_name):
-        """删除Mod"""
         mod_path = os.path.join(ModManager.mod_dir, mod_name)
         if os.path.exists(mod_path):
             if messagebox.askyesno("确认删除", f"确定要删除Mod {mod_name} 吗？"):
@@ -515,7 +477,6 @@ class ModAddonManagerPage:
                     self.mod_manager.unload_mod(mod_name)
                     import shutil
                     shutil.rmtree(mod_path)
-                    # 刷新Mod列表
                     self.refresh_mods_tab()
                 except Exception as e:
                     messagebox.showerror("错误", f"删除Mod失败: {str(e)}")
@@ -524,17 +485,14 @@ class ModAddonManagerPage:
         self.show_mods()
     
     def open_addon_folder(self, path):
-        """打开插件文件夹"""
         if os.path.exists(path):
             os.startfile(path)
         else:
             messagebox.showinfo("信息", "插件文件夹不存在")
     
     def delete_addon(self, addon_name):
-        """删除插件"""
         if messagebox.askyesno("确认删除", f"确定要删除插件 {addon_name} 吗？"):
             if self.addon_manager.remove_addon(addon_name):
-                # 刷新插件列表
                 self.refresh_addons_tab()
                 self.app.core._on_reload_addons()
             else:
@@ -544,10 +502,8 @@ class ModAddonManagerPage:
         self.show_addons()
 
     def refresh_all_tabs(self):
-        """刷新所有标签页"""
         self.refresh_addons_tab()
         self.refresh_mods_tab()
 
 def init_mod_addon_manager(parent_frame, bg_color, lighten_bg_color, app):
-    """初始化插件&mod管理器页面"""
     return ModAddonManagerPage(parent_frame, bg_color, lighten_bg_color, app)

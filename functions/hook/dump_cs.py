@@ -1,33 +1,3 @@
-"""dump.cs 解析器 — 从 Il2CppDumper 的输出里取出我们真正需要的符号。
-
-``dump.cs`` 是 Il2CppDumper 生成的 C# 伪代码，单个文件 200 万行 / 80 MB 级别。
-本解析器的策略是**一边流式扫描一边过滤**：只有"声明行 / RVA 注释行 /
-带偏移的字段行"三种行会被正则处理，其余直接跳过，因此全量扫描只要几十秒，
-且内存占用与文件大小无关。
-
-行格式（实测 Il2CppDumper 6.7.x）::
-
-    // Image 0: Assembly-CSharp.dll - 0
-
-    // Namespace:            ← 空命名空间（BattleUnitModel 就是这种）
-    public abstract class BattleUnitModel : CombatUnitModel // TypeDefIndex: 19508
-    {
-    	// Fields
-    	public static readonly float _ATK_RESIST_MAX; // 0x0        ← 静态字段（静态区偏移）
-    	protected int _instanceID; // 0x60                          ← 实例字段（对象内偏移）
-
-    	// Methods
-    	// RVA: 0x9587C0 Offset: 0x956DC0 VA: 0x1809587C0 Slot: 196
-    	public virtual float GetTakeAttackDmgMultiplier(BattleUnitModel unit, ...) { }
-    }
-
-保留规则（决定 JSON 大小）：只保留
-
-- ``wanted`` 里显式点名的符号（hook 目标 / 指针链涉及的类字段）
-- 声明类型命中 ``focus`` 模式（如 ``BattleUnitModel``、``Enkephalin``）的符号
-
-其余只统计数量，不进结果。
-"""
 
 from __future__ import annotations
 
@@ -49,23 +19,19 @@ NAMESPACE_PREFIX = "// Namespace: "
 _MAX_SIG = 220
 _MAX_ALT_RVAS = 8
 
-
 @dataclass
 class SymbolIndex:
-    """从 dump.cs 提取出的符号表（体积受 focus 控制）。"""
 
-    types: dict[str, str] = field(default_factory=dict)            # 全名 → kind
-    methods: dict[str, dict] = field(default_factory=dict)         # 全名 → {rva, offset, va, slot, sig}
-    fields: dict[str, dict] = field(default_factory=dict)          # 全名 → {offset, static, type}
-    method_aliases: dict[str, str] = field(default_factory=dict)   # Class$$Method → 全名
+    types: dict[str, str] = field(default_factory=dict)
+    methods: dict[str, dict] = field(default_factory=dict)
+    fields: dict[str, dict] = field(default_factory=dict)
+    method_aliases: dict[str, str] = field(default_factory=dict)
     stats: dict = field(default_factory=dict)
     dump_path: str = ""
     dump_size: int = 0
     dump_mtime: float = 0.0
 
-    # ---------------------------------------------------------------- 查询
     def find_method(self, name: str) -> dict | None:
-        """按多种写法查方法：``Ns.Class::M`` / ``Class::M`` / ``Ns.Class$$M`` / ``Class$$M``。"""
         for key in self._candidates(name, sep="::"):
             item = self.methods.get(key)
             if item:
@@ -75,7 +41,6 @@ class SymbolIndex:
             item = self.methods.get(alias)
             if item:
                 return {"key": alias, **item}
-        # 后缀匹配（同名类在多命名空间时兜底）
         bare = name.split("::")[-1].split("$$")[-1]
         short = name.replace("$$", "::")
         hits = [(k, v) for k, v in self.methods.items()
@@ -85,7 +50,6 @@ class SymbolIndex:
         return None
 
     def find_field(self, class_name: str, field_name: str) -> dict | None:
-        """查字段：优先 ``类::字段``，再退回"只在某个类里唯一"的匹配。"""
         if not field_name:
             return None
         for key in self._candidates(f"{class_name}::{field_name}" if class_name else field_name,
@@ -105,7 +69,6 @@ class SymbolIndex:
         return item.get("offset") if item else None
 
     def fields_of(self, class_name: str) -> dict[str, dict]:
-        """某类的全部字段（只含被保留的）。"""
         out = {}
         for key, item in self.fields.items():
             owner, _, name = key.partition("::")
@@ -115,7 +78,6 @@ class SymbolIndex:
 
     @staticmethod
     def _candidates(name: str, sep: str = "::") -> list[str]:
-        """名字 → 可能的键列表（去重保序）。"""
         raw = str(name or "").strip().replace("$$", sep)
         out = []
         for candidate in (raw, raw.split(".")[-1] if "." in raw else raw):
@@ -123,13 +85,10 @@ class SymbolIndex:
                 out.append(candidate)
         return out
 
-
 def _normalize_alias(name: str) -> str:
     return str(name or "").strip().replace("::", "$$")
 
-
 def _split_decl(decl: str) -> tuple[str, str]:
-    """字段/方法声明 → (类型, 名字)。"""
     text = decl.strip()
     while text.startswith(("public ", "private ", "protected ", "internal ",
                            "static ", "readonly ", "const ", "volatile ", "unsafe ",
@@ -147,16 +106,7 @@ def _split_decl(decl: str) -> tuple[str, str]:
         return name, name.split("<")[0].strip("!")
     return " ".join(parts[:-1]), parts[-1].split("<")[0].strip("!")
 
-
 def parse_dump_cs(path: str, focus=(), wanted=(), on_log=None, on_progress=None) -> SymbolIndex:
-    """流式解析 dump.cs。
-
-    参数：
-        focus:      类名/命名空间包含这些子串（或 fnmatch 模式）时保留其符号
-        wanted:     必须保留的符号名（``类::方法`` / ``类::字段`` / ``类$$方法``）
-        on_log(msg) 日志回调
-        on_progress(done_bytes, total_bytes) 进度回调
-    """
     import fnmatch
 
     log = on_log or (lambda _m: None)
@@ -214,7 +164,6 @@ def parse_dump_cs(path: str, focus=(), wanted=(), on_log=None, on_progress=None)
                 continue
 
             if pending_rva is not None:
-                # RVA 注释的下一行就是签名；空行/注释行则丢弃这次 pending
                 stripped = line.strip()
                 if stripped and not stripped.startswith("//") and "(" in stripped:
                     _, name = _split_decl(stripped.split("(", 1)[0])
@@ -282,21 +231,17 @@ def parse_dump_cs(path: str, focus=(), wanted=(), on_log=None, on_progress=None)
         index.dump_mtime = 0.0
     return index
 
-
 def _to_int(text, base: int = 16) -> int:
     try:
         return int(str(text), base)
     except (TypeError, ValueError):
         return 0
 
-
 def _store_symbol(index: SymbolIndex, full: str, owner: str, name: str,
                   item: dict, is_method: bool) -> None:
-    """写入符号表 + 生成 ``Class$$Method`` 兼容别名。"""
     table = index.methods if is_method else index.fields
     existing = table.get(full)
     if existing is not None:
-        # 重载：主条目保留第一个，其余 RVA 收进 alt_rvas（上限 8 个）
         if is_method:
             alt = existing.setdefault("alt_rvas", [])
             if len(alt) < _MAX_ALT_RVAS and item.get("rva") not in alt:
@@ -308,9 +253,7 @@ def _store_symbol(index: SymbolIndex, full: str, owner: str, name: str,
         index.method_aliases.setdefault(f"{owner.split('.')[-1]}$${name}", full)
         index.method_aliases.setdefault(_normalize_alias(full), full)
 
-
 def load_or_parse(dump_path: str, focus=(), wanted=(), on_log=None) -> SymbolIndex:
-    """解析 dump.cs（带简单的进程内记忆，避免同一次运行里重复扫 80 MB）。"""
     key = (dump_path, tuple(sorted(focus or ())), tuple(sorted(wanted or ())))
     cached = _PARSE_CACHE.get(key)
     if cached is not None:
@@ -320,11 +263,9 @@ def load_or_parse(dump_path: str, focus=(), wanted=(), on_log=None) -> SymbolInd
     _PARSE_CACHE[key] = index
     return index
 
-
 _PARSE_CACHE: dict = {}
 
-
-def main() -> int:  # 简易自检: python -m functions.hook.dump_cs <dump.cs>
+def main() -> int:
     import sys
 
     if len(sys.argv) < 2:
@@ -336,7 +277,6 @@ def main() -> int:  # 简易自检: python -m functions.hook.dump_cs <dump.cs>
     print("method:", index.find_method("BattleUnitModel$$GetTakeAttackDmgMultiplier"))
     print("field:", index.find_field("BattleUnitModel", "_instanceID"))
     return 0
-
 
 if __name__ == "__main__":
     raise SystemExit(main())

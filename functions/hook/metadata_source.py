@@ -1,23 +1,3 @@
-"""取得"标准明文 global-metadata.dat"的三条路（按可靠性排序）。
-
-Limbus 的 ``global-metadata.dat`` 是**被保护过的**：文件头没有 IL2CPP 的
-标准魔数 ``0xFAB11BAF``（实测前 17 MB 熵 ≈ 8.0，属于加密/置乱区），
-所以 Il2CppDumper 直接读磁盘文件会报
-``ERROR: Metadata file supplied is not valid metadata file``。
-
-本模块负责把"能喂给 Il2CppDumper 的标准明文 metadata"弄到手：
-
-1. ``disk``    磁盘文件本身就是标准明文（魔数正确）→ 直接用（游戏未加保护时）
-2. ``static``  离线静态解密：``metadata_recovery`` 流水线
-   （定位 GameAssembly.dll 里的解密入口 → 参数提取 → 结构验证 → 求解 →
-   标准文件重建，约 40 秒，无需游戏运行）
-3. ``memory``  运行时动态 dump：在游戏进程内存里按"标准魔数 + 磁盘明文尾部
-   锚点"找到运行时解密后的 metadata 缓冲，整段读出来
-   （纯 ctypes，不需要 Frida；需要游戏正在运行）
-
-三条路都做同一套校验（魔数 / 版本 / 节范围 / string 节含 ``mscorlib``），
-只有通过校验的产物才会被返回。
-"""
 
 from __future__ import annotations
 
@@ -29,35 +9,21 @@ from . import paths as paths_mod
 from .memory import ProcessMemoryReader
 
 METADATA_MAGIC = 0xFAB11BAF
-# 已知的 IL2CPP metadata 版本（39 = 本仓库验证过的当前版本；其它仅作为"看起来合法"的判据）
 KNOWN_VERSIONS = (24, 27, 29, 31, 35, 37, 39, 40, 41, 42)
 DEFAULT_VERSION = 39
 
-# 运行时 dump 的扫描门槛：metadata 缓冲本身 ≥ 这个尺寸才会被优先扫描
 _MIN_SCAN_SIZE = 32 << 20
 _MAX_METADATA_SIZE = 256 << 20
-
-
-# --------------------------------------------------------------------------- 头部校验
-
 
 @dataclass
 class MetadataHeader:
     version: int
     section_count: int
-    max_end: int          # max(offset+size)：文件至少要有这么长
+    max_end: int
     sections: list[tuple[int, int]] = field(default_factory=list)
     layout: str = ""
 
-
 def _section_count_from_first_offset(first_offset: int, stride: int) -> int | None:
-    """用第一节的偏移反推头部里有多少节。
-
-    标准 metadata 的第一节紧跟在头部后面，所以
-    ``first_offset == 8 + 节数 * 每节字节数``（每个节在头部占 ``stride`` 个 u32）。
-    这个自洽关系让“头部到底是 2 元组还是 3 元组”可以精确判定：
-    算出来的节数不是整数的那套布局直接排除。
-    """
     if first_offset < 8:
         return None
     unit = stride * 4
@@ -66,13 +32,7 @@ def _section_count_from_first_offset(first_offset: int, stride: int) -> int | No
     count = (first_offset - 8) // unit
     return count if 1 <= count <= 64 else None
 
-
 def _walk_sections(values: list[int], stride: int) -> list[tuple[int, int]] | None:
-    """按给定步长读出节表（stride=2：(offset,size)；stride=3：(offset,size,count)）。
-
-    节数由第一节的偏移反推（见 ``_section_count_from_first_offset``），
-    所以不会把头部后面的节数据当成“更多节”。推不出来则返回 None。
-    """
     if not values:
         return None
     count = _section_count_from_first_offset(int(values[0]), stride)
@@ -87,10 +47,8 @@ def _walk_sections(values: list[int], stride: int) -> list[tuple[int, int]] | No
         sections.append((offset, size))
     return sections
 
-
 def _score_layout(sections: list[tuple[int, int]], stride: int,
                   reference_size: int = 0) -> tuple:
-    """给一套（布局, 节表）打分，用于自动判别头部到底是 2 元组还是 3 元组。"""
     filled = [(offset, size) for offset, size in sections if size > 0]
     if not filled:
         return (-1,)
@@ -103,17 +61,7 @@ def _score_layout(sections: list[tuple[int, int]], stride: int,
     self_consistent = 1 if filled[0][0] == header_len else 0
     return (monotonic, in_bounds, exact, self_consistent, len(filled))
 
-
 def parse_header(data: bytes, reference_size: int = 0) -> MetadataHeader | None:
-    """校验标准 IL2CPP metadata 头，返回节表信息；不合法返回 None。
-
-    头部布局随版本变化：
-
-    - 经典（如 v24~v29）：``(offset, size)`` 对
-    - 较新（本项目实测的 v39）：``(offset, size, count)`` 三元组
-
-    两者用"节偏移是否严格递增/末节是否落在文件末尾"自动判别，不写死版本号。
-    """
     if len(data) < 16 or struct.unpack_from("<I", data, 0)[0] != METADATA_MAGIC:
         return None
     version = struct.unpack_from("<i", data, 4)[0]
@@ -142,9 +90,7 @@ def parse_header(data: bytes, reference_size: int = 0) -> MetadataHeader | None:
                           max_end=max_end, sections=best_sections,
                           layout=f"stride{best_stride}")
 
-
 def header_from_file(path: str) -> MetadataHeader | None:
-    """读文件头并校验（只读前 4KB，带上文件大小做交叉验证）。"""
     try:
         size = os.path.getsize(path)
         with open(path, "rb") as fh:
@@ -152,14 +98,10 @@ def header_from_file(path: str) -> MetadataHeader | None:
     except OSError:
         return None
 
-
 def is_standard_metadata(path: str) -> bool:
-    """磁盘文件是否为标准明文 metadata。"""
     return header_from_file(path) is not None
 
-
 def _validate_file(path: str) -> tuple[bool, str]:
-    """校验磁盘上的（解密后的）metadata 文件是否完整可用。"""
     size = os.path.getsize(path)
     header = header_from_file(path)
     if header is None:
@@ -171,9 +113,7 @@ def _validate_file(path: str) -> tuple[bool, str]:
     return True, (f"version={header.version} 节数={header.section_count}"
                   f"({header.layout}) size={size}")
 
-
 def _file_contains(path: str, needle: bytes, chunk: int = 8 << 20) -> bool:
-    """流式检查文件是否包含某段字节（避免整文件读进内存）。"""
     overlap = len(needle) - 1
     tail = b""
     try:
@@ -188,9 +128,7 @@ def _file_contains(path: str, needle: bytes, chunk: int = 8 << 20) -> bool:
     except OSError:
         return False
 
-
 def _validate_payload(data: bytes) -> tuple[bool, str]:
-    """校验内存 dump 出来的整段数据是否是完整可用的 metadata。"""
     header = parse_header(data)
     if header is None:
         return False, "魔数/头部非法"
@@ -200,19 +138,14 @@ def _validate_payload(data: bytes) -> tuple[bool, str]:
         return False, "未在 string 节附近找到 mscorlib（可能是加密残留）"
     return True, f"version={header.version} 节数≈{header.section_count} size={len(data)}"
 
-
-# --------------------------------------------------------------------------- 结果对象
-
-
 @dataclass
 class MetadataResult:
-    """可用的标准明文 metadata（或失败原因）。"""
 
     ok: bool
-    source: str = ""            # disk / static / memory / ""
+    source: str = ""
     path: str = ""
     version: int = 0
-    encrypted: bool = False     # 磁盘上的原始文件是否被保护过
+    encrypted: bool = False
     sha1: str = ""
     size: int = 0
     detail: str = ""
@@ -224,10 +157,6 @@ class MetadataResult:
         return (f"[metadata] 来源={self.source} version={self.version} "
                 f"size={self.size} ({self.detail})")
 
-
-# --------------------------------------------------------------------------- 1) 静态解密
-
-
 def capstone_available() -> bool:
     try:
         from .metadata_recovery import capstone_available as _impl
@@ -235,20 +164,16 @@ def capstone_available() -> bool:
     except Exception:
         return False
 
-
 def install_capstone(on_log=None) -> dict:
-    """用当前解释器 pip 安装 capstone（静态解密依赖它做反汇编）。"""
     try:
         from .metadata_recovery import install_capstone as _impl
         return _impl(on_log) # type: ignore
     except Exception as exc:  # noqa: BLE001
         return {"success": False, "message": f"capstone 安装入口不可用: {exc}"}
 
-
 def decrypt_static(metadata_path: str, dll_path: str, on_log=None,
                    out_dir: str = "", version: int = DEFAULT_VERSION,
                    expect_sha256: str = "") -> MetadataResult:
-    """静态解密流水线（约 40 秒，不需要游戏运行）。"""
     log = on_log or (lambda _m: None)
     if not capstone_available():
         return MetadataResult(False, detail="缺少 capstone（pip install capstone 后重试）")
@@ -279,9 +204,7 @@ def decrypt_static(metadata_path: str, dll_path: str, on_log=None,
         detail=f"{why}；流水线 {result.get('elapsed_sec')}s",
         extras={"run_dir": result.get("run_dir"), "verdicts": result.get("verdicts")})
 
-
 def _read_head_tail(path: str, head: int = 1 << 20, tail: int = 8 << 20) -> bytes:
-    """读文件头 + 尾部（少量取样用，完整校验请用 ``_validate_file``）。"""
     with open(path, "rb") as fh:
         data = fh.read(head)
         try:
@@ -291,30 +214,13 @@ def _read_head_tail(path: str, head: int = 1 << 20, tail: int = 8 << 20) -> byte
             pass
     return data
 
-
 def _stamp() -> str:
     import time
     return time.strftime("%Y%m%d_%H%M%S")
 
-
-# --------------------------------------------------------------------------- 2) 运行时 dump
-
-
 def dump_from_memory(disk_metadata: str, process_name: str = "LimbusCompany.exe",
                      on_log=None, out_path: str = "",
                      reader: ProcessMemoryReader | None = None) -> MetadataResult:
-    """在运行中的游戏进程里把解密后的 metadata 整段 dump 出来。
-
-    算法（两条路，互相验证）：
-
-    A. 直接找标准魔数 ``AF 1B B1 FA``：先扫"尺寸 ≥ 32 MB 的私有区域"
-       （解密后的 metadata 缓冲就在这类区域里），找不到再全量扫。
-    B. 用磁盘文件的**明文尾部**做锚点（加密只覆盖前半段，尾部是明文）：
-       在内存里搜到这段字节后，按"锚点在文件里的偏移"反推头部地址，
-       再核对那里的魔数。
-
-    找到头部后，用头部里的节范围算出 metadata 长度，把那一段整块读出来。
-    """
     log = on_log or (lambda _m: None)
     owner = reader if reader is not None else ProcessMemoryReader(process_name)
     temp_attach = reader is None
@@ -326,7 +232,6 @@ def dump_from_memory(disk_metadata: str, process_name: str = "LimbusCompany.exe"
         log(f"[metadata] 已附加游戏进程 PID={owner.pid}"
             + (f"，GameAssembly.dll base=0x{module.base:012X}" if module else ""))
 
-        # ---- A. 直接搜魔数
         magic = struct.pack("<I", METADATA_MAGIC)
         candidates: list[tuple[str, int]] = []
         big = [(r.base, r.size) for r in owner.regions(include_images=False)
@@ -347,7 +252,6 @@ def dump_from_memory(disk_metadata: str, process_name: str = "LimbusCompany.exe"
             if candidates:
                 break
 
-        # ---- B. 磁盘明文尾部锚点
         if not candidates:
             try:
                 size = os.path.getsize(disk_metadata)
@@ -401,17 +305,14 @@ def dump_from_memory(disk_metadata: str, process_name: str = "LimbusCompany.exe"
         if temp_attach:
             owner.detach()
 
-
 def _read_large(reader: ProcessMemoryReader, address: int, size: int,
                 chunk: int = 8 << 20) -> bytes:
-    """分块读取大段内存（单块失败时降级为逐块 4KB，尽量拿到数据）。"""
     out = bytearray()
     offset = 0
     while offset < size:
         want = min(chunk, size - offset)
         data = reader.read(address + offset, want)
         if data is None:
-            # 逐页重试，失败页留 0（metadata 里 0 填充区本来就多）
             data = bytearray()
             page = 0x1000
             for page_off in range(0, want, page):
@@ -422,9 +323,7 @@ def _read_large(reader: ProcessMemoryReader, address: int, size: int,
         offset += want
     return bytes(out)
 
-
 def detect_runtime_version(process_name: str = "LimbusCompany.exe") -> int | None:
-    """游戏在跑时，直接读内存里解密后的 metadata 版本号（静态解密版本表兜底用）。"""
     reader = ProcessMemoryReader(process_name)
     if not reader.attach():
         return None
@@ -442,20 +341,11 @@ def detect_runtime_version(process_name: str = "LimbusCompany.exe") -> int | Non
         reader.detach()
     return None
 
-
-# --------------------------------------------------------------------------- 统一入口
-
-
 def obtain_metadata(metadata_path: str, gameassembly_path: str, on_log=None,
                     allow_static: bool = True, allow_memory: bool = True,
                     process_name: str = "LimbusCompany.exe",
                     dump_dir: str = "", version: int = DEFAULT_VERSION,
                     prefer_memory: bool | None = None) -> MetadataResult:
-    """按 disk → (memory | static) → … 顺序拿到可用的标准 metadata。
-
-    ``prefer_memory`` 为 None 时自动判断：游戏在跑就优先用内存 dump
-    （只读几 MB，几秒就完事），没跑才走静态解密（约 40 秒、吃 capstone）。
-    """
     log = on_log or (lambda _m: None)
     if is_standard_metadata(metadata_path):
         header = header_from_file(metadata_path)

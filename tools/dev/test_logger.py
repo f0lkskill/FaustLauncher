@@ -1,5 +1,4 @@
 # -*- coding: utf-8 -*-
-"""冒烟测试: logger 显式级别 + print 推断级别, 以及控制台/日志文件两条出口。"""
 import io
 import os
 import sys
@@ -8,7 +7,6 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
 from functions.base import console_log, logger, log_manager  # noqa: E402
-
 
 class Sink:
     def __init__(self):
@@ -35,11 +33,9 @@ class Sink:
     def errors(self):
         return "replace"
 
-
 def strip_ansi(text):
     import re
     return re.sub(r"\x1b\[[0-9;]*m", "", text)
-
 
 raw = Sink()
 old = sys.stdout

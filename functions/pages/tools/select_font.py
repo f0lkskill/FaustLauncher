@@ -9,77 +9,63 @@ from functions.base.custom_notebook import CustomNotebook
 
 class FontSelectorGUI:
     def __init__(self, window, root):
-        self.root = tk.Toplevel(root)  # 改为Toplevel而不是Tk
-        self.root.withdraw()  # 先隐藏窗口，防止闪烁
+        self.root = tk.Toplevel(root)
+        self.root.withdraw()
 
         self.root.title("字体替换工具")
         self.root.geometry("500x600")
         self.root.resizable(True, True)
-        self.parent = window  # 保存父窗口引用
-        self.root.configure(bg=self.parent.lighten_bg_color)  # 继承父窗口的背景颜色
+        self.parent = window
+        self.root.configure(bg=self.parent.lighten_bg_color)
 
         center_window(self.root)
 
-        # 设置应用程序图标
         try:
             if os.path.exists("assets/images/icon/icon.ico"):
                 self.root.iconbitmap("assets/images/icon/icon.ico")
         except:
             pass
         
-        # 字体路径
         self.context_font_path = "assets\\Font\\Context\\ChineseFont.ttf"
         self.title_font_path = "assets\\Font\\Title\\ChineseFont.ttf"
         
-        # 为每个选项卡创建独立的预览对象和图片引用列表
         self.context_preview_data = {
             'canvas': None,
-            'photo_refs': [],  # 改为列表存储多个图片引用
+            'photo_refs': [],
             'info_text': None
         }
         self.title_preview_data = {
             'canvas': None,
-            'photo_refs': [],  # 改为列表存储多个图片引用
+            'photo_refs': [],
             'info_text': None
         }
         
-        # 创建界面
         self.create_widgets()
         
-        # 绑定窗口关闭事件
         self.root.protocol("WM_DELETE_WINDOW", self.on_close)
         
     def on_close(self):
-        """窗口关闭时的清理操作"""
-        # 清理图片引用
         for preview_data in [self.context_preview_data, self.title_preview_data]:
             preview_data['photo_refs'] = []
         self.root.destroy()
 
     def create_widgets(self):
-        """创建界面组件"""
         
-        # 主内容区域
         main_frame = tk.Frame(self.root, bg=self.parent.bg_color)
         main_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=10)
         
-        # 创建选项卡
         notebook = CustomNotebook(main_frame, bg=self.parent.bg_color, accent=C.ACCENT)
         notebook.pack(fill=tk.BOTH, expand=True)
         
-        # Context字体选项卡
         context_frame = tk.Frame(notebook, bg=self.parent.bg_color)
         notebook.add(context_frame, text="Context 字体")
         self.create_font_tab(context_frame, "Context", self.context_font_path, self.context_preview_data)
         
-        # Title字体选项卡
         title_frame = tk.Frame(notebook, bg=self.parent.bg_color)
         notebook.add(title_frame, text="Title 字体")
         self.create_font_tab(title_frame, "Title", self.title_font_path, self.title_preview_data)
         
     def create_font_tab(self, parent, font_type, font_path, preview_data):
-        """创建字体选项卡"""
-        # 当前字体信息区域
         info_frame = tk.Frame(parent, bg=self.parent.bg_color)
         info_frame.pack(fill=tk.X, padx=10, pady=(10, 5))
         
@@ -88,7 +74,6 @@ class FontSelectorGUI:
                               bg=self.parent.bg_color, fg=C.TEXT_PRIMARY, anchor=tk.W)
         info_label.pack(fill=tk.X)
         
-        # 为每个选项卡创建独立的信息文本框
         info_text = tk.Text(info_frame, height=3, width=60,
                            font=('Microsoft YaHei UI', 9),
                            bg=self.parent.lighten_bg_color, fg='#ecf0f1',
@@ -98,7 +83,6 @@ class FontSelectorGUI:
         info_text.config(state=tk.DISABLED)
         preview_data['info_text'] = info_text
         
-        # 预览区域
         preview_frame = tk.Frame(parent, bg=self.parent.bg_color)
         preview_frame.pack(fill=tk.BOTH, expand=True, padx=2, pady=2)
         
@@ -107,7 +91,6 @@ class FontSelectorGUI:
                                bg=self.parent.lighten_bg_color, fg=C.TEXT_PRIMARY, anchor=tk.W)
         preview_label.pack(fill=tk.X)
         
-        # 为每个选项卡创建独立的预览画布
         canvas_frame = tk.Frame(preview_frame, bg=self.parent.lighten_bg_color, relief=tk.RAISED, borderwidth=1)
         canvas_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 0))
         
@@ -116,11 +99,9 @@ class FontSelectorGUI:
         preview_canvas.pack(fill=tk.BOTH, expand=True, padx=1, pady=1)
         preview_data['canvas'] = preview_canvas
         
-        # 按钮区域
         button_frame = tk.Frame(parent, bg=self.parent.bg_color)
         button_frame.pack(fill=tk.X, padx=10, pady=10)
         
-        # 创建按钮
         self.create_button(button_frame, "选择字体文件", 
                           lambda: self.select_font_file(font_type, font_path, preview_data),
                           side=tk.LEFT, padx=(0, 8))
@@ -129,11 +110,9 @@ class FontSelectorGUI:
                           lambda: self.delete_font(font_type, font_path, preview_data),
                           side=tk.LEFT)
         
-        # 初始化字体信息
         self.update_font_info(font_type, font_path, preview_data)
     
     def create_button(self, parent, text, command, **pack_args):
-        """创建样式统一的按钮"""
         btn = tk.Button(parent, text=text, command=command,
                        font=('Microsoft YaHei UI', 10),
                         bg=C.LEGACY_BLUE, fg=C.TEXT_WHITE,
@@ -143,7 +122,6 @@ class FontSelectorGUI:
                        padx=15, pady=8)
         btn.pack(**pack_args)
         
-        # 添加悬停效果
         def on_enter(e):
             btn.config(bg=C.LEGACY_BLUE_HOVER)
         def on_leave(e):
@@ -155,16 +133,14 @@ class FontSelectorGUI:
         return btn
     
     def update_font_info(self, font_type, font_path, preview_data):
-        """更新字体信息显示"""
         info_text = preview_data['info_text']
         info_text.config(state=tk.NORMAL)
         info_text.delete(1.0, tk.END)
         
         if os.path.exists(font_path):
             try:
-                # 测试字体文件
                 font = ImageFont.truetype(font_path, 16)
-                file_size = os.path.getsize(font_path) / 1024  # KB
+                file_size = os.path.getsize(font_path) / 1024
                 file_mtime = os.path.getmtime(font_path)
                 from datetime import datetime
                 mtime_str = datetime.fromtimestamp(file_mtime).strftime('%Y-%m-%d %H:%M:%S')
@@ -192,18 +168,14 @@ class FontSelectorGUI:
         info_text.config(state=tk.DISABLED)
     
     def update_preview(self, font_path, font_type, preview_data):
-        """更新字体预览"""
         try:
-            # 创建更大的预览图像
             img = Image.new('RGB', (600, 450), color=self.parent.lighten_bg_color)
             draw = ImageDraw.Draw(img)
             
-            # 加载字体 - 使用更大的字号
             font_large = ImageFont.truetype(font_path, 32)
             font_medium = ImageFont.truetype(font_path, 20)
             font_small = ImageFont.truetype(font_path, 16)
             
-            # 绘制预览文本 - 更好的布局
             draw.text((20, 15), f"{font_type} 字体预览", font=font_large, fill=C.TEXT_PRIMARY)
             draw.text((20, 60), "中文预览：你好，世界！这是一段测试文本", font=font_medium, fill=C.TEXT_SECONDARY)
             draw.text((20, 88), "English: Hello World! This is a test text", font=font_medium, fill=C.TEXT_SECONDARY)
@@ -214,35 +186,28 @@ class FontSelectorGUI:
             draw.text((20, 220), "emoji字符：😊 😂 😃 😄 �️ 😁 😍 😎 😐 😞 😯 😭 😢 😄 😅 😃 😄 😅 😃 😄 😅 😃 😄 😅 😃 😄 😅 😃 😄 😅 😃 😄 😅 😃 😅 😃 😄 😅 😃 �", font=font_small, fill=C.TEXT_MUTED)
             draw.text((20, 244), "字体路径：" + os.path.basename(font_path), font=font_small, fill='#7f8c8d')
             
-            # 显示图像到对应的画布
             photo = ImageTk.PhotoImage(img)
             preview_canvas = preview_data['canvas']
             preview_canvas.delete("all")
             preview_canvas.create_image(0, 0, anchor=tk.NW, image=photo)
             
-            # 保存引用防止垃圾回收 - 使用列表存储
             preview_data['photo_refs'].append(photo)
             
         except Exception as e:
             self.show_error_preview(font_type, preview_data, str(e))
     
     def show_error_preview(self, font_type, preview_data, error_msg=None):
-        """显示错误预览"""
         img = Image.new('RGB', (600, 250), color=self.parent.lighten_bg_color)
         draw = ImageDraw.Draw(img)
         
-        # 使用系统默认字体
         try:
-            # 尝试使用系统字体
             font_large = ImageFont.truetype("ChineseFont.ttf", 24)
         except:
             try:
                 font_large = ImageFont.load_default()
             except:
-                # 如果都失败，使用默认字体
                 font_large = None
         
-        # 绘制错误信息
         if font_large:
             draw.text((20, 30), f"{font_type} 字体", font=font_large, fill=C.DANGER)
             draw.text((20, 70), "字体不存在或已损坏", font=font_large, fill=C.DANGER)
@@ -254,7 +219,6 @@ class FontSelectorGUI:
             
             draw.text((20, 150), "支持的格式: .ttf 字体文件", font=font_large, fill='#7f8c8d')
         else:
-            # 如果没有字体，直接绘制文本
             draw.text((20, 30), f"{font_type} 字体", fill=C.DANGER)
             draw.text((20, 70), "字体不存在或已损坏", fill=C.DANGER)
             if error_msg:
@@ -263,17 +227,14 @@ class FontSelectorGUI:
                 draw.text((20, 110), "请选择有效的字体文件进行替换", fill=C.TEXT_MUTED)
             draw.text((20, 150), "支持的格式: .ttf 字体文件", fill='#7f8c8d')
         
-        # 显示图像到对应的画布
         photo = ImageTk.PhotoImage(img)
         preview_canvas = preview_data['canvas']
         preview_canvas.delete("all")
         preview_canvas.create_image(0, 0, anchor=tk.NW, image=photo)
         
-        # 保存引用防止垃圾回收 - 使用列表存储
         preview_data['photo_refs'].append(photo)
     
     def select_font_file(self, font_type, target_path, preview_data):
-        """选择字体文件"""
         file_path = filedialog.askopenfilename(
             title=f"选择{font_type}字体文件",
             filetypes=[("TrueType字体文件", "*.ttf"), ("OpenType字体文件", "*.otf"), ("所有文件", "*.*")]
@@ -281,20 +242,15 @@ class FontSelectorGUI:
         
         if file_path:
             try:
-                # 验证是否为有效的字体文件
                 test_font = ImageFont.truetype(file_path, 16)
                 
-                # 确保目标目录存在
                 os.makedirs(os.path.dirname(target_path), exist_ok=True)
                 
-                # 删除原字体文件（如果存在）
                 if os.path.exists(target_path):
                     os.remove(target_path)
                 
-                # 复制新字体文件并重命名
                 shutil.copy2(file_path, target_path)
                 
-                # 更新显示
                 self.update_font_info(font_type, target_path, preview_data)
                 messagebox.showinfo("成功", 
                                   f"{font_type}字体已成功替换！")
@@ -305,7 +261,6 @@ class FontSelectorGUI:
                                    f"请确保选择的是有效的TrueType字体文件(.ttf)")
     
     def delete_font(self, font_type, target_path, preview_data):
-        """删除当前字体文件 (恢复为游戏默认字体)"""
         if not os.path.exists(target_path):
             messagebox.showinfo("提示", f"当前没有已替换的{font_type}字体文件，无需删除")
             return
@@ -322,18 +277,14 @@ class FontSelectorGUI:
             messagebox.showerror("错误", f"删除字体失败:\n{str(e)}")
     
     def run(self):
-        """运行GUI"""
-        # 居中显示窗口
         self.root.update_idletasks()
         x = (self.root.winfo_screenwidth() // 2) - (self.root.winfo_width() // 2)
         y = (self.root.winfo_screenheight() // 2) - (self.root.winfo_height() // 2)
         self.root.geometry(f"+{x}+{y}")
         
-        # 等待窗口关闭
         self.root.wait_window()
 
 def select_font_gui(root):
-    """主函数"""
     try:
         app = FontSelectorGUI(root, root.root)
         app.run()

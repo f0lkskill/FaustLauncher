@@ -1,9 +1,7 @@
 import os
 import sys
 
-# 项目根目录 (字体包解压目标: 7z 内部结构为 assets/Font/..., 需解压到项目根使其落入 assets/Font)
 if getattr(sys, 'frozen', False):
-    # 打包后 __file__ 位于 _internal/, 项目根应为 exe 所在目录 (assets/ 在 exe 同目录)
     _PROJECT_ROOT = os.path.dirname(os.path.abspath(sys.executable))
 else:
     _PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
@@ -17,13 +15,10 @@ from functions.web_update.download_utils import check_need_up_translate
 from functions.base.settings_manager import get_settings_manager
 from functions.base.web_config import get_webnote
 
-# 7-Zip可执行文件路径
 SEVEN_ZIP_PATH = r"resources\7-zip\7z.exe"
 settings_manager = get_settings_manager()
 
-
 def get_github_release_url() -> tuple[str, str] | None:
-    """从GitHub Release获取7z文件下载链接"""
     try:
         fetcher = GitHubReleaseFetcher(
             repo_owner="LocalizeLimbusCompany",
@@ -36,7 +31,6 @@ def get_github_release_url() -> tuple[str, str] | None:
         if not latest_release:
             return None, None # type: ignore
             
-        # 查找7z文件
         windows_assets = latest_release.get_assets_by_extension(".7z")
         for asset in windows_assets:
             if "LimbusLocalize" in asset.name:
@@ -47,21 +41,14 @@ def get_github_release_url() -> tuple[str, str] | None:
         print(f"获取GitHub Release失败: {e}")
         return None, None # type: ignore
 
-
 def _invalidate_direct_link(source_url):
-    """直链失效时丢掉解析缓存 (下次重新解析); 解析缓存默认永久, 靠这个自愈"""
     try:
         from functions.web_update.lanzou_utils import InvalidateDirectLink
         InvalidateDirectLink(source_url)
     except Exception:
         pass
 
-
 def _open_stream(url, source_url, **kwargs):
-    """按 url 取响应流; 蓝奏云直链失效(4xx/5xx)时丢缓存重解析一次
-
-    :param source_url: 调用方给的原始链接 (失效时用来清缓存); 与 url 相同表示非蓝奏云
-    """
     try:
         resp = requests.get(url, **kwargs)
         resp.raise_for_status()
@@ -78,9 +65,7 @@ def _open_stream(url, source_url, **kwargs):
         resp.raise_for_status()
         return resp
 
-
 def _status_reporter(gui, label=''):
-    """下载流程的状态回调: 有 GUI 就同步到界面, 同时 print"""
     prefix = f"{label}: " if label else ""
 
     def _status(text):
@@ -92,12 +77,8 @@ def _status_reporter(gui, label=''):
         print(f"[Download] {prefix}{text}")
     return _status
 
-
-# 原链接连续失败多少次后才尝试"破解"蓝奏云直链 (用户要求: 默认原链接, 失败两次再解析)
 RAW_LINK_ATTEMPTS = 2
-# 原链接重试间隔 (秒): 原链接本来就快, 失败通常是瞬时的, 不像解析那样需要等 8 秒
 RAW_LINK_RETRY_WAIT = 3.0
-
 
 def _close_quietly(resp):
     try:
@@ -106,22 +87,7 @@ def _close_quietly(resp):
     except Exception:
         pass
 
-
 def open_download_source(url, gui=None, label='', **kwargs):
-    """取下载流: **默认直接用原链接**, 连续失败两次才尝试本地解析蓝奏云直链
-
-    云端条目里的下载链接本身就是可下载地址 (lz0/lz.qaiu.top 的
-    /parser?url=<分享链接> 会 302 到真文件), 正常情况根本不需要"破解"蓝奏云直链。
-    原先"默认先解析"的写法有两个代价: 每次下载白等 10~20 秒; 解析失败时把
-    "蓝奏云直链解析失败"刷进日志, 而前端流水线把带"失败"字样的日志当致命错误,
-    会把流水线 UI 打回未启动状态。
-
-    所以顺序反过来: 原链接先试 RAW_LINK_ATTEMPTS 次, 都不成 (或被判定成
-    JSON/HTML 错误页) 才退回本地直链解析 (自带 WAF 挑战求解)。
-    非蓝奏云链接 (GitHub / ghproxy 等) 解析步骤原样返回, 等于直连, 与历史行为一致。
-
-    :return: (response, 原始链接)
-    """
     if not url:
         raise ValueError('下载链接为空')
 
@@ -129,7 +95,6 @@ def open_download_source(url, gui=None, label='', **kwargs):
 
     status = _status_reporter(gui, label)
 
-    # ① 默认原链接: 连试 RAW_LINK_ATTEMPTS 次, 任一次拿到文件本体就直接返回
     resp = None
     for attempt in range(1, RAW_LINK_ATTEMPTS + 1):
         try:
@@ -147,7 +112,6 @@ def open_download_source(url, gui=None, label='', **kwargs):
             status(f'原链接失败，{RAW_LINK_RETRY_WAIT:.0f} 秒后重试（{attempt}/{RAW_LINK_ATTEMPTS}）')
             time.sleep(RAW_LINK_RETRY_WAIT)
 
-    # ② 原链接连续失败两次, 才尝试自动解析蓝奏云直链 (直链失效由 _open_stream 丢缓存重解析一次)
     status('原链接连续失败，尝试自动解析蓝奏云直链...')
     resolved = resolve_download_url(url, gui=gui, label=label)
     if resolved and resolved != url:
@@ -156,22 +120,11 @@ def open_download_source(url, gui=None, label='', **kwargs):
         except requests.exceptions.RequestException as e:
             status(f'直链下载失败({type(e).__name__})，改用原链接')
 
-    # ③ 直链也拿不到: 把最后一次原链接的结果原样交给调用方 (由它按状态码报错)
     if resp is None:
         resp = requests.get(url, **kwargs)
     return resp, url
 
-
-# 下载前置处理: 先本地直链解析, 解析不出/失效再用原链接
 def resolve_download_url(url, gui=None, label=''):
-    """把蓝奏云分享/解析链接在本地解析成直链 (解析失败退回原链接)
-
-    下载入口 (open_download_source) 与图标入口 (GetWithDirectLink) 都先走这里:
-    云端数据库里的 dowload_url / icon_url 与字体包链接都是蓝奏云分享链接 (新条目写
-    lz0.qaiu.top 这类修复版解析服务, 老条目写已失效的 lz.qaiu.top), 这里用自带实现
-    本地解析成直链再下载, 不依赖第三方解析服务; 解析不出来就返回原链接
-    (lz0 这类链接本身可下载), 非蓝奏云链接原样返回, 永不抛异常。
-    """
     if not url:
         return url
     try:
@@ -181,7 +134,6 @@ def resolve_download_url(url, gui=None, label=''):
 
         _status = _status_reporter(gui, label)
 
-        # 用户主动点的下载值得等一会儿 (蓝奏云接口偶发限流/超时)
         resolved = ResolveDownloadUrl(url, log=_status, retries=2)
         print(f"[Download] 直链解析 {label or ''}: {url[:90]} -> {resolved[:90]}")
         return resolved
@@ -189,24 +141,17 @@ def resolve_download_url(url, gui=None, label=''):
         print(f"[Download] 直链解析失败，使用原始链接: {e}")
         return url
 
-
-# 保留原有的函数（用于命令行模式）
 def download_file(url, local_filename):
-    """下载文件并显示进度"""
     try:
-        # 先直连原链接, 不可直接下载时才解析成直链 (失效会自动重新解析一次)
         response, _source = open_download_source(
             url, label=os.path.basename(local_filename), stream=True)
         response.raise_for_status()
         
-        # 获取文件大小
         total_size = int(response.headers.get('content-length', 0))
         block_size = 8192
         
-        # 创建目录
         os.makedirs(os.path.dirname(local_filename), exist_ok=True)
         
-        # 下载文件
         with open(local_filename, 'wb') as f:
             downloaded_size = 0
             for chunk in response.iter_content(chunk_size=block_size):
@@ -214,7 +159,6 @@ def download_file(url, local_filename):
                     f.write(chunk)
                     downloaded_size += len(chunk)
                     
-                    # 显示下载进度
                     if total_size > 0:
                         percent = (downloaded_size / total_size) * 100
                         print(f"\r下载进度: {percent:.1f}% ({downloaded_size}/{total_size} bytes)", end='')
@@ -230,34 +174,27 @@ def download_file(url, local_filename):
         return False
 
 def extract_with_7zip(archive_path, extract_path):
-    """使用系统7zip解压（直接使用本地7z.exe）"""
     try:
-        # 检查7z.exe是否存在
         if not os.path.exists(SEVEN_ZIP_PATH):
             print(f"错误: 7-Zip可执行文件不存在: {SEVEN_ZIP_PATH}")
             return False
         
         print(f"使用本地7-Zip解压: {SEVEN_ZIP_PATH}")
         
-        # 确保目标目录存在
         os.makedirs(extract_path, exist_ok=True)
         
-        # 检查文件大小，确保下载完整
         file_size = os.path.getsize(archive_path)
-        if file_size < 1000:  # 如果文件太小，可能下载不完整
+        if file_size < 1000:
             print(f"警告: 压缩文件可能不完整，大小: {file_size} bytes")
             return False
         
-        # 使用7z.exe解压
-        # 注意: 7z 在中文系统上输出 GBK 文本, 不能用 utf-8 硬解码(会导致
-        # UnicodeDecodeError); 使用系统默认编码 + errors='replace' 兜底。
         result = subprocess.run([
             SEVEN_ZIP_PATH, 
-            'x',           # 解压命令
-            archive_path,   # 压缩文件路径
-            f'-o{extract_path}',  # 输出目录
-            '-y',          # 确认所有操作
-            '-r'           # 递归处理子目录
+            'x',
+            archive_path,
+            f'-o{extract_path}',
+            '-y',
+            '-r'
         ], capture_output=True, text=True, errors='replace', creationflags=subprocess.CREATE_NO_WINDOW)
         
         if result.returncode == 0:
@@ -273,12 +210,10 @@ def extract_with_7zip(archive_path, extract_path):
         return False
 
 def extract_with_zipfile_backup(archive_path, extract_path):
-    """备用方案：使用Python内置zipfile"""
     import zipfile
     try:
         print("尝试使用zipfile作为备用方案...")
         
-        # 检查是否为zip格式
         with zipfile.ZipFile(archive_path, 'r') as zip_ref:
             zip_ref.extractall(extract_path)
         print("zipfile解压成功!")
@@ -290,25 +225,19 @@ def extract_with_zipfile_backup(archive_path, extract_path):
         print(f"zipfile解压失败: {e}")
         return False
 def extract_7z_file(archive_path, extract_path):
-    """解压7z文件（主函数）"""
     print(f"开始解压文件到: {extract_path}")
     
-    # 检查文件是否存在
     if not os.path.exists(archive_path):
         print(f"错误: 压缩文件不存在: {archive_path}")
         return False
     
-    # 优先使用本地7-Zip
     if extract_with_7zip(archive_path, extract_path):
         return True
     
-    # 如果7-Zip失败，尝试使用zipfile作为备用方案
     print("7-Zip解压失败，尝试使用zipfile备用方案...")
     return extract_with_zipfile_backup(archive_path, extract_path)
 
-
 def _install_fonts(archive_path):
-    """下载的字体包解压并安装到 assets/Font (兼容 7z 内部结构为 Font/ 或 assets/Font/)"""
     import shutil
     import tempfile
     tmp = tempfile.mkdtemp(prefix='faust_font_')
@@ -345,15 +274,12 @@ def _install_fonts(archive_path):
         shutil.rmtree(tmp, ignore_errors=True)
 
 def create_config_file(game_path):
-    """创建配置文件"""
     try:
         config_path = os.path.join(game_path, 'LimbusCompany_Data', 'Lang', 'config.json')
         config_dir = os.path.dirname(config_path)
 
-        # 确保目录存在
         os.makedirs(config_dir, exist_ok=True)
 
-        # 创建配置文件 (lang 目录名跟随当前汉化包平台方)
         from functions.web_update.translation_source import get_translation_dir_name
         config_content = f"""{{
     "lang": "{get_translation_dir_name()}",
@@ -374,7 +300,6 @@ def create_config_file(game_path):
         return False
 
 def cleanup_temp_files(temp_path):
-    """清理临时文件"""
     try:
         if os.path.exists(temp_path):
             os.remove(temp_path)
@@ -383,14 +308,12 @@ def cleanup_temp_files(temp_path):
         print(f"清理临时文件失败: {e}")
 
 def verify_download(file_path):
-    """验证下载的文件是否完整"""
     try:
         file_size = os.path.getsize(file_path)
         if file_size < 1000:
             print(f"错误: 下载的文件太小，可能不完整: {file_size} bytes")
             return False
         
-        # 检查文件是否可以正常打开（基本验证）
         with open(file_path, 'rb') as f:
             header = f.read(10)
             if len(header) < 10:
@@ -404,40 +327,31 @@ def verify_download(file_path):
         return False
     
 def download_file_with_gui(url, local_filename, gui, file_name):
-    """带GUI进度显示的下载文件函数"""
     try:
-        # 更新GUI状态
-        # 更新GUI状态: 先直连原链接, 不可直接下载时才解析成直链
         response, source_url = open_download_source(url, gui=gui, label=file_name,
                                                     stream=True, verify=False)
         gui.current_file_var.set(f"{file_name}")
         
         response.raise_for_status()
         
-        # 获取文件大小
         total_size = int(response.headers.get('content-length', 0))
         if total_size == 0:
-            # 如果无法获取文件大小，使用默认值
-            total_size = 10 * 1024 * 1024  # 10MB作为默认值
+            total_size = 10 * 1024 * 1024
         
         block_size = 8192
         
-        # 创建目录
         os.makedirs(os.path.dirname(local_filename), exist_ok=True)
         
-        # 开始时间
         start_time = time.time()
         downloaded_size = 0
         last_update_time = start_time
         last_downloaded_size = 0
         
-        # 平滑进度条相关变量
-        current_animated_percent = 0.0  # 当前动画显示的百分比
-        target_percent = 0.0  # 目标百分比
-        animation_speed = 0.15  # 动画速度系数，值越小越平滑
+        current_animated_percent = 0.0
+        target_percent = 0.0
+        animation_speed = 0.15
         last_animation_time = start_time
         
-        # 下载文件
         with open(local_filename, 'wb') as f:
             for chunk in response.iter_content(chunk_size=block_size):
                 if not gui.is_downloading:
@@ -448,48 +362,39 @@ def download_file_with_gui(url, local_filename, gui, file_name):
                     f.write(chunk)
                     downloaded_size += len(chunk)
                     
-                    # 计算实时下载速度（每秒更新）
                     current_time = time.time()
 
                     elapsed_time = current_time - last_update_time
                     downloaded_since_last = downloaded_size - last_downloaded_size
                     
-                    speed = downloaded_since_last / elapsed_time / 1024  # KB/s
+                    speed = downloaded_since_last / elapsed_time / 1024
                     
-                    # 计算目标百分比
                     target_percent = (downloaded_size / total_size) * 100
                         
-                    # 平滑渐变效果：持续向目标百分比移动
                     animation_elapsed = current_time - last_animation_time
-                    if animation_elapsed > 0.1:  # 每0.1秒更新一次动画
+                    if animation_elapsed > 0.1:
                         if current_animated_percent < target_percent:
-                            # 使用缓动函数实现平滑过渡
                             progress_diff = target_percent - current_animated_percent
                             current_animated_percent += progress_diff * animation_speed
                             
-                            # 确保不超过目标值
                             if current_animated_percent > target_percent:
                                 current_animated_percent = target_percent
                         
-                        # 显示下载进度（使用平滑后的百分比）
                         gui.update_progress(current_animated_percent, downloaded_size, total_size, speed)
                         last_animation_time = current_time
                     
                     last_update_time = current_time
                     last_downloaded_size = downloaded_size
         
-        # 下载完成后，平滑过渡到100%并停止震动
         final_animation_start = time.time()
         while current_animated_percent < 99.9:
             current_time = time.time()
             animation_elapsed = current_time - final_animation_start
             
-            # 平滑过渡到100%
             if current_animated_percent < target_percent:
                 progress_diff = target_percent - current_animated_percent
-                current_animated_percent += progress_diff * animation_speed * 2  # 加速完成
+                current_animated_percent += progress_diff * animation_speed * 2
             else:
-                # 如果已经达到目标值，继续平滑到100%
                 progress_diff = 100 - current_animated_percent
                 current_animated_percent += progress_diff * animation_speed * 1.5
             
@@ -497,10 +402,9 @@ def download_file_with_gui(url, local_filename, gui, file_name):
                 current_animated_percent = 100
             
             gui.update_progress(current_animated_percent, downloaded_size, total_size, 0)
-            time.sleep(0.01)  # 短暂延迟让动画更平滑
+            time.sleep(0.01)
             
-            # 防止无限循环
-            if animation_elapsed > 2.0:  # 最多2秒完成动画
+            if animation_elapsed > 2.0:
                 current_animated_percent = 100
                 break
         
@@ -508,20 +412,16 @@ def download_file_with_gui(url, local_filename, gui, file_name):
         
     except requests.exceptions.RequestException as e:
         gui.current_file_var.set(f"❌ 下载失败: {e}")
-        # print(e)
         return False
     except Exception as e:
         gui.current_file_var.set(f"❌ 下载过程中出现错误: {e}")
-        # print(e)
 
 def _fetch_download_path(note_name: str, pwd: str, get_path) -> tuple[str, str] | None:
-    """从云端笔记获取汉化包下载地址"""
     from webFunc import Note
     from json import loads
     note = Note("translation", note_name, pwd)
     note.fetch_note_info()
 
-    # print("获取到笔记内容:", note.note_content)
     note = loads(note.note_content)
     path = get_path(note)
     version = note['llc_version']
@@ -548,7 +448,6 @@ def get_download_path_ByLanzouyun() -> tuple[str, str] | None:
                                 lambda n: n['lanzou_download_url']['seven'])
 
 def _find_refer_root() -> str:
-    """为神人版查找基板包 (参考包): 优先游戏目录已有汉化, 其次 lang/ 下已有汉化"""
     from functions.web_update.translation_source import (
         get_translation_dir_name, get_translation_dir,
     )
@@ -559,7 +458,6 @@ def _find_refer_root() -> str:
         candidate = os.path.join(game_path, 'LimbusCompany_Data', 'Lang', get_translation_dir_name())
         if os.path.isdir(candidate):
             return candidate
-        # 游戏目录兜底: 任意标准结构汉化 (用户手动装的零协常在 LLC_zh-CN)
         for d in ("LLC_zh-CN", "OurPlayHanHua"):
             p = os.path.join(game_path, 'LimbusCompany_Data', 'Lang', d)
             if os.path.isdir(p):
@@ -567,20 +465,13 @@ def _find_refer_root() -> str:
     candidate = os.path.abspath(get_translation_dir())
     if os.path.isdir(candidate):
         return candidate
-    # 兜底: 任意标准结构汉化包 (零协包最通用), 与当前平台目录名无关
     for d in ("LLC_zh-CN", "OurPlayHanHua"):
         p = os.path.abspath(os.path.join("lang", d))
         if os.path.isdir(p):
             return p
     return ""
 
-
 def _ensure_refer_root(gui) -> str:
-    """确保存在参考包 (标准结构汉化包, 用于 transfile 哈希文件重命名)
-
-    无参考包时自动下载零协会汉化包作为参考 (用户无感), 成功返回参考包目录,
-    失败返回空串。
-    """
     refer = _find_refer_root()
     if refer:
         return refer
@@ -617,7 +508,6 @@ def _ensure_refer_root(gui) -> str:
         if not extract_7z_file(temp_file, 'lang'):
             return ""
 
-        # 解压产物: lang/LimbusCompany_Data/Lang/LLC_zh-CN -> lang/LLC_zh-CN
         src = os.path.join('lang', 'LimbusCompany_Data', 'Lang', 'LLC_zh-CN')
         target = os.path.abspath(os.path.join('lang', 'LLC_zh-CN'))
         if not os.path.isdir(src):
@@ -628,7 +518,6 @@ def _ensure_refer_root(gui) -> str:
             import shutil as _sh
             _sh.rmtree(target, ignore_errors=True)
         safe_merge_dirs(src, target)
-        # 清理解压中间产物
         leftover = os.path.join('lang', 'LimbusCompany_Data')
         if os.path.exists(leftover):
             import shutil as _sh2
@@ -642,12 +531,9 @@ def _ensure_refer_root(gui) -> str:
         if temp_file and os.path.exists(temp_file):
             cleanup_temp_files(temp_file)
 
-
 def _install_ourplay(gui, temp_file, game_path, version, is_god):
-    """下载并安装 OurPlay 汉化包 (结构处理 + 落到 lang/<平台目录名>), 成功返回 True"""
     import json
     from functions.web_update.ourplay_download import prepare_ourplay_dir
-    # OurPlay 是内置平台: 落地目录用内置目录名 (lang/OurPlayHanHua), 不受插件自定义源影响
     from functions.web_update.translation_source import get_builtin_translation_dir
     from functions.base.game_launcher import safe_merge_dirs
     import shutil as _shutil
@@ -656,8 +542,6 @@ def _install_ourplay(gui, temp_file, game_path, version, is_god):
     ourplay_root = ""
     temp_extract = ""
     try:
-        # OurPlay 两版本 (普通/神人) 均为 transfile 结构, 都需要参考包转换;
-        # 参考包缺失时自动下载零协会汉化包作为参考
         refer_root = _ensure_refer_root(gui)
         if not refer_root:
             gui.current_file_var.set("❌ 汉化包处理失败: 参考包获取失败, 无法重命名哈希文件")
@@ -676,7 +560,6 @@ def _install_ourplay(gui, temp_file, game_path, version, is_god):
             _shutil.rmtree(target, ignore_errors=True)
         os.makedirs(target, exist_ok=True)
         safe_merge_dirs(ourplay_root, target)
-        # 防御: 清理 Font 目录下的字体文件 (OurPlay 包不带字体, 不应混入其他汉化组字体)
         removed_fonts = 0
         for font_dir in ("Font", "Font/Context", "Font/Title"):
             font_path = os.path.join(target, font_dir)
@@ -706,21 +589,17 @@ def _install_ourplay(gui, temp_file, game_path, version, is_god):
         if temp_extract:
             _shutil.rmtree(temp_extract, ignore_errors=True)
 
-
 def download_and_extract_gui(gui:DownloadGUI, config_path: str = "", download_files = None, auto_close:bool = True) -> bool:
-    """带GUI的下载和解压主函数 (按汉化包平台方分支)"""
     from functions.web_update.translation_source import (
         get_translate_source, is_ourplay_source, is_god_source,
         check_need_up_translate as need_up,
     )
-    # 加载配置
     game_path = config_path
     
     if not game_path:
         gui.current_file_var.set("❌ 错误: 未配置游戏路径")
         return False
     
-    # 检查路径是否存在
     if not os.path.exists(game_path):
         gui.current_file_var.set(f"❌ 错误: 路径不存在: {game_path}")
         return False
@@ -729,25 +608,22 @@ def download_and_extract_gui(gui:DownloadGUI, config_path: str = "", download_fi
     is_ourplay = is_ourplay_source()
     is_god = is_god_source()
 
-    # 获取下载链接
     gui.current_file_var.set("正在链接浮务器...")
     download_url = ""
     timeout_counter = 0
     need_update_translate = True
     is_custom = False
 
-    # 定义要下载的文件列表
     if download_files:
         is_custom = True
     elif is_ourplay:
         download_files = [
             {
                 'name': 'OurPlay 汉化包',
-                'url': '',  # URL将在后续代码中动态设置
+                'url': '',
                 'temp_filename': 'ourplay_translation.zip'
             },
             {
-                # OurPlay 汉化包本身不带字体 (转换时跳过 Font), 需同零协会一样单独下载字体
                 'name': 'TTF 字体文件',
                 'url': 'https://lz.qaiu.top/parser?url=https://folkskill.lanzouc.com/irAGt3iha71c',
                 'temp_filename': 'LLCCN-Font.7z'
@@ -757,7 +633,7 @@ def download_and_extract_gui(gui:DownloadGUI, config_path: str = "", download_fi
         download_files = [
             {
                 'name': '零协会汉化包',
-                'url': '',  # URL将在后续代码中动态设置
+                'url': '',
                 'temp_filename': 'LimbusLocalize_latest.7z'
             },
             {
@@ -767,7 +643,6 @@ def download_and_extract_gui(gui:DownloadGUI, config_path: str = "", download_fi
             }
         ]
     
-    # 临时文件路径
     temp_dir = 'lang/'
     os.makedirs(temp_dir, exist_ok=True)
     
@@ -778,7 +653,6 @@ def download_and_extract_gui(gui:DownloadGUI, config_path: str = "", download_fi
         if not gui.is_downloading:
             break
 
-        # 检查字体文件是否已存在 (OurPlay 与零协会共用同一套中文字体, 已下载则跳过)
         if os.path.exists("assets/Font/Context/ChineseFont.ttf") and \
            file_info['name'] == 'TTF 字体文件':
             print("字体文件已存在, 无需下载.")
@@ -786,7 +660,6 @@ def download_and_extract_gui(gui:DownloadGUI, config_path: str = "", download_fi
             continue
 
         if is_ourplay:
-            # ── OurPlay 平台 ──────────────────────────────
             if file_info['name'] == 'OurPlay 汉化包':
                 try:
                     from functions.web_update.ourplay_download import get_ourplay_download_info
@@ -822,12 +695,10 @@ def download_and_extract_gui(gui:DownloadGUI, config_path: str = "", download_fi
                     if _install_ourplay(gui, temp_file, game_path, version, is_god):
                         success_count += 1
                 elif file_info['name'] == 'TTF 字体文件':
-                    # 字体包安装到 assets/Font (解压到临时目录后合并, 供启动时转移)
                     if not _install_fonts(temp_file):
                         continue
                     success_count += 1
                 else:
-                    # 自定义资源 (资源更新流 mod_loader/siner_skill_info 等), 直接解压
                     if not extract_7z_file(temp_file, game_path):
                         continue
                     success_count += 1
@@ -836,7 +707,6 @@ def download_and_extract_gui(gui:DownloadGUI, config_path: str = "", download_fi
             finally:
                 cleanup_temp_files(temp_file)
         else:
-            # ── 零协会平台 (原有逻辑) ─────────────────────
             if file_info['name'] == '零协会汉化包':
 
                 if download_way == 2:
@@ -896,17 +766,13 @@ def download_and_extract_gui(gui:DownloadGUI, config_path: str = "", download_fi
             temp_file = os.path.join(temp_dir, file_info['temp_filename'])
             
             try:
-                # 下载文件
                 if not download_file_with_gui(file_info['url'], temp_file, gui, file_info['name']):
                     continue
                 
-                # 验证下载的文件
                 if not verify_download(temp_file):
                     continue
                 
-                # 解压文件
                 if file_info['name'] == 'TTF 字体文件':
-                    # 字体包安装到 assets/Font (解压到临时目录后合并, 供启动时转移)
                     if not _install_fonts(temp_file):
                         continue
                 else:
@@ -915,18 +781,15 @@ def download_and_extract_gui(gui:DownloadGUI, config_path: str = "", download_fi
                 
                 success_count += 1
                 
-                
             except Exception as e:
                 print(e)
             finally:
                 cleanup_temp_files(temp_file)
-                # print('cleanup temp files')
     
     if auto_close:
         gui.is_downloading = False
         gui.root.after(1000, gui.root.destroy)
     
-    # 创建配置文件（只在至少一个文件处理成功时创建）
     if success_count > 0 and not is_custom:
         create_config_file(game_path)
         return True
@@ -936,17 +799,11 @@ def download_and_extract_gui(gui:DownloadGUI, config_path: str = "", download_fi
         return False
 
 def main_gui(parent, config_path: str = ""):
-    """GUI入口点"""
     gui = DownloadGUI(parent, config_path, download_func=download_and_extract_gui)
     
     return gui
 
 def download_and_extract_mod(gui, target_dir, download_files):
-    """简化的下载+解压函数 (供下载中心 Mod/插件使用)
-
-    下载后直接解压到 target_dir 根目录 (压缩包内自带插件/Mod 目录结构),
-    不额外包裹一层目录, 仅清理压缩包附带杂质。
-    """
     import traceback as _tb
     import tempfile as _tf
     import shutil
@@ -971,7 +828,6 @@ def download_and_extract_mod(gui, target_dir, download_files):
                 if os.path.exists(temp_file):
                     if not extract_7z_file(temp_file, target_dir):
                         return False
-                    # 清理压缩包附带的杂质
                     for junk in ('__MACOSX', '.DS_Store', '.gitkeep'):
                         p = os.path.join(target_dir, junk)
                         if os.path.isdir(p):

@@ -1,8 +1,3 @@
-"""GitHub Release 获取器（薄封装）
-
-统一实现见 functions/base/common/github_release.py。
-原双份重复实现（本文件与 functions/web_update/github_utils.py）已合并到集合库。
-"""
 
 from functions.base.common.github_release import (
     ReleaseAsset,
@@ -13,12 +8,9 @@ from functions.base.common.github_release import (
     print_release_summary,
 )
 
-
-# 全局请求器实例
 GithubRequester: GitHubReleaseFetcher = None  # type: ignore
 
 def init_request():
-    """初始化全局请求器"""
     global GithubRequester
     GithubRequester = GitHubReleaseFetcher(
         use_proxy=True,
@@ -26,14 +18,11 @@ def init_request():
         )
     print("GitHub请求器已初始化")
 
-
-# 使用示例
 if __name__ == "__main__":
     init_request()
     
     fetcher = GithubRequester
     
-    # 获取不同仓库的最新release信息
     print("=" * 60)
     print("示例1: 获取vscode的最新release")
     print("=" * 60)
@@ -41,7 +30,6 @@ if __name__ == "__main__":
     if latest_release:
         print_release_summary(latest_release)
         
-        # 查找特定文件
         print("\n查找Windows安装包:")
         windows_assets = latest_release.get_assets_by_extension(".exe")
         for asset in windows_assets:

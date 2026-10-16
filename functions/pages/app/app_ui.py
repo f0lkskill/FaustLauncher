@@ -16,12 +16,9 @@ from functions.extension.addon.addon_utils import AddonManager
 from functions.extension.mod.mod_utils import ModManager
 from functions.pages.app.app_core import FaustLauncherCore
 
-
-# 禁用警告
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 class FaustLauncherUI:
-    """应用程序UI类"""
     
     def __init__(self, root: tk.Tk, core: FaustLauncherCore, on_initialized=None):
         self.root = root
@@ -48,7 +45,6 @@ class FaustLauncherUI:
         self.core.page_loader = PageLoader(self)
         
     def _setup_window(self):
-        """设置主窗口基础配置"""
         self.root.title("Faust Launcher")
         self.root.geometry("850x730")
         self.root.resizable(False, False)
@@ -63,7 +59,6 @@ class FaustLauncherUI:
             pass
         
     def _setup_styles(self):
-        """设置应用程序样式 - 现代化风格"""
         style = ttk.Style()
         
         style.theme_use('clam')
@@ -77,7 +72,6 @@ class FaustLauncherUI:
         self._surface_color = self.theme.surface
         self._card_bg = self.theme.card_bg
         
-        # 标签样式 (ttk Label)
         style.configure("Title.TLabel",
                     background=self._card_bg,
                     foreground=self._text_primary,
@@ -88,7 +82,6 @@ class FaustLauncherUI:
                     foreground=self._text_secondary,
                     font=('Microsoft YaHei UI', 13))
         
-        # 现代化 LabelFrame - 无边框卡片式设计
         style.configure("Custom.TLabelframe",
                     background=self._surface_color,
                     foreground=self._text_secondary,
@@ -101,7 +94,6 @@ class FaustLauncherUI:
                     foreground=self._accent_light,
                     font=('Microsoft YaHei UI', 11, 'bold'))
         
-        # 现代化按钮样式
         style.configure('Modern.TButton',
                        font=('Microsoft YaHei UI', 10, 'bold'),
                        foreground=self._text_primary,
@@ -114,11 +106,9 @@ class FaustLauncherUI:
                   background=[('active', self._accent_hover), ('pressed', self._accent_light)],
                   foreground=[('active', self._text_primary)])
         
-        # 滚动条样式 - 现代细滚动条
         self._scrollbar_style = apply_scrollbar_style(
             'App.Vertical.TScrollbar', self.core.bg_color, self._accent_color)
         
-        # Combobox 现代化样式
         combo_bg = self.theme.surface_lighten(8)
         combo_field = self.theme.surface_lighten(4)
         combo_dark = darken_color(combo_field, 0.95)
@@ -149,14 +139,12 @@ class FaustLauncherUI:
         self.root.tk.call('bind', 'TCombobox', '<Button-4>', 'break')
         self.root.tk.call('bind', 'TCombobox', '<Button-5>', 'break')
         
-        # 字体配置
         self.title_font = font.Font(family='Microsoft YaHei UI', size=20, weight='bold')
         self.subtitle_font = font.Font(family='Microsoft YaHei UI', size=13)
         self.normal_font = font.Font(family='Microsoft YaHei UI', size=10)
         self.button_font = font.Font(family='Microsoft YaHei UI', size=10, weight='bold')
         
     def _create_ui_structure(self):
-        """创建UI结构框架"""
         self.container = tk.Frame(self.root, bg=self.theme.darken(0.7))
         self.container.pack(fill=tk.BOTH, expand=True)
         
@@ -196,7 +184,6 @@ class FaustLauncherUI:
         self.notebook.add(self.page_frames['about'], text="💻 关于")
         
     def _setup_event_bindings(self):
-        """设置事件绑定"""
         self.notebook.bind("<<NotebookTabChanged>>", self.on_tab_changed) # type: ignore
         self.root.bind_all("<ButtonPress-1>", self.core._on_global_click)
         
@@ -216,8 +203,6 @@ class FaustLauncherUI:
         self.root.protocol("WM_DELETE_WINDOW", check_close)
         
     def initialize_pages(self):
-        """初始化所有页面（异步方式）"""
-        # 先创建 AddonManager，确保页面加载时可用
         self.addon_menu_items = []
         self.core.addon_manager = AddonManager([], app=self)
         self.core.addon_manager.run_all_addon()
@@ -229,7 +214,6 @@ class FaustLauncherUI:
         self._notify_initialized()
         
     def _notify_initialized(self):
-        """通知应用程序初始化完成"""
         self.root.attributes('-topmost', False)
         self.root.update_idletasks()
         self.root.update()
@@ -246,10 +230,8 @@ class FaustLauncherUI:
                 mod_addon_page.refresh_all_tabs()
     
     def init_tray(self):
-        """初始化托盘程序"""
         ico = Image.open("assets/images/icon/icon.ico")
 
-        # 托盘回调通过 root.after 回到 tkinter 主线程执行 (线程安全, 并兼容 pystray 传参)
         def _show_win(icon=None, item=None):
             try:
                 self.root.after(0, self.root.deiconify)
@@ -332,7 +314,6 @@ class FaustLauncherUI:
         Thread(target=self.tray.run, daemon=True).start()
         
     def set_background_image(self):
-        """设置背景图片"""
         if self.core.background_images:
             try:
                 bg_path = random.choice(self.core.background_images)
@@ -421,11 +402,9 @@ class FaustLauncherUI:
             self.bg_canvas.configure(bg=self.core.bg_color)
         
     def start_background_rotation(self):
-        """开始背景轮换"""
         self.root.after(100, self.rotate_background)
         
     def rotate_background(self):
-        """轮换背景图片"""
         self.set_background_image()
         self.root.after(30000, self.rotate_background)
         
@@ -439,7 +418,6 @@ class FaustLauncherUI:
         status_frame.pack(fill='x', side='bottom')
         status_frame.pack_propagate(False)
         
-        # 状态指示器 - 带颜色圆点
         status_container = tk.Frame(status_frame, bg=status_bg)
         status_container.pack(side='left', padx=12)
         
@@ -461,22 +439,13 @@ class FaustLauncherUI:
                                 font=('Microsoft YaHei UI', 9))
         version_label.pack(side='right', padx=12)
 
-
 def check_single_instance():
-    """检测是否已有实例在运行
-
-    有 -> 激活那个实例的窗口(显示/还原/置顶)并返回 True, 由调用方退出本进程。
-    不弹系统消息框: 重复双击的意义是"把那个窗口叫出来", 而不是提示它存在。
-    激活逻辑复用 app_web.activate_existing_window (旧版 Tk 窗口标题同样是
-    "Faust Launcher", 能被同一个 FindWindow 找到)。
-    """
     try:
         from functions.pages.app.app_web import (
             activate_existing_window, _find_main_hwnd,
         )
         hwnd = _find_main_hwnd()
         if not hwnd:
-            # 回退: 老实现用 FindWindowA + utf-8 字节串, 某些环境下能找到 Tk 窗口
             hwnd = ctypes.windll.user32.FindWindowA(
                 None, "Faust Launcher".encode('utf-8'))
         if hwnd:
@@ -488,5 +457,4 @@ def check_single_instance():
     user32 = ctypes.windll.user32
     hwnd = user32.FindWindowA(None, "Faust Launcher".encode('utf-8'))
 
-    # 兜底路径(连 app_web 都导入失败时): 只判断是否存在, 同样不弹任何系统消息框。
     return bool(hwnd)

@@ -31,11 +31,6 @@ def download_new_version(dow_root, download_files:list):
         download_gui.root.after(3000, download_gui.root.destroy)
         return
 
-    # 应用更新之前先校验更新包是否完整 —— 关键是前端页面。
-    # 本版本把页面收进了 _internal/web/ (顶层不再有 web/), 而升级是"合并覆盖":
-    # 只要 _internal 里的 web/ 没被复制过来, 用户下次启动就会直接报
-    # "找不到页面文件", 且自己无法判断是升级失败。在这里提前拦住, 坏包不落地。
-    # (同时兼容顶层 web/ 的旧结构, 避免误判好包)
     new_root = os.path.abspath("cache/new_version/FaustLauncher")
     _web_candidates = (
         os.path.join(new_root, "_internal", "web", "app", "index.html"),
@@ -63,10 +58,8 @@ def download_new_version(dow_root, download_files:list):
     new_version_dir = os.path.abspath("cache/new_version/FaustLauncher")
     updater_vbs_path = os.path.join(new_version_dir, "updater.vbs")
     
-    # 运行vbs更新器
     if os.path.exists(updater_vbs_path):
         print(f"正在启动更新器: {updater_vbs_path}")
-        # 使用 wscript.exe 运行 vbs，避免依赖文件关联；close_fds=True 确保子进程独立于父进程
         subprocess.Popen(
             ['wscript.exe', updater_vbs_path],
             cwd=new_version_dir,
@@ -78,7 +71,6 @@ def download_new_version(dow_root, download_files:list):
     os._exit(0)
 
 def _start_update_download(root, latest_entry, version_name):
-    """创建下载窗口并后台开始下载新版本 (须在 tkinter 主线程调用)"""
     from functions.web_update.zeroasso_download import DownloadGUI
     gui_dow = DownloadGUI(root, 'cache/', False, download_func=download_and_extract_gui)
 
@@ -90,9 +82,7 @@ def _start_update_download(root, latest_entry, version_name):
 
     Thread(target=download_new_version, args=(gui_dow, download_files)).start()
 
-
 def _on_update_choice(root, latest_entry, version_name, action):
-    """更新询问窗口关闭后的回调 (后台线程); 选择更新时回到主线程开始下载"""
     if action != 'update':
         print(f"[Update] 用户选择: {action or '未选择(窗口直接关闭或超时)'}")
         return
@@ -103,7 +93,6 @@ def _on_update_choice(root, latest_entry, version_name, action):
         except Exception:
             pass
     Thread(target=_start_update_download, args=(root, latest_entry, version_name)).start()
-
 
 def check_version_update(root):
 
@@ -120,17 +109,12 @@ def check_version_update(root):
 
     latest_release = (version_info.get('latest_release_version') or '').strip()
     if not latest_release:
-        # 服务器侧尚未填写最新版本标记, 视为暂无更新
         print("云端版本信息未填写最新版本 (latest_release_version 为空), 跳过更新检查")
         return need_update, {}, current_version, None
 
-    # 版本号语义比较, 不是字符串不等 —— 否则本地自建/未发布的 V0.9.2-release 会被
-    # 云端还停在 V0.9.1-release.fix.1 的 latest_release_version 判定成"新版本",
-    # 然后强制下载安装, 把用户手上的新版本降级成旧版本。
     latest_entry = (version_info.get('versions') or {}).get(latest_release) or {}
     has_update = is_newer_version(latest_release, current_version)
 
-    # 这次抓到的版本信息留在内存: 主页版本卡"手动打开版本窗口"直接读它, 不再联网
     try:
         from functions.pages.notice.version_notify import remember_version_info
         remember_version_info({
@@ -149,13 +133,11 @@ def check_version_update(root):
                        'description': latest_entry.get('description', ''),
                        'date': latest_entry.get('data') or latest_entry.get('date'),
                        'bilibili_url': latest_entry.get('url', '')}
-        # Web 界面: 走应用内二级模态窗口, 强制下载更新 (窗口不可取消, 带进度/速度)
         from functions.pages.notice.version_notify import notify_version
         if notify_version(current_version, latest_info, info='发现新版本',
                           has_new_version=True, forced=True, root=root):
             return (need_update, latest_entry,
                     latest_release, current_version)
-        # 旧版 TK 界面: 正式版/测试版统一询问用户, 不再自动更新
         from functions.pages.notice.version_update_window import open_version_update_window
         ok = open_version_update_window(
             current_version,
@@ -164,7 +146,6 @@ def check_version_update(root):
             on_result=lambda action: _on_update_choice(
                 root, latest_entry, latest_release, action))
         if ok is None:
-            # 窗口无法启动: 回退到普通询问框
             choice = messagebox.askyesno(
                 "版本更新", f"检测到启动器新版本: {latest_release}\n当前版本: {current_version}\n是否更新？")
             if choice:

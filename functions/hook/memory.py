@@ -1,16 +1,3 @@
-"""进程内存读写 / 扫描（纯 ctypes，无需 Frida、无需管理员即可读同用户进程）。
-
-这个模块是整个 hook 子系统的"运行时眼睛"：元数据的动态 dump、指针链的
-结构性重定位、目标值校验都靠它。设计上刻意与
-``functions/achievement/memory_reader.py`` 保持一致的读取语义
-（读失败返回 None 而不是抛异常、一律带边界校验），但补齐了区域枚举与
-模式扫描能力。
-
-约定：
-- 所有读取失败（跨页/无权限/进程退出）都返回 ``None``，绝不抛异常；
-- 地址都是进程内的绝对虚拟地址；
-- ``scan_bytes`` 只在给出的范围内读，单块失败自动跳过。
-"""
 
 from __future__ import annotations
 
@@ -21,7 +8,6 @@ import struct
 import time
 from dataclasses import dataclass
 
-# ---- 访问权限 / 常量 ---------------------------------------------------------
 PROCESS_QUERY_INFORMATION = 0x0400
 PROCESS_VM_READ = 0x0010
 TH32CS_SNAPPROCESS = 0x00000002
@@ -50,8 +36,6 @@ _READABLE_PROTECTIONS = (
 MAX_USER_ADDRESS = 0x7FFFFFFF0000
 INVALID_HANDLE_VALUE = ctypes.c_void_p(-1).value
 
-
-# ---- 结构体 -----------------------------------------------------------------
 class MEMORY_BASIC_INFORMATION64(ctypes.Structure):
     _fields_ = [
         ("BaseAddress", ctypes.c_ulonglong),
@@ -64,7 +48,6 @@ class MEMORY_BASIC_INFORMATION64(ctypes.Structure):
         ("Type", wintypes.DWORD),
         ("__alignment2", wintypes.DWORD),
     ]
-
 
 class PROCESSENTRY32W(ctypes.Structure):
     _fields_ = [
@@ -80,7 +63,6 @@ class PROCESSENTRY32W(ctypes.Structure):
         ("szExeFile", ctypes.c_wchar * 260),
     ]
 
-
 class MODULEENTRY32W(ctypes.Structure):
     _fields_ = [
         ("dwSize", wintypes.DWORD),
@@ -95,10 +77,8 @@ class MODULEENTRY32W(ctypes.Structure):
         ("szExePath", ctypes.c_wchar * 260),
     ]
 
-
 @dataclass(frozen=True)
 class RegionInfo:
-    """一段已提交且可读的内存。"""
 
     base: int
     size: int
@@ -120,7 +100,6 @@ class RegionInfo:
     def __contains__(self, addr: int) -> bool:
         return self.base <= addr < self.end
 
-
 @dataclass(frozen=True)
 class ModuleInfo:
     name: str
@@ -134,9 +113,7 @@ class ModuleInfo:
     def __contains__(self, addr: int) -> bool:
         return self.base <= addr < self.end
 
-
 _kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-
 
 def _configure_api() -> None:
     k = _kernel32
@@ -163,12 +140,9 @@ def _configure_api() -> None:
     k.Module32NextW.argtypes = [wintypes.HANDLE, ctypes.POINTER(MODULEENTRY32W)]
     k.Module32NextW.restype = wintypes.BOOL
 
-
 _configure_api()
 
-
 def find_process_id(process_name: str) -> int | None:
-    """按进程名查 PID（不含 .exe 也可以）；找不到返回 None。"""
     wanted = process_name.lower()
     if not wanted.endswith(".exe"):
         wanted += ".exe"
@@ -187,20 +161,10 @@ def find_process_id(process_name: str) -> int | None:
         _kernel32.CloseHandle(snapshot)
     return None
 
-
 def is_process_running(process_name: str) -> bool:
     return find_process_id(process_name) is not None
 
-
 class ProcessMemoryReader:
-    """游戏进程内存读取器。
-
-    用法::
-
-        with ProcessMemoryReader() as reader:          # 默认 LimbusCompany.exe
-            base = reader.module_base("GameAssembly.dll")
-            value = reader.follow_chain(base + 0x7BB4F90, [0xB8, 0x80, 0x18], "int32")
-    """
 
     def __init__(self, process_name: str = "LimbusCompany.exe",
                  pid: int | None = None) -> None:
@@ -209,12 +173,7 @@ class ProcessMemoryReader:
         self.pid: int | None = None
         self.handle: int | None = None
 
-    # ---------------------------------------------------------------- 生命周期
     def attach(self, timeout: float = 0.0, poll: float = 0.5) -> bool:
-        """附加到目标进程；``timeout`` > 0 时轮询等待进程出现。
-
-        构造时给了 ``pid`` 就直接用它（测试/指定进程场景）。
-        """
         if self.attached:
             return True
         if self.pid_override:
@@ -262,7 +221,6 @@ class ProcessMemoryReader:
         except Exception:
             pass
 
-    # ---------------------------------------------------------------- 模块 / 区域
     def _module_snapshot(self, pid: int | None = None):
         pid = pid or self.pid
         flags = TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32
@@ -272,7 +230,6 @@ class ProcessMemoryReader:
         return snapshot
 
     def modules(self) -> dict[str, ModuleInfo]:
-        """已加载模块表（键为小写模块名）。"""
         out: dict[str, ModuleInfo] = {}
         if not self.attached:
             return out
@@ -308,7 +265,6 @@ class ProcessMemoryReader:
 
     def regions(self, readable_only: bool = True,
                 include_images: bool = True) -> list[RegionInfo]:
-        """枚举内存区域（默认只返回已提交且可读的）。"""
         out: list[RegionInfo] = []
         if not self.attached:
             return out
@@ -336,9 +292,7 @@ class ProcessMemoryReader:
             return False
         return any(protect & p for p in _READABLE_PROTECTIONS)
 
-    # ---------------------------------------------------------------- 读取
     def read(self, address: int, size: int) -> bytes | None:
-        """读 ``size`` 字节；失败返回 None。"""
         if not self.attached or address <= 0 or size <= 0:
             return None
         buffer = ctypes.create_string_buffer(size)
@@ -350,7 +304,6 @@ class ProcessMemoryReader:
         return buffer.raw[:size]
 
     def read_into(self, address: int, buffer) -> bool:
-        """读入调用方提供的 ctypes 缓冲区（大块读取更省内存）。"""
         if not self.attached or address <= 0:
             return False
         size = ctypes.sizeof(buffer)
@@ -376,7 +329,6 @@ class ProcessMemoryReader:
         return struct.unpack("<f", raw)[0] if raw else None
 
     def read_value(self, address: int, value_type: str = "int32"):
-        """按类型读取（int32 / uint32 / int64 / uint64 / float / double / pointer）。"""
         vt = (value_type or "int32").lower()
         if vt in ("int32", "i32", "int"):
             return self.read_i32(address)
@@ -395,7 +347,6 @@ class ProcessMemoryReader:
         return None
 
     def read_cstring(self, address: int, max_len: int = 128) -> str:
-        """读 UTF-8/ASCII C 字符串（最多 ``max_len`` 字节，遇 0 截断）。"""
         raw = self.read(address, max_len)
         if not raw:
             return ""
@@ -408,11 +359,6 @@ class ProcessMemoryReader:
             return text.decode("latin1", errors="replace")
 
     def follow_chain(self, address: int, offsets, value_type: str = "pointer"):
-        """多级指针链：先按 ``value_type`` 读首地址，再逐级 +offset 解引用。
-
-        与 ``functions/achievement/memory_reader.py`` 的语义一致：
-        ``address`` 是首级数据的地址，offsets 的第一项作用于首级读取结果。
-        """
         if not offsets:
             return self.read_value(address, value_type)
         current = self.read_u64(address) if value_type in ("pointer", "ptr", "uint64", "u64") \
@@ -430,7 +376,6 @@ class ProcessMemoryReader:
         return None
 
     def resolve_chain_address(self, base_address: int, offsets) -> int | None:
-        """多级指针链的最终地址（不解引用最后一级）。"""
         current = base_address
         for offset in offsets:
             raw = self.read_u64(current)
@@ -439,15 +384,9 @@ class ProcessMemoryReader:
             current = raw + int(offset)
         return current
 
-    # ---------------------------------------------------------------- 扫描
     def scan_bytes(self, pattern: bytes, ranges=None, limit: int = 8,
                    chunk: int = 8 << 20, overlap: int = 32,
                    progress=None) -> list[int]:
-        """在 ``ranges``（默认：可读的非映像区域）里搜索字节模式。
-
-        返回匹配地址列表（最多 ``limit`` 个）。为了处理跨块匹配，每块之间保留
-        ``overlap`` 字节重叠。
-        """
         if not self.attached or not pattern:
             return []
         hits: list[int] = []
@@ -466,7 +405,6 @@ class ProcessMemoryReader:
                     break
                 buffer = buf if want == chunk else ctypes.create_string_buffer(want)
                 if not self.read_into(address, buffer):
-                    # 单块读失败（很少见：区域内含保留页）→ 跳过 4KB 继续
                     address += 0x1000
                     data = b""
                 else:
@@ -486,11 +424,6 @@ class ProcessMemoryReader:
 
     def iter_pointers(self, ranges=None, chunk: int = 8 << 20,
                       pointer_filter=None, progress=None):
-        """流式产出范围内的"像指针的值" → ``(存放地址, 指针值)``。
-
-        ``pointer_filter(value) -> bool`` 用于快速排除明显无效的指针（默认只
-        要求 8 字节对齐且落在 0x10000 以上）。生成器形式可避免一次性塞满内存。
-        """
         if not self.attached:
             return
         ranges = list(ranges) if ranges is not None else [
@@ -510,7 +443,6 @@ class ProcessMemoryReader:
                     address += 0x1000
                     continue
                 data = memoryview(buffer.raw)[:want]
-                # 8 字节步进：只在 8 字节对齐的槽位上找指针
                 start = (-address) % 8
                 for off in range(start, want - 7, 8):
                     value = int.from_bytes(data[off:off + 8], "little")
@@ -520,21 +452,15 @@ class ProcessMemoryReader:
 
     def collect_pointers(self, ranges=None, chunk: int = 8 << 20,
                          pointer_filter=None, progress=None) -> list[tuple[int, int]]:
-        """``iter_pointers`` 的列表版本（小范围用；大范围请用生成器）。"""
         return list(self.iter_pointers(ranges, chunk, pointer_filter, progress))
 
     def pointer_targets(self, ptr: int, offsets, depth: int = 32) -> list[int]:
-        """给定指针与其候选偏移，返回所有能读出可读地址的候选 ``ptr + off``。"""
         return [ptr + off for off in offsets]
 
-
 def enumerate_pointer_value(reader: "ProcessMemoryReader", address: int) -> int | None:
-    """便利函数：读一个 8 字节指针值（失败 None）。"""
     return reader.read_u64(address)
 
-
 def describe_regions(regions, limit: int = 12) -> str:
-    """区域列表 → 简短文本（日志用）。"""
     lines = []
     for region in list(regions)[:limit]:
         kind = "image" if region.is_image else ("heap" if region.is_private else "other")
@@ -543,8 +469,7 @@ def describe_regions(regions, limit: int = 12) -> str:
         lines.append(f"  ...（共 {len(regions)} 段）")
     return "\n".join(lines)
 
-
-def main() -> int:  # 简易自检：python -m functions.hook.memory [进程名]
+def main() -> int:
     import sys
 
     name = sys.argv[1] if len(sys.argv) > 1 else "LimbusCompany.exe"
@@ -563,7 +488,6 @@ def main() -> int:  # 简易自检：python -m functions.hook.memory [进程名]
     print(describe_regions(regions))
     reader.detach()
     return 0
-
 
 if __name__ == "__main__":
     raise SystemExit(main())

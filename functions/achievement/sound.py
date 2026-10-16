@@ -1,9 +1,3 @@
-"""成就解锁音效播放。
-
-- 播放 assets/voices/achievement.wav (存在时)
-- 线程安全, 异步 (SND_ASYNC)
-- 防刷屏: 同一批连续解锁只播一次 (400ms 内去重)
-"""
 
 import os
 import time
@@ -17,9 +11,7 @@ _SND_ASYNC = 0x0001
 _SND_FILENAME = 0x00020000
 _SND_NODEFAULT = 0x0002
 
-
 def _resolve_wav() -> str | None:
-    """定位音效文件 assets/voices/achievement.wav。"""
     global _WAV_PATH
     if _WAV_PATH:
         return _WAV_PATH
@@ -30,13 +22,7 @@ def _resolve_wav() -> str | None:
         return cand
     return None
 
-
 def play_achievement_sound() -> bool:
-    """播放成就解锁音效 (异步, 400ms 去重)。
-
-    返回:
-        是否实际触发了播放
-    """
     wav = _resolve_wav()
     if not wav:
         return False
@@ -48,7 +34,6 @@ def play_achievement_sound() -> bool:
 
     try:
         import ctypes
-        # PlaySoundW(path, None, SND_FILENAME|SND_ASYNC|SND_NODEFAULT)
         ctypes.windll.winmm.PlaySoundW(wav, None, _SND_FILENAME | _SND_ASYNC | _SND_NODEFAULT)
         return True
     except Exception:

@@ -1,21 +1,4 @@
 #!/usr/bin/env python3
-"""solve_versioned.py - 无参考标准文件的 31 节映射求解（锚点间隙拼装）。
-
-模型（经 08-06 真值验证）：
-- 31 个标准节在物理空间按规范序首尾相连；每节物理位置 = entry.logical + adj，
-  |adj| ≤ MAX_ADJ；逻辑序 == 物理序。
-- 7 个受保护节（extractor：entry+adj+seed）为锚点，物理位置已知；
-  锚点间隙内的非保护节按规范序平铺，与锚点衔接（padding ≤ 8）。
-- padding 总量由锚点端点决定；分布用内容签名（rec-12/4 列单调率、
-  text 可打印率）择优（08-06 的 +4 异常可由强签名 + 端点唯一确定）。
-
-求解：
-1. 受保护节按 rec 映射候选槽位集合（唯一 rec 直接钉死）。
-2. 按物理序枚举锚点槽位组合（规范序递增）。
-3. 逐间隙求解：槽位 rec 匹配条目 + padding（|logical - phys| ≤ MAX_ADJ），
-   完成排序 = (内容分, -Σpads, -Σ|adj|) 字典序最大；跨间隙回溯。
-4. 零尺寸节 snap 到 ≥ logical 的最小链边界。
-"""
 
 from __future__ import annotations
 
@@ -26,14 +9,12 @@ from .versions import version_table
 
 MAX_ADJ = 0x8000
 PAD_MAX = 8
-SCORE_MONO_SIZE = 1 << 20      # 单调列评分的大小上限（避免大节读取开销）
+SCORE_MONO_SIZE = 1 << 20
 SCORE_TEXT_SIZE = 4 << 20
 SCORE_MONO_MIN = 0.95
 
-
 class SolveError(RuntimeError):
     pass
-
 
 def _direct_reads(header: bytes, profile: dict) -> list[dict]:
     out = []
@@ -56,15 +37,12 @@ def _direct_reads(header: bytes, profile: dict) -> list[dict]:
         })
     return out
 
-
 def _rec_of(entry: dict) -> int | None:
     if entry["count"] > 0 and entry["size"] > 0 and entry["size"] % entry["count"] == 0:
         return entry["size"] // entry["count"]
     return None
 
-
 class _Scorer:
-    """内容签名评分器（按 (entry, phys) 记忆化）。"""
 
     def __init__(self, metadata: bytes, by_index: dict) -> None:
         self.metadata = metadata
@@ -72,7 +50,6 @@ class _Scorer:
         self.cache: dict[tuple, float] = {}
 
     def strong(self, entry: dict) -> bool:
-        """是否有强签名（决定是否参与评分）。"""
         sz = entry["size"]
         return 12 <= sz <= SCORE_MONO_SIZE and sz % 4 == 0
 
@@ -83,12 +60,6 @@ class _Scorer:
         return self.cache[key]
 
     def align_score(self, phys: int) -> float:
-        """对齐/死空间签名：物理位置 4 对齐 + 节起始 4 字节非全零。
-
-        单调列签名对 4 对齐偏移免疫（索引列在错位时仍单调），无法区分
-        ±4 死空间；真值位置恒满足 phys%4==0 且起始字节非全零
-        （08-06 的 +4 异常正是靠这两点唯一确定）。
-        """
         s = 0.0
         if phys >= 0 and phys % 4 == 0:
             s += 0.3
@@ -123,7 +94,6 @@ class _Scorer:
                 score = max(score, 0.5)
         return score
 
-
 def solve(metadata: bytes, profile: dict, version: int = 39) -> dict:
     vt = version_table(version)
     names = vt["names"]
@@ -153,11 +123,7 @@ def solve(metadata: bytes, profile: dict, version: int = 39) -> dict:
         if e["offset"] < 0:
             continue
         if e["offset"] >= len(metadata):
-            continue          # 逻辑起点已在文件外 → 幻影辅助表
-        # ★ 不再按 offset + size 越界丢弃：加密 metadata 里逻辑位置与物理位置相差一个
-        #   adj（可正可负），负 adj 会让 offset + size 超过文件长度，但条目本身是真实的
-        #   （2026-10 游戏更新后正是这些条目被误丢，导致 rec=4 一类槽位候选不足、
-        #   求解报"无可行锚点槽位组合"）。是否放得下交给位置约束与内容评分。
+            continue
         if e["index"] in prot_entries:
             continue
         pool.append(e)
@@ -167,7 +133,6 @@ def solve(metadata: bytes, profile: dict, version: int = 39) -> dict:
 
     review: list[str] = []
 
-    # ---- 1. 受保护节候选槽位 ----------------------------------------------
     prot_sorted = sorted(protected, key=lambda p: p["phys"])
     slot_sets = []
     for p in prot_sorted:
@@ -178,7 +143,6 @@ def solve(metadata: bytes, profile: dict, version: int = 39) -> dict:
             raise SolveError(f"受保护节 entry{p['entry_index']} 无匹配槽位（rec={er}）")
         slot_sets.append(slots)
 
-    # ---- 2. 锚点槽位枚举 ---------------------------------------------------
     def enumerate_assignments(idx: int, chosen: list[int]) -> list[list[int]]:
         if idx == len(slot_sets):
             return [list(chosen)]
@@ -202,16 +166,8 @@ def solve(metadata: bytes, profile: dict, version: int = 39) -> dict:
         gaps.append((prev_end, None, list(range(prev_slot + 1, 31))))
         return gaps
 
-    # ---- 3. 逐间隙求解 -----------------------------------------------------
     def solve_gap(prev_end: int | None, next_start: int | None,
                   slots: list[int], used: set[int]) -> tuple[list, float] | None:
-        """返回 (placements, score)；placements: [(slot, entry_index, phys)]。
-
-        两段式搜索（避免 padding 组合爆炸）：
-        a) 先枚举槽位条目序列（rec 匹配 + 位置近似约束）；
-        b) 序列完成时由端点计算精确 padding 总量 Σ ∈ [P-8, P]，
-           再枚举 Σ 在 m 个槽位上的分布（每槽 ≤ 8，位置校验）。
-        """
         non_zero = [s for s in slots if rec[names[s]] != 0]
         if not non_zero:
             return [], 0.0
@@ -223,8 +179,6 @@ def solve(metadata: bytes, profile: dict, version: int = 39) -> dict:
         def placements_rank(placements: list) -> tuple:
             sc = sum(scorer.score(e, ph) for (_, e, ph) in placements)
             sc += sum(scorer.align_score(ph) for (_, e, ph) in placements)
-            # 死空间签名：节间 gap 字节全零 = 真实 padding（+0.15）；
-            # 非零 = 该节实际被前移、真实数据被跳过（-0.15）。
             prev = prev_end
             for (_, e, ph) in placements:
                 gap = ph - prev
@@ -240,7 +194,6 @@ def solve(metadata: bytes, profile: dict, version: int = 39) -> dict:
 
         def enumerate_pads(i: int, cum_sizes: int, cum_pads: int, sigma: int,
                            placements: list) -> None:
-            """把 sigma 个 pad 分布到各槽位（每槽 ≤ 8，位置校验）。"""
             nonlocal best
             if i == m:
                 if cum_pads == sigma:
@@ -264,7 +217,6 @@ def solve(metadata: bytes, profile: dict, version: int = 39) -> dict:
         def finish(chosen: list) -> None:
             nonlocal best
             if prev_end is None:
-                # 链首间隙：相对定位（物理位置由首个锚点反推）
                 placements = []
                 run = 0
                 for slot, eidx in chosen:
@@ -275,7 +227,6 @@ def solve(metadata: bytes, profile: dict, version: int = 39) -> dict:
                     best = (key, [(s, e, p) for s, e, p in placements])
                 return
             if next_start is None:
-                # 链尾间隙：默认 pad=0；放置于 prev_end 累计
                 placements = []
                 run = prev_end
                 for slot, eidx in chosen:
@@ -305,7 +256,6 @@ def solve(metadata: bytes, profile: dict, version: int = 39) -> dict:
                 if e["index"] in used or e["index"] in used_local:
                     continue
                 if prev_end is not None:
-                    # 位置近似约束：|(prev_end + 前序尺寸) - logical| 粗筛
                     cum = sum(by_index[ci]["size"] for _, ci in chosen)
                     if abs((prev_end + cum) - by_index[e["index"]]["offset"]) \
                             > MAX_ADJ + PAD_MAX * m:
@@ -378,7 +328,6 @@ def solve(metadata: bytes, profile: dict, version: int = 39) -> dict:
     solution["entries"] = entries
     solution["anchor_slots"] = best_slot_assign
 
-    # ---- 链首间隙反推：锚点前各节真实物理位置 --------------------------------
     pre_slots = [s for s in range(best_slot_assign[0]) if rec[names[s]] != 0]
     if pre_slots:
         first_anchor = prot_sorted[0]
@@ -408,7 +357,6 @@ def solve(metadata: bytes, profile: dict, version: int = 39) -> dict:
                 solution["evidence"][names[s]]["physical"] = run
                 run += entry["size"]
 
-    # ---- 零尺寸节 snap ----------------------------------------------------
     zero_names = [n for n in names if rec[n] == 0]
     used_e = {s["custom_entry_index"] for s in solution["sections"].values()}
     zero_cands = [e for e in zero_entries if e["index"] not in used_e]

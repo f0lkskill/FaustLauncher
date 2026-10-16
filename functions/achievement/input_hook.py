@@ -1,16 +1,8 @@
-"""输入统计 Hook - 使用 Windows 低级钩子统计 P 键与鼠标点击。
-
-- 仅在 LimbusCompany 游戏窗口处于前台时统计 (避免后台误计)
-- P 键: VK=0x50; 鼠标左键 WM_LBUTTONDOWN=0x0201, 右键 WM_RBUTTONDOWN=0x0204
-- 线程安全: 钩子回调在系统线程, 用原子/锁更新计数
-- 计数存入 GlobalState.press_p_count / click_count, 由成就系统读取
-"""
 
 import ctypes
 import ctypes.wintypes as wt
 import threading
 
-# LRESULT / WPARAM / LPARAM 不在 wintypes, 用原生类型
 LRESULT = ctypes.c_ssize_t
 WPARAM = ctypes.c_size_t
 LPARAM = ctypes.c_ssize_t
@@ -21,13 +13,11 @@ DWORD = wt.DWORD
 LPMSG = wt.LPMSG
 POINT = wt.POINT
 
-# 若平台 wintypes 缺 HHOOK 等, 自行兜底
 try:
     HHOOK = wt.HHOOK
 except AttributeError:
     pass
 
-# ── 常量 ──
 WH_KEYBOARD_LL = 13
 WH_MOUSE_LL = 14
 WM_KEYDOWN = 0x0100
@@ -38,8 +28,6 @@ WM_QUIT = 0x0012
 
 GAME_EXE = "LimbusCompany.exe"
 
-
-# Windows API
 _user32 = ctypes.WinDLL("user32", use_last_error=True)
 _kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
 
@@ -81,7 +69,6 @@ _CloseHandle = _kernel32.CloseHandle
 _CloseHandle.argtypes = [wt.HANDLE]
 _CloseHandle.restype = wt.BOOL
 
-
 class KBDLLHOOKSTRUCT(ctypes.Structure):
     _fields_ = [
         ("vkCode", wt.DWORD),
@@ -90,7 +77,6 @@ class KBDLLHOOKSTRUCT(ctypes.Structure):
         ("time", wt.DWORD),
         ("dwExtraInfo", ctypes.POINTER(ctypes.c_ulong)),
     ]
-
 
 class MSLLHOOKSTRUCT(ctypes.Structure):
     _fields_ = [
@@ -101,16 +87,7 @@ class MSLLHOOKSTRUCT(ctypes.Structure):
         ("dwExtraInfo", ctypes.POINTER(ctypes.c_ulong)),
     ]
 
-
 class InputCounter:
-    """低级钩子统计器。
-
-    用法:
-        c = InputCounter()
-        c.start()      # 启动钩子线程
-        ...
-        c.stop()
-    """
 
     def __init__(self):
         self._running = False
@@ -119,10 +96,9 @@ class InputCounter:
         self._mouse_hook = None
         self._kbd_cb = None
         self._mouse_cb = None
-        self._state = None  # 延迟设置避免循环 import
+        self._state = None
         self._lock = threading.Lock()
 
-    # ── 计数更新 (线程安全) ──
     def _inc_p(self):
         from functions.achievement.achievements import get_state
         try:
@@ -143,7 +119,6 @@ class InputCounter:
 
     @staticmethod
     def _game_foreground() -> bool:
-        """精确判定前台窗口进程是否为 LimbusCompany.exe (纯 ctypes)。"""
         try:
             hwnd = _GetForegroundWindow()
             pid = wt.DWORD(0)
@@ -182,13 +157,11 @@ class InputCounter:
         return _CallNextHookEx(self._mouse_hook, nCode, wParam, lParam)
 
     def _thread_main(self):
-        """钩子消息循环线程。"""
         try:
             module = _GetModuleHandleW(None)
         except Exception:
             module = None
 
-        # 键盘钩子回调须保持引用
         self._kbd_cb = ctypes.WINFUNCTYPE(
             LRESULT, ctypes.c_int, WPARAM, LPARAM)(self._kbd_proc)
         self._mouse_cb = ctypes.WINFUNCTYPE(
@@ -199,7 +172,6 @@ class InputCounter:
         self._mouse_hook = _SetWindowsHookExW(
             WH_MOUSE_LL, self._mouse_cb, module, 0)
 
-        # 消息循环
         msg = wt.MSG()
         while self._running:
             r = _GetMessageW(ctypes.byref(msg), None, 0, 0)
@@ -212,7 +184,6 @@ class InputCounter:
             _UnhookWindowsHookEx(self._mouse_hook)
 
     def start(self):
-        """启动钩子线程。"""
         if self._running:
             return
         self._running = True
@@ -220,27 +191,20 @@ class InputCounter:
         self._thread.start()
 
     def stop(self):
-        """停止钩子。"""
         self._running = False
         if self._thread:
             self._thread.join(timeout=2)
 
-
-# 全局单例
 _counter: InputCounter | None = None
 
-
 def start_input_monitoring() -> InputCounter:
-    """启动全局输入统计 (幂等)。"""
     global _counter
     if _counter is None:
         _counter = InputCounter()
         _counter.start()
     return _counter
 
-
 def stop_input_monitoring():
-    """停止输入统计。"""
     global _counter
     if _counter:
         _counter.stop()
