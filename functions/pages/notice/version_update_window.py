@@ -501,8 +501,8 @@ def run_update_window(payload_b64=None, debug: bool = False):
     )
     x, y = _center_xy(win_w, win_h)
     if x is not None and y is not None:
-        window_kwargs["x"] = x
-        window_kwargs["y"] = y
+        window_kwargs["x"] = x # type: ignore
+        window_kwargs["y"] = y # type: ignore
 
     try:
         _win = webview.create_window(**window_kwargs) # type: ignore
