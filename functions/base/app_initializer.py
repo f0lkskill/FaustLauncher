@@ -1,5 +1,6 @@
 
 import sys, os
+import traceback
 import tkinter as tk
 
 from functions.achievement.hook import run_achievement_hook
@@ -16,12 +17,66 @@ from functions.base.sound_utils import play_sound
 WEB_UI_FLAG = 'WEB_UI'
 TK_UI_FLAG = 'TK_UI'
 
+
+def _use_headless_download_gui():
+    """把下载进度界面换成无窗口版本。
+
+    `--launcher-mode` 是后台流程，没有 Tk 主循环。真实 `DownloadGUI` 会在这里
+    创建窗口却不跑 mainloop，结果就是一个永远无响应的窗口挡住流程。
+    web 后端早就有同样的替换，这里复用同一套无头实现。
+    """
+    try:
+        from functions.pages.download.headless_gui import HeadlessDownloadGUI
+        import functions.web_update.zeroasso_download as zd
+
+        zd.main_gui = lambda parent, config_path="": HeadlessDownloadGUI(
+            config_path, download_func=zd.download_and_extract_gui)
+        zd.DownloadGUI = (
+            lambda parent=None, config_path="", auto_start=True,
+                   download_func=None, task=None: HeadlessDownloadGUI(
+                       config_path, auto_start=auto_start,
+                       download_func=download_func, task=task))
+        try:
+            import functions.update.version_utils as vu
+            vu.DownloadGUI = zd.DownloadGUI  # type: ignore
+        except Exception:
+            pass
+        return True
+    except Exception as exc:  # noqa: BLE001
+        print(f"[LauncherMode] 无头下载界面不可用(继续): {exc}")
+        return False
+
+
+def run_launcher_mode(debug=False):
+    """--launcher-mode：不进入 UI，直接跑完整后端启动流程。
+
+    Steam 通过启动项把启动器拉起时走这里：检查/更新汉化 -> 应用到游戏目录 ->
+    加载 mod -> 起游戏，最后照常弹出 mod 加载进度窗口。跑完即退出。
+    """
+    print("[LauncherMode] 以 Steam 启动器模式运行（不进入 UI）")
+    try:
+        from functions.base.log_manager import init_logger
+        init_logger()
+    except Exception as exc:  # noqa: BLE001
+        print(f"[LauncherMode] 日志初始化失败(继续): {exc}")
+
+    _use_headless_download_gui()
+
+    try:
+        from functions.pages.app.page_loader import download_and_launch
+        download_and_launch(obj=None, need_run_game=True)
+    except Exception as exc:  # noqa: BLE001
+        traceback.print_exc()
+        print(f"[LauncherMode] 启动流程失败: {exc}")
+
+
 LAUNCH_MODE = {
     "--achievement-hook": run_achievement_hook,    
     "--nyos-window": run_prescript_window,
     "--mod-manager-window": run_mod_manager_window,
     "--extension-tools-window": run_extension_tools_window,
-    "--custom-translation-window": run_custom_translation_window
+    "--custom-translation-window": run_custom_translation_window,
+    "--launcher-mode": run_launcher_mode
 }
 
 DEBUG_MODE = '--debug' in sys.argv
@@ -72,6 +127,36 @@ def detect_mod_loader_window() -> bool:
         return True
     return False
 
+def _reconcile_steam_binding():
+    """启动器初始化时核对 Steam 启动项，不符合当前设置就纠正。
+
+    为什么放在这里而不是「启动游戏」流程里：一旦 Steam 的启动项指向一个已经被
+    删掉的旧启动器，用户从 Steam 点游戏只会毫无反应，永远走不到启动游戏那段代码。
+    只有「启动器自己被打开」这个时刻是必然发生的，所以检查点只能在这里。
+    """
+    from functions.base.launcher_mode import is_launcher_mode
+    if is_launcher_mode():
+        # launcher-mode 是 Steam 按启动项拉起来的：此刻启动项必然指向自己，
+        # 再去关 Steam 会把正在拉起的这条链路自己掐断。
+        return
+    try:
+        from functions.base import steam_binding
+        result = steam_binding.reconcile()
+        if result.get("changed"):
+            print(f"[SteamBinding] {result.get('message', '')}")
+            if result.get("ok") and result.get("value"):
+                print(f"[SteamBinding] 已绑定: {result['value']}")
+    except Exception as exc:
+        print(f"[SteamBinding] 核对启动项失败(忽略): {exc}")
+
+
+def _start_steam_binding_reconcile():
+    """后台线程做核对：不一致时要先关 Steam 再写再起，不能卡住启动画面。"""
+    import threading
+    threading.Thread(target=_reconcile_steam_binding, daemon=True,
+                     name="steam-binding-reconcile").start()
+
+
 def detect_ui_mode() -> bool:
     from functions.base.settings_manager import get_settings_manager
     if "--tk-ui" in sys.argv:
@@ -118,6 +203,10 @@ def launch_app():
             os.remove(_old_updater)
         except OSError:
             pass
+
+    # Steam 启动项核对放在这里：update 窗口 / mod loader 进度窗口 / --launcher-mode
+    # 都已经 return 了，剩下的是「用户真的打开了启动器」这条路径。
+    _start_steam_binding_reconcile()
 
     if detect_ui_mode():
         return

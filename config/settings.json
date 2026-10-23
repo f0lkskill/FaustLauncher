@@ -10,7 +10,7 @@
         "name": "游戏路径",
         "type": "string",
         "default": "",
-        "value": "",
+        "value": "D:\\steam\\steamapps\\common\\Limbus Company",
         "description": "游戏安装路径, 请确保路径正确\n否则可能导致启动失败和其他错误问题",
         "page": "通用"
     },
@@ -39,6 +39,14 @@
         "default": 0,
         "value": 0,
         "description": "翻译的下载方式\n推荐使用蓝奏云转存下载源, 以获取最新的翻译内容\nGithub Releases 官方下载源可能会被墙, 导致下载失败\n若选择 Github Releases 官方下载源, 请确保网络环境可以访问 Github。",
+        "page": "通用"
+    },
+    "steam_launch_with_launcher": {
+        "name": "从 Steam 启动时使用启动器",
+        "type": "boolean",
+        "default": false,
+        "value": true,
+        "description": "开启后把 Steam 的启动项绑定到本启动器: 从 Steam 启动游戏时先拉起启动器, 由启动器完成汉化/Mod 加载后再启动游戏.\n开启时会先关掉 Steam, 写入启动项后再重新启动 Steam.\n关闭时会把启动项清空.",
         "page": "通用"
     },
     "check_translate_update": {
@@ -194,7 +202,7 @@
         "name": "隐藏Mod加载窗口",
         "type": "boolean",
         "default": true,
-        "value": true,
+        "value": false,
         "description": "启动游戏时是否隐藏 Mod 加载窗口",
         "page": "Mod"
     },
@@ -424,8 +432,8 @@
             "version_notify_flag": false
         },
         "value": {
-            "tray_hint": false,
-            "version_notify_flag": false
+            "tray_hint": true,
+            "version_notify_flag": true
         },
         "description": "程序运行时的缓存数据\n不建议修改"
     }

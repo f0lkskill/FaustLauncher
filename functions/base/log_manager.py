@@ -6,7 +6,6 @@ import logging
 LOG_DIR = "logs"
 MAX_KEEP_DAYS = 3
 MAX_KEEP_PER_DAY = 7
-LEVEL_DIRS = ("DEBUG", "WARN", "ERROR")
 
 _logger = None
 
@@ -17,10 +16,8 @@ def _cleanup_logs():
     try:
         today = datetime.date.today()
         cutoff = today - datetime.timedelta(days=MAX_KEEP_DAYS - 1)
-        for folder in [LOG_DIR] + [os.path.join(LOG_DIR, d) for d in LEVEL_DIRS]:
-            if not os.path.isdir(folder):
-                continue
-            _cleanup_folder(folder, cutoff)
+        if os.path.isdir(LOG_DIR):
+            _cleanup_folder(LOG_DIR, cutoff)
     except Exception:
         pass
 
@@ -94,45 +91,12 @@ def get_logger():
         init_logger()
     return _logger
 
-def _current_log_file() -> str:
-    if _logger is None:
-        return ""
-    for handler in list(_logger.handlers):
-        base = getattr(handler, "baseFilename", "")
-        if base:
-            return base
-    return ""
-
-def _mirror_level(line: str) -> None:
-    level = parse_level(line)
-    if level == "INFO" or level not in LEVEL_DIRS:
-        return
-    main = _current_log_file()
-    if not main:
-        return
-    folder = os.path.join(LOG_DIR, level)
-    os.makedirs(folder, exist_ok=True)
-    path = os.path.join(folder, os.path.basename(main))
-    with open(path, "a", encoding="utf-8") as fp:
-        fp.write(re.sub(r"\x1b\[[0-9;]*m", "", line).rstrip("\r\n") + "\n")
-
-def parse_level(line: str) -> str:
-    try:
-        text = re.sub(r"\x1b\[[0-9;]*m", "", line)
-        for level in ("ERROR", "WARN", "DEBUG", "INFO"):
-            if "] [" + level + "]" in text:
-                return level
-    except Exception:
-        pass
-    return "INFO"
-
 def write_line(line: str) -> None:
     try:
         text = re.sub(r"\x1b\[[0-9;]*m", "", line).rstrip("\r\n")
         if not text:
             return
         get_logger().info("%s", text)  # type: ignore
-        _mirror_level(text)
     except Exception:
         pass
 
