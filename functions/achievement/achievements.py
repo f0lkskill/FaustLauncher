@@ -288,7 +288,8 @@ def _define_achievements():
     try:
         _marked = load_completed_state()
         if _marked:
-            print(f"[Achievement] 本地已完成 {_marked} 条，直接标记为已解锁（不再重复获取）")
+            pass
+            # print(f"[Achievement] 本地已完成 {_marked} 条，直接标记为已解锁（不再重复获取）")
     except Exception as _exc:  # noqa: BLE001
         print(f"[Achievement] 读取本地完成记录失败: {_exc}")
 
