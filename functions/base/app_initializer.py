@@ -1,5 +1,6 @@
 
 import sys, os
+import traceback
 import tkinter as tk
 
 from functions.achievement.hook import run_achievement_hook
@@ -16,12 +17,35 @@ from functions.base.sound_utils import play_sound
 WEB_UI_FLAG = 'WEB_UI'
 TK_UI_FLAG = 'TK_UI'
 
+
+def run_launcher_mode(debug=False):
+    """--launcher-mode：不进入 UI，直接跑完整后端启动流程。
+
+    Steam 通过启动项把启动器拉起时走这里：检查/更新汉化 -> 应用到游戏目录 ->
+    加载 mod -> 起游戏，最后照常弹出 mod 加载进度窗口。跑完即退出。
+    """
+    print("[LauncherMode] 以 Steam 启动器模式运行（不进入 UI）")
+    try:
+        from functions.base.log_manager import init_logger
+        init_logger()
+    except Exception as exc:  # noqa: BLE001
+        print(f"[LauncherMode] 日志初始化失败(继续): {exc}")
+
+    try:
+        from functions.pages.app.page_loader import download_and_launch
+        download_and_launch(obj=None, need_run_game=True)
+    except Exception as exc:  # noqa: BLE001
+        traceback.print_exc()
+        print(f"[LauncherMode] 启动流程失败: {exc}")
+
+
 LAUNCH_MODE = {
     "--achievement-hook": run_achievement_hook,    
     "--nyos-window": run_prescript_window,
     "--mod-manager-window": run_mod_manager_window,
     "--extension-tools-window": run_extension_tools_window,
-    "--custom-translation-window": run_custom_translation_window
+    "--custom-translation-window": run_custom_translation_window,
+    "--launcher-mode": run_launcher_mode
 }
 
 DEBUG_MODE = '--debug' in sys.argv

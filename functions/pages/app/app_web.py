@@ -1288,6 +1288,33 @@ class AppApi:
         except Exception as exc:
             print(f"[User] 记录改名时间失败: {exc}")
 
+    def _apply_steam_binding(self, enabled):
+        """设置项变化时同步 Steam 启动项：开启 -> 关 Steam / 写入 / 开 Steam；
+        关闭 -> 还原成绑定前的启动项。会强杀 Steam，所以丢到后台线程做。"""
+
+        def worker():
+            try:
+                from functions.base import steam_binding
+                result = steam_binding.apply(bool(enabled))
+                if result.get("ok"):
+                    print(f"[SteamBinding] {result.get('message') or '已同步 Steam 启动项'}")
+                else:
+                    print(f"[SteamBinding] 同步失败: {result.get('error')}")
+            except Exception as exc:  # noqa: BLE001
+                print(f"[SteamBinding] 同步异常: {exc}")
+
+        threading.Thread(target=worker, daemon=True, name="steam-binding").start()
+
+    def _sync_steam_binding_setting(self, key, value):
+        try:
+            from functions.base.launcher_mode import STEAM_BINDING_KEY
+        except Exception:
+            return False
+        if str(key) != str(STEAM_BINDING_KEY):
+            return False
+        self._apply_steam_binding(bool(value))
+        return True
+
     def set_setting(self, key, value):
         blocked = self._guard_user_name(key, value)
         if blocked:
@@ -1298,6 +1325,7 @@ class AppApi:
         if str(key) == "user_name":
             self._mark_user_name_changed()
             self._push_user_name()
+        self._sync_steam_binding_setting(key, value)
         return True
 
     def save_settings(self, changes: dict):
@@ -1316,6 +1344,8 @@ class AppApi:
         if renamed:
             self._mark_user_name_changed()
             self._push_user_name()
+        for key, value in changes.items():
+            self._sync_steam_binding_setting(key, value)
         if blocked:
             print(f"[User] 改名被冷却限制拒绝: {blocked}")
             return {"ok": False, "limited": True, "error": blocked}
