@@ -10,7 +10,7 @@
         "name": "游戏路径",
         "type": "string",
         "default": "",
-        "value": "D:\\steam\\steamapps\\common\\Limbus Company",
+        "value": "",
         "description": "游戏安装路径, 请确保路径正确\n否则可能导致启动失败和其他错误问题",
         "page": "通用"
     },
@@ -45,7 +45,7 @@
         "name": "从 Steam 启动时使用启动器",
         "type": "boolean",
         "default": false,
-        "value": true,
+        "value": false,
         "description": "开启后把 Steam 的启动项绑定到本启动器: 从 Steam 启动游戏时先拉起启动器, 由启动器完成汉化/Mod 加载后再启动游戏.\n开启时会先关掉 Steam, 写入启动项后再重新启动 Steam.\n关闭时会把启动项清空.\n启动项内容会被完全接管: 手动追加的参数同样会被覆盖.",
         "page": "通用"
     },
@@ -81,7 +81,7 @@
         "name": "用户名",
         "type": "string",
         "default": "Player",
-        "value": "folkskill",
+        "value": "Player",
         "description": "你的用户名，将显示在边狱巴士的个人车票上。",
         "page": "美化"
     },
@@ -202,7 +202,7 @@
         "name": "隐藏Mod加载窗口",
         "type": "boolean",
         "default": true,
-        "value": false,
+        "value": true,
         "description": "启动游戏时是否隐藏 Mod 加载窗口",
         "page": "Mod"
     },
@@ -420,8 +420,8 @@
     "version_info": {
         "name": "版本信息",
         "type": "UNABLE_TO_EDIT",
-        "default": "V0.9.2-release.fix.1",
-        "value": "V0.9.2-release.fix.1",
+        "default": "V0.9.3-release",
+        "value": "V0.9.3-release",
         "description": "当前应用程序的版本信息"
     },
     "mems": {
@@ -432,8 +432,8 @@
             "version_notify_flag": false
         },
         "value": {
-            "tray_hint": true,
-            "version_notify_flag": true
+            "tray_hint": false,
+            "version_notify_flag": false
         },
         "description": "程序运行时的缓存数据\n不建议修改"
     }
