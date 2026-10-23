@@ -206,6 +206,14 @@
         "description": "如果为空, 则使用启动器自带的改装后的mod加载器加载mod并启动游戏.\n否则使用存储路径处的外部mod加载器进行启动操作.",
         "page": "Mod"
     },
+    "steam_launch_with_launcher": {
+        "name": "从 Steam 启动时使用启动器",
+        "type": "boolean",
+        "default": false,
+        "value": false,
+        "description": "开启后把 Steam 的启动项绑定到本启动器: 从 Steam 启动游戏时先拉起启动器(--launcher-mode), 由启动器完成汉化/Mod 加载后再启动游戏.\n开启时会先关掉 Steam, 写入启动项后再重新启动 Steam.\n关闭时会自动把启动项还原成绑定前的样子.",
+        "page": "Mod"
+    },
     "ai_app_key": {
         "name": "翻译 AI 密钥",
         "type": "string",
