@@ -237,7 +237,7 @@ class FaustLauncherCore:
             return
         if not interactive and getattr(self, "_steam_path_checked", False):
             return
-        print("错误: 未配置游戏路径")
+        print("未配置游戏路径，进入自动查找。")
         from functions.base.steam_locator import (
             find_steam_game_path, resolve_game_dir, GAME_EXE,
         )

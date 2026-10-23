@@ -377,115 +377,10 @@ def _patch_tk_dialogs(push_event):
     except Exception:
         pass
 
-class _VarHook:
+from functions.pages.download.headless_gui import (
+    _VarHook, _RootShim, HeadlessDownloadGUI,
+)
 
-    def __init__(self, on_change=None, initial=""):
-        self._value = initial
-        self._on_change = on_change
-
-    def set(self, value):
-        self._value = str(value)
-        if self._on_change:
-            try:
-                self._on_change(self._value)
-            except Exception:
-                pass
-
-    def get(self):
-        return self._value
-
-    def trace(self, *args):
-        pass
-
-class _RootShim:
-
-    def __init__(self, owner):
-        self._owner = owner
-        self._closed = False
-
-    def after(self, ms, cb):
-        def _run():
-            if not self._closed:
-                try:
-                    cb()
-                except Exception:
-                    pass
-        threading.Timer(ms / 1000.0, _run).start()
-
-    def destroy(self):
-        self._closed = True
-        self._owner.is_downloading = False
-
-    def deiconify(self):
-        pass
-
-    def update_idletasks(self):
-        pass
-
-class HeadlessDownloadGUI:
-
-    def __init__(self, config_path: str = "", auto_start: bool = True,
-                 download_func=None, task: str = None): # type: ignore
-        self.config_path = config_path
-        self.is_downloading = True
-        self.task = task
-        self._push_progress = None
-        self._on_done = None
-        self.current_file_var = _VarHook(self._on_status, "初始化下载组件...")
-        self.progress_var = _VarHook(initial="0")
-        self.progress_text_var = _VarHook(initial="0%")
-        self.speed_var = _VarHook(initial="0 KB/s")
-        self.status_var = _VarHook(initial="准备开始下载...")
-        self.root = _RootShim(self)
-
-        if auto_start:
-            self.start_download(download_func)
-
-    def _on_status(self, text):
-        import functions.web_update.zeroasso_download as zd
-        try:
-            getattr(zd, "_web_progress", lambda e, d: None)("status", {
-                "task": self.task, "text": text,
-            })
-        except Exception:
-            pass
-
-    def update_progress(self, percent, downloaded, total, speed):
-        import functions.web_update.zeroasso_download as zd
-        try:
-            getattr(zd, "_web_progress", lambda e, d: None)("progress", {
-                "task": self.task,
-                "percent": round(float(percent), 1),
-                "downloaded": downloaded, "total": total, "speed": speed,
-            })
-        except Exception:
-            pass
-        self.progress_var.set(percent)
-        self.speed_var.set(f"速度: {speed:.1f} KB/s" if speed < 1024 else f"速度: {speed / 1024:.1f} MB/s")
-
-    def start_download(self, download_func=None):
-        self.is_downloading = True
-        threading.Thread(target=self.run_download, args=(download_func,),
-                         daemon=True).start()
-
-    def run_download(self, download_func=None):
-        try:
-            success = download_func(self, self.config_path)  # type: ignore
-            if success:
-                self.root.after(500, self.root.destroy)
-            else:
-                self.current_file_var.set("下载失败, 请检查错误信息")
-                self.root.after(1000, self.root.destroy)
-        except Exception as e:
-            self.current_file_var.set(f"下载过程中出现错误: {e}")
-        finally:
-            self.is_downloading = False
-            self.root.after(500, self.root.destroy)
-            if self._on_done:
-                try:
-                    self._on_done()
-                except Exception:
-                    pass
 
 SKIN_SETTING_KEY = "skin"
 _IMAGE_EXTS = (".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp")
@@ -1288,6 +1183,33 @@ class AppApi:
         except Exception as exc:
             print(f"[User] 记录改名时间失败: {exc}")
 
+    def _apply_steam_binding(self, enabled):
+        """设置项变化时同步 Steam 启动项：开启 -> 关 Steam / 写入 / 开 Steam；
+        关闭 -> 还原成绑定前的启动项。会强杀 Steam，所以丢到后台线程做。"""
+
+        def worker():
+            try:
+                from functions.base import steam_binding
+                result = steam_binding.apply(bool(enabled))
+                if result.get("ok"):
+                    print(f"[SteamBinding] {result.get('message') or '已同步 Steam 启动项'}")
+                else:
+                    print(f"[SteamBinding] 同步失败: {result.get('error')}")
+            except Exception as exc:  # noqa: BLE001
+                print(f"[SteamBinding] 同步异常: {exc}")
+
+        threading.Thread(target=worker, daemon=True, name="steam-binding").start()
+
+    def _sync_steam_binding_setting(self, key, value):
+        try:
+            from functions.base.launcher_mode import STEAM_BINDING_KEY
+        except Exception:
+            return False
+        if str(key) != str(STEAM_BINDING_KEY):
+            return False
+        self._apply_steam_binding(bool(value))
+        return True
+
     def set_setting(self, key, value):
         blocked = self._guard_user_name(key, value)
         if blocked:
@@ -1298,6 +1220,7 @@ class AppApi:
         if str(key) == "user_name":
             self._mark_user_name_changed()
             self._push_user_name()
+        self._sync_steam_binding_setting(key, value)
         return True
 
     def save_settings(self, changes: dict):
@@ -1316,6 +1239,8 @@ class AppApi:
         if renamed:
             self._mark_user_name_changed()
             self._push_user_name()
+        for key, value in changes.items():
+            self._sync_steam_binding_setting(key, value)
         if blocked:
             print(f"[User] 改名被冷却限制拒绝: {blocked}")
             return {"ok": False, "limited": True, "error": blocked}
