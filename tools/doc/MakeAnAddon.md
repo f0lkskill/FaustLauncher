@@ -44,11 +44,12 @@ import pystray
 self = ADDON_ARG['AddonManager']
 func_menu = pystray.Menu(pystray.MenuItem('测试', lambda:print('测试?')))
 
-self.menu_items.append(pystray.MenuItem(ADDON_ARG['AddonName'], action=func_menu))
+self.register_tray_item(pystray.MenuItem(ADDON_ARG['AddonName'], action=func_menu))
 
 print('loads')
 ```
-- 这里实现了一个简单的功能，加载的时候实现添加托盘右键功能。
+- 上例在托盘右键菜单的“插件”子菜单中添加功能。`register_tray_item` 会刷新托盘；旧版 `menu_items.append(...)` 仍兼容。
+- 子菜单的 `action` 必须是 `pystray.Menu` 对象；普通回调返回 `Menu` 不会弹出子菜单。
 - 至于可以做些什么，可以考虑查看项目源码实现更多的功能。
 
 ---
