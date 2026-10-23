@@ -56,6 +56,7 @@ class AddonManager:
     def clear_custom_tray_items(self) -> None:
         self.custom_tray_items.clear()
         self.menu_items.clear()
+        self._refresh_tray_menu()
 
     def get_custom_tray_items(self) -> List[Any]:
         seen: set = set()
@@ -67,64 +68,8 @@ class AddonManager:
         return merged
 
     def build_tray_menu_items(self) -> List[Any]:
-        items: List[Any] = []
-
-        for addon in self.get_all_addons():
-            name = addon['name']
-            try:
-                enabled = bool(addon.get('info', {}).get('settings', {}).get('enable', True))
-            except Exception:
-                enabled = True
-
-            def _make_runner(n: str):
-                def _run(icon=None, item=None):
-                    try:
-                        self.run_addon(n)
-                    except Exception as e:
-                        print(f"手动运行插件 {n} 失败: {e}")
-                return _run
-
-            label = f"🔧 {name}" if enabled else f"⚙️ {name} (已禁用)"
-            try:
-                import pystray
-                items.append(pystray.MenuItem(label, _make_runner(name)))
-            except Exception:
-                items.append((label, _make_runner(name)))
-
-        custom_items = self.get_custom_tray_items()
-        if custom_items:
-            if items:
-                try:
-                    import pystray
-                    items.append(pystray.MenuItem(
-                        '─── 自定义项 ───', None, enabled=False))
-                except Exception:
-                    items.append(('─── 自定义项 ───', None))
-            items.extend(custom_items)
-
-        try:
-            import pystray
-            if items:
-                items.append(pystray.MenuItem('─────────────', None, enabled=False))
-            items.append(pystray.MenuItem(
-                '🔄 重载插件',
-                lambda icon=None, item=None: self.reload_all_addons()))
-            items.append(pystray.MenuItem(
-                '📋 插件列表',
-                lambda icon=None, item=None: self._print_addon_status()))
-        except Exception:
-            if items:
-                items.append(('─────────────', None))
-            items.append(('🔄 重载插件', lambda: self.reload_all_addons()))
-
-        if not items or all(isinstance(x, tuple) and x[1] is None for x in items):
-            try:
-                import pystray
-                items = [pystray.MenuItem('（暂无可用插件）', None, enabled=False)]
-            except Exception:
-                items = [('（暂无可用插件）', None)]
-
-        return items
+        """Only show menus explicitly registered by addons, including the legacy API."""
+        return self.get_custom_tray_items()
 
     def _print_addon_status(self) -> None:
         print(f"共扫描到 {len(self.addon_names)} 个插件：")
@@ -249,6 +194,8 @@ class AddonManager:
             for f in self.gamestart_funcs[_gs_before:]:
                 self.gamestart_owners[id(f)] = addon_name
 
+            # Legacy addons append directly to menu_items; refresh after loading too.
+            self._refresh_tray_menu()
             print(f"插件 {addon_name} 初始化完成!")
             return True
         except Exception as e:
