@@ -18,35 +18,6 @@ WEB_UI_FLAG = 'WEB_UI'
 TK_UI_FLAG = 'TK_UI'
 
 
-def _use_headless_download_gui():
-    """把下载进度界面换成无窗口版本。
-
-    `--launcher-mode` 是后台流程，没有 Tk 主循环。真实 `DownloadGUI` 会在这里
-    创建窗口却不跑 mainloop，结果就是一个永远无响应的窗口挡住流程。
-    web 后端早就有同样的替换，这里复用同一套无头实现。
-    """
-    try:
-        from functions.pages.download.headless_gui import HeadlessDownloadGUI
-        import functions.web_update.zeroasso_download as zd
-
-        zd.main_gui = lambda parent, config_path="": HeadlessDownloadGUI(
-            config_path, download_func=zd.download_and_extract_gui)
-        zd.DownloadGUI = (
-            lambda parent=None, config_path="", auto_start=True,
-                   download_func=None, task=None: HeadlessDownloadGUI(
-                       config_path, auto_start=auto_start,
-                       download_func=download_func, task=task))
-        try:
-            import functions.update.version_utils as vu
-            vu.DownloadGUI = zd.DownloadGUI  # type: ignore
-        except Exception:
-            pass
-        return True
-    except Exception as exc:  # noqa: BLE001
-        print(f"[LauncherMode] 无头下载界面不可用(继续): {exc}")
-        return False
-
-
 def run_launcher_mode(debug=False):
     """--launcher-mode：不进入 UI，直接跑完整后端启动流程。
 
@@ -59,8 +30,6 @@ def run_launcher_mode(debug=False):
         init_logger()
     except Exception as exc:  # noqa: BLE001
         print(f"[LauncherMode] 日志初始化失败(继续): {exc}")
-
-    _use_headless_download_gui()
 
     try:
         from functions.pages.app.page_loader import download_and_launch

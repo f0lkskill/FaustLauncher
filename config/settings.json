@@ -46,7 +46,7 @@
         "type": "boolean",
         "default": false,
         "value": true,
-        "description": "开启后把 Steam 的启动项绑定到本启动器: 从 Steam 启动游戏时先拉起启动器, 由启动器完成汉化/Mod 加载后再启动游戏.\n开启时会先关掉 Steam, 写入启动项后再重新启动 Steam.\n关闭时会把启动项清空.",
+        "description": "开启后把 Steam 的启动项绑定到本启动器: 从 Steam 启动游戏时先拉起启动器, 由启动器完成汉化/Mod 加载后再启动游戏.\n开启时会先关掉 Steam, 写入启动项后再重新启动 Steam.\n关闭时会把启动项清空.\n启动项内容会被完全接管: 手动追加的参数同样会被覆盖.",
         "page": "通用"
     },
     "check_translate_update": {
