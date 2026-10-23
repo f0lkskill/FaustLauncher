@@ -13,6 +13,35 @@ _SMALL_FONT = ('Microsoft YaHei UI', 9)
 _BUTTON_FONT = ('Microsoft YaHei UI', 9, 'bold')
 _BIG_BUTTON_FONT = ('Microsoft YaHei UI', 11, 'bold')
 
+
+def _after_setting_change(key, value):
+    """设置项改动的副作用钩子（目前只有 Steam 启动项绑定）。
+
+    绑定要关掉/拉起 Steam，耗时且会阻塞 UI，所以一律丢后台线程。
+    """
+    try:
+        from functions.base.launcher_mode import STEAM_BINDING_KEY
+        if str(key) != str(STEAM_BINDING_KEY):
+            return
+
+        import threading
+        from functions.base import steam_binding
+
+        def worker():
+            try:
+                result = steam_binding.apply(bool(value))
+                if result.get("ok"):
+                    print(f"[SteamBinding] {result.get('message') or '已同步 Steam 启动项'}")
+                else:
+                    print(f"[SteamBinding] 同步失败: {result.get('error')}")
+            except Exception as exc:  # noqa: BLE001
+                print(f"[SteamBinding] 同步异常: {exc}")
+
+        threading.Thread(target=worker, daemon=True, name="steam-binding").start()
+    except Exception as exc:  # noqa: BLE001
+        print(f"[SteamBinding] 钩子异常: {exc}")
+
+
 class SettingsPage:
     def __init__(self, parent_frame, bg_color, lighten_bg_color):
         self.parent = parent_frame
@@ -391,6 +420,7 @@ class SettingsPage:
 
     def on_boolean_change(self, key, var):
         self.settings_manager.set_setting(key, var.get())
+        _after_setting_change(key, var.get())
 
     def on_string_change(self, key, entry):
         self.settings_manager.set_setting(key, entry.get())
