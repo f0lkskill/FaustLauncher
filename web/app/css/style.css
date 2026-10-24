@@ -568,6 +568,13 @@ body.no-hw .hero {
 .res-actions-group { display: flex; gap: 8px; flex-wrap: wrap; }
 /* hidden 属性优先于 display:flex, 保证按钮组按分区正确切换 */
 .res-actions-group[hidden] { display: none !important; }
+/* 破坏性按钮 (强卸载等): 常态与普通图标按钮一致, 悬停才提示危险 */
+.res-actions .res-danger { margin-left: 2px; }
+.res-actions .res-danger:hover {
+  color: var(--danger);
+  border-color: rgba(239, 68, 68, 0.45);
+  background: rgba(239, 68, 68, 0.10);
+}
 /* 搜索框 (图标 + 输入框; 图标是内联 SVG, 不能塞进 placeholder) */
 .res-search-wrap {
   position: relative; display: flex; align-items: center;
@@ -1153,6 +1160,16 @@ body.modal-open .res-card {
 }
 .panel-close:hover { background: rgba(239, 68, 68, 0.15); color: var(--danger); }
 .panel-body { padding: 18px 20px; overflow-y: auto; flex: 1; }
+/* 面板里的富文本说明 (确认框/结果框): 全局 reset 把 p/ol 的间距清零了, 这里补回来,
+   否则多段文字会挤成一坨、有序列表的序号会贴在文字上。 */
+.panel-body.rich { font-size: 13.5px; line-height: 1.8; color: var(--text-2); }
+.panel-body.rich p { margin: 9px 0; }
+.panel-body.rich > *:first-child { margin-top: 0; }
+.panel-body.rich > *:last-child { margin-bottom: 0; }
+.panel-body.rich ol, .panel-body.rich ul { margin: 9px 0; padding-left: 20px; }
+.panel-body.rich li { margin: 5px 0; }
+.panel-body.rich li::marker { color: var(--text-3); }
+.panel-body.rich b, .panel-body.rich strong { color: var(--text); font-weight: 700; }
 .panel-foot { display: flex; gap: 10px; justify-content: flex-end; padding: 14px 20px; border-top: 1px solid var(--border); }
 .at-row { margin-bottom: 14px; }
 .at-row label { display: block; font-size: 12.5px; color: var(--text-2); margin-bottom: 6px; }
@@ -2521,3 +2538,19 @@ body.no-hw .ver-card { animation: verCardInLite .38s cubic-bezier(.22, .9, .24, 
   .user-modal-card { width: auto; }
 }
 
+
+/* ---- 悬浮提示 (data-tip) ----
+   按钮上写 data-tip="文字" 即可, 由 utils.js 的事件委托负责显示。
+   用 body 下的 fixed 图层而不是 ::after: 工具栏/面板都有 overflow 裁切,
+   伪元素做的提示会被切掉一半。 */
+.tip-layer {
+  position: fixed; z-index: 9999; left: 0; top: 0;
+  padding: 5px 10px; border-radius: 7px;
+  font-size: 12px; line-height: 1.5; white-space: nowrap;
+  color: #f2f2f3; background: rgba(16, 16, 18, .97);
+  border: 1px solid rgba(255, 255, 255, .13);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, .5);
+  pointer-events: none; opacity: 0; transform: translateY(-3px);
+  transition: opacity .14s ease, transform .14s ease;
+}
+.tip-layer.on { opacity: 1; transform: translateY(0); }

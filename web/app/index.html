@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>FaustLauncher 浮士德启动器</title>
-<link rel="stylesheet" href="css/style.css?v=171">
+<link rel="stylesheet" href="css/style.css?v=172">
 </head>
 <body>
 <div id="titlebar">
@@ -144,15 +144,16 @@
           </div>
           <div class="res-actions">
             <div class="res-actions-group" id="res-actions-addon">
-              <button class="btn btn-ghost btn-icon" id="btn-open-addon-dir"><svg class="ico" data-icon="all-application.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg></button>
-              <button class="btn btn-ghost btn-icon" id="btn-install-addon"><svg class="ico" data-icon="install.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg></button>
-              <button class="btn btn-ghost btn-icon" id="btn-reinstall-addon"><svg class="ico" data-icon="refresh.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg></button>
+              <button class="btn btn-ghost btn-icon" id="btn-open-addon-dir" data-tip="打开插件目录"><svg class="ico" data-icon="all-application.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg></button>
+              <button class="btn btn-ghost btn-icon" id="btn-install-addon" data-tip="安装本地插件"><svg class="ico" data-icon="install.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg></button>
+              <button class="btn btn-ghost btn-icon" id="btn-reinstall-addon" data-tip="重装全部插件"><svg class="ico" data-icon="refresh.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg></button>
             </div>
             <div class="res-actions-group" id="res-actions-mod" hidden>
-              <button class="btn btn-ghost btn-icon" id="btn-open-mod-dir"><svg class="ico" data-icon="all-application.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg></button>
-              <button class="btn btn-ghost btn-icon" id="btn-open-mod-window"><svg class="ico" data-icon="file-addition-one.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg></button>
-              <button class="btn btn-ghost btn-icon" id="btn-reinstall-mod"><svg class="ico" data-icon="refresh.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg></button>
+              <button class="btn btn-ghost btn-icon" id="btn-open-mod-dir" data-tip="打开 Mod 目录"><svg class="ico" data-icon="all-application.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg></button>
+              <button class="btn btn-ghost btn-icon" id="btn-open-mod-window" data-tip="打开 Mod 管理窗口"><svg class="ico" data-icon="file-addition-one.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg></button>
+              <button class="btn btn-ghost btn-icon" id="btn-reinstall-mod" data-tip="重装全部 Mod"><svg class="ico" data-icon="refresh.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg></button>
             </div>
+            <button class="btn btn-ghost btn-icon res-danger" id="btn-force-uninstall-mods" data-tip="强卸载全部 Mod（清除所有资源改写）"><svg class="ico" data-icon="harm.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg></button>
           </div>
         </div>
         <div id="res-list" class="res-list"></div>
@@ -344,7 +345,7 @@
 <!-- core: 基座层(环境/状态/工具/后端通道/外壳) -->
 <script src="js/core/bootstrap.js?v=171"></script>
 <script src="js/core/state.js?v=171"></script>
-<script src="js/core/utils.js?v=171"></script>
+<script src="js/core/utils.js?v=172"></script>
 <!-- 图标仓库: 内联 SVG (assets/icon/*.svg), 取代此前的 emoji 图标 -->
 <script src="js/core/icons.js?v=171"></script>
 <script src="js/core/bridge.js?v=171"></script>
@@ -361,7 +362,7 @@
 <script src="js/ui/version_modal.js?v=171"></script>
 <!-- features: 业务功能(流水线/资源/下载/工具/主页/设置/关于) -->
 <script src="js/features/pipeline.js?v=171"></script>
-<script src="js/features/resources.js?v=171"></script>
+<script src="js/features/resources.js?v=172"></script>
 <script src="js/features/downloads.js?v=171"></script>
 <script src="js/features/tools.js?v=171"></script>
 <script src="js/features/home.js?v=171"></script>
