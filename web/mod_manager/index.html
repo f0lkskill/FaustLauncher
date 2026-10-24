@@ -44,6 +44,63 @@
         padding: 22px 30px 20px;
     }
 
+    /* ── 搜索框 ── */
+    .searchbar {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        height: 40px;
+        padding: 0 14px;
+        background: rgba(var(--tint-rgb, 255, 255, 255), 0.04);
+        border: 1px solid rgba(var(--tint-rgb, 148, 163, 184), 0.22);
+        border-radius: 10px;
+        transition: border-color 0.15s ease, background 0.15s ease;
+    }
+
+    .searchbar:focus-within {
+        border-color: rgba(var(--accent-rgb, 88, 166, 255), 0.6);
+        background: rgba(var(--accent-rgb, 88, 166, 255), 0.06);
+    }
+
+    .searchbar .sb-ico {
+        font-size: 14px;
+        opacity: 0.6;
+        flex-shrink: 0;
+    }
+
+    .searchbar input {
+        flex: 1;
+        min-width: 0;
+        border: none;
+        outline: none;
+        background: transparent;
+        font-family: inherit;
+        font-size: 13px;
+        color: var(--text, #e2e8f0);
+        user-select: text;
+    }
+
+    .searchbar input::placeholder {
+        color: var(--text-3, #64748b);
+    }
+
+    .searchbar .sb-clear {
+        flex-shrink: 0;
+        display: none;
+        border: none;
+        background: transparent;
+        color: var(--text-3, #94a3b8);
+        font-family: inherit;
+        font-size: 13px;
+        line-height: 1;
+        padding: 3px 4px;
+        cursor: pointer;
+        transition: color 0.15s ease;
+    }
+
+    .searchbar.has-text .sb-clear { display: block; }
+    .searchbar .sb-clear:hover { color: var(--danger, #f87171); }
+
     /* ── 拖拽区域 ── */
     .dropzone {
         margin-top: 12px;
@@ -291,9 +348,15 @@
 <body>
 <img id="bgimg" alt="">
 <div class="wrap">
+    <div class="searchbar" id="searchbar">
+        <span class="sb-ico">🔍</span>
+        <input id="search" type="text" placeholder="搜索 Mod 文件（名称 / 类型）..." spellcheck="false" autocomplete="off">
+        <button class="sb-clear" id="searchClear" type="button">✕</button>
+    </div>
+
     <div class="dropzone" id="dropzone">
         <div class="dz-title">📁 拖拽 Mod 文件到此处</div>
-        <div class="dz-hint">支持批量添加 · 仅支持单文件 <b>.bank</b>（音效）与 <b>.carra2</b>（贴图）· 或点击选择文件</div>
+        <div class="dz-hint">支持批量添加 · 支持单文件 <b>.bank</b>（音效）<b>.carra2</b>（贴图）<b>.rebank</b>（差分）· 或点击选择文件</div>
     </div>
 
     <div class="list" id="list">
@@ -310,7 +373,7 @@
     <div class="ov-inner">
         <div class="ov-icon">📥</div>
         <div class="ov-text">松开以添加文件</div>
-        <div class="ov-sub">仅支持 .bank / .carra2 单文件，支持批量</div>
+        <div class="ov-sub">支持 .bank / .carra2 / .rebank 单文件，支持批量</div>
     </div>
 </div>
 
@@ -337,12 +400,31 @@
         return (bytes / (1024 * 1024)).toFixed(1) + " MB";
     }
 
+    // 最近一次拉取的完整列表: 搜索时在本地过滤, 不重新请求后端
+    let lastData = { files: [] };
+
+    function currentQuery() {
+        const el = $("search");
+        return ((el && el.value) || "").trim().toLowerCase();
+    }
+
+    function matchFile(f, q) {
+        if (!q) return true;
+        return String(f.name || "").toLowerCase().indexOf(q) >= 0
+            || String(f.ext || "").toLowerCase().indexOf(q) >= 0
+            || String(f.type_label || "").toLowerCase().indexOf(q) >= 0;
+    }
+
     function renderFiles(d) {
         const list = $("list");
         list.innerHTML = "";
-        const files = d.files || [];
-        if (!files.length) {
+        const all = (d && d.files) || [];
+        const q = currentQuery();
+        const files = q ? all.filter((f) => matchFile(f, q)) : all;
+        if (!all.length) {
             list.innerHTML = '<div class="empty">📭 暂无 Mod 文件，拖拽或点击上方区域添加</div>';
+        } else if (!files.length) {
+            list.innerHTML = '<div class="empty">🔍 没有匹配的 Mod 文件</div>';
         }
         files.forEach((f) => {
             const row = document.createElement("div");
@@ -421,8 +503,10 @@
             list.appendChild(row);
         });
 
-        const enabledCount = files.filter((f) => f.enabled).length;
-        $("count").textContent = "已加载 " + files.length + " 个文件 · " + enabledCount + " 已启用";
+        const enabledCount = all.filter((f) => f.enabled).length;
+        $("count").textContent = q
+            ? "筛选 " + files.length + " / " + all.length + " 个文件 · " + enabledCount + " 已启用"
+            : "已加载 " + all.length + " 个文件 · " + enabledCount + " 已启用";
     }
 
     function setMsg(text, isErr) {
@@ -434,11 +518,41 @@
     async function loadList() {
         try {
             const d = await api.get_data();
-            renderFiles(d);
+            lastData = d || { files: [] };
+            renderFiles(lastData);
         } catch (e) {
             console.error(e);
             setMsg("获取列表失败: " + (e && (e.message || e) || e), true);
         }
+    }
+
+    // ---- 搜索 ----
+    const searchInput = $("search");
+    const searchBar = $("searchbar");
+
+    function applySearch() {
+        if (searchBar) searchBar.classList.toggle("has-text", !!(searchInput && searchInput.value));
+        renderFiles(lastData);
+    }
+
+    if (searchInput) {
+        searchInput.addEventListener("input", applySearch);
+        searchInput.addEventListener("keydown", (e) => {
+            if (e.key === "Escape") {
+                searchInput.value = "";
+                applySearch();
+            }
+        });
+    }
+    const searchClear = $("searchClear");
+    if (searchClear) {
+        searchClear.addEventListener("click", () => {
+            if (searchInput) {
+                searchInput.value = "";
+                applySearch();
+                searchInput.focus();
+            }
+        });
     }
 
     function handleAdd(results) {
@@ -446,11 +560,11 @@
         const failCount = results.length - okCount;
         if (okCount > 0) {
             setMsg("已添加 " + okCount + " 个文件" + (failCount > 0 ? "，" + failCount + " 个被拒绝" : ""));
-            if (failCount > 0) showToast(failCount + " 个文件不符合要求（仅支持 .bank / .carra2）", true);
+            if (failCount > 0) showToast(failCount + " 个文件不符合要求（仅支持 .bank / .carra2 / .rebank）", true);
             loadList();
         } else if (failCount > 0) {
-            setMsg("没有可添加的文件（仅支持 .bank / .carra2）", true);
-            showToast("仅支持 .bank / .carra2 单文件", true);
+            setMsg("没有可添加的文件（仅支持 .bank / .carra2 / .rebank）", true);
+            showToast("仅支持 .bank / .carra2 / .rebank 单文件", true);
         } else {
             setMsg("未选择文件");
         }
@@ -529,10 +643,10 @@
         const failCount = results.length - okCount;
         if (okCount > 0) {
             setMsg("已添加 " + okCount + " 个文件" + (failCount > 0 ? "，" + failCount + " 个被拒绝" : ""));
-            if (failCount > 0) showToast(failCount + " 个文件不符合要求（仅支持 .bank / .carra2）", true);
+            if (failCount > 0) showToast(failCount + " 个文件不符合要求（仅支持 .bank / .carra2 / .rebank）", true);
             loadList();
         } else {
-            setMsg(failCount > 0 ? "没有可添加的文件（仅支持 .bank / .carra2）" : "未添加任何文件", true);
+            setMsg(failCount > 0 ? "没有可添加的文件（仅支持 .bank / .carra2 / .rebank）" : "未添加任何文件", true);
         }
     };
 
