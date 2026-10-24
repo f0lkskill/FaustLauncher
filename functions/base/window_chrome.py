@@ -387,7 +387,7 @@ def get_window_alpha(hwnd) -> int:
         import ctypes.wintypes as wt
         key = wt.COLORREF()
         alpha = wt.BYTE()
-        flags = ctypes.wintypes.DWORD()
+        flags = ctypes.wintypes.DWORD() # type: ignore
         if ctypes.windll.user32.GetLayeredWindowAttributes(
                 hwnd, ctypes.byref(key), ctypes.byref(alpha), ctypes.byref(flags)):
             return int(alpha.value)
