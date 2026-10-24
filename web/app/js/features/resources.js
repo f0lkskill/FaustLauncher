@@ -97,6 +97,7 @@ function renderResFromCache() {
   renderResList();
   syncResActions();              // 保持按钮组与当前分区一致
   bindResReinstallButtons();
+  bindResForceUninstall();       // 强卸载按钮常驻, 与分区无关
 }
 
 // ---- 资源管理页的加载态 ----
@@ -130,6 +131,70 @@ function enterResourcePage() {
     if (list && !list.children.length) renderResFromCache();
     setResLoading(false);
   });
+}
+
+// ---- 强卸载全部 Mod ----
+// carra2 改的是 Unity 缓存目录里的资源副本, rebank 改的是游戏目录里的 *.bank。
+// 强卸载 = 把这些改写全部抹掉, 无法自行还原成被 Mod 改过的样子,
+// 只能靠 Steam 完整性验证 + 游戏重新下载补回原版资源, 所以必须先确认。
+function bindResForceUninstall() {
+  const btn = $('#btn-force-uninstall-mods');
+  if (!btn) return;
+  btn.onclick = confirmForceUninstall;
+}
+
+function confirmForceUninstall() {
+  if (!api) { toast('浏览器预览模式', 'warn'); return; }
+  const panel = document.createElement('div');
+  panel.className = 'panel-overlay';
+  panel.innerHTML = '<div class="panel-card"><div class="panel-head"><h3>全部 Mod 强卸载</h3><button class="panel-close"><svg class="ico" data-icon="close.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg></button></div>' +
+    '<div class="panel-body rich">' +
+    '<p>将要进行全部 Mod 强卸载。</p>' +
+    '<p>执行强卸载之后，将<b>完全去除您下载的 Mod 视觉效果</b>，并需要您在 Steam 进行<b>完整性验证</b>和游戏内少部分资源重新下载。</p>' +
+    '<p style="color:var(--danger)">注意：执行本操作之后使用启动器启动并不能成功进行 Mod 加载，必须先按上述操作恢复资源才行。</p>' +
+    '</div>' +
+    '<div class="panel-foot"><button class="btn btn-ghost" data-no>取消</button><button class="btn btn-danger" data-yes>确认强卸载</button></div></div>';
+  document.body.appendChild(panel);
+  const close = () => closePanel(panel);
+  panel.querySelector('.panel-close').onclick = close;
+  panel.querySelector('[data-no]').onclick = close;
+  panel.querySelector('[data-yes]').onclick = async () => {
+    const btn = panel.querySelector('[data-yes]');
+    btn.disabled = true;
+    btn.textContent = '正在卸载...';
+    const r = await api.force_uninstall_all_mods().catch(e => ({ ok: false, error: String(e) }));
+    close();
+    if (!r || !r.ok) {
+      toast('强卸载失败: ' + ((r && (r.error || r.message)) || '未知错误'), 'error', 5000);
+      return;
+    }
+    showForceUninstallDone(r);
+    refreshMods(false);
+  };
+}
+
+function showForceUninstallDone(r) {
+  const done = (r.uninstalled || []).length;
+  const fail = (r.errors || []).length;
+  const panel = document.createElement('div');
+  panel.className = 'panel-overlay';
+  panel.innerHTML = '<div class="panel-card"><div class="panel-head"><h3>强卸载完成</h3><button class="panel-close"><svg class="ico" data-icon="close.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg></button></div>' +
+    '<div class="panel-body rich">' +
+    '<p>已还原 <b>' + done + '</b> 处 Mod 资源改写' + (fail ? '，另有 <b>' + fail + '</b> 处失败' : '') + '。</p>' +
+    '<p>现在游戏资源是不完整的原版状态，请务必按下面步骤恢复，否则启动游戏会缺资源：</p>' +
+    '<ol>' +
+    '<li>Steam → 库 → 右键《边狱公司》→ <b>属性</b></li>' +
+    '<li>切到「已安装文件」，点<b>验证游戏文件完整性</b>，等它跑完</li>' +
+    '<li>启动一次游戏，让它重新下载缺失的少量资源</li>' +
+    '</ol>' +
+    '<p>完成之后再用启动器启动，即可正常加载 Mod。</p>' +
+    '</div>' +
+    '<div class="panel-foot"><button class="btn btn-primary" data-ok>知道了</button></div></div>';
+  document.body.appendChild(panel);
+  const close = () => closePanel(panel);
+  panel.querySelector('.panel-close').onclick = close;
+  panel.querySelector('[data-ok]').onclick = close;
+  toast('已强卸载 ' + done + ' 处 Mod 资源改写', fail ? 'warn' : 'success', 4200);
 }
 
 function confirmReinstall(kind, dirs, label) {

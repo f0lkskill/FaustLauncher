@@ -1594,6 +1594,27 @@ class AppApi:
             'single_dir': '',
         }
 
+    def force_uninstall_all_mods(self):
+        """把所有 Mod 对游戏资源的改写还原成原版（强卸载）。"""
+        try:
+            from functions.base import mod_force_uninstall as mfu
+            plan = mfu.scan()
+            if not plan:
+                return {'ok': True, 'total': 0, 'uninstalled': [], 'missing': [],
+                        'errors': [], 'message': '当前没有可卸载的 Mod'}
+            result = mfu.force_uninstall_all()
+            if result.get('ok'):
+                result['message'] = (f"已还原 {len(result['uninstalled'])} 处资源改写"
+                                     f"（共扫描 {result['total']} 个 Mod）")
+            else:
+                result['message'] = (f"已还原 {len(result['uninstalled'])} 处，"
+                                     f"{len(result['errors'])} 处失败")
+            print(f"[ModForceUninstall] {result['message']}")
+            return result
+        except Exception as exc:
+            print(f"[ModForceUninstall] 卸载失败: {exc}")
+            return {'ok': False, 'error': str(exc)}
+
     def _cached_resource(self, kind, name):
         try:
             from functions.pages.app import page_loader as _pl

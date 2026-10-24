@@ -250,3 +250,71 @@ function shortPath(p) {
     }
     return p;
 }
+
+// ---- 悬浮提示 (data-tip) ----
+// 任何元素加 data-tip="文字" 就能有提示。用 body 下的 fixed 图层而不是 CSS 伪元素,
+// 因为工具栏、面板、列表容器都带 overflow 裁切, 伪元素的提示会被切掉。
+// 事件委托挂在 document 上, 后动态插入的按钮同样生效, 不需要重新绑定。
+(function () {
+  let layer = null;
+  let timer = null;
+  let current = null;
+
+  function ensureLayer() {
+    if (!layer) {
+      layer = document.createElement('div');
+      layer.className = 'tip-layer';
+      document.body.appendChild(layer);
+    }
+    return layer;
+  }
+
+  function place(el) {
+    const l = ensureLayer();
+    const r = el.getBoundingClientRect();
+    const lr = l.getBoundingClientRect();
+    let left = r.left + r.width / 2 - lr.width / 2;
+    left = Math.max(8, Math.min(left, window.innerWidth - lr.width - 8));
+    // 默认在下方; 贴底了就翻到上方
+    let top = r.bottom + 8;
+    if (top + lr.height > window.innerHeight - 8) top = r.top - lr.height - 8;
+    l.style.left = left + 'px';
+    l.style.top = Math.max(8, top) + 'px';
+  }
+
+  function show(el) {
+    const text = el.getAttribute('data-tip');
+    if (!text) return;
+    const l = ensureLayer();
+    l.textContent = text;
+    l.classList.add('on');
+    place(el);            // 先上屏才能量出宽度, 再校正一次位置
+    place(el);
+  }
+
+  function hide() {
+    clearTimeout(timer);
+    timer = null;
+    current = null;
+    if (layer) layer.classList.remove('on');
+  }
+
+  document.addEventListener('mouseover', function (e) {
+    const el = e.target && e.target.closest && e.target.closest('[data-tip]');
+    if (!el || el === current) return;
+    current = el;
+    clearTimeout(timer);
+    timer = setTimeout(function () { if (current === el) show(el); }, 240);
+  });
+
+  document.addEventListener('mouseout', function (e) {
+    const el = e.target && e.target.closest && e.target.closest('[data-tip]');
+    if (!el) return;
+    // 在提示元素内部挪动时不闪烁
+    if (e.relatedTarget && el.contains(e.relatedTarget)) return;
+    hide();
+  });
+
+  document.addEventListener('mousedown', hide, true);
+  window.addEventListener('blur', hide);
+})();
