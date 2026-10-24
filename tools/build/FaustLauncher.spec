@@ -143,6 +143,9 @@ a = Analysis(
     'functions.achievement.data.ach_battle_03',
     'functions.achievement.data.ach_enkephalin_100',
     'capstone',
+    # il2cpp 导出映射：插件（addons\SinnersRandom）在函数内 import，静态分析看不到
+    'functions.base.il2cpp_exports',
+    'pefile',
 ],
     hookspath=[],
     hooksconfig={},
