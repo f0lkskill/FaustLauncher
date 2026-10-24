@@ -7,11 +7,13 @@ else:
     _PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
 import json
 import time
+import threading
 import requests
 import subprocess
 from functions.pages.download.download_gui import DownloadGUI
 from functions.web_update.github_utils import GitHubReleaseFetcher
 from functions.web_update.download_utils import check_need_up_translate
+from functions.web_update import fast_download
 from functions.base.settings_manager import get_settings_manager
 from functions.base.web_config import get_webnote
 
@@ -50,7 +52,7 @@ def _invalidate_direct_link(source_url):
 
 def _open_stream(url, source_url, **kwargs):
     try:
-        resp = requests.get(url, **kwargs)
+        resp = fast_download.session().get(url, **kwargs)
         resp.raise_for_status()
         return resp
     except requests.exceptions.RequestException:
@@ -61,7 +63,7 @@ def _open_stream(url, source_url, **kwargs):
         retry_url = resolve_download_url(source_url)
         if not retry_url or retry_url == url:
             raise
-        resp = requests.get(retry_url, **kwargs)
+        resp = fast_download.session().get(retry_url, **kwargs)
         resp.raise_for_status()
         return resp
 
@@ -98,7 +100,7 @@ def open_download_source(url, gui=None, label='', **kwargs):
     resp = None
     for attempt in range(1, RAW_LINK_ATTEMPTS + 1):
         try:
-            resp = requests.get(url, **kwargs)
+            resp = fast_download.session().get(url, **kwargs)
             if resp.status_code < 400 and LooksLikeFileResponse(resp):
                 if attempt > 1:
                     status(f'原链接第 {attempt} 次尝试成功')
@@ -121,7 +123,7 @@ def open_download_source(url, gui=None, label='', **kwargs):
             status(f'直链下载失败({type(e).__name__})，改用原链接')
 
     if resp is None:
-        resp = requests.get(url, **kwargs)
+        resp = fast_download.session().get(url, **kwargs)
     return resp, url
 
 def resolve_download_url(url, gui=None, label=''):
@@ -146,26 +148,21 @@ def download_file(url, local_filename):
         response, _source = open_download_source(
             url, label=os.path.basename(local_filename), stream=True)
         response.raise_for_status()
-        
+
         total_size = int(response.headers.get('content-length', 0))
-        block_size = 8192
-        
         os.makedirs(os.path.dirname(local_filename), exist_ok=True)
-        
-        with open(local_filename, 'wb') as f:
-            downloaded_size = 0
-            for chunk in response.iter_content(chunk_size=block_size):
-                if chunk:
-                    f.write(chunk)
-                    downloaded_size += len(chunk)
-                    
-                    if total_size > 0:
-                        percent = (downloaded_size / total_size) * 100
-                        print(f"\r下载进度: {percent:.1f}% ({downloaded_size}/{total_size} bytes)", end='')
-        
+
+        def _progress(done, total):
+            size = total or total_size
+            if size > 0:
+                percent = (done / size) * 100
+                print(f"\r下载进度: {percent:.1f}% ({done}/{size} bytes)", end='')
+
+        ok = fast_download.download(url, local_filename, resp=response, progress=_progress)
+
         print("\n下载完成!")
-        return True
-        
+        return ok
+
     except requests.exceptions.RequestException as e:
         print(f"下载失败: {e}")
         return False
@@ -331,90 +328,87 @@ def download_file_with_gui(url, local_filename, gui, file_name):
         response, source_url = open_download_source(url, gui=gui, label=file_name,
                                                     stream=True, verify=False)
         gui.current_file_var.set(f"{file_name}")
-        
+
         response.raise_for_status()
-        
+
         total_size = int(response.headers.get('content-length', 0))
         if total_size == 0:
             total_size = 10 * 1024 * 1024
-        
-        block_size = 8192
-        
-        os.makedirs(os.path.dirname(local_filename), exist_ok=True)
-        
-        start_time = time.time()
-        downloaded_size = 0
-        last_update_time = start_time
-        last_downloaded_size = 0
-        
-        current_animated_percent = 0.0
-        target_percent = 0.0
-        animation_speed = 0.15
-        last_animation_time = start_time
-        
-        with open(local_filename, 'wb') as f:
-            for chunk in response.iter_content(chunk_size=block_size):
-                if not gui.is_downloading:
-                    return False
-                    
-                if chunk:
-                    speed = 0
-                    f.write(chunk)
-                    downloaded_size += len(chunk)
-                    
-                    current_time = time.time()
 
-                    elapsed_time = current_time - last_update_time
-                    downloaded_since_last = downloaded_size - last_downloaded_size
-                    
-                    speed = downloaded_since_last / elapsed_time / 1024
-                    
-                    target_percent = (downloaded_size / total_size) * 100
-                        
-                    animation_elapsed = current_time - last_animation_time
-                    if animation_elapsed > 0.1:
-                        if current_animated_percent < target_percent:
-                            progress_diff = target_percent - current_animated_percent
-                            current_animated_percent += progress_diff * animation_speed
-                            
-                            if current_animated_percent > target_percent:
-                                current_animated_percent = target_percent
-                        
-                        gui.update_progress(current_animated_percent, downloaded_size, total_size, speed)
-                        last_animation_time = current_time
-                    
-                    last_update_time = current_time
-                    last_downloaded_size = downloaded_size
-        
+        folder = os.path.dirname(local_filename)
+        if folder:
+            os.makedirs(folder, exist_ok=True)
+
+        # 下载线程（分块时是多个）只往 state 里写数字，UI 更新仍然只在
+        # 0.1 秒一次的节流窗口里做，避免把 tkinter 拖垮。
+        state = {
+            "done": 0,
+            "target": 0.0,
+            "animated": 0.0,
+            "speed": 0.0,
+            "last_time": time.time(),
+            "last_done": 0,
+            "last_anim": time.time(),
+        }
+        animation_speed = 0.15
+        state_lock = threading.Lock()
+
+        def on_progress(done, total):
+            now = time.time()
+            with state_lock:
+                span = now - state["last_time"]
+                if span > 0:
+                    state["speed"] = (done - state["last_done"]) / span / 1024
+                state["done"] = done
+                if total:
+                    state["target"] = min(100.0, done / total * 100)
+                state["last_time"] = now
+                state["last_done"] = done
+                if now - state["last_anim"] <= 0.1:
+                    return
+                diff = state["target"] - state["animated"]
+                if diff > 0:
+                    state["animated"] += diff * animation_speed
+                percent = state["animated"]
+                speed = state["speed"]
+                state["last_anim"] = now
+            gui.update_progress(percent, done, total or total_size, speed)
+
+        ok = fast_download.download(
+            url, local_filename, resp=response, progress=on_progress,
+            cancel=lambda: gui.is_downloading)
+        if not ok:
+            return False
+
+        downloaded_size = state["done"] or os.path.getsize(local_filename)
         final_animation_start = time.time()
-        while current_animated_percent < 99.9:
-            current_time = time.time()
-            animation_elapsed = current_time - final_animation_start
-            
-            if current_animated_percent < target_percent:
-                progress_diff = target_percent - current_animated_percent
-                current_animated_percent += progress_diff * animation_speed * 2
+        while state["animated"] < 99.9:
+            now = time.time()
+            animation_elapsed = now - final_animation_start
+
+            if state["animated"] < state["target"]:
+                state["animated"] += (state["target"] - state["animated"]) * animation_speed * 2
             else:
-                progress_diff = 100 - current_animated_percent
-                current_animated_percent += progress_diff * animation_speed * 1.5
-            
-            if current_animated_percent > 99.9:
-                current_animated_percent = 100
-            
-            gui.update_progress(current_animated_percent, downloaded_size, total_size, 0)
+                state["animated"] += (100 - state["animated"]) * animation_speed * 1.5
+
+            if state["animated"] > 99.9:
+                state["animated"] = 100
+
+            gui.update_progress(state["animated"], downloaded_size, total_size, 0)
             time.sleep(0.01)
-            
+
             if animation_elapsed > 2.0:
-                current_animated_percent = 100
+                state["animated"] = 100
                 break
-        
+
         return True
-        
+
     except requests.exceptions.RequestException as e:
         gui.current_file_var.set(f"❌ 下载失败: {e}")
         return False
     except Exception as e:
         gui.current_file_var.set(f"❌ 下载过程中出现错误: {e}")
+        return False
 
 def _fetch_download_path(note_name: str, pwd: str, get_path) -> tuple[str, str] | None:
     from webFunc import Note

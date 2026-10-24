@@ -1,6 +1,5 @@
 from functions.webFunc import Note
 from functions.base.web_config import get_webnote
-import re
 from json import loads, dumps
 
 class WebTrigger:
@@ -58,12 +57,16 @@ class WebTrigger:
         except Exception as exc:  # noqa: BLE001
             print(f"[Cloud] 下载上报失败({kind}:{clean}): {type(exc).__name__}: {exc}")
             return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+        
         if result.get("ok"):
+            # 完成了下载 +1
             payload = result.get("data") if isinstance(result.get("data"), dict) else {}
+            assert payload is not None
             print(f"[Cloud] {kind}「{clean}」下载次数 +1 → "
-                  f"{payload.get('download_count')}（第 {payload.get('rank', '?')} 名）")
+                  f"{payload.get('download_count')}")
         else:
             print(f"[Cloud] {kind}「{clean}」下载上报失败: {result.get('error')}")
+
         return result
 
     def sort_addon_info_by_download_number(self):
