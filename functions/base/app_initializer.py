@@ -18,18 +18,76 @@ WEB_UI_FLAG = 'WEB_UI'
 TK_UI_FLAG = 'TK_UI'
 
 
+def _game_path_from_argv():
+    """从命令行里找游戏目录。
+
+    Steam 启动项里的 `%command%` 会展开成游戏 exe 的完整路径，所以从 Steam 点
+    启动时 argv 里天然带着它——比让用户事先配好路径可靠得多。
+    """
+    from functions.base.steam_locator import GAME_EXE, resolve_game_dir
+
+    for arg in sys.argv[1:]:
+        if not arg or arg.startswith("-"):
+            continue
+        candidate = arg.strip().strip('"')
+        if os.path.basename(candidate).lower() != GAME_EXE.lower():
+            continue
+        found = resolve_game_dir(candidate)
+        if found:
+            return found
+    return ""
+
+
+def _ensure_game_path():
+    """确保设置里的游戏路径可用，不可用时自动查找并写回配置。"""
+    from functions.base.steam_locator import resolve_game_dir, find_steam_game_path
+
+    manager = get_settings_manager()
+    if resolve_game_dir(manager.get_setting("game_path") or ""):
+        return True
+
+    found = _game_path_from_argv()
+    if found:
+        print(f"[LauncherMode] 从启动参数定位到游戏路径: {found}")
+    else:
+        found = resolve_game_dir(find_steam_game_path() or "") or ""
+        if found:
+            print(f"[LauncherMode] 从 Steam 库定位到游戏路径: {found}")
+
+    if not found:
+        print("[LauncherMode] 未能自动定位游戏路径, 请先在启动器界面里设置")
+        return False
+
+    manager.set_setting("game_path", found)
+    try:
+        manager.save_settings()
+    except Exception as exc:  # noqa: BLE001
+        print(f"[LauncherMode] 保存游戏路径失败(继续): {exc}")
+    return True
+
+
 def run_launcher_mode(debug=False):
     """--launcher-mode：不进入 UI，直接跑完整后端启动流程。
 
     Steam 通过启动项把启动器拉起时走这里：检查/更新汉化 -> 应用到游戏目录 ->
     加载 mod -> 起游戏，最后照常弹出 mod 加载进度窗口。跑完即退出。
+
+    这里第一步就把进程切成**完全静默模式**：本进程不创建任何窗口。后台进程没有
+    Tk 主循环，任何 `tk.Tk()` / `Toplevel()` 都只会留下来一个永远无响应的空窗口，
+    这正是「从 Steam 点启动后弹窗卡死」的原因。mod 加载进度窗口不受影响——它是
+    另一个进程，自己跑自己的 mainloop。
     """
+    from functions.base.headless_ui import install as _install_headless_ui
+    _install_headless_ui()
+
     print("[LauncherMode] 以 Steam 启动器模式运行（不进入 UI）")
     try:
         from functions.base.log_manager import init_logger
         init_logger()
     except Exception as exc:  # noqa: BLE001
         print(f"[LauncherMode] 日志初始化失败(继续): {exc}")
+
+    _ensure_game_path()
 
     try:
         from functions.pages.app.page_loader import download_and_launch
