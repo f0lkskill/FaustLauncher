@@ -8,8 +8,7 @@ from functions.base.settings_manager import get_settings_manager
 
 VERSION_INFO = get_settings_manager().get_setting("version_info")  # type: ignore
 BG_COLOR: str = get_settings_manager().get_setting("bg_color")  # type: ignore
-bg_gaussian_blur: int = get_settings_manager().get_setting("bg_gaussian_blur")  # type: ignore
-bg_gaussian_blur += 5
+bg_gaussian_blur: int = (get_settings_manager().get_setting("bg_gaussian_blur") or 0) + 5
 
 def _parse_rgb(hex_color: str):
     h = hex_color.lstrip('#')

@@ -6,8 +6,7 @@ from functions.base.settings_manager import get_settings_manager
 from functions.base.color_scheme import C, ThemeColors
 
 BG_COLOR: str = get_settings_manager().get_setting("bg_color") # type: ignore
-_bg_blur_raw: int = get_settings_manager().get_setting("bg_gaussian_blur") # type: ignore
-BG_GAUSSIAN_BLUR: int = _bg_blur_raw + 5
+BG_GAUSSIAN_BLUR: int = (get_settings_manager().get_setting("bg_gaussian_blur") or 0) + 5
 
 def _parse_rgb(hex_color: str):
     h = hex_color.lstrip('#')
