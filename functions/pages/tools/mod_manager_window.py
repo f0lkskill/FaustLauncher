@@ -123,7 +123,7 @@ def _copy_into_mod_dir(path):
         return False, os.path.basename(path), "不是有效文件"
     ext = os.path.splitext(os.path.basename(path))[1].lower()
     if ext not in ALLOWED_EXTENSIONS:
-        return False, os.path.basename(path), f"不支持的类型 {ext}，仅支持 .bank / .carra2"
+        return False, os.path.basename(path), f"不支持的类型 {ext}，仅支持 .bank / .carra2 / .rebank"
     try:
         mod_dir = _get_mod_dir()
         dest = os.path.join(mod_dir, os.path.basename(path))
