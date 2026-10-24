@@ -2542,14 +2542,18 @@ body.no-hw .ver-card { animation: verCardInLite .38s cubic-bezier(.22, .9, .24, 
 /* ---- 悬浮提示 (data-tip) ----
    按钮上写 data-tip="文字" 即可, 由 utils.js 的事件委托负责显示。
    用 body 下的 fixed 图层而不是 ::after: 工具栏/面板都有 overflow 裁切,
-   伪元素做的提示会被切掉一半。 */
+   伪元素做的提示会被切掉一半。
+   配色必须走皮肤变量 —— 写死黑底会在奶蛙/DeepSeek 这类浅色皮肤上变成
+   一块突兀的黑色贴纸。--panel-rgb-2 是"比面板略深一档"的底色,
+   --text 是皮肤正文色, --tint-rgb 是压暗/提亮的描边色。 */
 .tip-layer {
   position: fixed; z-index: 9999; left: 0; top: 0;
   padding: 5px 10px; border-radius: 7px;
   font-size: 12px; line-height: 1.5; white-space: nowrap;
-  color: #f2f2f3; background: rgba(16, 16, 18, .97);
-  border: 1px solid rgba(255, 255, 255, .13);
-  box-shadow: 0 6px 20px rgba(0, 0, 0, .5);
+  color: var(--text);
+  background: rgba(var(--panel-rgb-2), .97);
+  border: 1px solid rgba(var(--tint-rgb), .18);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, .32);
   pointer-events: none; opacity: 0; transform: translateY(-3px);
   transition: opacity .14s ease, transform .14s ease;
 }
