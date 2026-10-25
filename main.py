@@ -1,3 +1,9 @@
+"""
+FaustLauncher 主入口
+程序将从此处进行初始化和运行。
+"""
+
+
 import os
 import sys
 
