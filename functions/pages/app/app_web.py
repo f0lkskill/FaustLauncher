@@ -537,14 +537,39 @@ def _skin_profile_file(skin_id):
             return p
     return ""
 
+#: 本地插件/Mod 图标的内存缓存：{(路径, mtime, 大小): data-uri}。
+#: get_mods_data 每次刷新都会重新取一遍图标，缓存命中时不再重复读盘 + base64。
+_RES_ICON_CACHE = {}
+
+
 def _res_icon_uri(base_dir, name):
+    """把 ``<base_dir>/<name>/icon.*`` 读成 data-uri（缩略后并带内存缓存）。
+
+    插件图标常见 474×296 / 512×512 的 PNG，而界面上只显示几十像素；这里统一
+    缩到 192px 再 base64，体积和前端解码开销都能降一个量级。
+    """
     try:
+        from functions.base.common import icon_fetch
         for fn in ('icon.png', 'icon.jpg', 'icon.jpeg'):
             p = os.path.join(base_dir, name, fn)
-            if os.path.isfile(p):
-                with open(p, 'rb') as f:
-                    b64 = base64.b64encode(f.read()).decode('ascii')
-                return 'data:image/png;base64,' + b64
+            if not os.path.isfile(p):
+                continue
+            try:
+                st = os.stat(p)
+            except OSError:
+                continue
+            key = (p, st.st_mtime_ns, st.st_size)
+            cached = _RES_ICON_CACHE.get(key)
+            if cached is not None:
+                return cached
+            with open(p, 'rb') as f:
+                raw = f.read()
+            payload = icon_fetch.shrink_image(raw, max_edge=192)
+            uri = 'data:image/png;base64,' + base64.b64encode(payload).decode('ascii')
+            if len(_RES_ICON_CACHE) > 256:
+                _RES_ICON_CACHE.clear()
+            _RES_ICON_CACHE[key] = uri
+            return uri
     except Exception:
         pass
     return ''
@@ -1531,6 +1556,13 @@ class AppApi:
 
     def get_mods_data(self):
         import os, json
+        # 首次进入资源页顺手把历史遗留的 MB 级图标缓存瘦身（后台线程，只跑一次）
+        try:
+            from functions.base.common import icon_cache
+            icon_cache.ensure_icons_shrunk(os.path.join(_PROJECT_ROOT, 'cache', 'icons'),
+                                           log=print)
+        except Exception:
+            pass
         addons = []
         try:
             base = os.path.abspath('addons')
@@ -2220,39 +2252,57 @@ if %errorlevel% equ 0 (
         return True
 
     def get_icon(self, icon_url, item_name):
+        """取一个 addon / mod 的图标，返回 ``data:image/png;base64,...``。
+
+        下载走 :mod:`functions.base.common.icon_fetch`：直连（图标 URL 被第三方
+        解析器包过一层，本身就会 302 到文件）+ Range 多连接并发 + 落盘前缩略。
+        只有直连拿到的不是图片时（例如传入的是裸的蓝奏分享页），才回退到
+        ``lanzou_utils.GetWithDirectLink`` 的完整解析链路。
+
+        落盘的都是 ≤160px 的缩略图，老缓存里 1 MB 级的原图会在命中时顺手缩小，
+        所以前端拿到的 base64 从 1.4 MB 级别降到几十 KB。
+        """
         if not icon_url:
             return ''
-        from functions.base.common import icon_cache
+        from functions.base.common import icon_cache, icon_fetch
         cache_dir = os.path.join(_PROJECT_ROOT, 'cache', 'icons')
         os.makedirs(cache_dir, exist_ok=True)
         icon_path = icon_cache.find_cached_icon(icon_url, item_name, cache_dir)
-        if not (icon_path and os.path.exists(icon_path)):
+        if icon_path and os.path.exists(icon_path):
+            # 老缓存是原图，顺手瘦身一次；之后固定走小图
+            icon_fetch.shrink_file(icon_path)
+        else:
             icon_path = icon_cache.icon_cache_path(icon_url, item_name, cache_dir)
             if icon_cache.icon_failed_recently(icon_url):
                 return ''
-            try:
-                from functions.web_update.lanzou_utils import GetWithDirectLink
-                r = GetWithDirectLink(
-                    icon_url,
-                    accept=lambda resp: resp.status_code == 200
-                    and icon_cache.looks_like_image(resp.content),
-                    timeout=15, verify=False)
-                if r is not None and r.status_code == 200 \
-                        and icon_cache.looks_like_image(r.content):
-                    with open(icon_path, 'wb') as f:
-                        f.write(r.content)
-                    icon_cache.note_icon_success(icon_url)
-                else:
+            data = icon_fetch.download_image(icon_url, timeout=15)
+            if not (data and icon_cache.looks_like_image(data)):
+                data = self._icon_via_lanzou(icon_url)
+            if data and icon_cache.looks_like_image(data):
+                if not icon_fetch.save_image(data, icon_path):
                     icon_cache.note_icon_failure(icon_url)
                     return ''
-            except Exception:
+                icon_cache.note_icon_success(icon_url)
+            else:
                 icon_cache.note_icon_failure(icon_url)
                 return ''
+        return icon_fetch.data_uri(icon_path)
+
+    def _icon_via_lanzou(self, icon_url):
+        """兜底：走蓝奏分享页解析链路下载图标（慢，只在直连失败时用）。"""
+        from functions.base.common import icon_cache
         try:
-            with open(icon_path, 'rb') as f:
-                return "data:image/png;base64," + base64.b64encode(f.read()).decode('ascii')
+            from functions.web_update.lanzou_utils import GetWithDirectLink
+            r = GetWithDirectLink(
+                icon_url,
+                accept=lambda resp: resp.status_code == 200
+                and icon_cache.looks_like_image(resp.content),
+                timeout=15, verify=False)
         except Exception:
-            return ''
+            return None
+        if r is not None and r.status_code == 200 and icon_cache.looks_like_image(r.content):
+            return r.content
+        return None
 
     def start_auto_translate(self, source, target, blacklist):
         def _run():
