@@ -514,8 +514,8 @@ function openResModal(kind, item) {
       '<div class="res-detail-ops">' +
          '<button class="btn btn-ghost" id="res-open-dir">打开目录</button>' +
          (item.reinstall_available ? '<button class="btn btn-primary" id="res-reinstall">重装</button>' : '') +
-         '<button class="btn btn-danger" id="res-delete">删除</button>' +
          (isAddon ? '' : '<button class="btn btn-danger" id="res-force-uninstall">卸载资源</button>') +
+         '<button class="btn btn-danger" id="res-delete">删除</button>' +
       '</div>' +
     '</div>';
   document.body.appendChild(panel);
