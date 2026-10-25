@@ -22,13 +22,15 @@
 
 本模块的关键约束：**所有清理动作都必须按 `{Mod名}_` 前缀严格匹配**，否则会
 误删别的 Mod 的包。:func:`_target_belongs_to` 就是这条规则的唯一实现。
+
+历史说明：早期版本用「给同名 bank 追加数字序号」的方式避免覆盖，现在投放名
+已统一带 `{Mod名}_` 前缀，同名冲突由前缀解决，序号方案已整体移除。
 """
 
 import os
 import json
 import hashlib
 import datetime
-import re
 import shutil
 from typing import List, Dict, Any
 from functions.base.settings_manager import SettingsManager
@@ -36,47 +38,6 @@ from functions.base.common.path_utils import get_mod_root_dir
 from functions.web_update.translation_source import get_translation_dir_name as _translation_dir_name
 from subprocess import run, CREATE_NO_WINDOW
 from functions.base.common.json_io import read_json
-
-
-def _strip_suffix_number(name: str) -> str:
-    """去掉文件名末尾的数字后缀。
-
-    bank 资源被改过多次时，游戏/Mod 会生成 `Voice_1.bank`、`Voice_2.bank`
-    这类带序号的文件，它们逻辑上属于同一族。比对这些文件的「族名」时要先
-    去掉尾部数字。
-
-    Args:
-        name: 去掉扩展名后的文件名主干，如 `Voice_Default_S7_4`。
-
-    Returns:
-        去掉末尾连续数字后的主干；没有数字时原样返回。例如
-        `Voice_Default_S7_4` -> `Voice_Default_S7_`。
-
-    Examples:
-        >>> _strip_suffix_number("Shadow_1")
-        'Shadow_'
-        >>> _strip_suffix_number("Shadow")
-        'Shadow'
-    """
-    # 贪婪的主干 + 末尾数字；没有数字时 m 为 None
-    m = re.match(r"^(.*?)(\d+)$", name)
-    return m.group(1) if m else name
-
-
-def _suffix_number(name: str) -> int:
-    """取出文件名末尾的数字序号。
-
-    与 :func:`_strip_suffix_number` 配套使用：前者拿族名，这里拿序号，
-    用于比较「哪个 bank 的序号更大、属于更新的一代」。
-
-    Args:
-        name: 去掉扩展名后的文件名主干。
-
-    Returns:
-        末尾数字；没有数字时返回 0（注意不是 -1，调用方据此判断「无序号」）。
-    """
-    m = re.match(r"^(.*?)(\d+)$", name)
-    return int(m.group(2)) if m else 0
 
 
 def _decode_output(data):
@@ -232,15 +193,12 @@ def _listdir_safe(path: str) -> List[str]:
 def _target_belongs_to(target_name: str, prefix: str) -> bool:
     """判断投放目录里的某个文件是否属于指定 Mod。
 
-    这是**卸载安全性的核心**：投放文件名规则是 `{Mod名}_{文件名}`，但 Mod 名
-    本身可能带下划线，直接 `startswith` 会把 `A_B` 和 `A` 混淆。因此这里先
-    剥掉 `.src` 版本标记后缀，再取扩展名之前的主干，要求满足以下之一：
+    投放文件名规则是 `{Mod名}_{文件名}`，不同 Mod 的同名资源靠前缀天然区分，
+    不再需要给 bank 追加序号。判定时先剥掉 `.src` 版本标记后缀，再取扩展名
+    之前的主干，要求它与 `prefix`（`{Mod名}_{文件名主干}`）**完全相等**。
 
-    1. 主干与 `prefix` 完全相等（对应 `{Mod名}_{stem}` 里文件名刚好等于
-       stem 的情况）；
-    2. 主干以 `prefix` 开头，且剩余部分是**纯数字**——这是
-       :meth:`ModManager._unique_bank_name` 为避免同名冲突而追加的序号，
-       例如 `prefix="Shadow_1"`、文件主干 `Shadow_12` 就属于它。
+    这里刻意不用 `startswith` 做宽松匹配：Mod 名本身可能带下划线，宽松匹配会
+    把 `A_B` 的包误判成属于 `A`，进而误删。
 
     Args:
         target_name: 投放目录里的文件名（可能带 `.src` / `.rebank` 等后缀）。
@@ -252,8 +210,6 @@ def _target_belongs_to(target_name: str, prefix: str) -> bool:
     Examples:
         >>> _target_belongs_to("Shadow_1.rebank.src", "Shadow_1")
         True
-        >>> _target_belongs_to("Shadow_12.bank", "Shadow_1")
-        True
         >>> _target_belongs_to("Shadow_2.bank", "Shadow_1")
         False
     """
@@ -262,12 +218,7 @@ def _target_belongs_to(target_name: str, prefix: str) -> bool:
     if name.lower().endswith(STAMP_SUFFIX):
         name = name[:-len(STAMP_SUFFIX)]
     stem = os.path.splitext(name)[0]
-    if stem == prefix:
-        return True
-    # 只允许「前缀 + 纯数字」的变体，防止 A_B 误判为属于 A
-    if stem.startswith(prefix):
-        return stem[len(prefix):].isdigit()
-    return False
+    return stem == prefix
 
 
 def _move_orphans(target_dir: str, stale_names: List[str]) -> None:
@@ -470,7 +421,6 @@ class ModManager:
             本轮成功加载的 Mod 名列表。
         """
         loaded_mods = []
-        used = {}
 
         manifest_root = self.get_mod_directory()
         old_manifest = _read_manifest(manifest_root)
@@ -591,107 +541,6 @@ class ModManager:
                 h.update(b)
         return h.hexdigest()
 
-    @staticmethod
-    def _rebank_max_index(target_dir: str, base: str) -> int:
-        """找出投放目录里同一族 `.rebank` 差分包的最大序号。
-
-        用于 :meth:`_unique_bank_name` 判断「新投放的 bank 序号是否与已有
-        差分包冲突」，冲突时要顺延到更大的序号。
-
-        Args:
-            target_dir: 投放目录。
-            base: bank 的族名（已去掉末尾数字）。
-
-        Returns:
-            最大序号；没有同族差分包时返回 -1。
-        """
-        max_idx = -1
-        try:
-            for f in os.listdir(target_dir):
-                if not f.lower().endswith(".rebank"):
-                    continue
-                stem = f[:-len(".rebank")]
-                # 只统计同一族的（去掉尾部数字后相等）
-                if _strip_suffix_number(stem) == base:
-                    max_idx = max(max_idx, _suffix_number(stem))
-        except OSError:
-            pass
-        return max_idx
-
-    @classmethod
-    def _unique_bank_name(cls, target_dir: str, source_file: str, file_name: str,
-                          used: Dict[str, str]):
-        """为要投放的 bank 选一个不会撞内容的文件名。
-
-        两个 Mod 可能带同名 bank，若内容不同就必须改名，否则后投放的会覆盖
-        先投放的。规则：
-
-        1. 若已有同族 `.rebank` 且自身序号不大于它，则从
-           `最大序号 + 1` 开始顺延（保证新 bank 排在旧的后面）；
-        2. 否则先用原名；若原名已被占用且内容不同（MD5 不同）或磁盘上已有
-           同名但内容不同的文件，就依次尝试 `<stem>1`、`<stem>2`…；
-        3. 内容相同（MD5 相同）则直接复用现有名字，避免重复投放。
-
-        Args:
-            target_dir: 投放目录。
-            source_file: 源 bank 文件路径（用于算 MD5）。
-            file_name: 期望的投放文件名（不含 `{Mod名}_` 前缀）。
-            used: 本轮已分配的名字 -> 内容 MD5 的映射，防止轮内自撞。
-
-        Returns:
-            `(目标完整路径, 目标文件名)` 二元组。
-        """
-        stem, ext = os.path.splitext(file_name)
-        src_md5 = cls._file_md5(source_file)
-
-        base = _strip_suffix_number(stem)
-        own_idx = _suffix_number(stem)
-        max_rebank_idx = cls._rebank_max_index(target_dir, base)
-
-        if max_rebank_idx >= 0 and own_idx <= max_rebank_idx:
-            # 与已有差分包同族：必须顺延序号，否则会和旧包抢同一个位置
-            num = 0
-            while True:
-                candidate = "%s%d%s" % (base, max_rebank_idx + 1 + num, ext)
-                if candidate in used and used[candidate] != src_md5:
-                    num += 1
-                    continue
-                target = os.path.join(target_dir, candidate)
-                if os.path.exists(target):
-                    try:
-                        # 磁盘上已有同内容文件 -> 直接复用
-                        if cls._file_md5(target) == src_md5:
-                            break
-                    except OSError:
-                        pass
-                    num += 1
-                    continue
-                break
-            used[candidate] = src_md5
-            return os.path.join(target_dir, candidate), candidate
-
-        candidate = file_name
-        num = 0
-        while True:
-            if candidate in used:
-                # 本轮内部撞名：内容相同可复用，否则继续加序号
-                if used[candidate] == src_md5:
-                    break
-            else:
-                target = os.path.join(target_dir, candidate)
-                if os.path.exists(target):
-                    try:
-                        if cls._file_md5(target) == src_md5:
-                            break
-                    except OSError:
-                        pass
-                else:
-                    break
-            num += 1
-            candidate = "%s%d%s" % (stem, num, ext)
-        used[candidate] = src_md5
-        return os.path.join(target_dir, candidate), candidate
-        
     @staticmethod
     def load_language(name: str, dir: str) -> None:
         """把 Mod 自带的语言文件复制进游戏的语言目录。
