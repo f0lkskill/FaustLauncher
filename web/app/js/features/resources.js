@@ -218,11 +218,22 @@ function confirmForceUninstallMod(dir, name) {
 function showForceUninstallDone(r, scopeName) {
   const done = (r.uninstalled || []).length;
   const fail = (r.errors || []).length;
+  const removed = r.removed || [];
+  const head = removed.slice(0, 12);
+  const more = removed.length - head.length;
+  const removedHtml = removed.length
+    ? '<p>已清理的缓存目录：</p><ul class="force-removed">' +
+      head.map(x => '<li><code>' + esc(String(x.path || '').split(/[\\/]/).pop()) + '</code>' +
+        (x.name ? ' <span class="muted">' + esc(x.name) + '</span>' : '') + '</li>').join('') +
+      (more > 0 ? '<li class="muted">…另有 ' + more + ' 个</li>' : '') +
+      '</ul>'
+    : '';
   const panel = document.createElement('div');
   panel.className = 'panel-overlay';
   panel.innerHTML = '<div class="panel-card"><div class="panel-head"><h3>强卸载完成' + (scopeName ? '：' + esc(scopeName) : '') + '</h3><button class="panel-close"><svg class="ico" data-icon="close.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg></button></div>' +
     '<div class="panel-body rich">' +
     '<p>已还原 <b>' + done + '</b> 处 Mod 资源改写' + (fail ? '，另有 <b>' + fail + '</b> 处失败' : '') + '。</p>' +
+    removedHtml +
     '<p>现在游戏资源是不完整的原版状态，请务必按下面步骤恢复，否则启动游戏会缺资源：</p>' +
     '<ol>' +
     '<li>Steam → 库 → 右键《边狱公司》→ <b>属性</b></li>' +
