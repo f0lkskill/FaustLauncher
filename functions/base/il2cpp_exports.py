@@ -52,21 +52,31 @@ def cache_path(sha256: str) -> str:
 
 
 def canonical_names(path: str = "") -> List[str]:
-    """读取插件的 il2cpp C API 基准名字表（234 项，顺序即接口布局）。"""
-    candidates = [path] if path else []
-    if not candidates:
-        candidates.append(
-            os.path.join(get_app_root(create=False), "addons", "SinnersRandom",
-                         "Assets", "runtime", CANONICAL_FILE)
-        )
-    for candidate in candidates:
-        if candidate and os.path.isfile(candidate):
-            with open(candidate, "r", encoding="utf-8") as handle:
-                names = [line.strip() for line in handle]
-            names = [name for name in names if _CANONICAL_RE.fullmatch(name)]
-            if names:
-                return names
-    raise Il2cppExportsError(f"找不到 il2cpp 基准名字表: {path or candidates[0]}")
+    """返回 il2cpp C API 基准名字表（234 项，顺序即接口布局）。
+
+    默认直接用内嵌常量 :data:`functions.base.il2cpp_api_names.CANONICAL_NAMES`
+    —— 启动器自带这张表，不依赖 ``addons/`` 下任何插件目录，也不依赖外部
+    文件，打包后同样可用。
+
+    只有显式传入 ``path`` 时才改读文件，留给「游戏更新、需要临时换表」的
+    场景；文件里只保留 ``il2cpp_`` 开头的合法标识符。
+    """
+    if path:
+        if not os.path.isfile(path):
+            raise Il2cppExportsError(f"找不到 il2cpp 基准名字表: {path}")
+        with open(path, "r", encoding="utf-8") as handle:
+            names = [line.strip() for line in handle]
+        names = [name for name in names if _CANONICAL_RE.fullmatch(name)]
+        if not names:
+            raise Il2cppExportsError(f"il2cpp 基准名字表为空或格式不对: {path}")
+        return names
+
+    from functions.base.il2cpp_api_names import CANONICAL_NAMES
+
+    names = list(CANONICAL_NAMES)
+    if not names:
+        raise Il2cppExportsError("内嵌的 il2cpp 基准名字表为空")
+    return names
 
 
 def gameassembly_sha256(game_dir: str) -> str:
