@@ -40,6 +40,14 @@ def get_app_root(create: bool = True) -> str:
     return root
 
 def get_mod_root_dir(create: bool = True) -> str:
+    """_返回 APPDATA 下面的单文件类型mod目录_
+
+    Args:
+        create (bool, optional): _是否自动创建目录_. Defaults to True.
+
+    Returns:
+        str: _Mod目录的路径_
+    """
     roaming_path = os.getenv('APPDATA')
     mod_path = os.path.join(roaming_path, MOD_ROOT_NAME) # type: ignore
 
