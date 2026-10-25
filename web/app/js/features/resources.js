@@ -173,12 +173,46 @@ function confirmForceUninstall() {
   };
 }
 
-function showForceUninstallDone(r) {
+// 单 Mod 强卸载: 只还原这一个 Mod 改写的资源 (carra2 缓存目录 / rebank-bank),
+// 并清掉启动器投放到 mod loader 目录里的包副本, 其它 Mod 完全不受影响。
+function confirmForceUninstallMod(dir, name) {
+  if (!api) { toast('浏览器预览模式', 'warn'); return; }
+  const label = name || dir;
+  const panel = document.createElement('div');
+  panel.className = 'panel-overlay';
+  panel.innerHTML = '<div class="panel-card"><div class="panel-head"><h3>强卸载此 Mod</h3><button class="panel-close"><svg class="ico" data-icon="close.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg></button></div>' +
+    '<div class="panel-body rich">' +
+    '<p>将要强卸载 Mod：<b>' + esc(label) + '</b>（只影响这一个 Mod，其它 Mod 不受影响）。</p>' +
+    '<p>执行强卸载之后，将<b>完全去除您下载的 Mod 视觉效果</b>，并需要您在 Steam 进行<b>完整性验证</b>和游戏内少部分资源重新下载。</p>' +
+    '<p style="color:var(--danger)">注意：执行本操作之后使用启动器启动并不能成功进行 Mod 加载，必须先按上述操作恢复资源才行。</p>' +
+    '</div>' +
+    '<div class="panel-foot"><button class="btn btn-ghost" data-no>取消</button><button class="btn btn-danger" data-yes>确认强卸载</button></div></div>';
+  document.body.appendChild(panel);
+  const close = () => closePanel(panel);
+  panel.querySelector('.panel-close').onclick = close;
+  panel.querySelector('[data-no]').onclick = close;
+  panel.querySelector('[data-yes]').onclick = async () => {
+    const btn = panel.querySelector('[data-yes]');
+    btn.disabled = true;
+    btn.textContent = '正在卸载...';
+    const r = await api.force_uninstall_mod(dir).catch(e => ({ ok: false, error: String(e) }));
+    close();
+    if (!r || !r.ok) {
+      toast('强卸载失败: ' + ((r && (r.error || r.message)) || '未知错误'), 'error', 5000);
+      refreshMods(false);
+      return;
+    }
+    showForceUninstallDone(r, label);
+    refreshMods(false);
+  };
+}
+
+function showForceUninstallDone(r, scopeName) {
   const done = (r.uninstalled || []).length;
   const fail = (r.errors || []).length;
   const panel = document.createElement('div');
   panel.className = 'panel-overlay';
-  panel.innerHTML = '<div class="panel-card"><div class="panel-head"><h3>强卸载完成</h3><button class="panel-close"><svg class="ico" data-icon="close.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg></button></div>' +
+  panel.innerHTML = '<div class="panel-card"><div class="panel-head"><h3>强卸载完成' + (scopeName ? '：' + esc(scopeName) : '') + '</h3><button class="panel-close"><svg class="ico" data-icon="close.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg></button></div>' +
     '<div class="panel-body rich">' +
     '<p>已还原 <b>' + done + '</b> 处 Mod 资源改写' + (fail ? '，另有 <b>' + fail + '</b> 处失败' : '') + '。</p>' +
     '<p>现在游戏资源是不完整的原版状态，请务必按下面步骤恢复，否则启动游戏会缺资源：</p>' +
@@ -470,6 +504,7 @@ function openResModal(kind, item) {
       '<div class="res-detail-ops">' +
          '<button class="btn btn-ghost" id="res-open-dir">打开目录</button>' +
          (item.reinstall_available ? '<button class="btn btn-primary" id="res-reinstall">重装</button>' : '') +
+         (isAddon ? '' : '<button class="btn btn-danger" id="res-force-uninstall">卸载资源</button>') +
          '<button class="btn btn-danger" id="res-delete">删除</button>' +
       '</div>' +
     '</div>';
@@ -485,6 +520,12 @@ function openResModal(kind, item) {
     $('#res-reinstall').onclick = () => {
       closePanel(panel);
       confirmReinstall(kind, [dir], isAddon ? '插件' : 'Mod');
+    };
+  }
+  if (!isAddon) {
+    $('#res-force-uninstall').onclick = () => {
+      closePanel(panel);
+      confirmForceUninstallMod(dir, name);
     };
   }
   $('#res-delete').onclick = async () => {
