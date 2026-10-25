@@ -24,6 +24,15 @@ mod 包本身保留在磁盘上（否则用户连自己装过什么都不知道�
   就覆盖还原；没有备份就只能删掉 bank，交给 Steam 的完整性验证重新下发。
 
 `_orphan` 子目录（被移出生效集合的 mod）同样会被扫到。
+
+除了「全部强卸载」，本模块也把**单个 mod** 的两层卸载动作包装成可复用函数：
+
+- `uninstall_resource(kind, target)` / `uninstall_package_file(path)`:
+  还原一条 / 一个包（`.carra2` / `.rebank` / `.bank`）留下的资源残留；
+- `uninstall_launcher_package(mod_name)`: 撤掉启动器投放到 mod loader 目录里的
+  `{mod名}_` 包副本（`ModManager.unload_mod` 的薄包装）；
+- `scan_mod(mod_name)` / `force_uninstall_mod(mod_name)`: 只针对这一个 mod
+  的扫描与强卸载，语义与全部强卸载一致（资源回到原版，mod 包目录保留）。
 """
 
 import json
@@ -111,7 +120,7 @@ def launcher_mods_dir() -> str:
     return os.path.join(get_app_root(create=False), "mods")
 
 
-def _launcher_mod_files():
+def _launcher_mod_files(mod_name: str = None):
     """遍历启动器 `mods\\<名>\\` 下 `mod_info.json` 里**登记了文件**的 mod 包。
 
     判据是 `file_names` —— 它记录这个 mod 往游戏里投了哪些包（`.carra2` /
@@ -123,10 +132,14 @@ def _launcher_mod_files():
 
     只看启动器目录会漏掉「装了但还没启用过」的 mod，只看 APPDATA 又会漏掉
     「启用过但被清空过」的 mod，所以两边都扫，最后按目标资源去重。
+
+    传入 `mod_name` 时只遍历这一个 mod 的目录（单 mod 强卸载用）。
     """
     root = launcher_mods_dir()
-    for mod_name in _listdir_safe(root):
-        mod_path = os.path.join(root, mod_name)
+    for name in _listdir_safe(root):
+        if mod_name and name != mod_name:
+            continue
+        mod_path = os.path.join(root, name)
         info_path = os.path.join(mod_path, "mod_info.json")
         if not os.path.isfile(info_path):
             continue
@@ -141,9 +154,13 @@ def _launcher_mod_files():
                 yield path
 
 
-def _iter_mod_files():
-    """遍历生效目录与 _orphan 目录下的 carra2 / rebank 包。"""
+def _iter_mod_files(mod_name: str = None):
+    """遍历生效目录与 _orphan 目录下的 carra2 / rebank 包。
+
+    已投放的包会带 `{mod名}_` 前缀，传入 `mod_name` 时只保留该 mod 的包。
+    """
     roots = (mods_dir(), os.path.join(mods_dir(), ORPHAN_DIR))
+    prefix = (mod_name + "_") if mod_name else None
     seen = set()
     for root in roots:
         try:
@@ -152,6 +169,8 @@ def _iter_mod_files():
             continue
         for name in sorted(names):
             if not name.lower().endswith(MOD_SUFFIXES):
+                continue
+            if prefix and not name.startswith(prefix):
                 continue
             path = os.path.join(root, name)
             if path in seen or not os.path.isfile(path):
@@ -188,12 +207,15 @@ def _target_for(path: str):
     return "rebank", (_bank_target(base) if base else None)
 
 
-def scan():
-    """列出所有 mod 以及它们改写的目标资源位置。
+def scan(mod_name: str = None):
+    """列出 mod 以及它们改写的目标资源位置。
 
     两个来源都会扫，按 `(kind, target)` 去重:
     - `launcher`: 启动器 `mods\\<名>\\` 里单文件型 mod 登记的包
     - `appdata`: `%APPDATA%\\LimbusCompanyMods`（含 `_orphan`）里已投放的包
+
+    传入 `mod_name` 时只扫描这一个 mod（启动器目录同名 + APPDATA `{mod名}_`
+    前缀的包），供单 mod 强卸载使用。
 
     返回的每一项: `{name, path, source, kind, target, exists}`
     - `kind`: `carra2` / `rebank`
@@ -202,8 +224,8 @@ def scan():
     items = []
     seen_targets = set()
     sources = {"launcher": 0, "appdata": 0}
-    for source, paths in (("launcher", _launcher_mod_files()),
-                          ("appdata", _iter_mod_files())):
+    for source, paths in (("launcher", _launcher_mod_files(mod_name)),
+                          ("appdata", _iter_mod_files(mod_name))):
         for path in paths:
             sources[source] += 1
             kind, target = _target_for(path)
@@ -227,6 +249,12 @@ def scan():
     return items
 
 
+def scan_mod(mod_name: str):
+    """只扫描一个 mod 会改写的资源；`mod_name` 为空时返回空列表。"""
+    name = str(mod_name or "").strip()
+    return scan(name) if name else []
+
+
 def _restore_bank(target: str) -> str:
     """还原一条 bank：优先用 mods 目录里的 .bank.orig 备份，否则删除。
 
@@ -241,17 +269,74 @@ def _restore_bank(target: str) -> str:
     return "removed"
 
 
-def force_uninstall_all(*, dry_run: bool = False):
-    """卸载所有 mod 对游戏资源的改写。
+def _uninstall_resource(kind: str, target: str) -> str:
+    """还原一处被 mod 改写的资源（不判断是否存在的内部实现）。
 
-    `dry_run=True` 只扫描不落盘。返回:
-    `{ok, total, uninstalled, missing, errors, unity_root, bank_dir}`
+    - `carra2`: 删掉 Unity 缓存里的整个 `<hash2>` 目录，游戏会用原版 bundle
+      重新解包出这层缓存；
+    - `rebank`: 有 `.bank.orig` 备份就覆盖还原，否则删除 bank 交给 Steam
+      完整性验证重新下发。
+
+    返回 `removed` / `restored`；删除失败抛 `OSError`。
     """
-    items = scan()
-    uninstalled, missing, errors = [], [], []
-    actions = []
-    bank_dir = game_bank_dir()
+    if kind == "carra2":
+        shutil.rmtree(target, ignore_errors=True)
+        if os.path.isdir(target):
+            raise OSError(f"删除失败（可能被游戏或启动器占用）: {target}")
+        return "removed"
+    return _restore_bank(target)
 
+
+def uninstall_resource(kind: str, target):
+    """对外包装：还原一处资源残留。
+
+    只处理「当前确实存在」的目标；不存在时返回 None（没有可还原的东西）。
+    返回 `removed` 或 `restored`。
+    """
+    if not _exists(kind, target):
+        return None
+    return _uninstall_resource(kind, target)
+
+
+def uninstall_package_file(path: str):
+    """对外包装：还原单个 mod 包（`.carra2` / `.rebank` / `.bank`）改写的资源。
+
+    解析不出目标资源时抛 `ValueError`；目标已不存在时 `action` 为 None。
+    返回 `{name, path, kind, target, action}`，方便调用方汇总。
+    """
+    kind, target = _target_for(path)
+    if not target:
+        raise ValueError("无法解析资源位置")
+    return {
+        "name": os.path.basename(path),
+        "path": path,
+        "kind": kind,
+        "target": target,
+        "action": uninstall_resource(kind, target),
+    }
+
+
+def uninstall_launcher_package(mod_name: str):
+    """对外包装：撤掉启动器投放到 mod loader 目录里的整个 mod 包。
+
+    这一步与「资源残留」不同：它删的是 `%APPDATA%\\LimbusCompanyMods` 里
+    `{mod名}_` 前缀的包副本（`.bank` / `.rebank` / `.src` 标记），并在 mod
+    自带 `Uninstaller.bat` 时执行它 —— 也就是 `ModManager.unload_mod` 的全部
+    职责。包清理失败不应该回滚已经还原的资源，所以这里只把错误交回调用方。
+
+    返回 `(ok, error)`。
+    """
+    try:
+        from functions.extension.mod.mod_utils import ModManager
+        ModManager().unload_mod(str(mod_name))
+        return True, None
+    except Exception as exc:
+        return False, str(exc)
+
+
+def _run_uninstall(items, *, dry_run: bool = False):
+    """对扫描结果逐条执行还原，返回统一的统计结构。"""
+    uninstalled, missing, errors, actions = [], [], [], []
     for item in items:
         name = item["name"]
         target = item["target"]
@@ -265,13 +350,8 @@ def force_uninstall_all(*, dry_run: bool = False):
             uninstalled.append(name)
             continue
         try:
-            if item["kind"] == "carra2":
-                shutil.rmtree(target, ignore_errors=True)
-                if os.path.isdir(target):
-                    raise OSError(f"删除失败（可能被游戏或启动器占用）: {target}")
-                actions.append({"name": name, "action": "removed"})
-            else:
-                actions.append({"name": name, "action": _restore_bank(target)})
+            action = _uninstall_resource(item["kind"], target)
+            actions.append({"name": name, "action": action})
             uninstalled.append(name)
         except OSError as exc:
             errors.append({"name": name, "error": str(exc)})
@@ -283,9 +363,49 @@ def force_uninstall_all(*, dry_run: bool = False):
         "missing": missing,
         "errors": errors,
         "actions": actions,
-        "unity_root": unity_cache_root(),
-        "bank_dir": bank_dir,
     }
+
+
+def force_uninstall_all(*, dry_run: bool = False):
+    """卸载所有 mod 对游戏资源的改写。
+
+    `dry_run=True` 只扫描不落盘。返回:
+    `{ok, total, uninstalled, missing, errors, unity_root, bank_dir}`
+    """
+    result = _run_uninstall(scan(), dry_run=dry_run)
+    result["unity_root"] = unity_cache_root()
+    result["bank_dir"] = game_bank_dir()
+    return result
+
+
+def force_uninstall_mod(mod_name: str, *, dry_run: bool = False):
+    """只卸载指定 mod 对游戏资源的改写，不影响其它 mod。
+
+    顺序:
+    1. `scan_mod` 只收这个 mod 的包（启动器目录 + APPDATA `{mod名}_` 前缀）；
+    2. 逐条还原资源（carra2 删缓存目录 / bank 还原或删除）；
+    3. `uninstall_launcher_package` 清掉启动器投放的包副本，避免下次启动
+       mod loader 又用这些副本把资源打回去。
+
+    `dry_run=True` 只扫描不落盘。返回结构与 `force_uninstall_all` 一致，
+    额外带 `mod_name` / `package_cleaned`。
+    """
+    name = str(mod_name or "").strip()
+    result = _run_uninstall(scan_mod(name), dry_run=dry_run)
+    result["mod_name"] = name
+    result["package_cleaned"] = False
+    if not dry_run and name:
+        ok, error = uninstall_launcher_package(name)
+        result["package_cleaned"] = bool(ok)
+        if error:
+            result["errors"].append({
+                "name": name,
+                "error": f"启动器 mod 包清理失败: {error}",
+            })
+            result["ok"] = False
+    result["unity_root"] = unity_cache_root()
+    result["bank_dir"] = game_bank_dir()
+    return result
 
 
 def _describe(result) -> str:
