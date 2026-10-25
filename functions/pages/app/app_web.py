@@ -2914,20 +2914,33 @@ def run_web_ui(debug: bool = False):
     harden_stdio()
 
     window_holder = {}
+    # 页面里的 window.__onLog 由前端脚本定义，加载完成前一定不存在。
+    # 这个标志用来挡住「页面还没准备好就往前端推日志」的行为。
+    page_ready = {"value": False}
 
-    def _evaluate_js(code):
+    def _evaluate_js(code, quiet=True):
         win = window_holder.get("win")
         if win is None:
             return
         try:
             win.evaluate_js(code)
         except Exception as e:
-            print(f"执行JS代码失败: {e}")
+            # 这里绝对不能 print：print 会走 console_log 的行钩子，
+            # 行钩子又会调 _push_log -> _evaluate_js，形成无限递归。
+            # 页面 ready 之前 __onLog 尚不存在属于正常情况，静默跳过。
+            if not quiet:
+                try:
+                    assert sys.__stderr__ is not None
+                    sys.__stderr__.write(f"执行JS代码失败: {e}\n")
+                except Exception:
+                    pass
 
     def _push_log(text):
+        if not page_ready["value"]:
+            return
         try:
             payload = json.dumps(text, ensure_ascii=False)
-            _evaluate_js(f"window.__onLog({payload})")
+            _evaluate_js(f"window.__onLog && window.__onLog({payload})")
         except Exception:
             pass
 
@@ -3019,6 +3032,8 @@ def run_web_ui(debug: bool = False):
             if startup_state["shown"]:
                 return
             startup_state["shown"] = True
+        # 前端脚本已跑完（window.__onLog 可用），此后才允许推日志。
+        page_ready["value"] = True
         hwnd = _win32_hwnd(window)
         if not hwnd:
             _win32_show_window(True)
