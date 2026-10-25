@@ -27,6 +27,5 @@ except OSError as e:
 
 from functions.base.app_initializer import launch_app
 
-
 if __name__ == "__main__":
     launch_app()
