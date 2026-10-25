@@ -379,9 +379,14 @@ def uninstall_launcher_package(mod_name: str):
         return False, str(exc)
 
 
-def _run_uninstall(items, *, dry_run: bool = False):
-    """对扫描结果逐条执行还原，返回统一的统计结构。"""
-    uninstalled, missing, errors, actions = [], [], [], []
+def _run_uninstall(items, *, dry_run: bool = False, log=None):
+    """对扫描结果逐条执行还原，返回统一的统计结构。
+
+    `log` 是可选的日志回调（传 `print` 就能在启动器终端里看到每一处明细）；
+    `removed` 里记录**每个被真正删掉/还原的路径**，方便调用方把
+    `7a1078d78aa0ff8cf7d286e67a20c842` 这种缓存目录名回显给用户。
+    """
+    uninstalled, missing, errors, actions, removed = [], [], [], [], []
     for item in items:
         name = item["name"]
         targets = item.get("targets") or ([item["target"]] if item["target"] else [])
@@ -402,8 +407,19 @@ def _run_uninstall(items, *, dry_run: bool = False):
             try:
                 action = _uninstall_resource(item["kind"], target)
                 cleaned += 1
+                removed.append({
+                    "name": name,
+                    "kind": item["kind"],
+                    "action": action,
+                    "path": target,
+                })
+                if log:
+                    verb = "已还原" if action == "restored" else "已删除"
+                    log(f"[ModForceUninstall] {verb} {target}  <-  {name}")
             except OSError as exc:
                 errors.append({"name": name, "error": str(exc)})
+                if log:
+                    log(f"[ModForceUninstall] 失败: {target}  ({exc})")
                 action = None
                 break
         if action is not None:
@@ -417,22 +433,23 @@ def _run_uninstall(items, *, dry_run: bool = False):
         "missing": missing,
         "errors": errors,
         "actions": actions,
+        "removed": removed,
     }
 
 
-def force_uninstall_all(*, dry_run: bool = False):
+def force_uninstall_all(*, dry_run: bool = False, log=None):
     """卸载所有 mod 对游戏资源的改写。
 
     `dry_run=True` 只扫描不落盘。返回:
-    `{ok, total, uninstalled, missing, errors, unity_root, bank_dir}`
+    `{ok, total, uninstalled, missing, errors, actions, removed, unity_root, bank_dir}`
     """
-    result = _run_uninstall(scan(), dry_run=dry_run)
+    result = _run_uninstall(scan(), dry_run=dry_run, log=log)
     result["unity_root"] = unity_cache_root()
     result["bank_dir"] = game_bank_dir()
     return result
 
 
-def force_uninstall_mod(mod_name: str, *, dry_run: bool = False):
+def force_uninstall_mod(mod_name: str, *, dry_run: bool = False, log=None):
     """只卸载指定 mod 对游戏资源的改写，不影响其它 mod。
 
     顺序:
@@ -445,7 +462,7 @@ def force_uninstall_mod(mod_name: str, *, dry_run: bool = False):
     额外带 `mod_name` / `package_cleaned`。
     """
     name = str(mod_name or "").strip()
-    result = _run_uninstall(scan_mod(name), dry_run=dry_run)
+    result = _run_uninstall(scan_mod(name), dry_run=dry_run, log=log)
     result["mod_name"] = name
     result["package_cleaned"] = False
     if not dry_run and name:
