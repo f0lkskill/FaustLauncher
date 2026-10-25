@@ -16,8 +16,10 @@ mod 包本身保留在磁盘上（否则用户连自己装过什么都不知道�
 
 - `.carra2`: 本质是 zip。包内路径形如 `<hash1>/<hash2>/<xxx>`，对应 Unity 的
   bundle 缓存 `%LOCALAPPDATA%\\..\\LocalLow\\Unity\\ProjectMoon_LimbusCompany\\
-  <hash1>\\<hash2>`。游戏启动时会用游戏目录里的原版 bundle 重新解包出这层缓存，
-  所以**删掉整个 <hash2> 目录**就等于恢复原样。
+  <hash1>\\<hash2>`。**`<hash1>` 才是这个资源在 Unity 缓存里的索引**，`<hash2>`
+  只是某一版 bundle 的缓存名（mod 包更新或游戏重打 bundle 后会变），所以卸载时
+  直接**删掉整个 `<hash1>` 目录**，把它下面所有版本的缓存一起清掉。游戏启动时会
+  用游戏目录里的原版 bundle 重新解包出这层缓存，于是恢复到原样。
 - `.rebank` / `.bank`: 本质也是 zip。根目录 `rebank.json` 里的 `base_bank` 指明了
   被改写的 bank（`<base_bank>.bank`，位于游戏目录 `LimbusCompany_Data\\StreamingAssets\\
   Assets\\Sound\\FMODBuilds\\Desktop`）。mods 目录里如果留着 `<base_bank>.bank.orig`
@@ -90,6 +92,27 @@ def _carra2_target(path: str):
         if len(parts) >= 2 and parts[0] and parts[1]:
             return parts[0], parts[1]
     return None
+
+
+def _carra2_targets(path: str):
+    """列出 carra2 包对应的 Unity 缓存目录（按资源索引整目录删除）。
+
+    包里写的是 `{hash1}/{hash2}`，其中 **`{hash1}` 才是这个资源在 Unity 缓存
+    里的索引**，`{hash2}` 只是某一版 bundle 的缓存名，会随 mod 包更新或游戏
+    版本重打而变化（实测「扭曲裁缝 罗佳」：包里 9f52a9…、磁盘 52f123…）。
+
+    所以这里直接返回 `<缓存根>/<hash1>` 整个目录，删除时连它下面所有版本的
+    缓存一起清掉 —— 只按包里那个 hash2 删，就会出现「显示还原 0 处，但
+    `7a1078d78aa0ff8cf7d286e67a20c842` 还好好躺着」的情况。
+    """
+    pair = _carra2_target(path)
+    if not pair:
+        return []
+    hash1_dir = os.path.join(unity_cache_root(), pair[0])
+    if os.path.isdir(hash1_dir):
+        return [hash1_dir]
+    # 目录还不存在时保留包里的原始路径，让上层能把它记成「缺失」而不是「解析失败」
+    return [os.path.join(hash1_dir, pair[1])]
 
 
 def _rebank_target(path: str):
@@ -207,6 +230,19 @@ def _target_for(path: str):
     return "rebank", (_bank_target(base) if base else None)
 
 
+def _targets_for(path: str):
+    """把一个 mod 包解析成 `(kind, 需要清理的全部路径列表)`。
+
+    carra2 会展开成 `<hash1>` 下所有缓存目录（见 :func:`_carra2_targets`），
+    其它类型只有一个目标，保持与 :func:`_target_for` 一致。
+    """
+    kind, target = _target_for(path)
+    if kind == "carra2":
+        return kind, _carra2_targets(path)
+    return kind, ([target] if target else [])
+
+
+
 def scan(mod_name: str = None):
     """列出 mod 以及它们改写的目标资源位置。
 
@@ -217,9 +253,11 @@ def scan(mod_name: str = None):
     传入 `mod_name` 时只扫描这一个 mod（启动器目录同名 + APPDATA `{mod名}_`
     前缀的包），供单 mod 强卸载使用。
 
-    返回的每一项: `{name, path, source, kind, target, exists}`
+    返回的每一项: `{name, path, source, kind, target, targets, exists}`
     - `kind`: `carra2` / `rebank`
-    - `target`: 被改写的资源路径（`exists` 表示当前是否真的存在）
+    - `target`: 被改写的资源路径（主目标）
+    - `targets`: 实际要清理的全部路径（carra2 会带上同 `hash1` 下的旧缓存）
+    - `exists`: 这些路径里是否有任何一个当前真的存在
     """
     items = []
     seen_targets = set()
@@ -228,7 +266,8 @@ def scan(mod_name: str = None):
                           ("appdata", _iter_mod_files(mod_name))):
         for path in paths:
             sources[source] += 1
-            kind, target = _target_for(path)
+            kind, targets = _targets_for(path)
+            target = targets[0] if targets else None
             key = (kind, target)
             # 同一个包可能在启动器目录与 APPDATA 各存一份，按目标资源去重
             if target and key in seen_targets:
@@ -244,7 +283,8 @@ def scan(mod_name: str = None):
                 "source": source,
                 "kind": kind,
                 "target": target,
-                "exists": _exists(kind, target),
+                "targets": targets,
+                "exists": any(_exists(kind, t) for t in targets),
             })
     return items
 
@@ -304,15 +344,20 @@ def uninstall_package_file(path: str):
     解析不出目标资源时抛 `ValueError`；目标已不存在时 `action` 为 None。
     返回 `{name, path, kind, target, action}`，方便调用方汇总。
     """
-    kind, target = _target_for(path)
-    if not target:
+    kind, targets = _targets_for(path)
+    if not targets:
         raise ValueError("无法解析资源位置")
+    action = None
+    for target in targets:
+        if _exists(kind, target):
+            action = _uninstall_resource(kind, target)
     return {
         "name": os.path.basename(path),
         "path": path,
         "kind": kind,
-        "target": target,
-        "action": uninstall_resource(kind, target),
+        "target": targets[0],
+        "targets": targets,
+        "action": action,
     }
 
 
@@ -339,8 +384,8 @@ def _run_uninstall(items, *, dry_run: bool = False):
     uninstalled, missing, errors, actions = [], [], [], []
     for item in items:
         name = item["name"]
-        target = item["target"]
-        if not target:
+        targets = item.get("targets") or ([item["target"]] if item["target"] else [])
+        if not targets:
             errors.append({"name": name, "error": "无法解析资源位置"})
             continue
         if not item["exists"]:
@@ -349,12 +394,21 @@ def _run_uninstall(items, *, dry_run: bool = False):
         if dry_run:
             uninstalled.append(name)
             continue
-        try:
-            action = _uninstall_resource(item["kind"], target)
-            actions.append({"name": name, "action": action})
-            uninstalled.append(name)
-        except OSError as exc:
-            errors.append({"name": name, "error": str(exc)})
+        cleaned = 0
+        action = None
+        for target in targets:
+            if not _exists(item["kind"], target):
+                continue
+            try:
+                action = _uninstall_resource(item["kind"], target)
+                cleaned += 1
+            except OSError as exc:
+                errors.append({"name": name, "error": str(exc)})
+                action = None
+                break
+        if action is not None:
+            actions.append({"name": name, "action": action, "count": cleaned})
+            uninstalled.append(name if cleaned == 1 else f"{name}（{cleaned} 处）")
 
     return {
         "ok": not errors,
