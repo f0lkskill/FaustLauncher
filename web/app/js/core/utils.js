@@ -96,9 +96,9 @@ function refreshProjectIcons() {
 let APP_READY = false;                       // app.js 的 startupFinish 里置 true
 const HYDRATE_GATE_DELAY_MS = 900;           // app 就绪后再等一会儿才开始拉图标
 const ICON_GATE_MAX_WAIT_MS = 8000;          // 就绪信号一直没来也要放行 (避免图标永不加载)
-const ICON_MAX_CONCURRENT = 4;               // 并发上限
-const ICON_QUEUE_STAGGER_MS = 120;           // 排队任务开始前错开的时间
-const ICON_TIMEOUT_MS = 12000;               // 单个图标请求超时
+const ICON_MAX_CONCURRENT = 6;               // 并发上限（后端已改多连接并发下载，可放宽）
+const ICON_QUEUE_STAGGER_MS = 60;            // 排队任务开始前错开的时间
+const ICON_TIMEOUT_MS = 20000;               // 单个图标请求超时（冷 CDN 首包可能很慢）
 const ICON_RETRY_DELAYS = [5000, 20000, 65000];  // 失败后的后台重试退避
 //   最后一次 65s 是刻意跨过后端的图标负缓存 (NEGATIVE_TTL=60s), 否则重试必然瞬时失败
 

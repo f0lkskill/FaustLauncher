@@ -150,7 +150,7 @@ function setPipeDetailIconByTask(taskName) {
   iconUrl = find(dcAddonItems) || find(dcModItems);
   icoEl.dataset.task = taskName;
   if (!iconUrl) return;   // 找不到云端图标则保留步骤默认图标
-  withTimeout(api.get_icon(iconUrl, taskName), 6000, '').then(uri => {
+  withTimeout(api.get_icon(iconUrl, taskName), 15000, '').then(uri => {
     if (uri && icoEl.dataset.task === taskName) {
       icoEl.innerHTML = '<img src="' + uri + '" alt="">';
     }
