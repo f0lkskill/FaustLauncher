@@ -24,7 +24,7 @@
         ],
         "default": 0,
         "value": 0,
-        "description": "选择下载的汉化包来源平台\n零协会: 零协会汉化, 目录名为 LLC_zh-CN\nOurPlay 普通版: OurPlay PC 端汉化, 目录名为 OurPlayHanHua\nOurPlay 神人版: OurPlay Android 端神人汉化, 目录名为 OurPlayHanHua\n切换平台后, 程序会按所选平台的汉化包结构处理文件。",
+        "description": "选择下载的汉化包来源平台。",
         "page": "通用"
     },
     "translate_download_way": {
@@ -38,7 +38,7 @@
         ],
         "default": 0,
         "value": 0,
-        "description": "翻译的下载方式\n推荐使用蓝奏云转存下载源, 以获取最新的翻译内容\nGithub Releases 官方下载源可能会被墙, 导致下载失败\n若选择 Github Releases 官方下载源, 请确保网络环境可以访问 Github。",
+        "description": "翻译的下载方式。",
         "page": "通用"
     },
     "steam_launch_with_launcher": {
@@ -46,7 +46,7 @@
         "type": "boolean",
         "default": false,
         "value": false,
-        "description": "开启后把 Steam 的启动项绑定到本启动器: 从 Steam 启动游戏时先拉起启动器, 由启动器完成汉化/Mod 加载后再启动游戏.\n开启时会先关掉 Steam, 写入启动项后再重新启动 Steam.\n关闭时会把启动项清空.\n启动项内容会被完全接管: 手动追加的参数同样会被覆盖.",
+        "description": "是否将 Steam 的高级启动项绑定到启动器。",
         "page": "通用"
     },
     "check_translate_update": {
@@ -54,7 +54,7 @@
         "type": "boolean",
         "default": true,
         "value": true,
-        "description": "启动时检查汉化包版本并自动更新\n关闭后启动将跳过汉化更新检查",
+        "description": "启动时检查汉化包版本并自动更新，关闭后启动将跳过汉化更新检查",
         "page": "通用"
     },
     "after_gui_exit": {
@@ -66,7 +66,7 @@
         ],
         "default": 0,
         "value": 0,
-        "description": "退出程序后, 程序将如何操作\n最小化到系统托盘: 程序将最小化到系统托盘, 并继续运行\n关闭程序: 程序将立即关闭",
+        "description": "窗口关闭后, 程序将如何操作。",
         "page": "通用"
     },
     "enable_terminal_typing_effect": {
@@ -74,7 +74,7 @@
         "type": "boolean",
         "default": false,
         "value": false,
-        "description": "是否启用终端打字机输入效果功能\n若启用后, 终端文本将逐渐显示。\n注意: 这个功能有一定缺陷，可能会导致终端文本显示不完整。",
+        "description": "是否启用终端打字机输入效果功能，启用后, 终端文本将逐渐显示。",
         "page": "通用"
     },
     "user_name": {
@@ -82,7 +82,7 @@
         "type": "string",
         "default": "Player",
         "value": "folkskill",
-        "description": "你的用户名，将显示在边狱巴士的个人车票上。",
+        "description": "你的用户名，将显示在边狱公司的个人车票上。",
         "page": "美化"
     },
     "enable_show_user_name": {
@@ -90,7 +90,7 @@
         "type": "boolean",
         "default": true,
         "value": true,
-        "description": "是否显示用户名在边狱巴士的个人车票上，替换了原版的复制按钮的文字显示。",
+        "description": "是否显示用户名在个人车票上，替换了原版的复制按钮的文字显示。",
         "page": "美化"
     },
     "enable_special_tip": {
@@ -98,7 +98,7 @@
         "type": "boolean",
         "default": true,
         "value": true,
-        "description": "零协会曾经为边狱巴士制作过一些私活Tip\n但是现在已经看不见了。\n启用后, 这些Tip将会替换战斗文本的Tip。",
+        "description": "是否在加载界面展示零协会私活Tip。",
         "page": "美化"
     },
     "enable_skill_style": {
@@ -106,7 +106,7 @@
         "type": "boolean",
         "default": true,
         "value": true,
-        "description": "是否对技能描述应用颜色渐变和样式美化\n比如技能描述中的数字将有特殊样式\n大于小于改为＞,＜",
+        "description": "是否对技能描述应用颜色渐变和样式美化。",
         "page": "美化"
     },
     "enable_ego_gift_style": {
@@ -130,7 +130,7 @@
         "type": "boolean",
         "default": true,
         "value": true,
-        "description": "是否对EGO名称应用颜色渐变和样式美化\n若启用, 除了正常EGO名称美化\n以及侵蚀的EGO名称将有特殊样式。",
+        "description": "是否对EGO名称应用颜色渐变和样式美化。",
         "page": "美化"
     },
     "enable_bubble_color": {
@@ -138,7 +138,7 @@
         "type": "boolean",
         "default": true,
         "value": true,
-        "description": "是否启用气泡文本的 <color> 颜色标签\n开启 (默认): 气泡文本正常显示汉化颜色并按设置应用渐变色美化 (原版功能), 启动流程中不对气泡文件做额外处理\n关闭: 对所有转移后的气泡文件去除 <color=#xxxxxx> 颜色标签, 气泡文本以默认颜色显示",
+        "description": "是否启用气泡文本独特颜色。",
         "page": "美化"
     },
     "enable_text_gradient": {
@@ -154,7 +154,7 @@
         "type": "float",
         "default": 0.4,
         "value": 0.4,
-        "description": "气泡文本渐变系数\n越大的值意味着颜色渐变越快。",
+        "description": "气泡文本渐变系数，越大的值意味着颜色渐变越快。",
         "min": 0.1,
         "max": 1.0,
         "step": 0.1,
@@ -165,7 +165,7 @@
         "type": "boolean",
         "default": true,
         "value": true,
-        "description": "是否对技能名称应用颜色渐变\n根据技能的罪孽颜色添加渐变色。",
+        "description": "是否对技能名称应用颜色渐变，根据技能的罪孽颜色添加渐变色。",
         "page": "美化"
     },
     "skill_text_gradient_rate": {
@@ -173,7 +173,7 @@
         "type": "float",
         "default": 0.4,
         "value": 0.4,
-        "description": "技能名称渐变系数\n越大的值意味着颜色渐变越快。",
+        "description": "技能名称渐变系数，越大的值意味着颜色渐变越快。",
         "min": 0.1,
         "max": 1.0,
         "step": 0.1,
@@ -184,7 +184,7 @@
         "type": "boolean",
         "default": true,
         "value": false,
-        "description": "是否加载 Mod\n注意: 由于游戏切换了新的引擎，导致大部分mod已经完全失效，不建议您启用 Mod 加载。\n我们将会在接下来的版本进行修复。",
+        "description": "是否在启动的时候加载视觉效果 Mod。",
         "page": "Mod"
     },
     "mod_loader_threads": {
@@ -235,7 +235,7 @@
         "type": "string",
         "default": "assets/voices/welcome_2.wav",
         "value": "assets/voices/welcome_2.wav",
-        "description": "启动器欢迎音效的文件路径\n可以替换为你喜欢的音效文件\n仅支持wav格式\n如果不想要欢迎音效, 可以将其设置为空字符串",
+        "description": "启动器欢迎音效的文件路径，可以替换为你喜欢的音效文件，仅支持wav格式\n如果不想要欢迎音效, 可以将其设置为空字符串",
         "page": "其它"
     },
     "click_sound": {
@@ -243,7 +243,7 @@
         "type": "boolean",
         "default": true,
         "value": true,
-        "description": "是否播放界面控件的点击音效",
+        "description": "是否播放界面控件的点击音效。",
         "page": "其它"
     },
     "bg_gaussian_blur": {
@@ -251,7 +251,7 @@
         "type": "float",
         "default": 1.0,
         "value": 1.0,
-        "description": "主界面背景模糊效果的强度\n越大的值意味着模糊越强",
+        "description": "主界面背景模糊效果的强度\n越大的值意味着模糊效果越强。",
         "min": 0.0,
         "max": 10.0,
         "step": 1.0,
@@ -262,7 +262,7 @@
         "type": "color",
         "default": "#181818",
         "value": "#181818",
-        "description": "应用程序的主题颜色 (十六进制格式)\n重启后才能生效\n实验性功能, 可能会出现样式失效，颜色冲突。",
+        "description": "应用程序的主题颜色 (十六进制格式)\n重启后才能生效，实验性功能, 可能会出现样式失效，颜色冲突。",
         "page": "其它"
     },
     "glass_enabled": {
@@ -270,7 +270,7 @@
         "type": "boolean",
         "default": false,
         "value": false,
-        "description": "是否启用毛玻璃效果 (卡片/面板半透明模糊)\n关闭后禁用 backdrop-filter, 减少 GPU 填充率开销。",
+        "description": "是否启用毛玻璃效果，关闭后将一定程度的减少 GPU 填充率开销。",
         "page": "其它"
     },
     "hw_accel": {
@@ -278,7 +278,7 @@
         "type": "boolean",
         "default": true,
         "value": true,
-        "description": "是否为启动器界面使用 GPU 渲染界面\n关闭后禁用 WebView GPU 加速 (--disable-gpu), 适合显卡驱动异常/黑屏场景\n修改后需重启生效",
+        "description": "是否为启动器界面使用 GPU 渲染界面，关闭后禁用 WebView GPU 加速, 修改后需重启生效。",
         "page": "其它"
     },
     "frame_limit": {
@@ -293,7 +293,7 @@
         ],
         "default": 3,
         "value": 3,
-        "description": "启动器界面动画的最大帧率上限\n降低帧率可减少毛玻璃卡片等每帧重绘的 GPU 开销\n默认 60 FPS",
+        "description": "启动器界面动画的最大帧率上限，默认 90 FPS",
         "page": "其它"
     },
     "glass_factor": {
@@ -301,7 +301,7 @@
         "type": "float",
         "default": 0.2,
         "value": 0.2,
-        "description": "全局控件模糊程度: 所有面板/卡片背景的模糊强度倍率\n0.5 = 减弱, 1.0 = 默认, 2.0 = 增强, 0 = 完全清晰\n资源管理、下载中心、玻璃窗、快捷方式、工具卡片等全部受此控制",
+        "description": "全局控件模糊程度: 所有面板/卡片背景的模糊强度倍率。",
         "min": 0,
         "max": 3.0,
         "step": 0.1,
@@ -312,7 +312,7 @@
         "type": "float",
         "default": 0.9,
         "value": 0.9,
-        "description": "统一控制普通面板/卡片/终端的透明度 (直接就是 alpha 值)\n0 = 完全透明, 0.72 = 默认, 1 = 完全不透明\n资源管理、下载中心、玻璃窗、快捷方式、设置、终端 等均受此控制;\n模态窗口 (版本更新 / 路径确认 / 详情弹窗) 保持完全不透明, 不受此项影响",
+        "description": "统一控制UI控件的透明度。",
         "min": 0.0,
         "max": 1.0,
         "step": 0.02,
@@ -329,7 +329,7 @@
             10,
             30
         ],
-        "description": "角色小人缩回后再次出现的间隔 (秒)\n在给定范围内随机取值",
+        "description": "角色小人缩回后再次出现的间隔。",
         "min": 2,
         "max": 120,
         "step": 1,
@@ -346,7 +346,7 @@
             10,
             15
         ],
-        "description": "角色小人切换问候语的间隔 (秒)\n在给定范围内随机取值",
+        "description": "角色小人切换问候语的间隔。",
         "min": 2,
         "max": 60,
         "step": 1,
@@ -363,7 +363,7 @@
             40,
             60
         ],
-        "description": "角色小人出现后停留的时间 (秒)\n在给定范围内随机取值",
+        "description": "角色小人出现后停留的时间。",
         "min": 5,
         "max": 300,
         "step": 1,
@@ -378,23 +378,15 @@
         ],
         "default": 0,
         "value": 0,
-        "description": "快捷方式与实用工具页面的展示方式\n滚轮切换: 3D 轮播卡片\n箱式布局: 网格平铺\n切换后需重启生效",
+        "description": "快捷方式与实用工具页面的展示方式，切换后需重启生效",
         "page": "其它"
-    },
-    "auto_update_hook_index": {
-        "name": "自动刷新游戏偏移索引",
-        "type": "boolean",
-        "default": true,
-        "value": true,
-        "description": "已废弃：客户端不再自动重建偏移索引（2026-10 起）\n预检发现偏移量对不上本机 DLL 时只会与云端对照，\n仍对不上就继续用现有索引。需要新偏移请手动跑\npython -m functions.hook.main update",
-        "page": "成就"
     },
     "enable_achievement_hook": {
         "name": "启用成就监测与战斗观测",
         "type": "boolean",
         "default": true,
         "value": true,
-        "description": "启动游戏时拉起成就监测子进程：监控 Player.log，并向游戏进程注入\nbattle_watch.dll（只读观测：回合边界/技能使用/速度/血量/理智）以解锁战斗类成就\n关闭后不启动子进程、不注入任何DLL",
+        "description": "是否开启成就监测功能，将会向游戏进程注入 dll（只进行游戏数据读取）以解锁战斗类成就。",
         "page": "成就"
     },
     "achievement_log_verbose": {
@@ -402,7 +394,7 @@
         "type": "boolean",
         "default": false,
         "value": false,
-        "description": "成就相关日志现在只有一份 logs/achievement_hook.log（含成就生命周期、子进程 stdout/stderr、以及全量 RND/SPD/VAL/ACT 事件流）。\n此开关只控制“事件行要不要也带一条即时摘要行”，排查问题时打开即可。",
+        "description": "成就监控是否输出更详细的日志内容。",
         "page": "成就"
     },
     "ui_mode": {
@@ -414,7 +406,7 @@
         ],
         "default": 1,
         "value": 1,
-        "description": "选择启动器界面\n旧版界面: 经典 tkinter 界面\n新版 Web 界面: pywebview 现代化界面\n修改后重启启动器生效",
+        "description": "选择启动器界面\n旧版界面: 经典 tkinter 界面，新版 Web 界面: pywebview 现代化界面\n修改后重启启动器生效",
         "page": "其它"
     },
     "version_info": {
