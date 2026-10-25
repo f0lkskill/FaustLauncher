@@ -1634,7 +1634,7 @@ class AppApi:
             if not plan:
                 return {'ok': True, 'total': 0, 'uninstalled': [], 'missing': [],
                         'errors': [], 'message': '当前没有可卸载的 Mod'}
-            result = mfu.force_uninstall_all()
+            result = mfu.force_uninstall_all(log=print)
             if result.get('ok'):
                 result['message'] = (f"已还原 {len(result['uninstalled'])} 处资源改写"
                                      f"（共扫描 {result['total']} 个 Mod）")
@@ -1659,7 +1659,7 @@ class AppApi:
                 return {'ok': True, 'total': 0, 'uninstalled': [], 'missing': [],
                         'errors': [], 'mod_name': mod_name,
                         'message': f'{mod_name} 没有可卸载的资源改写'}
-            result = mfu.force_uninstall_mod(mod_name)
+            result = mfu.force_uninstall_mod(mod_name, log=print)
             restored = len(result.get('uninstalled') or [])
             if result.get('ok'):
                 result['message'] = f"已还原 {restored} 处资源改写（{mod_name}）"

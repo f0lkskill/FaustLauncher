@@ -1177,6 +1177,18 @@ body.modal-open .res-card {
 .panel-body.rich li { margin: 5px 0; }
 .panel-body.rich li::marker { color: var(--text-3); }
 .panel-body.rich b, .panel-body.rich strong { color: var(--text); font-weight: 700; }
+/* 强卸载完成时列出的缓存目录名（7a1078d… 这种 hash 文件夹） */
+.panel-body.rich ul.force-removed {
+  max-height: 150px; overflow-y: auto; padding-left: 18px;
+  background: var(--bg-2); border: 1px solid var(--border);
+  border-radius: 8px; padding: 8px 12px 8px 28px;
+}
+.panel-body.rich ul.force-removed li { margin: 3px 0; font-size: 12.5px; color: var(--text-2); }
+.panel-body.rich ul.force-removed code {
+  color: var(--text); background: var(--card); border-radius: 4px;
+  padding: 1px 5px; font-size: 12px; letter-spacing: .2px;
+}
+.panel-body.rich ul.force-removed .muted { color: var(--text-3); font-size: 12px; }
 .panel-foot { display: flex; gap: 10px; justify-content: flex-end; padding: 14px 20px; border-top: 1px solid var(--border); }
 .at-row { margin-bottom: 14px; }
 .at-row label { display: block; font-size: 12.5px; color: var(--text-2); margin-bottom: 6px; }
