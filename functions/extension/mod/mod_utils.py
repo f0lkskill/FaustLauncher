@@ -459,6 +459,7 @@ class ModManager:
                         if not os.path.isfile(source_file):
                             print(f"跳过缺失文件: {source_file}")
                             continue
+
                         # 投放名统一加前缀，避免不同 Mod 的同名资源互相覆盖
                         target_name = f"{mod_name}_{file_name}"
                         target_file = os.path.join(target_dir, target_name)
@@ -473,6 +474,7 @@ class ModManager:
                             new_pkg_names.append(rebank_name)
                             new_pkg_names.append(rebank_name + STAMP_SUFFIX)
                             src_md5 = self._file_md5(source_file)
+
                             # 源 bank 没变且差分已存在 -> 无需重建，直接跳过
                             if os.path.isfile(rebank_path) and _read_stamp(stamp_path) == src_md5:
                                 print(f"跳过 {file_name}: 差分已是最新 (源 bank 未变化)")
@@ -509,6 +511,7 @@ class ModManager:
             stale = [n for n in (old_manifest.get("package") or [])
                      if n not in set(new_pkg_names)
                      and not any(n.startswith(p) for p in alive_prefixes)]
+            
             if stale:
                 _move_orphans(target_root, stale)
             _write_manifest(target_root, {"package": new_pkg_names,
