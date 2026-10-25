@@ -528,11 +528,15 @@ body.no-hw .hero {
 .dc-actions { flex-shrink: 0; }
 
 /* ---------- 资源管理 (插件/Mod) ---------- */
-/* 资源管理/下载中心/成就页: 外层容器禁 3D/透视/位移 (卡片自身保留 3D 聚焦效果)。
-   外层面板跟着鼠标转既难看、又会把指针"甩出"卡片, 所以这三页统一压平。 */
+/* 资源管理/下载中心/成就页: 外层容器**永久**禁 3D/透视/位移。
+   这些页面的大面板是布局容器, 跟着鼠标转既难看, 又会把指针"甩出"卡片;
+   之前只在 :hover 时压平, 一旦打开模态面板(指针不再悬停)内联的
+   perspective/rotate 就留在元素上, 于是整个面板歪成一块斜的玻璃 —— 就是
+   "点重装/卸载按钮后出现诡异 3D 效果"的根因。这里改成无条件压平。 */
 #page-mod_addon, #page-mod_addon .card, #page-mod_addon .res-list,
 #page-download_center, #page-download_center .card, #page-download_center .res-list,
 #page-achievement, #page-achievement .card, #page-achievement .res-list {
+  transform: none !important;
   transform-style: flat !important;
   perspective: none !important;
   backface-visibility: visible !important;
@@ -648,7 +652,10 @@ body.modal-open .res-card {
   border-radius: 12px; padding: 10px 14px;
   backdrop-filter: blur(calc(var(--glass-factor) * 26px)) saturate(140%);
   -webkit-backdrop-filter: blur(calc(var(--glass-factor) * 26px)) saturate(140%);
-  transform-style: preserve-3d;
+  /* 卡片本身会被 tilt.js 做 rotateX/rotateY (perspective), 这里必须是 flat:
+     preserve-3d 会让卡片的文字/按钮真的被"挤出"三维空间, 配合 backdrop-filter
+     还会出现重影、边缘错位的假 3D 效果。 */
+  transform-style: flat;
   transition: box-shadow .25s ease;
 }
 .res-card:hover {
