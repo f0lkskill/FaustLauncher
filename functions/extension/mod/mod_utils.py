@@ -443,26 +443,6 @@ class ModManager:
                                     print(f"删除缓存 {cache} 失败: {e}", flush=True)
                             _remove_quietly(cache + STAMP_SUFFIX, "版本标记")
 
-                lang_dir = os.path.join(mod_path, 'extra_files')
-                if os.path.isdir(lang_dir):
-                    try:
-                        game_path: str = SettingsManager().get_setting('game_path') # type: ignore
-                        target_lang_dir = os.path.join(game_path, 'LimbusCompany_Data', 'lang',
-                                                       _translation_dir_name())
-                        for root, _, files in os.walk(lang_dir):
-                            for fn in files:
-                                src = os.path.join(root, fn)
-                                dst = os.path.join(target_lang_dir, os.path.relpath(src, lang_dir))
-                                try:
-                                    if os.path.isfile(dst) and self._file_md5(dst) == self._file_md5(src):
-                                        os.remove(dst)
-                                        print(f"删除语言文件: {dst}")
-                                        do_flag = True
-
-                                except OSError:
-                                    pass
-                    except Exception as e:
-                        print(f"清理语言文件失败: {e}")
                 if do_flag:
                     print(f"成功卸载Mod: {mod_name}")
                 return mod_name
