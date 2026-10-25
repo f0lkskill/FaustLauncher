@@ -1615,6 +1615,31 @@ class AppApi:
             print(f"[ModForceUninstall] 卸载失败: {exc}")
             return {'ok': False, 'error': str(exc)}
 
+    def force_uninstall_mod(self, name):
+        """只还原指定 Mod 对游戏资源的改写，不影响其它 Mod（单 Mod 强卸载）。"""
+        mod_name = str(name or '').strip()
+        if not mod_name:
+            return {'ok': False, 'error': '缺少 Mod 名称'}
+        try:
+            from functions.base import mod_force_uninstall as mfu
+            plan = mfu.scan_mod(mod_name)
+            if not plan:
+                return {'ok': True, 'total': 0, 'uninstalled': [], 'missing': [],
+                        'errors': [], 'mod_name': mod_name,
+                        'message': f'{mod_name} 没有可卸载的资源改写'}
+            result = mfu.force_uninstall_mod(mod_name)
+            restored = len(result.get('uninstalled') or [])
+            if result.get('ok'):
+                result['message'] = f"已还原 {restored} 处资源改写（{mod_name}）"
+            else:
+                result['message'] = (f"已还原 {restored} 处，"
+                                     f"{len(result.get('errors') or [])} 处失败")
+            print(f"[ModForceUninstall] {result['message']}")
+            return result
+        except Exception as exc:
+            print(f"[ModForceUninstall] 卸载 {mod_name} 失败: {exc}")
+            return {'ok': False, 'error': str(exc), 'mod_name': mod_name}
+
     def _cached_resource(self, kind, name):
         try:
             from functions.pages.app import page_loader as _pl
