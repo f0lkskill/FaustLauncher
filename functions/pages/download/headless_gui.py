@@ -65,6 +65,14 @@ class HeadlessDownloadGUI:
 
     def __init__(self, config_path: str = "", auto_start: bool = True,
                  download_func=None, task: str = None): # type: ignore
+        """_初始化一个无头下载器_
+
+        Args:
+            config_path (str, optional): _配置的下载路径_. Defaults to "".
+            auto_start (bool, optional): _是否自动开始下载_. Defaults to True.
+            download_func (_type_, optional): _下载回调方法_. Defaults to None.
+            task (str, optional): _任务名称_. Defaults to None.
+        """
         self.config_path = config_path
         self.is_downloading = True
         self.task = task
@@ -103,6 +111,11 @@ class HeadlessDownloadGUI:
         self.speed_var.set(f"速度: {speed:.1f} KB/s" if speed < 1024 else f"速度: {speed / 1024:.1f} MB/s")
 
     def start_download(self, download_func=None):
+        """_开始下载_
+
+        Args:
+            download_func (_type_, optional): _下载回调方法_. Defaults to None.
+        """
         self.is_downloading = True
         threading.Thread(target=self.run_download, args=(download_func,),
                          daemon=True).start()
