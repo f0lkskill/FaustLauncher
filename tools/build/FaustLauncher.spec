@@ -143,8 +143,11 @@ a = Analysis(
     'functions.achievement.data.ach_battle_03',
     'functions.achievement.data.ach_enkephalin_100',
     'capstone',
-    # il2cpp 导出映射：插件（addons\SinnersRandom）在函数内 import，静态分析看不到
+    # il2cpp 导出映射：插件在函数内 import，静态分析看不到。内嵌的基准名字表
+    # 也必须一并打包 —— 否则打包后的启动器算不出「标准名 -> 混淆名」映射，
+    # 插件只会报「取不到 il2cpp 接口（导出名映射缺失）」。
     'functions.base.il2cpp_exports',
+    'functions.base.il2cpp_api_names',
     'pefile',
 ],
     hookspath=[],
