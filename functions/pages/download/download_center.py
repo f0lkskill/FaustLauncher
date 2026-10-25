@@ -722,39 +722,51 @@ class DownloadCenterPage:
             print(f"加载图标失败: {e}")
 
     def download_icon(self, icon_url:str, item_name:str):
+        """下载并缓存插件/Mod 图标，返回落盘路径；失败返回 None。
+
+        走 ``icon_fetch`` 的直连 + 多连接并发 + 缩略流程（界面上只显示 64px，
+        没必要把 1 MB 原图留在磁盘上）；直连拿到的不是图片时才退回蓝奏解析。
+        """
         if not icon_url:
             return None
 
-        from functions.base.common import icon_cache
+        from functions.base.common import icon_cache, icon_fetch
         icon_path = icon_cache.find_cached_icon(icon_url, item_name, self.icon_cache_dir)
 
         if icon_path and os.path.exists(icon_path):
+            icon_fetch.shrink_file(icon_path)
             return icon_path
 
         icon_path = self._icon_cache_path(icon_url, item_name)
         if icon_cache.icon_failed_recently(icon_url):
             return None
 
-        try:
-            from functions.web_update.lanzou_utils import GetWithDirectLink
-            response = GetWithDirectLink(
-                icon_url,
-                accept=lambda resp: resp.status_code == 200
-                and icon_cache.looks_like_image(resp.content),
-                timeout=15, verify=False)
+        data = icon_fetch.download_image(icon_url, timeout=15)
+        if not (data and icon_cache.looks_like_image(data)):
+            try:
+                from functions.web_update.lanzou_utils import GetWithDirectLink
+                response = GetWithDirectLink(
+                    icon_url,
+                    accept=lambda resp: resp.status_code == 200
+                    and icon_cache.looks_like_image(resp.content),
+                    timeout=15, verify=False)
+            except Exception as e:
+                print(f"图标下载异常: {str(e)}")
+                icon_cache.note_icon_failure(icon_url)
+                return None
             if response is not None and response.status_code == 200 \
                     and icon_cache.looks_like_image(response.content):
-                with open(icon_path, 'wb') as f:
-                    f.write(response.content)
-                icon_cache.note_icon_success(icon_url)
-                return icon_path
-            status = response.status_code if response is not None else '无响应'
-            print(f"图标下载失败（返回内容不是图片）: {icon_url[:80]} status={status}")
-            icon_cache.note_icon_failure(icon_url)
-        except Exception as e:
-            print(f"图标下载异常: {str(e)}")
-            icon_cache.note_icon_failure(icon_url)
+                data = response.content
+            else:
+                status = response.status_code if response is not None else '无响应'
+                print(f"图标下载失败（返回内容不是图片）: {icon_url[:80]} status={status}")
+                icon_cache.note_icon_failure(icon_url)
+                return None
 
+        if icon_fetch.save_image(data, icon_path):
+            icon_cache.note_icon_success(icon_url)
+            return icon_path
+        icon_cache.note_icon_failure(icon_url)
         return None
 
     def refresh_center(self):
