@@ -143,6 +143,12 @@ function bindResForceUninstall() {
   btn.onclick = confirmForceUninstall;
 }
 
+// 点遮罩空白处关闭面板: 面板铺满整个窗口, 只有点到遮罩本身(而不是里面的
+// .panel-card)才算"点空白", 否则在卡片里拖选文字也会被误关。
+function bindOverlayClose(panel) {
+  panel.addEventListener('click', (e) => { if (e.target === panel) closePanel(panel); });
+}
+
 function confirmForceUninstall() {
   if (!api) { toast('浏览器预览模式', 'warn'); return; }
   const panel = document.createElement('div');
@@ -155,6 +161,7 @@ function confirmForceUninstall() {
     '</div>' +
     '<div class="panel-foot"><button class="btn btn-ghost" data-no>取消</button><button class="btn btn-danger" data-yes>确认强卸载</button></div></div>';
   document.body.appendChild(panel);
+  bindOverlayClose(panel);
   const close = () => closePanel(panel);
   panel.querySelector('.panel-close').onclick = close;
   panel.querySelector('[data-no]').onclick = close;
@@ -188,6 +195,7 @@ function confirmForceUninstallMod(dir, name) {
     '</div>' +
     '<div class="panel-foot"><button class="btn btn-ghost" data-no>取消</button><button class="btn btn-danger" data-yes>确认强卸载</button></div></div>';
   document.body.appendChild(panel);
+  bindOverlayClose(panel);
   const close = () => closePanel(panel);
   panel.querySelector('.panel-close').onclick = close;
   panel.querySelector('[data-no]').onclick = close;
@@ -225,6 +233,7 @@ function showForceUninstallDone(r, scopeName) {
     '</div>' +
     '<div class="panel-foot"><button class="btn btn-primary" data-ok>知道了</button></div></div>';
   document.body.appendChild(panel);
+  bindOverlayClose(panel);
   const close = () => closePanel(panel);
   panel.querySelector('.panel-close').onclick = close;
   panel.querySelector('[data-ok]').onclick = close;
@@ -252,6 +261,7 @@ function confirmReinstall(kind, dirs, label) {
     '<div class="panel-body"><p>将删除本地资源，并使用启动时缓存的云端信息重新安装。是否继续？</p></div>' +
     '<div class="panel-foot"><button class="btn btn-ghost" data-no>取消</button><button class="btn btn-primary" data-yes>确认重装</button></div></div>';
   document.body.appendChild(panel);
+  bindOverlayClose(panel);
   const close = () => closePanel(panel);
   panel.querySelector('.panel-close').onclick = close;
   panel.querySelector('[data-no]').onclick = close;
@@ -509,7 +519,7 @@ function openResModal(kind, item) {
       '</div>' +
     '</div>';
   document.body.appendChild(panel);
-  panel.addEventListener('click', (e) => { if (e.target === panel) closePanel(panel); });
+  bindOverlayClose(panel);
   $('#res-modal-close').onclick = () => closePanel(panel);
 
   $('#res-open-dir').onclick = async () => {
