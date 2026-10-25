@@ -34,6 +34,13 @@ def looks_like_image(data):
     return any(head.startswith(magic) for magic in _IMAGE_MAGIC)
 
 def find_cached_icon(icon_url, item_name, cache_dir=DEFAULT_ICON_CACHE_DIR):
+    """找出已缓存的图标文件路径；没有缓存时返回空字符串。
+
+    先按 ``<名字>_<url摘要>_icon.png`` 精确找，再退一步按 ``_<url摘要>_icon.png``
+    后缀扫一遍（云端条目改名后仍能命中同一张图）。**只有文件真的存在才返回
+    路径**，不会返回一个"本该在这里"的虚构路径——调用方以前必须自己再
+    ``os.path.exists`` 一次，现在不必了。
+    """
     if not icon_url:
         return ""
     exact = icon_cache_path(icon_url, item_name, cache_dir)
@@ -44,10 +51,12 @@ def find_cached_icon(icon_url, item_name, cache_dir=DEFAULT_ICON_CACHE_DIR):
     try:
         for filename in os.listdir(cache_dir):
             if filename.endswith(suffix):
-                return os.path.join(cache_dir, filename)
+                candidate = os.path.join(cache_dir, filename)
+                if os.path.exists(candidate):
+                    return candidate
     except OSError:
         pass
-    return exact
+    return ""
 
 def icon_failed_recently(icon_url):
     if not icon_url:
@@ -124,9 +133,11 @@ def shrink_cached_icons(cache_dir=DEFAULT_ICON_CACHE_DIR, log=None):
     """把缓存目录里的大图就地缩略，返回 (处理数, 节省字节)。
 
     早期版本把上传时的原图（1 MB 级）直接当缓存存下来，前端却只显示几十像素，
-    既占磁盘又让每次 base64 传输膨胀几十倍。这里做一次性的瘦身迁移：只碰
-    体积超过 96 KB 的文件，`icon_fetch.shrink_file` 内部有幂等判断，重复调用
-    不会反复处理。
+    既占磁盘又让每次 base64 传输膨胀几十倍。这里做一次性的瘦身迁移：以
+    ``force=True`` 调 :func:`functions.base.common.icon_fetch.shrink_file`，
+    连「体积不到 96 KB 但像素尺寸仍超标」（例如 536px / 80 KB）的历史文件也
+    一并缩到 ``MAX_EDGE``；``shrink_file`` 内部有幂等判断，已合格的文件不会被
+    反复改写。
     """
     if not os.path.isdir(cache_dir):
         return (0, 0)
@@ -146,10 +157,8 @@ def shrink_cached_icons(cache_dir=DEFAULT_ICON_CACHE_DIR, log=None):
             before = os.path.getsize(path)
         except OSError:
             continue
-        if before <= 96 * 1024:
-            continue
         try:
-            changed = icon_fetch.shrink_file(path)
+            changed = icon_fetch.shrink_file(path, force=True)
         except Exception:  # noqa: BLE001 - 单个文件坏掉不影响其它图标
             continue
         if not changed:

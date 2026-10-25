@@ -245,6 +245,42 @@ def CachedDirectLink(url):
         return None
     return item["direct"]
 
+def PeekCachedDirectLink(url, pwd=None):
+    """只查直链缓存，**不发起任何网络请求**；没有可用直链时返回空字符串。
+
+    与 :func:`GetDirectLink` 的区别：后者查不到缓存时会长链解析（抓分享页 +
+    WAF 挑战 + POST 接口，实测约 1.3 秒/个）。图标这类「缓存里有就赚、没有就
+    走更便宜的路子」的场景只想知道「现在有没有现成直链」，所以单独开这个
+    只读入口。
+
+    Args:
+        url: 分享链接，或 ``lz.qaiu.top/parser?url=<分享链接>`` 这种包装链接。
+        pwd: 可选的提取码；留空时从 URL 的 ``pwd``/``p`` 参数里取。
+
+    Returns:
+        直链字符串；缓存未命中、已过期或 URL 不是蓝奏链接时返回 ``""``。
+    """
+    if not url:
+        return ""
+    try:
+        if not IsLanzouUrl(url):
+            return ""
+        persisted = CachedDirectLink(url)
+        if persisted:
+            return persisted
+        share_url, share_pwd = ParseShareUrl(url, pwd)
+        cached = _CachedDirect((share_url, share_pwd or ""))
+        if cached:
+            return cached
+        if share_pwd:
+            cached = _CachedDirect((share_url, ""))
+            if cached:
+                return cached
+    except Exception:  # noqa: BLE001 - 查询缓存失败一律当没有
+        return ""
+    return ""
+
+
 def CacheDirectLink(url, direct):
     if not url or not direct:
         return
