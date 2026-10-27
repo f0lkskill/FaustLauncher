@@ -412,13 +412,12 @@ function buildResCard(item) {
         '<div class="res-title-row">' +
           '<span class="res-title">' + esc(name) +
             '<span class="res-state-badge ' + (item.permanent ? 'permanent' : (enabled ? 'on' : 'off')) + '">' +
-              (item.permanent ? '永久启用' : (enabled ? '已启用' : '已禁用')) +
+              (item.permanent ? '依赖库' : (enabled ? '已启用' : '已禁用')) +
             '</span>' +
           '</span>' +
           (ver ? '<span class="res-ver-inline">v' + esc(ver) + '</span>' : '') +
         '</div>' +
         '<div class="res-desc">' + esc(desc) + '</div>' +
-        depBadgesHtml(item) +
         (authorLinksHtml(item.author_links) ? '<div class="res-desc res-authors">' + authorLinksHtml(item.author_links) + '</div>' : '') +
       '</div>' +
     '</div>' +
@@ -492,7 +491,7 @@ function renderSettingsFields(settings, opts) {
         '<span class="res-set-name">启用</span>' +
         '<span class="switch"><input type="checkbox" checked disabled><span class="slider"></span></span>' +
       '</label>' +
-      '<div class="res-set-hint">依赖库常驻启用，不能关闭；其它插件通过它获得底层能力。</div>' +
+      
     '</div>';
   }
   if (!keys.length) return '<div class="res-empty">暂无配置项</div>';
@@ -534,30 +533,31 @@ function fillDepList(panel, item) {
   if (!box) return;
   const deps = item.requires || [];
   const missing = item.missing_requires || [];
-  box.innerHTML = '<div class="res-dep-head">依赖 ' + deps.length + ' 项</div>' +
-    deps.map(function (d) {
+  box.innerHTML = deps.map(function (d) {
       const lack = missing.indexOf(d) >= 0;
-      return '<div class="res-dep-item">' +
-        '<img class="res-dep-icon" src="' + PROJECT_ICON + '" alt="">' +
-        '<div class="res-dep-main">' +
-          '<div class="res-dep-title">' +
-            '<span class="res-dep-name">' + esc(d) + '</span>' +
-            '<span class="res-dep-ver"></span>' +
+      return '<div class="res-card' + (lack ? ' disabled' : '') + '" data-dep-name="' + esc(d) + '">' +
+        '<div class="res-card-main">' +
+        '<img class="res-icon" src="' + PROJECT_ICON + '" alt="">' +
+        '<div class="res-info">' +
+          '<div class="res-title-row">' +
+            '<span class="res-title">' + esc(d) + '</span>' +
+            '<span class="res-ver-inline res-dep-ver"></span>' +
+            '<span class="res-dep-state ' + (lack ? 'missing' : 'ok') + '">' +
+              (lack ? '未安装' : '已安装') +
+            '</span>' +
           '</div>' +
-          '<div class="res-dep-desc">读取中…</div>' +
+          '<div class="res-desc res-dep-desc">读取中…</div>' +
         '</div>' +
-        '<span class="res-dep-state ' + (lack ? 'missing' : 'ok') + '">' +
-          (lack ? '未安装' : '已安装') +
-        '</span>' +
+        '</div>' +
       '</div>';
     }).join('');
 
-  const rows = box.querySelectorAll('.res-dep-item');
+  const rows = box.querySelectorAll('.res-card');
   deps.forEach(function (dep, i) {
     const row = rows[i];
     if (!row) return;
     const fill = function (info) {
-      const img = row.querySelector('.res-dep-icon');
+      const img = row.querySelector('.res-icon');
       if (info && info.icon && img) img.src = info.icon;
       const ver = row.querySelector('.res-dep-ver');
       if (ver) ver.textContent = (info && info.version) ? 'v' + info.version : '';
@@ -614,7 +614,7 @@ function openResModal(kind, item) {
         '</div>' +
       '</div>' +
       '<div class="res-detail-desc">' + esc(item.description || '（无描述）') + '</div>' +
-      renderSettingsFields(item.settings, { permanent: item.permanent }) +
+      '<div class="res-settings-scroll">' + renderSettingsFields(item.settings, { permanent: item.permanent }) + '</div>' +
       (isAddon && (item.requires || []).length ? '<div class="res-dep-list" id="res-dep-list"></div>' : '') +
       '<div class="res-detail-ops">' +
          '<button class="btn btn-ghost" id="res-open-dir">打开目录</button>' +
