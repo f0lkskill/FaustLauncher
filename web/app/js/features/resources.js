@@ -411,7 +411,7 @@ function buildResCard(item) {
       '<div class="res-info">' +
         '<div class="res-title-row">' +
           '<span class="res-title">' + esc(name) +
-            '<span class="res-state-badge ' + (enabled ? 'on' : 'off') + '">' +
+            '<span class="res-state-badge ' + (item.permanent ? 'permanent' : (enabled ? 'on' : 'off')) + '">' +
               (item.permanent ? '永久启用' : (enabled ? '已启用' : '已禁用')) +
             '</span>' +
           '</span>' +
@@ -427,7 +427,9 @@ function buildResCard(item) {
         '<svg class="ico" data-icon="more-one.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg>' +
       '</button>' +
       (item.permanent
-        ? '<span class="res-perma-lock" title="依赖库：其它插件靠它运行，不能关闭">依赖库</span>'
+        ? '<button class="res-toggle-btn on" type="button" disabled' +
+            ' aria-pressed="true" title="依赖库：其它插件靠它运行，不能关闭"' +
+            '>' + resToggleIcon(true) + '</button>'
         : '<button class="res-toggle-btn' + (enabled ? ' on' : '') + '" type="button"' +
             ' aria-pressed="' + (enabled ? 'true' : 'false') + '"' +
             '>' +
@@ -479,8 +481,20 @@ function resStateHtml(enabled) {
 
 // 设置字段渲染 (bool→开关, number→数字框, 其余→文本框); enable 标签译为"启用"
 // 例外: enable 是"启用/禁用这个资源"本身, 统一用与卡片一致的电源按钮, 不再用滑动开关
-function renderSettingsFields(settings) {
+function renderSettingsFields(settings, opts) {
+  const permanent = !!(opts && opts.permanent);
   const keys = settings ? Object.keys(settings) : [];
+  // 依赖库: 启用项还在, 只是不可交互 —— 它自己不产生行为,
+  // 被关掉只会让依赖它的插件静默失效, 所以开关锁死在"已启用"。
+  if (permanent) {
+    return '<div class="res-settings">' +
+      '<label class="res-set-row res-set-locked">' +
+        '<span class="res-set-name">启用</span>' +
+        '<span class="switch"><input type="checkbox" checked disabled><span class="slider"></span></span>' +
+      '</label>' +
+      '<div class="res-set-hint">依赖库常驻启用，不能关闭；其它插件通过它获得底层能力。</div>' +
+    '</div>';
+  }
   if (!keys.length) return '<div class="res-empty">暂无配置项</div>';
   let html = '<div class="res-settings">';
   keys.forEach(k => {
@@ -510,6 +524,63 @@ function collectSettingsFields(panel) {
     else s[k] = el.value;
   });
   return s;
+}
+
+// 依赖列表: 每个 requires 条目拉一份简介/版本/图标。
+// 数据优先走云端缓存(和资源页一致), 云端没有时后端会降级读本地
+// addons/<目录>/addon_info.json 与本地 icon.png, 所以离线也能看清依赖是什么。
+function fillDepList(panel, item) {
+  const box = panel.querySelector('#res-dep-list');
+  if (!box) return;
+  const deps = item.requires || [];
+  const missing = item.missing_requires || [];
+  box.innerHTML = '<div class="res-dep-head">依赖 ' + deps.length + ' 项</div>' +
+    deps.map(function (d) {
+      const lack = missing.indexOf(d) >= 0;
+      return '<div class="res-dep-item">' +
+        '<img class="res-dep-icon" src="' + PROJECT_ICON + '" alt="">' +
+        '<div class="res-dep-main">' +
+          '<div class="res-dep-title">' +
+            '<span class="res-dep-name">' + esc(d) + '</span>' +
+            '<span class="res-dep-ver"></span>' +
+          '</div>' +
+          '<div class="res-dep-desc">读取中…</div>' +
+        '</div>' +
+        '<span class="res-dep-state ' + (lack ? 'missing' : 'ok') + '">' +
+          (lack ? '未安装' : '已安装') +
+        '</span>' +
+      '</div>';
+    }).join('');
+
+  const rows = box.querySelectorAll('.res-dep-item');
+  deps.forEach(function (dep, i) {
+    const row = rows[i];
+    if (!row) return;
+    const fill = function (info) {
+      const img = row.querySelector('.res-dep-icon');
+      if (info && info.icon && img) img.src = info.icon;
+      const ver = row.querySelector('.res-dep-ver');
+      if (ver) ver.textContent = (info && info.version) ? 'v' + info.version : '';
+      const desc = row.querySelector('.res-dep-desc');
+      if (desc) {
+        const text = (info && info.desc) ? info.desc : '（云端与本地都没有这个依赖的介绍）';
+        desc.textContent = text;
+      }
+      const state = row.querySelector('.res-dep-state');
+      if (state && info) {
+        // 本地已安装 + 云端有发布信息 = 正常; 本地缺就是缺
+        const lack = !info.installed;
+        state.className = 'res-dep-state ' + (lack ? 'missing' : 'ok');
+        state.textContent = lack ? '未安装' : '已安装';
+        if (info.source === 'local') state.title = '云端没有条目，信息来自本地插件目录';
+      }
+    };
+    if (!api) { fill(null); return; }
+    api.get_addon_dep(dep).then(function (r) {
+      if (!r || !r.ok) { fill(null); return; }
+      fill(r);
+    }).catch(function () { fill(null); });
+  });
 }
 
 // 模态窗口 (插件/Mod 统一): 无标题栏, X 与名字同排; 设置表单自动保存; 操作按钮
@@ -543,7 +614,8 @@ function openResModal(kind, item) {
         '</div>' +
       '</div>' +
       '<div class="res-detail-desc">' + esc(item.description || '（无描述）') + '</div>' +
-      renderSettingsFields(item.settings) +
+      renderSettingsFields(item.settings, { permanent: item.permanent }) +
+      (isAddon && (item.requires || []).length ? '<div class="res-dep-list" id="res-dep-list"></div>' : '') +
       '<div class="res-detail-ops">' +
          '<button class="btn btn-ghost" id="res-open-dir">打开目录</button>' +
          (item.reinstall_available ? '<button class="btn btn-primary" id="res-reinstall">重装</button>' : '') +
@@ -554,6 +626,7 @@ function openResModal(kind, item) {
   document.body.appendChild(panel);
   bindOverlayClose(panel);
   $('#res-modal-close').onclick = () => closePanel(panel);
+  fillDepList(panel, item);
 
   $('#res-open-dir').onclick = async () => {
     const r = await api.open_mod_item_dir(kind, dir).catch(e => ({ error: String(e) }));
