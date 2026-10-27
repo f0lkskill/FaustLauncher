@@ -69,10 +69,32 @@ class AddonManager:
         seen: set = set()
         merged: List[Any] = []
         for item in [*self.custom_tray_items, *self.menu_items]:
+            if not self._is_tray_item(item):
+                continue
             if id(item) not in seen:
                 seen.add(id(item))
                 merged.append(item)
         return merged
+
+    @staticmethod
+    def _is_tray_item(item: Any) -> bool:
+        """过滤掉混进来的非菜单项。
+
+        插件可能把字符串/None 之类的东西塞进 ``menu_items``（例如把插件名
+        当参数传给 ``pystray.Menu(...)``）。pystray 在构建原生菜单时会遍历
+        items 并对每一项取 ``.visible``，一旦遇到 str 就直接抛
+        ``AttributeError: 'str' object has no attribute 'visible'``，
+        整个托盘菜单（连带主菜单）都建不出来。这里提前把非菜单项过滤掉，
+        坏插件只影响自己，不拖垮托盘。
+        """
+        if item is None or isinstance(item, (str, bytes)):
+            return False
+        # pystray.MenuItem / Menu 都有 visible 属性；其它对象一律不放行。
+        # 取值本身也可能抛错（Menu 里混了 str 时 .visible 会炸），一并兜住。
+        try:
+            return bool(item.visible)
+        except Exception:
+            return False
 
     def build_tray_menu_items(self) -> List[Any]:
         """Only show menus explicitly registered by addons, including the legacy API."""
