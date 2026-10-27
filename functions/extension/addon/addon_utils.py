@@ -5,6 +5,7 @@ from types import ModuleType
 from typing import Dict, List, Optional, Any
 from functions.web_update.translation_source import CustomTranslateSource
 from functions.base.common.json_io import read_json, write_json
+from functions.extension.addon.warp_registry import WarpRegistry
 
 class _ScratchAddonManager:
 
@@ -39,6 +40,10 @@ class AddonManager:
         self.custom_tray_items: List[Any] = []
         self.addons_dir = 'addons'
         self.extend_translate_source:list[CustomTranslateSource] = []
+        # WarpHook 命名空间代理层：所有插件通过 ADDON_ARG['Warp'] 拿同一份实例
+        self.warp = WarpRegistry()
+        # 载入时被依赖关系挡下的插件 -> 原因，供界面提示
+        self.dep_skipped: Dict[str, str] = {}
         self.scan_addons()
 
     def register_tray_item(self, item) -> None:
@@ -79,8 +84,17 @@ class AddonManager:
                 enabled = bool(info.get('settings', {}).get('enable', True)) if info else True
             except Exception:
                 enabled = True
-            status = "✅ 已启用" if enabled else "⛔ 已禁用"
-            print(f"  {status}  {name}")
+            if self.is_addon_permanent(name):
+                status = "🔒 永久启用"
+            else:
+                status = "✅ 已启用" if enabled else "⛔ 已禁用"
+            needs = self.get_addon_requires(name)
+            suffix = f"  ← 依赖 {', '.join(needs)}" if needs else ""
+            print(f"  {status}  {name}{suffix}")
+        if self.dep_skipped:
+            print(f"因依赖问题跳过 {len(self.dep_skipped)} 个：")
+            for name, reason in self.dep_skipped.items():
+                print(f"  ⚠️  {name}: {reason}")
         print(f"插件自定义菜单项: {len(self.get_custom_tray_items())} 个")
 
     def scan_addons(self) -> None:
@@ -137,6 +151,114 @@ class AddonManager:
                 })
         return addons
     
+    def get_addon_requires(self, addon_name: str) -> List[str]:
+        """读插件声明的依赖插件名列表。
+
+        ``addon_info.json`` 里的 ``requires`` 是可选键——没有依赖的插件根本不
+        写这个键，所以这里返回空列表即可，不需要兼容「空数组」这种半状态。
+        也接受单个字符串写法（``"requires": "WarpHook"``），方便手写清单。
+
+        Args:
+            addon_name: 插件目录名。
+
+        Returns:
+            依赖的插件目录名列表，顺序与清单里一致。
+        """
+        info = self.get_addon_info(addon_name) or {}
+        raw = info.get('requires')
+        if not raw:
+            return []
+        if isinstance(raw, str):
+            raw = [raw]
+        if not isinstance(raw, (list, tuple, set)):
+            return []
+        result: List[str] = []
+        for item in raw:
+            name = str(item).strip()
+            if name and name not in result:
+                result.append(name)
+        return result
+
+    def is_addon_permanent(self, addon_name: str) -> bool:
+        """插件是否标记为「永久启用」（依赖库类插件，界面不允许关闭）。"""
+        info = self.get_addon_info(addon_name) or {}
+        return bool(info.get('permanent'))
+
+    def get_addon_provides(self, addon_name: str) -> List[str]:
+        """插件声明自己提供的命名空间（目前只有 WarpHook 会写 ``["warp"]``）。"""
+        info = self.get_addon_info(addon_name) or {}
+        raw = info.get('provides')
+        if not raw:
+            return []
+        if isinstance(raw, str):
+            raw = [raw]
+        if not isinstance(raw, (list, tuple, set)):
+            return []
+        return [str(item).strip() for item in raw if str(item).strip()]
+
+    def resolve_load_order(self) -> tuple:
+        """按 ``requires`` 做拓扑排序，算出插件载入顺序与被跳过项。
+
+        被依赖的插件先载入（WarpHook 必须先于用它的插件注册命名空间）。
+        三种异常情况都会被挡下并记录原因：
+
+            * 缺依赖：``requires`` 里写的插件目录不存在 → ``缺少依赖: X``
+            * 循环依赖：A 依赖 B、B 又依赖 A → ``循环依赖``
+            * 依赖不可用：依赖本身因上述原因被跳过 → ``依赖不可用: X``
+
+        Returns:
+            ``(载入顺序, 跳过原因表)``，后者形如 ``{'某插件': '缺少依赖: WarpHook'}``。
+        """
+        names = list(self.addon_names)
+        exists = set(names)
+        requires = {name: self.get_addon_requires(name) for name in names}
+
+        order: List[str] = []
+        state: Dict[str, int] = {}       # 1=访问中 2=已完成
+        skipped: Dict[str, str] = {}
+
+        def visit(name: str, stack: List[str]) -> bool:
+            if state.get(name) == 2:
+                return name not in skipped
+            if state.get(name) == 1:
+                # 回边即环：把环上所有节点都标掉
+                try:
+                    start = stack.index(name)
+                except ValueError:
+                    start = 0
+                for item in stack[start:]:
+                    skipped.setdefault(item, '循环依赖')
+                return False
+
+            state[name] = 1
+            stack.append(name)
+            try:
+                for dep in requires.get(name, []):
+                    if dep not in exists:
+                        skipped[name] = f'缺少依赖: {dep}'
+                        state[name] = 2
+                        return False
+                    if not visit(dep, stack):
+                        skipped.setdefault(name, f'依赖不可用: {dep}')
+                        state[name] = 2
+                        return False
+            finally:
+                if stack and stack[-1] == name:
+                    stack.pop()
+
+            state[name] = 2
+            order.append(name)
+            return True
+
+        for name in names:
+            try:
+                visit(name, [])
+            except Exception as exc:  # 依赖声明写坏了也不该拖垮整个启动
+                skipped[name] = f'依赖解析失败: {exc}'
+                state[name] = 2
+
+        return [name for name in order if name not in skipped], skipped
+
     def run_addon(self, addon_name: str, ADDON_ARG: Optional[Dict[str, Any]] = None) -> bool:
         if ADDON_ARG is None:
             ADDON_ARG = {}
@@ -146,12 +268,23 @@ class AddonManager:
             print(f"插件 {addon_name} 信息读取失败，跳过载入")
             return False
 
+        # 依赖库类插件（permanent）永远载入，不受 settings.enable 控制：
+        # 它自己不产生行为，被关掉只会让依赖它的插件静默失效。
+        permanent = self.is_addon_permanent(addon_name)
         try:
-            if not bool(info.get("settings", {}).get("enable", True)):
+            if not permanent and not bool(info.get("settings", {}).get("enable", True)):
                 print(f"插件 {addon_name} 被禁用，跳过载入")
                 return False
         except Exception:
             pass
+
+        missing = [dep for dep in self.get_addon_requires(addon_name)
+                   if dep not in self.addon_names]
+        if missing:
+            reason = '缺少依赖: ' + ', '.join(missing)
+            self.dep_skipped[addon_name] = reason
+            print(f"插件 {addon_name} 跳过载入（{reason}）")
+            return False
 
         addon_path = self.get_addon_path(addon_name)
         if not addon_path:
@@ -168,6 +301,9 @@ class AddonManager:
             ADDON_ARG['AddonManager'] = self
             ADDON_ARG['AddonName'] = addon_name
             ADDON_ARG['ExtendTranslateSource'] = self.extend_translate_source
+            # WarpHook 命名空间代理层：所有插件共享同一个容器，WarpHook 往里
+            # 注册工具，其他插件按命名空间读取。见 warp_registry.py。
+            ADDON_ARG['Warp'] = self.warp
 
             _gs_before = len(self.gamestart_funcs)
 
@@ -238,6 +374,8 @@ class AddonManager:
         self.del_funcs.clear()
         self.enabled_funcs.clear()
         self.disabled_funcs.clear()
+        self.warp.clear()
+        self.dep_skipped.clear()
         self.clear_custom_tray_items()
 
     def reload_all_addons(self, ADDON_ARG: Optional[Dict[str, Any]] = None) -> bool:
@@ -302,6 +440,7 @@ class AddonManager:
                 'AddonManager': scratch,
                 'AddonName': addon_name,
                 'ExtendTranslateSource': scratch.extend_translate_source,
+                'Warp': self.warp,
             }
             builtins_dict = vars(__builtins__) if isinstance(__builtins__, ModuleType) else dict(__builtins__)
             module_globals: Dict[str, Any] = {
@@ -345,11 +484,19 @@ class AddonManager:
     def run_all_addon(self, ADDON_ARG: Optional[Dict[str, Any]] = None) -> None:
         if not self.addon_names:
             self.scan_addons()
-        for name in self.addon_names:
+        self.dep_skipped = {}
+        order, skipped = self.resolve_load_order()
+        self.dep_skipped = dict(skipped)
+        for name, reason in skipped.items():
+            print(f"插件 {name} 跳过载入（{reason}）")
+        args = ADDON_ARG if ADDON_ARG is not None else {}
+        for name in order:
             try:
-                self.run_addon(name, ADDON_ARG if ADDON_ARG is not None else {})
+                self.run_addon(name, args)
             except Exception as e:
                 print(f"运行插件 {name} 时发生未捕获错误: {e}")
+        if self.warp:
+            print(f"WarpHook 命名空间: {self.warp.snapshot()}")
         self._sync_extend_translate_source()
 
     def _sync_extend_translate_source(self) -> None:
