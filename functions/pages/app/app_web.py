@@ -1576,6 +1576,15 @@ class AppApi:
                     except Exception:
                         info = {}
                     local_name = str(info.get('name') or name)
+                    # 依赖声明：requires 允许写成字符串或数组；没有依赖就不该有这个键
+                    requires = info.get('requires')
+                    if isinstance(requires, str):
+                        requires = [requires]
+                    requires = [str(x).strip() for x in (requires or []) if str(x).strip()]
+                    permanent = bool(info.get('permanent', False))
+                    # 依赖是否已安装：目标目录下有 addon_info.json 才算装了
+                    missing = [r for r in requires
+                               if not os.path.isfile(os.path.join(base, r, 'addon_info.json'))]
                     addons.append({
                         'dir': name,
                         'name': str(info.get('name') or name),
@@ -1583,7 +1592,12 @@ class AppApi:
                         'author': _fmt_authors(info.get('authors')),
                         'author_links': _fmt_author_links(info.get('authors')),
                         'description': str(info.get('desc') or info.get('description', '')),
-                        'enabled': bool(info.get('settings', {}).get('enable', True)),
+                        # 依赖库自身不产生行为，界面上一律显示为已启用且不可关闭
+                        'enabled': True if permanent else bool(info.get('settings', {}).get('enable', True)),
+                        'permanent': permanent,
+                        'requires': requires,
+                        'missing_requires': missing,
+                        'provides': [str(x) for x in (info.get('provides') or [])],
                         'icon': _res_icon_uri('addons', name),
                         'settings': info.get('settings', {}),
                         'reinstall_available': self._cached_resource(kind='addon', name=local_name) is not None,
@@ -1915,6 +1929,9 @@ class AppApi:
             return {'error': f"插件信息文件不存在: {path}"}
         try:
             info = read_json(path)
+            # 依赖库（permanent）不产生行为，被关掉只会让依赖它的插件静默失效，一律拒绝
+            if info.get('permanent') and not bool(enabled):
+                return {'error': 'f"{name}" 是其它插件的依赖库，不能关闭'}
             was_enabled = bool(info.get('settings', {}).get('enable', True))
             info.setdefault('settings', {})['enable'] = bool(enabled)
             write_json(path, info, indent=4)
@@ -2196,28 +2213,71 @@ if %errorlevel% equ 0 (
             print(f"上传下载计数失败: {e}")
             return False
 
+    @staticmethod
+    def _cloud_addon_item(pages, name):
+        """在云端插件列表里按名字找一条条目。"""
+        want = str(name).strip()
+        for page in (pages or []):
+            for item in (page.get('items') or []):
+                if str(item.get('name', '')).strip() == want:
+                    return item
+        return None
+
+    def _install_addon_sync(self, name, url, pages, chain=(), log=print):
+        """同步安装一个插件；先把它声明的依赖装好，再装自己。
+
+        依赖关系来自云端条目的 ``requires``（由上传工具从本地 addon_info.json
+        带上去）。没有这个键就是没有依赖，什么都不做。
+        chain 记录当前递归路径，防止循环依赖把线程绕死。
+        """
+        import os, shutil
+        from functions.web_update.zeroasso_download import download_and_extract_mod
+
+        item = self._cloud_addon_item(pages, name)
+        requires = item.get('requires') if item else None
+        if isinstance(requires, str):
+            requires = [requires]
+        for dep in [str(x).strip() for x in (requires or []) if str(x).strip()]:
+            if dep in chain:
+                log(f'插件 {name} 的依赖出现环: {" -> ".join(list(chain) + [dep])}，跳过 {dep}')
+                continue
+            if self.check_item_downloaded('addon', dep).get('downloaded'):
+                log(f'依赖 {dep} 已安装')
+                continue
+            dep_item = self._cloud_addon_item(pages, dep)
+            dep_url = str((dep_item or {}).get('dowload_url') or '').strip()
+            if not dep_url:
+                log(f'依赖 {dep} 在云端找不到下载地址，放弃安装 {name}')
+                return False
+            log(f'先安装 {name} 的依赖 {dep}')
+            if not self._install_addon_sync(dep, dep_url, pages, tuple(chain) + (name,), log):
+                log(f'依赖 {dep} 安装失败，放弃安装 {name}')
+                return False
+
+        try:
+            shutil.rmtree(os.path.join('addons', name), ignore_errors=True)
+        except Exception:
+            pass
+        gui = HeadlessDownloadGUI('addons', auto_start=False, task=name)
+        ok = download_and_extract_mod(
+            gui, 'addons', [{'url': url, 'name': name, 'temp_filename': f"{name}.7z"}])
+        log(f'插件 {name} ' + ('下载并解压完成' if ok else '下载失败'))
+        return bool(ok)
+
     def download_addon(self, name, url):
         def _run():
             try:
-                from functions.web_update.zeroasso_download import download_and_extract_mod
-                import shutil
-                target = 'addons'
+                pages = None
                 try:
-                    shutil.rmtree(os.path.join(target, name), ignore_errors=True)
-                except Exception:
-                    pass
-                download_files = [{'url': url, 'name': name, 'temp_filename': f"{name}.7z"}]
-                gui = HeadlessDownloadGUI(target, auto_start=False, task=name)
-                ok = download_and_extract_mod(gui, target, download_files)
-                if ok:
-                    print(f"插件 {name} 下载并解压完成")
+                    pages = self._get_cached_list('addon')
+                except Exception as e:
+                    print(f"读取云端插件列表失败（将跳过依赖解析）: {e}")
+                if self._install_addon_sync(name, url, pages):
                     try:
                         self.core.addon_manager.reload_all_addons()
                     except Exception:
                         pass
                     self._notify_res_changed('addon')
-                else:
-                    print(f"插件 {name} 下载失败")
             except Exception as e:
                 print(f"下载插件 {name} 失败: {e}")
         threading.Thread(target=_run, daemon=True).start()
