@@ -10,7 +10,9 @@
  *  函数: normalizeResKind / syncResTabs / syncResActions / bindResReinstallButtons / refreshMods / renderResFromCache / resNeedsFetch /
  *        setResLoading / enterResourcePage / confirmReinstall / renderResList / renderResPagination /
  *        authorLinksHtml / buildResCard / renderSettingsFields / collectSettingsFields / openResModal
- *  状态/常量: resKind / resPage / RES_PAGE_SIZE / resSearch / resAddons / resMods / resRefreshing / resRefreshedAt / RES_REFRESH_GAP / SETTING_LABELS
+ *  状态/常量: resKind / resPage / RES_PAGE_SIZE / resSearch / resAddons / resMods / resRefreshing / resRefreshedAt / RES_REFRESH_GAP / SETTING_LABELS /
+ *            resIconCache / resIconInflight
+ *  函数(图标): resIconKey / resIconFor / hydrateResIcons —— 图标按当前页按需向后端要, 不随列表一起传
  * 依赖: bootstrap($/api) / state / utils; 卡片的 3D 跟随效果由 ui/tilt.js 的 addCardTilt 提供
  * 加载顺序: 16/22    (拆分自原 app.js 行 760-1104)
  * ============================================================================== */
@@ -23,6 +25,59 @@ const RES_PAGE_SIZE = 5;        // 每页最多 5 个
 let resSearch = '';             // 资源管理搜索词
 let resAddons = [];             // 插件列表
 let resMods = [];               // Mod 列表
+
+// ---- 图标按需加载 ----
+// 后端 get_mods_data 只回 has_icon, 不再把图标 base64 塞进列表: 48 个资源的
+// 图标合计 3.7MB, 而每页只显示 5 个。这里维护 kind|dir -> data-uri 的缓存,
+// 每次渲染只向 get_res_icons 要当前页缺的那几张(典型 5 张, 几十 KB)。
+const resIconCache = new Map();     // 'addon|WarpHook' -> data-uri
+const resIconInflight = new Set();  // 正在请求中的 key, 防重复并发
+const RES_ICON_EMPTY = '';          // 后端也返回空串 = 该资源没有图标, 不再重试
+
+function resIconKey(kind, dir) { return kind + '|' + dir; }
+
+// 取已缓存的图标; 没有就返回占位图(渲染先出骨架, 图到了再补)
+function resIconFor(item) {
+  const dir = (item && (item.dir || item.name)) || '';
+  const kind = (item && item.kind) || resKind;
+  const hit = resIconCache.get(resIconKey(kind, dir));
+  return hit || PROJECT_ICON;
+}
+
+// 给列表里当前可见的卡片补图: 只请求缓存里没有的, 回来后就地换 src(不重绘列表)
+function hydrateResIcons(items, root) {
+  if (!api || !items || !items.length) return;
+  const need = [];
+  const seen = new Set();
+  items.forEach(it => {
+    if (!it || !it.has_icon) return;
+    const dir = it.dir || it.name;
+    if (!dir) return;
+    const kind = it.kind || resKind;
+    const key = resIconKey(kind, dir);
+    if (resIconCache.has(key) || resIconInflight.has(key) || seen.has(key)) return;
+    seen.add(key);
+    need.push({ kind: kind, dir: dir, key: key });
+  });
+  if (!need.length) return;
+  need.forEach(n => resIconInflight.add(n.key));
+  Promise.resolve(api.get_res_icons(need.map(n => ({ kind: n.kind, dir: n.dir }))))
+    .then(map => {
+      const got = (map && typeof map === 'object') ? map : {};
+      need.forEach(n => {
+        resIconInflight.delete(n.key);
+        const uri = got[n.key];
+        if (!uri) return;                     // 后端没有这张图: 保持占位
+        resIconCache.set(n.key, uri);
+        // 就地替换所有引用这张图的 img(卡片 58px / 详情 72px 共用同一份缓存)
+        const scope = root || document;
+        scope.querySelectorAll('[data-res-icon="' + n.key.replace(/"/g, '\\"') + '"]').forEach(img => {
+          img.src = uri;
+        });
+      });
+    })
+    .catch(() => { need.forEach(n => resIconInflight.delete(n.key)); });
+}
 
 // 分区取值兜底: 只认 addon / mod, 其余 (undefined / 未知值) 一律当插件分区。
 // 否则 syncResActions 会把两组按钮同时隐藏 —— 资源页右上角直接变成空白。
@@ -314,6 +369,8 @@ function renderResList() {
     list.innerHTML = '<div class="res-empty">' + (resKind === 'addon' ? '暂无插件 (addons/ 目录)' : '暂无 Mod (mods/ 目录)') + '</div>';
   } else {
     pageItems.forEach((item, i) => { const c = buildResCard(item); if (c) { c.style.animationDelay = (i * 0.05) + 's'; list.appendChild(c); } });
+    // 图标按需补: 只拉当前页这几张, 不阻塞首屏渲染
+    hydrateResIcons(pageItems, list);
   }
   renderResPagination($('#res-pagination'), items.length, totalPages);
 }
@@ -403,7 +460,8 @@ function buildResCard(item) {
   card.innerHTML =
     '<div class="res-card-main">' +
       '<span class="res-icon-wrap">' +
-        '<img class="res-icon" src="' + (item.icon || PROJECT_ICON) + '" alt="" onerror="this.src=\'' + PROJECT_ICON + '\'">' +
+        '<img class="res-icon" src="' + resIconFor(item) + '" data-res-icon="' +
+          esc(((item.kind || resKind) + '|' + (item.dir || item.name))) + '" alt="" onerror="this.src=\'' + PROJECT_ICON + '\'">' +
         // 右下角"已禁用"角标 (白色圆圈蒙版 + 禁用图标): 显隐交给 CSS 的
         // .res-card.disabled 控制, 就地切换时不必再动 DOM
         '<span class="res-off-badge" title="已禁用">' + iconSvg('reduceOne') + '</span>' +
@@ -600,7 +658,8 @@ function openResModal(kind, item) {
   panel.innerHTML =
     '<div class="panel-card">' +
       '<div class="res-detail-head">' +
-        '<img class="res-detail-icon" src="' + (item.icon || PROJECT_ICON) + '" onerror="this.src=\'' + PROJECT_ICON + '\'">' +
+        '<img class="res-detail-icon" src="' + resIconFor(item) + '" data-res-icon="' +
+          esc((kind + '|' + dir)) + '" onerror="this.src=\'' + PROJECT_ICON + '\'">' +
         '<div class="res-detail-main">' +
           '<div class="res-detail-title-row">' +
             '<span class="res-detail-name">' + esc(name) + '</span>' +
@@ -627,6 +686,8 @@ function openResModal(kind, item) {
   bindOverlayClose(panel);
   $('#res-modal-close').onclick = () => closePanel(panel);
   fillDepList(panel, item);
+  // 详情页图标与列表共用一份缓存: 列表已取过就直接命中, 没取过才补一次请求
+  hydrateResIcons([item], panel);
 
   $('#res-open-dir').onclick = async () => {
     const r = await api.open_mod_item_dir(kind, dir).catch(e => ({ error: String(e) }));
