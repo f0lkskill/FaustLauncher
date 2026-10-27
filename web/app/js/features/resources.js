@@ -675,6 +675,8 @@ function openResModal(kind, item) {
         st.innerHTML = resStateHtml(en);
       }
       refreshMods(true);   // 保持当前页, 刷新列表状态标识
+
+
     }).catch(err => { toast('保存失败: ' + err, 'error'); });
   };
   panel.querySelectorAll('[data-set]').forEach(el => {
