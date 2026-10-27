@@ -538,15 +538,35 @@ def _skin_profile_file(skin_id):
     return ""
 
 #: 本地插件/Mod 图标的内存缓存：{(路径, mtime, 大小): data-uri}。
-#: get_mods_data 每次刷新都会重新取一遍图标，缓存命中时不再重复读盘 + base64。
+#: 图标按页按需取，缓存命中时不再重复读盘 + 缩放 + base64。
 _RES_ICON_CACHE = {}
+_RES_ICON_CACHE_LOCK = threading.Lock()
+
+#: 云端资源名 -> 条目 的索引缓存：{kind: ((列表id, 长度), {名字: 条目})}
+_CLOUD_RES_INDEX = {}
+_CLOUD_RES_INDEX_LOCK = threading.Lock()
+
+#: 卡片图标显示 58px、详情图标 72px；128px 缩略图在 2 倍屏下也够清晰，
+#: 而 192px 的 base64 比它大一半以上（48 张图 3.7MB vs 1.9MB）。
+_RES_ICON_EDGE = 128
+_RES_ICON_DISK_DIR = os.path.join(_PROJECT_ROOT, 'cache', 'res_icons')
+
+
+def _res_icon_disk_path(src_path, st):
+    """缩略图的磁盘缓存路径（含 mtime/size，源图一改就换新文件）。"""
+    import hashlib
+    tag = hashlib.md5(
+        ('%s|%d|%d' % (os.path.abspath(src_path), st.st_mtime_ns, st.st_size)).encode('utf-8', 'replace')
+    ).hexdigest()
+    return os.path.join(_RES_ICON_DISK_DIR, tag + '.png')
 
 
 def _res_icon_uri(base_dir, name):
-    """把 ``<base_dir>/<name>/icon.*`` 读成 data-uri（缩略后并带内存缓存）。
+    """把 ``<base_dir>/<name>/icon.*`` 读成 data-uri（缩略 + 内存缓存 + 磁盘缓存）。
 
     插件图标常见 474×296 / 512×512 的 PNG，而界面上只显示几十像素；这里统一
-    缩到 192px 再 base64，体积和前端解码开销都能降一个量级。
+    缩到 128px 再 base64。缩略结果按「源图路径+mtime+size」落到 cache/res_icons，
+    这样下次启动不必再用 PIL 重新缩放（冷启动从 ~1.4s 降到读小文件）。
     """
     try:
         from functions.base.common import icon_fetch
@@ -559,20 +579,136 @@ def _res_icon_uri(base_dir, name):
             except OSError:
                 continue
             key = (p, st.st_mtime_ns, st.st_size)
-            cached = _RES_ICON_CACHE.get(key)
+            with _RES_ICON_CACHE_LOCK:
+                cached = _RES_ICON_CACHE.get(key)
             if cached is not None:
                 return cached
-            with open(p, 'rb') as f:
-                raw = f.read()
-            payload = icon_fetch.shrink_image(raw, max_edge=192)
+
+            payload = None
+            disk = _res_icon_disk_path(p, st)
+            try:
+                if os.path.isfile(disk):
+                    with open(disk, 'rb') as f:
+                        payload = f.read()
+            except OSError:
+                payload = None
+
+            if not payload:
+                with open(p, 'rb') as f:
+                    raw = f.read()
+                payload = icon_fetch.shrink_image(raw, max_edge=_RES_ICON_EDGE)
+                try:
+                    os.makedirs(_RES_ICON_DISK_DIR, exist_ok=True)
+                    tmp = disk + '.tmp'
+                    with open(tmp, 'wb') as f:
+                        f.write(payload)
+                    os.replace(tmp, disk)
+                except OSError:
+                    pass
+
             uri = 'data:image/png;base64,' + base64.b64encode(payload).decode('ascii')
-            if len(_RES_ICON_CACHE) > 256:
-                _RES_ICON_CACHE.clear()
-            _RES_ICON_CACHE[key] = uri
+            with _RES_ICON_CACHE_LOCK:
+                if len(_RES_ICON_CACHE) > 256:
+                    _RES_ICON_CACHE.clear()
+                _RES_ICON_CACHE[key] = uri
             return uri
     except Exception:
         pass
     return ''
+
+
+#: 插件重载的任务状态（连续点开关时合并成一轮，避免并发 reload）
+_ADDON_RELOAD_STATE = {'running': False, 'pending': False, 'notify': False}
+_ADDON_RELOAD_LOCK = threading.Lock()
+
+
+def _res_icon_exists(base_dir, name):
+    """是否有可用的图标文件（只看存在性，不读盘、不缩放）。"""
+    for fn in ('icon.png', 'icon.jpg', 'icon.jpeg'):
+        if os.path.isfile(os.path.join(base_dir, name, fn)):
+            return True
+    return False
+
+
+#: 图标预热线程只跑一次
+_RES_ICON_PREWARMED = False
+_RES_ICON_PREWARM_LOCK = threading.Lock()
+
+
+def _res_icon_prewarm_async():
+    """后台把全部插件/Mod 图标缩略一次并落盘（首次进资源页后触发，只跑一次）。
+
+    这样冷启动只需等当前页那几张图，其余的在后台慢慢备好；下一次启动
+    cache/res_icons 全部命中，进资源页不再有缩放开销。
+    """
+    global _RES_ICON_PREWARMED
+    with _RES_ICON_PREWARM_LOCK:
+        if _RES_ICON_PREWARMED:
+            return False
+        _RES_ICON_PREWARMED = True
+
+    def _work():
+        try:
+            pairs = []
+            for base, kind in (('addons', 'addon'), ('mods', 'mod')):
+                try:
+                    names = sorted(os.listdir(base))
+                except OSError:
+                    continue
+                for name in names:
+                    if _res_icon_exists(base, name):
+                        pairs.append((kind, name))
+            for i in range(0, len(pairs), 4):
+                _res_icon_uris(pairs[i:i + 4])
+        except Exception as exc:  # noqa: BLE001 - 预热失败不影响功能
+            print("[ResIcon] 图标预热失败: %s" % exc)
+
+    threading.Thread(target=_work, name="faust-res-icon-prewarm", daemon=True).start()
+    return True
+
+
+def _res_icon_uris(pairs):
+    """批量取图标：``pairs`` 是 ``[(kind, dir), ...]``，返回 ``{'kind|dir': data-uri}``。
+
+    PIL 缩放是纯 CPU 且会释放 GIL，用线程池并行能把冷启动的图标耗时压到 1/N；
+    磁盘缓存命中时更是纯 I/O，并行同样有收益。
+    """
+    wanted = []
+    seen = set()
+    for kind, name in pairs or []:
+        kind = 'mod' if str(kind) == 'mod' else 'addon'
+        name = str(name or '')
+        if not name:
+            continue
+        key = kind + '|' + name
+        if key in seen:
+            continue
+        seen.add(key)
+        wanted.append((key, 'addons' if kind == 'addon' else 'mods', name))
+    if not wanted:
+        return {}
+
+    out = {}
+
+    def _one(entry):
+        key, base, name = entry
+        return key, _res_icon_uri(base, name)
+
+    if len(wanted) == 1:
+        key, uri = _one(wanted[0])
+        out[key] = uri
+        return out
+
+    try:
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=min(8, len(wanted))) as pool:
+            for key, uri in pool.map(_one, wanted):
+                out[key] = uri
+    except Exception:
+        for entry in wanted:
+            key, uri = _one(entry)
+            out[key] = uri
+    return out
 
 def _get_project_icon_uri():
     p = _web_asset_file(_active_skin_id(), "icon", "icon.png")
@@ -1555,6 +1691,14 @@ class AppApi:
             return {'error': str(e)}
 
     def get_mods_data(self):
+        """本地插件/Mod 列表（轻量元数据，**不含图标**）。
+
+        图标 base64 曾经一并塞在这个返回值里：48 个资源的图标合计 3.7MB，
+        每刷一次资源页都要经 pywebview 的 JS 桥把整包序列化传一遍，而列表
+        每页只显示 5 个（RES_PAGE_SIZE = 5）。现在只回 ``has_icon``，
+        前端按当前页调用 ``get_res_icons`` 按需取，首屏 payload 从 MB 级
+        降到几十 KB。
+        """
         import os, json
         # 首次进入资源页顺手把历史遗留的 MB 级图标缓存瘦身（后台线程，只跑一次）
         try:
@@ -1586,6 +1730,7 @@ class AppApi:
                     missing = [r for r in requires
                                if not os.path.isfile(os.path.join(base, r, 'addon_info.json'))]
                     addons.append({
+                        'kind': 'addon',
                         'dir': name,
                         'name': str(info.get('name') or name),
                         'version': str(info.get('version', '')),
@@ -1598,7 +1743,7 @@ class AppApi:
                         'requires': requires,
                         'missing_requires': missing,
                         'provides': [str(x) for x in (info.get('provides') or [])],
-                        'icon': _res_icon_uri('addons', name),
+                        'has_icon': _res_icon_exists('addons', name),
                         'settings': info.get('settings', {}),
                         'reinstall_available': self._cached_resource(kind='addon', name=local_name) is not None,
                     })
@@ -1618,6 +1763,7 @@ class AppApi:
                         info = {}
                     local_name = str(info.get('name') or name)
                     dir_mods.append({
+                        'kind': 'mod',
                         'dir': name,
                         'name': str(info.get('name') or name),
                         'version': str(info.get('version', '')),
@@ -1627,18 +1773,38 @@ class AppApi:
                         'files': list(info.get('file_names', [])),
                         'has_installer': bool(os.path.exists(os.path.join(base, name, 'Installer.bat'))),
                         'enabled': bool(info.get('settings', {}).get('enable', False)),
-                        'icon': _res_icon_uri('mods', name),
+                        'has_icon': _res_icon_exists('mods', name),
                         'settings': info.get('settings', {}),
                         'reinstall_available': self._cached_resource(kind='mod', name=local_name) is not None,
                     })
         except Exception as e:
             print(f"读取目录 Mod 失败: {e}")
+        # 首次进资源页后，后台把还没落盘的图标一口气缩略好，下次启动全命中磁盘缓存
+        _res_icon_prewarm_async()
         return {
             'addons': addons,
             'dir_mods': dir_mods,
             'single_files': [],
             'single_dir': '',
         }
+
+    def get_res_icons(self, pairs):
+        """按需批量取图标：``pairs`` = ``[{'kind','dir'}, ...]``。
+
+        前端只对当前页可见的卡片调用它，返回 ``{'kind|dir': data-uri}``。
+        多张图并行生成（线程池），单次典型 5 张，耗时在几十毫秒级。
+        """
+        try:
+            items = []
+            for p in (pairs or []):
+                if isinstance(p, dict):
+                    items.append((p.get('kind'), p.get('dir')))
+                elif isinstance(p, (list, tuple)) and len(p) >= 2:
+                    items.append((p[0], p[1]))
+            return _res_icon_uris(items)
+        except Exception as e:
+            print(f"读取图标失败: {e}")
+            return {}
 
     def force_uninstall_all_mods(self):
         """把所有 Mod 对游戏资源的改写还原成原版（强卸载）。"""
@@ -1686,24 +1852,52 @@ class AppApi:
             print(f"[ModForceUninstall] 卸载 {mod_name} 失败: {exc}")
             return {'ok': False, 'error': str(exc), 'mod_name': mod_name}
 
-    def _cached_resource(self, kind, name):
+    def _cloud_res_index(self, kind):
+        """把云端缓存列表建成 ``{名字: 条目}`` 索引（按列表对象 id + 长度失效）。
+
+        原先每个本地资源都要在整张云端列表里线性扫一遍（O(本地数 × 云端数)），
+        资源一多就是几万次字符串比较；改成一次建索引后按名字直接查。
+        """
+        global _CLOUD_RES_INDEX
         try:
             from functions.pages.app import page_loader as _pl
-            wanted = str(name).strip()
             items = _pl._cloud_sync_cache.get(kind) or []
+            try:
+                stamp = (id(items), len(items))
+            except TypeError:
+                stamp = (id(items), -1)
+            with _CLOUD_RES_INDEX_LOCK:
+                hit = _CLOUD_RES_INDEX.get(kind)
+                if hit is not None and hit[0] == stamp:
+                    return hit[1]
+
+            index = {}
             pending = list(items) if isinstance(items, list) else [items]
             while pending:
                 item = pending.pop(0)
                 if isinstance(item, list):
                     pending.extend(item)
                     continue
-                if isinstance(item, dict) and str(item.get('name') or '').strip() == wanted:
-                    url = item.get('dowload_url') or item.get('download_url') or item.get('url')
-                    if url:
-                        return item
+                if not isinstance(item, dict):
+                    continue
+                name = str(item.get('name') or '').strip()
+                if not name or name in index:
+                    continue
+                url = item.get('dowload_url') or item.get('download_url') or item.get('url')
+                if url:
+                    index[name] = item
+
+            with _CLOUD_RES_INDEX_LOCK:
+                _CLOUD_RES_INDEX[kind] = (stamp, index)
+            return index
         except Exception:
-            pass
-        return None
+            return {}
+
+    def _cached_resource(self, kind, name):
+        index = self._cloud_res_index(kind)
+        if not index:
+            return None
+        return index.get(str(name).strip())
 
     def _reinstall_local(self, kind, local_dir):
         import json, shutil
@@ -1871,18 +2065,47 @@ class AppApi:
         except Exception as e:
             return {'error': str(e)}
 
-    def _reload_addons_async(self):
+    def _reload_addons_async(self, notify=True):
+        """后台重载全部插件。
+
+        ``notify=False`` 时不向前端推 ``__onResChanged``：卡片上点启用/禁用
+        时前端已经就地更新了那张卡（applyCardEnabledState），这里只需要让
+        后端真正把插件卸载/重新加载起来；再推一次刷新会让整个列表重建、
+        已禁用的卡片当场跳到最后 —— 那正是用户抱怨的"点一下东西飞走"。
+
+        连续快速点若干次开关时不会并发重载：内部合并成"排队再跑一轮"。
+        """
+        with _ADDON_RELOAD_LOCK:
+            _ADDON_RELOAD_STATE['notify'] = bool(_ADDON_RELOAD_STATE['notify'] or notify)
+            if _ADDON_RELOAD_STATE['running']:
+                _ADDON_RELOAD_STATE['pending'] = True
+                return
+            _ADDON_RELOAD_STATE['running'] = True
+
         def _run():
             try:
-                self.core._on_reload_addons()
-            except Exception as e:
-                print(f"重载插件失败: {e}")
+                while True:
+                    with _ADDON_RELOAD_LOCK:
+                        _ADDON_RELOAD_STATE['pending'] = False
+                        want_notify = _ADDON_RELOAD_STATE['notify']
+                        _ADDON_RELOAD_STATE['notify'] = False
+                    try:
+                        self.core._on_reload_addons()
+                    except Exception as e:
+                        print(f"重载插件失败: {e}")
+                    if want_notify:
+                        try:
+                            self._notify_res_changed('addon')
+                        except Exception as e:
+                            print(f"重载插件后通知前端失败: {e}")
+                    with _ADDON_RELOAD_LOCK:
+                        if not _ADDON_RELOAD_STATE['pending']:
+                            return
             finally:
-                try:
-                    self._notify_res_changed('addon')
-                except Exception as e:
-                    print(f"重载插件后通知前端失败: {e}")
-        threading.Thread(target=_run, daemon=True).start()
+                with _ADDON_RELOAD_LOCK:
+                    _ADDON_RELOAD_STATE['running'] = False
+
+        threading.Thread(target=_run, name="faust-addon-reload", daemon=True).start()
 
     def _fire_addon_disabled(self, name):
         try:
@@ -1931,13 +2154,15 @@ class AppApi:
             info = read_json(path)
             # 依赖库（permanent）不产生行为，被关掉只会让依赖它的插件静默失效，一律拒绝
             if info.get('permanent') and not bool(enabled):
-                return {'error': 'f"{name}" 是其它插件的依赖库，不能关闭'}
+                return {'error': f'"{name}" 是其它插件的依赖库，不能关闭'}
             was_enabled = bool(info.get('settings', {}).get('enable', True))
             info.setdefault('settings', {})['enable'] = bool(enabled)
             write_json(path, info, indent=4)
             if was_enabled and not bool(enabled):
                 self._fire_addon_disabled(name)
-            # 不触发全量重载, 避免前端列表重构
+            # 后端要真正卸载/重新加载插件（否则开关只是改了个 JSON 字段）。
+            # notify=False: 前端那张卡片已经就地更新过，不再让列表整体重建。
+            self._reload_addons_async(notify=False)
             return {'error': None}
         except Exception as e:
             return {'error': str(e)}
