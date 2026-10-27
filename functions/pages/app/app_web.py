@@ -2215,29 +2215,25 @@ if %errorlevel% equ 0 (
 
         # 云端：覆盖简介与版本（云端是最新发布信息），图标优先用云端 icon_url
         try:
-            for page in (self._get_cached_list('addon') or []):
-                for it in (page.get('items') or []):
-                    if str(it.get('name', '')).strip() != want:
-                        continue
-                    if (it.get('desc') or '').strip():
-                        result['desc'] = str(it['desc']).strip()
-                    if (it.get('version') or '').strip():
-                        result['version'] = str(it['version']).strip()
-                    if it.get('authors'):
-                        result['author'] = _fmt_authors(it.get('authors'))
-                        result['author_links'] = _fmt_author_links(it.get('authors'))
-                    icon_url = str(it.get('icon_url') or '').strip()
-                    if icon_url:
-                        try:
-                            uri = self.get_icon(icon_url, want)
-                            if uri:
-                                result['icon'] = uri
-                        except Exception as e:
-                            print(f"取依赖 {want} 的云端图标失败: {e}")
-                    result['source'] = 'cloud'
-                    break
-                else:
+            for it in self._iter_cloud_addons(self._get_cached_list('addon')):
+                if str(it.get('name', '')).strip() != want:
                     continue
+                if (it.get('desc') or '').strip():
+                    result['desc'] = str(it['desc']).strip()
+                if (it.get('version') or '').strip():
+                    result['version'] = str(it['version']).strip()
+                if it.get('authors'):
+                    result['author'] = _fmt_authors(it.get('authors'))
+                    result['author_links'] = _fmt_author_links(it.get('authors'))
+                icon_url = str(it.get('icon_url') or '').strip()
+                if icon_url:
+                    try:
+                        uri = self.get_icon(icon_url, want)
+                        if uri:
+                            result['icon'] = uri
+                    except Exception as e:
+                        print(f"取依赖 {want} 的云端图标失败: {e}")
+                result['source'] = 'cloud'
                 break
         except Exception as e:
             print(f"读取云端插件列表失败（依赖 {want} 降级用本地信息）: {e}")
@@ -2297,13 +2293,33 @@ if %errorlevel% equ 0 (
             return False
 
     @staticmethod
+    def _iter_cloud_addons(pages):
+        """遍历云端插件列表里的所有条目。
+
+        云端 note 的原始结构是分页数组：第 0 页是元信息
+        （``{"total_page": 3, "total_addons": 12}``），后面每一页直接是条目数组。
+        这里同时兼容「页是列表」和「页是带 items 的字典」两种写法，
+        免得以后再改一次云端格式就在这里炸 ``'list' object has no attribute 'get'``。
+        """
+        for page in (pages or []):
+            if isinstance(page, dict):
+                items = page.get('items')
+                if not isinstance(items, list):
+                    continue
+            elif isinstance(page, list):
+                items = page
+            else:
+                continue
+            for item in items:
+                if isinstance(item, dict):
+                    yield item
+
     def _cloud_addon_item(pages, name):
         """在云端插件列表里按名字找一条条目。"""
         want = str(name).strip()
-        for page in (pages or []):
-            for item in (page.get('items') or []):
-                if str(item.get('name', '')).strip() == want:
-                    return item
+        for item in AppApi._iter_cloud_addons(pages):
+            if str(item.get('name', '')).strip() == want:
+                return item
         return None
 
     def _install_addon_sync(self, name, url, pages, chain=(), log=print):
