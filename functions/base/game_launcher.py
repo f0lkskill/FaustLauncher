@@ -448,7 +448,8 @@ class GameLauncher:
                     info = {}
                 enabled = self._resource_enabled(kind[:-1], info) and not (is_mods and mods_off)
                 if not enabled:
-                    print(f"[TextPatch] {kind}/{res_dir} 已禁用: 不应用它的文本补丁")
+                    pass
+                    # print(f"[TextPatch] {kind}/{res_dir} 已禁用: 不应用它的文本补丁")
                 (apply_jobs if enabled else revert_jobs).append((kind, res_dir))
 
         for kind, res_dir in revert_jobs:
