@@ -162,7 +162,13 @@ function bindEvents() {
       window.addEventListener('mouseup', onUp);
     });
   }
-  // 导航
+  // 一键刷新前端页面 (Ctrl+F5): 走 location.reload，避免 WebView2 原生刷新导致断联
+  document.addEventListener('keydown', (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'F5') {
+      e.preventDefault();
+      window.location.reload();
+    }
+  });
   $$('.nav-item').forEach(b => b.addEventListener('click', () => switchPage(b.dataset.page)));
   if (typeof bindUserEvents === 'function') bindUserEvents();
   if (typeof bindAchievementEvents === 'function') bindAchievementEvents();
