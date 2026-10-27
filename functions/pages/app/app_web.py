@@ -2161,6 +2161,89 @@ if %errorlevel% equ 0 (
         print(f'初始化云端 {kind} 资源完成。')
         return data
 
+    def get_addon_dep(self, name):
+        """取一个依赖插件的基本信息（图标 / 简介 / 版本 / 作者）。
+
+        优先用云端缓存里的条目，和资源页显示保持一致；云端取不到（没网、
+        刚清过缓存、云端条目还没更新）就降级读本地
+        ``addons/<目录>/addon_info.json``，这样离线时也能看清依赖是什么。
+        """
+        import os
+        want = str(name or '').strip()
+        if not want:
+            return {'ok': False, 'error': '缺少插件名'}
+        result = {
+            'ok': True, 'name': want, 'dir': want, 'desc': '', 'version': '',
+            'author': '', 'author_links': [], 'icon': '', 'source': 'none',
+            'installed': False, 'permanent': False, 'provides': [],
+        }
+
+        # 本地：插件名和目录名不一定相同，按 addon_info.json 的 name 反查
+        local_dir = want
+        local_info = {}
+        try:
+            base = os.path.abspath('addons')
+            if os.path.isdir(base):
+                for folder in sorted(os.listdir(base)):
+                    info_path = os.path.join(base, folder, 'addon_info.json')
+                    if not os.path.isfile(info_path):
+                        continue
+                    try:
+                        info = read_json(info_path)
+                    except Exception:
+                        continue
+                    if str(info.get('name') or folder).strip() == want or folder == want:
+                        local_dir = folder
+                        local_info = info if isinstance(info, dict) else {}
+                        break
+        except Exception as e:
+            print(f"查找依赖 {want} 的本地目录失败: {e}")
+        if local_info:
+            result['installed'] = True
+            result['dir'] = local_dir
+            result['desc'] = str(local_info.get('desc') or local_info.get('description') or '')
+            result['version'] = str(local_info.get('version') or '')
+            result['author'] = _fmt_authors(local_info.get('authors'))
+            result['author_links'] = _fmt_author_links(local_info.get('authors'))
+            result['permanent'] = bool(local_info.get('permanent', False))
+            result['provides'] = [str(x) for x in (local_info.get('provides') or [])]
+            result['source'] = 'local'
+            try:
+                result['icon'] = _res_icon_uri('addons', local_dir)
+            except Exception:
+                pass
+
+        # 云端：覆盖简介与版本（云端是最新发布信息），图标优先用云端 icon_url
+        try:
+            for page in (self._get_cached_list('addon') or []):
+                for it in (page.get('items') or []):
+                    if str(it.get('name', '')).strip() != want:
+                        continue
+                    if (it.get('desc') or '').strip():
+                        result['desc'] = str(it['desc']).strip()
+                    if (it.get('version') or '').strip():
+                        result['version'] = str(it['version']).strip()
+                    if it.get('authors'):
+                        result['author'] = _fmt_authors(it.get('authors'))
+                        result['author_links'] = _fmt_author_links(it.get('authors'))
+                    icon_url = str(it.get('icon_url') or '').strip()
+                    if icon_url:
+                        try:
+                            uri = self.get_icon(icon_url, want)
+                            if uri:
+                                result['icon'] = uri
+                        except Exception as e:
+                            print(f"取依赖 {want} 的云端图标失败: {e}")
+                    result['source'] = 'cloud'
+                    break
+                else:
+                    continue
+                break
+        except Exception as e:
+            print(f"读取云端插件列表失败（依赖 {want} 降级用本地信息）: {e}")
+
+        return result
+
     def check_item_downloaded(self, kind, name):
         import os
         try:
