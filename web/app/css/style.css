@@ -720,6 +720,26 @@ body.modal-open .res-card {
 .res-state-badge.off { color: var(--text-3); background: rgba(var(--tint-rgb), 0.05); border: 1px solid var(--border); }
 .res-state-badge.installed { color: var(--info); background: rgba(var(--info-rgb), 0.13); border: 1px solid rgba(var(--info-rgb), 0.35); }
 .res-state-badge.is-new { color: rgba(17, 255, 0, 0.696); background: rgba(29, 221, 0, 0.13); border: 1px solid rgba(30, 255, 0, 0.35); }
+/* 插件依赖徽标: 紫色代表"由 WarpHook 之类依赖库提供能力", 缺失时转红 */
+.res-deps { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 5px; }
+.res-dep-badge {
+  font-size: 10.5px; font-weight: 600; padding: 1px 8px; border-radius: 999px;
+  color: var(--accent, #a06cf0);
+  background: rgba(160, 108, 240, 0.13);
+  border: 1px solid rgba(160, 108, 240, 0.38);
+}
+.res-dep-badge.missing {
+  color: var(--danger);
+  background: rgba(220, 60, 60, 0.13);
+  border-color: rgba(220, 60, 60, 0.4);
+}
+/* 依赖库本身不提供开关, 用一枚静态标记占位 */
+.res-perma-lock {
+  font-size: 10.5px; font-weight: 600; padding: 4px 9px; border-radius: 8px;
+  color: var(--text-3); background: rgba(var(--tint-rgb), 0.06);
+  border: 1px dashed var(--border); white-space: nowrap;
+  user-select: none; cursor: default;
+}
 /* NEW 标识: 周期性 摇摆+放大+表面泛光 (每 3s 播放一次, 播放约 1.2s) */
 @keyframes res-new-pop {
   0%, 100% {

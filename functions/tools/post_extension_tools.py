@@ -487,6 +487,24 @@ def upload_extension_info(kind, folder, address=None, log=None, urls=None, keep_
             'disabled': False,
             'is_new': True
         }
+        # 依赖声明：只有本地确实写了 requires 才带上这个键，这样启动器下载插件时
+        # 才知道要先把依赖装上；没有依赖的插件，云端条目里也不会多出一个空数组。
+        requires = info.get('requires')
+        if isinstance(requires, str):
+            requires = [requires]
+        requires = [str(x).strip() for x in (requires or []) if str(x).strip()]
+        if requires:
+            item['requires'] = requires
+            log(f'{label} {name} 依赖: {", ".join(requires)}\n')
+        # 依赖库自身（permanent）也照实写上去，方便界面标注成"永久启用"
+        if info.get('permanent'):
+            item['permanent'] = True
+        provides = info.get('provides')
+        if isinstance(provides, str):
+            provides = [provides]
+        provides = [str(x).strip() for x in (provides or []) if str(x).strip()]
+        if provides:
+            item['provides'] = provides
 
         items = [item]
         for page in data[1:]:
