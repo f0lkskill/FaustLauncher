@@ -377,6 +377,22 @@ function applyCardEnabledState(card, item) {
 }
 
 // 资源卡片: 下载中心样式, 图标用目录下图片, 名字旁启用/禁用标识, hover 渐变描边 + 3D 跟随
+// 依赖徽标: addon_info.json 里声明了几个 requires 就显示几个;
+// 本地没装的标红, 提示用户要么自动下载依赖, 要么手动补装。
+function depBadgesHtml(item) {
+  const req = item.requires || [];
+  if (!req.length) return '';
+  const missing = item.missing_requires || [];
+  return '<div class="res-deps">' +
+    req.map(function (dep) {
+      const lack = missing.indexOf(dep) >= 0;
+      return '<span class="res-dep-badge' + (lack ? ' missing' : '') + '">' +
+        (lack ? '缺少依赖：' : '依赖 ') + esc(dep) + (lack ? '' : ' ✓') +
+      '</span>';
+    }).join('') +
+  '</div>';
+}
+
 function buildResCard(item) {
   const name = item.name || '未知';
   const enabled = !!item.enabled;
@@ -395,11 +411,14 @@ function buildResCard(item) {
       '<div class="res-info">' +
         '<div class="res-title-row">' +
           '<span class="res-title">' + esc(name) +
-            '<span class="res-state-badge ' + (enabled ? 'on' : 'off') + '">' + (enabled ? '已启用' : '已禁用') + '</span>' +
+            '<span class="res-state-badge ' + (enabled ? 'on' : 'off') + '">' +
+              (item.permanent ? '永久启用' : (enabled ? '已启用' : '已禁用')) +
+            '</span>' +
           '</span>' +
           (ver ? '<span class="res-ver-inline">v' + esc(ver) + '</span>' : '') +
         '</div>' +
         '<div class="res-desc">' + esc(desc) + '</div>' +
+        depBadgesHtml(item) +
         (authorLinksHtml(item.author_links) ? '<div class="res-desc res-authors">' + authorLinksHtml(item.author_links) + '</div>' : '') +
       '</div>' +
     '</div>' +
@@ -407,13 +426,16 @@ function buildResCard(item) {
       '<button class="res-menu-btn" type="button">' +
         '<svg class="ico" data-icon="more-one.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg>' +
       '</button>' +
-      '<button class="res-toggle-btn' + (enabled ? ' on' : '') + '" type="button"' +
-        ' aria-pressed="' + (enabled ? 'true' : 'false') + '"' +
-        '>' +
-        resToggleIcon(enabled) +
-      '</button>' +
+      (item.permanent
+        ? '<span class="res-perma-lock" title="依赖库：其它插件靠它运行，不能关闭">依赖库</span>'
+        : '<button class="res-toggle-btn' + (enabled ? ' on' : '') + '" type="button"' +
+            ' aria-pressed="' + (enabled ? 'true' : 'false') + '"' +
+            '>' +
+            resToggleIcon(enabled) +
+          '</button>') +
     '</div>';
-  card.querySelector('.res-toggle-btn').onclick = async (e) => {
+  const toggleBtn = card.querySelector('.res-toggle-btn');
+  if (toggleBtn) toggleBtn.onclick = async (e) => {
     stopClick(e);   // 阻止冒泡(别触发卡片自身) 并补一次点击音效
     if (!api) { toast('浏览器预览模式', 'warn'); return; }
     const btn = e.currentTarget;
