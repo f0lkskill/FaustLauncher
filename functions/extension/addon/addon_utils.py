@@ -5,7 +5,7 @@ from types import ModuleType
 from typing import Dict, List, Optional, Any
 from functions.web_update.translation_source import CustomTranslateSource
 from functions.base.common.json_io import read_json, write_json
-from functions.extension.addon.warp_registry import WarpRegistry
+from functions.extension.addon.namespace_registry import NamespaceRegistry
 
 class _ScratchAddonManager:
 
@@ -40,8 +40,10 @@ class AddonManager:
         self.custom_tray_items: List[Any] = []
         self.addons_dir = 'addons'
         self.extend_translate_source:list[CustomTranslateSource] = []
-        # WarpHook 命名空间代理层：所有插件通过 ADDON_ARG['Warp'] 拿同一份实例
-        self.warp = WarpRegistry()
+        # 插件命名空间代理层：所有插件通过 ADDON_ARG['Namespaces'] 拿同一份
+        # 容器。谁想开命名空间、往里放什么工具，全由插件自己决定，
+        # 启动器不针对任何插件做特殊适配。见 namespace_registry.py。
+        self.namespaces = NamespaceRegistry()
         # 载入时被依赖关系挡下的插件 -> 原因，供界面提示
         self.dep_skipped: Dict[str, str] = {}
         self.scan_addons()
@@ -185,7 +187,7 @@ class AddonManager:
         return bool(info.get('permanent'))
 
     def get_addon_provides(self, addon_name: str) -> List[str]:
-        """插件声明自己提供的命名空间（目前只有 WarpHook 会写 ``["warp"]``）。"""
+        """插件声明自己提供的命名空间名，纯自描述元数据，启动器不校验。"""
         info = self.get_addon_info(addon_name) or {}
         raw = info.get('provides')
         if not raw:
@@ -199,7 +201,7 @@ class AddonManager:
     def resolve_load_order(self) -> tuple:
         """按 ``requires`` 做拓扑排序，算出插件载入顺序与被跳过项。
 
-        被依赖的插件先载入（WarpHook 必须先于用它的插件注册命名空间）。
+        被依赖的插件先载入（提供方必须先于使用方注册命名空间）。
         三种异常情况都会被挡下并记录原因：
 
             * 缺依赖：``requires`` 里写的插件目录不存在 → ``缺少依赖: X``
@@ -207,7 +209,7 @@ class AddonManager:
             * 依赖不可用：依赖本身因上述原因被跳过 → ``依赖不可用: X``
 
         Returns:
-            ``(载入顺序, 跳过原因表)``，后者形如 ``{'某插件': '缺少依赖: WarpHook'}``。
+            ``(载入顺序, 跳过原因表)``，后者形如 ``{'某插件': '缺少依赖: 某插件'}``。
         """
         names = list(self.addon_names)
         exists = set(names)
@@ -301,9 +303,10 @@ class AddonManager:
             ADDON_ARG['AddonManager'] = self
             ADDON_ARG['AddonName'] = addon_name
             ADDON_ARG['ExtendTranslateSource'] = self.extend_translate_source
-            # WarpHook 命名空间代理层：所有插件共享同一个容器，WarpHook 往里
-            # 注册工具，其他插件按命名空间读取。见 warp_registry.py。
-            ADDON_ARG['Warp'] = self.warp
+            # 插件命名空间代理层：所有插件共享同一个容器，任何插件都可以
+            # 往里注册自己的命名空间，其他插件按名字读取。
+            # 见 namespace_registry.py。
+            ADDON_ARG['Namespaces'] = self.namespaces
 
             _gs_before = len(self.gamestart_funcs)
 
@@ -374,7 +377,7 @@ class AddonManager:
         self.del_funcs.clear()
         self.enabled_funcs.clear()
         self.disabled_funcs.clear()
-        self.warp.clear()
+        self.namespaces.clear()
         self.dep_skipped.clear()
         self.clear_custom_tray_items()
 
@@ -440,7 +443,7 @@ class AddonManager:
                 'AddonManager': scratch,
                 'AddonName': addon_name,
                 'ExtendTranslateSource': scratch.extend_translate_source,
-                'Warp': self.warp,
+                'Namespaces': self.namespaces,
             }
             builtins_dict = vars(__builtins__) if isinstance(__builtins__, ModuleType) else dict(__builtins__)
             module_globals: Dict[str, Any] = {
@@ -495,8 +498,8 @@ class AddonManager:
                 self.run_addon(name, args)
             except Exception as e:
                 print(f"运行插件 {name} 时发生未捕获错误: {e}")
-        if self.warp:
-            print(f"WarpHook 命名空间: {self.warp.snapshot()}")
+        if self.namespaces:
+            print(f"插件命名空间: {self.namespaces.snapshot()}")
         self._sync_extend_translate_source()
 
     def _sync_extend_translate_source(self) -> None:
