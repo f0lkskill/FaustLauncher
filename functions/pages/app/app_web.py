@@ -1937,7 +1937,7 @@ class AppApi:
             write_json(path, info, indent=4)
             if was_enabled and not bool(enabled):
                 self._fire_addon_disabled(name)
-            self._reload_addons_async()
+            # 不触发全量重载, 避免前端列表重构
             return {'error': None}
         except Exception as e:
             return {'error': str(e)}
