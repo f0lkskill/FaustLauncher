@@ -243,3 +243,14 @@ web/app_skins/*/profile.*
 # 少了这两行，往该目录新增 .py 会被 `**/tools/` 静默忽略、提交时丢失。
 !functions/pages/tools/
 !functions/pages/tools/*.py
+# WarpHook 是独立维护的底层依赖库，单独放在 warphook 分支（见该分支 README）。
+# 主分支不跟踪插件目录，这里只对 WarpHook 开白名单。
+!addons/WarpHook/
+!addons/WarpHook/**
+addons/WarpHook/__pycache__/
+addons/WarpHook/warphook/__pycache__/
+addons/WarpHook/warp_host.log
+addons/WarpHook/_icon_preview.png
+
+# 编译产物：由 src/ 里的源码生成，不入库
+addons/WarpHook/warp_host.dll
