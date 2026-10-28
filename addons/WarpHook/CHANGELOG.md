@@ -4,6 +4,17 @@
 
 看完整历史：`git log --oneline -- addons/WarpHook/`
 
+## 0.5.0
+
+- 事件从四格值（`a/b/c/d`）扩到**八格**（`a..h`），读链的 `out` 可以写 0..7。
+  起因是成就那套读法：一条 `VAL` 要「实例号 + 模板号 + 血量 + 上限 + 理智」五个数，
+  四条 `SPD` 要六个 —— 四格装不下只能把一条钩子拆成两条再在 Python 里按
+  instanceID 配对，比加 16 字节难受得多。
+- `WARP_EVENT` 28 → 44 字节，映射总长 63872 字节，`HOST_EVENT_SIZE` /
+  `HOST_READ_OFFSET` / `HOST_MAP_BYTES` 跟着变，两侧测试已同步。
+- 去重表 `g_last_vals` 从四列扩到八列，八格一起比。
+- 修 `out` 落盘时被 `& 0x3` 掩掉高位的旧限制。
+
 ## 0.4.1
 
 - 钩子新增 `dedupe=True`：**读链的值没变就不投递事件**。挂在

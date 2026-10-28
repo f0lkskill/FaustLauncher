@@ -243,7 +243,7 @@ static void warp_apply_reads(WARP_HOOK *h, void *self, int argc,
         int slot = r->out;
         if (h->read_base + i >= WARP_READ_MAX)
             break;
-        if (slot < 0 || slot > 3)
+        if (slot < 0 || slot >= WARP_EVENT_SLOTS)
             continue;
         warp_read_chain(r, self, argc, a1, a2, a3, &out[slot]);
     }
@@ -259,7 +259,8 @@ static void warp_emit_event(int hook_index, WARP_HOOK *h, void *self,
     WARP_EVENT *slot;
     LONG head, tail;
     int index;
-    int out[4];
+    int out[WARP_EVENT_SLOTS];
+    int i;
 
     if (!g_hdr)
         return;
@@ -270,6 +271,8 @@ static void warp_emit_event(int hook_index, WARP_HOOK *h, void *self,
     out[1] = argc > 1 ? (int)(intptr_t)a2 : 0;
     out[2] = argc > 2 ? (int)(intptr_t)a3 : 0;
     out[3] = g_hdr->vars[0];
+    for (i = 4; i < WARP_EVENT_SLOTS; i++)
+        out[i] = 0;
     warp_apply_reads(h, self, argc, a1, a2, a3, out);
 
     /* 值没变就不入队。必须先跑完读链才知道变没变，所以这段在自增 head 之前：
@@ -278,9 +281,8 @@ static void warp_emit_event(int hook_index, WARP_HOOK *h, void *self,
      * 参数指针，每次都不一样，去重等于没做。 */
     if ((h->flags & WARP_HF_DEDUPE) && h->read_count > 0) {
         int same = g_last_valid[hook_index];
-        int i;
 
-        for (i = 0; i < 4; i++) {
+        for (i = 0; i < WARP_EVENT_SLOTS; i++) {
             if (g_last_vals[hook_index][i] != out[i]) {
                 same = 0;
                 break;
@@ -288,7 +290,7 @@ static void warp_emit_event(int hook_index, WARP_HOOK *h, void *self,
         }
         if (same)
             return;
-        for (i = 0; i < 4; i++)
+        for (i = 0; i < WARP_EVENT_SLOTS; i++)
             g_last_vals[hook_index][i] = out[i];
         g_last_valid[hook_index] = 1;
     }
@@ -308,6 +310,10 @@ static void warp_emit_event(int hook_index, WARP_HOOK *h, void *self,
     slot->b = out[1];
     slot->c = out[2];
     slot->d = out[3];
+    slot->e = out[4];
+    slot->f = out[5];
+    slot->g = out[6];
+    slot->h = out[7];
 }
 
 int warp_on_event(int hook_index, void *self, int argc,

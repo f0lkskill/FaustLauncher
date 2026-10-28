@@ -36,7 +36,7 @@ extern HINSTANCE     g_hinst;
 extern HANDLE        g_map;
 extern LONG          g_hit_count[WARP_MAX_HOOKS];
 extern ULONGLONG     g_last_fire[WARP_MAX_HOOKS];
-extern int           g_last_vals[WARP_MAX_HOOKS][4];
+extern int           g_last_vals[WARP_MAX_HOOKS][WARP_EVENT_SLOTS];
 extern unsigned char g_last_valid[WARP_MAX_HOOKS];
 extern WARP_HEADER  *g_hdr;
 extern WARP_HOOK    *g_warp_hooks;
