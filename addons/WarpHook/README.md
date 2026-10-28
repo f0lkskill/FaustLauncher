@@ -1,5 +1,11 @@
 # WarpHook
 
+> 本目录是 [FaustLauncher](https://github.com/f0lkskill/FaustLauncher) 仓库内的**独立组件**，
+> 不是独立仓库。它有自己的 `README.md` 与 `CHANGELOG.md`，版本号单独演进
+> （`warphook/vX.Y.Z` 标签），但代码与启动器一起在 `main` 上维护。
+> 看它的完整提交历史：`git log --oneline -- addons/WarpHook/`
+> 只看它的提交信息：`git log --oneline --grep "warphook"`
+
 插件底层依赖库。别的插件只写 Python，**不写任何 C 代码**：等游戏、注入、
 挂钩、读参数、弹窗、杀进程全部由这里的 `warp_host.dll` 完成，插件通过一块
 共享内存给它下配置。
@@ -71,7 +77,11 @@ gcc -shared -O2 -Wall -s -static-libgcc -o warp_host.dll \
 编完把 `warp_host.dll` 放到本目录（与 `scr.py` 同级）即可，插件侧会按
 `插件目录 / warp_host.dll` 找它。
 
-## 分支说明
+## 版本与目录
 
-本分支只跟踪 WarpHook 自身（`.gitignore` 对 `addons/WarpHook/**` 开了白名单），
-主分支不跟踪任何插件目录。编译产物 `warp_host.dll` 不入库。
+- 代码在 `main` 上，跟着仓库一起演进；`.gitignore` 对 `addons/WarpHook/**` 开了白名单，
+  但 `warp_host.dll`、`__pycache__`、运行日志不入库。
+- 版本号在 `warphook/env.py` 的 `WARP_HOOK_VERSION` 与 `addon_info.json` 里，
+  发布时打 `warphook/vX.Y.Z` 标签（不要和启动器本体的版本混在一起）。
+- 改动写进本目录的 `CHANGELOG.md`；提交信息用 `feat(warphook): ...` 这种 scope，
+  这样 `git log --grep warphook` 就能把它的历史单独筛出来。
