@@ -139,7 +139,8 @@ static int warp_can_read(const void *p, int size)
  * 空指针在 il2cpp 里很常见（对象还没初始化、目标已销毁），所以这里一律
  * 静默返回 0，让上层保留上一次的值 —— 抛出或打印都会把游戏卡住。 */
 static int warp_read_chain(const WARP_READ *r, void *self, int argc,
-                           void *a1, void *a2, void *a3, int *out)
+                           void *a1, void *a2, void *a3,
+                           void *a4, void *a5, void *a6, int *out)
 {
     void *p;
     int i;
@@ -152,6 +153,9 @@ static int warp_read_chain(const WARP_READ *r, void *self, int argc,
     case 1:  p = a1;   break;
     case 2:  p = a2;   break;
     case 3:  p = a3;   break;
+    case 4:  p = a4;   break;
+    case 5:  p = a5;   break;
+    case 6:  p = a6;   break;
     default: return 0;
     }
     if (!p)
@@ -227,7 +231,8 @@ static int warp_read_chain(const WARP_READ *r, void *self, int argc,
 
 /* 把钩子声明的读链全跑一遍，结果写进 out[4]（事件的 a/b/c/d）。 */
 static void warp_apply_reads(WARP_HOOK *h, void *self, int argc,
-                             void *a1, void *a2, void *a3, int *out)
+                             void *a1, void *a2, void *a3,
+                             void *a4, void *a5, void *a6, int *out)
 {
     const WARP_READ *table;
     int i;
@@ -245,7 +250,7 @@ static void warp_apply_reads(WARP_HOOK *h, void *self, int argc,
             break;
         if (slot < 0 || slot >= WARP_EVENT_SLOTS)
             continue;
-        warp_read_chain(r, self, argc, a1, a2, a3, &out[slot]);
+        warp_read_chain(r, self, argc, a1, a2, a3, a4, a5, a6, &out[slot]);
     }
 }
 
@@ -253,7 +258,8 @@ static void warp_apply_reads(WARP_HOOK *h, void *self, int argc,
  * tail 一圈，越了就把 tail 往前推（丢最旧的，dropped++）。
  * 全程只用 Interlocked，读侧（Python）只读 head 与槽内容，不会撕裂。 */
 static void warp_emit_event(int hook_index, WARP_HOOK *h, void *self,
-                            int argc, void *a1, void *a2, void *a3)
+                            int argc, void *a1, void *a2, void *a3,
+                            void *a4, void *a5, void *a6)
 {
     int *ctrl;
     WARP_EVENT *slot;
@@ -270,10 +276,10 @@ static void warp_emit_event(int hook_index, WARP_HOOK *h, void *self,
     out[0] = argc > 0 ? (int)(intptr_t)a1 : 0;
     out[1] = argc > 1 ? (int)(intptr_t)a2 : 0;
     out[2] = argc > 2 ? (int)(intptr_t)a3 : 0;
-    out[3] = g_hdr->vars[0];
+    out[3] = argc > 3 ? (int)(intptr_t)a4 : g_hdr->vars[0];
     for (i = 4; i < WARP_EVENT_SLOTS; i++)
         out[i] = 0;
-    warp_apply_reads(h, self, argc, a1, a2, a3, out);
+    warp_apply_reads(h, self, argc, a1, a2, a3, a4, a5, a6, out);
 
     /* 值没变就不入队。必须先跑完读链才知道变没变，所以这段在自增 head 之前：
      * 先占槽位再判断的话，被吞掉的那条会在环形队列里留个空洞。
@@ -317,7 +323,8 @@ static void warp_emit_event(int hook_index, WARP_HOOK *h, void *self,
 }
 
 int warp_on_event(int hook_index, void *self, int argc,
-                  void *a1, void *a2, void *a3)
+                  void *a1, void *a2, void *a3,
+                  void *a4, void *a5, void *a6)
 {
     warp_pump_commands();
     WARP_HOOK *h;
@@ -383,7 +390,7 @@ int warp_on_event(int hook_index, void *self, int argc,
     /* 事件优先于行为：只要钩子声明了 ACT_EVENT 就入队，哪怕它同时什么都不做。
      * 成就、统计这类消费者要的就是「发生过什么」，不该和弹窗/拦截抢语义。 */
     if (h->actions & WARP_ACT_EVENT)
-        warp_emit_event(hook_index, h, self, argc, a1, a2, a3);
+        warp_emit_event(hook_index, h, self, argc, a1, a2, a3, a4, a5, a6);
 
     /* 没有行为位的纯旁观钩子（NoGacha 的 OpenGachaAlarmUI）只用来看参数与发事件，
      * 不弹窗、不刷新去重窗，免得把同一次操作里紧跟的拦截钩子挤掉。 */

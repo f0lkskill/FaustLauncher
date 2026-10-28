@@ -15,7 +15,7 @@
  * 而拦截判定必须在原函数之前，否则拦不住。 */
 #define WARP_THUNK_0(n) \
     static void __fastcall warp_thunk0_##n(void *self) { \
-        int act = warp_on_event(n, self, 0, NULL, NULL, NULL); \
+        int act = warp_on_event(n, self, 0, NULL, NULL, NULL, NULL, NULL, NULL); \
         if (g_slots[n].installed && !(act & 0x1)) { \
             ((void (__fastcall *)(void *))g_slots[n].original)(self); \
         } \
@@ -23,7 +23,7 @@
     }
 #define WARP_THUNK_1(n) \
     static void __fastcall warp_thunk1_##n(void *self, void *a1) { \
-        int act = warp_on_event(n, self, 1, a1, NULL, NULL); \
+        int act = warp_on_event(n, self, 1, a1, NULL, NULL, NULL, NULL, NULL); \
         if (g_slots[n].installed && !(act & 0x1)) { \
             ((void (__fastcall *)(void *, void *))g_slots[n].original)(self, a1); \
         } \
@@ -31,7 +31,7 @@
     }
 #define WARP_THUNK_2(n) \
     static void __fastcall warp_thunk2_##n(void *self, void *a1, void *a2) { \
-        int act = warp_on_event(n, self, 2, a1, a2, NULL); \
+        int act = warp_on_event(n, self, 2, a1, a2, NULL, NULL, NULL, NULL); \
         if (g_slots[n].installed && !(act & 0x1)) { \
             ((void (__fastcall *)(void *, void *, void *))g_slots[n].original)(self, a1, a2); \
         } \
@@ -39,9 +39,36 @@
     }
 #define WARP_THUNK_3(n) \
     static void __fastcall warp_thunk3_##n(void *self, void *a1, void *a2, void *a3) { \
-        int act = warp_on_event(n, self, 3, a1, a2, a3); \
+        int act = warp_on_event(n, self, 3, a1, a2, a3, NULL, NULL, NULL); \
         if (g_slots[n].installed && !(act & 0x1)) { \
             ((void (__fastcall *)(void *, void *, void *, void *))g_slots[n].original)(self, a1, a2, a3); \
+        } \
+        if (act & 0x2) warp_fire(n); \
+    }
+/* 4~6 个参数是给 `GetTakeAttackDmgMultiplier(unit, action, coin, attacker,
+ * isCritical, info)` 这类方法留的：出手者（attacker）在第 4 个参数上，
+ * 只有 a1..a3 的话「谁打的我」永远读不到。 */
+#define WARP_THUNK_4(n) \
+    static void __fastcall warp_thunk4_##n(void *self, void *a1, void *a2, void *a3, void *a4) { \
+        int act = warp_on_event(n, self, 4, a1, a2, a3, a4, NULL, NULL); \
+        if (g_slots[n].installed && !(act & 0x1)) { \
+            ((void (__fastcall *)(void *, void *, void *, void *, void *))g_slots[n].original)(self, a1, a2, a3, a4); \
+        } \
+        if (act & 0x2) warp_fire(n); \
+    }
+#define WARP_THUNK_5(n) \
+    static void __fastcall warp_thunk5_##n(void *self, void *a1, void *a2, void *a3, void *a4, void *a5) { \
+        int act = warp_on_event(n, self, 5, a1, a2, a3, a4, a5, NULL); \
+        if (g_slots[n].installed && !(act & 0x1)) { \
+            ((void (__fastcall *)(void *, void *, void *, void *, void *, void *))g_slots[n].original)(self, a1, a2, a3, a4, a5); \
+        } \
+        if (act & 0x2) warp_fire(n); \
+    }
+#define WARP_THUNK_6(n) \
+    static void __fastcall warp_thunk6_##n(void *self, void *a1, void *a2, void *a3, void *a4, void *a5, void *a6) { \
+        int act = warp_on_event(n, self, 6, a1, a2, a3, a4, a5, a6); \
+        if (g_slots[n].installed && !(act & 0x1)) { \
+            ((void (__fastcall *)(void *, void *, void *, void *, void *, void *, void *))g_slots[n].original)(self, a1, a2, a3, a4, a5, a6); \
         } \
         if (act & 0x2) warp_fire(n); \
     }
@@ -66,10 +93,28 @@ WARP_THUNK_3(4)  WARP_THUNK_3(5)  WARP_THUNK_3(6)  WARP_THUNK_3(7)
 WARP_THUNK_3(8)  WARP_THUNK_3(9)  WARP_THUNK_3(10) WARP_THUNK_3(11)
 WARP_THUNK_3(12) WARP_THUNK_3(13) WARP_THUNK_3(14) WARP_THUNK_3(15)
 
+WARP_THUNK_4(0) WARP_THUNK_4(1) WARP_THUNK_4(2) WARP_THUNK_4(3)
+WARP_THUNK_4(4) WARP_THUNK_4(5) WARP_THUNK_4(6) WARP_THUNK_4(7)
+WARP_THUNK_4(8) WARP_THUNK_4(9) WARP_THUNK_4(10) WARP_THUNK_4(11)
+WARP_THUNK_4(12) WARP_THUNK_4(13) WARP_THUNK_4(14) WARP_THUNK_4(15)
+
+WARP_THUNK_5(0) WARP_THUNK_5(1) WARP_THUNK_5(2) WARP_THUNK_5(3)
+WARP_THUNK_5(4) WARP_THUNK_5(5) WARP_THUNK_5(6) WARP_THUNK_5(7)
+WARP_THUNK_5(8) WARP_THUNK_5(9) WARP_THUNK_5(10) WARP_THUNK_5(11)
+WARP_THUNK_5(12) WARP_THUNK_5(13) WARP_THUNK_5(14) WARP_THUNK_5(15)
+
+WARP_THUNK_6(0) WARP_THUNK_6(1) WARP_THUNK_6(2) WARP_THUNK_6(3)
+WARP_THUNK_6(4) WARP_THUNK_6(5) WARP_THUNK_6(6) WARP_THUNK_6(7)
+WARP_THUNK_6(8) WARP_THUNK_6(9) WARP_THUNK_6(10) WARP_THUNK_6(11)
+WARP_THUNK_6(12) WARP_THUNK_6(13) WARP_THUNK_6(14) WARP_THUNK_6(15)
+
 #define WARP_SEL_0(n) warp_thunk0_##n
 #define WARP_SEL_1(n) warp_thunk1_##n
 #define WARP_SEL_2(n) warp_thunk2_##n
 #define WARP_SEL_3(n) warp_thunk3_##n
+#define WARP_SEL_4(n) warp_thunk4_##n
+#define WARP_SEL_5(n) warp_thunk5_##n
+#define WARP_SEL_6(n) warp_thunk6_##n
 
 void *const g_thunks0[WARP_MAX_HOOKS] = {
     WARP_SEL_0(0), WARP_SEL_0(1), WARP_SEL_0(2), WARP_SEL_0(3),
@@ -95,6 +140,24 @@ void *const g_thunks3[WARP_MAX_HOOKS] = {
     WARP_SEL_3(8), WARP_SEL_3(9), WARP_SEL_3(10), WARP_SEL_3(11),
     WARP_SEL_3(12), WARP_SEL_3(13), WARP_SEL_3(14), WARP_SEL_3(15),
 };
+void *const g_thunks4[WARP_MAX_HOOKS] = {
+    WARP_SEL_4(0), WARP_SEL_4(1), WARP_SEL_4(2), WARP_SEL_4(3),
+    WARP_SEL_4(4), WARP_SEL_4(5), WARP_SEL_4(6), WARP_SEL_4(7),
+    WARP_SEL_4(8), WARP_SEL_4(9), WARP_SEL_4(10), WARP_SEL_4(11),
+    WARP_SEL_4(12), WARP_SEL_4(13), WARP_SEL_4(14), WARP_SEL_4(15),
+};
+void *const g_thunks5[WARP_MAX_HOOKS] = {
+    WARP_SEL_5(0), WARP_SEL_5(1), WARP_SEL_5(2), WARP_SEL_5(3),
+    WARP_SEL_5(4), WARP_SEL_5(5), WARP_SEL_5(6), WARP_SEL_5(7),
+    WARP_SEL_5(8), WARP_SEL_5(9), WARP_SEL_5(10), WARP_SEL_5(11),
+    WARP_SEL_5(12), WARP_SEL_5(13), WARP_SEL_5(14), WARP_SEL_5(15),
+};
+void *const g_thunks6[WARP_MAX_HOOKS] = {
+    WARP_SEL_6(0), WARP_SEL_6(1), WARP_SEL_6(2), WARP_SEL_6(3),
+    WARP_SEL_6(4), WARP_SEL_6(5), WARP_SEL_6(6), WARP_SEL_6(7),
+    WARP_SEL_6(8), WARP_SEL_6(9), WARP_SEL_6(10), WARP_SEL_6(11),
+    WARP_SEL_6(12), WARP_SEL_6(13), WARP_SEL_6(14), WARP_SEL_6(15),
+};
 
 void *warp_pick_thunk(int index, int argc)
 {
@@ -105,6 +168,9 @@ void *warp_pick_thunk(int index, int argc)
     case 1: return g_thunks1[index];
     case 2: return g_thunks2[index];
     case 3: return g_thunks3[index];
+    case 4: return g_thunks4[index];
+    case 5: return g_thunks5[index];
+    case 6: return g_thunks6[index];
     default: return NULL;
     }
 }
