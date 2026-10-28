@@ -1175,10 +1175,11 @@ class BattleWatch:
 
     def __init__(self, log_callback=None, poll_interval: float = 0.25,
                  process_name: str = TARGET_PROCESS, verbose: bool = False,
-                 engine: str = ENGINE_DLL) -> None:
+                 engine: str = ENGINE_WARP) -> None:
         self.log_callback = log_callback or (lambda _m: None)
         # 谁来挂钩子：老链路自带 battle_watch.dll，或者借 WarpHook 的宿主。
-        # 默认仍是老链路 —— 新引擎要能随时切回去，才谈得上下线。
+        # P5 起默认走 WarpHook —— 钩子全是配置，加减一条不用重编 C，
+        # 游戏跑着也能换表。老 DLL 仍留在 `hook_dll/` 里，起不来会自动退回。
         self.engine = engine
         self._source = None
         self.poll_interval = max(0.1, float(poll_interval))
@@ -1221,7 +1222,12 @@ class BattleWatch:
         if self.running:
             return True
         if self.engine == ENGINE_WARP:
-            return self._start_warp()
+            if self._start_warp():
+                return True
+            # WarpHook 没装 / 宿主没注入成功：退回老链路。成就宁可跑在旧引擎上，
+            # 也不要因为新引擎起不来就整片哑掉 —— 老 DLL 还在，随时能接。
+            self._log("[BattleWatch] WarpHook 引擎起不来，退回老链路 battle_watch.dll")
+            self.engine = ENGINE_DLL
         self._stop.clear()
         self._thread = threading.Thread(target=self._run_guarded, name="battle-watch",
                                         daemon=True)
@@ -2587,7 +2593,7 @@ def get_watch(log_callback=None) -> BattleWatch:
 
 def start_battle_watch(log_callback=None, process_name: str = TARGET_PROCESS,
                       verbose: bool | None = None,
-                      engine: str = ENGINE_DLL) -> BattleWatch:
+                      engine: str = ENGINE_WARP) -> BattleWatch:
     watch = get_watch(log_callback)
     watch.process_name = process_name
     watch.engine = engine
