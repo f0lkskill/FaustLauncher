@@ -264,6 +264,35 @@ static void warp_emit_event(int hook_index, WARP_HOOK *h, void *self,
     if (!g_hdr)
         return;
 
+    /* 默认放原始参数，配了读链就被读出来的值覆盖 —— 成就那类消费者要的是
+     * 「伤害多少、剩多少血」，不是「第 2 个参数是个指针」。 */
+    out[0] = argc > 0 ? (int)(intptr_t)a1 : 0;
+    out[1] = argc > 1 ? (int)(intptr_t)a2 : 0;
+    out[2] = argc > 2 ? (int)(intptr_t)a3 : 0;
+    out[3] = g_hdr->vars[0];
+    warp_apply_reads(h, self, argc, a1, a2, a3, out);
+
+    /* 值没变就不入队。必须先跑完读链才知道变没变，所以这段在自增 head 之前：
+     * 先占槽位再判断的话，被吞掉的那条会在环形队列里留个空洞。
+     * 只对「开了去重位又确实配了读链」的钩子生效 —— 没配读链时 out[] 装的是
+     * 参数指针，每次都不一样，去重等于没做。 */
+    if ((h->flags & WARP_HF_DEDUPE) && h->read_count > 0) {
+        int same = g_last_valid[hook_index];
+        int i;
+
+        for (i = 0; i < 4; i++) {
+            if (g_last_vals[hook_index][i] != out[i]) {
+                same = 0;
+                break;
+            }
+        }
+        if (same)
+            return;
+        for (i = 0; i < 4; i++)
+            g_last_vals[hook_index][i] = out[i];
+        g_last_valid[hook_index] = 1;
+    }
+
     ctrl = (int *)((char *)g_hdr + WARP_EV_CTRL_OFFSET);
     head = InterlockedIncrement((LONG *)&ctrl[0]) - 1;
     tail = ctrl[1];
@@ -275,13 +304,6 @@ static void warp_emit_event(int hook_index, WARP_HOOK *h, void *self,
     slot->id = h->event_id ? h->event_id : hook_index;
     slot->hook = hook_index;
     slot->tick = (int)GetTickCount();
-    /* 默认放原始参数，配了读链就被读出来的值覆盖 —— 成就那类消费者要的是
-     * 「伤害多少、剩多少血」，不是「第 2 个参数是个指针」。 */
-    out[0] = argc > 0 ? (int)(intptr_t)a1 : 0;
-    out[1] = argc > 1 ? (int)(intptr_t)a2 : 0;
-    out[2] = argc > 2 ? (int)(intptr_t)a3 : 0;
-    out[3] = g_hdr->vars[0];
-    warp_apply_reads(h, self, argc, a1, a2, a3, out);
     slot->a = out[0];
     slot->b = out[1];
     slot->c = out[2];

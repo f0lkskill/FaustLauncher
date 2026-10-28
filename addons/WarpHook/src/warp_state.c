@@ -31,6 +31,17 @@ HINSTANCE     g_hinst;
 HANDLE        g_map = NULL;
 LONG        g_hit_count[WARP_MAX_HOOKS];  /* 每个钩子自己被命中多少次 */
 ULONGLONG   g_last_fire[WARP_MAX_HOOKS];  /* 每个钩子上次执行动作的时刻 */
+
+/* 去重用的「上次读出来的值」。
+ *
+ * 放在进程静态内存里而不是共享内存里，有两个原因：一是共享内存的布局已经
+ * 被 Python 侧按字节偏移写死了，多一个字段就要两边同时改，容易对不上；
+ * 二是这些值只对 DLL 自己有参考意义，插件不需要读。游戏重启就重来，正合适。
+ *
+ * 只有标了 WARP_HF_DEDUPE 又配了读链的钩子才用得上：值没变就把这次命中的
+ * 事件吞掉，别让 FixedUpdate 这种东西每帧往环形队列里塞一条。 */
+int         g_last_vals[WARP_MAX_HOOKS][4];
+unsigned char g_last_valid[WARP_MAX_HOOKS];
 WARP_HEADER  *g_hdr = NULL;
 
 WARP_HOOK    *g_warp_hooks = NULL;      /* 指向 map 内 128 偏移 */
