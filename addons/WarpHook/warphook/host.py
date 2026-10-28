@@ -251,10 +251,16 @@ def _warp_dir():
 
     不能用 ``_caller_dir()``：那个函数是给插件侧 :class:`Runtime` 推断「插件目录」
     用的，宿主 DLL 永远属于 WarpHook 自己。
+
+    注意本文件住在 ``WarpHook/warphook/`` 里，DLL 在上一级 —— 拆包时这里踩过一次。
     """
     path = globals().get("__file__") or ""
     if path and os.path.isfile(path):
-        return os.path.dirname(os.path.abspath(path))
+        pkg = os.path.dirname(os.path.abspath(path))
+        parent = os.path.dirname(pkg)
+        if os.path.isfile(os.path.join(parent, "addon_info.json")):
+            return parent
+        return pkg
     return os.getcwd()
 
 
