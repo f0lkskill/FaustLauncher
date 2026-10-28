@@ -1,0 +1,13 @@
+{
+    "name": "WarpHook",
+    "desc": "插件运行时依赖库。把「注入游戏进程」「读 il2cpp 混淆导出名」「建共享内存协议」「在游戏里自建 UI」这些每个插件都要重写一遍的底层代码集中到一处，其他插件通过 ADDON_ARG['Warp'] 的命名空间直接调用。\n\n它自己不产生任何行为：不弹窗、不挂钩子、不改游戏，界面上永远是「永久启用」，关掉它没有任何意义（关掉只会让依赖它的插件静默失效）。\n\n命名空间（首次加载后可用）：\n  • warp.il2cpp —— GameAssembly 混淆导出名解析、类/方法/字段定位\n  • warp.inject —— 找游戏进程、等 GameAssembly 加载、远程线程注入\n  • warp.shm    —— 共享内存建立、定长文本写入、导出名表写入\n  • warp.log    —— 统一前缀的日志输出\n\n插件清单里用 \"requires\": [\"WarpHook\"] 声明依赖，启动器会自动排序载入；从云端安装插件时也会自动把缺的依赖一并装上。",
+    "authors": {
+        "FolkSkill": "https://space.bilibili.com/599331034"
+    },
+    "version": "0.1.0",
+    "permanent": true,
+    "provides": [
+        "warp"
+    ],
+    "settings": {}
+}
