@@ -505,6 +505,12 @@ class Host:
             if i >= len(hooks):
                 continue
             hook = hooks[i] or {}
+            # 声明式 dict 也能直接写 event=事件号，效果等同 Host.hook(event=...)：
+            # 少了这一位，DLL 只数命中次数、不往事件队列里塞东西。
+            if hook.get("event") is not None:
+                hook = dict(hook)
+                hook["event_id"] = int(hook["event"])
+                hook["actions"] = int(hook.get("actions", 0)) | HOST_ACT_EVENT
             _write_fixed(slot + HostHook.klass.offset,
                          hook.get("klass", ""), HOST_KLASS_LEN)
             _write_fixed(slot + HostHook.method.offset,
@@ -539,6 +545,9 @@ class Host:
                     spec = reads[j]
                     arg = int(spec.get("arg", 1))
                     chain = list(spec.get("off") or spec.get("chain") or ())[:HOST_READ_STEPS]
+                    # 两种写法都收：元素级 {'off':..,'deref':..}，或者
+                    # 顶层并列写 off=[...] / deref=[True, False]（跟 C 那张表一样）。
+                    flags = list(spec.get("deref") or ())
                     at = read_addr + (read_used + j) * HOST_READ_SIZE
                     ctypes.c_int32.from_address(at + HostRead.arg.offset).value = arg
                     ctypes.c_int32.from_address(at + HostRead.nsteps.offset).value = len(chain)
@@ -554,7 +563,10 @@ class Host:
                             off = int(step.get("off", 0))
                             deref = 1 if step.get("deref", True) else 0
                         else:
-                            off, deref = int(step), 1
+                            off = int(step)
+                            # 顶层 deref 没写到这一位，就按「解引用」处理：
+                            # 绝大多数跳到 next 是对象引用，内嵌 struct 才显式写 False。
+                            deref = 1 if (k >= len(flags) or flags[k]) else 0
                         ctypes.c_int32.from_address(
                             at + HostRead.off.offset + k * 4).value = off
                         ctypes.c_int32.from_address(

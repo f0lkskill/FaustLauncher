@@ -99,6 +99,41 @@ int warp_probe_int(const char *klass_name, const char *method_name, void *obj)
  * 返回值是位掩码：bit0 = 拦掉原函数（WARP_HF_BLOCK 且没被参数门放行），
  * bit1 = 本次要执行动作。拆成"先判定再执行"，是为了让 detour 能按参数
  * 决定放行 —— NoGacha 的「付费单抽不拦」就是靠 guard_index/guard_value。 */
+/* 读之前先问系统这段内存能不能读。
+ *
+ * 插件把偏移写错一个字节就会崩游戏 —— 真实发生过：把场景状态（0~15 的枚举）
+ * 当成对象指针去解引用，游戏在注入的瞬间退出。读取链是插件写的东西，不能
+ * 假设它一定对；宁可这一次读不到，也不能让宿主跟着一起死。 */
+static int warp_can_read(const void *p, int size)
+{
+    MEMORY_BASIC_INFORMATION mbi;
+    const char *cur;
+    const char *end;
+
+    if (!p || size <= 0)
+        return 0;
+    cur = (const char *)p;
+    end = cur + size;
+    while (cur < end) {
+        SIZE_T span;
+        if (!VirtualQuery(cur, &mbi, sizeof(mbi)))
+            return 0;
+        if (mbi.State != MEM_COMMIT)
+            return 0;
+        if (mbi.Protect & (PAGE_GUARD | PAGE_NOACCESS))
+            return 0;
+        if (!(mbi.Protect & (PAGE_READONLY | PAGE_READWRITE | PAGE_WRITECOPY |
+                             PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE |
+                             PAGE_EXECUTE_WRITECOPY)))
+            return 0;
+        span = (SIZE_T)((const char *)mbi.BaseAddress + mbi.RegionSize - cur);
+        if (!span)
+            return 0;
+        cur += span;
+    }
+    return 1;
+}
+
 /* 沿着一条读取链取值。返回 1 表示读到了，0 表示中途碰到空指针。
  *
  * 空指针在 il2cpp 里很常见（对象还没初始化、目标已销毁），所以这里一律
@@ -125,11 +160,16 @@ static int warp_read_chain(const WARP_READ *r, void *self, int argc,
     for (i = 0; i < r->nsteps && i < WARP_READ_STEPS; i++) {
         p = (char *)p + r->off[i];
         if (r->deref[i]) {
+            if (!warp_can_read(p, (int)sizeof(void *)))
+                return 0;
             p = *(void **)p;
             if (!p)
                 return 0;
         }
     }
+
+    if (!warp_can_read(p, 16))
+        return 0;
 
     switch (r->kind) {
     case WARP_READ_FLOAT: {

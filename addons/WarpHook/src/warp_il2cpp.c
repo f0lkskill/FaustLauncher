@@ -75,6 +75,11 @@ int warp_bind_exports(void)
     }
 
     g_ic_ready = 1;
+    /* 前面几轮可能失败过（初始化早期导出表还是空的），这里成功就把
+     * 那条残留错误清掉 —— 否则状态行会一直挂着「取不到 il2cpp 接口」，
+     * 明明已经能用，看日志的人会以为坏了。 */
+    if (g_hdr && g_hdr->last_error == WARP_ERR_NO_IL2CPP)
+        g_hdr->last_error = 0;
     warp_log("bind exports ok", got);
     return 1;
 }
