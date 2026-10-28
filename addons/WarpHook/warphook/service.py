@@ -392,6 +392,7 @@ class Service:
         self._closed = False
         self._hit_seen = {}
         self._hit_done = set()
+        self._event_callbacks = []
         reg = _service_registry()
         old = reg.get(self.addon_name)
         if old is not None and old is not self:
@@ -496,6 +497,7 @@ class Service:
             try:
                 host.beat()
                 self._dispatch_hits(host, stop)
+                self._dispatch_events(host)
                 st = host.poll()
                 if st:
                     key = self._state_key(st)
@@ -508,6 +510,33 @@ class Service:
                 break
 
     # ---------- 钩子命中派发 ----------
+
+    def on_event(self, callback):
+        """事件回调 —— 钩子每命中一次，引擎就往队列塞一条，这里被逐条喂到。
+
+        ``callback(host, event)``，``event`` 是 ``{'id','hook','tick','a','b','c','d'}'``。
+        跟 :meth:`on_hit` 的区别：``on_hit`` 只知道「命中了多少下」（计数器差），
+        这里拿到的是**每一次命中的现场**（参数、时机），可以丢进队列慢慢算。
+
+        钩子要用 ``event=事件号`` 声明才会入队；队列是环形的，满了丢最旧的，
+        所以回调不必抢在别人前面 —— 但也别太慢，攒太多会盖掉旧事件。
+        """
+        self._event_callbacks.append(callback)
+        return self
+
+    def _dispatch_events(self, host):
+        callbacks = getattr(self, '_event_callbacks', None)
+        if not callbacks:
+            return
+        events = host.events()
+        if not events:
+            return
+        for callback in list(callbacks):
+            for event in events:
+                try:
+                    callback(host, event)
+                except Exception:  # noqa: BLE001
+                    pass
 
     def on_hit(self, callback, *, method=None, once=False, delay=0.0,
                thread=True):

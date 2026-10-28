@@ -59,7 +59,29 @@ HOST_HOOK_SIZE = 256
 HOST_TEXTS_OFFSET = HOST_HOOK_OFFSET + HOST_MAX_HOOKS * HOST_HOOK_SIZE
 HOST_TEXT_SIZE = HOST_TEXT_LEN
 HOST_EXPORTS_OFFSET = HOST_TEXTS_OFFSET + HOST_MAX_TEXTS * HOST_TEXT_SIZE
-HOST_MAP_BYTES = HOST_EXPORTS_OFFSET + HOST_EXPORT_COUNT * HOST_NAME_MAX
+HOST_EV_CTRL_OFFSET = HOST_EXPORTS_OFFSET + HOST_EXPORT_COUNT * HOST_NAME_MAX
+HOST_EV_CTRL_SIZE = 16
+HOST_EVENTS_OFFSET = HOST_EV_CTRL_OFFSET + HOST_EV_CTRL_SIZE
+HOST_EVENT_COUNT = 512
+HOST_EVENT_SIZE = 28
+HOST_MAP_BYTES = HOST_EVENTS_OFFSET + HOST_EVENT_COUNT * HOST_EVENT_SIZE
+
+#: 钩子动作位：把这次命中装进事件队列（见 :meth:`Host.events`）。
+HOST_ACT_EVENT = 0x08
+
+
+class HostEvent(ctypes.Structure):
+    """环形队列里的一个事件。字段含义与 C 侧 ``WARP_EVENT`` 一一对应。"""
+
+    _fields_ = [
+        ("id", ctypes.c_int32),      # 事件号（钩子没填就用钩子下标）
+        ("hook", ctypes.c_int32),    # 哪个钩子产生的
+        ("tick", ctypes.c_int32),    # GetTickCount 低 32 位
+        ("a", ctypes.c_int32),       # 第 1 个参数
+        ("b", ctypes.c_int32),       # 第 2 个参数
+        ("c", ctypes.c_int32),       # 第 3 个参数
+        ("d", ctypes.c_int32),       # vars[0] 快照
+    ]
 
 # 动作位（与 warp_host.c 的 WARP_ACT_* 一致）
 ACT_POPUP = 0x01     # 弹游戏原版系统弹窗
@@ -483,13 +505,14 @@ class Host:
         ensure_exports(block, HOST_EXPORT_ORDER, HOST_EXPORTS_OFFSET, HOST_NAME_MAX)
 
     def hook(self, klass, method, argc=0, block=False, actions=None,
-             probe=None, guard=None, **extra):
+             probe=None, guard=None, event=None, **extra):
         """登记一条钩子 —— 用法就是一次普通调用，不是填表格。
 
         ``klass`` / ``method`` 是要挂的方法（``argc`` 按「不含 this」数），
         ``block=True`` 表示拦下原方法，``probe=(类, 方法, 参数序号, 写到哪个槽)``
         表示顺手把某个参数对象的属性读进 ``vars[]``，
-        ``guard=(槽号, 值)`` 表示那个槽等于该值时彻底放行。
+        ``guard=(槽号, 值)`` 表示那个槽等于该值时彻底放行，
+        ``event=事件号`` 表示每次命中都往事件队列塞一条（见 :meth:`events`）。
 
         返回登记进去的那条 dict，方便调用方就地改。
         默认 ``actions=0``：只拦、只看，不弹窗 —— 要弹什么由 Python 自己调
@@ -512,6 +535,9 @@ class Host:
         if guard is not None:
             g_slot, g_value = list(guard)[:2]
             item.update({"guard_var": int(g_slot), "guard_value": int(g_value)})
+        if event is not None:
+            item["event_id"] = int(event)
+            item["actions"] = int(item.get("actions", 0)) | HOST_ACT_EVENT
         item.update(extra)
         entry["hooks"].append(item)
         self._sync_view(owner)
@@ -657,6 +683,44 @@ class Host:
             slot = base + i * HOST_HOOK_SIZE
             total += ctypes.c_int32.from_address(slot + off).value
         return total
+
+    def events(self, limit=None):
+        """把事件队列里攒下的条目读走，读的同时推进 tail。
+
+        钩子登记时写 ``event=事件号``（或手动 ``actions |= HOST_ACT_EVENT``），
+        引擎每命中一次就往环形队列塞一条，DLL 侧不关心谁在读、读多快；
+        队列满了丢最旧的，所以这里读到的是「最近的一批」。
+
+        返回 ``[{'id', 'hook', 'tick', 'a', 'b', 'c', 'd'}, ...]``，
+        ``a/b/c`` 是这次命中的第 1~3 个参数（截成 32 位），``d`` 是 ``vars[0]``。
+        """
+        block = self.block()
+        if block is None:
+            return []
+        base = block.address
+        ctrl = ctypes.cast(base + HOST_EV_CTRL_OFFSET,
+                           ctypes.POINTER(ctypes.c_int32 * 4)).contents
+        head = int(ctrl[0])
+        tail = int(ctrl[1])
+        if head <= tail:
+            return []
+        take = head - tail
+        if limit is not None:
+            take = min(take, max(0, int(limit)))
+        if take <= 0:
+            return []
+        out = []
+        for i in range(take):
+            index = (tail + i) % HOST_EVENT_COUNT
+            slot = ctypes.cast(base + HOST_EVENTS_OFFSET + index * HOST_EVENT_SIZE,
+                               ctypes.POINTER(HostEvent)).contents
+            out.append({
+                "id": int(slot.id), "hook": int(slot.hook), "tick": int(slot.tick),
+                "a": int(slot.a), "b": int(slot.b), "c": int(slot.c),
+                "d": int(slot.d),
+            })
+        ctrl[1] = tail + take
+        return out
 
     def hits(self, method=None, blocked=False, owner=None):
         """本插件钩子的命中次数。
