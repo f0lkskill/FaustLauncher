@@ -72,7 +72,12 @@
 #define WARP_TEXTS_OFFSET (WARP_HOOK_OFFSET + WARP_MAX_HOOKS * WARP_HOOK_SIZE)
 #define WARP_TEXT_SIZE    WARP_TEXT_LEN
 #define WARP_EXPORTS_OFFSET (WARP_TEXTS_OFFSET + WARP_MAX_TEXTS * WARP_TEXT_SIZE)
-#define WARP_MAP_BYTES    (WARP_EXPORTS_OFFSET + WARP_EXPORT_COUNT * WARP_NAME_MAX)
+#define WARP_EVENT_COUNT  512   /* 环形队列容量，满了丢最旧的 */
+#define WARP_EVENT_SIZE   28
+#define WARP_EV_CTRL_OFFSET (WARP_EXPORTS_OFFSET + WARP_EXPORT_COUNT * WARP_NAME_MAX)
+#define WARP_EV_CTRL_SIZE 16    /* head / tail / dropped / pad */
+#define WARP_EVENTS_OFFSET (WARP_EV_CTRL_OFFSET + WARP_EV_CTRL_SIZE)
+#define WARP_MAP_BYTES    (WARP_EVENTS_OFFSET + WARP_EVENT_COUNT * WARP_EVENT_SIZE)
 
 /* 状态 */
 #define WARP_ST_IDLE       0   /* 等游戏 */
@@ -96,6 +101,10 @@
 #define WARP_ACT_POPUP  0x01
 #define WARP_ACT_PANEL  0x02
 #define WARP_ACT_KILL   0x04
+#define WARP_ACT_EVENT  0x08   /* 把这次命中装进事件队列给 py 读 */
+
+/* 一个钩子要么只发事件、要么顺便触发行为，两种位互不干扰 */
+#define WARP_ACT_BEHAVIOR (WARP_ACT_POPUP | WARP_ACT_PANEL | WARP_ACT_KILL)
 
 /* 钩子标志 */
 #define WARP_HF_BLOCK   0x01
@@ -153,6 +162,17 @@ typedef struct _WARP_HOOK {
     int  text_base;                /* 244 文案从第几句开始挑（多插件分段用） */
     int  reserved[2];              /* 248 */
 } WARP_HOOK;                       /* 256 */
+
+/* 环形队列里的一个事件：py 侧按 events() 批量读走，读完推进 tail。 */
+typedef struct _WARP_EVENT {
+    int id;     /* 0  事件号（hook.event_id，0 时用钩子下标） */
+    int hook;   /* 4  哪个钩子产生的 */
+    int tick;   /* 8  GetTickCount 低 32 位 */
+    int a;      /* 12 第 1 个参数（截成 int） */
+    int b;      /* 16 第 2 个参数 */
+    int c;      /* 20 第 3 个参数 */
+    int d;      /* 24 vars[0] 的快照，省一次读 */
+} WARP_EVENT;   /* 28 */
 
 /* ------------------------------------------------------------------ */
 /* il2cpp 接口表（顺序必须和 il2cpp-api-names.txt / Python 侧一致）     */
