@@ -260,6 +260,14 @@ OFFSET_KEYS = (
 )
 
 
+# 只缓存对象、不发事件的那两种读法各自占一个对象槽。
+# 0：``cache_self`` 抓到的对象；1：``cache_arg1`` 抓到的对象。
+CACHE_SLOTS = {
+    KIND_CACHE_SELF: 0,
+    KIND_CACHE_ARG1: 1,
+}
+
+
 def hook_spec(kind, klass, method, offsets=None, **extra):
     """把一种读法翻译成 `Host.hook()` 能直接吃的参数。
 
@@ -286,6 +294,12 @@ def hook_spec(kind, klass, method, offsets=None, **extra):
         'native': list(KIND_NATIVE[kind]),
         'kind': kind,
     }
+    # 只缓存对象、不发事件的读法：把指针留在对象槽里，等采样侧回读。
+    # 槽号在 CACHE_SLOTS 里定死，同一类读法共用一格 —— 它们抓的是同一个
+    # 存档管理器对象，谁后命中谁的值就是最新的一份。
+    slot = CACHE_SLOTS.get(kind)
+    if slot is not None:
+        spec['cache'] = (0 if kind == KIND_CACHE_SELF else 1, slot)
     spec.update(extra)
     return spec
 

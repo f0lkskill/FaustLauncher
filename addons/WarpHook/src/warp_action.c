@@ -99,6 +99,15 @@ int warp_probe_int(const char *klass_name, const char *method_name, void *obj)
  * 返回值是位掩码：bit0 = 拦掉原函数（WARP_HF_BLOCK 且没被参数门放行），
  * bit1 = 本次要执行动作。拆成"先判定再执行"，是为了让 detour 能按参数
  * 决定放行 —— NoGacha 的「付费单抽不拦」就是靠 guard_index/guard_value。 */
+/* 对象槽区的起点。槽里存的是 void*，读侧可以按地址直接读。
+ * 放在共享内存最后一段，所以基址就是 g_hdr 加固定偏移。 */
+static void **warp_objects(void)
+{
+    if (!g_hdr)
+        return NULL;
+    return (void **)((char *)g_hdr + WARP_OBJECTS_OFFSET);
+}
+
 /* 读之前先问系统这段内存能不能读。
  *
  * 插件把偏移写错一个字节就会崩游戏 —— 真实发生过：把场景状态（0~15 的枚举）
@@ -156,7 +165,22 @@ static int warp_read_chain(const WARP_READ *r, void *self, int argc,
     case 4:  p = a4;   break;
     case 5:  p = a5;   break;
     case 6:  p = a6;   break;
-    default: return 0;
+    default: {
+        /* 0x100 + n = 从第 n 个对象槽出发。槽里的指针是「上一次某个钩子命中时
+         * 缓下来的」，此刻对象可能已经换了甚至销毁了 —— 后面每一步都会先问
+         * warp_can_read，读到坏地址就当这次没读到。 */
+        int slot;
+        void **objs;
+
+        if (r->arg < WARP_OBJ_ARG_BASE)
+            return 0;
+        slot = r->arg - WARP_OBJ_ARG_BASE;
+        if (slot < 0 || slot >= WARP_OBJECT_COUNT)
+            return 0;
+        objs = warp_objects();
+        p = objs ? objs[slot] : NULL;
+        break;
+    }
     }
     if (!p)
         return 0;
@@ -290,6 +314,26 @@ static void warp_emit_event(int hook_index, WARP_HOOK *h, void *self,
     out[3] = argc > 3 ? (int)(intptr_t)a4 : g_hdr->vars[0];
     for (i = 4; i < WARP_EVENT_SLOTS; i++)
         out[i] = 0;
+    /* 先落对象槽，再跑读链：同一条钩子既想「记住这个对象」又想「顺手读两个值」
+     * 的时候，读链可以直接写 arg=0x100+槽号 走刚缓存下来的指针。 */
+    if (h->cache_arg >= 0 && h->cache_slot >= 0 && h->cache_slot < WARP_OBJECT_COUNT) {
+        void **objs = warp_objects();
+        void *cached = NULL;
+
+        switch (h->cache_arg) {
+        case 0:  cached = self; break;
+        case 1:  cached = a1;   break;
+        case 2:  cached = a2;   break;
+        case 3:  cached = a3;   break;
+        case 4:  cached = a4;   break;
+        case 5:  cached = a5;   break;
+        case 6:  cached = a6;   break;
+        default: break;
+        }
+        if (objs && cached)
+            objs[h->cache_slot] = cached;
+    }
+
     warp_apply_reads(h, self, argc, a1, a2, a3, a4, a5, a6, out);
 
     /* 值没变就不入队。必须先跑完读链才知道变没变，所以这段在自增 head 之前：

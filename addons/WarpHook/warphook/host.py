@@ -11,6 +11,7 @@ import os, sys, time
 from . import env
 from .base import (
     SharedMap,
+    read_chain,
     _valid_snapshot,
     ensure_exports,
     export_mapped,
@@ -88,7 +89,7 @@ HOST_READ_MAX = 64
 HOST_READ_SIZE = 48
 
 
-HOST_HOOK_SIZE = 264
+HOST_HOOK_SIZE = 272
 HOST_TEXTS_OFFSET = HOST_HOOK_OFFSET + HOST_MAX_HOOKS * HOST_HOOK_SIZE
 HOST_TEXT_SIZE = HOST_TEXT_LEN
 HOST_EXPORTS_OFFSET = HOST_TEXTS_OFFSET + HOST_MAX_TEXTS * HOST_TEXT_SIZE
@@ -99,7 +100,11 @@ HOST_EVENT_COUNT = 2048
 HOST_EVENT_SIZE = 44
 HOST_EVENT_SLOTS = 8    # 读链的 out 能写到 0..7
 HOST_READ_OFFSET = HOST_EVENTS_OFFSET + HOST_EVENT_COUNT * HOST_EVENT_SIZE
-HOST_MAP_BYTES = HOST_READ_OFFSET + HOST_READ_MAX * HOST_READ_SIZE
+HOST_OBJECT_COUNT = 32      # 对象槽个数（与 C 侧 WARP_OBJECT_COUNT 一致）
+HOST_OBJECT_SIZE = 8        # 一个 void*
+HOST_OBJECTS_OFFSET = HOST_READ_OFFSET + HOST_READ_MAX * HOST_READ_SIZE
+HOST_OBJ_ARG_BASE = 0x100   # 读取链的 arg 写 0x100+n = 从第 n 个对象槽出发
+HOST_MAP_BYTES = HOST_OBJECTS_OFFSET + HOST_OBJECT_COUNT * HOST_OBJECT_SIZE
 
 #: 钩子动作位：把这次命中装进事件队列（见 :meth:`Host.events`）。
 HOST_ACT_EVENT = 0x08
@@ -226,6 +231,8 @@ class HostHook(ctypes.Structure):
         ("text_base", ctypes.c_int32),
         ("read_base", ctypes.c_int32),
         ("read_count", ctypes.c_int32),
+        ("cache_arg", ctypes.c_int32),
+        ("cache_slot", ctypes.c_int32),
         ("reserved", ctypes.c_int32 * 2),
     ]
 
@@ -564,7 +571,8 @@ class Host:
                                   ("flags", 0), ("hold_ms", 0), ("delay_ms", 0),
                                   ("guard_index", -1), ("guard_value", 0),
                                   ("probe_index", 0), ("probe_slot", -1),
-                                  ("guard_var", -1), ("text_base", 0)):
+                                  ("guard_var", -1), ("text_base", 0),
+                                  ("cache_arg", -1), ("cache_slot", -1)):
                 value = hook.get(name, default)
                 try:
                     value = int(value)
@@ -645,7 +653,7 @@ class Host:
 
     def hook(self, klass, method, argc=0, block=False, actions=None,
              probe=None, guard=None, event=None, reads=None, dedupe=False,
-             **extra):
+             cache=None, **extra):
         """登记一条钩子 —— 用法就是一次普通调用，不是填表格。
 
         ``klass`` / ``method`` 是要挂的方法（``argc`` 按「不含 this」数），
@@ -657,6 +665,9 @@ class Host:
         引擎在命中时按链把值读出来写进事件的 a/b/c/d —— 见 :meth:`reads`。
         ``dedupe=True`` 加 ``reads=`` 表示「读出来的值跟上次一样就别投递」，
         挂在 ``FixedUpdate`` 这类每帧调用的方法上时必开，否则事件队列会被刷爆。
+        ``cache=(参数序号, 槽号)`` 表示命中时把那个参数的指针留在对象槽里，
+        之后可以用 ``arg=0x100+槽号`` 的读链从它出发，或者 :meth:`object_ptr`
+        直接把地址拿出来 —— 这是老链路 `cache_self` 那类读法的通用版。
 
         返回登记进去的那条 dict，方便调用方就地改。
         默认 ``actions=0``：只拦、只看，不弹窗 —— 要弹什么由 Python 自己调
@@ -684,6 +695,9 @@ class Host:
         if event is not None:
             item["event_id"] = int(event)
             item["actions"] = int(item.get("actions", 0)) | HOST_ACT_EVENT
+        if cache is not None:
+            c_arg, c_slot = list(cache)[:2]
+            item.update({"cache_arg": int(c_arg), "cache_slot": int(c_slot)})
         if reads:
             item["reads"] = list(reads)
         item.update(extra)
@@ -979,6 +993,50 @@ class Host:
         return self.status()
 
     # ---- 主动命令：一行调用就让游戏做事 ---------------------------------
+    def object_ptr(self, slot):
+        """读对象槽里缓存的指针（钩子配了 ``cache=(arg, slot)`` 才会有值）。
+
+        对象槽是「先记住对象在哪儿，回头再摸」的通用版：老链路里
+        ``cache_self`` / ``cache_arg1`` 那几种读法就是靠它工作的 ——
+        钩子命中时把 self 或某个参数存进槽里，采样线程隔一会儿再来读。
+
+        槽里只有裸指针，不带引用计数：两次读取之间对象可能已经销毁，所以
+        拿到的地址随时可能失效。要读内容请用读取链（``arg=0x100+槽号``），
+        那条路上每一步都有 ``warp_can_read`` 校验；直接按地址读要自己当心。
+        """
+        slot = int(slot)
+        if slot < 0 or slot >= HOST_OBJECT_COUNT:
+            raise ValueError(f"对象槽 {slot} 超出 0..{HOST_OBJECT_COUNT - 1}")
+        block = self.block()
+        if block is None:
+            return 0
+        addr = block.address + HOST_OBJECTS_OFFSET + slot * HOST_OBJECT_SIZE
+        return int(ctypes.c_uint64.from_address(addr).value)
+
+    def read_object(self, slot, chain, kind="int"):
+        """从第 slot 个对象槽里存着的那个对象出发，按读取链读一个值。
+
+        这是「对象槽」的读端：钩子命中时把对象留在槽里（``cache=(arg, slot)``），
+        过一会儿再用这条链去读它的字段。链的写法与 ``reads=`` 完全一致，
+        读不到返回 ``None``（对象已销毁 / 链走岔了都会是 None，不会崩）。
+        """
+        ptr = self.object_ptr(slot)
+        if not ptr:
+            return None
+        return read_chain(ptr, chain, kind)
+
+    def object_slot(self, slot, out=0, kind="int"):
+        """把「从第 slot 个对象槽出发」写成一条读链，配合 ``reads=`` 使用。
+
+        例：``host.object_slot(3, out=0)`` 得到一条从槽 3 的对象里读第一个
+        int 的链；要跳偏移就自己拼 ``{'arg': 0x100 + 3, ...}``。
+        """
+        slot = int(slot)
+        if slot < 0 or slot >= HOST_OBJECT_COUNT:
+            raise ValueError(f"对象槽 {slot} 超出 0..{HOST_OBJECT_COUNT - 1}")
+        return {"arg": HOST_OBJ_ARG_BASE + slot, "off": [], "deref": [],
+                "out": int(out), "kind": kind}
+
     def _command(self, cmd_type, text="", timeout=2.0):
         """往命令槽里塞一条命令，等 DLL 在游戏主线程执行完。
 
