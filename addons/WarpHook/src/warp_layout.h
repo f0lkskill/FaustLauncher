@@ -88,6 +88,7 @@
 #define WARP_READ_FLOAT   1     /* float，按位取回来由 py 还原 */
 #define WARP_READ_BOOL    2     /* 只取低 8 位当 0/1 */
 #define WARP_READ_PTR     3     /* 指针，只给地址不追 */
+#define WARP_READ_OBSCURED 4    /* ObscuredInt：value = hidden ^ key（血量/理智那种混淆 int） */
 
 /* 状态 */
 #define WARP_ST_IDLE       0   /* 等游戏 */
