@@ -305,5 +305,6 @@ class WarpSource:
             'hooks': len(self._hooks),
             'events': self.events_out,
             'lines': self.lines_in,
+            'lost': int(getattr(self._host, 'events_lost', 0)) if self._host else 0,
             'running': self.running,
         }

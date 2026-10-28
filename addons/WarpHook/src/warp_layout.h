@@ -33,9 +33,9 @@
  *   432   WARP_HOOK[16]   16 × 264 = 4224
  *   4656  texts[256]     256 × 128 = 32768
  *   37424 exports[13]     13 × 64  = 832
- *   38272 events[512]   512 × 44  = 22528
- *   60800 reads[64]      64 × 48  = 3072
- *   63872 (结束)
+ *   38272 events[2048] 2048 × 44  = 90112
+ *   128384 reads[64]    64 × 48  = 3072
+ *   131456 (结束)
  * ===================================================================== */
 
 #include <windows.h>
@@ -74,7 +74,7 @@
 #define WARP_TEXTS_OFFSET (WARP_HOOK_OFFSET + WARP_MAX_HOOKS * WARP_HOOK_SIZE)
 #define WARP_TEXT_SIZE    WARP_TEXT_LEN
 #define WARP_EXPORTS_OFFSET (WARP_TEXTS_OFFSET + WARP_MAX_TEXTS * WARP_TEXT_SIZE)
-#define WARP_EVENT_COUNT  512   /* 环形队列容量，满了丢最旧的 */
+#define WARP_EVENT_COUNT  2048  /* 环形队列容量，满了丢最旧的（丢的时候 ctrl[2] 自增） */
 #define WARP_EVENT_SIZE   44
 #define WARP_EV_CTRL_OFFSET (WARP_EXPORTS_OFFSET + WARP_EXPORT_COUNT * WARP_NAME_MAX)
 #define WARP_EV_CTRL_SIZE 16    /* head / tail / dropped / pad */

@@ -304,8 +304,13 @@ static void warp_emit_event(int hook_index, WARP_HOOK *h, void *self,
     ctrl = (int *)((char *)g_hdr + WARP_EV_CTRL_OFFSET);
     head = InterlockedIncrement((LONG *)&ctrl[0]) - 1;
     tail = ctrl[1];
-    if (head - tail >= WARP_EVENT_COUNT)
+    if (head - tail >= WARP_EVENT_COUNT) {
+        /* 读侧跟不上，最旧的那批要被覆盖掉 —— 交给 Python 一个准确的数字，
+         * 它才知道「我漏了 37 条事件」，而不是默默丢。 */
+        int drop = head - tail - WARP_EVENT_COUNT + 1;
         ctrl[1] = head - WARP_EVENT_COUNT + 1;
+        InterlockedAdd((LONG *)&ctrl[2], drop);
+    }
 
     index = (int)(head % WARP_EVENT_COUNT);
     slot = (WARP_EVENT *)((char *)g_hdr + WARP_EVENTS_OFFSET) + index;

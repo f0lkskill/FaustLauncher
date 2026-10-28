@@ -95,7 +95,7 @@ HOST_EXPORTS_OFFSET = HOST_TEXTS_OFFSET + HOST_MAX_TEXTS * HOST_TEXT_SIZE
 HOST_EV_CTRL_OFFSET = HOST_EXPORTS_OFFSET + HOST_EXPORT_COUNT * HOST_NAME_MAX
 HOST_EV_CTRL_SIZE = 16
 HOST_EVENTS_OFFSET = HOST_EV_CTRL_OFFSET + HOST_EV_CTRL_SIZE
-HOST_EVENT_COUNT = 512
+HOST_EVENT_COUNT = 2048
 HOST_EVENT_SIZE = 44
 HOST_EVENT_SLOTS = 8    # 读链的 out 能写到 0..7
 HOST_READ_OFFSET = HOST_EVENTS_OFFSET + HOST_EVENT_COUNT * HOST_EVENT_SIZE
@@ -409,6 +409,10 @@ class Host:
             self.texts = []
             self._owners = {}
             self._block = None
+            # 引擎侧丢了多少条事件（读侧太慢、环形队列被覆盖）。累计值，
+            # 只增不减；events() 每读一次就把增量并进来。
+            self.events_lost = 0
+            self._dropped_seen = 0
             self._inited = True
 
         self._owners[owner] = {
@@ -846,6 +850,12 @@ class Host:
                            ctypes.POINTER(ctypes.c_int32 * 4)).contents
         head = int(ctrl[0])
         tail = int(ctrl[1])
+        # ctrl[2] 是引擎侧累计丢弃数：环形队列被读侧追不上时会覆盖最旧的。
+        # 差值累到 self.events_lost 上，成就那边才分得清「没发生」与「漏了」。
+        dropped = int(ctrl[2])
+        if dropped > self._dropped_seen:
+            self.events_lost += dropped - self._dropped_seen
+            self._dropped_seen = dropped
         if head <= tail:
             return []
         take = head - tail
