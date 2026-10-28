@@ -107,6 +107,8 @@ OUT_PRIMARY = 0     # 主值（伤害、hp、技能 id 等）
 OUT_SECONDARY = 1   # 次值（max hp、tier、oid 等）
 OUT_UNIT_ID = 2     # 单位 instance id
 OUT_ORIGIN_ID = 3   # 单位 origin id（角色静态 id）
+OUT_ACTOR = 4       # 行动：出手者 instance id
+OUT_COMMANDER = 5   # 行动：指令者 instance id
 
 
 def _read(arg, chain, out, kind='int'):
@@ -159,6 +161,23 @@ def action_skill(offsets, arg=1):
     ]
 
 
+def action_frame(offsets, arg=1):
+    """action 对象身上的四项：出手者、指令者、技能 id、技能层级。
+
+    `BattleActionModel::OnEndTurn(action, timing, info)` 的 action 是**第一个参数**
+    而不是 self（self 是 BattleActionModel 自己），所以 arg 默认 1。
+    """
+    skill = offsets['action_skill']
+    data = offsets['skill_data']
+    return [
+        _read(arg, [(offsets['action_actor_id'], False)], OUT_ACTOR),
+        _read(arg, [(offsets['action_commander_id'], False)], OUT_COMMANDER),
+        _read(arg, [(skill, True), (data, True), (offsets['skill_id'], False)], OUT_PRIMARY),
+        _read(arg, [(skill, True), (data, True), (offsets['skill_tier'], False)],
+              OUT_SECONDARY),
+    ]
+
+
 def attacker_origin_id(offsets, arg=3):
     """attacker → [+origin_id]，伤害钩子用它判断是哪一方打出来的。"""
     return [
@@ -203,7 +222,7 @@ _KIND_READS = {
     KIND_UNIT: lambda off: unit_frame(off),
     KIND_UNIT_INT_BOOL: lambda off: unit_frame(off),
     KIND_UNIT_GET_INT: lambda off: unit_frame(off),
-    KIND_ACTION_INT: lambda off: action_skill(off),
+    KIND_ACTION_INT: lambda off: action_frame(off),
     KIND_DAMAGE_ACTION: lambda off: (
         attacker_origin_id(off) + unit_vitals(off)
     ),

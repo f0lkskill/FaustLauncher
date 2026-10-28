@@ -36,10 +36,24 @@ FIRST_BATCH = (
     'unit_refresh_speed',
     'unit_set_random_speed',
     'unit_set_speed',
+    'unit_get_origin_speed',
     'unit_round_start',
-    'manager_on_round_start_before',
     'manager_init',
+    'action_on_end_turn',
+    'action_done_with_action',
 )
+
+#: 钩子的真实参数个数（**不含 this**）。
+#: `KIND_SIGNATURES` 里那个数是「老 thunk 从寄存器里取几个格子」，和
+#: `class_get_method_from_name` 要的参数个数不是一回事 —— 对不上就
+#: `method not found`，一个钩子都装不上。这里按 dump.cs 的实际签名写死。
+ARGC_OVERRIDE = {
+    'action_on_end_turn': 3,        # OnEndTurn(action, timing, info)
+    'action_done_with_action': 2,   # DoneWithAction(action, timing)
+}
+
+#: 行动类钩子读 action 对象，发 ACT 行。
+ACTION_KINDS = (WR.KIND_ACTION_INT,)
 
 #: 这些读法用八格 + 两行就能还原成老链路的语义。
 UNIT_KINDS = (WR.KIND_UNIT, WR.KIND_UNIT_INT_BOOL, WR.KIND_UNIT_GET_INT)
@@ -81,7 +95,7 @@ def build_hooks(names=None, offsets=None):
             'name': name,
             'klass': spec['klass'],
             'method': spec['method'],
-            'argc': spec['argc'],
+            'argc': ARGC_OVERRIDE.get(name, spec['argc']),
             'reads': spec['reads'],
             'event': EVENT_ID_BASE + index,
             'kind': kind,
@@ -91,6 +105,20 @@ def build_hooks(names=None, offsets=None):
         }
         hooks.append(hook)
     return hooks
+
+
+def action_lines(tag, ev):
+    """一个 action 事件还原成 ACT 行。
+
+    老 DLL 里这一行有七个字段，我们能从 action → skill → data 摸到其中四个：
+    出手者、指令者、技能 id、层级。`slot` / `tf` / `aoid` 要先读 coin 与 attacker，
+    读取链够不着，先给 -1 —— 规则引擎对缺字段本来就是按 -1 处理的。
+    """
+    return [
+        'ACT tag=%s actor=%d cmd=%d skid=%d slot=-1 tier=%d tf=-1 aoid=%d'
+        % (tag, int(ev.get('e', -1)), int(ev.get('f', -1)),
+           int(ev.get('a', -1)), int(ev.get('b', -1)), int(ev.get('e', -1))),
+    ]
 
 
 def _speed_int(raw):
@@ -131,6 +159,8 @@ def event_lines(kind, tag, ev):
     """按读法把事件翻成文本行。认不出的读法返回空列表（第一批不接）。"""
     if kind in UNIT_KINDS:
         return unit_lines(tag, ev)
+    if kind in ACTION_KINDS:
+        return action_lines(tag, ev)
     if kind in PLAIN_KINDS:
         return plain_lines(tag, ev)
     return []
