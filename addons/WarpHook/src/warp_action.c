@@ -142,6 +142,14 @@ static int warp_read_chain(const WARP_READ *r, void *self, int argc,
     case WARP_READ_BOOL:
         *out = (*(unsigned char *)p) ? 1 : 0;
         break;
+    case WARP_READ_OBSCURED: {
+        /* ObscuredInt { int key; int hidden; int fake; } → 值 = hidden ^ key */
+        int key = 0, hidden = 0;
+        memcpy(&key, p, sizeof(key));
+        memcpy(&hidden, (char *)p + 4, sizeof(hidden));
+        *out = hidden ^ key;
+        break;
+    }
     default:
         *out = *(int *)p;
         break;
