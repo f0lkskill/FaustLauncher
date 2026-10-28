@@ -2588,6 +2588,28 @@ if %errorlevel% equ 0 (
         log(f'插件 {name} ' + ('下载并解压完成' if ok else '下载失败'))
         return bool(ok)
 
+    def install_required_addon(self, name):
+        """给「必需插件」检查用的下载器：从云端条目装一个插件。
+
+        和用户在资源页点安装走同一条链路（``_install_addon_sync``），
+        所以它自己声明的依赖也会一并补齐。云端暂时没有条目就返回 False，
+        由调用方记日志、让对应功能降级，不阻塞启动。
+        """
+        want = str(name or '').strip()
+        if not want:
+            return False
+        try:
+            pages = self._get_cached_list('addon')
+        except Exception as exc:
+            print(f'读取云端插件列表失败（{want}）: {exc}')
+            return False
+        item = self._cloud_addon_item(pages, want)
+        url = str((item or {}).get('dowload_url') or '').strip()
+        if not url:
+            print(f'云端没有插件 {want} 的下载地址，跳过自动安装')
+            return False
+        return bool(self._install_addon_sync(want, url, pages))
+
     def download_addon(self, name, url):
         def _run():
             try:
@@ -3452,6 +3474,13 @@ def run_web_ui(debug: bool = False):
     core.mod_manager = ModManager()
 
     api = AppApi(core, window_holder)
+    # 插件载入早于 AppApi，那时还拿不到云端下载器；这里补一次必需插件检查，
+    # 缺 WarpHook 会就地下载并重载全部插件（ensure_required 内部幂等）。
+    try:
+        core.addon_manager.required_installer = api.install_required_addon
+        core.addon_manager.ensure_required()
+    except Exception as e:
+        print(f"必需插件检查失败: {e}")
     try:
         from functions.pages.notice.version_notify import register_web_pusher
         register_web_pusher(api.push_version_modal)
