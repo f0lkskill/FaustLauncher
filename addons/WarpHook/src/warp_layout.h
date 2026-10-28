@@ -127,6 +127,7 @@
 /* 钩子标志 */
 #define WARP_HF_BLOCK   0x01
 #define WARP_HF_ONCE    0x02   /* 只触发一次 */
+#define WARP_HF_DEDUPE  0x04   /* 读链读出来的值没变就不投递事件 */
 #define WARP_HF_FIRED   0x0100 /* 运行时标记：已经触发过 */
 
 typedef struct _WARP_HEADER {

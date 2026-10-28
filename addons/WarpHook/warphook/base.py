@@ -419,15 +419,30 @@ def shm_open(name, size, struct_cls, magic_field=None, magic_value=None,
 _export_cache = None
 
 
+def _addon_root():
+    """插件根目录（含 ``addon_info.json`` 的那层）。
+
+    拆包之后 ``__file__`` 在 ``warphook/`` 子目录里，直接 ``dirname`` 会指到子包，
+    所以统一往上找到 ``addon_info.json`` 为止 —— 宿主 DLL、基准名字表这些跟着
+    插件走的资源都在那一层。
+    """
+    here = os.path.dirname(os.path.abspath(__file__))
+    parent = here
+    for _ in range(4):
+        if os.path.isfile(os.path.join(parent, "addon_info.json")):
+            return parent
+        parent = os.path.dirname(parent)
+    return os.path.dirname(here)
+
+
 def names_table():
     """返回 WarpHook 自带的那份 il2cpp 基准名字表路径。
 
-    表放在本插件目录里（``il2cpp-api-names.txt``），因此 WarpHook 完全自包含。
+    表放在插件根目录（``il2cpp-api-names.txt``），因此 WarpHook 完全自包含。
     文件缺失时返回空串，交给 :func:`functions.base.il2cpp_exports.resolve`
     用它自己的默认来源（新版启动器内置了同一张表）。
     """
-    path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                        "il2cpp-api-names.txt")
+    path = os.path.join(_addon_root(), "il2cpp-api-names.txt")
     return path if os.path.isfile(path) else ""
 
 

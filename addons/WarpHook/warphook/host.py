@@ -125,6 +125,7 @@ ACT_KILL = 0x04      # 结束游戏进程
 # 钩子标志（与 WARP_HF_* 一致）
 HF_BLOCK = 0x01      # 跳过原方法（用于「拦截」类插件）
 HF_ONCE = 0x02       # 只触发一次
+HF_DEDUPE = 0x04     # 读链的值没变就不投递事件（配了 reads 才有意义）
 
 HOST_STATUS_TEXT = {
     0: "等待游戏",
@@ -633,7 +634,8 @@ class Host:
         ensure_exports(block, HOST_EXPORT_ORDER, HOST_EXPORTS_OFFSET, HOST_NAME_MAX)
 
     def hook(self, klass, method, argc=0, block=False, actions=None,
-             probe=None, guard=None, event=None, reads=None, **extra):
+             probe=None, guard=None, event=None, reads=None, dedupe=False,
+             **extra):
         """登记一条钩子 —— 用法就是一次普通调用，不是填表格。
 
         ``klass`` / ``method`` 是要挂的方法（``argc`` 按「不含 this」数），
@@ -643,6 +645,8 @@ class Host:
         ``event=事件号`` 表示每次命中都往事件队列塞一条（见 :meth:`events`）。
         ``reads=[...]`` 是读取链列表，每项 ``(参数序号, 偏移链, 落点, 类型)``，
         引擎在命中时按链把值读出来写进事件的 a/b/c/d —— 见 :meth:`reads`。
+        ``dedupe=True`` 加 ``reads=`` 表示「读出来的值跟上次一样就别投递」，
+        挂在 ``FixedUpdate`` 这类每帧调用的方法上时必开，否则事件队列会被刷爆。
 
         返回登记进去的那条 dict，方便调用方就地改。
         默认 ``actions=0``：只拦、只看，不弹窗 —— 要弹什么由 Python 自己调
@@ -658,6 +662,8 @@ class Host:
                 "actions": 0 if actions is None else int(actions)}
         if block:
             item["flags"] = int(extra.pop("flags", 0)) | int(HF_BLOCK)
+        if dedupe:
+            item["flags"] = int(extra.pop("flags", item.get("flags", 0))) | int(HF_DEDUPE)
         if probe is not None:
             p_class, p_method, p_index, p_slot = (list(probe) + [0, 0])[:4]
             item.update({"probe_class": p_class, "probe_method": p_method,
