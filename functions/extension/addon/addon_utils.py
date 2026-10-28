@@ -46,6 +46,9 @@ class AddonManager:
         self.namespaces = NamespaceRegistry()
         # 载入时被依赖关系挡下的插件 -> 原因，供界面提示
         self.dep_skipped: Dict[str, str] = {}
+        # 必需插件的下载器（由 app 层注入）。签名：callable(addon_name) -> bool。
+        # 交给外部注入是为了让 extension 层不必知道云端下载怎么做。
+        self.required_installer: Optional[Any] = None
         self.scan_addons()
 
     def register_tray_item(self, item) -> None:
@@ -506,7 +509,29 @@ class AddonManager:
             print(f"删除插件失败: {e}")
             return False
         
+    def ensure_required(self) -> Dict[str, Dict[str, Any]]:
+        """补齐必需插件；下载器还没注入时只是记录缺失原因。
+
+        下载完成后会重扫插件目录并重载，让新装上的插件立刻生效。
+        """
+        try:
+            from functions.extension.addon.required_addons import ensure_all
+        except Exception as exc:
+            print(f"载入必需插件声明失败: {exc}")
+            return {}
+        result = ensure_all(installer=self.required_installer, root=self.addons_dir)
+        if any((state or {}).get('status') == 'installed' for state in result.values()):
+            self.scan_addons()
+            try:
+                self.reload_all_addons()
+            except Exception as exc:
+                print(f"重载插件失败: {exc}")
+        return result
+
     def run_all_addon(self, ADDON_ARG: Optional[Dict[str, Any]] = None) -> None:
+        # 先把「必需插件」补齐（例如 WarpHook）。缺失时不阻塞启动：
+        # 下载失败只是让依赖它的功能降级，其它插件照常载入。
+        self.ensure_required()
         if not self.addon_names:
             self.scan_addons()
         self.dep_skipped = {}
