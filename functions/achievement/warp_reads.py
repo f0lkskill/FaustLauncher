@@ -166,12 +166,43 @@ def attacker_origin_id(offsets, arg=3):
     ]
 
 
+# 单位一帧的八格布局：老链路一次命中要发 SPD 和 VAL 两行，一行五六个数，
+# 四格装不下。八格刚好一次装完，桥那边就不用把一条钩子拆成两条再配对。
+SLOT_IID = 0
+SLOT_OID = 1
+SLOT_HP = 2
+SLOT_MAX_HP = 3
+SLOT_MP = 4
+SLOT_ORIGIN_SPEED = 5
+SLOT_OVERWRITED_SPEED = 6
+SLOT_INT_SPEED_TURN = 7
+
+
+def unit_frame(offsets):
+    """self 身上的八个字段，一次读完：编号、模板、血量三件套、速度三件套。
+
+    速度那三个是**定点数**（存的是 ×1000 的值），原样带回 Python 再除，
+    免得在这里做整数除法把 -1 哨兵变成 0。
+    """
+    state = offsets['unit_state']
+    return [
+        _read(0, [(offsets['unit_instance_id'], False)], SLOT_IID),
+        _read(0, [(offsets['unit_origin_id'], False)], SLOT_OID),
+        _read(0, [(state, True), (offsets['state_hp'], False)], SLOT_HP, 'obscured'),
+        _read(0, [(state, True), (offsets['state_max_hp'], False)], SLOT_MAX_HP, 'obscured'),
+        _read(0, [(state, True), (offsets['state_mp'], False)], SLOT_MP, 'obscured'),
+        _read(0, [(offsets['unit_origin_speed'], False)], SLOT_ORIGIN_SPEED),
+        _read(0, [(offsets['unit_overwrited_speed'], False)], SLOT_OVERWRITED_SPEED),
+        _read(0, [(offsets['unit_int_speed_turn'], False)], SLOT_INT_SPEED_TURN),
+    ]
+
+
 # 每种读法「默认」读哪些槽。调用方可以在此基础上增删。
 _KIND_READS = {
     KIND_PLAIN: lambda off: [],
-    KIND_UNIT: lambda off: unit_identity(off) + unit_vitals(off),
-    KIND_UNIT_INT_BOOL: lambda off: unit_identity(off) + unit_vitals(off),
-    KIND_UNIT_GET_INT: lambda off: unit_identity(off) + unit_vitals(off),
+    KIND_UNIT: lambda off: unit_frame(off),
+    KIND_UNIT_INT_BOOL: lambda off: unit_frame(off),
+    KIND_UNIT_GET_INT: lambda off: unit_frame(off),
     KIND_ACTION_INT: lambda off: action_skill(off),
     KIND_DAMAGE_ACTION: lambda off: (
         attacker_origin_id(off) + unit_vitals(off)

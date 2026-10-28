@@ -24,6 +24,11 @@ NCL_SEEN_MAX = 96
 HOOK_NAME_LEN = 40
 TARGET_PROCESS = "LimbusCompany.exe"
 
+#: 事件从哪来：插件自带的 C 钩子，还是 WarpHook 的共享宿主。
+#: 两者的产物是同一种文本行（`VAL tag=... hp=...`），所以规则引擎完全共用。
+ENGINE_DLL = "dll"
+ENGINE_WARP = "warphook"
+
 BUFF_WATCH_MAX = 32
 
 def fnv1a64(text) -> int:
@@ -1169,8 +1174,13 @@ def describe_hook_table(table: dict) -> str:
 class BattleWatch:
 
     def __init__(self, log_callback=None, poll_interval: float = 0.25,
-                 process_name: str = TARGET_PROCESS, verbose: bool = False) -> None:
+                 process_name: str = TARGET_PROCESS, verbose: bool = False,
+                 engine: str = ENGINE_DLL) -> None:
         self.log_callback = log_callback or (lambda _m: None)
+        # 谁来挂钩子：老链路自带 battle_watch.dll，或者借 WarpHook 的宿主。
+        # 默认仍是老链路 —— 新引擎要能随时切回去，才谈得上下线。
+        self.engine = engine
+        self._source = None
         self.poll_interval = max(0.1, float(poll_interval))
         self.process_name = process_name
         self.verbose = verbose
@@ -1208,16 +1218,35 @@ class BattleWatch:
         self._preflight: dict = {}
 
     def start(self) -> bool:
-        if self._thread and self._thread.is_alive():
+        if self.running:
             return True
+        if self.engine == ENGINE_WARP:
+            return self._start_warp()
         self._stop.clear()
         self._thread = threading.Thread(target=self._run_guarded, name="battle-watch",
                                         daemon=True)
         self._thread.start()
         return True
 
+    def _start_warp(self) -> bool:
+        """用 WarpHook 挂钩子：事件照样走 :meth:`handle_line`，规则引擎不用改。"""
+        from functions.achievement.warp_source import WarpSource
+        self._stop.clear()
+        source = WarpSource(self, log=self._log)
+        if not source.attach():
+            self._log("[BattleWatch] WarpHook 引擎没起来，成就事件不会产生")
+            return False
+        self._source = source
+        source.start()
+        self._phase = "WarpHook 引擎"
+        self._write_status(force=True)
+        return True
+
     def stop(self) -> None:
         self._stop.set()
+        if self._source is not None:
+            self._source.stop()
+            self._source = None
         if self._thread:
             self._thread.join(timeout=3)
         self._eject()
@@ -1226,7 +1255,9 @@ class BattleWatch:
 
     @property
     def running(self) -> bool:
-        return bool(self._thread and self._thread.is_alive() and not self._stop.is_set())
+        if self._thread and self._thread.is_alive() and not self._stop.is_set():
+            return True
+        return bool(self._source is not None and self._source.running)
 
     def settle_turn(self, reason: str = "", fallback_immediate: bool = True,
                     only_skills: bool = False) -> list:
@@ -2555,9 +2586,11 @@ def get_watch(log_callback=None) -> BattleWatch:
         return _watch
 
 def start_battle_watch(log_callback=None, process_name: str = TARGET_PROCESS,
-                      verbose: bool | None = None) -> BattleWatch:
+                      verbose: bool | None = None,
+                      engine: str = ENGINE_DLL) -> BattleWatch:
     watch = get_watch(log_callback)
     watch.process_name = process_name
+    watch.engine = engine
     watch.verbose = log_verbose_enabled() if verbose is None else bool(verbose)
     watch.start()
     return watch

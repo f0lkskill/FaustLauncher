@@ -25,9 +25,22 @@ class _ScratchAddonManager:
     def _refresh_tray_menu(self) -> None:
         pass
 
+#: 最近创建的那个管理器。命名空间、已载入模块都挂在实例上，而插件是 exec 进
+#: 各自模块的，谁也拿不到「启动器正在用的是哪个实例」。成就这类非插件功能要借
+#: WarpHook 的命名空间时，只能靠这个引用找到它。
+_current_manager = None
+
+
+def current_manager():
+    """当前进程里的插件管理器（最近创建的那个），没有就返回 None。"""
+    return _current_manager
+
+
 class AddonManager:
 
     def __init__(self, menu_items=None, app=None) -> None:
+        global _current_manager
+        _current_manager = self
         self.menu_items = menu_items if menu_items is not None else []
         self.app = app
         self.gamestart_funcs: List[Any] = []
