@@ -15,7 +15,7 @@
  * 而拦截判定必须在原函数之前，否则拦不住。 */
 #define WARP_THUNK_0(n) \
     static void __fastcall warp_thunk0_##n(void *self) { \
-        int act = warp_on_event(n, 0, NULL, NULL, NULL); \
+        int act = warp_on_event(n, self, 0, NULL, NULL, NULL); \
         if (g_slots[n].installed && !(act & 0x1)) { \
             ((void (__fastcall *)(void *))g_slots[n].original)(self); \
         } \
@@ -23,7 +23,7 @@
     }
 #define WARP_THUNK_1(n) \
     static void __fastcall warp_thunk1_##n(void *self, void *a1) { \
-        int act = warp_on_event(n, 1, a1, NULL, NULL); \
+        int act = warp_on_event(n, self, 1, a1, NULL, NULL); \
         if (g_slots[n].installed && !(act & 0x1)) { \
             ((void (__fastcall *)(void *, void *))g_slots[n].original)(self, a1); \
         } \
@@ -31,7 +31,7 @@
     }
 #define WARP_THUNK_2(n) \
     static void __fastcall warp_thunk2_##n(void *self, void *a1, void *a2) { \
-        int act = warp_on_event(n, 2, a1, a2, NULL); \
+        int act = warp_on_event(n, self, 2, a1, a2, NULL); \
         if (g_slots[n].installed && !(act & 0x1)) { \
             ((void (__fastcall *)(void *, void *, void *))g_slots[n].original)(self, a1, a2); \
         } \
@@ -39,7 +39,7 @@
     }
 #define WARP_THUNK_3(n) \
     static void __fastcall warp_thunk3_##n(void *self, void *a1, void *a2, void *a3) { \
-        int act = warp_on_event(n, 3, a1, a2, a3); \
+        int act = warp_on_event(n, self, 3, a1, a2, a3); \
         if (g_slots[n].installed && !(act & 0x1)) { \
             ((void (__fastcall *)(void *, void *, void *, void *))g_slots[n].original)(self, a1, a2, a3); \
         } \

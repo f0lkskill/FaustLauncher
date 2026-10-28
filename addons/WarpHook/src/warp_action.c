@@ -99,16 +99,91 @@ int warp_probe_int(const char *klass_name, const char *method_name, void *obj)
  * 返回值是位掩码：bit0 = 拦掉原函数（WARP_HF_BLOCK 且没被参数门放行），
  * bit1 = 本次要执行动作。拆成"先判定再执行"，是为了让 detour 能按参数
  * 决定放行 —— NoGacha 的「付费单抽不拦」就是靠 guard_index/guard_value。 */
+/* 沿着一条读取链取值。返回 1 表示读到了，0 表示中途碰到空指针。
+ *
+ * 空指针在 il2cpp 里很常见（对象还没初始化、目标已销毁），所以这里一律
+ * 静默返回 0，让上层保留上一次的值 —— 抛出或打印都会把游戏卡住。 */
+static int warp_read_chain(const WARP_READ *r, void *self, int argc,
+                           void *a1, void *a2, void *a3, int *out)
+{
+    void *p;
+    int i;
+
+    if (!r || !out)
+        return 0;
+
+    switch (r->arg) {
+    case 0:  p = self; break;
+    case 1:  p = a1;   break;
+    case 2:  p = a2;   break;
+    case 3:  p = a3;   break;
+    default: return 0;
+    }
+    if (!p)
+        return 0;
+
+    for (i = 0; i < r->nsteps && i < WARP_READ_STEPS; i++) {
+        p = (char *)p + r->off[i];
+        if (r->deref[i]) {
+            p = *(void **)p;
+            if (!p)
+                return 0;
+        }
+    }
+
+    switch (r->kind) {
+    case WARP_READ_FLOAT: {
+        float f = *(float *)p;
+        int bits;
+        memcpy(&bits, &f, sizeof(bits));
+        *out = bits;
+        break;
+    }
+    case WARP_READ_BOOL:
+        *out = (*(unsigned char *)p) ? 1 : 0;
+        break;
+    default:
+        *out = *(int *)p;
+        break;
+    }
+    return 1;
+}
+
+/* 把钩子声明的读链全跑一遍，结果写进 out[4]（事件的 a/b/c/d）。 */
+static void warp_apply_reads(WARP_HOOK *h, void *self, int argc,
+                             void *a1, void *a2, void *a3, int *out)
+{
+    const WARP_READ *table;
+    int i;
+
+    if (!h || !g_hdr || h->read_count <= 0)
+        return;
+    if (h->read_base < 0 || h->read_base >= WARP_READ_MAX)
+        return;
+
+    table = (const WARP_READ *)((char *)g_hdr + WARP_READ_OFFSET);
+    for (i = 0; i < h->read_count && i < WARP_READ_MAX; i++) {
+        const WARP_READ *r = &table[h->read_base + i];
+        int slot = r->out;
+        if (h->read_base + i >= WARP_READ_MAX)
+            break;
+        if (slot < 0 || slot > 3)
+            continue;
+        warp_read_chain(r, self, argc, a1, a2, a3, &out[slot]);
+    }
+}
+
 /* 把这次命中装进环形队列。head 只增不减，槽位取模；写之前先保证不越过
  * tail 一圈，越了就把 tail 往前推（丢最旧的，dropped++）。
  * 全程只用 Interlocked，读侧（Python）只读 head 与槽内容，不会撕裂。 */
-static void warp_emit_event(int hook_index, WARP_HOOK *h,
+static void warp_emit_event(int hook_index, WARP_HOOK *h, void *self,
                             int argc, void *a1, void *a2, void *a3)
 {
     int *ctrl;
     WARP_EVENT *slot;
     LONG head, tail;
     int index;
+    int out[4];
 
     if (!g_hdr)
         return;
@@ -124,13 +199,21 @@ static void warp_emit_event(int hook_index, WARP_HOOK *h,
     slot->id = h->event_id ? h->event_id : hook_index;
     slot->hook = hook_index;
     slot->tick = (int)GetTickCount();
-    slot->a = argc > 0 ? (int)(intptr_t)a1 : 0;
-    slot->b = argc > 1 ? (int)(intptr_t)a2 : 0;
-    slot->c = argc > 2 ? (int)(intptr_t)a3 : 0;
-    slot->d = g_hdr->vars[0];
+    /* 默认放原始参数，配了读链就被读出来的值覆盖 —— 成就那类消费者要的是
+     * 「伤害多少、剩多少血」，不是「第 2 个参数是个指针」。 */
+    out[0] = argc > 0 ? (int)(intptr_t)a1 : 0;
+    out[1] = argc > 1 ? (int)(intptr_t)a2 : 0;
+    out[2] = argc > 2 ? (int)(intptr_t)a3 : 0;
+    out[3] = g_hdr->vars[0];
+    warp_apply_reads(h, self, argc, a1, a2, a3, out);
+    slot->a = out[0];
+    slot->b = out[1];
+    slot->c = out[2];
+    slot->d = out[3];
 }
 
-int warp_on_event(int hook_index, int argc, void *a1, void *a2, void *a3)
+int warp_on_event(int hook_index, void *self, int argc,
+                  void *a1, void *a2, void *a3)
 {
     warp_pump_commands();
     WARP_HOOK *h;
@@ -196,7 +279,7 @@ int warp_on_event(int hook_index, int argc, void *a1, void *a2, void *a3)
     /* 事件优先于行为：只要钩子声明了 ACT_EVENT 就入队，哪怕它同时什么都不做。
      * 成就、统计这类消费者要的就是「发生过什么」，不该和弹窗/拦截抢语义。 */
     if (h->actions & WARP_ACT_EVENT)
-        warp_emit_event(hook_index, h, argc, a1, a2, a3);
+        warp_emit_event(hook_index, h, self, argc, a1, a2, a3);
 
     /* 没有行为位的纯旁观钩子（NoGacha 的 OpenGachaAlarmUI）只用来看参数与发事件，
      * 不弹窗、不刷新去重窗，免得把同一次操作里紧跟的拦截钩子挤掉。 */

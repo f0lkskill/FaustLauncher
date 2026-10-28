@@ -68,7 +68,7 @@
 
 #define WARP_HEADER_SIZE  432   /* 160 状态头 + 命令槽 4*4 + 256 字节文本 */
 #define WARP_HOOK_OFFSET  WARP_HEADER_SIZE
-#define WARP_HOOK_SIZE    256
+#define WARP_HOOK_SIZE    264
 #define WARP_TEXTS_OFFSET (WARP_HOOK_OFFSET + WARP_MAX_HOOKS * WARP_HOOK_SIZE)
 #define WARP_TEXT_SIZE    WARP_TEXT_LEN
 #define WARP_EXPORTS_OFFSET (WARP_TEXTS_OFFSET + WARP_MAX_TEXTS * WARP_TEXT_SIZE)
@@ -77,7 +77,17 @@
 #define WARP_EV_CTRL_OFFSET (WARP_EXPORTS_OFFSET + WARP_EXPORT_COUNT * WARP_NAME_MAX)
 #define WARP_EV_CTRL_SIZE 16    /* head / tail / dropped / pad */
 #define WARP_EVENTS_OFFSET (WARP_EV_CTRL_OFFSET + WARP_EV_CTRL_SIZE)
-#define WARP_MAP_BYTES    (WARP_EVENTS_OFFSET + WARP_EVENT_COUNT * WARP_EVENT_SIZE)
+#define WARP_READ_MAX     64    /* 全进程共用的读取链条数 */
+#define WARP_READ_SIZE    48
+#define WARP_READ_STEPS   4     /* 一条链最多走几跳 */
+#define WARP_READ_OFFSET  (WARP_EVENTS_OFFSET + WARP_EVENT_COUNT * WARP_EVENT_SIZE)
+#define WARP_MAP_BYTES    (WARP_READ_OFFSET + WARP_READ_MAX * WARP_READ_SIZE)
+
+/* 读出来的值怎么解释 */
+#define WARP_READ_INT     0     /* int32 */
+#define WARP_READ_FLOAT   1     /* float，按位取回来由 py 还原 */
+#define WARP_READ_BOOL    2     /* 只取低 8 位当 0/1 */
+#define WARP_READ_PTR     3     /* 指针，只给地址不追 */
 
 /* 状态 */
 #define WARP_ST_IDLE       0   /* 等游戏 */
@@ -160,8 +170,26 @@ typedef struct _WARP_HOOK {
     int  probe_slot;               /* 236 结果写进 vars[几] */
     int  guard_var;                /* 240 参数门改成比较 vars[几]（>=0 生效） */
     int  text_base;                /* 244 文案从第几句开始挑（多插件分段用） */
-    int  reserved[2];              /* 248 */
-} WARP_HOOK;                       /* 256 */
+    int  read_base;                /* 248 第一条读取链在全局表里的下标 */
+    int  read_count;               /* 252 用了几条 */
+    int  reserved[2];              /* 256 运行时标记：reserved[0]=命中数 reserved[1]=拦下数 */
+} WARP_HOOK;                       /* 264 */
+
+/* 一条读取链：从某个参数出发，按偏移跳 nsteps 次，把落点当成一个值读出来。
+ *
+ * il2cpp 里的「取字段」只有两种动作：把当前指针加上偏移（内嵌 struct），
+ * 或者先解引用再算（class 引用）。所以每一步带一个 deref 位就够了，
+ * 不需要知道字段类型 —— 类型只影响最后一步怎么解释（kind）。
+ *
+ * 钩子把 read_base / read_count 写在 reserved[0] / reserved[1] 里。 */
+typedef struct _WARP_READ {
+    int arg;               /* 0  从第几个参数出发（0 = self，1..3 = 第 1..3 个参数） */
+    int nsteps;            /* 4  走几跳（0 = 直接用参数本身） */
+    int kind;              /* 8  WARP_READ_* */
+    int out;               /* 12 写进事件的哪一格（0=a 1=b 2=c 3=d） */
+    int off[WARP_READ_STEPS];    /* 16 每跳的偏移 */
+    int deref[WARP_READ_STEPS];  /* 32 每跳是否先解引用 */
+} WARP_READ;                /* 48 */
 
 /* 环形队列里的一个事件：py 侧按 events() 批量读走，读完推进 tail。 */
 typedef struct _WARP_EVENT {
