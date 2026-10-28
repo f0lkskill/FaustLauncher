@@ -209,12 +209,16 @@ WARP_HEADER 432B   magic version enabled hooked status last_error heartbeat stan
                    evt_count hook_installed hook_total panel_step last_event fired
                    ga_found popup_ok boot_at(u64) dedupe_ms reserved0 log_tail[48] vars[8]
                    cmd_seq cmd_ack cmd_type cmd_result cmd_text[256]   ← 命令槽
-WARP_HOOK   256B×16 klass[48] method[48] argc event_id every chance actions flags
+WARP_HOOK   264B×16 klass[48] method[48] argc event_id every chance actions flags
                    hold_ms delay_ms guard_index guard_value
                    probe_class[48] probe_method[48] probe_index probe_slot guard_var
+                   text_base read_base read_count reserved[2]
 文案池      128B×256 随机挑一句弹出去（按插件分段，段尾空串当界标）
 导出表      64B×13   标准名按固定顺序映射成混淆名
-总长        38128B
+事件 ctrl   16B      head / tail / dropped / pad（环形队列游标）
+事件队列    28B×512  WARP_EVENT { id, hook, tick, a, b, c, d }
+读取链      48B×64   WARP_READ { arg, nsteps, kind, out, off[4], deref[4] }
+总长        55680B
 ```
 
 钩子表 → 行为的三段式表达力：
@@ -225,6 +229,13 @@ WARP_HOOK   256B×16 klass[48] method[48] argc event_id every chance actions fla
    `guard_var=0, guard_value=1` 时直接 `return 0`。
 3. **动作**（`actions`）：`ACT_POPUP` 弹原版窗、`ACT_KILL` 结束进程；`flags=HF_BLOCK`
    让原方法不执行。`every` / `chance` / `delay_ms` / `dedupe_ms` / `HF_ONCE` 决定何时触发。
+
+读取链（`reads=`）是第 1 条的通用版：探针只能「调一个 0 参 getter 拿 int」，
+读取链能「从任意参数出发，按偏移跳最多 4 跳，每跳可选解引用，落点按
+int/float/bool/ptr 解释」，结果直接写进事件槽 `a/b/c/d`。il2cpp 里取字段只有
+两种动作（加偏移 / 先解引用），所以带一个 deref 位就够，不需要类型系统。
+成就那十六种 `BWK_*` 读法全都是「参数形状 × 读路径 × 输出方式」的组合，
+有了读取链它们退化成十六行配置。
 
 命令通道（P5）：除了「挂钩子等游戏自己触发」，py 还能主动命令游戏做事。
 `Host.popup(text)` / `Host.kill_game()` 只是往命令槽写 `cmd_type` + `cmd_text` 并递增
@@ -303,7 +314,7 @@ NS['warp.plugin'].Host            # 扁平访问，等价
 
 | 文件 | 职责 |
 | --- | --- |
-| `warp_layout.h` | 协议层：`WARP_HEADER`(432B)、`WARP_HOOK`(256B)、13 个函数指针类型 |
+| `warp_layout.h` | 协议层：`WARP_HEADER`(432B)、`WARP_HOOK`(264B)、13 个函数指针类型 |
 | `warp_internal.h` | 内部契约：`WARP_IC` / `WARP_SLOT`、全部 `extern` 全局与函数原型 |
 | `warp_state.c` | 全局状态、日志、状态码、随机数 |
 | `warp_shm.c` | 打开 / 创建共享映射 |
