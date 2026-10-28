@@ -82,7 +82,8 @@ const char *warp_pick_text(int base);
 void warp_fire(int hook_index);
 int warp_probe_int(const char *klass_name, const char *method_name, void *obj);
 int warp_on_event(int hook_index, void *self, int argc,
-                  void *a1, void *a2, void *a3);
+                  void *a1, void *a2, void *a3,
+                  void *a4, void *a5, void *a6);
 void *warp_pick_thunk(int index, int argc);
 int warp_kill_game(void);
 void __stdcall hk_warp_pump(void *self);
