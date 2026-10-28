@@ -161,6 +161,17 @@ static int warp_read_chain(const WARP_READ *r, void *self, int argc,
     if (!p)
         return 0;
 
+    if (r->nsteps <= 0) {
+        /* 0 跳 = 这个参数本身就是值，不是指针。
+         *
+         * 关卡状态查询那类钩子的签名是 (self, int main, int sub, int node)，
+         * 三个参数都是值类型，直接躺在寄存器/栈上，没有任何偏移可跟。老链路
+         * 为它们单独写了 thunk；这里用「空链」表达同一件事：不往前走，就把
+         * 参数当结果。 */
+        *out = (int)(size_t)p;
+        return 1;
+    }
+
     for (i = 0; i < r->nsteps && i < WARP_READ_STEPS; i++) {
         int step = r->deref[i];
 

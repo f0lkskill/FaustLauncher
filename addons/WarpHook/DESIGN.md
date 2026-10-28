@@ -241,6 +241,10 @@ WARP_HOOK   264B×16 klass[48] method[48] argc event_id every chance actions fla
 | `2` / `'list'` | 把当前指针当 `List<T>`，取第 `off` 个元素 |
 | `3` / `'array'` | 把当前指针当 `Array<T>`，取第 `off` 个元素 |
 
+链长为 **0** 是另一种意思：不往前走，把参数本身的值当结果。这专给「参数是
+值类型」的钩子用 —— `IsNodeCleared(int main, int sub, int node)` 的三个参数
+就躺在寄存器上，没有任何偏移可跟。
+
 il2cpp 取字段只有「加偏移 / 先解引用」两种动作，所以前两种就够；后两种是为了
 **进容器** —— 管理器身上的单位列表是 `List<BattleUnitModel>`，不遍历就够不着单位。
 `List<T>` 的布局固定（`_items` 在 +0x10、`_size` 在 +0x18），`Array` 的 `max_length`

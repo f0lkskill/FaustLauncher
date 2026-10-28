@@ -4,6 +4,18 @@
 
 看完整历史：`git log --oneline -- addons/WarpHook/`
 
+## 0.6.1
+
+- **读取链支持「零跳」**：链长为 0 时不再把参数当指针解引用，而是把它本身的值
+  当结果。关卡节点查询那类方法的签名是 `(self, int main, int sub, int node)`，
+  三个参数全是值类型，直接躺在寄存器上，没有任何偏移可跟 —— 老链路为它们单独
+  写了 thunk，现在一条空链就表达了。
+- 顺带接上两种读法：`skv`（读表现层 `_attackerInstanceID`，发 `RND` 行）与
+  `node_state`（三个 int 参数原样发 `NCL` 行）。成就桥挂的钩子从 8 条增加到 13 条。
+- 记一笔之前踩过的坑：`KIND_SIGNATURES` 里的数只代表「老 thunk 从寄存器取几格」，
+  不等于方法真实声明的参数个数（`Skill_Start()` 无参、`IsNodeCleared` 是 3 参），
+  装钩子必须用 dump.cs 的真实签名，由 `warp_source.ARGC_OVERRIDE` 兜底。
+
 ## 0.6.0
 
 - **事件环扩容 512 → 2048 格**（44 字节/格，约 90 KB），映射总长 63872 → **131456**
