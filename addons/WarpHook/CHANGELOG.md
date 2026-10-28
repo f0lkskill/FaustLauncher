@@ -4,6 +4,13 @@
 
 看完整历史：`git log --oneline -- addons/WarpHook/`
 
+## 0.4.0
+
+- 读取链新增**容器步**：`deref` 位可写 `'list'` / `'array'`，按下标取 `List<T>` /
+  `Array<T>` 的元素。管理器身上的单位列表终于跳得进去了，
+  `BattleObjectManager._deadUnitList[0] → _state → _hp` 一条配置写完。
+- `deref` 位的四种取值（0 加偏移 / 1 解引用 / 2 List / 3 Array）在 `DESIGN.md` 里成表。
+
 ## 0.3.2
 
 **读取链上线前的三个硬伤** —— 都是真机跑出来的，不是想出来的。
