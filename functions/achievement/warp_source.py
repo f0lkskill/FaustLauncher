@@ -39,6 +39,7 @@ FIRST_BATCH = (
     'unit_get_origin_speed',
     'unit_round_start',
     'manager_init',
+    'manager_on_round_start_before',
     'action_on_end_turn',
     'action_done_with_action',
     'skv_start',
