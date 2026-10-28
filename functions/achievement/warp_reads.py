@@ -236,7 +236,9 @@ def hook_spec(kind, klass, method, offsets=None, **extra):
     """
     if kind not in KIND_SIGNATURES:
         raise ValueError('未知读法：%r' % (kind,))
-    argc, _names = KIND_SIGNATURES[kind]
+    # KIND_SIGNATURES 的第一项是「含 self 的格子数」，而 class_get_method_from_name
+    # 要的是真实参数个数（不含 this）。差 1 不是笔误：钩子能找到全靠这个数对。
+    argc = max(0, KIND_SIGNATURES[kind][0] - 1)
     reads = []
     if offsets:
         builder = _KIND_READS[kind]
