@@ -4,6 +4,17 @@
 
 看完整历史：`git log --oneline -- addons/WarpHook/`
 
+## 0.3.1
+
+**混淆整数读法** —— 血量、理智这类数字在内存里不是明文 int，而是
+`ObscuredInt { key, hidden, fake }`，真实值 = `hidden ^ key`。
+
+- 读取链新增 `WARP_READ_OBSCURED`（`kind='obscured'`）：落点按 12 字节结构解，
+  读 `[0]` 与 `[4]` 异或。老链路的 `read_unit_vitals()` 就是干这个的，
+  现在不用再为它写 C 了。
+- `Host.hook(reads=[...])` 的 `kind` 现在可以写名字：`'int' / 'float' / 'bool' /
+  'ptr' / 'obscured'`，写数字仍然认。
+
 ## 0.3.0
 
 **读取链** —— 钩子不再只能上报「第几个参数是个指针」，而是能直接给出「伤害多少、剩多少血」。
