@@ -5,7 +5,7 @@
 所以 scr.py 先调 :func:`bind` 把三样东西放进来。
 """
 
-WARP_HOOK_VERSION = "0.1.0"
+WARP_HOOK_VERSION = "0.2.0"
 
 ADDON_ARG = None
 ADDON_NAME = ""

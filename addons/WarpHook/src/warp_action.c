@@ -99,6 +99,37 @@ int warp_probe_int(const char *klass_name, const char *method_name, void *obj)
  * 返回值是位掩码：bit0 = 拦掉原函数（WARP_HF_BLOCK 且没被参数门放行），
  * bit1 = 本次要执行动作。拆成"先判定再执行"，是为了让 detour 能按参数
  * 决定放行 —— NoGacha 的「付费单抽不拦」就是靠 guard_index/guard_value。 */
+/* 把这次命中装进环形队列。head 只增不减，槽位取模；写之前先保证不越过
+ * tail 一圈，越了就把 tail 往前推（丢最旧的，dropped++）。
+ * 全程只用 Interlocked，读侧（Python）只读 head 与槽内容，不会撕裂。 */
+static void warp_emit_event(int hook_index, WARP_HOOK *h,
+                            int argc, void *a1, void *a2, void *a3)
+{
+    int *ctrl;
+    WARP_EVENT *slot;
+    LONG head, tail;
+    int index;
+
+    if (!g_hdr)
+        return;
+
+    ctrl = (int *)((char *)g_hdr + WARP_EV_CTRL_OFFSET);
+    head = InterlockedIncrement((LONG *)&ctrl[0]) - 1;
+    tail = ctrl[1];
+    if (head - tail >= WARP_EVENT_COUNT)
+        ctrl[1] = head - WARP_EVENT_COUNT + 1;
+
+    index = (int)(head % WARP_EVENT_COUNT);
+    slot = (WARP_EVENT *)((char *)g_hdr + WARP_EVENTS_OFFSET) + index;
+    slot->id = h->event_id ? h->event_id : hook_index;
+    slot->hook = hook_index;
+    slot->tick = (int)GetTickCount();
+    slot->a = argc > 0 ? (int)(intptr_t)a1 : 0;
+    slot->b = argc > 1 ? (int)(intptr_t)a2 : 0;
+    slot->c = argc > 2 ? (int)(intptr_t)a3 : 0;
+    slot->d = g_hdr->vars[0];
+}
+
 int warp_on_event(int hook_index, int argc, void *a1, void *a2, void *a3)
 {
     warp_pump_commands();
@@ -162,9 +193,14 @@ int warp_on_event(int hook_index, int argc, void *a1, void *a2, void *a3)
         InterlockedIncrement((LONG *)&h->reserved[1]);
     }
 
-    /* actions 为 0 的纯旁观钩子（NoGacha 的 OpenGachaAlarmUI）只用来看参数，
+    /* 事件优先于行为：只要钩子声明了 ACT_EVENT 就入队，哪怕它同时什么都不做。
+     * 成就、统计这类消费者要的就是「发生过什么」，不该和弹窗/拦截抢语义。 */
+    if (h->actions & WARP_ACT_EVENT)
+        warp_emit_event(hook_index, h, argc, a1, a2, a3);
+
+    /* 没有行为位的纯旁观钩子（NoGacha 的 OpenGachaAlarmUI）只用来看参数与发事件，
      * 不弹窗、不刷新去重窗，免得把同一次操作里紧跟的拦截钩子挤掉。 */
-    if (h->actions == 0)
+    if ((h->actions & WARP_ACT_BEHAVIOR) == 0)
         return act;
 
     if (!g_hdr->enabled)
