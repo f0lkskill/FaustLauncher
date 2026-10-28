@@ -1,0 +1,77 @@
+# WarpHook
+
+插件底层依赖库。别的插件只写 Python，**不写任何 C 代码**：等游戏、注入、
+挂钩、读参数、弹窗、杀进程全部由这里的 `warp_host.dll` 完成，插件通过一块
+共享内存给它下配置。
+
+```
+Warphook/
+├── addon_info.json          插件声明（permanent：作为依赖库常驻，不可关闭）
+├── scr.py                   入口（40 行）：bind 作用域 + 注册 warp 命名空间
+├── warphook/                运行时实现（Python）
+│   ├── env.py               插件作用域（ADDON_ARG / ADDON_NAME）
+│   ├── base.py              Win32、共享内存、il2cpp 导出名解析、注入
+│   ├── host.py              Host：钩子表与文案池的配置端
+│   ├── game.py              Gacha / GachaBill：抽卡语义层
+│   ├── service.py           Runtime / Service：等游戏、注入、心跳、状态播报
+│   └── registry.py          组装 warp 命名空间、卸载收尾
+├── src/                     C 侧（编译成 warp_host.dll）
+│   ├── warp_layout.h        协议结构：WARP_HEADER / WARP_HOOK / 函数指针类型
+│   ├── warp_internal.h      内部契约：extern 全局与函数原型
+│   ├── warp_state.c         全局状态、日志、状态码
+│   ├── warp_shm.c           共享映射
+│   ├── warp_il2cpp.c        混淆导出名绑定、类与方法解析
+│   ├── warp_ready.c         引擎就绪门闩
+│   ├── warp_popup.c         原版弹窗、杀进程
+│   ├── warp_action.c        挑台词、执行动作、参数探针
+│   ├── warp_hook.c          thunk 表、装配 / 卸载钩子
+│   ├── warp_cmd.c           命令泵（主动 popup / kill_game）
+│   └── warp_host.c          控制线程与 DllMain
+├── warp_stub.py             类型桩（给插件的 IDE / pyright 用，无运行时逻辑）
+├── DESIGN.md                设计文档、协议表、命名空间契约、代码结构
+└── il2cpp-api-names.txt     il2cpp 导出名的期望表
+```
+
+## 插件怎么用
+
+```python
+NS = ADDON_ARG['Namespaces']
+WARP = NS.space('warp') if NS else None
+
+service = WARP.plugin.Service(
+    addon_name=ADDON_NAME, name='MyAddon',
+    sync=_push,                              # 把设置写进共享内存
+    auto=lambda: _settings()['enable'],      # 游戏启动时自动注入？
+    menu=(('注入', lambda: service.inject_now(wait=True)),
+          ('解除', lambda: service.set_enabled(False)),
+          ('应用设置', lambda: service.sync())),
+)
+service.start()
+```
+
+拿到底层句柄就能直接开火：
+
+```python
+service.host().popup('这行字是 Python 下发的')   # 游戏里立刻弹原版系统窗
+service.host().kill_game()                     # 结束游戏进程
+```
+
+## 编译
+
+需要 MinGW-w64 与 MinHook 源码：
+
+```bash
+MH=/path/to/minhook
+gcc -shared -O2 -Wall -s -static-libgcc -o warp_host.dll \
+  src/warp_*.c \
+  "$MH/src/hook.c" "$MH/src/buffer.c" "$MH/src/trampoline.c" "$MH/src/hde/hde64.c" \
+  -I src -I "$MH/include" -I "$MH/src/hde"
+```
+
+编完把 `warp_host.dll` 放到本目录（与 `scr.py` 同级）即可，插件侧会按
+`插件目录 / warp_host.dll` 找它。
+
+## 分支说明
+
+本分支只跟踪 WarpHook 自身（`.gitignore` 对 `addons/WarpHook/**` 开了白名单），
+主分支不跟踪任何插件目录。编译产物 `warp_host.dll` 不入库。
