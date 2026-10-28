@@ -29,11 +29,13 @@
  *   那时候 il2cpp 运行时往往还没初始化完，碰一下就整个进程崩掉。
  *
  * 共享内存布局（Python 侧 WARP_MAP_BYTES 必须一致）
- *   0     WARP_HEADER      128 字节
- *   128   WARP_HOOK[16]   16 × 128 = 2048
- *   2176  texts[32]       32 × 128 = 4096
- *   6272  exports[13]     13 × 64  = 832
- *   7104  (结束)
+ *   0     WARP_HEADER      432 字节（状态头 + 命令槽 + 弹窗文本）
+ *   432   WARP_HOOK[16]   16 × 264 = 4224
+ *   4656  texts[256]     256 × 128 = 32768
+ *   37424 exports[13]     13 × 64  = 832
+ *   38272 events[512]   512 × 44  = 22528
+ *   60800 reads[64]      64 × 48  = 3072
+ *   63872 (结束)
  * ===================================================================== */
 
 #include <windows.h>
@@ -73,7 +75,7 @@
 #define WARP_TEXT_SIZE    WARP_TEXT_LEN
 #define WARP_EXPORTS_OFFSET (WARP_TEXTS_OFFSET + WARP_MAX_TEXTS * WARP_TEXT_SIZE)
 #define WARP_EVENT_COUNT  512   /* 环形队列容量，满了丢最旧的 */
-#define WARP_EVENT_SIZE   28
+#define WARP_EVENT_SIZE   44
 #define WARP_EV_CTRL_OFFSET (WARP_EXPORTS_OFFSET + WARP_EXPORT_COUNT * WARP_NAME_MAX)
 #define WARP_EV_CTRL_SIZE 16    /* head / tail / dropped / pad */
 #define WARP_EVENTS_OFFSET (WARP_EV_CTRL_OFFSET + WARP_EV_CTRL_SIZE)
@@ -200,16 +202,26 @@ typedef struct _WARP_READ {
     int deref[WARP_READ_STEPS];  /* 32 每跳是否先解引用 */
 } WARP_READ;                /* 48 */
 
-/* 环形队列里的一个事件：py 侧按 events() 批量读走，读完推进 tail。 */
+/* 环形队列里的一个事件：py 侧按 events() 批量读走，读完推进 tail。
+ *
+ * 八格值（a..h）是给成就那类消费者留的：一条读法往往要「实例号 + 模板号 +
+ * 血量 + 上限 + 理智 + 速度」六七个数，四格装不下就得拆成两条钩子再在
+ * Python 里按 instanceID 配对 —— 那比多加 16 字节难受得多。 */
 typedef struct _WARP_EVENT {
     int id;     /* 0  事件号（hook.event_id，0 时用钩子下标） */
     int hook;   /* 4  哪个钩子产生的 */
     int tick;   /* 8  GetTickCount 低 32 位 */
-    int a;      /* 12 第 1 个参数（截成 int） */
-    int b;      /* 16 第 2 个参数 */
-    int c;      /* 20 第 3 个参数 */
-    int d;      /* 24 vars[0] 的快照，省一次读 */
-} WARP_EVENT;   /* 28 */
+    int a;      /* 12 第 1 格：默认是第 1 个参数，配了读链就是读出来的值 */
+    int b;      /* 16 第 2 格 */
+    int c;      /* 20 第 3 格 */
+    int d;      /* 24 第 4 格：默认 vars[0] 的快照，省一次读 */
+    int e;      /* 28 第 5 格 */
+    int f;      /* 32 第 6 格 */
+    int g;      /* 36 第 7 格 */
+    int h;      /* 40 第 8 格 */
+} WARP_EVENT;   /* 44 */
+
+#define WARP_EVENT_SLOTS  8   /* 读链的 out 能写到 0..7 */
 
 /* ------------------------------------------------------------------ */
 /* il2cpp 接口表（顺序必须和 il2cpp-api-names.txt / Python 侧一致）     */

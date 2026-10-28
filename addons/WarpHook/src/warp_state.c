@@ -40,7 +40,7 @@ ULONGLONG   g_last_fire[WARP_MAX_HOOKS];  /* 每个钩子上次执行动作的�
  *
  * 只有标了 WARP_HF_DEDUPE 又配了读链的钩子才用得上：值没变就把这次命中的
  * 事件吞掉，别让 FixedUpdate 这种东西每帧往环形队列里塞一条。 */
-int         g_last_vals[WARP_MAX_HOOKS][4];
+int         g_last_vals[WARP_MAX_HOOKS][WARP_EVENT_SLOTS];
 unsigned char g_last_valid[WARP_MAX_HOOKS];
 WARP_HEADER  *g_hdr = NULL;
 

@@ -96,7 +96,8 @@ HOST_EV_CTRL_OFFSET = HOST_EXPORTS_OFFSET + HOST_EXPORT_COUNT * HOST_NAME_MAX
 HOST_EV_CTRL_SIZE = 16
 HOST_EVENTS_OFFSET = HOST_EV_CTRL_OFFSET + HOST_EV_CTRL_SIZE
 HOST_EVENT_COUNT = 512
-HOST_EVENT_SIZE = 28
+HOST_EVENT_SIZE = 44
+HOST_EVENT_SLOTS = 8    # 读链的 out 能写到 0..7
 HOST_READ_OFFSET = HOST_EVENTS_OFFSET + HOST_EVENT_COUNT * HOST_EVENT_SIZE
 HOST_MAP_BYTES = HOST_READ_OFFSET + HOST_READ_MAX * HOST_READ_SIZE
 
@@ -115,6 +116,10 @@ class HostEvent(ctypes.Structure):
         ("b", ctypes.c_int32),       # 第 2 个参数
         ("c", ctypes.c_int32),       # 第 3 个参数
         ("d", ctypes.c_int32),       # vars[0] 快照
+        ("e", ctypes.c_int32),       # 第 5 格（读链 out=4）
+        ("f", ctypes.c_int32),       # 第 6 格（读链 out=5）
+        ("g", ctypes.c_int32),       # 第 7 格（读链 out=6）
+        ("h", ctypes.c_int32),       # 第 8 格（读链 out=7）
     ]
 
 # 动作位（与 warp_host.c 的 WARP_ACT_* 一致）
@@ -587,8 +592,9 @@ class Host:
                         kind = HOST_READ_NAMES.get(kind.lower(), HOST_READ_INT)
                     ctypes.c_int32.from_address(
                         at + HostRead.kind.offset).value = int(kind)
+                    # out 是事件里的第几格：0..7（八格值，成就一条读法要六七个）
                     ctypes.c_int32.from_address(at + HostRead.out.offset).value = int(
-                        spec.get("out", j)) & 0x3
+                        spec.get("out", j)) & (HOST_EVENT_SLOTS - 1)
                     for k, step in enumerate(chain):
                         if isinstance(step, dict):
                             if "list" in step:
@@ -855,7 +861,8 @@ class Host:
             out.append({
                 "id": int(slot.id), "hook": int(slot.hook), "tick": int(slot.tick),
                 "a": int(slot.a), "b": int(slot.b), "c": int(slot.c),
-                "d": int(slot.d),
+                "d": int(slot.d), "e": int(slot.e), "f": int(slot.f),
+                "g": int(slot.g), "h": int(slot.h),
             })
         ctrl[1] = tail + take
         return out
