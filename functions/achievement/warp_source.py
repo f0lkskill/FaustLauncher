@@ -41,6 +41,11 @@ FIRST_BATCH = (
     'manager_init',
     'action_on_end_turn',
     'action_done_with_action',
+    'skv_start',
+    'skv_complete',
+    'skv_end',
+    'node_cleared',
+    'node_clear_state',
 )
 
 #: 钩子的真实参数个数（**不含 this**）。
@@ -50,6 +55,11 @@ FIRST_BATCH = (
 ARGC_OVERRIDE = {
     'action_on_end_turn': 3,        # OnEndTurn(action, timing, info)
     'action_done_with_action': 2,   # DoneWithAction(action, timing)
+    'skv_start': 0,                 # Skill_Start()
+    'skv_complete': 0,              # Skill_Complete()
+    'skv_end': 0,                   # Skill_End()
+    'node_cleared': 3,              # IsNodeCleared(mainchapter, subchapter, node)
+    'node_clear_state': 3,          # GetClearNodeState(mainchapter, subchapter, node)
 }
 
 #: 行动类钩子读 action 对象，发 ACT 行。
@@ -57,7 +67,12 @@ ACTION_KINDS = (WR.KIND_ACTION_INT,)
 
 #: 这些读法用八格 + 两行就能还原成老链路的语义。
 UNIT_KINDS = (WR.KIND_UNIT, WR.KIND_UNIT_INT_BOOL, WR.KIND_UNIT_GET_INT)
-PLAIN_KINDS = (WR.KIND_PLAIN,)
+#: SKV 读法发的是 `RND tag=... iid=...`（技能动画在演哪个单位），
+#: 与 plain 同一行格式，所以并进一组。
+PLAIN_KINDS = (WR.KIND_PLAIN, WR.KIND_SKV)
+
+#: 节点通关查询：三个值类型参数直接当结果，发 `NCL main=.. sub=.. node=..`。
+NODE_KINDS = (WR.KIND_NODE_STATE,)
 
 #: 事件号从 1 开始（0 会被 DLL 当成「没填」而退回钩子下标）。
 EVENT_ID_BASE = 1
@@ -147,6 +162,19 @@ def unit_lines(tag, ev):
     ]
 
 
+def node_lines(tag, ev):
+    """关卡节点状态查询还原成 NCL 行。
+
+    老链路是 `int (self, int main, int sub, int node, mi)`，三个参数原样打印，
+    `cleared=1` 表示「被问过一次」而不是「通关了」—— 是否通关要看游戏给的返回值，
+    那个值在寄存器里，钩子读不到。所以只报「问过哪些节点」。
+    """
+    return [
+        'NCL main=%d sub=%d node=%d cleared=1'
+        % (int(ev.get('a', 0)), int(ev.get('b', 0)), int(ev.get('c', 0)))
+    ]
+
+
 def plain_lines(tag, ev):
     """plain 钩子（管理器的回合开始/初始化）发一行回合边界。"""
     iid = int(ev.get('a', 0))
@@ -163,6 +191,8 @@ def event_lines(kind, tag, ev):
         return action_lines(tag, ev)
     if kind in PLAIN_KINDS:
         return plain_lines(tag, ev)
+    if kind in NODE_KINDS:
+        return node_lines(tag, ev)
     return []
 
 

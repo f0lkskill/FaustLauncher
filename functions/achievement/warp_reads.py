@@ -50,6 +50,10 @@ KIND_ORDER = (
 
 # 参数形状：argc 是「不含 this」的参数个数，与 C 侧 thunk 签名严格对应。
 # 名字只用于生成配置时自查，不影响行为。
+#
+# 注意：这个数是**老 thunk 从寄存器里取几格**，不等于方法真实声明的参数个数
+# （il2cpp 的部分方法还带隐藏的 MethodInfo*）。真要装钩子，得用 dump.cs 里的
+# 真实签名，由 `warp_source.ARGC_OVERRIDE` 兜底。
 KIND_SIGNATURES = {
     KIND_PLAIN: (1, ('method',)),
     KIND_UNIT: (1, ('method',)),
@@ -226,11 +230,19 @@ _KIND_READS = {
     KIND_DAMAGE_ACTION: lambda off: (
         attacker_origin_id(off) + unit_vitals(off)
     ),
-    KIND_SKV: lambda off: [],
+    KIND_SKV: lambda off: [
+        # 表现层 BattleSkillViewBase 的 _attackerInstanceID：技能动画在演哪个单位。
+        _read(0, [(off['skv_attacker_iid'], False)], OUT_PRIMARY),
+    ],
     KIND_STAGE_STAT: lambda off: [],
     KIND_RAILWAY_TOTAL: lambda off: [],
     KIND_CACHE_SELF: lambda off: [],
-    KIND_NODE_STATE: lambda off: [],
+    KIND_NODE_STATE: lambda off: [
+        # 三个参数都是值类型 int（main/sub/node），读链 0 跳 = 直接取参数值。
+        _read(1, [], OUT_PRIMARY),
+        _read(2, [], OUT_SECONDARY),
+        _read(3, [], OUT_UNIT_ID),
+    ],
     KIND_CACHE_ARG1: lambda off: [],
     KIND_RAILWAY_NODE: lambda off: [],
     KIND_RAILWAY_HIST: lambda off: [],
@@ -244,6 +256,7 @@ OFFSET_KEYS = (
     'unit_state', 'state_hp', 'state_max_hp', 'state_mp',
     'unit_buff_detail', 'buff_detail_list', 'buff_model_data', 'buff_static_id',
     'action_skill', 'skill_data', 'skill_id', 'skill_tier',
+    'skv_attacker_iid',
 )
 
 
