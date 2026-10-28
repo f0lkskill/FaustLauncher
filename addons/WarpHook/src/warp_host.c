@@ -11,6 +11,7 @@
 DWORD WINAPI warp_thread(LPVOID param)
 {
     ULONGLONG start = GetTickCount64();
+    ULONGLONG g_sig_pending = 0;
 
     (void)param;
     if (!warp_open_map())
@@ -36,8 +37,23 @@ DWORD WINAPI warp_thread(LPVOID param)
             }
         }
 
-        if (g_installed)
+        if (g_installed) {
+            /* 钩子表变了就重装：插件在游戏运行中改配置不该逼用户重开。
+               等 400ms 稳定期，避开 Python 端写表的中间状态。 */
+            unsigned int sig = warp_hook_signature();
+            ULONGLONG now2 = GetTickCount64();
+
+            if (sig == g_hook_sig) {
+                g_sig_pending = 0;
+            } else if (!g_sig_pending) {
+                g_sig_pending = now2;
+            } else if (now2 - g_sig_pending > 400) {
+                warp_log("hook table changed, reinstalling", 0);
+                warp_uninstall();
+                g_sig_pending = 0;
+            }
             continue;
+        }
 
         if (!GetModuleHandleW(L"GameAssembly.dll")) {
             if (GetTickCount64() - start > WARP_GA_TIMEOUT_MS) {

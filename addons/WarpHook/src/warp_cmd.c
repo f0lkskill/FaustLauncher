@@ -24,6 +24,33 @@ void   *g_pump_target = NULL;
 void   *g_pump_original = NULL;
 int     g_pump_installed = 0;
 
+/* 装完那一刻的钩子表指纹。控制线程拿它和当前映射里的表比对，变了就重装 ——
+   插件在游戏运行中改钩子表（切插件、改设置）不该逼着用户重开游戏。 */
+unsigned int g_hook_sig = 0;
+
+unsigned int warp_hook_signature(void)
+{
+    unsigned int hash = 2166136261u;   /* FNV-1a 32 */
+    int i;
+
+    for (i = 0; i < WARP_MAX_HOOKS; i++) {
+        const WARP_HOOK *h = &g_warp_hooks[i];
+        const unsigned char *p;
+        int k;
+
+        for (p = (const unsigned char *)h->klass, k = 0; k < WARP_KLASS_LEN && *p; k++, p++)
+            hash = (hash ^ *p) * 16777619u;
+        hash = (hash ^ (unsigned char)'|') * 16777619u;
+        for (p = (const unsigned char *)h->method, k = 0; k < WARP_METHOD_LEN && *p; k++, p++)
+            hash = (hash ^ *p) * 16777619u;
+        hash = (hash ^ (unsigned char)'|') * 16777619u;
+        hash = (hash ^ (unsigned int)(h->argc & 0xff)) * 16777619u;
+        hash = (hash ^ (unsigned int)(h->actions & 0xff)) * 16777619u;
+        hash = (hash ^ (unsigned int)(h->flags & 0xff)) * 16777619u;
+    }
+    return hash;
+}
+
 /* 宿主自己补的那条「泵点」：没有用户钩子的时候也能每帧跑一次命令泵。 */
 void __stdcall hk_warp_pump(void *self)
 {
@@ -159,6 +186,7 @@ int warp_install_hooks(void)
     }
 
     g_installed = installed;
+    g_hook_sig = warp_hook_signature();
     if (g_hdr) {
         g_hdr->hook_total = total;
         g_hdr->hook_installed = installed;
@@ -189,5 +217,11 @@ void warp_uninstall(void)
         g_pump_installed = 0;
     }
     MH_Uninitialize();
+    /* 归零，否则控制线程会一直以为「已经装好了」而不去重装新表 */
+    g_installed = 0;
+    if (g_hdr) {
+        g_hdr->hook_installed = 0;
+        g_hdr->hooked = 0;
+    }
 }
 

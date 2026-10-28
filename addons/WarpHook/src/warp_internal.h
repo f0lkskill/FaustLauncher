@@ -86,6 +86,8 @@ int warp_kill_game(void);
 void __stdcall hk_warp_pump(void *self);
 int warp_install_hooks(void);
 void warp_uninstall(void);
+unsigned int warp_hook_signature(void);
+extern unsigned int g_hook_sig;
 DWORD WINAPI warp_thread(LPVOID param);
 void warp_start(void);
 void warp_stop_cleanup(void);
