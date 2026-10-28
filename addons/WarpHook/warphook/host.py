@@ -62,6 +62,15 @@ HOST_READ_INT = 0
 HOST_READ_FLOAT = 1
 HOST_READ_BOOL = 2
 HOST_READ_PTR = 3
+HOST_READ_OBSCURED = 4       # 落点是 ObscuredInt（混淆 int），值 = hidden ^ key
+# 落盘时可以写数字，也可以写名字（插件侧更愿意写 'obscured' 而不是 4）
+HOST_READ_NAMES = {
+    'int': HOST_READ_INT,
+    'float': HOST_READ_FLOAT,
+    'bool': HOST_READ_BOOL,
+    'ptr': HOST_READ_PTR,
+    'obscured': HOST_READ_OBSCURED,
+}
 #: 全进程共用的读取链条数。
 HOST_READ_MAX = 64
 HOST_READ_SIZE = 48
@@ -533,8 +542,11 @@ class Host:
                     at = read_addr + (read_used + j) * HOST_READ_SIZE
                     ctypes.c_int32.from_address(at + HostRead.arg.offset).value = arg
                     ctypes.c_int32.from_address(at + HostRead.nsteps.offset).value = len(chain)
-                    ctypes.c_int32.from_address(at + HostRead.kind.offset).value = int(
-                        spec.get("kind", HOST_READ_INT))
+                    kind = spec.get("kind", HOST_READ_INT)
+                    if isinstance(kind, str):
+                        kind = HOST_READ_NAMES.get(kind.lower(), HOST_READ_INT)
+                    ctypes.c_int32.from_address(
+                        at + HostRead.kind.offset).value = int(kind)
                     ctypes.c_int32.from_address(at + HostRead.out.offset).value = int(
                         spec.get("out", j)) & 0x3
                     for k, step in enumerate(chain):
