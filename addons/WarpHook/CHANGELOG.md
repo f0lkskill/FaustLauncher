@@ -4,6 +4,19 @@
 
 看完整历史：`git log --oneline -- addons/WarpHook/`
 
+## 0.6.0
+
+- **事件环扩容 512 → 2048 格**（44 字节/格，约 90 KB），映射总长 63872 → **131456**
+  字节。老容量在 `dedupe` 关掉的 60fps 钩子下 8.5 秒就翻一轮，读侧稍微慢一点
+  就开始丢事件 —— 而丢了之后 Python 完全看不出来。
+- **丢事件现在有准确的数字**：覆盖最旧槽时 `WARP_EV_CTRL` 的 `dropped` 累加，
+  Python 侧读事件时把增量并进 `host.events_lost`，`WarpSource.stats()['lost']`
+  也带出来了。「漏了 37 条」和「什么都没发生」不该长得一样。
+- 钩子参数槽从 3 个扩到 6 个（112 个 thunk，`argc` 0..6）：读取链的 `arg` 可以写
+  1..6，`GetTakeAttackDmgMultiplier(unit, action, coin, attacker, isCritical, info)`
+  这类六参方法里的出手者终于读得到。
+- `DESIGN.md` 补「事件队列与背压」一节（游标分工、为什么丢事件要计数、容量怎么选）。
+
 ## 0.5.0
 
 - 事件从四格值（`a/b/c/d`）扩到**八格**（`a..h`），读链的 `out` 可以写 0..7。

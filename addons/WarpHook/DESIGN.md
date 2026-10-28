@@ -216,9 +216,9 @@ WARP_HOOK   264B×16 klass[48] method[48] argc event_id every chance actions fla
 文案池      128B×256 随机挑一句弹出去（按插件分段，段尾空串当界标）
 导出表      64B×13   标准名按固定顺序映射成混淆名
 事件 ctrl   16B      head / tail / dropped / pad（环形队列游标）
-事件队列    28B×512  WARP_EVENT { id, hook, tick, a, b, c, d }
+事件队列    44B×2048 WARP_EVENT { id, hook, tick, a, b, c, d, e, f, g, h }
 读取链      48B×64   WARP_READ { arg, nsteps, kind, out, off[4], deref[4] }
-总长        55680B
+总长        131456B
 ```
 
 钩子表 → 行为的三段式表达力：
@@ -254,11 +254,33 @@ il2cpp 取字段只有「加偏移 / 先解引用」两种动作，所以前两�
 > 容器要显式写容器步。另外**一行的 getter 会被 AOT 内联**，内存里没有调用指令，
 > 钩子命中 0 —— 选钩子要看方法体积，不是看名字好不好听。
 
+### 事件队列与背压
+
+事件环 2048 格 × 44 字节（约 90 KB）。游标放在 `WARP_EV_CTRL` 的
+`head / tail / dropped / pad` 四个 int 里：生产者只碰 `head`，消费者只碰 `tail`，
+两边都不加锁（64 位对齐的 int 读写本身是原子的，槽内容在 head 前进之前就写完了）。
+
+读侧跟不上时**不阻塞游戏**，直接把 `tail` 往前推、覆盖最旧的，同时
+`dropped` 累加。这个数字会经 `host.events_lost` 暴露出来：
+
+```python
+host.events()               # 读一批，读的同时把 dropped 的增量并进 events_lost
+host.events_lost            # 引擎侧累计丢了多少条（只增不减）
+```
+
+`WarpSource.stats()` 里的 `lost` 就是它。**丢掉的和「没发生」必须能区分** ——
+否则成就那边会把「这条内存读晚了」当成「这件事没发生」，规则静默错判。
+
+容量选取：2048 格在 `dedupe` 关掉的 60fps 钩子下能缓冲约 34 秒，开了 `dedupe`
+（值不变不投递）后一般几小时都用不完。真要观察长期高频采样，用 `every=N` 降频
+比继续扩环更划算 —— 环越大，`GetTickCount()` 取模命中同一槽的概率越低，但
+Python 一次性要读的条数也越多，反而更容易把单次 `pump()` 拖长。
+
 ### 事件去重（`dedupe=True`）
 
 `FixedUpdate` 这类每帧调用的方法一秒能命中 60 次，一小时就是二十万条事件，
-环形队列（512 格）连一秒都撑不住，消费者只能在垃圾里捞针。所以钩子可以带
-`dedupe=True`：**DLL 每次命中照样跑读链，但读出来的四个值跟上次全一样就不入队**。
+环形队列（2048 格）也撑不了几分钟，消费者只能在垃圾里捞针。所以钩子可以带
+`dedupe=True`：**DLL 每次命中照样跑读链，但读出来的值跟上次全一样就不入队**。
 
 ```python
 host.hook('GlobalGameManager', 'FixedUpdate', argc=0, event=1,
@@ -276,7 +298,7 @@ host.hook('GlobalGameManager', 'FixedUpdate', argc=0, event=1,
    命中计数（`reserved[0]`）全都不受去重影响 —— 去重管的是「要不要告诉 Python」，
    不是「要不要做事」。
 
-「上次的值」存在 DLL 进程的静态内存（`g_last_vals[16][4]` + `g_last_valid[16]`），
+「上次的值」存在 DLL 进程的静态内存（`g_last_vals[16][8]` + `g_last_valid[16]`），
 不进共享内存：布局少改一处就少一次两边对不上的机会，而且插件本来也不需要读它。
 
 命令通道（P5）：除了「挂钩子等游戏自己触发」，py 还能主动命令游戏做事。
@@ -286,8 +308,10 @@ host.hook('GlobalGameManager', 'FixedUpdate', argc=0, event=1,
 一条内部钩子（用户钩子已占该地址时自动跳过）。所以 `host.popup("...")` 一行就能让
 游戏弹窗，不用关心线程，也不用等战斗回合。
 
-`warp_on_event()` 返回位掩码：bit0 = 拦原函数、bit1 = 执行动作，由 64 个独立 thunk
-按 `argc`(0..3) 分派——超过 3 个参数的方法目前不支持。
+`warp_on_event()` 返回位掩码：bit0 = 拦原函数、bit1 = 执行动作，由 112 个独立 thunk
+按 `argc`(0..6) 分派——`GetTakeAttackDmgMultiplier(unit, action, coin, attacker,
+isCritical, info)` 这类方法有 6 个参数，出手者（attacker）在第 4 个上，只转发
+`a1..a3` 的话「谁打的我」永远读不到。读取链的 `arg` 也是 0..6（0=this，1..6=参数）。
 
 崩溃修复（P1）：`warp_wait_ready()` 五阶段门闩，**不调用 `il2cpp_thread_attach`**；
 工作线程只做只读元数据查询，一切 `new` 对象/弹窗都在主线程钩子回调里。
