@@ -4,6 +4,27 @@
 
 看完整历史：`git log --oneline -- addons/WarpHook/`
 
+## 0.7.0
+
+- **对象槽（object slot）**：钩子槽加两个字段 `cache_arg` / `cache_slot`，命中时
+  把第 `cache_arg` 个参数（0 = self）的指针写进第 `cache_slot` 个对象槽。
+  这是「先记住对象在哪儿，回头再摸」原语的第一次落地 —— 老链路里
+  `cache_self` / `cache_arg1` 那两种读法只缓存指针、不当场发事件，之前在新引擎里
+  没有对应物。映射里多了一片 `HOST_OBJECTS_OFFSET` 起的 32 × 8 字节区，
+  总长 131456 → 131840。
+- **读链可以拐道对象槽**：读链的 `arg` 写到 `0x100 + 槽号` 时表示「从那个对象槽
+  里存着的对象出发」。这样一条链就能接在几秒前缓存下来的对象上，而不是只能挂在
+  当次命中的参数上。
+- **Python 侧也有了读取链解释器**（`warphook.base.read_chain` / `can_read`）：
+  规则与 C 侧完全一致（加偏移 / 解引用 / List / Array / obscured），每一步都先问
+  `VirtualQuery`。理由很实际 —— Python 读非法地址是直接段错误，没有异常可捕获，
+  校验只能自己做。`Host.read_object(slot, chain, kind)` 是它的读端。
+- 成就桥接上五种「只缓存不发事件」的钩子：`stage_clear_info` / `stage_clear_query` /
+  `stage_clear_last` / `node_cleared_short`（缓存 self 到槽 0）、`stage_progress`
+  （缓存第一个参数到槽 1）。它们不加事件号，只让对象槽里有值。
+- 踩坑：`_write_config` 里读链的 `arg` 原来被钳在 `0..6`，`0x100 + 槽号` 会被截成
+  0，链会莫名其妙从参数 0 开始读。现在 `arg >= 0x100` 原样落盘。
+
 ## 0.6.1
 
 - **读取链支持「零跳」**：链长为 0 时不再把参数当指针解引用，而是把它本身的值

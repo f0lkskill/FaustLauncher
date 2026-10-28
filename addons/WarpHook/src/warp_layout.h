@@ -30,12 +30,13 @@
  *
  * 共享内存布局（Python 侧 WARP_MAP_BYTES 必须一致）
  *   0     WARP_HEADER      432 字节（状态头 + 命令槽 + 弹窗文本）
- *   432   WARP_HOOK[16]   16 × 264 = 4224
- *   4656  texts[256]     256 × 128 = 32768
- *   37424 exports[13]     13 × 64  = 832
- *   38272 events[2048] 2048 × 44  = 90112
- *   128384 reads[64]    64 × 48  = 3072
- *   131456 (结束)
+ *   432   WARP_HOOK[16]   16 × 272 = 4352
+ *   4784  texts[256]     256 × 128 = 32768
+ *   37552 exports[13]     13 × 64  = 832
+ *   38400 events[2048] 2048 × 44  = 90112
+ *   128512 reads[64]    64 × 48  = 3072
+ *   131584 objects[32]   32 × 8   = 256
+ *   131840 (结束)
  * ===================================================================== */
 
 #include <windows.h>
@@ -70,7 +71,7 @@
 
 #define WARP_HEADER_SIZE  432   /* 160 状态头 + 命令槽 4*4 + 256 字节文本 */
 #define WARP_HOOK_OFFSET  WARP_HEADER_SIZE
-#define WARP_HOOK_SIZE    264
+#define WARP_HOOK_SIZE    272
 #define WARP_TEXTS_OFFSET (WARP_HOOK_OFFSET + WARP_MAX_HOOKS * WARP_HOOK_SIZE)
 #define WARP_TEXT_SIZE    WARP_TEXT_LEN
 #define WARP_EXPORTS_OFFSET (WARP_TEXTS_OFFSET + WARP_MAX_TEXTS * WARP_TEXT_SIZE)
@@ -90,7 +91,17 @@
 #define WARP_STEP_LIST  2   /* List<T>  : items(+0x10) / size(+0x18) */
 #define WARP_STEP_ARRAY 3   /* Array<T> : length(+0x18) / 元素从 +0x20 起 */
 #define WARP_READ_OFFSET  (WARP_EVENTS_OFFSET + WARP_EVENT_COUNT * WARP_EVENT_SIZE)
-#define WARP_MAP_BYTES    (WARP_READ_OFFSET + WARP_READ_MAX * WARP_READ_SIZE)
+
+/* 对象槽：钩子命中时把某个参数的指针留在这儿，读侧（Python 或另一条读链）
+ * 稍后再按需读。用途是老链路里那批 `cache_self` / `cache_arg1` 读法 ——
+ * 「先记住对象在哪儿，回头再摸」跟「这一次调用里就把值读出来」是两件事。
+ * 槽里只有指针，不加引用计数：对象可能在两次读取之间就被释放了，所以读的
+ * 时候一律走 warp_can_read 校验，读到坏地址就当这次没读到。 */
+#define WARP_OBJECT_COUNT 32
+#define WARP_OBJECT_SIZE  8     /* 一个 void* */
+#define WARP_OBJECTS_OFFSET (WARP_READ_OFFSET + WARP_READ_MAX * WARP_READ_SIZE)
+#define WARP_OBJ_ARG_BASE 0x100 /* 读链的 arg 写 0x100+n = 从第 n 个对象槽出发 */
+#define WARP_MAP_BYTES    (WARP_OBJECTS_OFFSET + WARP_OBJECT_COUNT * WARP_OBJECT_SIZE)
 
 /* 读出来的值怎么解释 */
 #define WARP_READ_INT     0     /* int32 */
@@ -183,8 +194,10 @@ typedef struct _WARP_HOOK {
     int  text_base;                /* 244 文案从第几句开始挑（多插件分段用） */
     int  read_base;                /* 248 第一条读取链在全局表里的下标 */
     int  read_count;               /* 252 用了几条 */
-    int  reserved[2];              /* 256 运行时标记：reserved[0]=命中数 reserved[1]=拦下数 */
-} WARP_HOOK;                       /* 264 */
+    int  cache_arg;                /* 256 命中时把第几个参数存进对象槽（<0 关闭） */
+    int  cache_slot;               /* 260 存进哪个槽（0..WARP_OBJECT_COUNT-1） */
+    int  reserved[2];              /* 264 运行时标记：reserved[0]=命中数 reserved[1]=拦下数 */
+} WARP_HOOK;                       /* 272 */
 
 /* 一条读取链：从某个参数出发，按偏移跳 nsteps 次，把落点当成一个值读出来。
  *

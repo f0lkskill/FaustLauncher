@@ -522,3 +522,151 @@ def _tick32():
         return int(k32.GetTickCount64()) & 0xFFFFFFFF
     except Exception:
         return int(time.monotonic() * 1000) & 0xFFFFFFFF
+
+
+# ----------------------------------------------------------------------
+# 在 Python 侧按读取链读内存
+# ----------------------------------------------------------------------
+# 钩子里的读取链是 C 侧在命中那一刻跑的。对象槽把「那一刻的对象」留了下来，
+# 但要过一会儿再来读（老链路的 cache_self 那几种读法就是这样的），就得在
+# Python 里再走一遍同样的链。规则完全一致：每步加偏移、按需解引用、容器取
+# 元素，落点按 kind 解释。
+#
+# 与 C 侧唯一的区别是安全性：C 侧每一步都问 VirtualQuery，这里也一样 ——
+# Python 进程读非法地址是直接段错误的，没有异常可捕获，所以校验必须自己做。
+
+class _MEMORY_BASIC_INFORMATION(ctypes.Structure):
+    _fields_ = [
+        ("BaseAddress", ctypes.c_void_p),
+        ("AllocationBase", ctypes.c_void_p),
+        ("AllocationProtect", wintypes.DWORD),
+        ("RegionSize", ctypes.c_size_t),
+        ("State", wintypes.DWORD),
+        ("Protect", wintypes.DWORD),
+        ("Type", wintypes.DWORD),
+    ]
+
+
+_vq_lib = ctypes.WinDLL("kernel32.dll")
+_vq = _vq_lib.VirtualQuery
+_vq.restype = ctypes.c_size_t
+_vq.argtypes = [ctypes.c_void_p,
+                             ctypes.POINTER(_MEMORY_BASIC_INFORMATION),
+                             ctypes.c_size_t]
+
+_MEM_COMMIT = 0x1000
+_PAGE_GUARD = 0x100
+_PAGE_NOACCESS = 0x01
+_PAGE_READABLE = 0x02 | 0x04 | 0x08 | 0x20 | 0x40 | 0x80
+
+STEP_PLAIN = 0
+STEP_DEREF = 1
+STEP_LIST = 2
+STEP_ARRAY = 3
+
+_STEP_NAMES = {'plain': 0, 'deref': 1, 'list': 2, 'array': 3}
+
+
+def can_read(addr, size=8):
+    """这段地址能不能读。与 C 侧 `warp_can_read` 同一套判据。"""
+    addr = int(addr or 0)
+    if addr <= 0 or size <= 0:
+        return False
+    mbi = _MEMORY_BASIC_INFORMATION()
+    cur = addr
+    end = addr + size
+    while cur < end:
+        if not _vq(ctypes.c_void_p(cur), ctypes.byref(mbi), ctypes.sizeof(mbi)):
+            return False
+        if mbi.State != _MEM_COMMIT:
+            return False
+        if mbi.Protect & (_PAGE_GUARD | _PAGE_NOACCESS):
+            return False
+        if not mbi.Protect & _PAGE_READABLE:
+            return False
+        base = int(mbi.BaseAddress or 0)
+        span = base + int(mbi.RegionSize) - cur
+        if span <= 0:
+            return False
+        cur += span
+    return True
+
+
+def _step_code(value):
+    if isinstance(value, str):
+        return _STEP_NAMES.get(value.lower(), STEP_DEREF)
+    if isinstance(value, bool):
+        return STEP_DEREF if value else STEP_PLAIN
+    try:
+        return int(value) & 0x3
+    except (TypeError, ValueError):
+        return STEP_DEREF
+
+
+def read_chain(addr, chain, kind='int'):
+    """从 addr 出发按链读一个值，读不到返回 None。
+
+    chain 的每一项与 ``Host.hook(reads=...)`` 的写法完全一致：``(偏移, 是否解引用)``
+    或 ``{'off': .., 'deref': ..}``；``deref`` 也可以写 ``'list'`` / ``'array'``。
+    链长为 0 表示「addr 本身就是值」。
+    """
+    steps = []
+    for item in list(chain or ()):
+        if isinstance(item, dict):
+            if 'list' in item or 'array' in item:
+                code = STEP_LIST if 'list' in item else STEP_ARRAY
+                steps.append((int(item.get('list', item.get('array', 0))), code, None))
+            else:
+                steps.append((int(item.get('off', 0)),
+                              _step_code(item.get('deref', True)),
+                              item.get('index')))
+        else:
+            steps.append((int(item[0]), _step_code(item[1] if len(item) > 1 else True),
+                          None))
+    if not steps:
+        return int(addr) if kind != 'float' else _as_float(int(addr))
+
+    cur = int(addr or 0)
+    if not can_read(cur, 8):
+        return None
+    for off, step, index in steps:
+        if step == STEP_LIST or step == STEP_ARRAY:
+            if not can_read(cur, 0x20):
+                return None
+            if step == STEP_LIST:
+                arr = ctypes.c_uint64.from_address(cur + 0x10).value
+                count = ctypes.c_int32.from_address(cur + 0x18).value
+            else:
+                arr = cur
+                count = ctypes.c_int32.from_address(cur + 0x18).value
+            idx = int(index if index is not None else off)
+            if not arr or idx < 0 or idx >= count:
+                return None
+            if not can_read(arr + 0x20 + idx * 8, 8):
+                return None
+            cur = ctypes.c_uint64.from_address(arr + 0x20 + idx * 8).value
+            continue
+        cur = cur + off
+        if step == STEP_DEREF:
+            if not can_read(cur, 8):
+                return None
+            cur = ctypes.c_uint64.from_address(cur).value
+            if not cur:
+                return None
+    if not can_read(cur, 16):
+        return None
+    if kind == 'float':
+        return ctypes.c_float.from_address(cur).value
+    if kind == 'bool':
+        return 1 if ctypes.c_uint8.from_address(cur).value else 0
+    if kind == 'ptr':
+        return ctypes.c_uint64.from_address(cur).value
+    if kind == 'obscured':
+        key = ctypes.c_int32.from_address(cur).value
+        hidden = ctypes.c_int32.from_address(cur + 4).value
+        return hidden ^ key
+    return ctypes.c_int32.from_address(cur).value
+
+
+def _as_float(bits):
+    return ctypes.c_float.from_address(ctypes.addressof(ctypes.c_int32(bits))).value

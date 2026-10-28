@@ -47,6 +47,14 @@ FIRST_BATCH = (
     'skv_end',
     'node_cleared',
     'node_clear_state',
+    # 下面这些老链路里只缓存对象指针、不当场发事件（cache_self / cache_arg1）。
+    # 挂上来是为了让对象槽里有值 —— 采样侧要用时能按偏移读存档结构，
+    # 而不是留个「钩子根本没装」的空洞。
+    'stage_clear_info',
+    'stage_clear_query',
+    'stage_clear_last',
+    'node_cleared_short',
+    'stage_progress',
 )
 
 #: 钩子的真实参数个数（**不含 this**）。
@@ -98,7 +106,8 @@ def build_hooks(names=None, offsets=None):
     names = tuple(names or FIRST_BATCH)
     offsets = offsets if offsets is not None else default_offsets()
     hooks = []
-    for index, name in enumerate(names):
+    event_no = 0
+    for name in names:
         entry = BW.FALLBACK_HOOKS.get(name)
         if entry is None:
             raise KeyError('老链路里没有这个钩子：%s' % name)
@@ -107,18 +116,25 @@ def build_hooks(names=None, offsets=None):
         if not method:
             raise ValueError('钩子名不是 类::方法 的形状：%s' % target)
         spec = WR.hook_spec(kind, klass, method, offsets=offsets)
+        cache = spec.get('cache')
         hook = {
             'name': name,
             'klass': spec['klass'],
             'method': spec['method'],
             'argc': ARGC_OVERRIDE.get(name, spec['argc']),
             'reads': spec['reads'],
-            'event': EVENT_ID_BASE + index,
             'kind': kind,
+            # 只缓存对象的钩子不发事件（老链路里它们也不发）；事件号只发给
+            # 真正要投递的钩子，免得号段里一堆空号。
+            'event': None if cache else EVENT_ID_BASE + event_no,
             # unit 钩子在 RefreshSpeed/SetSpeed 这类方法上会被频繁调用，
             # 值没变就没必要让规则引擎重算一遍（血量不动时一轮能省几百条）
-            'dedupe': bool(spec['reads']),
+            'dedupe': bool(spec['reads']) and not cache,
         }
+        if cache:
+            hook['cache'] = cache
+        else:
+            event_no += 1
         hooks.append(hook)
     return hooks
 
