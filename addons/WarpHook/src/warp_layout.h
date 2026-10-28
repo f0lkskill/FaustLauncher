@@ -1,0 +1,194 @@
+/* warp_layout.h —— 共享内存布局的唯一真相。
+ *
+ * 这里的每个数字都必须和 Python 侧 warphook/layout.py 保持一致，
+ * 改任何一项都要同时改那边，否则两边看到的内存不是同一张图。
+ */
+#pragma once
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#include <stddef.h>
+#include <stdint.h>
+
+/* =====================================================================
+ * warp_host.dll —— WarpHook 的宿主 DLL（唯一需要 C 的部分）
+ *
+ * 设计目标
+ *   依赖 WarpHook 的插件不再各自维护一份 C 源码：注入、等待游戏、解析
+ *   il2cpp 混淆导出名、装配 MinHook、按规则触发行为，全部由这里完成。
+ *   插件只需要往共享内存里写一份「钩子表 + 文案池 + 规则」。
+ *
+ * 线程模型（这条是硬约束，早期版本就栽在这）
+ *   控制线程只碰 Win32 与共享内存，**绝不**在自己的线程里调 il2cpp。
+ *   真正需要 il2cpp 的事情分成两类：
+ *     · 只读元数据查询（找类、找方法）→ 就绪门闩通过后可以在控制线程做
+ *     · 创建对象 / 弹窗 → 只能在游戏主线程，也就是钩子回调里做
+ *   门闩要一路等到「域指针非空 + 程序集数组成形 + 稳定窗过去」，
+ *   因为 GetModuleHandleW("GameAssembly.dll") 只代表 DLL 被映射，
+ *   那时候 il2cpp 运行时往往还没初始化完，碰一下就整个进程崩掉。
+ *
+ * 共享内存布局（Python 侧 WARP_MAP_BYTES 必须一致）
+ *   0     WARP_HEADER      128 字节
+ *   128   WARP_HOOK[16]   16 × 128 = 2048
+ *   2176  texts[32]       32 × 128 = 4096
+ *   6272  exports[13]     13 × 64  = 832
+ *   7104  (结束)
+ * ===================================================================== */
+
+#include <windows.h>
+#include <stdint.h>
+#include <stddef.h>
+#include "MinHook.h"
+
+#define WARP_MAGIC        0x54534857u      /* "WHST" */
+#define WARP_VERSION      1
+
+#define WARP_MAX_HOOKS    16
+#define WARP_MAX_TEXTS    256
+#define WARP_TEXT_LEN     128
+#define WARP_KLASS_LEN    48
+#define WARP_METHOD_LEN   48
+#define WARP_LOG_LEN      48
+#define WARP_EXPORT_COUNT 13
+#define WARP_NAME_MAX     64
+
+#define WARP_POLL_MS      250
+#define WARP_GA_TIMEOUT_MS 180000
+#define WARP_MIN_ASSEMBLIES 8
+#define WARP_SETTLE_MS    1500
+#define WARP_HB_STALE_MS  10000
+#define WARP_VAR_COUNT    8      /* 钩子之间共享的整数槽个数（WARP_HEADER.vars） */
+#define WARP_CMD_TEXT_LEN 256   /* 命令里的弹窗正文长度 */
+
+/* 命令类型 */
+#define WARP_CMD_NONE     0
+#define WARP_CMD_POPUP    1     /* 在游戏里弹原版系统弹窗 */
+#define WARP_CMD_KILL     2     /* 结束游戏进程 */
+
+#define WARP_HEADER_SIZE  432   /* 160 状态头 + 命令槽 4*4 + 256 字节文本 */
+#define WARP_HOOK_OFFSET  WARP_HEADER_SIZE
+#define WARP_HOOK_SIZE    256
+#define WARP_TEXTS_OFFSET (WARP_HOOK_OFFSET + WARP_MAX_HOOKS * WARP_HOOK_SIZE)
+#define WARP_TEXT_SIZE    WARP_TEXT_LEN
+#define WARP_EXPORTS_OFFSET (WARP_TEXTS_OFFSET + WARP_MAX_TEXTS * WARP_TEXT_SIZE)
+#define WARP_EVENT_COUNT  512   /* 环形队列容量，满了丢最旧的 */
+#define WARP_EVENT_SIZE   28
+#define WARP_EV_CTRL_OFFSET (WARP_EXPORTS_OFFSET + WARP_EXPORT_COUNT * WARP_NAME_MAX)
+#define WARP_EV_CTRL_SIZE 16    /* head / tail / dropped / pad */
+#define WARP_EVENTS_OFFSET (WARP_EV_CTRL_OFFSET + WARP_EV_CTRL_SIZE)
+#define WARP_MAP_BYTES    (WARP_EVENTS_OFFSET + WARP_EVENT_COUNT * WARP_EVENT_SIZE)
+
+/* 状态 */
+#define WARP_ST_IDLE       0   /* 等游戏 */
+#define WARP_ST_LOADING    1   /* 游戏在起，il2cpp 还没就绪 */
+#define WARP_ST_HOOKING    2   /* 正在装配钩子 */
+#define WARP_ST_HOOKED     3   /* 已挂钩 */
+#define WARP_ST_ERROR      4
+
+/* 错误码 */
+#define WARP_ERR_OK        0
+#define WARP_ERR_NO_CONFIG 1
+#define WARP_ERR_GA_TIMEOUT 2
+#define WARP_ERR_NO_IL2CPP 3
+#define WARP_ERR_NO_TARGET 4
+#define WARP_ERR_MH_INIT   5
+#define WARP_ERR_MH_CREATE 6
+#define WARP_ERR_MH_ENABLE 7
+#define WARP_ERR_NO_POPUP  8
+
+/* 动作位 */
+#define WARP_ACT_POPUP  0x01
+#define WARP_ACT_PANEL  0x02
+#define WARP_ACT_KILL   0x04
+#define WARP_ACT_EVENT  0x08   /* 把这次命中装进事件队列给 py 读 */
+
+/* 一个钩子要么只发事件、要么顺便触发行为，两种位互不干扰 */
+#define WARP_ACT_BEHAVIOR (WARP_ACT_POPUP | WARP_ACT_PANEL | WARP_ACT_KILL)
+
+/* 钩子标志 */
+#define WARP_HF_BLOCK   0x01
+#define WARP_HF_ONCE    0x02   /* 只触发一次 */
+#define WARP_HF_FIRED   0x0100 /* 运行时标记：已经触发过 */
+
+typedef struct _WARP_HEADER {
+    unsigned int magic;            /* 0   */
+    int  version;                  /* 4   */
+    int  enabled;                  /* 8   */
+    int  hooked;                   /* 12  */
+    int  status;                   /* 16  */
+    int  last_error;               /* 20  */
+    int  heartbeat;                /* 24  启动器每 2s 写一次 tick */
+    int  standalone;               /* 28  1 = 启动器已断开，用内存快照继续跑 */
+    int  evt_count;                /* 32  钩子命中总次数 */
+    int  hook_installed;           /* 36  */
+    int  hook_total;               /* 40  */
+    int  panel_step;               /* 44  UI 构建卡在第几步（0 = 正常） */
+    int  last_event;               /* 48  最近命中的钩子下标 */
+    int  fired;                    /* 52  触发过多少次行为 */
+    int  ga_found;                 /* 56  1=DLL 已映射 2=域在加载 3=完全就绪 */
+    int  popup_ok;                 /* 60  原版弹窗方法是否解析成功 */
+    unsigned long long boot_at;    /* 64  引擎就绪时刻 GetTickCount64，delay_ms 从这儿算 */
+    int  dedupe_ms;                /* 72  同回合多钩子的去重窗口 */
+    int  reserved0;                /* 76  */
+    char log_tail[WARP_LOG_LEN];   /* 80  */
+    int  vars[8];                  /* 128 钩子间共享的整数槽：探针结果、计数 */
+    /* ---- 命令槽：让 py 能主动命令游戏做事，而不只是挂钩子等它自己触发 ---- */
+    int  cmd_seq;                  /* 160  py 每次下命令自增；-1 表示还没用过 */
+    int  cmd_ack;                  /* 164  DLL 执行完把 seq 抄回来 */
+    int  cmd_type;                 /* 168  1=弹窗 2=杀进程 */
+    int  cmd_result;               /* 172  上次执行的结果码（0=成功） */
+    char cmd_text[WARP_CMD_TEXT_LEN]; /* 176 弹窗正文 */
+} WARP_HEADER;                     /* 432 */
+
+typedef struct _WARP_HOOK {
+    char klass[WARP_KLASS_LEN];    /* 0   类名 */
+    char method[WARP_METHOD_LEN];  /* 48  方法名 */
+    int  argc;                     /* 96  参数个数 */
+    int  event_id;                 /* 100 事件号，同号共用一个去重窗口 */
+    int  every;                    /* 104 每 N 次触发一次（0/1 = 每次） */
+    int  chance;                   /* 108 触发概率 0-100 */
+    int  actions;                  /* 112 WARP_ACT_* 位掩码 */
+    int  flags;                    /* 116 WARP_HF_* */
+    int  hold_ms;                  /* 120 panel 停留毫秒 */
+    int  delay_ms;                 /* 124 引擎就绪后再等多久 */
+    int  guard_index;              /* 128 参数门：看第几个参数（<0 关闭） */
+    int  guard_value;              /* 132 该参数等于它时放行（不拦、不弹） */
+    char probe_class[WARP_KLASS_LEN];   /* 136 探针对象类名（空 = 不探针） */
+    char probe_method[WARP_METHOD_LEN]; /* 184 探针 getter（0 参） */
+    int  probe_index;              /* 232 拿第几个参数当对象（默认 0） */
+    int  probe_slot;               /* 236 结果写进 vars[几] */
+    int  guard_var;                /* 240 参数门改成比较 vars[几]（>=0 生效） */
+    int  text_base;                /* 244 文案从第几句开始挑（多插件分段用） */
+    int  reserved[2];              /* 248 */
+} WARP_HOOK;                       /* 256 */
+
+/* 环形队列里的一个事件：py 侧按 events() 批量读走，读完推进 tail。 */
+typedef struct _WARP_EVENT {
+    int id;     /* 0  事件号（hook.event_id，0 时用钩子下标） */
+    int hook;   /* 4  哪个钩子产生的 */
+    int tick;   /* 8  GetTickCount 低 32 位 */
+    int a;      /* 12 第 1 个参数（截成 int） */
+    int b;      /* 16 第 2 个参数 */
+    int c;      /* 20 第 3 个参数 */
+    int d;      /* 24 vars[0] 的快照，省一次读 */
+} WARP_EVENT;   /* 28 */
+
+/* ------------------------------------------------------------------ */
+/* il2cpp 接口表（顺序必须和 il2cpp-api-names.txt / Python 侧一致）     */
+/* ------------------------------------------------------------------ */
+
+typedef void *(*fn_domain_get)(void);
+typedef void **(*fn_domain_get_assemblies)(void *domain, size_t *count);
+typedef void *(*fn_assembly_get_image)(void *assembly);
+typedef void *(*fn_class_from_name)(void *image, const char *ns, const char *name);
+typedef void *(*fn_class_get_method_from_name)(void *klass, const char *name, int argc);
+typedef void *(*fn_string_new)(const char *utf8);
+typedef void *(*fn_runtime_invoke)(void *method, void *obj, void **params, void **exc);
+typedef void *(*fn_thread_attach)(void *domain);
+typedef void *(*fn_object_new)(void *klass);
+typedef void *(*fn_class_get_type)(void *klass);
+typedef void *(*fn_type_get_object)(void *type);
+typedef void *(*fn_array_new)(void *klass, size_t length);
+typedef void *(*fn_class_get_parent)(void *klass);
+
