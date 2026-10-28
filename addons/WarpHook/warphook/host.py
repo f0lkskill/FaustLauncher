@@ -55,7 +55,19 @@ CMD_KILL = 2      # 结束游戏进程
 
 HOST_HEADER_SIZE = 432   # 160 状态头 + 命令槽（4 个 int + 256 字节文本）
 HOST_HOOK_OFFSET = HOST_HEADER_SIZE
-HOST_HOOK_SIZE = 256
+#: 一条读取链最多走几跳。
+HOST_READ_STEPS = 4
+#: 读出来的值怎么解释。
+HOST_READ_INT = 0
+HOST_READ_FLOAT = 1
+HOST_READ_BOOL = 2
+HOST_READ_PTR = 3
+#: 全进程共用的读取链条数。
+HOST_READ_MAX = 64
+HOST_READ_SIZE = 48
+
+
+HOST_HOOK_SIZE = 264
 HOST_TEXTS_OFFSET = HOST_HOOK_OFFSET + HOST_MAX_HOOKS * HOST_HOOK_SIZE
 HOST_TEXT_SIZE = HOST_TEXT_LEN
 HOST_EXPORTS_OFFSET = HOST_TEXTS_OFFSET + HOST_MAX_TEXTS * HOST_TEXT_SIZE
@@ -64,7 +76,8 @@ HOST_EV_CTRL_SIZE = 16
 HOST_EVENTS_OFFSET = HOST_EV_CTRL_OFFSET + HOST_EV_CTRL_SIZE
 HOST_EVENT_COUNT = 512
 HOST_EVENT_SIZE = 28
-HOST_MAP_BYTES = HOST_EVENTS_OFFSET + HOST_EVENT_COUNT * HOST_EVENT_SIZE
+HOST_READ_OFFSET = HOST_EVENTS_OFFSET + HOST_EVENT_COUNT * HOST_EVENT_SIZE
+HOST_MAP_BYTES = HOST_READ_OFFSET + HOST_READ_MAX * HOST_READ_SIZE
 
 #: 钩子动作位：把这次命中装进事件队列（见 :meth:`Host.events`）。
 HOST_ACT_EVENT = 0x08
@@ -163,7 +176,7 @@ class HostHeader(ctypes.Structure):
 
 
 class HostHook(ctypes.Structure):
-    """钩子表的一项，256 字节。"""
+    """钩子表的一项，264 字节。"""
 
     _fields_ = [
         ("klass", ctypes.c_char * HOST_KLASS_LEN),
@@ -184,7 +197,22 @@ class HostHook(ctypes.Structure):
         ("probe_slot", ctypes.c_int32),
         ("guard_var", ctypes.c_int32),
         ("text_base", ctypes.c_int32),
+        ("read_base", ctypes.c_int32),
+        ("read_count", ctypes.c_int32),
         ("reserved", ctypes.c_int32 * 2),
+    ]
+
+
+class HostRead(ctypes.Structure):
+    """一条读取链：从某个参数出发，按偏移跳几跳，把落点读成一个值。"""
+
+    _fields_ = [
+        ("arg", ctypes.c_int32),                        # 0=self 1..3=第几个参数
+        ("nsteps", ctypes.c_int32),                     # 走几跳
+        ("kind", ctypes.c_int32),                       # HOST_READ_*
+        ("out", ctypes.c_int32),                        # 写进事件槽 0..3
+        ("off", ctypes.c_int32 * HOST_READ_STEPS),      # 每跳偏移
+        ("deref", ctypes.c_int32 * HOST_READ_STEPS),    # 每跳是否解引用
     ]
 
 
@@ -449,6 +477,11 @@ class Host:
 
         hooks, texts = self._layout()
 
+        # 读取链是全局一张表，钩子只记 (起点, 条数) —— 每轮重建，游标从头走
+        read_used = 0
+        read_addr = base + HOST_READ_OFFSET
+        ctypes.memset(read_addr, 0, HOST_READ_MAX * HOST_READ_SIZE)
+
         # 钩子表
         for i in range(HOST_MAX_HOOKS):
             slot = base + HOST_HOOK_OFFSET + i * HOST_HOOK_SIZE
@@ -483,6 +516,38 @@ class Host:
                 except (TypeError, ValueError):
                     value = default
                 ctypes.c_int32.from_address(slot + getattr(HostHook, name).offset).value = value
+
+            # 读取链：一条钩子最多占掉表里剩余的位置，写不下就少写几条
+            reads = hook.get("reads") or ()
+            if reads:
+                room = HOST_READ_MAX - read_used
+                take = min(len(reads), room)
+                ctypes.c_int32.from_address(
+                    slot + HostHook.read_base.offset).value = read_used
+                ctypes.c_int32.from_address(
+                    slot + HostHook.read_count.offset).value = take
+                for j in range(take):
+                    spec = reads[j]
+                    arg = int(spec.get("arg", 1))
+                    chain = list(spec.get("off") or spec.get("chain") or ())[:HOST_READ_STEPS]
+                    at = read_addr + (read_used + j) * HOST_READ_SIZE
+                    ctypes.c_int32.from_address(at + HostRead.arg.offset).value = arg
+                    ctypes.c_int32.from_address(at + HostRead.nsteps.offset).value = len(chain)
+                    ctypes.c_int32.from_address(at + HostRead.kind.offset).value = int(
+                        spec.get("kind", HOST_READ_INT))
+                    ctypes.c_int32.from_address(at + HostRead.out.offset).value = int(
+                        spec.get("out", j)) & 0x3
+                    for k, step in enumerate(chain):
+                        if isinstance(step, dict):
+                            off = int(step.get("off", 0))
+                            deref = 1 if step.get("deref", True) else 0
+                        else:
+                            off, deref = int(step), 1
+                        ctypes.c_int32.from_address(
+                            at + HostRead.off.offset + k * 4).value = off
+                        ctypes.c_int32.from_address(
+                            at + HostRead.deref.offset + k * 4).value = deref
+                read_used += take
             # 同一个钩子（类名与方法都没变）如果 DLL 已经标记过「触发过」，
             # 把标记补回去，一次性钩子才不会重复触发。
             if (old_flags & 0x100) and not hook.get("_reset"):
@@ -505,7 +570,7 @@ class Host:
         ensure_exports(block, HOST_EXPORT_ORDER, HOST_EXPORTS_OFFSET, HOST_NAME_MAX)
 
     def hook(self, klass, method, argc=0, block=False, actions=None,
-             probe=None, guard=None, event=None, **extra):
+             probe=None, guard=None, event=None, reads=None, **extra):
         """登记一条钩子 —— 用法就是一次普通调用，不是填表格。
 
         ``klass`` / ``method`` 是要挂的方法（``argc`` 按「不含 this」数），
@@ -513,6 +578,8 @@ class Host:
         表示顺手把某个参数对象的属性读进 ``vars[]``，
         ``guard=(槽号, 值)`` 表示那个槽等于该值时彻底放行，
         ``event=事件号`` 表示每次命中都往事件队列塞一条（见 :meth:`events`）。
+        ``reads=[...]`` 是读取链列表，每项 ``(参数序号, 偏移链, 落点, 类型)``，
+        引擎在命中时按链把值读出来写进事件的 a/b/c/d —— 见 :meth:`reads`。
 
         返回登记进去的那条 dict，方便调用方就地改。
         默认 ``actions=0``：只拦、只看，不弹窗 —— 要弹什么由 Python 自己调
@@ -538,6 +605,8 @@ class Host:
         if event is not None:
             item["event_id"] = int(event)
             item["actions"] = int(item.get("actions", 0)) | HOST_ACT_EVENT
+        if reads:
+            item["reads"] = list(reads)
         item.update(extra)
         entry["hooks"].append(item)
         self._sync_view(owner)
