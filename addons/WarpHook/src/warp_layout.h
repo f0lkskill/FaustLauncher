@@ -80,6 +80,13 @@
 #define WARP_READ_MAX     64    /* 全进程共用的读取链条数 */
 #define WARP_READ_SIZE    48
 #define WARP_READ_STEPS   4     /* 一条链最多走几跳 */
+
+/* 读取链每一步的动作。deref[i] 存的既是「要不要解引用」也是「这一步做什么」：
+ * 0 加偏移；1 加偏移后解引用；2/3 把当前指针当容器取元素。 */
+#define WARP_STEP_PLAIN 0
+#define WARP_STEP_DEREF 1
+#define WARP_STEP_LIST  2   /* List<T>  : items(+0x10) / size(+0x18) */
+#define WARP_STEP_ARRAY 3   /* Array<T> : length(+0x18) / 元素从 +0x20 起 */
 #define WARP_READ_OFFSET  (WARP_EVENTS_OFFSET + WARP_EVENT_COUNT * WARP_EVENT_SIZE)
 #define WARP_MAP_BYTES    (WARP_READ_OFFSET + WARP_READ_MAX * WARP_READ_SIZE)
 

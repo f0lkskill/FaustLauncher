@@ -158,8 +158,36 @@ static int warp_read_chain(const WARP_READ *r, void *self, int argc,
         return 0;
 
     for (i = 0; i < r->nsteps && i < WARP_READ_STEPS; i++) {
+        int step = r->deref[i];
+
+        if (step == WARP_STEP_LIST || step == WARP_STEP_ARRAY) {
+            /* 容器一步：把 p 当成容器，取第 off[i] 个元素。元素按引用类型处理
+             * （成就关心的单位/模型都是 class），值类型容器暂不支持。 */
+            void *arr;
+            int count, idx = r->off[i];
+
+            if (!warp_can_read(p, 0x20))
+                return 0;
+            if (step == WARP_STEP_LIST) {
+                arr = *(void **)((char *)p + 0x10);      /* List<T>._items */
+                count = *(int *)((char *)p + 0x18);      /* List<T>._size  */
+            } else {
+                arr = p;
+                count = *(int *)((char *)p + 0x18);      /* Array.max_length */
+            }
+            if (!arr || idx < 0 || idx >= count)
+                return 0;
+            if (!warp_can_read((char *)arr + 0x20 + idx * (int)sizeof(void *),
+                               (int)sizeof(void *)))
+                return 0;
+            p = *(void **)((char *)arr + 0x20 + idx * (int)sizeof(void *));
+            if (!p)
+                return 0;
+            continue;
+        }
+
         p = (char *)p + r->off[i];
-        if (r->deref[i]) {
+        if (step) {
             if (!warp_can_read(p, (int)sizeof(void *)))
                 return 0;
             p = *(void **)p;

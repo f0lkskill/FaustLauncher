@@ -62,7 +62,19 @@ HOST_READ_INT = 0
 HOST_READ_FLOAT = 1
 HOST_READ_BOOL = 2
 HOST_READ_PTR = 3
-HOST_READ_OBSCURED = 4       # 落点是 ObscuredInt（混淆 int），值 = hidden ^ key
+HOST_READ_OBSCURED = 4
+# 读取链每一步的动作。deref 位存的既是「要不要解引用」也是「做什么」：
+# 0 加偏移 / 1 解引用 / 2 List 取下标 / 3 Array 取下标
+HOST_STEP_PLAIN = 0
+HOST_STEP_DEREF = 1
+HOST_STEP_LIST = 2
+HOST_STEP_ARRAY = 3
+HOST_STEP_NAMES = {
+    "plain": HOST_STEP_PLAIN,
+    "deref": HOST_STEP_DEREF,
+    "list": HOST_STEP_LIST,
+    "array": HOST_STEP_ARRAY,
+}       # 落点是 ObscuredInt（混淆 int），值 = hidden ^ key
 # 落盘时可以写数字，也可以写名字（插件侧更愿意写 'obscured' 而不是 4）
 HOST_READ_NAMES = {
     'int': HOST_READ_INT,
@@ -277,6 +289,18 @@ _HOST_SINGLETON = None
 # wait_for_gameassembly 里等到同一时刻，然后各注入一份 warp_host.dll。
 # 一份宿主对应一套 detour，重复注入就会出现「钩子触发两次、弹窗弹两遍」。
 _INJECT_LOCK = threading.Lock()
+
+
+def _step_code(value):
+    """把 deref 位的各种写法归一成步类型。"""
+    if isinstance(value, str):
+        return HOST_STEP_NAMES.get(value.strip().lower(), HOST_STEP_DEREF)
+    if isinstance(value, bool):
+        return HOST_STEP_DEREF if value else HOST_STEP_PLAIN
+    try:
+        return int(value) & 0x3
+    except (TypeError, ValueError):
+        return HOST_STEP_DEREF
 
 
 def host_alive(block):
@@ -566,17 +590,26 @@ class Host:
                         spec.get("out", j)) & 0x3
                     for k, step in enumerate(chain):
                         if isinstance(step, dict):
-                            off = int(step.get("off", 0))
-                            deref = 1 if step.get("deref", True) else 0
+                            if "list" in step:
+                                off, code = int(step["list"]), HOST_STEP_LIST
+                            elif "array" in step:
+                                off, code = int(step["array"]), HOST_STEP_ARRAY
+                            else:
+                                code = _step_code(step.get("deref", True))
+                                off = int(step.get("index", 0)) if code in (
+                                    HOST_STEP_LIST, HOST_STEP_ARRAY) else int(
+                                    step.get("off", 0))
                         else:
                             off = int(step)
                             # 顶层 deref 没写到这一位，就按「解引用」处理：
                             # 绝大多数跳到 next 是对象引用，内嵌 struct 才显式写 False。
-                            deref = 1 if (k >= len(flags) or flags[k]) else 0
+                            code = _step_code(flags[k]) if k < len(flags) else 1
+                        off, code = int(off), int(code)
+                        off = max(-0x7FFFFF, min(0x7FFFFF, off))
                         ctypes.c_int32.from_address(
                             at + HostRead.off.offset + k * 4).value = off
                         ctypes.c_int32.from_address(
-                            at + HostRead.deref.offset + k * 4).value = deref
+                            at + HostRead.deref.offset + k * 4).value = code
                 read_used += take
             # 同一个钩子（类名与方法都没变）如果 DLL 已经标记过「触发过」，
             # 把标记补回去，一次性钩子才不会重复触发。
