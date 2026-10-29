@@ -72,13 +72,24 @@ FIRST_BATCH = (
 #: `class_get_method_from_name` 要的参数个数不是一回事 —— 对不上就
 #: `method not found`，一个钩子都装不上。这里按 dump.cs 的实际签名写死。
 ARGC_OVERRIDE = {
-    'action_on_end_turn': 3,        # OnEndTurn(action, timing, info)
-    'action_done_with_action': 2,   # DoneWithAction(action, timing)
+    # ↓ 全部对照 cache/hook/dump/E6312D92/out/dump.cs 的**类内真实签名**。
+    #   KIND_SIGNATURES 里的数是「老 thunk 取几格」，不是参数个数——
+    #   直接当 argc 用会在 class_get_method_from_name 的精确匹配上
+    #   全军覆没（v0.9.2 真机实锤：OnEndTurn 配 3 报 method not found，
+    #   真实是 1 参 OnEndTurn(BATTLE_EVENT_TIMING)）。
+    'action_on_end_turn': 1,        # BattleActionModel::OnEndTurn(BATTLE_EVENT_TIMING)
+    'action_done_with_action': 1,   # BattleActionModel::DoneWithAction(BATTLE_EVENT_TIMING)
     'skv_start': 0,                 # Skill_Start()
     'skv_complete': 0,              # Skill_Complete()
     'skv_end': 0,                   # Skill_End()
     'node_cleared': 3,              # IsNodeCleared(mainchapter, subchapter, node)
     'node_clear_state': 3,          # GetClearNodeState(mainchapter, subchapter, node)
+    # 只缓存钩子的 argc 同样按真实签名（不是「取格数-1」）：
+    'stage_clear_info': 1,          # UserStageClearInfoData::UpdateData(JSONNode)
+    'stage_clear_query': 1,         # UserStageClearInfoData::GetData(int id)
+    'stage_clear_last': 0,          # UserStageClearInfoData::GetLastClearData()
+    'node_cleared_short': 3,        # UserStageNodeStateData::IsNodeCleared(int,int,int)
+    'stage_progress': 1,            # UserStageNodeStateData::UpdateData(...)
 }
 
 #: 行动类钩子读 action 对象，发 ACT 行。
@@ -412,9 +423,13 @@ class WarpSource:
         try:
             self._host.push(True)
             if not self._host.status().get('hooked'):
-                # 不等 —— 游戏大概率还没开，赢了才回。宿主自己会盯着进程列表，
-                # 一看到游戏起来就注入，配置早写好了（先配置后注入是支持的）。
-                self._host.inject_now(wait=False)
+                # 不等 attach 阻塞 —— 游戏大概率还没开。旧代码 wait=False：
+                # 游戏还没开就直接放弃，之后没人再试（用户先开启动器后开
+                # 游戏时引擎整轮起不来，成就全线沉默）。改成后台线程
+                # wait=True 死等：游戏一起来就注入（配置已先写好）。
+                threading.Thread(
+                    target=self._host.inject_now, kwargs={'wait': True},
+                    daemon=True, name='warphook-inject').start()
         except Exception as exc:              # noqa: BLE001
             self._log('[成就] 注入失败：%s' % exc)
             return False
