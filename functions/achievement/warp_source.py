@@ -25,6 +25,7 @@ buff 类成就走采样器路径，与 v0.7 行为一致）。
 """
 from __future__ import annotations
 
+import os
 import threading
 import time
 
@@ -319,21 +320,49 @@ class WarpSource:
 
     # ---- 装配 ----------------------------------------------------------
     def host(self):
-        """取 WarpHook 的 Host 工厂（插件没装就是 None）。
+        """取 WarpHook 的 Host 工厂（插件没装也能直连 warphook 包）。
 
-        必须用启动器实际在用的那个 ``AddonManager`` 实例 —— ``namespaces`` 是
-        实例属性，随手 new 一个拿到的是空注册表。
+        两条路径：
+        * 启动器主进程：用实际在用的 ``AddonManager`` 实例 —— ``namespaces``
+          是实例属性，随手 new 一个拿到的是空注册表；
+        * 成就监测子进程：插件系统不在这个进程里跑，直接把 addons/WarpHook
+          加进 ``sys.path`` import warphook。共享内存本身是跨进程的，
+          warp_host.dll 由谁注入都一样，钩子表本来就只有成就这一个作者。
         """
         from functions.extension.addon.addon_utils import current_manager
         manager = current_manager()
         namespaces = getattr(manager, 'namespaces', None) if manager else None
-        if namespaces is None:
-            return None
+        if namespaces is not None:
+            try:
+                return namespaces['warp'].plugin.Host
+            except KeyError:
+                pass
+        return self._host_direct()
+
+    @staticmethod
+    def _host_direct():
+        """绕过插件系统直连 warphook（子进程路径）。失败返回 None。"""
+        import sys as _sys
         try:
-            space = namespaces['warp']
-        except KeyError:
-            return None
-        return space.plugin.Host
+            import warphook  # 已可导入（sys.path 里已有）就直接用
+        except ImportError:
+            try:
+                from functions.base.common.path_utils import get_app_root
+                root = get_app_root()
+            except Exception:  # noqa: BLE001
+                root = os.path.dirname(os.path.dirname(os.path.dirname(
+                    os.path.abspath(__file__)
+                )))
+            addon_dir = os.path.join(str(root), 'addons', 'WarpHook')
+            if not os.path.isdir(addon_dir):
+                return None
+            if addon_dir not in _sys.path:
+                _sys.path.insert(0, addon_dir)
+            try:
+                import warphook
+            except ImportError:
+                return None
+        return getattr(warphook, 'Host', None)
 
     def attach(self):
         """挂钩子并把宿主 DLL 注进去。成功返回 True。"""

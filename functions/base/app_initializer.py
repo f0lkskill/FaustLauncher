@@ -108,17 +108,29 @@ LAUNCH_MODE = {
 
 DEBUG_MODE = '--debug' in sys.argv
 
+def _is_achievement_child() -> bool:
+    """本进程是不是成就监测子进程。
+
+    子进程的 stdout 会被主进程整条泵进 logs/achievement_hook.log —— 走了
+    console_log 的彩色包装之后，一行日志里出现两层时间戳加一串 ANSI 码
+    （文件里就是用户看到的「错误字符」）；镜像进主日志还会凭空多出一份
+    按时间戳命名的新 logs/*.log。所以子进程必须保持 stdout 朴素。
+    """
+    return '--achievement-hook' in sys.argv
+
+
 def base_load():
-        
+
     from functions.base.common.stdio import harden_stdio
 
     harden_stdio()
 
-    try:
-        from functions.base.console_log import install as _install_console_log
-        _install_console_log()
-    except Exception as _exc:  # noqa: BLE001
-        print(f"控制台日志美化不可用(可忽略): {_exc}")
+    if not _is_achievement_child():
+        try:
+            from functions.base.console_log import install as _install_console_log
+            _install_console_log()
+        except Exception as _exc:  # noqa: BLE001
+            print(f"控制台日志美化不可用(可忽略): {_exc}")
 
     try:
         if not os.path.isfile(os.path.join("assets", "images", "icon", "icon.png")):
