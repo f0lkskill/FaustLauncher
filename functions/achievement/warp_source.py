@@ -43,12 +43,18 @@ FIRST_BATCH = (
     'manager_init',
     'manager_on_round_start_before',
     'action_on_end_turn',
-    'action_done_with_action',
+    # action_done_with_action：当前游戏版本 BattleActionModel 已无此方法，
+    # SkillAbility::DoneWithAction 是被 6 个子类 override 的虚方法（钩基类
+    # 拦不到），没有等价单点 —— v0.9.4 下线，开组逻辑改由 Skill_End 行驱动。
     'skv_start',
     'skv_complete',
     'skv_end',
     'node_cleared',
     'node_clear_state',
+    # node_cleared_short（IsNodeCleared 只缓存）下线：与 node_cleared 同
+    # target，MinHook 一个方法只能挂一个 detour（真机 slot23 冲突实证）。
+    # 缓存能力并进 node_cleared/node_clear_state 两个事件钩本身
+    # （KIND_NODE_STATE 现在带 cache=(0,0)，self 落对象槽 0）。
     # ---- v0.8：老链路剩下的五种信号源，读取链 + 返回值 + 容器聚合到位后
     # 全部能以纯配置表达，一次接完（老链路至此没有未迁移的事件钩子）。
     'railway_total',
@@ -63,7 +69,6 @@ FIRST_BATCH = (
     'stage_clear_info',
     'stage_clear_query',
     'stage_clear_last',
-    'node_cleared_short',
     'stage_progress',
 )
 
@@ -88,7 +93,6 @@ ARGC_OVERRIDE = {
     'stage_clear_info': 1,          # UserStageClearInfoData::UpdateData(JSONNode)
     'stage_clear_query': 1,         # UserStageClearInfoData::GetData(int id)
     'stage_clear_last': 0,          # UserStageClearInfoData::GetLastClearData()
-    'node_cleared_short': 3,        # UserStageNodeStateData::IsNodeCleared(int,int,int)
     'stage_progress': 1,            # UserStageNodeStateData::UpdateData(...)
 }
 
@@ -147,6 +151,10 @@ def build_hooks(names=None, offsets=None):
             raise ValueError('钩子名不是 类::方法 的形状：%s' % target)
         spec = WR.hook_spec(kind, klass, method, offsets=offsets)
         cache = spec.get('cache')
+        # 纯缓存钩（不发事件）与「事件钩自带缓存」要分开：node_state 这类
+        # 带缓存的读法照样占事件号、照样投递（v0.9.4 起 node_cleared /
+        # node_clear_state 自带 self 缓存，替代下线的 node_cleared_short）。
+        pure_cache = kind in (WR.KIND_CACHE_SELF, WR.KIND_CACHE_ARG1)
         hook = {
             'name': name,
             'klass': spec['klass'],
@@ -156,10 +164,10 @@ def build_hooks(names=None, offsets=None):
             'kind': kind,
             # 只缓存对象的钩子不发事件（老链路里它们也不发）；事件号只发给
             # 真正要投递的钩子，免得号段里一堆空号。
-            'event': None if cache else EVENT_ID_BASE + event_no,
+            'event': None if pure_cache else EVENT_ID_BASE + event_no,
             # unit 钩子在 RefreshSpeed/SetSpeed 这类方法上会被频繁调用，
             # 值没变就没必要让规则引擎重算一遍（血量不动时一轮能省几百条）
-            'dedupe': bool(spec['reads']) and not cache,
+            'dedupe': bool(spec['reads']) and not pure_cache,
         }
         # 「调用之后才有值」与「要读返回值」的钩子：when/ret_* 三件套
         # 透传给宿主（dict 配置路径与 hook() 关键字路径同一个默认表）。
@@ -170,7 +178,7 @@ def build_hooks(names=None, offsets=None):
             hook['ret_slot'] = int(spec.get('ret_slot', -1))
         if cache:
             hook['cache'] = cache
-        else:
+        if not pure_cache:
             event_no += 1
         hooks.append(hook)
     return hooks

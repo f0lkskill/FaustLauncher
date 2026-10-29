@@ -69,7 +69,7 @@ KIND_SIGNATURES = {
     KIND_UNIT: (1, ('method',)),
     KIND_UNIT_INT_BOOL: (3, ('value', 'cm', 'method')),
     KIND_UNIT_GET_INT: (1, ('method',)),
-    KIND_ACTION_INT: (2, ('timing', 'method')),
+    KIND_ACTION_INT: (2, ('action', 'method')),
     KIND_DAMAGE_ACTION: (5, ('action', 'coin', 'attacker', 'crit', 'method')),
     KIND_SKV: (2, ('a1', 'method')),
     KIND_STAGE_STAT: (3, ('a1', 'a2', 'method')),
@@ -182,19 +182,28 @@ def action_skill(offsets, arg=1):
 
 
 def action_frame(offsets, arg=1):
-    """action 对象身上的四项：出手者、指令者、技能 id、技能层级。
+    """action 对象身上的四件：出手者身份、指令者、技能 id、技能层级。
 
-    `BattleActionModel::OnEndTurn(action, timing, info)` 的 action 是**第一个参数**
-    而不是 self（self 是 BattleActionModel 自己），所以 arg 默认 1。
+    真机 v0.9.3 证伪旧钩点：当前游戏版本 `BattleActionModel` 里已经没有
+    `OnEndTurn`/`DoneWithAction`（钩到的是 parent 链上别的东西，读链全
+    垃圾）。新钩点 `BattleSystemAbilityDetail::DoneWithAction(action)`，
+    a1=action。字段偏移对照当前 dump.cs：
+      - `_model`（BattleUnitModel 引用）@0x18 → 出手者 origin id @0x64；
+      - `_commanderInstanceID`（int）@0xB4；
+      - `_skill`@0x20 → SkillModel._skillData@0x10 → id@0x10 / skillTier@0x40，
+        两个都是 **ObscuredInt**，必须按 obscured 读（直接 int 读出来的是
+        key 分量 —— 真机 skid=2010341209 就是这么来的）。
     """
     skill = offsets['action_skill']
     data = offsets['skill_data']
     return [
-        _read(arg, [(offsets['action_actor_id'], False)], OUT_ACTOR),
+        _read(arg, [(offsets['action_actor_id'], True),
+                    (offsets['unit_origin_id'], False)], OUT_ACTOR),
         _read(arg, [(offsets['action_commander_id'], False)], OUT_COMMANDER),
-        _read(arg, [(skill, True), (data, True), (offsets['skill_id'], False)], OUT_PRIMARY),
+        _read(arg, [(skill, True), (data, True), (offsets['skill_id'], False)],
+              OUT_PRIMARY, 'obscured'),
         _read(arg, [(skill, True), (data, True), (offsets['skill_tier'], False)],
-              OUT_SECONDARY),
+              OUT_SECONDARY, 'obscured'),
     ]
 
 
@@ -223,9 +232,12 @@ SLOT_DMG_OID = 9
 def damage_frame(offsets):
     """伤害钩子的一帧：attacker 的 origin id + 受击者三围 + action 四件套。
 
-    参数布局（老链路 DEF_DAMAGE_THUNK 同款）：self=受击单位、a1=action、
-    a2=coin、a3=attacker、a4=crit。返回值是 float 倍率（本钩子取了但不直出，
-    与老链路一致 —— 伤害数值成就走 VAL 行的 hp 变化）。
+    真机确认 slot19 钩到的是 4 参版
+    `GetTakeAttackDmgMultiplier(action, coin, attacker, isCritical)`
+    （BattleUnitModel 嵌套族），self=受击单位、a1=action、a3=attacker。
+    skid/tier 同样是 ObscuredInt（v0.9.3 真机 skid=2010341209 教训）。
+    返回值是 float 倍率（本钩子取了但不直出，与老链路一致 —— 伤害数值
+    成就走 VAL 行的 hp 变化）。
     """
     skill = offsets['action_skill']
     data = offsets['skill_data']
@@ -235,10 +247,13 @@ def damage_frame(offsets):
         _read(0, [(state, True), (offsets['state_max_hp'], False)], SLOT_DMG_MAX_HP, 'obscured'),
         _read(0, [(state, True), (offsets['state_mp'], False)], SLOT_DMG_MP, 'obscured'),
         _read(3, [(offsets['unit_origin_id'], False)], SLOT_DMG_ATTACKER_OID),
-        _read(1, [(offsets['action_actor_id'], False)], SLOT_DMG_ACTOR),
+        _read(1, [(offsets['action_actor_id'], True),
+                  (offsets['unit_origin_id'], False)], SLOT_DMG_ACTOR),
         _read(1, [(offsets['action_commander_id'], False)], SLOT_DMG_COMMANDER),
-        _read(1, [(skill, True), (data, True), (offsets['skill_id'], False)], SLOT_DMG_SKID),
-        _read(1, [(skill, True), (data, True), (offsets['skill_tier'], False)], SLOT_DMG_TIER),
+        _read(1, [(skill, True), (data, True), (offsets['skill_id'], False)],
+              SLOT_DMG_SKID, 'obscured'),
+        _read(1, [(skill, True), (data, True), (offsets['skill_tier'], False)],
+              SLOT_DMG_TIER, 'obscured'),
         _read(0, [(offsets['unit_instance_id'], False)], SLOT_DMG_IID),
         _read(0, [(offsets['unit_origin_id'], False)], SLOT_DMG_OID),
     ]
@@ -355,6 +370,10 @@ OFFSET_KEYS = (
 CACHE_SLOTS = {
     KIND_CACHE_SELF: 0,
     KIND_CACHE_ARG1: 1,
+    # node_state 事件钩自带缓存（v0.9.4：node_cleared_short 与 node_cleared
+    # 同 target，MinHook 一方法一 detour，独立缓存钩装不上 —— 真机 slot23
+    # 冲突实证）。self 落槽 0，与 cache_self 共槽：抓的是同一个存档对象。
+    KIND_NODE_STATE: 0,
 }
 
 
@@ -400,7 +419,9 @@ def hook_spec(kind, klass, method, offsets=None, **extra):
     # 存档管理器对象，谁后命中谁的值就是最新的一份。
     slot = CACHE_SLOTS.get(kind)
     if slot is not None:
-        spec['cache'] = (0 if kind == KIND_CACHE_SELF else 1, slot)
+        # 只有 cache_arg1 从第 1 参取对象，其余（含 node_state 事件钩的自带
+        # 缓存）一律缓存 self。
+        spec['cache'] = (1 if kind == KIND_CACHE_ARG1 else 0, slot)
     spec.update(extra)
     return spec
 
