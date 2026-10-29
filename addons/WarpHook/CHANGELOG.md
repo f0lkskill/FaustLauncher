@@ -4,6 +4,35 @@
 
 看完整历史：`git log --oneline -- addons/WarpHook/`
 
+## 0.9.3
+
+真机第三轮排障：装钩失败的三大根因，逐条掀掉。
+
+- **thunk 表截断（本轮最致命）**。v0.9.1 把钩子表从 16 槽扩到 32 槽
+  时，`warp_hook.c` 的十个 thunk 数组声明改成了 32 槽，但初始化实例
+  还停在 16 个——槽 16..31 的 thunk 全是 NULL，`warp_pick_thunk` 返
+  回 NULL 后报 "unsupported argc"（而且日志打印的是 argc 值不是槽
+  号，极具迷惑性）。真机上铁路五件套、伤害、两条抽卡钩全死在这。
+  现在 160 个实例补齐，装钩前自检：任何一槽为 NULL 即拒绝装钩并打
+  "thunk table truncated"。
+- **argc 配错 5 条**。`ARGC_OVERRIDE` 一直是「老 thunk 取几格」而非
+  真实参数个数，对着 dump.cs 逐条核过：`OnEndTurn`/`DoneWithAction`
+  各 1 参（原配 3/2）、`UpdateData`/`GetData` 各 1 参（原配 0）、
+  `IsNodeCleared` 选 3 参重载（原配 0）。argc 错 = 方法查不到，全
+  数 "method not found"。
+- **铁路三类 "class not found"**。`RailwayDungeonHistoryDataByCollection`
+  和 `RailwayDungeonMapUpperUILine1002` 不在全局命名空间（分别在
+  `LimbusCompany.RailwayDungeon.HistoryLibs` / `.UI`）。FALLBACK_HOOKS
+  补全名，`warp_find_class` 的点分分割从「第一个点」改为「最后一个
+  点」——命名空间自身可以带点，类名永远是末段。
+- **李箱三技能成就链修复**。SKV 读链偏移 0x120 实为 `_targetDir`
+  （float 0.0 → 位模式 0 → 全零事件），`_attackerInstanceID` 真身
+  在 0x130。配合前两条修复，`OnEndTurn` 的 ACT 行恢复流动后
+  `match_skill` 才有数据可比。
+- **成就观测注入重试**。旧代码 `inject_now(wait=False)`：游戏还没开
+  就直接放弃，之后没人再试（用户先开启动器后开游戏时引擎整轮不起
+  来）。改为后台线程 `wait=True` 死等，游戏一起来就注入。
+
 ## 0.9.2
 
 真机第二轮排障：钩子表不是不够大，是**多个插件进程在互踩**。

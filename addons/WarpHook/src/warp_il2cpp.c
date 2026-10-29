@@ -112,8 +112,10 @@ void *warp_find_class(void *domain, const char *name)
     if (!name || !name[0])
         return NULL;
 
-    /* 名字里带点就是「命名空间.类名」，按命名空间精确查 */
-    dot = strchr(name, '.');
+    /* 名字里带点就是「命名空间.类名」——按**最后一个**点分割：
+     * 命名空间自身可以带点（LimbusCompany.RailwayDungeon.HistoryLibs），
+     * 类名永远是末段。v0.9.2 之前按第一个点分，多级命名空间全灭。 */
+    dot = strrchr(name, '.');
     if (dot && (size_t)(dot - name) < sizeof(ns_buf)) {
         memcpy(ns_buf, name, (size_t)(dot - name));
         ns_buf[dot - name] = '\0';

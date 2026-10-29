@@ -411,6 +411,25 @@ int warp_install_hooks(void)
     int total = 0;
     BOOL mh_ready = FALSE;
 
+    /* 自检：thunk 表每个数组必须全槽非空。v0.9.1 把 16 槽扩到 32 时
+     * 初始化实例漏补一半，槽 16+ 的 thunk 全是 NULL，装钩全数死在
+     * "unsupported argc"——而且日志打印的是 argc 值，极具迷惑性。
+     * 这里在装钩前把这类结构性错误显式掀出来。 */
+    {
+        void *const *const tabs[10] = {
+            g_thunks0, g_thunks1, g_thunks2, g_thunks3, g_thunks4,
+            g_thunks5, g_thunks6, g_thunks7, g_thunks8, g_thunks9
+        };
+        int t;
+        for (t = 0; t < 10; t++) {
+            if (!tabs[t][WARP_MAX_HOOKS - 1]) {
+                warp_log("thunk table truncated (argc slot)", t);
+                warp_status(WARP_ST_ERROR, WARP_ERR_MH_INIT);
+                return 0;
+            }
+        }
+    }
+
     domain = g_ic.domain_get();
     if (!domain)
         return 0;
