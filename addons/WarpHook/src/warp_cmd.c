@@ -294,6 +294,26 @@ void __stdcall hk_warp_pump(void *self)
     if (g_pump_original)
         ((warp_fixedupdate_fn)g_pump_original)(self);
     warp_pump_commands();
+    warp_pump_ticks();
+}
+
+/* 共享 tick 槽：小插件（battle_snark 的立绘淡出）把「每帧回调」注册进
+   objects[30]=WARP_TICK_MAGIC / objects[31]=函数指针，泵每帧代跑一次。
+   v0.9.1 同目标双钩崩游戏的教训——别的模块不再各自挂钩子，改协作调用。
+   回调跑在游戏主线程（FixedUpdate detour 里），il2cpp 调用安全。 */
+#define WARP_TICK_MAGIC ((void *)(size_t)0x534B5431ull)   /* "SKT1" */
+void warp_pump_ticks(void)
+{
+    void **slot;
+    void (*tick)(void);
+    if (!g_hdr)
+        return;
+    slot = (void **)((char *)g_hdr + WARP_OBJECTS_OFFSET);
+    if (slot[30] != WARP_TICK_MAGIC)
+        return;
+    tick = (void (*)(void))slot[31];
+    if (tick)
+        tick();
 }
 
 void warp_pump_commands(void)

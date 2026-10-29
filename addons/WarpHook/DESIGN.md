@@ -317,6 +317,31 @@ host.hook('SomeStage', 'Load', argc=1, cache=(1, 1))             # 第一个参�
 （`warphook.base.can_read`）—— Python 读非法地址是直接段错误，没有异常可捕获，
 这个校验只能自己做。
 
+### 多作者分段（共享内存写规则，v0.9.2 起）
+
+共享内存段（`Local\WarpHost_Default`）是**多个插件进程共用的**：成就观测在
+独立子进程，NoGacha 在主进程，两边都要 push 钩子。谁整表清写谁就吞掉别人——
+v0.9.1 真机上成就 25 条钩子就是这样被 NoGacha 的 2 条清掉的。规则从此是
+**按 owner 分段、各管各的**：
+
+| 段 | 主段（owner 名含「成就/achievement」） | 辅段（其余） |
+| --- | --- | --- |
+| 钩子槽 | 0..26 | 27..31 |
+| 读链 | 0..95 | 96..127 |
+| 文案 | 0..191 | 192..255 |
+
+每个作者 push 时只 memset、只写自己段；`header.enabled` 不再被别人的 push
+关掉（关掉的插件把自己段清空即等于停）。判定是纯名字运算（`_is_primary_owner`），
+两个进程对同一个 owner 名必然算出同一段，无需握手。
+
+### tick 共享槽（objects[30]/[31]，battle_snark 专用）
+
+battle_snark 的气泡淡出需要每帧驱动，但 `Update`/`LateUpdate` 在游戏类上
+未必有重载、钩不上。v0.9.2 起走函数指针共享：battle_snark 把
+`sk_ui_tick` 写进 `objects[31]`（`objects[30]` 放 magic `0x534B5431`，
+"SKT1"），WarpHost 的命令泵每帧检查 magic 后代跑——主线程安全，钩子
+装不装得上都不影响气泡生命周期。battle_snark 退出时只清 [31] 留 magic。
+
 ### 事件队列与背压
 
 事件环 2048 格 × 60 字节（约 120 KB）。游标放在 `WARP_EV_CTRL` 的

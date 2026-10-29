@@ -155,6 +155,25 @@ HOST_OBJECTS_OFFSET = HOST_READ_OFFSET + HOST_READ_MAX * HOST_READ_SIZE
 HOST_OBJ_ARG_BASE = 0x100   # 读取链的 arg 写 0x100+n = 从第 n 个对象槽出发
 HOST_MAP_BYTES = HOST_OBJECTS_OFFSET + HOST_OBJECT_COUNT * HOST_OBJECT_SIZE
 
+# ---- 多作者分段（v0.9.2）------------------------------------------------
+# 成就观测跑在独立子进程，它有自己的一份 Host；NoGacha 等插件在启动器主进程
+# 也有一份。两个进程写的是同一块共享内存——v0.9.1 及之前 _write_config 每次都
+# 把整张表清空重写，谁后 push 谁说了算：成就 push 完 25 条，NoGacha 一 push，
+# 表里就只剩 NoGacha 的 2 条，C 只装 2 条，「成就钩子全死」（v0.9.1 真机实锤）。
+# 现在改成按 owner 名分段、各写各的段，互不覆盖：
+HOST_PRIMARY_MARKS = ('成就', 'achievement')   # owner 名含这些 → 主段作者
+HOST_HOOKS_PRIMARY = 27    # 钩子槽：主段 0..26 / 辅段 27..31（成就 25 条 + 余量）
+HOST_READS_PRIMARY = 96    # 读链条目：主段 0..95 / 辅段 96..127
+HOST_TEXTS_PRIMARY = 192   # 文案段：主段 0..191 / 辅段 192..255
+
+
+def _is_primary_owner(owner):
+    """主段作者判定 —— 必须是纯名字运算：子进程和主进程对同一个
+    owner 名要算出同一个答案，不能依赖任何运行时状态。"""
+    name = str(owner).lower()
+    return any(m in name for m in HOST_PRIMARY_MARKS)
+
+
 #: 钩子动作位：把这次命中装进事件队列（见 :meth:`Host.events`）。
 HOST_ACT_EVENT = 0x08
 
@@ -524,41 +543,76 @@ class Host:
     def _layout(self):
         """把各插件登记的钩子与文案排成一张总表。
 
-        钩子按注册顺序首尾相接；文案按插件分段，段尾补一个空串当界标
-        （DLL 的 warp_pick_text 从 text_base 起扫到空槽为止）。
+        v0.9.2 起按 owner 分段：主段作者（成就观测，名字含「成就」/
+        achievement）占钩子槽 0..26、读链 0..95、文案 0..191；其余作者
+        合占钩子槽 27..31、读链 96..127、文案 192..255。成就观测在子进程
+        有一份独立的 Host，两边各自 push 同一块共享内存——只有分段各写各的，
+        才不会互相把对方清掉（v0.9.1 真机事故：NoGacha 后 push，成就 25 条
+        全被清掉，C 只装上 NoGacha 的 2 条）。
 
-        超出 HOST_MAX_HOOKS 的钩子会被丢掉。这事必须喊出来：v0.9.0 真机上
-        成就 25 条 + NoGacha 2 条 > 16 槽，NoGacha 的钩子被静默截掉，
-        插件盯着 hits 永远是 0，查了半天才发现是布局截断。
+        返回的 hooks 列表按**最终槽号**排列（空洞为 None，由 _write_config
+        跳过）；texts 同理按最终段号。超容量的钩子会被丢掉并打日志。
         """
         active = [(name, e) for name, e in self._owners.items() if e["on"]]
+        primaries = [(n, e) for n, e in active if _is_primary_owner(n)]
+        secondaries = [(n, e) for n, e in active if not _is_primary_owner(n)]
 
-        hooks = []
-        texts = []
-        dropped = []   # (owner, method) —— 装不下的钩子，push 时打日志
-        for owner_name, entry in active:
-            base = len(texts)
-            for hook in entry["hooks"]:
-                if len(hooks) >= HOST_MAX_HOOKS:
-                    dropped.append((owner_name, hook.get("method") or "?"))
+        hook_cap = (HOST_HOOKS_PRIMARY, HOST_MAX_HOOKS - HOST_HOOKS_PRIMARY)
+        text_cap = (HOST_TEXTS_PRIMARY, HOST_MAX_TEXTS - HOST_TEXTS_PRIMARY)
+        groups = []
+        dropped = []
+        text_dropped = 0
+        for gi, members in enumerate((primaries, secondaries)):
+            hooks = []
+            texts = []
+            for owner_name, entry in members:
+                base = len(texts)
+                for hook in entry["hooks"]:
+                    if len(hooks) >= hook_cap[gi]:
+                        dropped.append((owner_name, hook.get("method") or "?"))
+                        continue
+                    item = dict(hook)
+                    item["text_base"] = base
+                    item["owner"] = owner_name
+                    hooks.append(item)
+                # 先到先得，但不截断：每个插件能装多少装多少，只受**自己段**
+                # 剩余容量约束（留一格给段尾空串当界标）。
+                room = text_cap[gi] - len(texts) - 1
+                if room <= 0:
+                    text_dropped += len(entry["texts"])
                     continue
-                item = dict(hook)
-                item["text_base"] = base
-                item["owner"] = owner_name
-                hooks.append(item)
-            # 先到先得，但不截断：每个插件能装多少装多少，只受池子剩余容量约束
-            # （留一格给段尾空串当界标）。池子够大时谁都不会被砍。
-            room = HOST_MAX_TEXTS - len(texts) - 1
-            if room <= 0:
-                continue
-            texts.extend(entry["texts"][:room])
-            texts.append("")
+                take = entry["texts"][:room]
+                text_dropped += len(entry["texts"]) - len(take)
+                texts.extend(take)
+                texts.append("")
+            groups.append((hooks, texts))
+
+        # 槽号拼装：主段从 0、辅段从 HOST_HOOKS_PRIMARY 起，中间的空洞留 None
+        out_hooks = [None] * HOST_MAX_HOOKS
+        out_texts = [None] * HOST_MAX_TEXTS
+        primary_hooks, primary_texts = groups[0]
+        secondary_hooks, secondary_texts = groups[1]
+        for i, hook in enumerate(primary_hooks):
+            out_hooks[i] = hook
+        for i, hook in enumerate(secondary_hooks):
+            out_hooks[HOST_HOOKS_PRIMARY + i] = hook
+        for i, text in enumerate(primary_texts):
+            out_texts[i] = text
+        for i, text in enumerate(secondary_texts):
+            out_texts[HOST_TEXTS_PRIMARY + i] = text
         if dropped:
             names = ", ".join(f"{o}.{m}" for o, m in dropped[:6])
             more = f" 等 {len(dropped)} 条" if len(dropped) > 6 else ""
-            self.log(f"钩子表只有 {HOST_MAX_HOOKS} 槽，装不下的钩子被丢弃："
+            self.log(f"钩子分段容量不够，装不下的钩子被丢弃："
                      f"{names}{more} —— 检查各插件钩子总数", "warp")
-        return hooks[:HOST_MAX_HOOKS], texts[:HOST_MAX_TEXTS]
+        bands = tuple(
+            gi for gi, group in enumerate(
+                ([(n, e) for n, e in self._owners.items()
+                  if _is_primary_owner(n)],
+                 [(n, e) for n, e in self._owners.items()
+                  if not _is_primary_owner(n)]))
+            if group)   # 关掉的 owner 也要管段：全关 push 时才轮得到清自己的槽
+        return out_hooks, out_texts, bands
 
     # ---------- 日志 ----------
 
@@ -595,22 +649,38 @@ class Host:
         return self._block
 
     def _write_config(self, block):
-        """把钩子表、文案池、导出名表写进共享内存。"""
+        """把钩子表、文案池、导出名表写进共享内存。
+
+        v0.9.2 分段协议：只碰本实例 _owners 涉及的段（主段/辅段），别人的段
+        一个字节都不动——成就观测子进程与主进程插件各自 push 互不覆盖。
+        """
         base = block.address
         hdr = block.cfg
-        # 只要还有任何一个插件是开着的，宿主就继续工作
-        hdr.enabled = 1 if any(e["on"] for e in self._owners.values()) else 0
+        # 只要还有任何一个插件是开着的，宿主就继续工作。全关时**不写 0**：
+        # 别的进程（另一个 Host 实例）可能还开着——写 0 会把人家一起停掉。
+        # 关掉的插件自己的钩子段会被清空，行为上已经「停」了。
+        if any(e["on"] for e in self._owners.values()):
+            hdr.enabled = 1
         hdr.dedupe_ms = self.dedupe_ms
 
-        hooks, texts = self._layout()
+        hooks, texts, bands = self._layout()
 
-        # 读取链是全局一张表，钩子只记 (起点, 条数) —— 每轮重建，游标从头走
-        read_used = 0
+        # 读取链按段各自重建：主段 0..95、辅段 96..127，游标各走各的
+        read_base_slot = (0, HOST_READS_PRIMARY)
+        read_used = [0, 0]
         read_addr = base + HOST_READ_OFFSET
-        ctypes.memset(read_addr, 0, HOST_READ_MAX * HOST_READ_SIZE)
+        for gi, cap in enumerate((HOST_READS_PRIMARY,
+                                  HOST_READ_MAX - HOST_READS_PRIMARY)):
+            if gi in bands:
+                ctypes.memset(
+                    read_addr + read_base_slot[gi] * HOST_READ_SIZE,
+                    0, cap * HOST_READ_SIZE)
 
-        # 钩子表
+        # 钩子表：只清只写自己段的槽
         for i in range(HOST_MAX_HOOKS):
+            gi = 0 if i < HOST_HOOKS_PRIMARY else 1
+            if gi not in bands:
+                continue
             slot = base + HOST_HOOK_OFFSET + i * HOST_HOOK_SIZE
             # 先记下旧槽位：DLL 会把「一次性钩子已经触发过」的标记写回 flags
             # 的最高位。反复 push 配置时若把这个标记清掉，同一个一次性钩子
@@ -620,13 +690,13 @@ class Host:
             old_klass = _read_fixed(slot + HostHook.klass.offset, HOST_KLASS_LEN)
             old_method = _read_fixed(slot + HostHook.method.offset, HOST_METHOD_LEN)
             ctypes.memset(slot, 0, HOST_HOOK_SIZE)
-            if i >= len(hooks):
+            hook = hooks[i]
+            if hook is None:
                 continue
-            hook = hooks[i] or {}
+            hook = dict(hook)
             # 声明式 dict 也能直接写 event=事件号，效果等同 Host.hook(event=...)：
             # 少了这一位，DLL 只数命中次数、不往事件队列里塞东西。
             if hook.get("event") is not None:
-                hook = dict(hook)
                 hook["event_id"] = int(hook["event"])
                 hook["actions"] = int(hook.get("actions", 0)) | HOST_ACT_EVENT
             _write_fixed(slot + HostHook.klass.offset,
@@ -659,13 +729,15 @@ class Host:
                     value = default
                 ctypes.c_int32.from_address(slot + getattr(HostHook, name).offset).value = value
 
-            # 读取链：一条钩子最多占掉表里剩余的位置，写不下就少写几条
+            # 读取链：一条钩子最多占掉自己段里剩余的位置，写不下就少写几条
             reads = hook.get("reads") or ()
             if reads:
-                room = HOST_READ_MAX - read_used
+                rbase = read_base_slot[gi]
+                room = (HOST_READ_MAX if gi == 0 else HOST_READ_MAX) - rbase \
+                    - read_used[gi]
                 take = min(len(reads), room)
                 ctypes.c_int32.from_address(
-                    slot + HostHook.read_base.offset).value = read_used
+                    slot + HostHook.read_base.offset).value = rbase + read_used[gi]
                 ctypes.c_int32.from_address(
                     slot + HostHook.read_count.offset).value = take
                 for j in range(take):
@@ -675,7 +747,7 @@ class Host:
                     # 两种写法都收：元素级 {'off':..,'deref':..}，或者
                     # 顶层并列写 off=[...] / deref=[True, False]（跟 C 那张表一样）。
                     flags = list(spec.get("deref") or ())
-                    at = read_addr + (read_used + j) * HOST_READ_SIZE
+                    at = read_addr + (rbase + read_used[gi] + j) * HOST_READ_SIZE
                     ctypes.c_int32.from_address(at + HostRead.arg.offset).value = arg
                     ctypes.c_int32.from_address(at + HostRead.nsteps.offset).value = len(chain)
                     kind = spec.get("kind", HOST_READ_INT)
@@ -715,7 +787,7 @@ class Host:
                             at + HostRead.off.offset + k * 4).value = off
                         ctypes.c_int32.from_address(
                             at + HostRead.deref.offset + k * 4).value = code
-                read_used += take
+                read_used[gi] += take
             # 同一个钩子（类名与方法都没变）如果 DLL 已经标记过「触发过」，
             # 把标记补回去，一次性钩子才不会重复触发。
             if (old_flags & 0x100) and not hook.get("_reset"):
@@ -725,13 +797,18 @@ class Host:
                     addr = slot + HostHook.flags.offset
                     ctypes.c_int32.from_address(addr).value |= 0x100
 
-        # 文案池
-        for i in range(HOST_MAX_TEXTS):
-            slot = base + HOST_TEXTS_OFFSET + i * HOST_TEXT_SIZE
-            if i < len(texts):
-                _write_fixed(slot, texts[i], HOST_TEXT_SIZE)
-            else:
-                ctypes.memset(slot, 0, HOST_TEXT_SIZE)
+        # 文案池：只写自己段的区间，别人的段不动
+        text_base_slot = (0, HOST_TEXTS_PRIMARY)
+        text_cap = (HOST_TEXTS_PRIMARY, HOST_MAX_TEXTS - HOST_TEXTS_PRIMARY)
+        for gi in bands:
+            for k in range(text_cap[gi]):
+                i = text_base_slot[gi] + k
+                slot = base + HOST_TEXTS_OFFSET + i * HOST_TEXT_SIZE
+                value = texts[i]
+                if value is None:
+                    ctypes.memset(slot, 0, HOST_TEXT_SIZE)
+                else:
+                    _write_fixed(slot, value, HOST_TEXT_SIZE)
 
         # 导出名表：顺序错了会拿到别人的函数指针，所以统一走 ensure_exports，
         # 它内部负责把标准名映射成混淆名（这里必须传标准名，别再自己映射一遍）
@@ -944,8 +1021,10 @@ class Host:
         off = HostHook.blocked.offset if blocked else HostHook.hits.offset
         total = 0
         base = ctypes.addressof(cfg) + HOST_HOOK_OFFSET
-        hooks, _ = self._layout()
+        hooks, _, _ = self._layout()
         for i, hook in enumerate(hooks):
+            if hook is None:
+                continue
             if hook.get("owner") != owner:
                 continue
             if method is not None and hook.get("method") != method:
