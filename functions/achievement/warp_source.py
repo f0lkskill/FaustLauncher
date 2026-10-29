@@ -290,6 +290,25 @@ def event_lines(kind, tag, ev):
     return []
 
 
+class _NullDiag:
+    """诊断日志的空壳：warphook.diag 导入不了时顶上，接口全空操作。"""
+
+    def config_snapshot(self, _source):
+        pass
+
+    def event(self, _source, _ev, _hook, _lines):
+        pass
+
+    def dropped(self, _source, _delta):
+        pass
+
+    def state(self, _source, force=False):
+        pass
+
+    def reset(self):
+        pass
+
+
 class WarpSource:
     """把 WarpHook 的事件流翻译成 `BattleWatch.handle_line()` 认的行。
 
@@ -313,6 +332,7 @@ class WarpSource:
         self._host = None
         self._hooks = []
         self._by_event = {}
+        self._diag = _NullDiag()               # attach 成功后换成真诊断器
         self._thread = None
         self._stop = threading.Event()
         self.lines_in = 0
@@ -399,6 +419,13 @@ class WarpSource:
             self._log('[成就] 注入失败：%s' % exc)
             return False
         self._log('[成就] 已挂 %d 个钩子（WarpHook 引擎）' % len(self._hooks))
+        try:
+            from warphook import diag          # host() 成功后 warphook 必可导入
+            self._diag = diag
+            diag.reset()
+            diag.config_snapshot(self)
+        except ImportError:
+            self._diag = _NullDiag()
         return True
 
     # ---- 轮询 ----------------------------------------------------------
@@ -407,17 +434,24 @@ class WarpSource:
         if self._host is None:
             return 0
         try:
+            lost_before = self._host.events_lost
             events = self._host.events()
+            lost_after = self._host.events_lost
         except Exception as exc:              # noqa: BLE001
             self._log('[成就] 读事件失败：%s' % exc)
             return 0
+        if lost_after > lost_before:
+            self._diag.dropped(self, lost_after - lost_before)
         fed = 0
         for ev in events:
             hook = self._by_event.get(int(ev.get('id', -1)))
             if hook is None:
+                self._diag.event(self, ev, {'method': '?未登记'}, [])
                 continue
             self.events_out += 1
-            for line in event_lines(hook['kind'], hook['name'], ev):
+            lines = event_lines(hook['kind'], hook['name'], ev)
+            self._diag.event(self, ev, hook, lines)
+            for line in lines:
                 try:
                     self.watch.handle_line(line)
                 except Exception as exc:      # noqa: BLE001
@@ -425,6 +459,7 @@ class WarpSource:
                     continue
                 fed += 1
                 self.lines_in += 1
+        self._diag.state(self)
         return fed
 
     def run(self, duration=None):

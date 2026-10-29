@@ -251,6 +251,7 @@ web/app_skins/*/profile.*
 addons/WarpHook/__pycache__/
 addons/WarpHook/warphook/__pycache__/
 addons/WarpHook/warp_host.log
+addons/WarpHook/warp_events.log
 addons/WarpHook/_icon_preview.png
 
 # 编译产物：由 src/ 里的源码生成，不入库
