@@ -5,6 +5,7 @@
 """
 
 import ctypes
+import struct
 import threading
 import os, sys, time
 
@@ -33,7 +34,7 @@ from .base import (
 )
 
 HOST_MAGIC = 0x54534857           # "WHST"
-HOST_VERSION = 2                  # v2：钩子加 when/ret_kind/ret_slot，事件 12 格，读链 128 条
+HOST_VERSION = 3                  # v3：导出表 13→15（gchandle），命令槽扩对象构造
 HOST_MAP_DEFAULT = "Local\\WarpHost_Default"
 HOST_MAP_ENV = "WARP_HOST_MAP"
 HOST_DLL_NAME = "warp_host.dll"
@@ -44,7 +45,7 @@ HOST_TEXT_LEN = 128
 HOST_KLASS_LEN = 48
 HOST_METHOD_LEN = 48
 HOST_LOG_LEN = 48
-HOST_EXPORT_COUNT = 13
+HOST_EXPORT_COUNT = 15
 HOST_NAME_MAX = 64
 HOST_VAR_COUNT = 8
 HOST_CMD_TEXT_LEN = 256
@@ -53,6 +54,30 @@ HOST_CMD_TEXT_LEN = 256
 CMD_NONE = 0
 CMD_POPUP = 1     # 弹原版系统弹窗
 CMD_KILL = 2      # 结束游戏进程
+CMD_MAKE = 3      # 构造对象（object_new + .ctor）→ 对象槽
+CMD_CALL = 4      # 调方法（runtime_invoke），槽内对象当 this（无槽 = 静态）
+CMD_STR = 5       # 造 il2cpp 字符串 → 对象槽
+CMD_RELEASE = 6   # 解掉槽上 GC 句柄并清槽
+
+# CALL 的返回值形状（retkind 打进 cmd_type 12-15 位）
+CMD_RET_INT32 = 0   # box 返回，真值在 +0x10，位模式写回 vars[6]
+CMD_RET_FLOAT = 1   # box 返回 float，位模式写回 vars[6]
+CMD_RET_REF = 2     # 引用返回，落 vars[7] 指定的槽（挂 GC 句柄）
+CMD_RET_NAMES = {"int32": CMD_RET_INT32, "int": CMD_RET_INT32,
+                 "float": CMD_RET_FLOAT, "ref": CMD_RET_REF,
+                 "ptr": CMD_RET_REF}
+
+# 命令执行结果码（DLL 写 cmd_result）
+CMD_RES_NAMES = {
+    0: "已执行",
+    1: "失败",
+    2: "未知命令",
+    3: "方法抛了异常",
+    4: "类没找到",
+    5: "方法没找到",
+    6: "对象槽越界",
+    7: "参数太多（vars 最多 6 个）",
+}
 
 HOST_HEADER_SIZE = 432   # 160 状态头 + 命令槽（4 个 int + 256 字节文本）
 HOST_HOOK_OFFSET = HOST_HEADER_SIZE
@@ -199,6 +224,8 @@ HOST_EXPORT_ORDER = [
     "il2cpp_type_get_object",
     "il2cpp_array_new",
     "il2cpp_class_get_parent",
+    "il2cpp_gchandle_new",
+    "il2cpp_gchandle_free",
 ]
 
 class HostHeader(ctypes.Structure):
@@ -740,8 +767,14 @@ class Host:
             item["flags"] = int(extra.pop("flags", item.get("flags", 0))) | int(HF_DEDUPE)
         if probe is not None:
             p_class, p_method, p_index, p_slot = (list(probe) + [0, 0])[:4]
-            item.update({"probe_class": p_class, "probe_method": p_method,
-                         "probe_index": int(p_index), "probe_slot": int(p_slot)})
+            if int(p_slot) in (6, 7):
+                # vars[6]/vars[7] 是命令通道的返回值/输出槽，探针写进去会在
+                # 命令执行的窗口里互相踩 —— 探针换一格。
+                log(f"probe_slot={p_slot} 与命令通道冲突（6/7 保留），忽略该探针",
+                    "[WarpHook.host]")
+            else:
+                item.update({"probe_class": p_class, "probe_method": p_method,
+                             "probe_index": int(p_index), "probe_slot": int(p_slot)})
         if guard is not None:
             g_slot, g_value = list(guard)[:2]
             item.update({"guard_var": int(g_slot), "guard_value": int(g_value)})
@@ -1102,19 +1135,29 @@ class Host:
         return {"arg": HOST_OBJ_ARG_BASE + slot, "off": [], "deref": [],
                 "out": int(out), "kind": kind}
 
-    def _command(self, cmd_type, text="", timeout=2.0):
+    def _command(self, cmd_type, text="", timeout=2.0, args=(), retkind=0,
+                 slot=-1, out_slot=-1):
         """往命令槽里塞一条命令，等 DLL 在游戏主线程执行完。
 
         真实的 Unity UI 调用必须发生在游戏主线程，所以这里不自己动手，
         只写共享内存；DLL 那边每帧（或任何钩子命中时）会把命令取走执行。
+
+        P6 起 cmd_type 是打包字：低 8 位命令号、8-11 位 argc、12-15 位返回值
+        形状、16-23 位对象槽号。参数值写 vars[0..5]（引用参数在这里就解成
+        对象槽里的真实指针），返回值读 vars[6]，CALL 的引用输出槽放 vars[7]。
         """
         block = self.block()
         if block is None:
             return "宿主未注入"
         hdr = block.cfg
         payload = str(text).encode("utf-8")[:HOST_CMD_TEXT_LEN - 1]
+        argc = len(args)
         hdr.cmd_text = payload
-        hdr.cmd_type = int(cmd_type)
+        hdr.cmd_type = (int(cmd_type) & 0xFF) | ((argc & 0xF) << 8) | \
+                       ((int(retkind) & 0xF) << 12) | ((int(slot) & 0xFF) << 16)
+        for i, value in enumerate(args[:6]):
+            hdr.vars[i] = int(value) & 0xFFFFFFFF
+        hdr.vars[7] = int(out_slot)
         hdr.cmd_result = -1
         seq = int(hdr.cmd_seq) + 1
         if seq <= 0:
@@ -1125,9 +1168,111 @@ class Host:
         while time.time() < deadline:
             if int(hdr.cmd_ack) == seq:
                 rc = int(hdr.cmd_result)
-                return "已执行" if rc == 0 else "失败(%d)" % rc
+                return CMD_RES_NAMES.get(rc, "失败(%d)" % rc)
             time.sleep(0.02)
         return "超时"
+
+    @staticmethod
+    def _arg_bits(value):
+        """把 py 参数折成 (vars 位模式, 类型字符)。
+
+        int/float 直接按值折位模式；槽引用元组 ``('slot', n)`` 原样带过 ——
+        指针要现场从对象槽里读（对象槽是活的），由调用方用 ``object_ptr``
+        解析后再进这里。
+        """
+        if isinstance(value, tuple) and len(value) == 2 and value[0] == "slot":
+            return None, "p"       # 占位：调用方先解析再填
+        if isinstance(value, float):
+            return struct.unpack("<I", struct.pack("<f", value))[0], "f"
+        return int(value), "i"
+
+    def _pack_args(self, args):
+        """把参数序列折成 (位模式列表, 类型后缀字符串)；槽引用解成真实指针。"""
+        bits_list = []
+        kinds = []
+        for value in args:
+            if isinstance(value, tuple) and len(value) == 2 and value[0] == "slot":
+                bits_list.append(self.object_ptr(value[1]))
+                kinds.append("p")
+                continue
+            bits, kind = self._arg_bits(value)
+            bits_list.append(bits)
+            kinds.append(kind)
+        return bits_list, "".join(kinds)
+
+    def make(self, klass, args=(), slot=24, timeout=2.0):
+        """构造一个对象放进对象槽（挂 GC 强句柄）。
+
+        ``host.make("TMPro.TextMeshProUGUI")`` —— 0 参构造；
+        ``host.make("Foo", args=[1, 2.0])`` —— 带参构造（≤6 个，走 .ctor）。
+        引用参数写 ``('slot', n)`` 引用别的槽里的对象。
+        返回执行结果字符串（"已执行" / "类没找到" / ...）。
+        """
+        packed, kinds = self._pack_args(args)
+        if len(packed) > 6:
+            return "参数太多（vars 最多 6 个）"
+        slot = int(slot)
+        if not 0 <= slot < HOST_OBJECT_COUNT:
+            return f"对象槽 {slot} 超出 0..{HOST_OBJECT_COUNT - 1}"
+        text = klass if not kinds else f"{klass}#{kinds}"
+        return self._command(CMD_MAKE, text, timeout, args=packed, slot=slot)
+
+    def make_str(self, text, slot=24, timeout=2.0):
+        """造一个 il2cpp 字符串放进对象槽：``host.make_str("你好")``。"""
+        slot = int(slot)
+        if not 0 <= slot < HOST_OBJECT_COUNT:
+            return f"对象槽 {slot} 超出 0..{HOST_OBJECT_COUNT - 1}"
+        return self._command(CMD_STR, text, timeout, slot=slot)
+
+    def call(self, method, slot=None, args=(), ret="int32", out_slot=-1,
+             timeout=2.0):
+        """调一个方法：``host.call("Foo::get_value", slot=24, ret="int32")``。
+
+        Args:
+            method: "Ns.Klass::Method"（不带槽 = 静态调用；带槽 = slot 里的
+                对象当 this）。
+            slot: this 所在的对象槽；None 表示静态调用。
+            args: 参数值（int/float/槽引用元组），≤6 个。
+            ret: 返回值形状 —— "int32"/"float" 解包写回（返回该值）；
+                "ref" 落 out_slot 槽（返回槽号）。
+            out_slot: ret="ref" 时结果落的槽。
+
+        Returns:
+            ret 为 int32/float 时返回数值（失败返回结果字符串）；
+            ret 为 ref 时返回落好的槽号（失败返回结果字符串）。
+        """
+        packed, kinds = self._pack_args(args)
+        if len(packed) > 6:
+            return "参数太多（vars 最多 6 个）"
+        retkind = CMD_RET_NAMES.get(str(ret).lower())
+        if retkind is None:
+            return f"未知返回值形状 {ret!r}（int32/float/ref）"
+        if slot is not None and not 0 <= int(slot) < HOST_OBJECT_COUNT:
+            return f"对象槽 {slot} 超出 0..{HOST_OBJECT_COUNT - 1}"
+        if retkind == CMD_RET_REF and not 0 <= int(out_slot) < HOST_OBJECT_COUNT:
+            return f"输出槽 {out_slot} 超出 0..{HOST_OBJECT_COUNT - 1}"
+        text = method if not kinds else f"{method}#{kinds}"
+        this_slot = -1 if slot is None else int(slot)
+        result = self._command(CMD_CALL, text, timeout, args=packed,
+                               retkind=retkind, slot=this_slot, out_slot=out_slot)
+        if result != "已执行":
+            return result
+        if retkind == CMD_RET_REF:
+            return out_slot
+        block = self.block()
+        if block is None:
+            return "宿主未注入"
+        bits = int(block.cfg.vars[6]) & 0xFFFFFFFF
+        if retkind == CMD_RET_FLOAT:
+            return struct.unpack("<f", struct.pack("<I", bits))[0]
+        return bits - (1 << 32) if bits >= (1 << 31) else bits
+
+    def release(self, slot, timeout=2.0):
+        """解掉对象槽上的 GC 句柄并清槽：用完构造对象后还回去。"""
+        slot = int(slot)
+        if not 0 <= slot < HOST_OBJECT_COUNT:
+            return f"对象槽 {slot} 超出 0..{HOST_OBJECT_COUNT - 1}"
+        return self._command(CMD_RELEASE, "", timeout, slot=slot)
 
     def popup(self, text, timeout=2.0):
         """让游戏弹出原版系统弹窗：`host.popup("你好")`。"""

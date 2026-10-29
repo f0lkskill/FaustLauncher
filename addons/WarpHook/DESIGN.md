@@ -445,7 +445,7 @@ NS['warp.plugin'].Host            # 扁平访问，等价
 
 | 文件 | 职责 |
 | --- | --- |
-| `warp_layout.h` | 协议层：`WARP_HEADER`(432B)、`WARP_HOOK`(264B)、13 个函数指针类型 |
+| `warp_layout.h` | 协议层：`WARP_HEADER`(432B)、`WARP_HOOK`(288B)、15 个函数指针类型 |
 | `warp_internal.h` | 内部契约：`WARP_IC` / `WARP_SLOT`、全部 `extern` 全局与函数原型 |
 | `warp_state.c` | 全局状态、日志、状态码、随机数 |
 | `warp_shm.c` | 打开 / 创建共享映射 |
@@ -453,8 +453,8 @@ NS['warp.plugin'].Host            # 扁平访问，等价
 | `warp_ready.c` | 引擎就绪门闩（等程序集、稳定期、域初始化） |
 | `warp_popup.c` | 原版弹窗、杀进程 |
 | `warp_action.c` | 挑台词、执行动作、参数探针、单次事件入口 |
-| `warp_hook.c` | thunk 表、装配 / 卸载钩子 |
-| `warp_cmd.c` | 命令泵（`popup` / `kill_game` 主动调用） |
+| `warp_hook.c` | thunk 表（argc 0..9，显式收发 `MethodInfo*`）、装配 / 卸载钩子 |
+| `warp_cmd.c` | 命令泵 + 对象构造（`popup` / `kill_game` / `make` / `call` / `str` / `release`） |
 | `warp_host.c` | 控制线程、`DllMain`（只剩入口） |
 
 编译（`MH` 是 MinHook 目录）：
@@ -474,8 +474,8 @@ gcc -shared -O2 -Wall -s -static-libgcc -o test/warp_host.dll \
 | 模块 | 行数 | 职责 |
 | --- | --- | --- |
 | `env.py` | 19 | 插件作用域：`ADDON_ARG` / `ADDON_NAME` / `ADDON_MANAGER` |
-| `base.py` | 509 | Win32、共享内存、il2cpp 导出名解析、注入 |
-| `host.py` | 823 | `Host`：钩子表与文案池的配置端 |
+| `base.py` | 732 | Win32、共享内存、il2cpp 导出名解析、注入、读取链翻译 |
+| `host.py` | 1310 | `Host`：钩子表与文案池的配置端、命令通道客户端 |
 | `game.py` | 197 | `Gacha` / `GachaBill`：抽卡语义层 |
 | `service.py` | 690 | `Runtime` / `Service`：等游戏、注入、心跳、状态播报 |
 | `registry.py` | 171 | 组装 `warp` 命名空间、卸载收尾 |
@@ -490,3 +490,67 @@ gcc -shared -O2 -Wall -s -static-libgcc -o test/warp_host.dll \
 
 `_owner_of_caller()` / `_caller_dir()` 都改成了「沿调用栈往上找」而不是固定
 几层，正是为了让拆包以后不管中间多套几层仍然认得出真正的调用方。
+
+## 14. P6 对象构造（协议 v3，命令通道可编程化）
+
+P5 之前命令通道只有两条硬编码命令（弹窗 / 杀进程）。P6 把「做」这条线
+泛化：**插件可以构造对象、调用方法、造字符串**，全程游戏主线程执行、
+插件侧零 C。
+
+### 协议变更（v2 → v3）
+
+- 导出表 13 → **15**：追加 `il2cpp_gchandle_new` / `il2cpp_gchandle_free`
+  （构造出来的对象挂强句柄，防 GC 在使用前收走）。两个都缺也不致命，
+  只是退化为裸指针落槽。`EV_CTRL` 起的全部偏移 +128 字节机械平移，
+  映射总长 167936 → **168064**。
+- `cmd_type` 从单命令编号变成**打包字**：
+  `code | (argc<<8) | (retkind<<12) | (slot<<16)`，`code` 3=MAKE、4=CALL、
+  5=STR、6=RELEASE。
+- `vars[0..5]` 是参数（≤6 个），`vars[6]` 是返回值，`vars[7]` 是引用返回的
+  输出槽号——这两个下标命令通道保留，配置探针 `probe_slot` 时要避开。
+- 结果码：0 已执行 / 1 失败 / 2 未知命令 / 3 方法抛了异常 / 4 类没找到 /
+  5 方法没找到 / 6 对象槽越界 / 7 参数超过 6 个。
+- **静态调用约定**：`slot` 打包进一个字节，-1 会变成 255——所以 0xFF
+  就是「静态调用（无 this）」的哨兵，Python 侧把 None 翻成 0xFF。
+
+### C 侧原语（`warp_cmd.c`）
+
+- 对象槽写入口统一走 `warp_slot_put(slot, obj, with_handle)`：写之前先解掉
+  槽上旧句柄，`with_handle` 时 `gchandle_new(obj, strong=1)` 挂强句柄。
+  `g_gc_handles[32]` 静态表记录槽→句柄映射。
+- MAKE：`object_new` 分配 + （带参时）`.ctor` 经 `runtime_invoke` 执行。
+  参数类型记在 `cmd_text` 的 `#` 后缀（`#iif` = int/int/float），缺省全按
+  int；runtime_invoke 要的是「指向参数值的指针」，按类型搬进本地缓冲再取址。
+- CALL：`cmd_text = "Ns.Klass::Method#kinds"`；this 取自对象槽（0xFF 走
+  静态）；int32/float 返回从 box 对象 +0x10 解包写 `vars[6]`（对象头 8B +
+  klass 8B）；引用返回直接落 `vars[7]` 指定的槽并挂句柄；方法抛异常走
+  `runtime_invoke` 的 exc 出参 → 结果码 3。
+- STR：`string_new` → 槽挂句柄。RELEASE：解句柄 + 清槽。
+
+### Python API（`warphook/host.py`）
+
+```python
+slot = host.make('Sth.Klass', args=[1, 2.0], slot=20)     # 带参构造
+host.call('Sth.Klass::DoIt', slot=slot, args=[('slot', 20)], ret='int32')
+host.make_str('文本', slot=22)                            # 字符串也是对象
+host.release(slot)                                        # 用完还回去
+```
+
+引用参数写 `('slot', n)`，打包时经对象槽解析成真实指针；`ret='ref'` 时
+返回值落在 `out_slot`，拿到的是槽号。
+
+### 线程纪律（不变的硬约束）
+
+命令泵只在**游戏主线程**跑：泵点钩在 `GlobalGameManager::FixedUpdate`，
+用户钩子命中时也顺路泵一次。命令通道共享内存是单向信箱：Python 写
+`cmd_text/vars/cmd_type` 再递增 `cmd_seq`，C 先记 `cmd_ack` 再执行
+（防弹窗重入重复执行），结果写 `cmd_result`，Python 轮询回读。
+
+### 验证
+
+`test/warp_cmd_smoke.py`：编一个带真桩的假 GameAssembly（导出名全用
+原名，模块名必须是 `GameAssembly.dll`——宿主按模块名
+`GetModuleHandleW` 绑定），MinHook 真挂一条钩子，测试自己调触发函数
+驱动命令泵，26 项断言覆盖 MAKE（0 参 / 带参 #if）、CALL（实例 / 静态 /
+int32 / float / ref）、STR、RELEASE（句柄分配与解放全程核对）、五个
+错误码。布局常量直接 `import warphook.host`，永不漂移。

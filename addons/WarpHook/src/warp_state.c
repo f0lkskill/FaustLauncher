@@ -21,6 +21,8 @@ const char *g_export_names[WARP_EXPORT_COUNT] = {
     "il2cpp_type_get_object",
     "il2cpp_array_new",
     "il2cpp_class_get_parent",
+    "il2cpp_gchandle_new",
+    "il2cpp_gchandle_free",
 };
 
 /* ------------------------------------------------------------------ */

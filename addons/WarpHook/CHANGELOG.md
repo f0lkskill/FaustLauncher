@@ -4,6 +4,31 @@
 
 看完整历史：`git log --oneline -- addons/WarpHook/`
 
+## 0.9.0
+
+P6 对象构造落地：命令通道从「弹窗 / 杀进程」两条硬编码泛化成**可编程的
+构造 / 调用通道**，插件不改 C 就能在游戏主线程造对象、调方法、造字符串。
+
+- **协议 v2 → v3**：导出表 13 → 15（追加 `il2cpp_gchandle_new` / `free`，
+  构造对象挂强句柄防 GC 收走；缺了退化裸指针）；`EV_CTRL` 起偏移 +128
+  字节平移，映射总长 167936 → 168064。
+- **命令扩展**：`cmd_type` 变打包字（code | argc | retkind | slot），新增
+  MAKE（object_new + .ctor）/ CALL（runtime_invoke，实例 + 静态）/
+  STR（string_new）/ RELEASE（解句柄清槽）四条；参数走 `vars[0..5]`
+  （≤6 个，`#iif` 后缀标类型），int32/float 返回从 box +0x10 解包进
+  `vars[6]`，引用返回落 `vars[7]` 指定槽；0xFF = 静态调用哨兵；结果码
+  0..7 细分到「类没找到 / 方法没找到 / 槽越界 / 参数超六个 / 方法抛异常」。
+- **GC 句柄生命周期**：对象槽写入口统一 `warp_slot_put`——写之前先解掉
+  旧句柄，句柄表 `g_gc_handles[32]` 与槽同生命周期；探针读链照旧经
+  `0x100+槽` 出发，构造出来的对象立刻就能当读链起点。
+- **Python API**：`Host.make / make_str / call / release`；引用参数
+  `('slot', n)` 打包时解析成真实指针；`ret='ref'` 返回输出槽号。
+- **新增 `test/warp_cmd_smoke.py`**：假 GameAssembly（真桩、真 MinHook
+  挂钩、真命令泵）26 项断言全绿；顺带 `warp_host_smoke.py` 的布局常量
+  改为直接 import `warphook.host`，彻底告别手抄漂移。
+- 防御性修复：`warp_cmd_build_params` 的 params 数组零初始化（真实
+  il2cpp 只读前 argc 个，但桩和调试器会扫整段）。
+
 ## 0.8.0
 
 三个新原语进宿主，成就桥老链路的**全部事件钩子**至此迁完（P5 收官的前一半）。
