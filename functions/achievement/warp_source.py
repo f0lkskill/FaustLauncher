@@ -8,7 +8,8 @@
 `BattleWatch.handle_line()` 解析回 Python 对象。规则引擎（2756 行）只认这些行。
 
 WarpHook 把「挂钩子 + 按路径读内存」变成了配置，于是这一层要做的只剩翻译：
-**把 WarpHook 的八格事件，还原成老 DLL 会发的那种文本行**。规则引擎一行都不用改。
+**把 WarpHook 的十二格事件，还原成老 DLL 会发的那种文本行**。规则引擎一行
+都不用改。
 
 ## 分工
 
@@ -16,11 +17,11 @@ WarpHook 把「挂钩子 + 按路径读内存」变成了配置，于是这一�
 * `warp_reads.py` 负责「一种读法对应哪几条读取链」；
 * 本文件负责「挂哪些钩子、事件怎么变成行」。三者的边界不重叠。
 
-## 为什么不一次接完
+## 接入进度
 
-十六种读法里有九种要读**函数返回值**、**容器内容**或**字符串**，读取链表达不了
-（见 `warp_reads.py` 的边界说明）。第一批先接 unit 系与回合边界 —— 血量、理智、
-速度、回合数是战斗成就的绝大多数，先把这条链跑通再谈剩下的。
+v0.7 接了 unit 系与回合边界；v0.8 起返回值、值类型容器、字符串取数三个
+原语进了宿主，老链路**全部事件钩子都已接入**（buff 链的 BUF 行除外 ——
+buff 类成就走采样器路径，与 v0.7 行为一致）。
 """
 from __future__ import annotations
 
@@ -47,6 +48,14 @@ FIRST_BATCH = (
     'skv_end',
     'node_cleared',
     'node_clear_state',
+    # ---- v0.8：老链路剩下的五种信号源，读取链 + 返回值 + 容器聚合到位后
+    # 全部能以纯配置表达，一次接完（老链路至此没有未迁移的事件钩子）。
+    'railway_total',
+    'railway_node',
+    'railway_hist',
+    'stage_node_id',
+    'railway_ui_text',
+    'take_attack_dmg_multiplier',
     # 下面这些老链路里只缓存对象指针、不当场发事件（cache_self / cache_arg1）。
     # 挂上来是为了让对象槽里有值 —— 采样侧要用时能按偏移读存档结构，
     # 而不是留个「钩子根本没装」的空洞。
@@ -82,6 +91,15 @@ PLAIN_KINDS = (WR.KIND_PLAIN, WR.KIND_SKV)
 
 #: 节点通关查询：三个值类型参数直接当结果，发 `NCL main=.. sub=.. node=..`。
 NODE_KINDS = (WR.KIND_NODE_STATE,)
+
+#: damage 钩子一条事件同时还原 ACT + VAL 两行（十二格刚好装下）。
+DAMAGE_KINDS = (WR.KIND_DAMAGE_ACTION,)
+
+#: railway 系：每种一行格式，见 railway_lines()。
+RAILWAY_KINDS = (
+    WR.KIND_RAILWAY_TOTAL, WR.KIND_RAILWAY_NODE, WR.KIND_RAILWAY_HIST,
+    WR.KIND_STAGE_NODE_ID, WR.KIND_RAILWAY_UI_TEXT,
+)
 
 #: 事件号从 1 开始（0 会被 DLL 当成「没填」而退回钩子下标）。
 EVENT_ID_BASE = 1
@@ -131,6 +149,13 @@ def build_hooks(names=None, offsets=None):
             # 值没变就没必要让规则引擎重算一遍（血量不动时一轮能省几百条）
             'dedupe': bool(spec['reads']) and not cache,
         }
+        # 「调用之后才有值」与「要读返回值」的钩子：when/ret_* 三件套
+        # 透传给宿主（dict 配置路径与 hook() 关键字路径同一个默认表）。
+        if spec.get('when'):
+            hook['when'] = int(spec['when'])
+        if spec.get('ret_kind'):
+            hook['ret_kind'] = spec['ret_kind']
+            hook['ret_slot'] = int(spec.get('ret_slot', -1))
         if cache:
             hook['cache'] = cache
         else:
@@ -200,6 +225,53 @@ def plain_lines(tag, ev):
     return ['RND tag=%s' % tag]
 
 
+def damage_lines(tag, ev):
+    """damage 钩子还原成老 DLL 同一次命中发的两行：先 ACT 后 VAL。
+
+    十二格布局见 `warp_reads.damage_frame`：a..c=受击者 hp/mhp/mp、
+    d=出手方 origin id、e/f=action 的 actor/cmd、g/h=技能 id/tier、
+    i/j=受击者 iid/oid。`slot`/`tf` 老链路从 coin/crit 挤出来，读取链
+    取不到，保持 -1（规则引擎按缺字段处理）。
+    """
+    return [
+        'ACT tag=%s actor=%d cmd=%d skid=%d slot=-1 tier=%d tf=-1 aoid=%d'
+        % (tag, int(ev.get('e', -1)), int(ev.get('f', -1)),
+           int(ev.get('g', -1)), int(ev.get('h', -1)), int(ev.get('d', -1))),
+        'VAL tag=%s iid=%d oid=%d hp=%d mhp=%d mp=%d'
+        % (tag, int(ev.get('i', 0)), int(ev.get('j', 0)),
+           int(ev.get('a', 0)), int(ev.get('b', 0)), int(ev.get('c', 0))),
+    ]
+
+
+def railway_lines(kind, tag, ev):
+    """railway 系五种读法 → 老 DLL 的四种文本行。
+
+    * ``RWT line=.. total=..``：GetTotalClearTurn 的返回值直出格 0（a），
+      self._collectionId 读链进格 1（b）；
+    * ``RWT node=.. turn=..``：FormerSaveData::.ctor 之后读两个新字段；
+    * ``RWT line=.. total=.. nodes=..``：HistoryDataByCollection::.ctor 的
+      a1=线路号、a4=List<int> 求和/计数（老行尾的 vals=.. 明细这里不发，
+      解析侧只认 line/total/nodes）；
+    * ``SNI part=.. chapter=.. node=.. stage=.. state=..``：SetData 五个
+      int 参数原样出；
+    * ``RUT text=..``：UI 文本取开头数字（"86" → 86）。
+    """
+    if kind == WR.KIND_RAILWAY_TOTAL:
+        return ['RWT line=%d total=%d' % (int(ev.get('b', -1)), int(ev.get('a', -1)))]
+    if kind == WR.KIND_RAILWAY_NODE:
+        return ['RWT node=%d turn=%d' % (int(ev.get('a', -1)), int(ev.get('b', -1)))]
+    if kind == WR.KIND_RAILWAY_HIST:
+        return ['RWT line=%d total=%d nodes=%d'
+                % (int(ev.get('a', -1)), int(ev.get('b', -1)), int(ev.get('c', 0)))]
+    if kind == WR.KIND_STAGE_NODE_ID:
+        return ['SNI part=%d chapter=%d node=%d stage=%d state=%d'
+                % (int(ev.get('a', 0)), int(ev.get('b', 0)), int(ev.get('c', 0)),
+                   int(ev.get('d', 0)), int(ev.get('e', 0)))]
+    if kind == WR.KIND_RAILWAY_UI_TEXT:
+        return ['RUT text=%d' % int(ev.get('a', -1))]
+    return []
+
+
 def event_lines(kind, tag, ev):
     """按读法把事件翻成文本行。认不出的读法返回空列表（第一批不接）。"""
     if kind in UNIT_KINDS:
@@ -210,6 +282,10 @@ def event_lines(kind, tag, ev):
         return plain_lines(tag, ev)
     if kind in NODE_KINDS:
         return node_lines(tag, ev)
+    if kind in DAMAGE_KINDS:
+        return damage_lines(tag, ev)
+    if kind in RAILWAY_KINDS:
+        return railway_lines(kind, tag, ev)
     return []
 
 

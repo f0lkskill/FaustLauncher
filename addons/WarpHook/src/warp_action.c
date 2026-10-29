@@ -143,6 +143,101 @@ static int warp_can_read(const void *p, int size)
     return 1;
 }
 
+/* 值类型容器的一步：取第 off[i] 个 4 字节元素，值直接当位模式留在 p。
+ *
+ * 老链路遍历 List<int> 求铁路通关回合总和；引用类型步（2/3）读的是 8 字节
+ * 指针，对 int 元素会把两个 int 拼成一个地址——必错。值类型元素的 stride
+ * 是元素本身大小（这里只支持 4 字节），从 items + 0x20 起。 */
+static int warp_step_value_element(int step, void **pp, int idx, int count)
+{
+    char *items;
+    char *elem;
+
+    if (step == WARP_STEP_LIST_VAL) {
+        if (!warp_can_read(*pp, 0x20))
+            return 0;
+        items = *(char **)((char *)*pp + 0x10);   /* List<T>._items */
+        count = *(int *)((char *)*pp + 0x18);     /* List<T>._size  */
+    } else {
+        items = (char *)*pp;
+        count = *(int *)((char *)*pp + 0x18);     /* Array.max_length */
+    }
+    if (!items || idx < 0 || idx >= count)
+        return 0;
+    elem = items + 0x20 + idx * 4;
+    if (!warp_can_read(elem, 4))
+        return 0;
+    *pp = (void *)(uintptr_t)*(int *)elem;
+    return 1;
+}
+
+/* 落点是 List<4B 值类型>：把所有元素加起来（铁路通关回合总和）。
+ * 元素个数做个 64K 的上限防呆——偏移写错时 count 可能是个大数，别真去读。 */
+static int warp_sum_list_i32(const void *list, int *out)
+{
+    char *items;
+    int count, i;
+    int total = 0;
+
+    if (!warp_can_read(list, 0x20))
+        return 0;
+    items = *(char **)((const char *)list + 0x10);
+    count = *(int *)((const char *)list + 0x18);
+    if (!items || count < 0 || count > 0x10000)
+        return 0;
+    if (count > 0 && !warp_can_read(items + 0x20, count * 4))
+        return 0;
+    for (i = 0; i < count; i++) {
+        int v;
+        memcpy(&v, items + 0x20 + i * 4, sizeof(v));
+        total += v;
+    }
+    *out = total;
+    return 1;
+}
+
+/* 落点是 List/Array：只取元素个数（读不到就当 0 个）。 */
+static int warp_count_list(const void *p, int *out)
+{
+    int count;
+
+    if (!warp_can_read(p, 0x20))
+        return 0;
+    count = *(const int *)((const char *)p + 0x18);
+    *out = count > 0 ? count : 0;
+    return 1;
+}
+
+/* 落点是 il2cpp string*：抽出数字字符拼成 int（UI 文本实际就是「86」这种）。
+ * il2cpp string：+0x10 长度，+0x14 起是 UTF-16 字符。取前 9 位数字防溢出，
+ * 与 Python 侧 _apply_railway_ui_text 的 digits 提取同一套规矩。 */
+static int warp_text_number(const void *str, int *out)
+{
+    int len, i;
+    long long value = 0;
+    int digits = 0;
+
+    if (!warp_can_read(str, 0x14))
+        return 0;
+    len = *(const int *)((const char *)str + 0x10);
+    if (len <= 0 || len > 4096)
+        return 0;
+    if (!warp_can_read((const char *)str + 0x14, len * 2))
+        return 0;
+    for (i = 0; i < len && digits < 9; i++) {
+        unsigned short ch;
+        memcpy(&ch, (const char *)str + 0x14 + i * 2, sizeof(ch));
+        if (ch >= '0' && ch <= '9') {
+            value = value * 10 + (ch - '0');
+            digits++;
+        }
+    }
+    if (!digits)
+        return 0;
+    *out = (int)value;
+    return 1;
+}
+
 /* 沿着一条读取链取值。返回 1 表示读到了，0 表示中途碰到空指针。
  *
  * 空指针在 il2cpp 里很常见（对象还没初始化、目标已销毁），所以这里一律
@@ -186,12 +281,19 @@ static int warp_read_chain(const WARP_READ *r, void *self, int argc,
         return 0;
 
     if (r->nsteps <= 0) {
-        /* 0 跳 = 这个参数本身就是值，不是指针。
+        /* 0 跳 = 这个参数本身就是值/容器，不是指针。
          *
          * 关卡状态查询那类钩子的签名是 (self, int main, int sub, int node)，
          * 三个参数都是值类型，直接躺在寄存器/栈上，没有任何偏移可跟。老链路
          * 为它们单独写了 thunk；这里用「空链」表达同一件事：不往前走，就把
-         * 参数当结果。 */
+         * 参数当结果。聚合类 kind（求和/计数/文本）的落点是容器本身，参数
+         * 直接就是 List* / string*，同样零跳可达。 */
+        if (r->kind == WARP_READ_SUM_LIST)
+            return warp_sum_list_i32(p, out);
+        if (r->kind == WARP_READ_COUNT_LIST)
+            return warp_count_list(p, out);
+        if (r->kind == WARP_READ_TEXT_NUM)
+            return warp_text_number(p, out);
         *out = (int)(size_t)p;
         return 1;
     }
@@ -199,9 +301,17 @@ static int warp_read_chain(const WARP_READ *r, void *self, int argc,
     for (i = 0; i < r->nsteps && i < WARP_READ_STEPS; i++) {
         int step = r->deref[i];
 
+        if (step == WARP_STEP_LIST_VAL || step == WARP_STEP_ARRAY_VAL) {
+            /* 值类型容器一步：取第 off[i] 个 4 字节元素，值本身留在 p。
+             * 后面如果还有步骤，就把这个值当普通整数继续加偏移。 */
+            if (!warp_step_value_element(step, &p, r->off[i], 0))
+                return 0;
+            continue;
+        }
+
         if (step == WARP_STEP_LIST || step == WARP_STEP_ARRAY) {
             /* 容器一步：把 p 当成容器，取第 off[i] 个元素。元素按引用类型处理
-             * （成就关心的单位/模型都是 class），值类型容器暂不支持。 */
+             * （成就关心的单位/模型都是 class）；4 字节值类型元素走 4/5。 */
             void *arr;
             int count, idx = r->off[i];
 
@@ -233,6 +343,17 @@ static int warp_read_chain(const WARP_READ *r, void *self, int argc,
             if (!p)
                 return 0;
         }
+    }
+
+    /* 聚合类 kind 在链的**中途**就决定了：落点是容器本身而不是容器里的元素，
+     * 所以只要零跳或普通步走到 List*，剩下的就是求和/计数，不再走落点解释。 */
+    if (r->kind == WARP_READ_SUM_LIST || r->kind == WARP_READ_COUNT_LIST ||
+        r->kind == WARP_READ_TEXT_NUM) {
+        if (r->kind == WARP_READ_SUM_LIST)
+            return warp_sum_list_i32(p, out);
+        if (r->kind == WARP_READ_COUNT_LIST)
+            return warp_count_list(p, out);
+        return warp_text_number(p, out);
     }
 
     if (!warp_can_read(p, 16))
@@ -291,10 +412,11 @@ static void warp_apply_reads(WARP_HOOK *h, void *self, int argc,
 
 /* 把这次命中装进环形队列。head 只增不减，槽位取模；写之前先保证不越过
  * tail 一圈，越了就把 tail 往前推（丢最旧的，dropped++）。
- * 全程只用 Interlocked，读侧（Python）只读 head 与槽内容，不会撕裂。 */
+ * 全程只用 Interlocked，读侧（Python）只读 head 与槽内容，不会撕裂。
+ * ret 是原函数返回值的位模式（ret_kind==VOID 时无意义）。 */
 static void warp_emit_event(int hook_index, WARP_HOOK *h, void *self,
                             int argc, void *a1, void *a2, void *a3,
-                            void *a4, void *a5, void *a6)
+                            void *a4, void *a5, void *a6, int ret)
 {
     int *ctrl;
     WARP_EVENT *slot;
@@ -314,6 +436,11 @@ static void warp_emit_event(int hook_index, WARP_HOOK *h, void *self,
     out[3] = argc > 3 ? (int)(intptr_t)a4 : g_hdr->vars[0];
     for (i = 4; i < WARP_EVENT_SLOTS; i++)
         out[i] = 0;
+    /* 返回值直出：读返回值这类钩子的主值就在寄存器里，直写一格比配读链省事。
+     * ret_slot 与读链写同一格时读链会覆盖它 —— 配置侧别这么写。 */
+    if (h->ret_kind != WARP_RET_VOID && h->ret_slot >= 0 &&
+        h->ret_slot < WARP_EVENT_SLOTS)
+        out[h->ret_slot] = ret;
     /* 先落对象槽，再跑读链：同一条钩子既想「记住这个对象」又想「顺手读两个值」
      * 的时候，读链可以直接写 arg=0x100+槽号 走刚缓存下来的指针。 */
     if (h->cache_arg >= 0 && h->cache_slot >= 0 && h->cache_slot < WARP_OBJECT_COUNT) {
@@ -380,6 +507,18 @@ static void warp_emit_event(int hook_index, WARP_HOOK *h, void *self,
     slot->f = out[5];
     slot->g = out[6];
     slot->h = out[7];
+    slot->i = out[8];
+    slot->j = out[9];
+    slot->k = out[10];
+    slot->l = out[11];
+}
+
+/* 这次命中该在原函数返回之后才发事件吗？
+ * 显式配了 WARP_WHEN_POST，或者关心返回值（ret_kind != VOID）——前者是
+ * 构造函数要把字段填完才读得到，后者的值只存在于寄存器里。 */
+int warp_emits_post(const WARP_HOOK *h)
+{
+    return h && (h->when == WARP_WHEN_POST || h->ret_kind != WARP_RET_VOID);
 }
 
 int warp_on_event(int hook_index, void *self, int argc,
@@ -402,7 +541,7 @@ int warp_on_event(int hook_index, void *self, int argc,
     hits = InterlockedIncrement(&g_hit_count[hook_index]);
     InterlockedIncrement((LONG *)&g_hdr->evt_count);
     g_hdr->last_event = hook_index;
-    h->reserved[0] = hits;
+    h->hits = hits;
 
     /* 探针：先把参数对象的属性读进 vars[]，供下面的参数门使用 */
     if (h->probe_class[0] && h->probe_method[0] && argc > h->probe_index &&
@@ -442,15 +581,16 @@ int warp_on_event(int hook_index, void *self, int argc,
 
     if (h->flags & WARP_HF_BLOCK) {
         act |= 0x1;
-        /* reserved[1] 记「真的拦下来了多少次」：参数门放行的那次不计，
+        /* blocked 记「真的拦下来了多少次」：参数门放行的那次不计，
          * 插件在 Python 里靠它判断「这一单被我拦了，该说点什么」。 */
-        InterlockedIncrement((LONG *)&h->reserved[1]);
+        InterlockedIncrement((LONG *)&h->blocked);
     }
 
     /* 事件优先于行为：只要钩子声明了 ACT_EVENT 就入队，哪怕它同时什么都不做。
-     * 成就、统计这类消费者要的就是「发生过什么」，不该和弹窗/拦截抢语义。 */
-    if (h->actions & WARP_ACT_EVENT)
-        warp_emit_event(hook_index, h, self, argc, a1, a2, a3, a4, a5, a6);
+     * 成就、统计这类消费者要的就是「发生过什么」，不该和弹窗/拦截抢语义。
+     * 返回值类钩子在原函数之后才发（warp_on_event_post），这里只发 PRE 的。 */
+    if ((h->actions & WARP_ACT_EVENT) && !warp_emits_post(h))
+        warp_emit_event(hook_index, h, self, argc, a1, a2, a3, a4, a5, a6, 0);
 
     /* 没有行为位的纯旁观钩子（NoGacha 的 OpenGachaAlarmUI）只用来看参数与发事件，
      * 不弹窗、不刷新去重窗，免得把同一次操作里紧跟的拦截钩子挤掉。 */
@@ -488,5 +628,23 @@ int warp_on_event(int hook_index, void *self, int argc,
         h->flags |= WARP_HF_FIRED;
 
     return act | 0x2;
+}
+
+/* 原函数返回之后的那一半：只服务「要在调用后发事件」的钩子。
+ *
+ * 由 thunk 在调完 original 之后调用，参数是 thunk 自己保住的形参（C 语义
+ * 保证调用别人之后这些变量还活着）。ret 是原函数返回值的位模式——
+ * ret_kind==FLOAT 时 thunk 已把 XMM0 的位模式拷进 int。 */
+void warp_on_event_post(int hook_index, WARP_HOOK *h, void *self, int argc,
+                        void *a1, void *a2, void *a3,
+                        void *a4, void *a5, void *a6, int ret)
+{
+    if (!h || !g_hdr)
+        return;
+    if (hook_index < 0 || hook_index >= WARP_MAX_HOOKS)
+        return;
+    if (!(h->actions & WARP_ACT_EVENT) || !warp_emits_post(h))
+        return;
+    warp_emit_event(hook_index, h, self, argc, a1, a2, a3, a4, a5, a6, ret);
 }
 

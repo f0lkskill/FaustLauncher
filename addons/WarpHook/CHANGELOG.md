@@ -4,6 +4,40 @@
 
 看完整历史：`git log --oneline -- addons/WarpHook/`
 
+## 0.8.0
+
+三个新原语进宿主，成就桥老链路的**全部事件钩子**至此迁完（P5 收官的前一半）。
+
+- **读返回值**：钩子槽加 `when` / `ret_kind` / `ret_slot` 三个字段。
+  `ret_kind='int32'/'float'` 让 thunk 按类型调原函数（int 在 RAX、float 在 XMM0），
+  返回值直出进事件的第 `ret_slot` 格，并在离开 thunk 前把值**写回寄存器**——
+  原先 void thunk 靠 RAX/XMM0「没人碰就透传」碰巧正确，但后续任何 C 代码都会
+  破坏 XMM0，带返回值的钩子必须显式写回。带 `ret_kind` 或 `when=1`（POST）时
+  事件在原函数调用**之后**发，构造函数里「调用之后才填好」的字段读得到。
+- **值类型容器遍历**：deref 位扩出 `list_val`(4) / `array_val`(5) 两种步，按
+  4 字节元素取值（原先只有引用型的 8 字节指针步）；`sum` / `count` 两种落点
+  直接对 `List<int>` 求和 / 计数。九参构造函数
+  `RailwayDungeonHistoryDataByCollection::.ctor` 的 `clear_turns`（List<int>）
+  一条配置就求出总回合。
+- **字符串取数**：`text` 落点读 il2cpp string（len@+0x10、UTF-16 data@+0x14）
+  取开头数字。`RailwayDungeonMapUpperUILine1002::UpdateUI` 之后 UI 文本 "86"
+  → 86。
+- **事件八格 → 十二格**（`a..l`，44 → 60 字节/格）：damage 钩子一条命中要同时
+  还原 ACT + VAL 两行共十个数，八格装不下。配套 `WARP_READ_MAX` 64 → 128。
+- **thunk 形状补齐 7/8/9 参**，且所有形状显式收发 il2cpp 的隐藏 `MethodInfo*`
+  参数（原先直接丢掉——非泛型方法体不读它所以没炸，九参构造不敢赌）。
+- 协议版本 1 → 2（钩子槽 272 → 288 字节、事件 44 → 60、读链 64 → 128 条，
+  映射总长 131840 → **167936**）。
+- 成就桥接上剩下六条钩子：`railway_total` / `railway_node` / `railway_hist` /
+  `stage_node_id` / `railway_ui_text` / `take_attack_dmg_multiplier`，
+  行格式与老 DLL 逐字一致（RWT / RWT node / RWT line+total+nodes / SNI / RUT /
+  ACT+VAL），规则引擎零改动。damage 钩子的 BUF 行本轮不发（buff 链遍历 +
+  FNV-1a 哈希仍无通用表达，buff 类成就继续走采样器路径，与 0.7 行为一致）。
+- 踩坑两笔：`_write_config` 的 dict 路径原先只认整型 `ret_kind`，`'int32'`
+  字符串 `int()` 失败后**静默回退 VOID**——返回值就丢了，现在与 `hook()`
+  关键字路径共用 `HOST_RET_NAMES`；`out` 槽原先用 `& (SLOTS-1)` 掩码钳位，
+  十二格不是 2 的幂，out=12 会被折到 8，改成显式钳制。
+
 ## 0.7.0
 
 - **对象槽（object slot）**：钩子槽加两个字段 `cache_arg` / `cache_slot`，命中时

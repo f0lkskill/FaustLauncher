@@ -62,6 +62,12 @@ extern void *const   g_thunks0[WARP_MAX_HOOKS];
 extern void *const   g_thunks1[WARP_MAX_HOOKS];
 extern void *const   g_thunks2[WARP_MAX_HOOKS];
 extern void *const   g_thunks3[WARP_MAX_HOOKS];
+extern void *const   g_thunks4[WARP_MAX_HOOKS];
+extern void *const   g_thunks5[WARP_MAX_HOOKS];
+extern void *const   g_thunks6[WARP_MAX_HOOKS];
+extern void *const   g_thunks7[WARP_MAX_HOOKS];
+extern void *const   g_thunks8[WARP_MAX_HOOKS];
+extern void *const   g_thunks9[WARP_MAX_HOOKS];
 
 /* ---- 函数 ---- */
 void warp_pump_commands(void);
@@ -84,6 +90,16 @@ int warp_probe_int(const char *klass_name, const char *method_name, void *obj);
 int warp_on_event(int hook_index, void *self, int argc,
                   void *a1, void *a2, void *a3,
                   void *a4, void *a5, void *a6);
+void warp_on_event_post(int hook_index, WARP_HOOK *h, void *self, int argc,
+                        void *a1, void *a2, void *a3,
+                        void *a4, void *a5, void *a6, int ret);
+int warp_emits_post(const WARP_HOOK *h);
+static inline WARP_HOOK *warp_hook_at(int index)
+{
+    if (!g_warp_hooks || index < 0 || index >= WARP_MAX_HOOKS)
+        return NULL;
+    return &g_warp_hooks[index];
+}
 void *warp_pick_thunk(int index, int argc);
 int warp_kill_game(void);
 void __stdcall hk_warp_pump(void *self);

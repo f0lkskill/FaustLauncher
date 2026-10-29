@@ -33,7 +33,7 @@ from .base import (
 )
 
 HOST_MAGIC = 0x54534857           # "WHST"
-HOST_VERSION = 1
+HOST_VERSION = 2                  # v2：钩子加 when/ret_kind/ret_slot，事件 12 格，读链 128 条
 HOST_MAP_DEFAULT = "Local\\WarpHost_Default"
 HOST_MAP_ENV = "WARP_HOST_MAP"
 HOST_DLL_NAME = "warp_host.dll"
@@ -58,38 +58,62 @@ HOST_HEADER_SIZE = 432   # 160 状态头 + 命令槽（4 个 int + 256 字节文
 HOST_HOOK_OFFSET = HOST_HEADER_SIZE
 #: 一条读取链最多走几跳。
 HOST_READ_STEPS = 4
-#: 读出来的值怎么解释。
-HOST_READ_INT = 0
-HOST_READ_FLOAT = 1
-HOST_READ_BOOL = 2
-HOST_READ_PTR = 3
-HOST_READ_OBSCURED = 4
 # 读取链每一步的动作。deref 位存的既是「要不要解引用」也是「做什么」：
-# 0 加偏移 / 1 解引用 / 2 List 取下标 / 3 Array 取下标
+# 0 加偏移 / 1 解引用 / 2 List 取下标 / 3 Array 取下标 /
+# 4 List 取下标（值类型，元素 4B）/ 5 Array 取下标（值类型，元素 4B）
 HOST_STEP_PLAIN = 0
 HOST_STEP_DEREF = 1
 HOST_STEP_LIST = 2
 HOST_STEP_ARRAY = 3
+HOST_STEP_LIST_VAL = 4     # List<int> 这类值类型容器：元素是值不是指针
+HOST_STEP_ARRAY_VAL = 5
 HOST_STEP_NAMES = {
     "plain": HOST_STEP_PLAIN,
     "deref": HOST_STEP_DEREF,
     "list": HOST_STEP_LIST,
     "array": HOST_STEP_ARRAY,
+    "list_val": HOST_STEP_LIST_VAL,
+    "array_val": HOST_STEP_ARRAY_VAL,
 }       # 落点是 ObscuredInt（混淆 int），值 = hidden ^ key
 # 落盘时可以写数字，也可以写名字（插件侧更愿意写 'obscured' 而不是 4）
+HOST_READ_INT = 0
+HOST_READ_FLOAT = 1
+HOST_READ_BOOL = 2
+HOST_READ_PTR = 3
+HOST_READ_OBSCURED = 4
+HOST_READ_SUM = 5          # 落点是 List<int>：求和（值类型元素）
+HOST_READ_COUNT = 6        # 落点是容器：只取元素个数
+HOST_READ_TEXT = 7         # 落点是 il2cpp 字符串：取开头的数字（"86" → 86）
 HOST_READ_NAMES = {
     'int': HOST_READ_INT,
     'float': HOST_READ_FLOAT,
     'bool': HOST_READ_BOOL,
     'ptr': HOST_READ_PTR,
     'obscured': HOST_READ_OBSCURED,
+    'sum': HOST_READ_SUM,
+    'count': HOST_READ_COUNT,
+    'text': HOST_READ_TEXT,
 }
+# 返回值类型：thunk 调完原函数后按什么形状取返回值（int 在 RAX、float 在 XMM0）
+HOST_RET_VOID = 0
+HOST_RET_INT32 = 1
+HOST_RET_FLOAT = 2
+HOST_RET_NAMES = {
+    "void": HOST_RET_VOID,
+    "int32": HOST_RET_INT32,
+    "int": HOST_RET_INT32,
+    "float": HOST_RET_FLOAT,
+}
+# 事件时机：PRE=原函数调用前发（老默认），POST=调用后发（要读「调用之后才有」
+# 的字段，或者带返回值时自动转 POST）
+HOST_WHEN_PRE = 0
+HOST_WHEN_POST = 1
 #: 全进程共用的读取链条数。
-HOST_READ_MAX = 64
+HOST_READ_MAX = 128
 HOST_READ_SIZE = 48
 
 
-HOST_HOOK_SIZE = 272
+HOST_HOOK_SIZE = 288
 HOST_TEXTS_OFFSET = HOST_HOOK_OFFSET + HOST_MAX_HOOKS * HOST_HOOK_SIZE
 HOST_TEXT_SIZE = HOST_TEXT_LEN
 HOST_EXPORTS_OFFSET = HOST_TEXTS_OFFSET + HOST_MAX_TEXTS * HOST_TEXT_SIZE
@@ -97,8 +121,8 @@ HOST_EV_CTRL_OFFSET = HOST_EXPORTS_OFFSET + HOST_EXPORT_COUNT * HOST_NAME_MAX
 HOST_EV_CTRL_SIZE = 16
 HOST_EVENTS_OFFSET = HOST_EV_CTRL_OFFSET + HOST_EV_CTRL_SIZE
 HOST_EVENT_COUNT = 2048
-HOST_EVENT_SIZE = 44
-HOST_EVENT_SLOTS = 8    # 读链的 out 能写到 0..7
+HOST_EVENT_SIZE = 60
+HOST_EVENT_SLOTS = 12   # 读链的 out 能写到 0..11
 HOST_READ_OFFSET = HOST_EVENTS_OFFSET + HOST_EVENT_COUNT * HOST_EVENT_SIZE
 HOST_OBJECT_COUNT = 32      # 对象槽个数（与 C 侧 WARP_OBJECT_COUNT 一致）
 HOST_OBJECT_SIZE = 8        # 一个 void*
@@ -125,6 +149,10 @@ class HostEvent(ctypes.Structure):
         ("f", ctypes.c_int32),       # 第 6 格（读链 out=5）
         ("g", ctypes.c_int32),       # 第 7 格（读链 out=6）
         ("h", ctypes.c_int32),       # 第 8 格（读链 out=7）
+        ("i", ctypes.c_int32),       # 第 9 格（读链 out=8）
+        ("j", ctypes.c_int32),       # 第 10 格（读链 out=9）
+        ("k", ctypes.c_int32),       # 第 11 格（读链 out=10）
+        ("l", ctypes.c_int32),       # 第 12 格（读链 out=11）
     ]
 
 # 动作位（与 warp_host.c 的 WARP_ACT_* 一致）
@@ -208,7 +236,7 @@ class HostHeader(ctypes.Structure):
 
 
 class HostHook(ctypes.Structure):
-    """钩子表的一项，264 字节。"""
+    """钩子表的一项，288 字节。"""
 
     _fields_ = [
         ("klass", ctypes.c_char * HOST_KLASS_LEN),
@@ -233,7 +261,12 @@ class HostHook(ctypes.Structure):
         ("read_count", ctypes.c_int32),
         ("cache_arg", ctypes.c_int32),
         ("cache_slot", ctypes.c_int32),
-        ("reserved", ctypes.c_int32 * 2),
+        ("hits", ctypes.c_int32),        # 命中数（运行时）
+        ("blocked", ctypes.c_int32),     # 真正拦下原方法的次数（运行时）
+        ("when", ctypes.c_int32),        # HOST_WHEN_PRE / HOST_WHEN_POST
+        ("ret_kind", ctypes.c_int32),    # HOST_RET_*：thunk 按什么形状取返回值
+        ("ret_slot", ctypes.c_int32),    # 返回值直出的事件格（-1 不用）
+        ("pad", ctypes.c_int32),
     ]
 
 
@@ -311,7 +344,7 @@ def _step_code(value):
     if isinstance(value, bool):
         return HOST_STEP_DEREF if value else HOST_STEP_PLAIN
     try:
-        return int(value) & 0x3
+        return int(value) & 0x7
     except (TypeError, ValueError):
         return HOST_STEP_DEREF
 
@@ -572,8 +605,16 @@ class Host:
                                   ("guard_index", -1), ("guard_value", 0),
                                   ("probe_index", 0), ("probe_slot", -1),
                                   ("guard_var", -1), ("text_base", 0),
-                                  ("cache_arg", -1), ("cache_slot", -1)):
+                                  ("cache_arg", -1), ("cache_slot", -1),
+                                  ("when", HOST_WHEN_PRE),
+                                  ("ret_kind", HOST_RET_VOID),
+                                  ("ret_slot", -1)):
                 value = hook.get(name, default)
+                if name == "ret_kind" and isinstance(value, str):
+                    # dict 配置路径与 hook() 关键字路径同一套叫法：
+                    # 'int32' / 'float' 按名翻译，认不出按 VOID。
+                    value = HOST_RET_NAMES.get(value.strip().lower(),
+                                               HOST_RET_VOID)
                 try:
                     value = int(value)
                 except (TypeError, ValueError):
@@ -604,15 +645,20 @@ class Host:
                         kind = HOST_READ_NAMES.get(kind.lower(), HOST_READ_INT)
                     ctypes.c_int32.from_address(
                         at + HostRead.kind.offset).value = int(kind)
-                    # out 是事件里的第几格：0..7（八格值，成就一条读法要六七个）
-                    ctypes.c_int32.from_address(at + HostRead.out.offset).value = int(
-                        spec.get("out", j)) & (HOST_EVENT_SLOTS - 1)
+                    # out 是事件里的第几格：0..11（十二格，damage 一条钩子
+                    # 要装下 ACT+VAL 两行的数）。不是 2 的幂，用钳制不用掩码。
+                    out = max(0, min(int(spec.get("out", j)), HOST_EVENT_SLOTS - 1))
+                    ctypes.c_int32.from_address(at + HostRead.out.offset).value = out
                     for k, step in enumerate(chain):
                         if isinstance(step, dict):
                             if "list" in step:
                                 off, code = int(step["list"]), HOST_STEP_LIST
                             elif "array" in step:
                                 off, code = int(step["array"]), HOST_STEP_ARRAY
+                            elif "list_val" in step:
+                                off, code = int(step["list_val"]), HOST_STEP_LIST_VAL
+                            elif "array_val" in step:
+                                off, code = int(step["array_val"]), HOST_STEP_ARRAY_VAL
                             else:
                                 code = _step_code(step.get("deref", True))
                                 off = int(step.get("index", 0)) if code in (
@@ -624,6 +670,8 @@ class Host:
                             # 绝大多数跳到 next 是对象引用，内嵌 struct 才显式写 False。
                             code = _step_code(flags[k]) if k < len(flags) else 1
                         off, code = int(off), int(code)
+                        if not (0 <= code <= HOST_STEP_ARRAY_VAL):
+                            code = HOST_STEP_DEREF
                         off = max(-0x7FFFFF, min(0x7FFFFF, off))
                         ctypes.c_int32.from_address(
                             at + HostRead.off.offset + k * 4).value = off
@@ -653,7 +701,7 @@ class Host:
 
     def hook(self, klass, method, argc=0, block=False, actions=None,
              probe=None, guard=None, event=None, reads=None, dedupe=False,
-             cache=None, **extra):
+             cache=None, when=None, ret_kind=None, ret_slot=None, **extra):
         """登记一条钩子 —— 用法就是一次普通调用，不是填表格。
 
         ``klass`` / ``method`` 是要挂的方法（``argc`` 按「不含 this」数），
@@ -668,6 +716,11 @@ class Host:
         ``cache=(参数序号, 槽号)`` 表示命中时把那个参数的指针留在对象槽里，
         之后可以用 ``arg=0x100+槽号`` 的读链从它出发，或者 :meth:`object_ptr`
         直接把地址拿出来 —— 这是老链路 `cache_self` 那类读法的通用版。
+        ``when=1``（POST）表示事件在原函数调用**之后**发——构造函数里要读
+        的字段是调用之后才填好的，必须配这个；带 ``ret_kind`` 时自动转 POST。
+        ``ret_kind='int32'/'float'`` 让 thunk 按类型取返回值（int 在 RAX、
+        float 在 XMM0），``ret_slot=格号`` 把返回值直出进事件的那一格；
+        返回值是 Python 侧传名字，落盘前翻成 HOST_RET_* 常量。
 
         返回登记进去的那条 dict，方便调用方就地改。
         默认 ``actions=0``：只拦、只看，不弹窗 —— 要弹什么由 Python 自己调
@@ -698,6 +751,17 @@ class Host:
         if cache is not None:
             c_arg, c_slot = list(cache)[:2]
             item.update({"cache_arg": int(c_arg), "cache_slot": int(c_slot)})
+        if when is not None:
+            item["when"] = int(when)
+        if ret_kind is not None:
+            if isinstance(ret_kind, str):
+                ret_kind = HOST_RET_NAMES.get(ret_kind.strip().lower(),
+                                              HOST_RET_VOID)
+            item["ret_kind"] = int(ret_kind)
+            if int(ret_kind) != HOST_RET_VOID:
+                item.setdefault("when", HOST_WHEN_POST)
+        if ret_slot is not None:
+            item["ret_slot"] = int(ret_slot)
         if reads:
             item["reads"] = list(reads)
         item.update(extra)
@@ -830,10 +894,10 @@ class Host:
         FixedUpdate）一刷就是几千，放进插件状态行只会让人误会。
 
         ``method`` 只看某一个方法对应的钩子；``blocked`` 为真时读
-        ``reserved[1]``（真的把原方法拦下来的次数，参数门放行那次不算）。
+        ``blocked`` 计数（真的把原方法拦下来的次数，参数门放行那次不算）。
         """
         owner = owner or self._current_owner()
-        off = HostHook.reserved.offset + (4 if blocked else 0)
+        off = HostHook.blocked.offset if blocked else HostHook.hits.offset
         total = 0
         base = ctypes.addressof(cfg) + HOST_HOOK_OFFSET
         hooks, _ = self._layout()
@@ -886,7 +950,8 @@ class Host:
                 "id": int(slot.id), "hook": int(slot.hook), "tick": int(slot.tick),
                 "a": int(slot.a), "b": int(slot.b), "c": int(slot.c),
                 "d": int(slot.d), "e": int(slot.e), "f": int(slot.f),
-                "g": int(slot.g), "h": int(slot.h),
+                "g": int(slot.g), "h": int(slot.h), "i": int(slot.i),
+                "j": int(slot.j), "k": int(slot.k), "l": int(slot.l),
             })
         ctrl[1] = tail + take
         return out
