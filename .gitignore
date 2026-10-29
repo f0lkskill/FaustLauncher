@@ -12,6 +12,7 @@ __pycache__/
 resource_info.json
 addon_info.json
 # C extensions
+tmpdbg/
 *.so
 .icon_src/
 *.dll
