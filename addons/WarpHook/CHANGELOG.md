@@ -4,6 +4,37 @@
 
 看完整历史：`git log --oneline -- addons/WarpHook/`
 
+## 0.9.2
+
+真机第二轮排障：钩子表不是不够大，是**多个插件进程在互踩**。
+
+- **多作者分段协议（共享内存写规则）**。成就观测跑在独立子进程，
+  NoGacha 在主进程——两个进程各自 push 同一段共享内存，而旧
+  `_write_config` 是全表清写：后 push 的把先 push 的整表清掉。真机
+  现场就是这样：子进程先写 25 条成就钩子，主进程 NoGacha 一 push，
+  表里只剩 2 条抽卡钩子，C 侧「老老实实」只装 2 条——成就钩子全军
+  覆没而两边日志都说自己成功了。现在按 owner 名字把表分段：名字含
+  「成就/achievement」的进程占主段（钩子槽 0..26、读链 0..95、文案
+  0..191），其余进辅段（27..31 / 96..127 / 192..255），每个作者只清、
+  只写自己的段，`enabled` 也不再被别人的 push 关掉。谁先谁后、谁崩
+  谁活，都不再互相覆盖。
+- **ticks：battle_snark 的每帧驱动改走 WarpHost 的泵**。上一版为解
+  崩溃删掉了 battle_snark 的 `FixedUpdate` 钩，气泡淡出就没了驱动——
+  真机上立绘常驻不消失。直接钩 `Update`/`LateUpdate` 真机全失败
+  （游戏类未必重载这两个方法）。改为函数指针共享：battle_snark 把
+  `sk_ui_tick` 写进对象槽 30（magic `SKT1`）/31，WarpHost 泵每帧
+  代跑——钩子装不装得上不再影响气泡生命周期。
+- **battle_snark**：UI 加 `DontDestroyOnLoad`（崩溃根因：战斗场景
+  卸载后缓存指针悬空，tick 对死对象 invoke）；`blind` 守卫（alpha
+  调用失败即盲化，`show` 退回原版弹窗，绝不双重弹窗）。
+- **诊断日志（`warphook/diag.py`）**：CFG/EVT/ST/DROP 四层，落
+  `addons/WarpHook/warp_events.log`（2MB×3 轮转），`WARP_DIAG=0`
+  关闭。真机上「配置写没写进去、C 装了几条、事件翻译成什么行」从此
+  有账可查。
+- 测试：warp_hook 64 项（新增 `test_dual_owner` 双实例互不覆盖）、
+  warp_reads / warp_source / warp_cmd_smoke / nogacha_host 全绿；
+  `test/shm_probe.py` 修 64 位指针截断与 `popup_ok` 偏移。
+
 ## 0.9.1
 
 真机首航排障：一次上线暴露三个问题（成就不触发、NoGacha 拦了不弹窗、

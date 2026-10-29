@@ -74,6 +74,7 @@ extern unsigned int  g_gc_handles[WARP_OBJECT_COUNT];
 
 /* ---- 函数 ---- */
 void warp_pump_commands(void);
+void warp_pump_ticks(void);   /* objects[30]/[31] 共享 tick 槽（battle_snark 淡出） */
 void warp_log(const char *msg, int value);
 void warp_status(int st, int err);
 unsigned int warp_rand(void);
