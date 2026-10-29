@@ -100,8 +100,9 @@ int warp_probe_int(const char *klass_name, const char *method_name, void *obj)
  * bit1 = 本次要执行动作。拆成"先判定再执行"，是为了让 detour 能按参数
  * 决定放行 —— NoGacha 的「付费单抽不拦」就是靠 guard_index/guard_value。 */
 /* 对象槽区的起点。槽里存的是 void*，读侧可以按地址直接读。
- * 放在共享内存最后一段，所以基址就是 g_hdr 加固定偏移。 */
-static void **warp_objects(void)
+ * 放在共享内存最后一段，所以基址就是 g_hdr 加固定偏移。
+ * （warp_cmd.c 的对象构造也用同一张槽表，所以不再是 static。） */
+void **warp_objects(void)
 {
     if (!g_hdr)
         return NULL;
@@ -458,7 +459,7 @@ static void warp_emit_event(int hook_index, WARP_HOOK *h, void *self,
         default: break;
         }
         if (objs && cached)
-            objs[h->cache_slot] = cached;
+            warp_slot_put(h->cache_slot, cached, 0);
     }
 
     warp_apply_reads(h, self, argc, a1, a2, a3, a4, a5, a6, out);

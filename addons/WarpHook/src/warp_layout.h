@@ -32,12 +32,12 @@
  *   0     WARP_HEADER      432 字节（状态头 + 命令槽 + 弹窗文本）
  *   432   WARP_HOOK[16]   16 × 288 = 4608
  *   5040  texts[256]     256 × 128 = 32768
- *   37808 exports[13]     13 × 64  = 832
- *   38640 ev_ctrl          16 字节（head/tail/dropped/pad）
- *   38656 events[2048] 2048 × 60  = 122880
- *   161536 reads[128]    128 × 48  = 6144
- *   167680 objects[32]   32 × 8   = 256
- *   167936 (结束)
+ *   37808 exports[15]     15 × 64  = 960
+ *   38768 ev_ctrl          16 字节（head/tail/dropped/pad）
+ *   38784 events[2048] 2048 × 60  = 122880
+ *   161664 reads[128]    128 × 48  = 6144
+ *   167808 objects[32]   32 × 8   = 256
+ *   168064 (结束)
  * ===================================================================== */
 
 #include <windows.h>
@@ -46,7 +46,7 @@
 #include "MinHook.h"
 
 #define WARP_MAGIC        0x54534857u      /* "WHST" */
-#define WARP_VERSION      2                /* v2：钩子加 when/ret_kind/ret_slot，事件 12 格，读链 128 条 */
+#define WARP_VERSION      3                /* v3：导出表 13→15（gchandle），命令槽扩对象构造 */
 
 #define WARP_MAX_HOOKS    16
 #define WARP_MAX_TEXTS    256
@@ -54,7 +54,7 @@
 #define WARP_KLASS_LEN    48
 #define WARP_METHOD_LEN   48
 #define WARP_LOG_LEN      48
-#define WARP_EXPORT_COUNT 13
+#define WARP_EXPORT_COUNT 15
 #define WARP_NAME_MAX     64
 
 #define WARP_POLL_MS      250
@@ -65,10 +65,44 @@
 #define WARP_VAR_COUNT    8      /* 钩子之间共享的整数槽个数（WARP_HEADER.vars） */
 #define WARP_CMD_TEXT_LEN 256   /* 命令里的弹窗正文长度 */
 
-/* 命令类型 */
+/* 命令类型。cmd_type 是一个打包字：低 8 位命令号，8-11 位参数个数，
+ * 12-15 位返回值形状，16-23 位对象槽号（MAKE/STR 的落槽、CALL 的 this、
+ * RELEASE 的目标）。解析用 WARP_CMD_* 宏，打包用 WARP_CMD_PACK。 */
 #define WARP_CMD_NONE     0
 #define WARP_CMD_POPUP    1     /* 在游戏里弹原版系统弹窗 */
 #define WARP_CMD_KILL     2     /* 结束游戏进程 */
+#define WARP_CMD_MAKE     3     /* 构造对象：object_new (+ .ctor) → 对象槽 */
+#define WARP_CMD_CALL     4     /* 调方法：runtime_invoke，槽内对象当 this（无槽=静态） */
+#define WARP_CMD_STR      5     /* 造字符串：il2cpp_string_new(cmd_text) → 对象槽 */
+#define WARP_CMD_RELEASE  6     /* 解掉槽上 GC 句柄并清槽 */
+
+#define WARP_CMD_CODE(t)    ((t) & 0xFF)
+#define WARP_CMD_ARGC(t)    (((t) >> 8) & 0xF)
+#define WARP_CMD_RETKIND(t) (((t) >> 12) & 0xF)
+#define WARP_CMD_SLOT(t)    (((t) >> 16) & 0xFF)
+#define WARP_CMD_PACK(code, argc, retkind, slot) \
+    (((code) & 0xFF) | (((argc) & 0xF) << 8) | (((retkind) & 0xF) << 12) | \
+     (((slot) & 0xFF) << 16))
+
+/* CALL 的返回值形状（box 解包 / 引用落槽） */
+#define WARP_CMD_RET_INT32 0    /* box 返回，值在 +0x10，位模式写 vars[6] */
+#define WARP_CMD_RET_FLOAT 1    /* box 返回 float，位模式写 vars[6] */
+#define WARP_CMD_RET_REF   2    /* 引用返回，落对象槽 vars[7]（挂 GC 句柄） */
+
+/* 命令参数类型（cmd_text 的 "#..." 后缀，一位一参）：参数值都在 vars[0..5] */
+#define WARP_CMD_ARG_I 'i'      /* int32：vars 值就是参数 */
+#define WARP_CMD_ARG_F 'f'      /* float：vars 值按位解释 */
+#define WARP_CMD_ARG_P 'p'      /* 引用：vars 值就是对象指针（槽引用已在 py 侧解好） */
+
+/* 命令结果码 */
+#define WARP_CMD_RES_OK        0
+#define WARP_CMD_RES_FAIL      1   /* 一般失败（对象构造返回空之类） */
+#define WARP_CMD_RES_UNKNOWN   2   /* 未知命令 */
+#define WARP_CMD_RES_EXCEPTION 3   /* 方法调用抛了异常 */
+#define WARP_CMD_RES_NO_CLASS  4
+#define WARP_CMD_RES_NO_METHOD 5
+#define WARP_CMD_RES_BAD_SLOT  6   /* 槽号越界 */
+#define WARP_CMD_RES_BAD_ARGC  7   /* 参数个数超出 vars 容量（>6） */
 
 #define WARP_HEADER_SIZE  432   /* 160 状态头 + 命令槽 4*4 + 256 字节文本 */
 #define WARP_HOOK_OFFSET  WARP_HEADER_SIZE
@@ -279,4 +313,6 @@ typedef void *(*fn_class_get_type)(void *klass);
 typedef void *(*fn_type_get_object)(void *type);
 typedef void *(*fn_array_new)(void *klass, size_t length);
 typedef void *(*fn_class_get_parent)(void *klass);
+typedef unsigned int (*fn_gchandle_new)(void *obj, unsigned int strong);
+typedef void (*fn_gchandle_free)(unsigned int handle);
 

@@ -22,6 +22,8 @@ typedef struct {
     fn_type_get_object            type_get_object;
     fn_array_new                  array_new;
     fn_class_get_parent           class_get_parent;
+    fn_gchandle_new               gchandle_new;
+    fn_gchandle_free              gchandle_free;
 } WARP_IC;
 
 typedef struct {
@@ -68,6 +70,7 @@ extern void *const   g_thunks6[WARP_MAX_HOOKS];
 extern void *const   g_thunks7[WARP_MAX_HOOKS];
 extern void *const   g_thunks8[WARP_MAX_HOOKS];
 extern void *const   g_thunks9[WARP_MAX_HOOKS];
+extern unsigned int  g_gc_handles[WARP_OBJECT_COUNT];
 
 /* ---- 函数 ---- */
 void warp_pump_commands(void);
@@ -101,6 +104,13 @@ static inline WARP_HOOK *warp_hook_at(int index)
     return &g_warp_hooks[index];
 }
 void *warp_pick_thunk(int index, int argc);
+void **warp_objects(void);
+void warp_slot_put(int slot, void *obj, int with_handle);
+void *warp_slot_get(int slot);
+int warp_cmd_make(int argc, int slot, const char *argkinds);
+int warp_cmd_call(int argc, int slot, int retkind, int out_slot, const char *argkinds);
+int warp_cmd_str(int slot);
+int warp_cmd_release(int slot);
 int warp_kill_game(void);
 void __stdcall hk_warp_pump(void *self);
 int warp_install_hooks(void);

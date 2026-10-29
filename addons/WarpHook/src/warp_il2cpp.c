@@ -58,6 +58,11 @@ int warp_bind_exports(void)
     g_ic.type_get_object            = (fn_type_get_object)find_export(ga, 10);
     g_ic.array_new                  = (fn_array_new)find_export(ga, 11);
     g_ic.class_get_parent           = (fn_class_get_parent)find_export(ga, 12);
+    /* gchandle 两个是对象构造（P6）用的：构造出来的对象挂强句柄防 GC 收走。
+     * 缺了不致命 —— make/str 退化为裸指针落槽（对象可能在用之前被回收），
+     * 所以不进「前 5 个」那种命脉检查。 */
+    g_ic.gchandle_new               = (fn_gchandle_new)find_export(ga, 13);
+    g_ic.gchandle_free              = (fn_gchandle_free)find_export(ga, 14);
 
     for (i = 0; i < WARP_EXPORT_COUNT; i++) {
         void *p = find_export(ga, i);
