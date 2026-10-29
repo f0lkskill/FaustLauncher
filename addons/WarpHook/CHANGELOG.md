@@ -4,6 +4,35 @@
 
 看完整历史：`git log --oneline -- addons/WarpHook/`
 
+## 0.9.4
+
+真机第四轮排障：李箱链的钩点在当前游戏版本里换了地方，读法跟着重写。
+
+- **事件钩点整体迁移**。当前版本 `BattleActionModel` 类里已经没有
+  `OnEndTurn` / `DoneWithAction`（slot7/8 钩到 parent 链上的别的方法，
+  timing 枚举读出 32 这种垃圾值）。真实钩点是
+  `BattleSystemAbilityDetail::DoneWithAction(BattleActionModel)`（1 参）；
+  `SkillAbility::DoneWithAction` 是 2 参虚方法、6 个子类 override 各自
+  实现，MinHook 只认基类方法地址拦不到子类，弃用。damage 钩实际命中
+  的是 `BattleUnitModel` 嵌套族的 4 参
+  `GetTakeAttackDmgMultiplier(action,coin,attacker,isCritical)`（与
+  BuffManager 的 6 参版是两套独立方法），签名按 4 参校正。
+- **skill 读链重写（skid=2010341209 的根因）**。`SkillDataModel.id` 与
+  `skillTier` 都是 `ObscuredInt`，旧读链按裸 int 读拿到的是混淆 key 分
+  量。新链：actor = action→[0x18 解引用 `_model`]→[0x64 `origin_id`]，
+  commander = [0xB4]，skid/tier = action→[0x20 `_skill`]→[0x10
+  `_skillData`]→[0x10/0x40 按 obscured 异或]。
+- **`action_actor_id` 偏移过时**。`BattleActionModel._model` 现在在
+  0x18（旧配置 0xBC 是已删字段），且它是引用、必须显式解引用。
+- **同 target 双钩防御**。`node_cleared_short` 与 `IsNodeCleared` 是同
+  一个方法（MinHook 一方法只能一个 detour），从 FIRST_BATCH 删去；
+  `node_state` 钩自带缓存（self 落对象槽 0）但照常占事件号。
+- **类查找兜底**。`warp_find_class` 在精确命名空间查询全灭后按短名再扫
+  全 assembly——铁路三类在第四轮真机上依旧 class not found，留这条
+  退路。
+- **注入重试**。成就观测先于游戏启动时，`inject_now(wait=False)` 直接
+  放弃导致整轮无引擎；改为后台线程 `wait=True` 死等游戏进程出现。
+
 ## 0.9.3
 
 真机第三轮排障：装钩失败的三大根因，逐条掀掉。

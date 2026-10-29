@@ -129,6 +129,7 @@ void *warp_find_class(void *domain, const char *name)
     if (!asm_list)
         return NULL;
 
+    /* 第一遍：ns + 短名精确查（标准路径）。 */
     for (i = 0; i < count; i++) {
         void *image = g_ic.assembly_get_image(asm_list[i]);
         void *klass;
@@ -147,6 +148,24 @@ void *warp_find_class(void *domain, const char *name)
         if (klass)
             return klass;
     }
+    if (!ns_buf[0])
+        goto not_found;
+
+    /* 第二遍兜底：只按短名扫全图（ns=""）。真机 v0.9.3 实证铁路三类
+     * （LimbusCompany.RailwayDungeon.*）精确 ns 查询全灭而短名类能找到
+     * —— 有些版本的 metadata 里 ns 字符串和 C# 逻辑命名空间对不上，
+     * 短名至少能把类捞回来。短名撞名概率低，先到先得。 */
+    for (i = 0; i < count; i++) {
+        void *image = g_ic.assembly_get_image(asm_list[i]);
+        void *klass;
+        if (!image)
+            continue;
+        klass = g_ic.class_from_name(image, "", type_name);
+        if (klass)
+            return klass;
+    }
+
+not_found:
     return NULL;
 }
 

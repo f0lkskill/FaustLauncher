@@ -257,7 +257,12 @@ FALLBACK_HOOKS: dict[str, tuple[str, int, str]] = {
     "manager_on_round_start_before": ("BattleActionModelManager::OnRoundStart_Before",
                                       0xB63FA0, "plain"),
     "manager_init": ("BattleActionModelManager::Init", 0xB63DC0, "plain"),
-    "action_on_end_turn": ("BattleActionModel::OnEndTurn", 0x11ACBA0, "action_int"),
+    # 当前游戏版本 BattleActionModel 已无 OnEndTurn/DoneWithAction（真机 v0.9.3
+    # 证伪，钩到的是 parent 链上别的东西）。改挂系统层的行动结束汇聚点。
+    "action_on_end_turn": ("BattleSystemAbilityDetail::DoneWithAction", 0x11ACBA0, "action_int"),
+    # action_done_with_action：当前版本无对应单参钩点（SkillAbility::DoneWithAction
+    # 是虚方法且被 6 个子类 override，钩基类拦不到），v0.9.4 起从 FIRST_BATCH
+    # 下线；观测端 1006 的开组逻辑改由 Skill_End 行驱动。
     "action_done_with_action": ("BattleActionModel::DoneWithAction", 0x11AD140, "action_int"),
     "take_attack_dmg_multiplier": ("BattleUnitModel::GetTakeAttackDmgMultiplier", 0x11E1D10,
                                   "damage_action"),
@@ -296,7 +301,9 @@ FALLBACK_FIELDS: dict[str, int] = {
     "buff_static_id": 0x18,
     "action_skill": 0x20,
     "action_commander_id": 0xB4,
-    "action_actor_id": 0xBC,
+    # BattleActionModel._model（BattleUnitModel 引用）@0x18 —— 读链要解引用
+    # 后接 unit_origin_id 才是出手者身份（旧版 0xBC 是 int 字段，已过时）。
+    "action_actor_id": 0x18,
     "skill_data": 0x10,
     "skill_id": 0x10,
     "skill_tier": 0x40,
@@ -1003,6 +1010,10 @@ class BattleWatch:
                         self._assign_group_locked(key)
             if event.tag in ("take_attack_dmg_multiplier", "action_on_end_turn"):
                 self._mark_group_actor_locked(actor_oid)
+            # v0.9.4：action_done_with_action 钩点随旧版方法一起消失
+            # （当前版本 BattleActionModel 没有它）。开组/结算不再依赖它：
+            # Skill_End（skv_end → _apply_anim_tick 的 release 分支）已在
+            # 驱动动画结束的组放行，真机 EVT 里 skv_end 带 iid 正常流动。
             if event.tag == "action_done_with_action":
                 skid = record["skid"]
                 if skid and skid > 0:
