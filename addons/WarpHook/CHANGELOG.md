@@ -4,6 +4,26 @@
 
 看完整历史：`git log --oneline -- addons/WarpHook/`
 
+## 0.9.5
+
+真机第五轮：李箱成就触发（v0.9.4 钩点迁移生效）。本轮修「采光本被锁」
+的根因——一个藏在所有 thunk 里的返回值覆盖 bug。
+
+- **RAX 返回值被 warp_on_event_post 覆盖（真机反汇编实锤）**。thunk
+  用 `void` cast 调 original，靠「寄存器透传」把 bool/int 返回值带回
+  调用方——但 v0.9.1 引入的 `warp_on_event_post`（POST 事件发射）在
+  original 之后调用，RAX 从此装着 post 的返回值。反汇编
+  warp_thunk3_0（`IsNodeCleared` 用的形状）看到 `call *%rax` 之后
+  紧跟 post 调用——所有未配置 ret_kind 的 bool/int/指针 getter 返回
+  值全毁。表现：游戏把已通关的主线判成「通过 1-11 才能解锁」——
+  采光本永久上锁（重启才恢复）；启用拦截插件必现（它带 BLOCK 钩子，
+  拦截路径同样丢返回值）。
+- **修法：一律接住 + 无条件写回**。original 全部按 64 位整数 cast 调
+  用（int/bool/指针返回值都从 RAX 走，VOID 方法的 RAX 没人读、写回
+  也无害），`ret_` 升为 64 位（`movq` 写回保住指针高 32 位）；尾部
+  写回从「配置了 ret_kind 才写」改为无条件——float 写 XMM0，其余写
+  RAX。BLOCK 拦截路径没调 original，写 0 = 「拦截未成功」。
+
 ## 0.9.4
 
 真机第四轮排障：李箱链的钩点在当前游戏版本里换了地方，读法跟着重写。

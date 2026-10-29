@@ -27,27 +27,28 @@
     {                                                                   \
         WARP_HOOK *h_ = warp_hook_at(n);                                \
         int act = warp_on_event(n, self, N, WARP_EVT6 EVT);             \
-        int ret_ = 0;                                                   \
+        unsigned long long ret_ = 0;                                    \
         if (!(act & 0x1) && g_slots[n].installed) {                     \
             if (h_ && h_->ret_kind == WARP_RET_FLOAT) {                 \
                 float f_ = ((float (__fastcall *)DECL)g_slots[n].original) CALL; \
                 __builtin_memcpy(&ret_, &f_, 4);                        \
-            } else if (h_ && h_->ret_kind == WARP_RET_INT32) {          \
-                ret_ = (int)((long long (__fastcall *)DECL)g_slots[n].original) CALL; \
             } else {                                                    \
-                ((void (__fastcall *)DECL)g_slots[n].original) CALL;    \
+                /* 一律按 64 位整数接住 RAX：int/bool/指针的返回值全从     \
+                 * 这里走；VOID 方法的 RAX 没人读，写回去也无害。         \
+                 * 不接住的话，下面的 warp_on_event_post 调用会把         \
+                 * 它覆盖掉——真机实证：IsNodeCleared 永远返回假，        \
+                 * 游戏把已通关的主线判成 1-11 未解锁（采光本上锁）。 */  \
+                ret_ = (unsigned long long)((long long (__fastcall *)DECL)g_slots[n].original) CALL; \
             }                                                           \
-            warp_on_event_post(n, h_, self, N, WARP_EVT6 EVT, ret_);    \
+            warp_on_event_post(n, h_, self, N, WARP_EVT6 EVT, (int)ret_); \
         }                                                               \
         if (act & 0x2) warp_fire(n);                                    \
-        /* 声明了返回值类型的钩子，必须在离开前把值放回约定的寄存器：        \
-         * int 在 RAX、float 在 XMM0。写在函数最后一步，后面没有代码再       \
-         * 碰这两个寄存器。VOID 钩子不写 —— RAX/XMM0 原样透传 original      \
-         * 留下的值，正是 void 签名一直能工作（没崩）的原因。 */             \
-        if (h_ && h_->ret_kind == WARP_RET_INT32) {                     \
-            __asm__ volatile("movl %0, %%eax" :: "r"(ret_) : "eax");    \
-        } else if (h_ && h_->ret_kind == WARP_RET_FLOAT) {              \
+        /* 离开前无条件写回：int/bool/指针在 RAX（movq 保住 64 位指针），  \
+         * float 在 XMM0。BLOCK 路径没调 original，写 0 = 「拦截未成功」。 */ \
+        if (h_ && h_->ret_kind == WARP_RET_FLOAT) {                     \
             __asm__ volatile("movd %0, %%xmm0" :: "r"(ret_) : "xmm0");  \
+        } else {                                                        \
+            __asm__ volatile("movq %0, %%rax" :: "r"(ret_) : "rax");    \
         }                                                               \
     }
 
