@@ -351,6 +351,38 @@ void warp_pump_commands(void)
         g_hdr->cmd_result = rc;
 }
 
+/* 目标入口是不是已经被别的模块（或本表其他条目）钩过了。
+ *
+ * 各 DLL 的 MinHook 实例互不知情：两个 DLL 钩同一个方法会形成嵌套跳板链，
+ * 后挂者把自己的 original 指向前者的 thunk，调用一次、两边逻辑各跑两遍，
+ * 挂载时机一撞就是撕裂的跳板 —— v0.9.1 真机上就是这么把游戏崩掉的。
+ * 入口是 E9（近 jmp）或 FF 25（间接 jmp）就视为已占用：少装一个钩子、
+ * 降级运行，好过崩掉整个进程。必须在 MH_CreateHook 之前检查 —— create
+ * 时 MinHook 会把别人的 jmp 当普通指令拷进跳板，嵌套就成立了。 */
+static int warp_target_taken(void *target)
+{
+    unsigned char pro[6];
+    MEMORY_BASIC_INFORMATION mb;
+    int j;
+
+    if (!target)
+        return 0;
+    if (!VirtualQuery(target, &mb, sizeof(mb)) ||
+        mb.State != MEM_COMMIT ||
+        (mb.Protect & (PAGE_NOACCESS | PAGE_GUARD)))
+        return 0;
+    CopyMemory(pro, target, sizeof(pro));
+    if (pro[0] == 0xE9)
+        return 1;
+    if (pro[0] == 0xFF && pro[1] == 0x25)
+        return 1;
+    for (j = 0; j < WARP_MAX_HOOKS; j++) {
+        if (g_slots[j].installed && g_slots[j].target == target)
+            return 1;   /* 表内两条钩子配了同一方法，同样不许 */
+    }
+    return 0;
+}
+
 int warp_install_hooks(void)
 {
     void *domain;
@@ -410,6 +442,10 @@ int warp_install_hooks(void)
             }
             mh_ready = TRUE;
         }
+        if (warp_target_taken(target)) {
+            warp_log("hook: target already hooked elsewhere", i);
+            continue;
+        }
 
         g_slots[i].argc = h->argc;
         if (MH_CreateHook(target, thunk, &g_slots[i].original) != MH_OK) {
@@ -427,18 +463,30 @@ int warp_install_hooks(void)
     }
 
     /* 用户没钩 FixedUpdate 的话，宿主自己补一条：命令泵需要一个每帧都会
-       跑到的主线程入口，否则 py 主动调用 popup 要等到下次抽卡才生效。 */
+       跑到的主线程入口，否则 py 主动调用 popup 要等到下次抽卡才生效。
+       FixedUpdate 若已被别的模块钩走（warp_target_taken），退而求其次用
+       Update —— 再被占用就只能放弃命令通道，事件钩子照常工作。 */
     if (mh_ready && !g_pump_installed) {
-        void *gklass = warp_find_class(domain, "GlobalGameManager");
-        void *gmethod = gklass ? warp_find_method(gklass, "FixedUpdate", 0) : NULL;
-        void *gtarget = gmethod ? warp_method_pointer(gmethod) : NULL;
-        if (gtarget && MH_CreateHook(gtarget, hk_warp_pump, &g_pump_original) == MH_OK) {
-            if (MH_EnableHook(gtarget) == MH_OK) {
-                g_pump_target = gtarget;
-                g_pump_installed = 1;
-                warp_log("pump hook installed", 0);
+        static const char *PUMP_CANDIDATES[] = { "FixedUpdate", "Update" };
+        int ci;
+        for (ci = 0; ci < 2 && !g_pump_installed; ci++) {
+            void *gklass = warp_find_class(domain, "GlobalGameManager");
+            void *gmethod = gklass ? warp_find_method(gklass, PUMP_CANDIDATES[ci], 0) : NULL;
+            void *gtarget = gmethod ? warp_method_pointer(gmethod) : NULL;
+            if (!gtarget || warp_target_taken(gtarget))
+                continue;
+            if (MH_CreateHook(gtarget, hk_warp_pump, &g_pump_original) == MH_OK) {
+                if (MH_EnableHook(gtarget) == MH_OK) {
+                    g_pump_target = gtarget;
+                    g_pump_installed = 1;
+                    warp_log("pump hook installed on", ci);
+                } else {
+                    MH_RemoveHook(gtarget);
+                }
             }
         }
+        if (!g_pump_installed)
+            warp_log("pump: no free entry point, cmd channel off", 0);
     }
 
     g_installed = installed;

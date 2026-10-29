@@ -209,19 +209,19 @@ WARP_HEADER 432B   magic version enabled hooked status last_error heartbeat stan
                    evt_count hook_installed hook_total panel_step last_event fired
                    ga_found popup_ok boot_at(u64) dedupe_ms reserved0 log_tail[48] vars[8]
                    cmd_seq cmd_ack cmd_type cmd_result cmd_text[256]   ← 命令槽
-WARP_HOOK   288B×16 klass[48] method[48] argc event_id every chance actions flags
+WARP_HOOK   288B×32 klass[48] method[48] argc event_id every chance actions flags
                    hold_ms delay_ms guard_index guard_value
                    probe_class[48] probe_method[48] probe_index probe_slot guard_var
                    text_base read_base read_count cache_arg cache_slot
                    hits blocked（运行时计数）
                    when ret_kind ret_slot pad
 文案池      128B×256 随机挑一句弹出去（按插件分段，段尾空串当界标）
-导出表      64B×13   标准名按固定顺序映射成混淆名
+导出表      64B×15   标准名按固定顺序映射成混淆名（v3 起 + gchandle_new/free）
 事件 ctrl   16B      head / tail / dropped / pad（环形队列游标）
 事件队列    60B×2048 WARP_EVENT { id, hook, tick, a, b, …, l }（12 格）
 读取链      48B×128  WARP_READ { arg, nsteps, kind, out, off[4], deref[4] }
-对象槽      8B×32    cache 钩子落指针的地方
-总长        167936B（协议 version=2）
+对象槽      8B×32    cache 钩子与 P6 构造对象落指针的地方
+总长        172672B（协议 version=4：v3 加 2 导出，v4 钩子表 16→32）
 ```
 
 钩子表 → 行为的三段式表达力：

@@ -4,6 +4,32 @@
 
 看完整历史：`git log --oneline -- addons/WarpHook/`
 
+## 0.9.1
+
+真机首航排障：一次上线暴露三个问题（成就不触发、NoGacha 拦了不弹窗、
+游戏闪退），根因两个，都在协议与共存层面。
+
+- **协议 v3 → v4：钩子表 16 → 32 槽**。成就 25 条 + NoGacha 2 条早就
+  超过 16 槽，`_layout` 静默截断——真机上 NoGacha 的钩子整条消失，
+  插件盯着 `hits()` 永远是 0，日志只说「工作中，命中 0 次」。截断现在
+  会打日志点名被丢弃的钩子；映射总长 168064 → 172672。
+- **同目标双钩防御（`warp_target_taken`）**：安装前读目标函数入口，
+  已是 jmp（E9 / FF 25）或表内已有同方法就跳过并记日志。各 DLL 的
+  MinHook 实例互不知情，双钩同一方法会形成嵌套跳板链——真机崩溃栈
+  里 warp_host 与 battle_snark 在 `GlobalGameManager::FixedUpdate` 和
+  `BattleActionModelManager::OnRoundStart_Before` 上各嵌一层，最内层
+  游戏方法调 Unity API 时整个进程带走。命令泵也加了备胎：FixedUpdate
+  被占用就退到 `Update`，再占用就放弃命令通道（事件钩子照常）。
+  注意：这只防「别人先挂」；防不住别人在我们之后挂——多插件共存
+  的礼仪靠这一条加文档约束。
+- 配套的成就侧：`WarpSource.attach` 的 `int(h['event'])` 撞上只缓存
+  钩子的 `event=None`（v0.9.0 子进程直连打通后才暴露），成就观测整条
+  线炸成「仅日志成就生效」——现在跳过 `event is None` 的钩子。
+- **battle_snark 同步**（独立插件，改动随本仓库）：删掉与 WarpHook 撞车
+  的两条钩子（`GlobalGameManager::FixedUpdate` 气泡 tick、
+  `BattleActionModelManager::OnRoundStart_Before` 触发候选 2）；气泡收起
+  走回合兜底，触发候选还剩 BattleObjectManager 两个。
+
 ## 0.9.0
 
 P6 对象构造落地：命令通道从「弹窗 / 杀进程」两条硬编码泛化成**可编程的
