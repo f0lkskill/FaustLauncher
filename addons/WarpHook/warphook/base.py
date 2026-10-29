@@ -563,8 +563,11 @@ STEP_PLAIN = 0
 STEP_DEREF = 1
 STEP_LIST = 2
 STEP_ARRAY = 3
+STEP_LIST_VAL = 4     # List<int> 这类值类型容器：元素是值不是指针
+STEP_ARRAY_VAL = 5
 
-_STEP_NAMES = {'plain': 0, 'deref': 1, 'list': 2, 'array': 3}
+_STEP_NAMES = {'plain': 0, 'deref': 1, 'list': 2, 'array': 3,
+               'list_val': 4, 'array_val': 5}
 
 
 def can_read(addr, size=8):
@@ -598,7 +601,7 @@ def _step_code(value):
     if isinstance(value, bool):
         return STEP_DEREF if value else STEP_PLAIN
     try:
-        return int(value) & 0x3
+        return int(value) & 0x7
     except (TypeError, ValueError):
         return STEP_DEREF
 
@@ -609,6 +612,9 @@ def read_chain(addr, chain, kind='int'):
     chain 的每一项与 ``Host.hook(reads=...)`` 的写法完全一致：``(偏移, 是否解引用)``
     或 ``{'off': .., 'deref': ..}``；``deref`` 也可以写 ``'list'`` / ``'array'``。
     链长为 0 表示「addr 本身就是值」。
+    ``kind`` 还支持三种聚合读法（落点是容器/字符串而不是普通字段）：
+    ``'sum'`` = List<int> 求和、``'count'`` = 容器元素个数、
+    ``'text'`` = il2cpp 字符串取开头的数字（"86" → 86）。
     """
     steps = []
     for item in list(chain or ()):
@@ -616,6 +622,10 @@ def read_chain(addr, chain, kind='int'):
             if 'list' in item or 'array' in item:
                 code = STEP_LIST if 'list' in item else STEP_ARRAY
                 steps.append((int(item.get('list', item.get('array', 0))), code, None))
+            elif 'list_val' in item or 'array_val' in item:
+                code = STEP_LIST_VAL if 'list_val' in item else STEP_ARRAY_VAL
+                steps.append((int(item.get('list_val', item.get('array_val', 0))),
+                              code, None))
             else:
                 steps.append((int(item.get('off', 0)),
                               _step_code(item.get('deref', True)),
@@ -629,7 +639,28 @@ def read_chain(addr, chain, kind='int'):
     cur = int(addr or 0)
     if not can_read(cur, 8):
         return None
+    value_mode = False   # 走过值类型容器步后 cur 存的是值本身，不再是地址
     for off, step, index in steps:
+        if value_mode:
+            return None   # 值后面没有字段可跳
+        if step == STEP_LIST_VAL or step == STEP_ARRAY_VAL:
+            # 值类型容器：元素是 4B 的值（int/float/enum），读值不留指针
+            if not can_read(cur, 0x20):
+                return None
+            if step == STEP_LIST_VAL:
+                arr = ctypes.c_uint64.from_address(cur + 0x10).value
+                count = ctypes.c_int32.from_address(cur + 0x18).value
+            else:
+                arr = cur
+                count = ctypes.c_int32.from_address(cur + 0x18).value
+            idx = int(index if index is not None else off)
+            if not arr or idx < 0 or idx >= count:
+                return None
+            if not can_read(arr + 0x20 + idx * 4, 4):
+                return None
+            cur = ctypes.c_int32.from_address(arr + 0x20 + idx * 4).value & 0xFFFFFFFF
+            value_mode = True
+            continue
         if step == STEP_LIST or step == STEP_ARRAY:
             if not can_read(cur, 0x20):
                 return None
@@ -653,6 +684,35 @@ def read_chain(addr, chain, kind='int'):
             cur = ctypes.c_uint64.from_address(cur).value
             if not cur:
                 return None
+    if value_mode:
+        # 落点就是值本身（kind 只剩 int/float 有意义）
+        return _as_float(cur) if kind == 'float' else cur
+    # 聚合读法：落点是 List / il2cpp 字符串，读「内容」而不是字段
+    if kind == 'sum':
+        if not can_read(cur, 0x20):
+            return None
+        arr = ctypes.c_uint64.from_address(cur + 0x10).value
+        count = ctypes.c_int32.from_address(cur + 0x18).value
+        if not arr or count <= 0 or count > 0x10000 or not can_read(arr, 8):
+            return None
+        if not can_read(arr + 0x20, count * 4):
+            return None
+        return sum(ctypes.c_int32.from_address(arr + 0x20 + i * 4).value
+                   for i in range(count))
+    if kind == 'count':
+        if not can_read(cur, 0x20):
+            return None
+        return int(ctypes.c_int32.from_address(cur + 0x18).value)
+    if kind == 'text':
+        if not can_read(cur, 8):
+            return None
+        slen = ctypes.c_int32.from_address(cur + 0x10).value
+        if slen <= 0 or slen > 4096 or not can_read(cur + 0x14, slen * 2):
+            return None
+        raw = ctypes.string_at(cur + 0x14, slen * 2)
+        chars = raw.decode('utf-16-le', 'ignore')
+        digits = ''.join(ch for ch in chars[:9] if ch.isdigit())
+        return int(digits) if digits else None
     if not can_read(cur, 16):
         return None
     if kind == 'float':

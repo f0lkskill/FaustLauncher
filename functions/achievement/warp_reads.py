@@ -9,13 +9,23 @@
 WarpHook 的读取链把「按路径读整数」这件事变成了数据：一条链 = 从哪个参数出发、
 跳几跳（每跳可解引用）、落点按什么类型解释。于是十六种读法退化成十六行配置。
 
-但这个翻译不是无所不能的，写在这里说清楚边界：
+但这个翻译不是无所不能的，写在这里说清楚边界（v0.8 起边界往外推了一大截）：
 
 * **能表达**：按固定偏移跳几级再读一个 int / float / bool / 混淆 int。
   例：`self → [+state] → [+hp]` 读血量；`action → [+skill] → [+data] → [+id]` 读技能 id。
-* **不能表达**：函数**返回值**（在寄存器里，钩子读不到内存）、**容器遍历**
-  （buff 列表要按 List 布局走 items/size）、**字符串比较**（buff 名要读 il2cpp
-  string 再算 FNV-1a）。这三类仍然需要 C 侧特化，对应 `NATIVE_*` 里列出的项。
+* **v0.8 起也能表达**：
+  - **函数返回值**——钩子声明 ``ret_kind``（int32/float），thunk 按类型调
+    原函数把 RAX/XMM0 的返回值直出进事件格（``GetTotalClearTurn`` 的总回合、
+    ``GetTakeAttackDmgMultiplier`` 的伤害倍率）；带返回值或声明 ``when=post``
+    时事件在原函数**之后**发，构造函数里「调用之后才填好」的字段也读得到。
+  - **值类型容器遍历**——``list_val``/``array_val`` 步按 4B 元素取值，
+    ``sum``/``count`` 两种落点直接对 ``List<int>`` 求和/计数
+    （``RailwayDungeonHistoryDataByCollection::.ctor`` 的 clear_turns）。
+  - **字符串取数**——``text`` 落点读 il2cpp string 的 UTF-16 内容取开头数字
+    （``RailwayDungeonMapUpperUILine1002::UpdateUI`` 之后 UI 文本 "86" → 86）。
+* **仍然不能表达**：buff 链遍历 + buff 名 FNV-1a 比较（``NATIVE_BUFF_LIST`` /
+  ``NATIVE_BUFF_HASH``）——damage 钩子的 BUF 行因此仍不发，buff 类成就走
+  采样器路径；多行明细（``stage_statistic`` 的逐关卡 STG 行）同理暂缓。
 
 字段偏移不写死在本文件里：老链路是运行时从 `WarpConfig.off_*` 读的，说明
 它们本来就可配（不同游戏版本会变）。这里把偏移当参数传进来，由调用方
@@ -67,9 +77,12 @@ KIND_SIGNATURES = {
     KIND_CACHE_SELF: (1, ('method',)),
     KIND_NODE_STATE: (2, ('a1', 'method')),
     KIND_CACHE_ARG1: (2, ('a1', 'method')),
+    # railway_hist 的 .ctor 真实声明 9 个参数（老 thunk 形参 a1..a9，a1=int 线路
+    # 号、a4=List<int> clear_turns）；stage_node_id 的 SetData 是 5 个 int。
     KIND_RAILWAY_NODE: (2, ('a1', 'method')),
-    KIND_RAILWAY_HIST: (2, ('a1', 'method')),
-    KIND_STAGE_NODE_ID: (2, ('a1', 'method')),
+    KIND_RAILWAY_HIST: (10, ('cid', 'a2', 'a3', 'turns', 'a5', 'a6', 'a7', 'a8',
+                             'a9', 'method')),
+    KIND_STAGE_NODE_ID: (6, ('part', 'chapter', 'node', 'stage', 'state', 'method')),
     KIND_RAILWAY_UI_TEXT: (2, ('a1', 'method')),
 }
 
@@ -86,24 +99,27 @@ NATIVE_KINDS = (
     NATIVE_CONTAINER_WALK, NATIVE_UI_TEXT, NATIVE_POINTER_CACHE,
 )
 
-# 每种读法需要 C 侧额外做什么（空元组 = 纯配置就够）
+# 每种读法需要 C 侧额外做什么（空元组 = 纯配置就够）。
+# v0.8 起返回值/值类型容器/字符串取数都有了通用原语，原先标着
+# NATIVE_RETURN_VALUE / NATIVE_CONTAINER_WALK / NATIVE_UI_TEXT 的五种读法
+# 全部转成纯配置；真正的 C 特化只剩 buff 链那两个（BUF 行本轮不发）。
 KIND_NATIVE = {
     KIND_PLAIN: (),
     KIND_UNIT: (NATIVE_BUFF_LIST, NATIVE_BUFF_HASH),
     KIND_UNIT_INT_BOOL: (NATIVE_BUFF_LIST, NATIVE_BUFF_HASH),
-    KIND_UNIT_GET_INT: (NATIVE_RETURN_VALUE, NATIVE_BUFF_LIST),
+    KIND_UNIT_GET_INT: (NATIVE_BUFF_LIST,),
     KIND_ACTION_INT: (),
-    KIND_DAMAGE_ACTION: (NATIVE_RETURN_VALUE, NATIVE_BUFF_LIST, NATIVE_BUFF_HASH),
+    KIND_DAMAGE_ACTION: (NATIVE_BUFF_LIST, NATIVE_BUFF_HASH),
     KIND_SKV: (),
     KIND_STAGE_STAT: (),
-    KIND_RAILWAY_TOTAL: (NATIVE_CONTAINER_WALK,),
+    KIND_RAILWAY_TOTAL: (),
     KIND_CACHE_SELF: (NATIVE_POINTER_CACHE,),
     KIND_NODE_STATE: (),
     KIND_CACHE_ARG1: (NATIVE_POINTER_CACHE,),
-    KIND_RAILWAY_NODE: (NATIVE_CONTAINER_WALK,),
-    KIND_RAILWAY_HIST: (NATIVE_CONTAINER_WALK,),
-    KIND_STAGE_NODE_ID: (NATIVE_CONTAINER_WALK,),
-    KIND_RAILWAY_UI_TEXT: (NATIVE_UI_TEXT,),
+    KIND_RAILWAY_NODE: (),
+    KIND_RAILWAY_HIST: (),
+    KIND_STAGE_NODE_ID: (),
+    KIND_RAILWAY_UI_TEXT: (),
 }
 
 # 事件槽位约定：与老链路的 VAL/SPD/ACT 行里最重要的四个数字对齐
@@ -189,6 +205,45 @@ def attacker_origin_id(offsets, arg=3):
     ]
 
 
+# damage 事件的十二格布局：一条 GetTakeAttackDmgMultiplier 命中要同时
+# 还原 ACT（action 系）和 VAL（unit 系）两行，老链路一次发两行、这里
+# 一格装一个数。缺 mp / iid / oid 的话 VAL 行就得编数据 —— 全读齐。
+SLOT_DMG_HP = 0
+SLOT_DMG_MAX_HP = 1
+SLOT_DMG_MP = 2
+SLOT_DMG_ATTACKER_OID = 3
+SLOT_DMG_ACTOR = 4
+SLOT_DMG_COMMANDER = 5
+SLOT_DMG_SKID = 6
+SLOT_DMG_TIER = 7
+SLOT_DMG_IID = 8
+SLOT_DMG_OID = 9
+
+
+def damage_frame(offsets):
+    """伤害钩子的一帧：attacker 的 origin id + 受击者三围 + action 四件套。
+
+    参数布局（老链路 DEF_DAMAGE_THUNK 同款）：self=受击单位、a1=action、
+    a2=coin、a3=attacker、a4=crit。返回值是 float 倍率（本钩子取了但不直出，
+    与老链路一致 —— 伤害数值成就走 VAL 行的 hp 变化）。
+    """
+    skill = offsets['action_skill']
+    data = offsets['skill_data']
+    state = offsets['unit_state']
+    return [
+        _read(0, [(state, True), (offsets['state_hp'], False)], SLOT_DMG_HP, 'obscured'),
+        _read(0, [(state, True), (offsets['state_max_hp'], False)], SLOT_DMG_MAX_HP, 'obscured'),
+        _read(0, [(state, True), (offsets['state_mp'], False)], SLOT_DMG_MP, 'obscured'),
+        _read(3, [(offsets['unit_origin_id'], False)], SLOT_DMG_ATTACKER_OID),
+        _read(1, [(offsets['action_actor_id'], False)], SLOT_DMG_ACTOR),
+        _read(1, [(offsets['action_commander_id'], False)], SLOT_DMG_COMMANDER),
+        _read(1, [(skill, True), (data, True), (offsets['skill_id'], False)], SLOT_DMG_SKID),
+        _read(1, [(skill, True), (data, True), (offsets['skill_tier'], False)], SLOT_DMG_TIER),
+        _read(0, [(offsets['unit_instance_id'], False)], SLOT_DMG_IID),
+        _read(0, [(offsets['unit_origin_id'], False)], SLOT_DMG_OID),
+    ]
+
+
 # 单位一帧的八格布局：老链路一次命中要发 SPD 和 VAL 两行，一行五六个数，
 # 四格装不下。八格刚好一次装完，桥那边就不用把一条钩子拆成两条再配对。
 SLOT_IID = 0
@@ -227,15 +282,16 @@ _KIND_READS = {
     KIND_UNIT_INT_BOOL: lambda off: unit_frame(off),
     KIND_UNIT_GET_INT: lambda off: unit_frame(off),
     KIND_ACTION_INT: lambda off: action_frame(off),
-    KIND_DAMAGE_ACTION: lambda off: (
-        attacker_origin_id(off) + unit_vitals(off)
-    ),
+    KIND_DAMAGE_ACTION: lambda off: damage_frame(off),
     KIND_SKV: lambda off: [
         # 表现层 BattleSkillViewBase 的 _attackerInstanceID：技能动画在演哪个单位。
         _read(0, [(off['skv_attacker_iid'], False)], OUT_PRIMARY),
     ],
     KIND_STAGE_STAT: lambda off: [],
-    KIND_RAILWAY_TOTAL: lambda off: [],
+    # GetTotalClearTurn(int) 的返回值直出格 0，self._collectionId 进格 1。
+    KIND_RAILWAY_TOTAL: lambda off: [
+        _read(0, [(off['railway_collection_id'], False)], 1),
+    ],
     KIND_CACHE_SELF: lambda off: [],
     KIND_NODE_STATE: lambda off: [
         # 三个参数都是值类型 int（main/sub/node），读链 0 跳 = 直接取参数值。
@@ -244,10 +300,42 @@ _KIND_READS = {
         _read(3, [], OUT_UNIT_ID),
     ],
     KIND_CACHE_ARG1: lambda off: [],
-    KIND_RAILWAY_NODE: lambda off: [],
-    KIND_RAILWAY_HIST: lambda off: [],
-    KIND_STAGE_NODE_ID: lambda off: [],
-    KIND_RAILWAY_UI_TEXT: lambda off: [],
+    # RailwayDungeonFormerSaveData::.ctor 的两个字段是构造完才填好的，
+    # 配 when=post 在原函数之后读。
+    KIND_RAILWAY_NODE: lambda off: [
+        _read(0, [(off['railway_node_id'], False)], 0),
+        _read(0, [(off['railway_node_turn'], False)], 1),
+    ],
+    # 九参构造：a1=线路号（值类型零跳直出）、a4=List<int> clear_turns 求和/计数。
+    KIND_RAILWAY_HIST: lambda off: [
+        _read(1, [], 0),
+        _read(4, [], 1, 'sum'),
+        _read(4, [], 2, 'count'),
+    ],
+    # SetData(part, chapter, node, stage, state)：五个 int 参数原样进事件。
+    KIND_STAGE_NODE_ID: lambda off: [
+        _read(1, [], 0),
+        _read(2, [], 1),
+        _read(3, [], 2),
+        _read(4, [], 3),
+        _read(5, [], 4),
+    ],
+    # UpdateUI 之后 self[ui_text]→TMP 组件 →[tmp_text]→il2cpp string，取开头数字。
+    KIND_RAILWAY_UI_TEXT: lambda off: [
+        _read(0, [(off['railway_ui_text'], True), (off['tmp_text'], True)], 0, 'text'),
+    ],
+}
+
+# 需要返回值/POST 语义的读法：hook_spec 把这些并进 spec，
+# warp_source 塞进 Host.hook(when=..., ret_kind=..., ret_slot=...)。
+KIND_EVENT_WHEN_POST = (
+    KIND_RAILWAY_TOTAL,      # 返回值语义上就是「调完才有」
+    KIND_RAILWAY_NODE, KIND_RAILWAY_HIST, KIND_RAILWAY_UI_TEXT,
+)
+KIND_RETURN = {
+    # 读法: (ret_kind 名字, 直出的事件格)
+    KIND_RAILWAY_TOTAL: ('int32', 0),
+    KIND_DAMAGE_ACTION: ('float', None),   # 取返回值但先不直出（老链路也不发伤害值）
 }
 
 # 偏移表的键：与老链路 WarpConfig 的字段名一一对应（去掉 off_ 前缀）
@@ -257,6 +345,8 @@ OFFSET_KEYS = (
     'unit_buff_detail', 'buff_detail_list', 'buff_model_data', 'buff_static_id',
     'action_skill', 'skill_data', 'skill_id', 'skill_tier',
     'skv_attacker_iid',
+    'railway_collection_id', 'railway_node_id', 'railway_node_turn',
+    'railway_ui_text', 'tmp_text',
 )
 
 
@@ -294,6 +384,17 @@ def hook_spec(kind, klass, method, offsets=None, **extra):
         'native': list(KIND_NATIVE[kind]),
         'kind': kind,
     }
+    # 构造函数/UI 刷新这类「调用之后才有值」的钩子：事件改到 POST 发。
+    if kind in KIND_EVENT_WHEN_POST:
+        spec['when'] = 1
+    ret = KIND_RETURN.get(kind)
+    if ret is not None:
+        spec['ret_kind'] = ret[0]
+        if ret[1] is not None:
+            spec['ret_slot'] = ret[1]
+        # 带返回值 = 事件本来就该在原函数之后发（Host.hook() 关键字路径有
+        # 同款兜底；这里在配置源头写死，dict 直传路径不靠下游补）。
+        spec.setdefault('when', 1)
     # 只缓存对象、不发事件的读法：把指针留在对象槽里，等采样侧回读。
     # 槽号在 CACHE_SLOTS 里定死，同一类读法共用一格 —— 它们抓的是同一个
     # 存档管理器对象，谁后命中谁的值就是最新的一份。

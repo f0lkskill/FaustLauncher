@@ -209,16 +209,19 @@ WARP_HEADER 432B   magic version enabled hooked status last_error heartbeat stan
                    evt_count hook_installed hook_total panel_step last_event fired
                    ga_found popup_ok boot_at(u64) dedupe_ms reserved0 log_tail[48] vars[8]
                    cmd_seq cmd_ack cmd_type cmd_result cmd_text[256]   ← 命令槽
-WARP_HOOK   264B×16 klass[48] method[48] argc event_id every chance actions flags
+WARP_HOOK   288B×16 klass[48] method[48] argc event_id every chance actions flags
                    hold_ms delay_ms guard_index guard_value
                    probe_class[48] probe_method[48] probe_index probe_slot guard_var
-                   text_base read_base read_count reserved[2]
+                   text_base read_base read_count cache_arg cache_slot
+                   hits blocked（运行时计数）
+                   when ret_kind ret_slot pad
 文案池      128B×256 随机挑一句弹出去（按插件分段，段尾空串当界标）
 导出表      64B×13   标准名按固定顺序映射成混淆名
 事件 ctrl   16B      head / tail / dropped / pad（环形队列游标）
-事件队列    44B×2048 WARP_EVENT { id, hook, tick, a, b, c, d, e, f, g, h }
-读取链      48B×64   WARP_READ { arg, nsteps, kind, out, off[4], deref[4] }
-总长        131456B
+事件队列    60B×2048 WARP_EVENT { id, hook, tick, a, b, …, l }（12 格）
+读取链      48B×128  WARP_READ { arg, nsteps, kind, out, off[4], deref[4] }
+对象槽      8B×32    cache 钩子落指针的地方
+总长        167936B（协议 version=2）
 ```
 
 钩子表 → 行为的三段式表达力：
@@ -231,32 +234,62 @@ WARP_HOOK   264B×16 klass[48] method[48] argc event_id every chance actions fla
    让原方法不执行。`every` / `chance` / `delay_ms` / `dedupe_ms` / `HF_ONCE` 决定何时触发。
 
 读取链（`reads=`）是第 1 条的通用版：探针只能「调一个 0 参 getter 拿 int」，
-读取链能「从任意参数出发，按偏移跳最多 4 跳，落点按 int/float/bool/ptr/obscured
-解释」，结果直接写进事件槽 `a/b/c/d`。每跳的动作由 `deref` 位决定：
+读取链能「从任意参数出发，按偏移跳最多 4 跳，落点按 int/float/bool/ptr/obscured/
+sum/count/text 解释」，结果直接写进事件槽。每跳的动作由 `deref` 位决定：
 
 | `deref` 值 | 动作 |
 | --- | --- |
 | `0` / `false` | 只加偏移（读内嵌 struct 的字段） |
 | `1` / `true`（没写时的默认） | 加偏移后解引用（字段存的是对象引用） |
-| `2` / `'list'` | 把当前指针当 `List<T>`，取第 `off` 个元素 |
-| `3` / `'array'` | 把当前指针当 `Array<T>`，取第 `off` 个元素 |
+| `2` / `'list'` | 把当前指针当 `List<T>`，取第 `off` 个**引用**元素 |
+| `3` / `'array'` | 把当前指针当 `Array<T>`，取第 `off` 个**引用**元素 |
+| `4` / `'list_val'` | 同 `list`，但元素按 4 字节**值**取（`List<int>`） |
+| `5` / `'array_val'` | 同 `array`，但元素按 4 字节**值**取 |
 
 链长为 **0** 是另一种意思：不往前走，把参数本身的值当结果。这专给「参数是
 值类型」的钩子用 —— `IsNodeCleared(int main, int sub, int node)` 的三个参数
 就躺在寄存器上，没有任何偏移可跟。
 
-il2cpp 取字段只有「加偏移 / 先解引用」两种动作，所以前两种就够；后两种是为了
+il2cpp 取字段只有「加偏移 / 先解引用」两种动作，所以前两种就够；后四种是为了
 **进容器** —— 管理器身上的单位列表是 `List<BattleUnitModel>`，不遍历就够不着单位。
 `List<T>` 的布局固定（`_items` 在 +0x10、`_size` 在 +0x18），`Array` 的 `max_length`
-在 +0x18、元素从 +0x20 起，所以按下标取元素不需要类型信息。容器步取的是**引用**
-元素，值类型容器暂不支持。
+在 +0x18、元素从 +0x20 起，所以按下标取元素不需要类型信息。引用容器取 8 字节
+指针，值容器（`list_val`/`array_val`）取 4 字节值、取完这个值就是终点。
+
+落点里 `sum` / `count` 是**聚合读**：从当前指针（应当是 `List<int>`）一次求出
+总和 / 个数，写给 `out` 槽 —— `RailwayDungeonHistoryDataByCollection::.ctor`
+的 `clear_turns` 参数（List<int>，九参构造）一条配置求出铁路总回合。
+`text` 是**字符串读**：按 il2cpp string 布局（len@+0x10、UTF-16 data@+0x14）
+读出内容、取开头的数字（"86" → 86），UI 文本类的信号源就够用了。
 
 成就那十六种 `BWK_*` 读法全都是「参数形状 × 读路径 × 输出方式」的组合，
 有了读取链和容器步，它们退化成十六行配置。
 
-> 边界：读取链读不到**函数返回值**（值在 xmm0/eax）、**字符串**（变长结构）；
-> 容器要显式写容器步。另外**一行的 getter 会被 AOT 内联**，内存里没有调用指令，
-> 钩子命中 0 —— 选钩子要看方法体积，不是看名字好不好听。
+> 边界：读取链读不到**函数返回值**（值在 xmm0/eax）—— 那是 `ret_kind` 的活，
+> 见下一节；**变长字符串全文**读不了，`text` 落点只取开头数字。另外**一行的
+> getter 会被 AOT 内联**，内存里没有调用指令，钩子命中 0 —— 选钩子要看方法
+> 体积，不是看名字好不好听。
+
+### 返回值与 POST（`when` / `ret_kind` / `ret_slot`）
+
+thunk 是 `void __fastcall` 的：原先调完原函数就把 RAX / XMM0 留给运气——
+没人碰它们就透传回调用方，碰巧一直没崩。要**读**返回值就得按类型调用：
+
+```python
+host.hook('RailwayDungeonHistoryDataByCollection', 'GetTotalClearTurn',
+          argc=0, event=1, ret_kind='int32', ret_slot=0,
+          reads=[{'arg': 0, 'out': 1, 'off': [0x10]}],   # self._collectionId
+          when=1)      # 返回值语义上就是「调完才有」，带 ret_kind 自动转 POST
+host.hook('BattleUnitModel', 'GetTakeAttackDmgMultiplier',
+          argc=4, ret_kind='float')      # 取了但不直出，仅保证寄存器写回
+```
+
+`ret_kind='int32'` 按整数取 RAX、`'float'` 按 XMM0 取（位模式进事件格）；
+离开 thunk 前把值**写回寄存器**（int→eax、float→xmm0）——否则 thunk 里任何
+后续 C 代码（发事件、fire 动作）都可能破坏 XMM0，调用方拿到的就是垃圾。
+`when=1`（POST）的事件在原函数调用**之后**发：构造函数里「调用之后才填好」
+的字段（`RailwayDungeonFormerSaveData::.ctor` 的 node id / turn）、受击后
+扣过血的三围（damage 钩子），都必须 POST。
 
 ### 对象槽（`cache`）
 
@@ -286,7 +319,7 @@ host.hook('SomeStage', 'Load', argc=1, cache=(1, 1))             # 第一个参�
 
 ### 事件队列与背压
 
-事件环 2048 格 × 44 字节（约 90 KB）。游标放在 `WARP_EV_CTRL` 的
+事件环 2048 格 × 60 字节（约 120 KB）。游标放在 `WARP_EV_CTRL` 的
 `head / tail / dropped / pad` 四个 int 里：生产者只碰 `head`，消费者只碰 `tail`，
 两边都不加锁（64 位对齐的 int 读写本身是原子的，槽内容在 head 前进之前就写完了）。
 
@@ -328,7 +361,7 @@ host.hook('GlobalGameManager', 'FixedUpdate', argc=0, event=1,
    命中计数（`reserved[0]`）全都不受去重影响 —— 去重管的是「要不要告诉 Python」，
    不是「要不要做事」。
 
-「上次的值」存在 DLL 进程的静态内存（`g_last_vals[16][8]` + `g_last_valid[16]`），
+「上次的值」存在 DLL 进程的静态内存（`g_last_vals[16][12]` + `g_last_valid[16]`），
 不进共享内存：布局少改一处就少一次两边对不上的机会，而且插件本来也不需要读它。
 
 命令通道（P5）：除了「挂钩子等游戏自己触发」，py 还能主动命令游戏做事。
@@ -338,8 +371,10 @@ host.hook('GlobalGameManager', 'FixedUpdate', argc=0, event=1,
 一条内部钩子（用户钩子已占该地址时自动跳过）。所以 `host.popup("...")` 一行就能让
 游戏弹窗，不用关心线程，也不用等战斗回合。
 
-`warp_on_event()` 返回位掩码：bit0 = 拦原函数、bit1 = 执行动作，由 112 个独立 thunk
-按 `argc`(0..6) 分派——`GetTakeAttackDmgMultiplier(unit, action, coin, attacker,
+`warp_on_event()` 返回位掩码：bit0 = 拦原函数、bit1 = 执行动作，由 160 个独立
+thunk 按 `argc`(0..9) 分派——形状是 `(self, a1..aN, MethodInfo*)`，il2cpp 的
+隐藏 `MethodInfo*` 参数也照收照转（非泛型方法体一般不读它，但 `.ctor` 这类
+九参构造不敢赌）。`GetTakeAttackDmgMultiplier(unit, action, coin, attacker,
 isCritical, info)` 这类方法有 6 个参数，出手者（attacker）在第 4 个上，只转发
 `a1..a3` 的话「谁打的我」永远读不到。读取链的 `arg` 也是 0..6（0=this，1..6=参数）。
 

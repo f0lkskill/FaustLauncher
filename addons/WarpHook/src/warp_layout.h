@@ -28,15 +28,16 @@
  *   因为 GetModuleHandleW("GameAssembly.dll") 只代表 DLL 被映射，
  *   那时候 il2cpp 运行时往往还没初始化完，碰一下就整个进程崩掉。
  *
- * 共享内存布局（Python 侧 WARP_MAP_BYTES 必须一致）
+ * 共享内存布局（Python 侧 warphook/host.py 必须一致）
  *   0     WARP_HEADER      432 字节（状态头 + 命令槽 + 弹窗文本）
- *   432   WARP_HOOK[16]   16 × 272 = 4352
- *   4784  texts[256]     256 × 128 = 32768
- *   37552 exports[13]     13 × 64  = 832
- *   38400 events[2048] 2048 × 44  = 90112
- *   128512 reads[64]    64 × 48  = 3072
- *   131584 objects[32]   32 × 8   = 256
- *   131840 (结束)
+ *   432   WARP_HOOK[16]   16 × 288 = 4608
+ *   5040  texts[256]     256 × 128 = 32768
+ *   37808 exports[13]     13 × 64  = 832
+ *   38640 ev_ctrl          16 字节（head/tail/dropped/pad）
+ *   38656 events[2048] 2048 × 60  = 122880
+ *   161536 reads[128]    128 × 48  = 6144
+ *   167680 objects[32]   32 × 8   = 256
+ *   167936 (结束)
  * ===================================================================== */
 
 #include <windows.h>
@@ -45,7 +46,7 @@
 #include "MinHook.h"
 
 #define WARP_MAGIC        0x54534857u      /* "WHST" */
-#define WARP_VERSION      1
+#define WARP_VERSION      2                /* v2：钩子加 when/ret_kind/ret_slot，事件 12 格，读链 128 条 */
 
 #define WARP_MAX_HOOKS    16
 #define WARP_MAX_TEXTS    256
@@ -71,25 +72,29 @@
 
 #define WARP_HEADER_SIZE  432   /* 160 状态头 + 命令槽 4*4 + 256 字节文本 */
 #define WARP_HOOK_OFFSET  WARP_HEADER_SIZE
-#define WARP_HOOK_SIZE    272
+#define WARP_HOOK_SIZE    288
 #define WARP_TEXTS_OFFSET (WARP_HOOK_OFFSET + WARP_MAX_HOOKS * WARP_HOOK_SIZE)
 #define WARP_TEXT_SIZE    WARP_TEXT_LEN
 #define WARP_EXPORTS_OFFSET (WARP_TEXTS_OFFSET + WARP_MAX_TEXTS * WARP_TEXT_SIZE)
 #define WARP_EVENT_COUNT  2048  /* 环形队列容量，满了丢最旧的（丢的时候 ctrl[2] 自增） */
-#define WARP_EVENT_SIZE   44
+#define WARP_EVENT_SIZE   60
 #define WARP_EV_CTRL_OFFSET (WARP_EXPORTS_OFFSET + WARP_EXPORT_COUNT * WARP_NAME_MAX)
 #define WARP_EV_CTRL_SIZE 16    /* head / tail / dropped / pad */
 #define WARP_EVENTS_OFFSET (WARP_EV_CTRL_OFFSET + WARP_EV_CTRL_SIZE)
-#define WARP_READ_MAX     64    /* 全进程共用的读取链条数 */
+#define WARP_READ_MAX     128   /* 全进程共用的读取链条数（damage 一条钩子就要 11 条） */
 #define WARP_READ_SIZE    48
 #define WARP_READ_STEPS   4     /* 一条链最多走几跳 */
 
 /* 读取链每一步的动作。deref[i] 存的既是「要不要解引用」也是「这一步做什么」：
- * 0 加偏移；1 加偏移后解引用；2/3 把当前指针当容器取元素。 */
+ * 0 加偏移；1 加偏移后解引用；2/3 把当前指针当容器取引用元素；
+ * 4/5 同样取第 off[i] 个元素，但元素本身是 4 字节值类型（List<int> 之类）——
+ * 元素值不追指针，直接当位模式带回来交给最后一步的 kind 解释。 */
 #define WARP_STEP_PLAIN 0
 #define WARP_STEP_DEREF 1
 #define WARP_STEP_LIST  2   /* List<T>  : items(+0x10) / size(+0x18) */
 #define WARP_STEP_ARRAY 3   /* Array<T> : length(+0x18) / 元素从 +0x20 起 */
+#define WARP_STEP_LIST_VAL  4   /* List<值类型>，元素 stride 4 */
+#define WARP_STEP_ARRAY_VAL 5   /* Array<值类型>，元素 stride 4 */
 #define WARP_READ_OFFSET  (WARP_EVENTS_OFFSET + WARP_EVENT_COUNT * WARP_EVENT_SIZE)
 
 /* 对象槽：钩子命中时把某个参数的指针留在这儿，读侧（Python 或另一条读链）
@@ -109,6 +114,18 @@
 #define WARP_READ_BOOL    2     /* 只取低 8 位当 0/1 */
 #define WARP_READ_PTR     3     /* 指针，只给地址不追 */
 #define WARP_READ_OBSCURED 4    /* ObscuredInt：value = hidden ^ key（血量/理智那种混淆 int） */
+#define WARP_READ_SUM_LIST  5   /* 落点是 List<4B 值类型>：把所有元素求和（铁路通关回合） */
+#define WARP_READ_COUNT_LIST 6  /* 落点是 List/Array：只取元素个数 */
+#define WARP_READ_TEXT_NUM  7   /* 落点是 il2cpp string*：抽出 ASCII 数字串拼成 int（UI 显示文本） */
+
+/* 原函数返回值怎么取（thunk 调原函数后按这个类型拿返回值） */
+#define WARP_RET_VOID  0        /* 不关心返回值（原 thunk 的行为） */
+#define WARP_RET_INT32 1        /* 返回值在 RAX 低 32 位（int 返回的方法） */
+#define WARP_RET_FLOAT 2        /* 返回值在 XMM0（float 返回的方法），按位模式带回 */
+
+/* 事件在原函数调用之前还是之后发 */
+#define WARP_WHEN_PRE  0        /* 默认：命中瞬间就发（原 thunk 的行为） */
+#define WARP_WHEN_POST 1        /* 原函数返回后再发：构造函数要把字段填完才读得到 */
 
 /* 状态 */
 #define WARP_ST_IDLE       0   /* 等游戏 */
@@ -196,8 +213,13 @@ typedef struct _WARP_HOOK {
     int  read_count;               /* 252 用了几条 */
     int  cache_arg;                /* 256 命中时把第几个参数存进对象槽（<0 关闭） */
     int  cache_slot;               /* 260 存进哪个槽（0..WARP_OBJECT_COUNT-1） */
-    int  reserved[2];              /* 264 运行时标记：reserved[0]=命中数 reserved[1]=拦下数 */
-} WARP_HOOK;                       /* 272 */
+    int  hits;                     /* 264 运行时：命中数 */
+    int  blocked;                  /* 268 运行时：拦下数 */
+    int  when;                     /* 272 WARP_WHEN_*：事件在原函数前(0)还是后(1)发 */
+    int  ret_kind;                 /* 276 WARP_RET_*：原函数返回值类型（0=不关心） */
+    int  ret_slot;                 /* 280 返回值直出的事件格（<0 不直出；与读链别写同一格） */
+    int  pad;                      /* 284 对齐保留 */
+} WARP_HOOK;                       /* 288 */
 
 /* 一条读取链：从某个参数出发，按偏移跳 nsteps 次，把落点当成一个值读出来。
  *
@@ -205,7 +227,7 @@ typedef struct _WARP_HOOK {
  * 或者先解引用再算（class 引用）。所以每一步带一个 deref 位就够了，
  * 不需要知道字段类型 —— 类型只影响最后一步怎么解释（kind）。
  *
- * 钩子把 read_base / read_count 写在 reserved[0] / reserved[1] 里。 */
+ * 钩子把 read_base / read_count 写在自己的钩子槽里，链条本体按下标共用这张全局表。 */
 typedef struct _WARP_READ {
     int arg;               /* 0  从第几个参数出发（0 = self，1..3 = 第 1..3 个参数） */
     int nsteps;            /* 4  走几跳（0 = 直接用参数本身） */
@@ -217,9 +239,9 @@ typedef struct _WARP_READ {
 
 /* 环形队列里的一个事件：py 侧按 events() 批量读走，读完推进 tail。
  *
- * 八格值（a..h）是给成就那类消费者留的：一条读法往往要「实例号 + 模板号 +
- * 血量 + 上限 + 理智 + 速度」六七个数，四格装不下就得拆成两条钩子再在
- * Python 里按 instanceID 配对 —— 那比多加 16 字节难受得多。 */
+ * 十二格值（a..l）是给成就那类消费者留的：一条读法往往要「实例号 + 模板号 +
+ * 血量 + 上限 + 理智 + 速度」六七个数，伤害钩子更是一次要发行动五件套加
+ * 血量五件套 —— 八格就得拆两条钩子再在 Python 里配对，不如一次给够。 */
 typedef struct _WARP_EVENT {
     int id;     /* 0  事件号（hook.event_id，0 时用钩子下标） */
     int hook;   /* 4  哪个钩子产生的 */
@@ -232,9 +254,13 @@ typedef struct _WARP_EVENT {
     int f;      /* 32 第 6 格 */
     int g;      /* 36 第 7 格 */
     int h;      /* 40 第 8 格 */
-} WARP_EVENT;   /* 44 */
+    int i;      /* 44 第 9 格 */
+    int j;      /* 48 第 10 格 */
+    int k;      /* 52 第 11 格 */
+    int l;      /* 56 第 12 格 */
+} WARP_EVENT;   /* 60 */
 
-#define WARP_EVENT_SLOTS  8   /* 读链的 out 能写到 0..7 */
+#define WARP_EVENT_SLOTS  12  /* 读链的 out 能写到 0..11 */
 
 /* ------------------------------------------------------------------ */
 /* il2cpp 接口表（顺序必须和 il2cpp-api-names.txt / Python 侧一致）     */
