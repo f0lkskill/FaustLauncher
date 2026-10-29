@@ -233,6 +233,8 @@ def solve(metadata: bytes, profile: dict, version: int = 39) -> dict:
                     er = by_index[eidx]
                     placements.append([slot, eidx, run])
                     run += er["size"]
+                if run > len(metadata):
+                    return
                 key = placements_rank(placements)
                 if best is None or key > best[0]:
                     best = (key, [(s, e, p) for s, e, p in placements])
@@ -251,7 +253,16 @@ def solve(metadata: bytes, profile: dict, version: int = 39) -> dict:
                 return
             slot = non_zero[i]
             er_target = rec[names[slot]]
-            cands = pool_by_rec.get(None if er_target is None else er_target, [])
+            if er_target is None:
+                # 变长节（stringLiteralData / string / attributeData）没有固定
+                # rec 约束：它们的 header 条目 count 是“条目数”而非
+                # size/rec，若恰好 size % count == 0（例如 attributeData 每条
+                # 1 字节）会被 _rec_of 误判成某个固定 rec 值，从而被排挤出
+                # pool_by_rec[None]。这里对变长槽放宽为整个 pool，位置剪枝与
+                # 评分仍会筛掉噪声条目。
+                cands = pool
+            else:
+                cands = pool_by_rec.get(er_target, [])
             for e in cands:
                 if e["index"] in used or e["index"] in used_local:
                     continue
