@@ -34,12 +34,12 @@ from .base import (
 )
 
 HOST_MAGIC = 0x54534857           # "WHST"
-HOST_VERSION = 3                  # v3：导出表 13→15（gchandle），命令槽扩对象构造
+HOST_VERSION = 4                  # v4：钩子表 16→32（成就 25 条 + NoGacha 2 条装不下 16 槽）
 HOST_MAP_DEFAULT = "Local\\WarpHost_Default"
 HOST_MAP_ENV = "WARP_HOST_MAP"
 HOST_DLL_NAME = "warp_host.dll"
 
-HOST_MAX_HOOKS = 16
+HOST_MAX_HOOKS = 32
 HOST_MAX_TEXTS = 256
 HOST_TEXT_LEN = 128
 HOST_KLASS_LEN = 48
@@ -526,16 +526,22 @@ class Host:
 
         钩子按注册顺序首尾相接；文案按插件分段，段尾补一个空串当界标
         （DLL 的 warp_pick_text 从 text_base 起扫到空槽为止）。
+
+        超出 HOST_MAX_HOOKS 的钩子会被丢掉。这事必须喊出来：v0.9.0 真机上
+        成就 25 条 + NoGacha 2 条 > 16 槽，NoGacha 的钩子被静默截掉，
+        插件盯着 hits 永远是 0，查了半天才发现是布局截断。
         """
         active = [(name, e) for name, e in self._owners.items() if e["on"]]
 
         hooks = []
         texts = []
+        dropped = []   # (owner, method) —— 装不下的钩子，push 时打日志
         for owner_name, entry in active:
             base = len(texts)
             for hook in entry["hooks"]:
                 if len(hooks) >= HOST_MAX_HOOKS:
-                    break
+                    dropped.append((owner_name, hook.get("method") or "?"))
+                    continue
                 item = dict(hook)
                 item["text_base"] = base
                 item["owner"] = owner_name
@@ -547,6 +553,11 @@ class Host:
                 continue
             texts.extend(entry["texts"][:room])
             texts.append("")
+        if dropped:
+            names = ", ".join(f"{o}.{m}" for o, m in dropped[:6])
+            more = f" 等 {len(dropped)} 条" if len(dropped) > 6 else ""
+            self.log(f"钩子表只有 {HOST_MAX_HOOKS} 槽，装不下的钩子被丢弃："
+                     f"{names}{more} —— 检查各插件钩子总数", "warp")
         return hooks[:HOST_MAX_HOOKS], texts[:HOST_MAX_TEXTS]
 
     # ---------- 日志 ----------

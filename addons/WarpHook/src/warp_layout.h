@@ -30,14 +30,14 @@
  *
  * 共享内存布局（Python 侧 warphook/host.py 必须一致）
  *   0     WARP_HEADER      432 字节（状态头 + 命令槽 + 弹窗文本）
- *   432   WARP_HOOK[16]   16 × 288 = 4608
- *   5040  texts[256]     256 × 128 = 32768
- *   37808 exports[15]     15 × 64  = 960
- *   38768 ev_ctrl          16 字节（head/tail/dropped/pad）
- *   38784 events[2048] 2048 × 60  = 122880
- *   161664 reads[128]    128 × 48  = 6144
- *   167808 objects[32]   32 × 8   = 256
- *   168064 (结束)
+ *   432   WARP_HOOK[32]   32 × 288 = 9216
+ *   9648  texts[256]     256 × 128 = 32768
+ *   42416 exports[15]     15 × 64  = 960
+ *   43376 ev_ctrl          16 字节（head/tail/dropped/pad）
+ *   43392 events[2048] 2048 × 60  = 122880
+ *   166272 reads[128]    128 × 48  = 6144
+ *   172416 objects[32]   32 × 8   = 256
+ *   172672 (结束)
  * ===================================================================== */
 
 #include <windows.h>
@@ -46,9 +46,11 @@
 #include "MinHook.h"
 
 #define WARP_MAGIC        0x54534857u      /* "WHST" */
-#define WARP_VERSION      3                /* v3：导出表 13→15（gchandle），命令槽扩对象构造 */
+#define WARP_VERSION      4                /* v4：钩子表 16→32（成就 25 条 + NoGacha 2 条
+                                            * 已经装不下 16 槽，_layout 截断是静默的，
+                                            * 真机上 NoGacha 的钩子整条消失） */
 
-#define WARP_MAX_HOOKS    16
+#define WARP_MAX_HOOKS    32
 #define WARP_MAX_TEXTS    256
 #define WARP_TEXT_LEN     128
 #define WARP_KLASS_LEN    48

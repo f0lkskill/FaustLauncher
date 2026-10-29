@@ -375,7 +375,10 @@ class WarpSource:
         except (KeyError, ValueError) as exc:
             self._log('[成就] 钩子配置有问题：%s' % exc)
             return False
-        self._by_event = {int(h['event']): h for h in self._hooks}
+        # 只缓存钩子（event=None，只为读链缓存对象槽）不占事件号，跳过——
+        # v0.9.0 真机上 int(None) 把整条成就观测线炸成了「仅日志成就生效」。
+        self._by_event = {int(h['event']): h for h in self._hooks
+                          if h.get('event') is not None}
         payload = [dict(h) for h in self._hooks]
         for hook in payload:
             hook.pop('name', None)
