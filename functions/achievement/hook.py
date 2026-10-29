@@ -691,12 +691,6 @@ def run_achievement_hook(debug = False):
     _boot(f"单实例检查：{sole_note}")
     if not sole:
         raise SystemExit(0)
-    try:
-        from functions.achievement import battle_watch as _bw_mod
-        _bw_mod.set_sole_instance(True)
-    except Exception:  # noqa: BLE001
-        pass
-
     if args.output:
         import atexit as _atexit
         already_truncated = bool(os.environ.get("FAUST_ACH_TRUNCATED"))

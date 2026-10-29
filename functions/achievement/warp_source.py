@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""用 WarpHook 取代 `hook_dll/battle_watch.dll`，给成就系统供事件。
+"""用 WarpHook 取代老链路 battle_watch.dll（P5 已下线），给成就系统供事件。
 
 ## 为什么要有这一层
 

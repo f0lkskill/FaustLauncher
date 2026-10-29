@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
 """成就钩子的「读法」到 WarpHook 读取链的翻译。
 
-老链路（`hook_dll/battle_watch.c`）为每种读法手写了一个 thunk：四十个钩子槽
-乘以十六种读法，就是六百多个函数，再由 `pick_detour()` 用二重 switch 分派。
-那些 thunk 做的事情其实高度重复——调原函数、从某个参数出发按固定路径读几个
-整数、拼成一行事件发出去。
+老链路（battle_watch.dll，P5 已随 hook_dll/ 下线）为每种读法手写了一个
+thunk：四十个钩子槽乘以十六种读法，就是六百多个函数，再由 `pick_detour()`
+用二重 switch 分派。那些 thunk 做的事情其实高度重复——调原函数、从某个参数
+出发按固定路径读几个整数、拼成一行事件发出去。
 
 WarpHook 的读取链把「按路径读整数」这件事变成了数据：一条链 = 从哪个参数出发、
 跳几跳（每跳可解引用）、落点按什么类型解释。于是十六种读法退化成十六行配置。
@@ -49,7 +49,7 @@ KIND_RAILWAY_HIST = 'railway_hist'
 KIND_STAGE_NODE_ID = 'stage_node_id'
 KIND_RAILWAY_UI_TEXT = 'railway_ui_text'
 
-# 十六种读法，顺序与 battle_watch.c / battle_watch.py 的 BWK_* 编号一致
+# 十六种读法，顺序与 battle_watch.py 的 BWK_* 编号一致（老 C 链路已删）
 KIND_ORDER = (
     KIND_PLAIN, KIND_UNIT, KIND_UNIT_INT_BOOL, KIND_UNIT_GET_INT,
     KIND_ACTION_INT, KIND_DAMAGE_ACTION, KIND_SKV, KIND_STAGE_STAT,

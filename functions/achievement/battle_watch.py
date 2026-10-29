@@ -13,21 +13,10 @@ from dataclasses import dataclass, field
 
 from functions.achievement import log_sink
 
-BW_MAGIC_V5 = 0x34574246
-BW_MAGIC = 0x36574246
-MAP_NAME = "Local\\FaustLauncher_BattleWatch"
-LOG_RING_CAP = 512
-LOG_LINE_MAX = 255
-MAX_HOOKS = 40
 STAGE_WATCH_MAX = 32
-NCL_SEEN_MAX = 96
-HOOK_NAME_LEN = 40
 TARGET_PROCESS = "LimbusCompany.exe"
 
-#: 事件从哪来：插件自带的 C 钩子，还是 WarpHook 的共享宿主。
-#: 两者的产物是同一种文本行（`VAL tag=... hp=...`），所以规则引擎完全共用。
-ENGINE_DLL = "dll"
-ENGINE_WARP = "warphook"
+#: 事件从哪来：WarpHook 的共享宿主（P5 起唯一引擎）。
 
 BUFF_WATCH_MAX = 32
 
@@ -55,15 +44,6 @@ KIND_RAILWAY_NODE = 12
 KIND_RAILWAY_HIST = 13
 KIND_STAGE_NODE_ID = 14
 KIND_RAILWAY_UI_TEXT = 15
-KIND_NUMBERS = {"plain": KIND_PLAIN, "unit": KIND_UNIT,
-                "unit_int_bool": KIND_UNIT_INT_BOOL, "unit_get_int": KIND_UNIT_GET_INT,
-                "action_int": KIND_ACTION_INT, "damage_action": KIND_DAMAGE_ACTION,
-                "skv": KIND_SKV, "stage_stat": KIND_STAGE_STAT,
-                "railway_total": KIND_RAILWAY_TOTAL, "cache_self": KIND_CACHE_SELF,
-                "node_state": KIND_NODE_STATE, "cache_arg1": KIND_CACHE_ARG1,
-                "railway_node": KIND_RAILWAY_NODE, "railway_hist": KIND_RAILWAY_HIST,
-                "stage_node_id": KIND_STAGE_NODE_ID,
-                "railway_ui_text": KIND_RAILWAY_UI_TEXT}
 
 SPEED_SCALE = 1000
 
@@ -188,10 +168,6 @@ def register_rule(rule) -> BattleRule:
         rule = BattleRule(**rule)
     with _rules_lock:
         _rules[rule.key] = rule
-    try:
-        _sync_buff_watch()
-    except Exception:
-        pass
     return rule
 
 def registered_rules() -> dict[str, BattleRule]:
@@ -221,14 +197,6 @@ def watched_buff_names() -> tuple[str, ...]:
                     names.append(name)
     names.sort()
     return tuple(names[:BUFF_WATCH_MAX])
-
-def _sync_buff_watch() -> tuple[str, ...]:
-    names = watched_buff_names()
-    with _watch_lock:
-        watch = _watch
-    if watch is not None:
-        watch.sync_buff_watch(names)
-    return names
 
 def rule_hit(key: str) -> str | None:
     with _watch_lock:
@@ -277,19 +245,7 @@ SKILL_SETTLE_QUIET_TICKED_SEC = 15.0
 FIRST_ANIM_GRACE_SEC = 10.0
 SAMPLER_TAG = "sampler"
 
-HEARTBEAT_SEC = 20.0
 STATUS_WRITE_SEC = 2.0
-HOOK_MERGE_WARN = "已合并到同一地址"
-
-ERROR_TEXT = {
-    0: "正常",
-    1: "共享内存不可用",
-    2: "GameAssembly.dll 60 秒内未加载",
-    3: "版本自检失败（prologue 不匹配，索引与本机 DLL 不是同一版本）",
-    4: "MinHook 初始化失败",
-    5: "MinHook 创建钩子失败",
-    6: "MinHook 启用钩子失败",
-}
 
 FALLBACK_HOOKS: dict[str, tuple[str, int, str]] = {
     "unit_refresh_speed": ("BattleUnitModel::RefreshSpeed", 0x11C89D0, "unit"),
@@ -364,116 +320,20 @@ FALLBACK_FIELDS: dict[str, int] = {
     "railway_ui_text": 0x28,
     "tmp_text": 0xE0,
 }
-NO_STUB_RESOLVE = {"take_attack_dmg_multiplier"}
-
-class BWConfig(ctypes.Structure):
-
-    _fields_ = [
-        ("magic", ctypes.c_int32),
-        ("observing", ctypes.c_int32),
-        ("log", ctypes.c_int32),
-        ("retry_requested", ctypes.c_int32),
-        ("hook_count", ctypes.c_int32),
-        ("hook_rva", ctypes.c_int32 * MAX_HOOKS),
-        ("hook_kind", ctypes.c_int32 * MAX_HOOKS),
-        ("hook_hits", ctypes.c_int32 * MAX_HOOKS),
-        ("hook_prologue", (ctypes.c_ubyte * 16) * MAX_HOOKS),
-        ("hook_name", (ctypes.c_char * HOOK_NAME_LEN) * MAX_HOOKS),
-        ("off_unit_instance_id", ctypes.c_int32),
-        ("off_unit_origin_id", ctypes.c_int32),
-        ("off_unit_origin_speed", ctypes.c_int32),
-        ("off_unit_overwrited_speed", ctypes.c_int32),
-        ("off_unit_int_speed_turn", ctypes.c_int32),
-        ("off_unit_state", ctypes.c_int32),
-        ("off_state_hp", ctypes.c_int32),
-        ("off_state_max_hp", ctypes.c_int32),
-        ("off_state_mp", ctypes.c_int32),
-        ("off_unit_buff_detail", ctypes.c_int32),
-        ("off_buff_detail_list", ctypes.c_int32),
-        ("off_buff_model_data", ctypes.c_int32),
-        ("off_buff_static_id", ctypes.c_int32),
-        ("off_action_skill", ctypes.c_int32),
-        ("off_action_commander_id", ctypes.c_int32),
-        ("off_action_actor_id", ctypes.c_int32),
-        ("off_skill_data", ctypes.c_int32),
-        ("off_skill_id", ctypes.c_int32),
-        ("off_skill_tier", ctypes.c_int32),
-        ("off_skv_attacker_iid", ctypes.c_int32),
-        ("gameassembly_found", ctypes.c_int32),
-        ("verified", ctypes.c_int32),
-        ("installed", ctypes.c_int32),
-        ("last_error", ctypes.c_int32),
-        ("event_count", ctypes.c_int32),
-        ("round_seq", ctypes.c_int32),
-        ("ring_offset", ctypes.c_int32),
-        ("struct_size", ctypes.c_int32),
-        ("last_log", ctypes.c_char * 128),
-        ("log_head", ctypes.c_int32),
-        ("log_ring", (ctypes.c_char * (LOG_LINE_MAX + 1)) * LOG_RING_CAP),
-        ("buff_watch_count", ctypes.c_int32),
-        ("buff_watch_hashes", ctypes.c_uint64 * BUFF_WATCH_MAX),
-        ("off_stage_slot_list", ctypes.c_int32),
-        ("off_slot_uid", ctypes.c_int32),
-        ("off_slot_clear_turn", ctypes.c_int32),
-        ("off_slot_dead_count", ctypes.c_int32),
-        ("off_slot_ex_cleared", ctypes.c_int32),
-        ("off_railway_collection_id", ctypes.c_int32),
-        ("off_stage_clear_list", ctypes.c_int32),
-        ("off_clear_info_list", ctypes.c_int32),
-        ("off_clear_info_id", ctypes.c_int32),
-        ("stage_watch_count", ctypes.c_int32),
-        ("stage_watch_ids", ctypes.c_int32 * STAGE_WATCH_MAX),
-        ("stage_clear_data", ctypes.c_int64),
-        ("stage_seen_mask", ctypes.c_int32),
-        ("stage_diag_done", ctypes.c_int32),
-        ("ncl_seen", ctypes.c_int32 * NCL_SEEN_MAX),
-        ("ncl_seen_count", ctypes.c_int32),
-        ("stage_progress_list", ctypes.c_int64),
-        ("off_chapter_subs", ctypes.c_int32),
-        ("off_sub_nodes", ctypes.c_int32),
-        ("off_node_id", ctypes.c_int32),
-        ("off_node_clear_type", ctypes.c_int32),
-        ("off_node_clear_number", ctypes.c_int32),
-        ("off_railway_node_id", ctypes.c_int32),
-        ("off_railway_node_turn", ctypes.c_int32),
-        ("off_railway_ui_text", ctypes.c_int32),
-        ("off_tmp_text", ctypes.c_int32),
-    ]
-
-CONFIG_SIZE = ctypes.sizeof(BWConfig)
-RING_OFFSET = BWConfig.log_ring.offset
 
 _kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-_LPVOID = ctypes.c_void_p
 _HANDLE = ctypes.c_void_p
-_LPCWSTR = ctypes.c_wchar_p
 
-_kernel32.CreateFileMappingW.restype = _HANDLE
-_kernel32.CreateFileMappingW.argtypes = [_HANDLE, _LPVOID, wt.DWORD, wt.DWORD, wt.DWORD, _LPCWSTR]
-_kernel32.OpenFileMappingW.restype = _HANDLE
-_kernel32.OpenFileMappingW.argtypes = [wt.DWORD, wt.BOOL, _LPCWSTR]
-_kernel32.MapViewOfFile.restype = _LPVOID
-_kernel32.MapViewOfFile.argtypes = [_HANDLE, wt.DWORD, wt.DWORD, wt.DWORD, ctypes.c_size_t]
-_kernel32.UnmapViewOfFile.argtypes = [_LPVOID]
 _kernel32.CloseHandle.argtypes = [_HANDLE]
 _kernel32.OpenProcess.restype = _HANDLE
 _kernel32.OpenProcess.argtypes = [wt.DWORD, wt.BOOL, wt.DWORD]
-_kernel32.VirtualAllocEx.restype = _LPVOID
-_kernel32.VirtualAllocEx.argtypes = [_HANDLE, _LPVOID, ctypes.c_size_t, wt.DWORD, wt.DWORD]
-_kernel32.VirtualFreeEx.argtypes = [_HANDLE, _LPVOID, ctypes.c_size_t, wt.DWORD]
-_kernel32.WriteProcessMemory.argtypes = [_HANDLE, _LPVOID, _LPVOID, ctypes.c_size_t,
-                                         ctypes.POINTER(ctypes.c_size_t)]
-_kernel32.CreateRemoteThread.restype = _HANDLE
-_kernel32.CreateRemoteThread.argtypes = [_HANDLE, _LPVOID, ctypes.c_size_t, _LPVOID,
-                                         _LPVOID, wt.DWORD, _LPVOID]
-_kernel32.WaitForSingleObject.argtypes = [_HANDLE, wt.DWORD]
-_kernel32.GetExitCodeThread.argtypes = [_HANDLE, ctypes.POINTER(wt.DWORD)]
-_kernel32.GetModuleHandleW.restype = _HANDLE
-_kernel32.GetModuleHandleW.argtypes = [_LPCWSTR]
-_kernel32.GetProcAddress.restype = _LPVOID
-_kernel32.GetProcAddress.argtypes = [_HANDLE, ctypes.c_char_p]
+_kernel32.QueryFullProcessImageNameW.argtypes = [_HANDLE, wt.DWORD, ctypes.c_wchar_p,
+                                                 ctypes.POINTER(wt.DWORD)]
+_kernel32.GetProcessTimes.argtypes = [_HANDLE, ctypes.POINTER(wt.FILETIME),
+                                      ctypes.POINTER(wt.FILETIME),
+                                      ctypes.POINTER(wt.FILETIME),
+                                      ctypes.POINTER(wt.FILETIME)]
 
-PROCESS_ACCESS = 0x0002 | 0x0400 | 0x0008 | 0x0020 | 0x0010
 TH32CS_SNAPPROCESS = 0x00000002
 
 class PROCESSENTRY32W(ctypes.Structure):
@@ -495,64 +355,7 @@ _kernel32.CreateToolhelp32Snapshot.restype = _HANDLE
 _kernel32.Process32FirstW.argtypes = [_HANDLE, ctypes.POINTER(PROCESSENTRY32W)]
 _kernel32.Process32NextW.argtypes = [_HANDLE, ctypes.POINTER(PROCESSENTRY32W)]
 
-TH32CS_SNAPTHREAD = 0x00000004
-TH32CS_SNAPMODULE = 0x00000008
-TH32CS_SNAPMODULE32 = 0x00000010
-THREAD_SUSPEND_RESUME = 0x0002
 PROCESS_QUERY_LIMITED = 0x1000
-SYNCHRONIZE = 0x00100000
-SUSPEND_FAILED = 0xFFFFFFFF
-GAME_STABLE_SECONDS = 1.0
-SUSPEND_WAIT_SECONDS = 15.0
-MODULE_VERIFY_SECONDS = 5.0
-GA_VERIFY_RETRY = 3
-PE_HEADER_BYTES = 0x400
-
-class THREADENTRY32(ctypes.Structure):
-    _fields_ = [
-        ("dwSize", wt.DWORD),
-        ("cntUsage", wt.DWORD),
-        ("th32ThreadID", wt.DWORD),
-        ("th32OwnerProcessID", wt.DWORD),
-        ("tpBasePri", ctypes.c_long),
-        ("tpDeltaPri", ctypes.c_long),
-        ("dwFlags", wt.DWORD),
-    ]
-
-class MODULEENTRY32W(ctypes.Structure):
-    _fields_ = [
-        ("dwSize", wt.DWORD),
-        ("th32ModuleID", wt.DWORD),
-        ("th32ProcessID", wt.DWORD),
-        ("GlblcntUsage", wt.DWORD),
-        ("ProccntUsage", wt.DWORD),
-        ("modBaseAddr", ctypes.c_void_p),
-        ("modBaseSize", wt.DWORD),
-        ("hModule", _HANDLE),
-        ("szModule", ctypes.c_wchar * 256),
-        ("szExePath", ctypes.c_wchar * 260),
-    ]
-
-_kernel32.Thread32First.argtypes = [_HANDLE, ctypes.POINTER(THREADENTRY32)]
-_kernel32.Thread32Next.argtypes = [_HANDLE, ctypes.POINTER(THREADENTRY32)]
-_kernel32.Module32FirstW.argtypes = [_HANDLE, ctypes.POINTER(MODULEENTRY32W)]
-_kernel32.Module32NextW.argtypes = [_HANDLE, ctypes.POINTER(MODULEENTRY32W)]
-_kernel32.OpenThread.restype = _HANDLE
-_kernel32.OpenThread.argtypes = [wt.DWORD, wt.BOOL, wt.DWORD]
-_kernel32.SuspendThread.argtypes = [_HANDLE]
-_kernel32.SuspendThread.restype = wt.DWORD
-_kernel32.ResumeThread.argtypes = [_HANDLE]
-_kernel32.ResumeThread.restype = wt.DWORD
-_kernel32.QueryFullProcessImageNameW.argtypes = [_HANDLE, wt.DWORD, ctypes.c_wchar_p,
-                                                 ctypes.POINTER(wt.DWORD)]
-_kernel32.ReadProcessMemory.argtypes = [_HANDLE, _LPVOID, _LPVOID, ctypes.c_size_t,
-                                        ctypes.POINTER(ctypes.c_size_t)]
-_kernel32.GetProcessTimes.argtypes = [_HANDLE, ctypes.POINTER(wt.FILETIME),
-                                      ctypes.POINTER(wt.FILETIME),
-                                      ctypes.POINTER(wt.FILETIME),
-                                      ctypes.POINTER(wt.FILETIME)]
-
-_DLL_CHOICE_NOTE = ""
 
 def _process_image_path(pid: int) -> str:
     proc = _kernel32.OpenProcess(PROCESS_QUERY_LIMITED, False, pid)
@@ -651,213 +454,6 @@ def select_game_process(process_name: str = TARGET_PROCESS) -> tuple[int | None,
         return pid, image, f"映像 {image} 与配置 {expected} 不一致（唯一同名进程，仍尝试注入）"
     return pid, image, ""
 
-_SOLE_INSTANCE = False
-
-def set_sole_instance(value: bool = True) -> None:
-    global _SOLE_INSTANCE
-    _SOLE_INSTANCE = bool(value)
-
-def sole_instance() -> bool:
-    return _SOLE_INSTANCE
-
-def find_process_id(process_name: str = TARGET_PROCESS) -> int | None:
-    candidates = find_process_candidates(process_name)
-    return candidates[0][0] if candidates else None
-
-def pid_alive_for(pid: int, seconds: float) -> bool:
-    handle = _kernel32.OpenProcess(SYNCHRONIZE, False, pid)
-    if not handle:
-        return False
-    try:
-        return _kernel32.WaitForSingleObject(handle, int(seconds * 1000)) == 0x00000102
-    finally:
-        _kernel32.CloseHandle(handle)
-
-def remote_modules(pid: int) -> list[tuple[str, str, int]]:
-    snapshot = _kernel32.CreateToolhelp32Snapshot(TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32,
-                                                  pid)
-    out: list[tuple[str, str, int]] = []
-    if not snapshot or snapshot == -1:
-        return out
-    try:
-        entry = MODULEENTRY32W()
-        entry.dwSize = ctypes.sizeof(MODULEENTRY32W)
-        ok = _kernel32.Module32FirstW(snapshot, ctypes.byref(entry))
-        while ok:
-            out.append((str(entry.szModule), str(entry.szExePath),
-                        int(entry.modBaseAddr or 0)))
-            ok = _kernel32.Module32NextW(snapshot, ctypes.byref(entry))
-    finally:
-        _kernel32.CloseHandle(snapshot)
-    return out
-
-def read_remote(pid: int, address: int, size: int) -> bytes:
-    proc = _kernel32.OpenProcess(PROCESS_QUERY_LIMITED | 0x0010, False, pid)
-    if not proc:
-        return b""
-    try:
-        buf = ctypes.create_string_buffer(size)
-        got = ctypes.c_size_t()
-        if _kernel32.ReadProcessMemory(proc, ctypes.c_void_p(address), buf, size,
-                                       ctypes.byref(got)):
-            return buf.raw[:int(got.value)]
-    except Exception:  # noqa: BLE001
-        pass
-    finally:
-        _kernel32.CloseHandle(proc)
-    return b""
-
-def _parse_pe_header(head: bytes) -> dict:
-    import hashlib
-    import struct as _struct
-    info = {"timestamp": 0, "size_of_image": 0, "entry_rva": 0, "header_sha256": ""}
-    if len(head) < 0x40 or head[:2] != b"MZ":
-        return info
-    e_lfanew = _struct.unpack_from("<I", head, 0x3C)[0]
-    if e_lfanew + 0x40 > len(head) or head[e_lfanew:e_lfanew + 4] != b"PE\0\0":
-        return info
-    opt = e_lfanew + 24
-    info["timestamp"] = _struct.unpack_from("<I", head, e_lfanew + 8)[0]
-    info["entry_rva"] = _struct.unpack_from("<I", head, opt + 16)[0]
-    info["size_of_image"] = _struct.unpack_from("<I", head, opt + 56)[0]
-    info["header_sha256"] = hashlib.sha256(head).hexdigest().upper()
-    return info
-
-def pe_identity_same(a: dict, b: dict) -> bool:
-    if not a or not b:
-        return False
-    for key in ("timestamp", "size_of_image", "entry_rva"):
-        if int(a.get(key) or 0) != int(b.get(key) or 0):
-            return False
-    return True
-
-def local_pe_identity(path: str) -> dict:
-    try:
-        with open(path, "rb") as fh:
-            return _parse_pe_header(fh.read(PE_HEADER_BYTES))
-    except OSError:
-        return {"timestamp": 0, "size_of_image": 0, "entry_rva": 0, "header_sha256": ""}
-
-def remote_pe_identity(pid: int, module_name: str = "gameassembly.dll") -> dict:
-    wanted = module_name.lower()
-    for name, path, base in remote_modules(pid):
-        if name.lower() != wanted or not base:
-            continue
-        info = _parse_pe_header(read_remote(pid, base, PE_HEADER_BYTES))
-        if not info["timestamp"] and not info["size_of_image"]:
-            return {}
-        info.update({"base": base, "path": path, "module": name})
-        return info
-    return {}
-
-def dll_info(path: str) -> dict:
-    import hashlib
-    out = {"path": path, "size": 0, "mtime": "", "sha256": ""}
-    try:
-        st = os.stat(path)
-        with open(path, "rb") as fh:
-            out["sha256"] = hashlib.sha256(fh.read()).hexdigest().upper()
-        out["size"] = int(st.st_size)
-        out["mtime"] = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(st.st_mtime))
-    except OSError:
-        pass
-    return out
-
-def _process_thread_ids(pid: int) -> list[int]:
-    snapshot = _kernel32.CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0)
-    if not snapshot or snapshot == -1:
-        return []
-    out: list[int] = []
-    try:
-        entry = THREADENTRY32()
-        entry.dwSize = ctypes.sizeof(THREADENTRY32)
-        ok = _kernel32.Thread32First(snapshot, ctypes.byref(entry))
-        while ok:
-            if int(entry.th32OwnerProcessID) == pid:
-                out.append(int(entry.th32ThreadID))
-            ok = _kernel32.Thread32Next(snapshot, ctypes.byref(entry))
-    finally:
-        _kernel32.CloseHandle(snapshot)
-    return out
-
-def process_thread_suspend_state(pid: int) -> tuple[int, int]:
-    own_tid = int(_kernel32.GetCurrentThreadId())
-    total = 0
-    suspended = 0
-    for tid in _process_thread_ids(pid):
-        if tid == own_tid:
-            continue
-        handle = _kernel32.OpenThread(THREAD_SUSPEND_RESUME, False, tid)
-        if not handle:
-            continue
-        try:
-            prev = int(_kernel32.SuspendThread(handle))
-            if prev == SUSPEND_FAILED:
-                continue
-            total += 1
-            if prev > 0:
-                suspended += 1
-            _kernel32.ResumeThread(handle)
-        finally:
-            _kernel32.CloseHandle(handle)
-    return total, suspended
-
-class SuspendWindow:
-
-    def __init__(self, pid: int, log=None) -> None:
-        self.pid = pid
-        self.log = log or (lambda _m: None)
-        self.thread_ids: list[int] = []
-        self.owned: list[int] = []
-        self.already = 0
-        self.was_suspended = False
-
-    def _enumerate_threads(self) -> list[int]:
-        return _process_thread_ids(self.pid)
-
-    def __enter__(self) -> "SuspendWindow":
-        self.thread_ids = self._enumerate_threads()
-        for tid in self.thread_ids:
-            handle = _kernel32.OpenThread(THREAD_SUSPEND_RESUME, False, tid)
-            if not handle:
-                continue
-            try:
-                prev = int(_kernel32.SuspendThread(handle))
-                if prev == SUSPEND_FAILED:
-                    continue
-                if prev == 0:
-                    self.owned.append(tid)
-                else:
-                    self.already += 1
-                    _kernel32.ResumeThread(handle)
-            finally:
-                _kernel32.CloseHandle(handle)
-        total = len(self.thread_ids)
-        self.was_suspended = bool(total) and not self.owned and self.already >= total
-        if self.was_suspended:
-            self.log(f"[BattleWatch] 检测到游戏进程已处于挂起态（{total}/{total} 个线程挂起）"
-                     "→ 直接在这个挂起窗口内注入")
-        elif self.owned:
-            self.log(f"[BattleWatch] 已建立注入窗口：挂起 {len(self.owned)} 个线程"
-                     f"（共 {total} 个，其中 {self.already} 个本来就挂起）")
-        else:
-            self.log(f"[BattleWatch] 未能挂起任何线程（共 {total} 个），按普通方式注入")
-        return self
-
-    def __exit__(self, *_exc) -> bool:
-        for tid in self.owned:
-            handle = _kernel32.OpenThread(THREAD_SUSPEND_RESUME, False, tid)
-            if not handle:
-                continue
-            try:
-                _kernel32.ResumeThread(handle)
-            finally:
-                _kernel32.CloseHandle(handle)
-        if self.owned:
-            self.log(f"[BattleWatch] 注入窗口关闭：恢复 {len(self.owned)} 个线程")
-        self.owned = []
-        return False
-
 def _project_root() -> str:
     try:
         from functions.base.common.path_utils import get_app_root
@@ -865,48 +461,6 @@ def _project_root() -> str:
     except Exception:  # noqa: BLE001
         here = os.path.dirname(os.path.abspath(__file__))
         return os.path.abspath(os.path.join(here, "..", ".."))
-
-def _pick_newest_dll(candidates: list[str]) -> tuple[str, str]:
-    found: list[tuple[str, float]] = []
-    seen: set[str] = set()
-    for path in candidates:
-        if not path or not os.path.isfile(path):
-            continue
-        key = os.path.normcase(os.path.abspath(path))
-        if key in seen:
-            continue
-        seen.add(key)
-        try:
-            found.append((path, os.path.getmtime(path)))
-        except OSError:
-            continue
-    if not found:
-        return "", ""
-    found.sort(key=lambda item: item[1], reverse=True)
-    if len(found) == 1:
-        return found[0][0], ""
-    others = ", ".join(f"{p}（{time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(t))}）"
-                       for p, t in found[1:])
-    note = (f"发现 {len(found)} 份 battle_watch.dll，选用最新的一份 {found[0][0]}；"
-            f"忽略: {others}")
-    return found[0][0], note
-
-def dll_path() -> str:
-    global _DLL_CHOICE_NOTE
-    here = os.path.dirname(os.path.abspath(__file__))
-    root = _project_root()
-    candidates = [
-        os.path.join(here, "hook_dll", "battle_watch.dll"),
-        os.path.join(root, "hook_dll", "battle_watch.dll"),
-        os.path.join(root, "_internal", "hook_dll", "battle_watch.dll"),
-        os.path.join(root, "resources", "achievement_hook", "battle_watch.dll"),
-        os.path.join(here, "battle_watch.dll"),
-    ]
-    meipass = getattr(sys, "_MEIPASS", "")
-    if meipass:
-        candidates.insert(0, os.path.join(meipass, "hook_dll", "battle_watch.dll"))
-    chosen, _DLL_CHOICE_NOTE = _pick_newest_dll(candidates)
-    return chosen
 
 def event_log_path() -> str:
     return os.path.join(_project_root(), "logs", "battle_watch.log")
@@ -1034,173 +588,24 @@ class BattleState:
             "buff_total": self.buff_total,
         }
 
-def _read_at_rva(pe, rva: int, size: int) -> bytes:
-    try:
-        return pe.read_at_rva(rva, size)
-    except Exception:
-        return b""
-
-def resolve_stub(pe, rva: int, names: dict, max_hops: int = 4,
-                 on_log=None) -> tuple[int, list]:
-    import struct
-    log = on_log or (lambda _m: None)
-    hops = []
-    current = rva
-    for _ in range(max_hops):
-        raw = _read_at_rva(pe, current, 16)
-        if len(raw) < 8:
-            break
-        target = None
-        if raw[0] == 0x33 and raw[1] == 0xD2 and raw[2] == 0xE9:
-            target = current + 7 + struct.unpack_from("<i", raw, 3)[0]
-            kind = "尾调用桩 (xor edx,edx; jmp)"
-        elif raw[0] == 0xE9:
-            target = current + 5 + struct.unpack_from("<i", raw, 1)[0]
-            kind = "jmp 桩"
-        if target is None or target == current:
-            break
-        hops.append((current, names.get(current, "?"), kind, target, names.get(target, "?")))
-        log(f"[BattleWatch] 0x{current:X} ({names.get(current, '?')}) 是{kind}"
-            f" → 改钩 0x{target:X} ({names.get(target, '?')})")
-        current = target
-    return current, hops
-
-def build_hook_table(on_log=None, pe_path: str = "") -> dict:
-    log = on_log or (lambda _m: None)
-    entries: dict[str, dict] = {}
-    source = "fallback"
-
-    for key, (symbol, rva, kind) in FALLBACK_HOOKS.items():
-        entries[key] = {"key": key, "symbol": symbol, "rva": rva, "kind": kind,
-                        "prologue": "", "source": "fallback"}
-
-    index = None
-    try:
-        from functions.hook.index import get_index
-        index, idx_source = get_index()
-        if index is not None:
-            source = idx_source or "index"
-            for key in list(entries):
-                hook = index.hook(key)
-                if hook.get("rva"):
-                    entries[key]["rva"] = int(hook["rva"])
-                    entries[key]["source"] = source
-                text = str(hook.get("prologue") or "").replace(" ", "")
-                if text:
-                    try:
-                        entries[key]["prologue"] = bytes.fromhex(text)
-                    except ValueError:
-                        pass
-    except Exception as exc:  # noqa: BLE001
-        log(f"[BattleWatch] hook_index 不可用，使用内置回退偏移: {exc}")
-
-    names: dict[int, str] = {}
-    if index is not None:
-        for key, item in (index.symbols.get("methods") or {}).items():
-            rva = int(item.get("rva") or 0) if isinstance(item, dict) else int(item or 0)
-            if rva:
-                names.setdefault(rva, key)
-
-    pe = None
-    if pe_path and os.path.isfile(pe_path):
-        try:
-            from functions.hook.pe import PeFile
-            pe = PeFile(pe_path)
-        except Exception as exc:  # noqa: BLE001
-            log(f"[BattleWatch] 读取 GameAssembly.dll 节表失败（跳过桩解引用）: {exc}")
-    resolved: dict[str, dict] = {}
-    used_rva: dict[int, str] = {}
-    configured_rva = {int(item["rva"]): key for key, item in entries.items()}
-    for key, item in entries.items():
-        rva = int(item["rva"])
-        if pe is not None and key not in NO_STUB_RESOLVE:
-            final, hops = resolve_stub(pe, rva, names, on_log=log)
-            if final != rva:
-                other = configured_rva.get(final)
-                if other and other != key:
-                    log(f"[BattleWatch] {key} 的尾调用桩指向 {other} 的地址 0x{final:X} —— 不跟随"
-                        f"（跟随会吃掉 {other} 这个观测点，且两者 detour 类型不同），"
-                        f"改为直接钩桩本身 0x{rva:X}")
-                    final, hops = rva, []
-                elif not names.get(final):
-                    log(f"[BattleWatch] {key} 的尾调用桩指向未知地址 0x{final:X}"
-                        f"（符号表里查不到该符号）—— 不跟随，改为直接钩桩本身 0x{rva:X}")
-                    final, hops = rva, []
-            item["stub_hops"] = [list(h) for h in hops]
-            rva = final
-        item["final_rva"] = rva
-        if pe is not None and (not item["prologue"] or item.get("stub_hops")):
-            data = pe.prologue(rva, 16)
-            if data and len(data) == 16:
-                item["prologue"] = data
-                item["prologue_self_read"] = True
-        key_owner = used_rva.get(rva)
-        if key_owner is not None:
-            log(f"[BattleWatch] {key} 与 {key_owner} 指向同一地址 0x{rva:X}，"
-                f"已合并（{HOOK_MERGE_WARN}）")
-            resolved[key_owner].setdefault("merged_keys", []).append(key)
-            continue
-        used_rva[rva] = key
-        resolved[key] = item
-
-    dropped: list[str] = []
-    if index is not None:
-        dropped = [k for k, v in resolved.items() if v.get("prologue_self_read")]
-        for k in dropped:
-            resolved.pop(k, None)
-        if dropped:
-            log(f"[BattleWatch] 丢弃 {len(dropped)} 个**索引里没有**的观测点（它们的 RVA 只能"
-                f"沿用代码里写死的旧值，prologue 又只能本机现读自证，装钩有把游戏改崩的风险）: "
-                f"{', '.join(dropped)}")
-            log("[BattleWatch] 想恢复它们：跑一次 python -m functions.hook.main update 重建索引"
-                "（索引里现在会包含这些观测点，RVA/prologue 都来自当前游戏版本）")
-
-    if len(resolved) > MAX_HOOKS:
-        log(f"[BattleWatch] 候选 {len(resolved)} 个超过 DLL 上限 {MAX_HOOKS}，只取前 {MAX_HOOKS} 个")
-        resolved = {k: v for k, v in list(resolved.items())[:MAX_HOOKS]}
-    return {"entries": resolved, "source": source, "names": names,
-            "index_available": index is not None,
-            "dropped_self_read": dropped}
-
-def describe_hook_table(table: dict) -> str:
-    lines = []
-    for i, (key, item) in enumerate(table["entries"].items()):
-        pro = (item.get("prologue") or b"")[:8]
-        lines.append(f"    [{i:2}] {key:32} 0x{int(item['final_rva']):X} "
-                     f"kind={item['kind']:14} prologue={pro.hex(' ')}"
-                     + (f"  已合并: {item['merged_keys']}" if item.get("merged_keys") else ""))
-    return "\n" + "\n".join(lines)
-
 class BattleWatch:
 
     def __init__(self, log_callback=None, poll_interval: float = 0.25,
-                 process_name: str = TARGET_PROCESS, verbose: bool = False,
-                 engine: str = ENGINE_WARP) -> None:
+                 process_name: str = TARGET_PROCESS, verbose: bool = False) -> None:
         self.log_callback = log_callback or (lambda _m: None)
-        # 谁来挂钩子：老链路自带 battle_watch.dll，或者借 WarpHook 的宿主。
-        # P5 起默认走 WarpHook —— 钩子全是配置，加减一条不用重编 C，
-        # 游戏跑着也能换表。老 DLL 仍留在 `hook_dll/` 里，起不来会自动退回。
-        self.engine = engine
+        # 钩子全在 WarpHook：配置即钩子，加减一条不用重编 C，游戏跑着也能换表。
+        # 事件从宿主共享内存里泵出来，照样走 :meth:`handle_line` 喂规则引擎。
         self._source = None
         self.poll_interval = max(0.1, float(poll_interval))
         self.process_name = process_name
         self.verbose = verbose
         self.state = BattleState()
-        self.table: dict = {}
 
-        self._thread: threading.Thread | None = None
-        self._stop = threading.Event()
         self._lock = threading.Lock()
-        self._map_handle = None
-        self._map_view = None
-        self._injected_pid: int | None = None
-        self._remote_module: int | None = None
-        self._drained_head = 0
         self._status_logged: set[str] = set()
         self._last_hits: dict[str, int] = {}
         self._boundary_keys: set[str] = set()
         self._last_event_ts = 0.0
-        self._last_heartbeat = 0.0
         self._last_status_write = 0.0
         self._last_boundary_ts = 0.0
         self._last_anim_tick_ts = 0.0
@@ -1210,34 +615,15 @@ class BattleWatch:
         self._event_file = None
         self._event_to_sink = False
         self._phase = "未启动"
-        self._injected_image = ""
-        self._injected_dll = ""
-        self._ga_verified = False
-        self._ga_retry = 0
-        self._ga_note: dict = {}
-        self._index_game_note: dict = {}
-        self._preflight: dict = {}
 
     def start(self) -> bool:
         if self.running:
             return True
-        if self.engine == ENGINE_WARP:
-            if self._start_warp():
-                return True
-            # WarpHook 没装 / 宿主没注入成功：退回老链路。成就宁可跑在旧引擎上，
-            # 也不要因为新引擎起不来就整片哑掉 —— 老 DLL 还在，随时能接。
-            self._log("[BattleWatch] WarpHook 引擎起不来，退回老链路 battle_watch.dll")
-            self.engine = ENGINE_DLL
-        self._stop.clear()
-        self._thread = threading.Thread(target=self._run_guarded, name="battle-watch",
-                                        daemon=True)
-        self._thread.start()
-        return True
+        return self._start_warp()
 
     def _start_warp(self) -> bool:
         """用 WarpHook 挂钩子：事件照样走 :meth:`handle_line`，规则引擎不用改。"""
         from functions.achievement.warp_source import WarpSource
-        self._stop.clear()
         source = WarpSource(self, log=self._log)
         if not source.attach():
             self._log("[BattleWatch] WarpHook 引擎没起来，成就事件不会产生")
@@ -1249,20 +635,13 @@ class BattleWatch:
         return True
 
     def stop(self) -> None:
-        self._stop.set()
         if self._source is not None:
             self._source.stop()
             self._source = None
-        if self._thread:
-            self._thread.join(timeout=3)
-        self._eject()
-        self._close_map()
         self._close_event_file()
 
     @property
     def running(self) -> bool:
-        if self._thread and self._thread.is_alive() and not self._stop.is_set():
-            return True
         return bool(self._source is not None and self._source.running)
 
     def settle_turn(self, reason: str = "", fallback_immediate: bool = True,
@@ -1369,20 +748,7 @@ class BattleWatch:
         with self._lock:
             snap = self.state.snapshot()
         snap["phase"] = self._phase
-        snap["injected_pid"] = self._injected_pid
         snap["hook_hits"] = dict(self._last_hits)
-        if self._injected_image or self._injected_dll:
-            snap["injection"] = {
-                "image": self._injected_image,
-                "dll": self._injected_dll,
-                "dll_info": dll_info(self._injected_dll) if self._injected_dll else {},
-            }
-        if self._index_game_note:
-            snap["index_game"] = dict(self._index_game_note)
-        if self._preflight:
-            snap["preflight"] = dict(self._preflight)
-        if self._ga_note:
-            snap["gameassembly_check"] = dict(self._ga_note)
         return snap
 
     def _open_event_file(self) -> None:
@@ -1428,13 +794,6 @@ class BattleWatch:
         self._last_status_write = now
         data = self.snapshot()
         data["updated_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
-        data["dll_path"] = dll_path()
-        data["offsets_source"] = self.table.get("source", "")
-        data["hooks"] = {key: {"rva": int(item["final_rva"]), "kind": item["kind"],
-                               "symbol": item["symbol"],
-                               "prologue": (item.get("prologue") or b"")[:8].hex(" "),
-                               "hits": self._last_hits.get(key, 0)}
-                         for key, item in (self.table.get("entries") or {}).items()}
         try:
             path = status_path()
             os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -1443,375 +802,7 @@ class BattleWatch:
         except OSError:
             pass
 
-    def _open_map(self) -> bool:
-        if self._map_view is not None:
-            return True
-        existing = _kernel32.OpenFileMappingW(0x0006, False, ctypes.c_wchar_p(MAP_NAME))
-        if existing:
-            view = _kernel32.MapViewOfFile(existing, 0x0006, 0, 0, CONFIG_SIZE)
-            if view:
-                magic = ctypes.c_int32.from_address(view).value
-                if magic == BW_MAGIC:
-                    if sole_instance():
-                        self._map_handle = existing
-                        self._map_view = view
-                        self._log("[BattleWatch] 接管上次遗留的共享内存（本进程是唯一实例；"
-                                  "游戏里那份 DLL 若还在，会读到下面写入的新配置）")
-                        return True
-                    _kernel32.UnmapViewOfFile(view)
-                    _kernel32.CloseHandle(existing)
-                    self._log("[BattleWatch] 共享内存已存在且**还有别的监测实例在跑** → "
-                              "本次不注入以免双钩（另一个实例被杀掉后会自动接管）")
-                    return False
-                _kernel32.UnmapViewOfFile(view)
-            _kernel32.CloseHandle(existing)
-        handle = _kernel32.CreateFileMappingW(-1, None, 0x04, 0, CONFIG_SIZE,
-                                              ctypes.c_wchar_p(MAP_NAME))
-        if not handle:
-            self._log("[BattleWatch] 创建共享内存失败")
-            return False
-        view = _kernel32.MapViewOfFile(handle, 0x0006, 0, 0, CONFIG_SIZE)
-        if not view:
-            _kernel32.CloseHandle(handle)
-            self._log("[BattleWatch] 映射共享内存失败")
-            return False
-        self._map_handle = handle
-        self._map_view = view
-        return True
 
-    def _close_map(self) -> None:
-        if self._map_view:
-            _kernel32.UnmapViewOfFile(self._map_view)
-            self._map_view = None
-        if self._map_handle:
-            _kernel32.CloseHandle(self._map_handle)
-            self._map_handle = None
-
-    def _config(self) -> BWConfig | None:
-        if self._map_view is None:
-            return None
-        cfg = BWConfig.from_address(self._map_view)
-        return cfg if cfg.magic == BW_MAGIC else None
-
-    def _config_snapshot(self) -> BWConfig | None:
-        if self._map_view is None:
-            return None
-        cfg = BWConfig()
-        ctypes.memmove(ctypes.byref(cfg), self._map_view, CONFIG_SIZE)
-        return cfg if cfg.magic == BW_MAGIC else None
-
-    def _write_config(self, table: dict) -> bool:
-        if self._map_view is None:
-            return False
-        cfg = BWConfig()
-        cfg.magic = BW_MAGIC
-        cfg.observing = 1
-        cfg.log = 1
-        entries = list(table["entries"].items())[:MAX_HOOKS]
-        cfg.hook_count = len(entries)
-        for i, (key, item) in enumerate(entries):
-            cfg.hook_rva[i] = int(item["final_rva"])
-            cfg.hook_kind[i] = KIND_NUMBERS.get(str(item["kind"]), KIND_UNIT)
-            raw = (item.get("prologue") or b"")[:16].ljust(16, b"\x00")
-            cfg.hook_prologue[i][:] = raw
-            name = key.encode("utf-8", "replace")[:HOOK_NAME_LEN - 1]
-            cfg.hook_name[i][:] = name.ljust(HOOK_NAME_LEN, b"\x00")
-        for key, offset in FALLBACK_FIELDS.items():
-            field_off = offset
-            try:
-                from functions.hook.index import get_index
-                index, _src = get_index()
-                if index is not None:
-                    field_off = index.field_offset(key, offset) or offset
-            except Exception:
-                pass
-            attr = "off_" + key
-            if hasattr(cfg, attr):
-                setattr(cfg, attr, int(field_off))
-        prev = self._config()
-        if prev is not None:
-            cfg.buff_watch_count = int(prev.buff_watch_count)
-            for i in range(BUFF_WATCH_MAX):
-                cfg.buff_watch_hashes[i] = int(prev.buff_watch_hashes[i])
-        ctypes.memmove(self._map_view, ctypes.byref(cfg), CONFIG_SIZE)
-        return True
-
-    def _inject(self, pid: int, path: str, expect_exe: str | None = None) -> bool:
-        expected = _expected_game_exe() if expect_exe is None else expect_exe
-        image = _process_image_path(pid)
-        if expected and image and not _same_file(image, expected):
-            self._log(f"[BattleWatch] 跳过 PID {pid}：映像是 {image}，与配置的游戏（{expected}）"
-                      "不一致 —— 同名残留进程/别的副本，不注入")
-            return False
-        info = dll_info(path)
-        self._log(f"[BattleWatch] 准备注入 {os.path.basename(path)}（{info['size']} 字节，"
-                  f"mtime {info['mtime']}，sha256 {info['sha256'][:12]}…）"
-                  + (f"；目标映像 {image}" if image else ""))
-        want_name = os.path.basename(path).lower()
-        for name, mpath, base in remote_modules(pid):
-            if name.lower() == want_name:
-                self._log(f"[BattleWatch] 注意：目标进程已有一份 {name}"
-                          f"（{mpath or '路径未知'} @0x{base:X}）—— LoadLibraryW 会直接"
-                          "返回它、不会重新加载；若它来自旧构建，本次注入不会生效")
-                break
-
-        with SuspendWindow(pid, self._log) as window:
-            proc = _kernel32.OpenProcess(PROCESS_ACCESS, False, pid)
-            if not proc:
-                self._log("[BattleWatch] 打开游戏进程失败（游戏可能以管理员权限启动过；"
-                          "可尝试以管理员权限运行启动器）")
-                return False
-            remote = None
-            try:
-                wide = ctypes.c_wchar_p(path)
-                size = (len(path) + 1) * 2
-                remote = _kernel32.VirtualAllocEx(proc, None, size, 0x3000, 0x04)
-                if not remote:
-                    self._log("[BattleWatch] VirtualAllocEx 失败")
-                    return False
-                written = ctypes.c_size_t()
-                if not _kernel32.WriteProcessMemory(proc, remote, wide, size,
-                                                    ctypes.byref(written)):
-                    self._log("[BattleWatch] WriteProcessMemory 失败")
-                    return False
-                kernel32 = _kernel32.GetModuleHandleW("kernel32.dll")
-                load_lib = _kernel32.GetProcAddress(kernel32, b"LoadLibraryW")
-                if not load_lib:
-                    self._log("[BattleWatch] 定位 LoadLibraryW 失败")
-                    return False
-                thread = _kernel32.CreateRemoteThread(proc, None, 0, load_lib, remote, 0, None)
-                if not thread:
-                    self._log("[BattleWatch] CreateRemoteThread 失败（杀毒软件可能拦截）")
-                    return False
-                waited = _kernel32.WaitForSingleObject(thread, 10000)
-                exit_code = wt.DWORD()
-                _kernel32.GetExitCodeThread(thread, ctypes.byref(exit_code))
-                _kernel32.CloseHandle(thread)
-                if waited == 0x00000102:
-                    self._log("[BattleWatch] LoadLibraryW 超时（远程线程还没返回，可能撞上了"
-                              "加载器锁；线程已恢复，下面按模块表实际结果判定）")
-                elif not exit_code.value:
-                    self._log("[BattleWatch] DLL 加载失败（远程线程退出码为 0）")
-                    return False
-            finally:
-                if remote:
-                    _kernel32.VirtualFreeEx(proc, remote, 0, 0x8000)
-                _kernel32.CloseHandle(proc)
-
-        if not self._verify_remote_dll(pid, path):
-            return False
-        self._injected_pid = pid
-        self._injected_image = image
-        self._injected_dll = path
-        mode = "借用进程原有的挂起窗口" if window.was_suspended else "临时挂起窗口"
-        self._log(f"[BattleWatch] 已注入 battle_watch.dll (PID {pid}，{mode})")
-        self._event(f"注入成功 PID={pid} dll={path} sha256={info['sha256'][:12]}")
-        return True
-
-    def _verify_remote_dll(self, pid: int, path: str) -> bool:
-        want_name = os.path.basename(path).lower()
-        found: tuple[str, str, int] | None = None
-        deadline = time.time() + MODULE_VERIFY_SECONDS
-        while time.time() < deadline:
-            for name, mpath, base in remote_modules(pid):
-                if name.lower() == want_name:
-                    found = (name, mpath, base)
-                    break
-            if found:
-                break
-            time.sleep(0.2)
-        if not found:
-            self._log("[BattleWatch] 注入后没在目标进程里看到 battle_watch.dll"
-                      "（被拦截或加载失败）")
-            return False
-        name, mpath, base = found
-        if mpath and path and not _same_file(mpath, path):
-            self._log(f"[BattleWatch] 目标进程里的 {name} 来自 {mpath}，不是刚注入的 {path}"
-                      " —— 进程里已有一份旧副本（同名模块不会被重新加载），本次注入未生效")
-            return False
-        self._remote_module = int(base)
-        self._log(f"[BattleWatch] 已确认目标进程加载 {name} @0x{base:X}"
-                  + (f"（{mpath}）" if mpath else ""))
-        return True
-
-    _PREFLIGHT_TEXT = {
-        "local-ok": "本地偏移量对得上本机 DLL（未联网、未重建）",
-        "cloud-cached": "采用云端偏移量（本地缓存的那份对得上本机 DLL，未联网）",
-        "cloud-updated": "本地偏移量是旧版本 → 已采用云端偏移量",
-        "rebuilt": "本地重建偏移量（历史状态，客户端已不再产生）",
-        "rebuilt-unverified": "本地重建未通过校验（历史状态）",
-        "stale": "偏移量对不上本机 DLL，客户端不重建（钩子可能装不上）",
-        "no-index": "没有任何可用索引（将用内置回退偏移）",
-        "no-game-dll": "找不到 GameAssembly.dll（跳过偏移校验）",
-        "error": "偏移预检异常（继续用现有索引）",
-    }
-
-    def _run_preflight(self) -> dict:
-        try:
-            from functions.hook.preflight import ensure_offsets_ready
-            info = ensure_offsets_ready(on_log=self._log)
-        except Exception as exc:  # noqa: BLE001
-            info = {"verdict": "error", "detail": f"{type(exc).__name__}: {exc}"}
-            self._log(f"[BattleWatch] 偏移预检不可用（继续用现有索引）: {exc}")
-        verdict = str(info.get("verdict") or "")
-        text = self._PREFLIGHT_TEXT.get(verdict, verdict)
-        self._preflight = dict(info)
-        self._preflight.pop("index", None)
-        check = info.get("check") or {}
-        self._log(f"[BattleWatch] 偏移预检结果: {verdict}（{text}）"
-                  + (f"；{check['detail']}" if check.get("detail") else "")) # type: ignore
-        index = info.get("index")
-        if index is not None:
-            game = index.game or {}
-            self._index_game_note = {
-                "size": int(game.get("gameassembly_size") or 0),
-                "pe_timestamp": int(game.get("pe_timestamp") or 0),
-                "game_version": str(game.get("game_version") or ""),
-                "game_build_id": str(game.get("game_build_id") or ""),
-                "game_updated_at": str(game.get("game_updated_at") or ""),
-                "generated_at": str(getattr(index, "generated_at", "") or ""),
-                "source": str(info.get("source") or ""),
-            }
-        return info
-
-    def _wait_fully_suspended(self, pid: int, timeout: float = SUSPEND_WAIT_SECONDS) -> bool:
-        deadline = time.time() + timeout
-        announced = False
-        while time.time() < deadline and not self._stop.is_set():
-            total, suspended = process_thread_suspend_state(pid)
-            if total and suspended >= total:
-                self._log(f"[BattleWatch] 已等到游戏进程完全挂起（{suspended}/{total} 个线程）"
-                          "→ 在这个窗口内校验偏移并注入")
-                return True
-            if not announced:
-                self._log(f"[BattleWatch] 等待游戏进程完全挂起（当前 {suspended}/{total} 个线程挂起，"
-                          f"最多等 {timeout:.0f}s；超时则按常规挂起窗口注入）")
-                announced = True
-            self._sleep(0.2)
-        if not self._stop.is_set():
-            self._log(f"[BattleWatch] {timeout:.0f}s 内未出现完全挂起窗口 → 按常规方式注入")
-        return False
-
-    def _refresh_hook_table(self, log, pe_path: str) -> bool:
-        self._run_preflight()
-        table = build_hook_table(on_log=log, pe_path=pe_path)
-        self.table = table
-        log(f"[BattleWatch] 注入前钩子表就绪: 来源={table['source']}，"
-            f"{len(table['entries'])} 个观测点")
-        if not self._write_config(table):
-            log("[BattleWatch] 注入前写入钩子配置失败，本次注入跳过")
-            return False
-        names = _sync_buff_watch()
-        if names:
-            log(f"[BattleWatch] 注入前关注 buff 表已写入 {len(names)} 个: {'/'.join(names)}")
-        watch = get_watch()
-        stage_ids = observe_stage_ids()
-        if stage_ids and watch is not None:
-            watch.sync_stage_watch(stage_ids)
-        return True
-
-    def _verify_gameassembly(self) -> None:
-        pid = self._injected_pid
-        if not pid or self._ga_verified:
-            return
-        remote = remote_pe_identity(pid)
-        if not remote:
-            self._ga_retry += 1
-            if self._ga_retry <= GA_VERIFY_RETRY:
-                self._log("[BattleWatch] 还没枚举到进程内的 GameAssembly.dll，稍后再校验")
-            return
-        disk = local_pe_identity(_expected_gameassembly())
-        same = pe_identity_same(remote, disk)
-        self._ga_verified = True
-        self._ga_note = {"remote": {k: remote.get(k) for k in ("timestamp", "size_of_image",
-                                                              "entry_rva", "base", "path")},
-                         "disk": {k: disk.get(k) for k in ("timestamp", "size_of_image",
-                                                           "entry_rva")},
-                         "same": same}
-        if same:
-            self._log(f"[BattleWatch] 游戏 DLL 校验通过：进程内 GameAssembly.dll == 磁盘最新那份"
-                      f"（PE 时间戳 0x{int(remote['timestamp']):X}，"
-                      f"映像 {int(remote['size_of_image'])} 字节，基址 0x{int(remote['base']):X}）")
-        else:
-            self._log(f"[BattleWatch] ⚠ 游戏 DLL 不一致：进程内 ts=0x{int(remote['timestamp']):X} "
-                      f"size={int(remote['size_of_image'])} entry=0x{int(remote['entry_rva']):X}；"
-                      f"磁盘 ts=0x{int(disk['timestamp']):X} size={int(disk['size_of_image'])} "
-                      f"entry=0x{int(disk['entry_rva']):X} —— 游戏可能正在更新/加载了旧版本，"
-                      "钩子会被 prologue 自检拦下（跑 `python -m functions.hook.main update`）")
-
-    def _eject(self) -> None:
-        if not self._injected_pid or not self._remote_module:
-            return
-        pid, module = self._injected_pid, self._remote_module
-        proc = _kernel32.OpenProcess(PROCESS_ACCESS, False, pid)
-        if not proc:
-            return
-        try:
-            kernel32 = _kernel32.GetModuleHandleW("kernel32.dll")
-            free_lib = _kernel32.GetProcAddress(kernel32, b"FreeLibrary")
-            thread = _kernel32.CreateRemoteThread(proc, None, 0, free_lib,
-                                                  ctypes.c_void_p(module), 0, None)
-            if thread:
-                _kernel32.WaitForSingleObject(thread, 5000)
-                _kernel32.CloseHandle(thread)
-        finally:
-            _kernel32.CloseHandle(proc)
-        self._injected_pid = None
-        self._remote_module = None
-
-    def _ring_rows(self, cfg: BWConfig):
-        head = int(cfg.log_head)
-        if head < self._drained_head:
-            self._drained_head = 0
-        new = head - self._drained_head
-        if new <= 0:
-            return [], head
-        dropped = 0
-        if new > LOG_RING_CAP:
-            dropped = new - LOG_RING_CAP
-            new = LOG_RING_CAP
-        start = head - new
-        rows = []
-        for offset in range(new):
-            raw = bytes(cfg.log_ring[(start + offset) % LOG_RING_CAP])
-            text = raw.split(b"\x00", 1)[0].decode("utf-8", "replace").strip()
-            if text:
-                rows.append(text)
-        self._drained_head = head
-        if dropped:
-            self._log(f"[BattleWatch] 抽取过慢，丢弃了 {dropped} 行事件（可调小轮询间隔）")
-        return rows, head
-
-    def sync_buff_watch(self, names=()) -> None:
-        cfg = self._config()
-        if cfg is None:
-            self._log("[BattleWatch] ⚠ 关注 buff 表没写进去：共享内存配置不可用（magic 不对？）")
-            return None
-        names = tuple(names)[:BUFF_WATCH_MAX]
-        for i, name in enumerate(names):
-            cfg.buff_watch_hashes[i] = fnv1a64(name)
-        for i in range(len(names), BUFF_WATCH_MAX):
-            cfg.buff_watch_hashes[i] = 0
-        cfg.buff_watch_count = len(names)
-        readback = (int(cfg.buff_watch_count), int(cfg.buff_watch_hashes[0]),
-                    int(cfg.buff_watch_hashes[1]))
-        return readback # type: ignore
-
-    def sync_stage_watch(self, stage_ids=()) -> int:
-        cfg = self._config()
-        if cfg is None:
-            self._log("[BattleWatch] ⚠ 关注关卡表没写进去：共享内存配置不可用（magic 不对？）")
-            return 0
-        ids = [int(v) for v in stage_ids][:STAGE_WATCH_MAX]
-        for i in range(STAGE_WATCH_MAX):
-            cfg.stage_watch_ids[i] = ids[i] if i < len(ids) else 0
-        cfg.stage_watch_count = len(ids)
-        cfg.stage_seen_mask = 0
-        if ids:
-            self._log(f"[BattleWatch] 关注关卡 {len(ids)} 个: "
-                      f"{'/'.join(str(v) for v in ids[:8])}"
-                      f"{'…' if len(ids) > 8 else ''}")
-        return int(cfg.stage_watch_count)
 
     def handle_line(self, line: str) -> BattleEvent | None:
         if not line:
@@ -2386,188 +1377,6 @@ class BattleWatch:
         return (f"第 {self.state.round_seq} 回合 {label} {rule.threshold_text()}"
                 f"（命中字段 {','.join(names)}；{fields}；oid={oid} via {reason}）")
 
-    def _run_guarded(self) -> None:
-        try:
-            self._run()
-        except Exception as exc:  # noqa: BLE001
-            import traceback
-            self._log(f"[BattleWatch] 驱动线程异常退出: {type(exc).__name__}: {exc}")
-            self._event("驱动线程异常: " + traceback.format_exc().replace("\n", " | "))
-
-    def _run(self) -> None:
-        log = self.log_callback
-        self._open_event_file()
-        path = dll_path()
-        if not path:
-            self._phase = "缺少 DLL"
-            log("[BattleWatch] 找不到 battle_watch.dll，跳过战斗观测"
-                "（可运行 functions/achievement/hook_dll/build.ps1 编译）")
-            return
-
-        pe_path = ""
-        try:
-            from functions.hook.paths import game_paths
-            pe_path = game_paths().gameassembly
-        except Exception:
-            pe_path = ""
-        self._run_preflight()
-        self.table = build_hook_table(on_log=log, pe_path=pe_path)
-        table = self.table
-        self._phase = "已解析钩子表"
-        if _DLL_CHOICE_NOTE:
-            log(f"[BattleWatch] {_DLL_CHOICE_NOTE}")
-        log(f"[BattleWatch] 偏移来源={table['source']}；下发 {len(table['entries'])} 个观测点：")
-        log(describe_hook_table(table))
-        missing = [k for k, item in table["entries"].items() if not item.get("prologue")]
-        if missing:
-            log(f"[BattleWatch] 注意: 以下观测点没有 prologue（将跳过版本自检）: {missing}")
-
-        if not self._open_map():
-            self._phase = "共享内存失败"
-            return
-        if not self._write_config(table):
-            self._phase = "写配置失败"
-            log("[BattleWatch] 写入共享内存配置失败")
-            return
-        names = watched_buff_names()
-        readback = self.sync_buff_watch(names)
-        if names and readback is not None:
-            log(f"[BattleWatch] 关注 buff 回读: count={readback[0]} "
-                f"hash0=0x{readback[1]:016X} hash1=0x{readback[2]:016X}"
-                f"（Python 端 hash0=0x{fnv1a64(names[0]):016X}）")
-        if names:
-            log(f"[BattleWatch] 关注 buff {len(names)} 个: {'/'.join(names)}")
-        self._write_status(force=True)
-        pid = None
-        starting_flag = False
-        waited = 0.0
-        while not self._stop.is_set():
-            if pid is None or not self._pid_alive(pid):
-                pid, image, note = select_game_process(self.process_name)
-                if pid is None:
-                    self._phase = f"等待游戏进程（{self.process_name}）"
-                    if waited == 0.0:
-                        log(f"[BattleWatch] 等待 {self.process_name} 启动（最长 5 分钟，之后改慢轮询）")
-                    elif int(waited) % 60 == 0:
-                        log(f"[BattleWatch] 仍在等待游戏进程（已等 {int(waited)}s）；"
-                            f"钩子表已就绪，状态见 cache/achievement/battle_watch_status.json")
-                    self._sleep(2.0 if waited < 300 else 10.0)
-                    waited += 2.0
-                    self._write_status()
-                    starting_flag = True
-                    continue
-                else:
-                    if starting_flag:
-                        print(f"[BattleWatch] {self.process_name} 启动，PID: {pid}，进入 hook 注入流程。")
-                        starting_flag = False
-                if note:
-                    log(f"[BattleWatch] 进程选择: PID {pid}（{image or '映像未知'}）；{note}")
-                if not pid_alive_for(pid, GAME_STABLE_SECONDS):
-                    log(f"[BattleWatch] PID {pid} 存活不足 {GAME_STABLE_SECONDS:g}s"
-                        "（疑似 Steam 引导进程/闪退），继续等真正的游戏进程")
-                    pid = None
-                    self._sleep(1.0)
-                    continue
-                self._wait_fully_suspended(pid)
-                if not self._refresh_hook_table(log, pe_path):
-                    pid = None
-                    self._sleep(5.0)
-                    continue
-                if not self._inject(pid, path):
-                    self._sleep(5.0)
-                    continue
-                waited = 0.0
-                self._last_hits = {}
-                self._ga_verified = False
-                self._ga_retry = 0
-                self._ga_note = {}
-            cfg = self._config()
-            if cfg is None:
-                self._sleep(self.poll_interval)
-                continue
-            self._report_status(cfg)
-            rows, _head = self._ring_rows(cfg)
-            for line in rows:
-                try:
-                    self.handle_line(line)
-                except Exception as exc:  # noqa: BLE001
-                    log(f"[BattleWatch] 事件解析失败: {line!r} {exc}")
-            self._scan_hits(cfg)
-            self.settle_skills_if_quiet()
-            self._heartbeat()
-            self._write_status()
-            self._sleep(self.poll_interval)
-
-    def _sleep(self, seconds: float) -> None:
-        deadline = time.time() + seconds
-        while not self._stop.is_set() and time.time() < deadline:
-            time.sleep(min(0.1, max(0.01, deadline - time.time())))
-
-    @staticmethod
-    def _pid_alive(pid: int) -> bool:
-        handle = _kernel32.OpenProcess(0x1000, False, pid)
-        if not handle:
-            return False
-        _kernel32.CloseHandle(handle)
-        return True
-
-    def _scan_hits(self, cfg: BWConfig) -> None:
-        for i, (key, _item) in enumerate(list(self.table["entries"].items())[:MAX_HOOKS]):
-            hits = int(cfg.hook_hits[i])
-            prev = self._last_hits.get(key, 0)
-            if hits != prev:
-                self._last_hits[key] = hits
-                if prev == 0 and hits > 0:
-                    self._log(f"[BattleWatch] 观测点开始命中: {key} ×{hits}")
-                    if key == "take_attack_dmg_multiplier":
-                        self._log("[BattleWatch] ↳ 事件链路已通（受击观测钩子活了）")
-
-    def _heartbeat(self) -> None:
-        now = time.time()
-        if now - self._last_heartbeat < HEARTBEAT_SEC:
-            return
-        self._last_heartbeat = now
-        with self._lock:
-            snap = self.state.snapshot()
-        hits = " ".join(f"{k}={v}" for k, v in self._last_hits.items())
-        flags = list(snap.get("rule_hits") or {})
-        self._log(f"[BattleWatch] 心跳: 阶段={self._phase} PID={self._injected_pid} | "
-                  f"事件: RND {snap['rnd_total']} / SPD {snap['spd_total']} / "
-                  f"VAL {snap.get('vitals_total', 0)} / ACT {snap['acts_total']} / "
-                  f"BUF {snap.get('buff_total', 0)} | "
-                  f"动画 tick {snap.get('anim_ticks', 0)}"
-                  f"（{snap.get('anim_last_tag') or '无'}，带 iid {snap.get('anim_ticks_with_iid', 0)}） | "
-                  f"单位 {snap['units']} | 本回合待结算 {snap['pending_skills']} | "
-                  f"行动分组 {len(snap.get('action_groups') or {})}"
-                  f"（待放行 {len(snap.get('rule_pending_groups') or {})}，"
-                  f"已按动画放行 {snap.get('group_flushes', 0)} 组） | "
-                  f"成就判定 {len(flags)} 条{('（' + ','.join(flags) + '）') if flags else ''} | "
-                  f"钩子命中: {hits or '（全 0）'}")
-        if not hits:
-            self._log("[BattleWatch] 提示: 所有观测点命中数都是 0")
-
-    def _report_status(self, cfg: BWConfig) -> None:
-        if int(cfg.gameassembly_found) and "ga" not in self._status_logged:
-            self._status_logged.add("ga")
-            self._phase = "GameAssembly 已加载"
-            self._log("[BattleWatch] 游戏已加载 GameAssembly.dll，等待装钩")
-        if not self._ga_verified and int(cfg.gameassembly_found):
-            self._verify_gameassembly()
-        if int(cfg.verified) and "verified" not in self._status_logged:
-            self._status_logged.add("verified")
-            self._log("[BattleWatch] prologue 自检通过")
-        if int(cfg.installed) and "installed" not in self._status_logged:
-            self._status_logged.add("installed")
-            self._phase = "观测中（已装钩）"
-            self._log(f"[BattleWatch] 已装钩 {int(cfg.hook_count)} 个观测点，开始采集事件")
-        error = int(cfg.last_error)
-        if error and f"err{error}" not in self._status_logged:
-            self._status_logged.add(f"err{error}")
-            self._phase = f"DLL 错误 {error}"
-            self._log(f"[BattleWatch] DLL 状态: {ERROR_TEXT.get(error, error)}")
-            if error == 3:
-                self._log("[BattleWatch] 提示: 跑一次 `python -m functions.hook.main update` "
-                          "重建偏移索引后再启动游戏")
 
     def _log(self, message: str) -> None:
         for _mark in ("★ 关卡已通关", "★ 关卡身份", "★ 铁路界面显示",
@@ -2592,11 +1401,9 @@ def get_watch(log_callback=None) -> BattleWatch:
         return _watch
 
 def start_battle_watch(log_callback=None, process_name: str = TARGET_PROCESS,
-                      verbose: bool | None = None,
-                      engine: str = ENGINE_WARP) -> BattleWatch:
+                      verbose: bool | None = None) -> BattleWatch:
     watch = get_watch(log_callback)
     watch.process_name = process_name
-    watch.engine = engine
     watch.verbose = log_verbose_enabled() if verbose is None else bool(verbose)
     watch.start()
     return watch
@@ -2698,47 +1505,30 @@ def load_status() -> dict:
 def _print(message: str) -> None:
     print(message, flush=True)
 
-def _probe_preflight() -> None:
-    try:
-        from functions.hook.preflight import ensure_offsets_ready
-        info = ensure_offsets_ready(on_log=_print, allow_cloud=False)
-    except Exception as exc:  # noqa: BLE001
-        _print(f"[OffsetProbe] 不可用: {type(exc).__name__}: {exc}")
-        return
-    verdict = str(info.get("verdict") or "")
-    _print(f"[OffsetProbe] {verdict}（"
-           f"{BattleWatch._PREFLIGHT_TEXT.get(verdict, verdict)}）")
-    check = info.get("check") or {}
-    if check.get("detail") and verdict != "local-ok":
-        _print(f"[OffsetProbe] {check['detail']}")
-    elif verdict == "local-ok":
-        _print(f"[OffsetProbe] {check.get('detail', '')}")
-        _print("[OffsetProbe] （离线 --probe 不联网、不重建；云端对照只在游戏启动时按需发生）")
-
 def cmd_probe() -> int:
     from functions.hook.paths import game_paths
+    from functions.achievement.warp_source import build_hooks
     paths = game_paths()
     _print(f"游戏目录: {paths.root or '（未找到）'}")
     _print(f"GameAssembly.dll: {paths.gameassembly or '（未找到）'}")
-    table = build_hook_table(on_log=_print, pe_path=paths.gameassembly)
-    _print(f"\n偏移来源: {table['source']}；索引可用={table['index_available']}")
-    _print(f"将下发 {len(table['entries'])} 个观测点:")
-    _print(describe_hook_table(table))
-    dll = dll_path()
-    _print(f"\nbattle_watch.dll: {dll or '（未找到，需先编译）'}")
-    if dll:
-        info = dll_info(dll)
-        _print(f"  大小 {info['size']} 字节 / mtime {info['mtime']} / "
-               f"sha256 {info['sha256'][:16]}…")
-    if _DLL_CHOICE_NOTE:
-        _print(f"  {_DLL_CHOICE_NOTE}")
+    hooks = build_hooks()
+    events = [h for h in hooks if h.get("event")]
+    _print(f"\nWarpHook 钩子表: {len(hooks)} 条（事件 {len(events)} / 只缓存 "
+           f"{len(hooks) - len(events)}）")
+    for h in hooks:
+        mark = f"事件#{h['event']}" if h.get("event") else "只缓存"
+        extra = ""
+        if h.get("ret_kind"):
+            extra = f" ret={h['ret_kind']}"
+        _print(f"  [{mark}] {h['klass']}::{h['method']} argc={h['argc']} "
+               f"reads={len(h.get('reads') or ())}{extra}")
     _print("")
-    _probe_preflight()
     expected = _expected_game_exe()
-    _print(f"\n期望的游戏进程: {expected or '（配置里没拿到游戏路径，将退化为同名第一个）'}")
+    _print(f"期望的游戏进程: {expected or '（配置里没拿到游戏路径，将退化为同名第一个）'}")
     candidates = find_process_candidates(TARGET_PROCESS)
     for pid, image in candidates:
-        mark = "→ 将注入" if (expected and image and _same_file(image, expected)) else "（映像不符）"
+        mark = ("→ 游戏在跑" if (expected and image and _same_file(image, expected))
+                else "（映像不符）")
         _print(f"  同名进程 PID {pid}: {image or '（取不到映像路径）'} {mark}")
     if not candidates:
         _print("  游戏进程: 未运行")
@@ -2777,6 +1567,7 @@ def main(argv=None) -> int:
 
     watch = BattleWatch(log_callback=log)
     log("[BattleWatch] 独立调试模式（Ctrl+C 结束）；--probe 看钩子表、--status 看状态")
+    log("[BattleWatch] 钩子由 WarpHook 宿主执行，游戏需经启动器启动并注入 warp_host.dll")
     watch.start()
     try:
         while True:
