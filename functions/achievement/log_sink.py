@@ -7,6 +7,7 @@ import threading
 
 from functions.base.log_format import level_of as _level_of
 from functions.base.log_format import split_area as _split_area
+from functions.base.log_format import strip_ansi as _strip_ansi
 
 __all__ = ["install", "clear", "installed", "write", "format_line", "DEFAULT_AREA"]
 
@@ -23,7 +24,7 @@ def _now_stamp() -> str:
 
 def format_line(message: str, *, area: str | None = None,
                 stamp: str | None = None) -> str:
-    text = str(message).replace("\r\n", "\n").rstrip("\n")
+    text = _strip_ansi(str(message)).replace("\r\n", "\n").rstrip("\n")
     if not text.strip():
         return ""
     head, _, tail = text.partition("\n")

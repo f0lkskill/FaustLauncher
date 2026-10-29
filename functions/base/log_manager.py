@@ -52,6 +52,18 @@ def _cleanup_folder(folder: str, cutoff: datetime.date) -> None:
 
 def init_logger():
     global _logger
+
+    # 成就监测子进程不落主日志：它的输出由主进程泵进 achievement_hook.log，
+    # 自己再建一份按时间戳命名的 logs/*.log 只会让人误以为开了两次程序。
+    # 该开关同时拦住 get_logger() 的懒加载 —— 任何模块在子进程里第一次
+    # 写主日志时不会再凭空冒出第三个文件。
+    if os.environ.get("FAUST_NO_FILE_LOG") == "1":
+        if _logger is None:
+            _logger = logging.getLogger("FaustLauncher")
+            _logger.setLevel(logging.INFO)
+            _logger.addHandler(logging.NullHandler())
+        return _logger
+
     _ensure_dir()
     fname = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S") + ".log"
     path = os.path.join(LOG_DIR, fname)

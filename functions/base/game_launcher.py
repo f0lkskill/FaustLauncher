@@ -781,6 +781,7 @@ class GameLauncher:
             ]
             child_env = dict(os.environ)
             child_env["FAUST_ACH_TRUNCATED"] = "1"
+            child_env["FAUST_NO_FILE_LOG"] = "1"
             child_env["PYTHONIOENCODING"] = "utf-8"
             child_env["PYTHONUTF8"] = "1"
             child_env["PYTHONUNBUFFERED"] = "1"
