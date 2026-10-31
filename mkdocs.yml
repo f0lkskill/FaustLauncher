@@ -47,7 +47,11 @@ markdown_extensions:
   - pymdownx.snippets:
       base_path: ["."]
       check_paths: true
-  - pymdownx.superfences
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
   - pymdownx.tabbed:
       alternate_style: true
   - pymdownx.tasklist
@@ -73,6 +77,14 @@ nav:
       - 06 解析 buff: tutorial/06-buffs.md
       - 07 生命周期与线程: tutorial/07-lifecycle.md
       - 08 想到底层去: tutorial/08-inside.md
+  - 技术文档:
+      - technical/index.md
+      - 01 命名空间: technical/01-namespaces.md
+      - 02 warp.game: technical/02-game.md
+      - 03 warp.object: technical/03-object.md
+      - 04 warp.field: technical/04-field.md
+      - 05 warp.plugin: technical/05-plugin.md
+      - 06 底层四件套: technical/06-lowlevel.md
   - 参考手册:
       - reference/game-memory.md
       - reference/dev-notes.md

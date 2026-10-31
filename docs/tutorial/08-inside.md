@@ -14,19 +14,28 @@
 
 ## 心跳模型
 
-```text
-游戏主线程                          你的插件（启动器进程）
-    │                                      │
-    │  调用 BattleUnitModel.OnCreateUnitModel()
-    │  ──► warp_host.dll 的 thunk 抢在前面
-    │            │
-    │            ├─ 命中计数 +1      ←──── warphook 每 0.25 秒读一次这个数
-    │            ├─ 把 self 存进对象槽 27
-    │            ├─ （可选）拦下原方法
-    │            └─ 放行 / 继续
-    │
-    │  回到正常流程
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Game as 游戏主线程
+    participant DLL as warp_host.dll<br/>(thunk 抢在原方法前)
+    participant Py as 你的插件<br/>(轮询线程)
+
+    Game->>DLL: 调用 BattleUnitModel.OnCreateUnitModel()
+    DLL->>DLL: 命中计数 +1
+    DLL->>DLL: 把 self 存进对象槽 27
+    opt 需要拦截
+        DLL-->>Game: 直接返回，不执行原方法
+    end
+    DLL->>Game: 放行，回到正常流程
+    loop 每 0.25 秒
+        Py->>DLL: 读命中计数
+        Py->>Py: 发现「刚才命中了 N 次」→ 干活
+    end
 ```
+
+**游戏那边只做计数**，重活全在插件进程里。所以你的回调慢一点也不会卡游戏，
+代价是通知有最多 0.25 秒的延迟。
 
 注意这里没有「游戏调用 Python」这种事——**Python 不在游戏的线程里**。
 游戏那边只做计数和最轻的记录，插件这边靠轮询发现「刚才命中了 N 次」。

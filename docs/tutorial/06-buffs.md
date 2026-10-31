@@ -29,6 +29,23 @@ for b in u.buffs:
     print(b.key, b.stack, b.turn)
 ```
 
+## buff 在哪
+
+buff 挂在单位的 `_buffDetail` 上，是一个链表结构：
+
+```mermaid
+flowchart LR
+    UM["BattleUnitModel"] -->|"+0xE0"| BD["BuffDetail"]
+    BD -->|"+0x10 解引用"| L["List&lt;BuffModel&gt;"]
+    L -->|"第 i 个"| BM["BuffModel"]
+    BM -->|"+0x58"| BI["BuffInfo<br/><i>层数 stack / 次数 turn</i>"]
+    BM -->|"+0x68"| SD["BuffStaticData<br/><i>英文 ID / 图标 / 上限</i>"]
+```
+
+- **层数与次数**（`b.stack` `b.turn`）在 `BuffInfo` 里，走 DLL 代读；
+- **英文 ID 与图标**（`b.key` `b.icon`）在 `BuffStaticData` 里，是字符串，要另外读；
+- 中文名（`b.name`）在 `BuffInfo._name` 里，也是字符串。
+
 ## `key` 和 `name` 的区别（重要）
 
 同一个 buff 有两个名字：

@@ -76,9 +76,20 @@ print(u.id, u.hp, u.max_hp, u.sp, u.speed)
 
 这一点必须刻在脑子里。读一个属性，实际发生的是：
 
-```text
-你的插件  ──写一条读链──►  共享内存  ──DLL──►  游戏内存
-         ◄──读结果───────  共享内存  ◄──DLL──
+```mermaid
+sequenceDiagram
+    participant Py as 你的插件
+    participant SHM as 共享内存
+    participant DLL as warp_host.dll
+    participant Mem as 游戏内存
+
+    Py->>SHM: 写读链（8 跳以内）到 MAP 尾部
+    Py->>SHM: 写命令 CMD_READ + 对象槽号
+    DLL->>SHM: 每帧读命令格
+    DLL->>Mem: 按链逐跳 deref / 进容器
+    Mem-->>DLL: 字段值
+    DLL->>SHM: vars[6] = 值，回执「已执行」
+    SHM-->>Py: game.read() 返回
 ```
 
 **一次 20–40 毫秒。** 所以：

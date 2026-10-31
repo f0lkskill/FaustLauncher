@@ -69,6 +69,21 @@ u.scan(classes=("CharacterState",))    # 只要状态（血量、理智、各种
 u.scan(classes=("BattleUnitModel",))   # 只要本体（编号、速度、形态）
 ```
 
+## 这些字段是怎么走到的
+
+一个单位身上的字段分散在两个对象里，读的时候是一条链：
+
+```mermaid
+flowchart LR
+    M["BattleObjectManager<br/>全局管理器"] -->|"+0x90 解引用"| D["Dictionary&lt;int, BattleUnit&gt;"]
+    D -->|"第 i 个活跃项"| U["BattleUnit"]
+    U -->|"+0x10 解引用"| UM["BattleUnitModel<br/><i>编号/人格/速度/形态</i>"]
+    UM -->|"+0x148 解引用"| S["CharacterState<br/><i>血量/理智/各种标志</i>"]
+```
+
+`u.hp` 就是走完整条链再读 `_hp`；`u.id` 走到 `BattleUnitModel` 就停了。
+`u.props()` 把两个对象（`BattleUnitModel` + `CharacterState`）的字段都读一遍。
+
 ## 字段表是唯一真相
 
 所有字段名和偏移都在 `warp.field` 里：
