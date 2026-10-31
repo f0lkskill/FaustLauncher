@@ -715,3 +715,54 @@ int32 / float / ref）、STR、RELEASE（句柄分配与解放全程核对）、
 - **遍历范围只能用 `count`（+0x20）**，不是 entries 数组容量：容量是 2 的幂、
   通常大于 count，富余槽会被当成活跃单位；空槽的 hashCode 是 0，只有
   Remove 留下的死坑才是 -1。
+
+### 16.1 字段表覆盖（v0.9.9 扩充）
+
+`fields.FIELD_TABLE` 现在收录 **8 个类、62 个字段**，全部来自
+`cache/hook/dump/E6312D92/out/dump.cs`（Il2CppDumper），抽取工具
+`test/_dump_fields.py`（`--find 类名` 找行号，然后按行号抽字段表）：
+
+| 类 | 字段数 | 说明 |
+| --- | --- | --- |
+| `BattleObjectManager` | 13 | 单例；字典/列表/回合死亡数 |
+| `BattleUnit` | 3 | 字典 value 的壳，`_model` 在 +0x10 |
+| `BattleUnitModel` | 37 | 单位本体：id/速度/位置/行动/情绪 |
+| `CharacterState` | 26 | 血量理智生死，全是 `Obscured*` |
+| `GlobalGameManager` | 13 | 场景/时间缩放/加载状态 |
+| `BuffDetail` / `BuffModel` / `BuffStaticData` | 1/1/1 | buff 链三段 |
+
+每条带 `verified`：`fields.verified_names("CharacterState")` 看哪些真机对过数，
+`fields.unverified_names(cls)` 看哪些还是照 dump 抄的。**未验证的先用
+`u.scan()` 打出来对一眼**，症状是 `None`（读不到）或者数很离谱。
+
+`BattleUnitModel` 继承 `CombatUnitModel`，dump 给的是**绝对偏移**，所以
+基类字段（`_instanceID@0x60` 这些）直接能用，不用管继承链。
+
+### 16.2 一键扫描
+
+```python
+from warphook import objects
+
+bom = objects.bind_manager(host, timeout=180)   # 等一回合
+u = objects.Unit(host, bom, 0)
+u.scan()           # BattleUnitModel + CharacterState 全部 63 个字段
+objects.scan_class(host, objects.SLOT_SCENE, "GlobalGameManager")   # 场景全字段
+objects.scene_full(host)                                            # 同上，便捷版
+```
+
+`scan()` 是**摸底工具不是业务接口**：一个单位 63 个字段、每字段一次代读
+往返，整场 11 个单位要 20 秒上下。真跑业务请只读关心的几个字段。
+
+### 16.3 buff 的边界（v8 要做的事）
+
+`u.buff_count()` / `u.buff_ids()` 现在能拿到「身上几个 buff」和每个 buff 名字的
+**32 位哈希指纹**，拿不到原文：
+
+```
+BattleUnit → _model(+0x10) → _buffDetail(+0xE0) → list(+0x10)
+          → [i] → _staticData(+0x68) → name(+0x18)   ← 正好 8 跳，用满
+```
+
+`kind='text'` 的落点是 `WARP_READ_TEXT_NUM`，它把 il2cpp string 换算成一个
+数字（长度/哈希），**不是 UTF-16 原文**。要拿原文得让宿主支持「把对象槽里的
+字符串读出到共享内存文本区」—— 那是协议 v8 的事，记在开发笔记的下一步里。

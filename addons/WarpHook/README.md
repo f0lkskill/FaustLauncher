@@ -78,6 +78,19 @@ for u in objects.units(host, bom):      # 全场单位
 print(objects.scene(host))              # {'scene': 1, 'time_scale': 1.0}
 ```
 
+想看「一个单位身上到底有什么」，直接扫：
+
+```python
+u = objects.unit(host, bom, 0)
+u.scan()            # BattleUnitModel + CharacterState 全部 63 个字段
+u.buff_count()      # 身上几个 buff
+u.buff_ids()        # 每个 buff 名字的指纹（原文要等协议 v8）
+objects.scene_full(host)                        # 场景对象全字段
+objects.scan_class(host, objects.SLOT_SCENE, 'GlobalGameManager')
+```
+
+`scan()` 每个字段一次代读往返，整场扫下来十几秒 —— 摸底用它，业务只读你关心的。
+
 想读别的字段就查字段表，或者自己拼链 —— 底层一直开着：
 
 ```python
