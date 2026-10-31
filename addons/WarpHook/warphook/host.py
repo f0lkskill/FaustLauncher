@@ -733,6 +733,12 @@ class Host:
             self._dropped_seen = 0
             self._inited = True
 
+        if getattr(self, "_closed", False):
+            # 复用单例但上一任已 close（插件重载的常规路径）：必须复活，
+            # 否则 block() 永远返回 None，新实例永远「等待游戏加载」。
+            self._closed = False
+            self._block = None
+
         self._owners[owner] = {
             "hooks": [dict(h or {}) for h in (hooks or [])],
             "texts": [str(t) for t in (texts or [])],
