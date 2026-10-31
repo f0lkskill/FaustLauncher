@@ -243,6 +243,19 @@ HF_BLOCK = 0x01      # 跳过原方法（用于「拦截」类插件）
 HF_ONCE = 0x02       # 只触发一次
 HF_DEDUPE = 0x04     # 读链的值没变就不投递事件（配了 reads 才有意义）
 
+# Host.call 的白名单：只有这些 runtime_invoke 调用在真机上验证过稳定。
+# 0.9.10~0.9.13 三次真机崩溃全是「插件调了游戏自己的方法」引起的——
+# invoke 进 il2cpp 之后，方法内部一旦碰到没初始化好的子系统（战斗曲的
+# FMOD 实例、泛型单例的静态字段）就是原生访问违例，Python 侧拦不住。
+# 要加新条目，先在真机上单独验证「连调 20 次不崩」再加。
+SAFE_CALLS = frozenset((
+    "BattleObjectManager::get_Instance",
+    "GlobalGameManager::get_Instance",
+    # 纯读静态字段的无参 getter，实测 0.02s 返回、无副作用：
+    "BattleSoundGenerator::IsBattleBgmPlaying",
+    "BattleSoundGenerator::get_CurrentBgmIndex",
+))
+
 HOST_STATUS_TEXT = {
     0: "等待游戏",
     1: "引擎加载中",
@@ -1517,8 +1530,14 @@ class Host:
         return self._command(CMD_STR, text, timeout, slot=slot)
 
     def call(self, method, slot=None, args=(), ret="int32", out_slot=-1,
-             timeout=2.0):
+             timeout=2.0, unsafe=False):
         """调一个方法：``host.call("Foo::get_value", slot=24, ret="int32")``。
+
+        !! danger "默认只放白名单"
+            真机上「调用游戏内部方法」是能崩游戏的：0.9.10~0.9.13 三次崩溃
+            全是插件调了游戏自己的方法。所以除 `SAFE_CALLS` 里那几条之外，
+            这个接口默认直接拒绝，要调必须显式传 `unsafe=True` 并自己承担
+            后果（`unsafe=True` 也不会被异常保护兜住）。
 
         Args:
             method: "Ns.Klass::Method"（不带槽 = 静态调用；带槽 = slot 里的
@@ -1528,11 +1547,15 @@ class Host:
             ret: 返回值形状 —— "int32"/"float" 解包写回（返回该值）；
                 "ref" 落 out_slot 槽（返回槽号）。
             out_slot: ret="ref" 时结果落的槽。
+            unsafe: 允许调用不在白名单里的方法。
 
         Returns:
             ret 为 int32/float 时返回数值（失败返回结果字符串）；
             ret 为 ref 时返回落好的槽号（失败返回结果字符串）。
         """
+        if not unsafe and str(method).split("#")[0] not in SAFE_CALLS:
+            return (f"未在安全白名单（{method}）—— 真机上调游戏方法会崩，"
+                    "确认要试就传 unsafe=True")
         packed, kinds = self._pack_args(args)
         if len(packed) > 6:
             return "参数太多（vars 最多 6 个）"

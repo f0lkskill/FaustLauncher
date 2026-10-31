@@ -59,11 +59,19 @@ void *warp_safe_invoke(void *method, void *target, void **params, void **exc)
             *exc = NULL;
         return NULL;
     }
-    if (!s_invoke_veh)
-        s_invoke_veh = AddVectoredExceptionHandler(1, warp_invoke_veh);
+    if (0) {
+        /* 0.9.14：VEH + longjmp 这条路废弃了。真机上它「接住」第一击之后，
+         * 游戏还能再活一分多钟，然后崩在完全无关的地方（Player.log 栈上
+         * 一个 warp_host 帧都没有）—— 因为 longjmp 跳过了 il2cpp 的托管栈
+         * 展开，运行时状态是脏的。托管异常本来就由 &exc 正常返回，不需要
+         * 我们插手；原生 AV 拦下来也救不回来，只会把状态弄得更烂。
+         * 真正的护栏改在 Python 侧：Host.call 只认白名单里的方法。 */
+        if (!s_invoke_veh)
+            s_invoke_veh = AddVectoredExceptionHandler(1, warp_invoke_veh);
+    }
     if (exc)
         *exc = NULL;
-    if (setjmp(s_invoke_jmp) == 0) {
+    if (1) {
         s_invoke_tid = GetCurrentThreadId();
         s_invoke_depth++;
         ret = g_ic.runtime_invoke(method, target, params, exc);
@@ -752,6 +760,11 @@ void warp_uninstall(void)
         g_pump_installed = 0;
     }
     MH_Uninitialize();
+    /* MH_Uninitialize 之后必须把「已初始化」的标志也清掉：0.9.12 里忘了
+     * 复位，第二次重装时 warp_mh_ensure 看见 TRUE 直接返回，MinHook 其实
+     * 已经 uninit —— 结果 23 条钩子全部 "hook: create failed"，整张表死掉
+     * （真机 2026-10-31 18:35 撞到，只能重启游戏）。 */
+    s_mh_ready = FALSE;
     /* 归零，否则控制线程会一直以为「已经装好了」而不去重装新表 */
     g_installed = 0;
     if (g_hdr) {
