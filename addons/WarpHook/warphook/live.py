@@ -457,12 +457,17 @@ class Live:
     # ---------- 内部 ----------
 
     def _live_hooks(self):
-        """门面自己要用的钩子：回合开始 + 插件登记的改写钩子。
+        """门面钩子表：回合钩子 + 换曲锁钩子，**永远一体**。
 
-        回合钩子必须带 ``event``（→ actions|EVENT）：事件动作才会把 self
+        回合钩子带 ``event``（→ actions|EVENT）：事件动作才会把 self
         （BattleObjectManager 实例）落进 SLOT_MANAGER，``battle()`` 就有现成
         指针可用。裸 ``actions=0`` 只数命中不落槽，``battle()`` 只好去调
         ``get_Instance`` —— 那是泛型共享方法，直调必 AV（0.9.25 定案）。
+
+        锁钩子（audio.guard_hook_defs）不再等 bgm_lock_install 惰性追加：
+        钩子表按 owner 分段、configure 全量重写，任何一次「只含回合钩子」
+        的 push 都会把锁清掉（0.9.27 真机实证 28..31 变空）—— 干脆每次
+        push 都是完整集，辅段 5 格 = 回合 1 + 锁 3 + 余 1。
         """
         hooks = [{
             'klass': 'BattleObjectManager',
@@ -473,6 +478,10 @@ class Live:
             'cache': (0, objects.SLOT_MANAGER),
         }]
         hooks.extend(self._extra_hooks)
+        known = {(h.get('klass'), h.get('method')) for h in hooks}
+        for item in audio.guard_hook_defs():
+            if (item['klass'], item['method']) not in known:
+                hooks.append(item)
         return hooks
 
     def _push(self):
