@@ -653,7 +653,7 @@ def read_chain(addr, chain, kind='int'):
         # 直接就是容器），否则 count/dict_count 会漏成返回裸地址。
         if kind == 'dict_count' and can_read(int(addr), 0x30):
             total = ctypes.c_int32.from_address(int(addr) + 0x20).value
-            free = ctypes.c_int32.from_address(int(addr) + 0x2C).value
+            free = ctypes.c_int32.from_address(int(addr) + 0x28).value
             return int(total - free) if total > free else 0
         if kind == 'count' and can_read(int(addr), 0x20):
             return int(ctypes.c_int32.from_address(int(addr) + 0x18).value)
@@ -697,7 +697,7 @@ def read_chain(addr, chain, kind='int'):
                 return None
             entries = ctypes.c_uint64.from_address(cur + 0x18).value
             count = ctypes.c_int32.from_address(cur + 0x20).value
-            live = count - ctypes.c_int32.from_address(cur + 0x2C).value
+            live = count - ctypes.c_int32.from_address(cur + 0x28).value
             if not entries or count <= 0 or count > 0x10000:
                 return None
             if not can_read(entries + 0x20, count * stride):
@@ -769,12 +769,14 @@ def read_chain(addr, chain, kind='int'):
             return None
         return int(ctypes.c_int32.from_address(cur + 0x18).value)
     if kind == 'dict_count':
-        # Dictionary 活跃数 = count(+0x20) - freeCount(+0x2C)，与 List/Array
+        # Dictionary 活跃数 = count(+0x20) - freeCount(+0x28)，与 List/Array
         # 的 count（+0x18）不是一个偏移 —— Remove 不搬数组只改哈希标记。
+        # 注意 il2cpp 字段顺序是 count/freeList/freeCount/version：freeCount
+        # 在 +0x28，+0x2C 是 version（真机实测纠正）。
         if not can_read(cur, 0x30):
             return None
         total = ctypes.c_int32.from_address(cur + 0x20).value
-        free = ctypes.c_int32.from_address(cur + 0x2C).value
+        free = ctypes.c_int32.from_address(cur + 0x28).value
         return int(total - free) if total > free else 0
     if kind == 'text':
         if not can_read(cur, 8):

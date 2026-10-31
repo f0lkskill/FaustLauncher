@@ -46,6 +46,9 @@
 #include "MinHook.h"
 
 #define WARP_MAGIC        0x54534857u      /* "WHST" */
+/* 数值转字符串（构建戳用）：warp_log("proto v" WARP_STR(WARP_VERSION)) */
+#define WARP_STR_(x)      #x
+#define WARP_STR(x)       WARP_STR_(x)
 #define WARP_VERSION      6                /* v6：读取链新增 Dictionary 容器步
                                             * （deref=6/7）与字典计数 kind=9；
                                             * v5：尾部追加 buff 关注哈希表段（BUF 行）。
@@ -195,8 +198,10 @@
                                  * 命中关注表（WARP_BUFF_WATCH_OFFSET）就置位 —— out=位掩码。
                                  * off[0..3] = 单位buff详情/列表/模型数据/静态id 四个字段偏移。 */
 #define WARP_READ_COUNT_DICT 9  /* 落点是 il2cpp Dictionary<*,*>：活跃 entry 数 =
-                                 * count(+0x20) - freeCount(+0x2C)。注意 List/Array
-                                 * 的计数（kind=6）读的是 +0x18，两者布局不同。 */
+                                 * count(+0x20) - freeCount(+0x28)。il2cpp 字段序是
+                                 * count/freeList/freeCount/version（+0x2C 是 version，
+                                 * 与 .NET reference source 不同，真机实测纠正）。
+                                 * 注意 List/Array 的计数（kind=6）读的是 +0x18。 */
 
 /* 原函数返回值怎么取（thunk 调原函数后按这个类型拿返回值） */
 #define WARP_RET_VOID  0        /* 不关心返回值（原 thunk 的行为） */

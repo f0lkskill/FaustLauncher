@@ -4,6 +4,43 @@
 
 看完整历史：`git log --oneline -- addons/WarpHook/`
 
+## 0.9.8
+
+0.9.7 上真机后必修的一轮：**il2cpp 的 Dictionary 字段序和 .NET 参考源码不一样**，
+以及几处「只在真机才暴露」的装配/诊断问题。
+
+- **字典字段序纠错（真机实测）**。0.9.7 按 .NET reference source 把 freeCount
+  读在 `+0x2C`，il2cpp 实际是
+  `buckets@+0x10 / entries@+0x18 / count@+0x20 / freeList@+0x24 / freeCount@+0x28 /
+  version@+0x2C`（freeList=-1 表示无死坑）。读错一个字段的直接后果：
+  `count - freeCount` 读到的是 `count - version`，负数 → `dict_count` 恒 0、
+  遍历轮数也错。涉及 `src/warp_action.c`（`warp_dict_nth_value`、
+  `warp_count_dict`）、`warphook/base.py`（三处）、`src/warp_layout.h` 注释、
+  `DESIGN.md`。**教训：单元测试用同一份错误假设伪造内存，所以全绿也说明不了对
+  ——「测试绿≠对」第二次应验。**
+- **批去重真机验证通过**。连续三个回合不击杀、字典内容完全不变时，只有第一个
+  回合投递 3 条事件，后两回合整批被吞（`head` 因成就钩子继续涨，
+  hook 自己的批不再出现）。去重位 `HF_DEDUPE`（0x04）必须显式打开，
+  没开时引擎只做单值去重、每回合全量重投——这是行为边界，写进 DESIGN。
+- **新增 `warphook/remote.py`（跨进程读链）**。`base.read_chain` 走本进程
+  `ctypes.from_address`，拿游戏地址去读必然段错误（实测 exit 139）；诊断脚本
+  从外部进程验证读链时改用 `RemoteReader`（`OpenProcess`+`ReadProcessMemory`，
+  支持 dict/dict_val/list/array 与 sum/count/dict_count/text/obscured 落点）。
+- **`host_alive` 修 standalone 误判**。启动器退出后心跳没人写，age 动辄几十万
+  毫秒，「心跳新鲜」判据把活着的宿主判成死的；现在心跳过期时若
+  `standalone=1` 且 `hooked>0` 也算活。
+- **构建戳**。`warp_host.c` 启动时写
+  `build <__DATE__> <__TIME__> proto v<N>`，`host.py` 新增 `host_build()`
+  从日志尾部读回来。此前编译产物落在 `test/`、注入路径却读
+  `addons/WarpHook/warp_host.dll`，导致「源码已改、游戏里跑旧 DLL」，
+  症状是读到垃圾值（新 kind 被旧 DLL 当默认 int 落点处理）。**只比 `version`
+  区分不了同协议号的两次构建，必须比构建戳。**
+- **字典步缺省值修正**。`host.py` 装配 `value_off`/`stride` 的缺省值原写成 0，
+  落盘成 `0x80000000`，永远取 `entry[0]` 的 hashCode 当 value；改为文档写的
+  16/24。
+- 附带：`DESIGN.md` 编译命令改为直接输出到 `addons/WarpHook/warp_host.dll`
+  并附 md5 核对；`README`/`addon_info.json` 版本随动。
+
 ## 0.9.7
 
 读取链补上最后一块容器拼图：**Dictionary 遍历**（协议 v6，只改读链语义、
@@ -12,7 +49,8 @@
 - **字典容器步 `6`/`7`（`'dict'`/`'dict_val'`）**。`Dictionary<K,V>` 布局
   固定（entries Array@+0x18、count@+0x20、freeCount@+0x2C，entry 形如
   `{hashCode@0, next@4, TKey@8, TValue}`），`Remove` 留死坑
-  （hashCode<0）要跳过，活跃数 = count − freeCount。entry 尺寸/ value 偏移
+  （hashCode<0）要跳过，活跃数 = count − freeCount。**注：freeCount 的偏移
+  0.9.8 真机实测为 `+0x28`，`+0x2C` 是 version，见 0.9.8 条目。** entry 尺寸/ value 偏移
   由配置方从 dump.cs 算好写进步里（`value_off`/`stride`，缺省 16/24）。
   拿全场单位从此不用绕 List：`BattleObjectManager._allUnitDictionary`
   （+0x90）直接下脚。
