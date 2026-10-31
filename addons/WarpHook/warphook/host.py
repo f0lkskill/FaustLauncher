@@ -34,7 +34,9 @@ from .base import (
 )
 
 HOST_MAGIC = 0x54534857           # "WHST"
-HOST_VERSION = 5                  # v5：尾部追加 buff 关注哈希表段（BUF 行）。
+HOST_VERSION = 6                  # v6：读取链新增 Dictionary 容器步（6/7）与
+                                  # 字典计数 kind=9（见 warp_layout.h 同版注释）。
+# v5：尾部追加 buff 关注哈希表段（BUF 行）。
 # v4：钩子表 16→32（成就 25 条 + NoGacha 2 条装不下 16 槽）
 HOST_MAP_DEFAULT = "Local\\WarpHost_Default"
 HOST_MAP_ENV = "WARP_HOST_MAP"
@@ -86,13 +88,16 @@ HOST_HOOK_OFFSET = HOST_HEADER_SIZE
 HOST_READ_STEPS = 4
 # 读取链每一步的动作。deref 位存的既是「要不要解引用」也是「做什么」：
 # 0 加偏移 / 1 解引用 / 2 List 取下标 / 3 Array 取下标 /
-# 4 List 取下标（值类型，元素 4B）/ 5 Array 取下标（值类型，元素 4B）
+# 4 List 取下标（值类型，元素 4B）/ 5 Array 取下标（值类型，元素 4B）/
+# 6 Dictionary 取活跃 entry 的 value（引用）/ 7 同 6，value 是 4B 值类型
 HOST_STEP_PLAIN = 0
 HOST_STEP_DEREF = 1
 HOST_STEP_LIST = 2
 HOST_STEP_ARRAY = 3
 HOST_STEP_LIST_VAL = 4     # List<int> 这类值类型容器：元素是值不是指针
 HOST_STEP_ARRAY_VAL = 5
+HOST_STEP_DICT_VALUE = 6     # Dictionary<K,V>：跳过 Remove 空坑取第 k 个活跃 V
+HOST_STEP_DICT_VALUE32 = 7   # V 是 int 值类型（int→int 字典）：读出来是值
 HOST_STEP_NAMES = {
     "plain": HOST_STEP_PLAIN,
     "deref": HOST_STEP_DEREF,
@@ -100,7 +105,16 @@ HOST_STEP_NAMES = {
     "array": HOST_STEP_ARRAY,
     "list_val": HOST_STEP_LIST_VAL,
     "array_val": HOST_STEP_ARRAY_VAL,
+    "dict": HOST_STEP_DICT_VALUE,
+    "dict_val": HOST_STEP_DICT_VALUE32,
 }       # 落点是 ObscuredInt（混淆 int），值 = hidden ^ key
+# Dictionary 步的配置（写在步 dict 里，与 'list': i 并列）：
+#   'dict': k 或 'dict_val': k —— k 是要取的活跃 entry 下标；写 'iter'
+#   （或配 iter=True）表示遍历链：一次命中对每个活跃 value 各发一个事件。
+#   步里还可以带 'value_off' / 'stride'：entry 内 value 字段偏移（默认 16）
+#   和 entry 尺寸（默认 24），从 dump.cs 的 TKey/TValue 形状算出来 ——
+#   int→引用 / 引用→引用 是 24/16，int→int 是 16/12，引用→引用且 key 在前
+#   则 value_off 要自己数。C 侧没有类型信息，这两个数只能配置方给。
 # 落盘时可以写数字，也可以写名字（插件侧更愿意写 'obscured' 而不是 4）
 HOST_READ_INT = 0
 HOST_READ_FLOAT = 1
@@ -111,6 +125,9 @@ HOST_READ_SUM = 5          # 落点是 List<int>：求和（值类型元素）
 HOST_READ_COUNT = 6        # 落点是容器：只取元素个数
 HOST_READ_TEXT = 7         # 落点是 il2cpp 字符串：取开头的数字（"86" → 86）
 HOST_READ_BUFF_MASK = 8    # 落点是战斗单位：遍历 buff 链按关注表置位（BUF 行 m=）
+HOST_READ_COUNT_DICT = 9   # 落点是 Dictionary：活跃 entry 数 = count-freeCount
+                           # （注意 List/Array 的 count kind=6 读 +0x18，
+                           #  字典活跃数读 +0x20 与 +0x2C，两个 kind 别混用）
 HOST_READ_NAMES = {
     'int': HOST_READ_INT,
     'float': HOST_READ_FLOAT,
@@ -121,6 +138,7 @@ HOST_READ_NAMES = {
     'count': HOST_READ_COUNT,
     'text': HOST_READ_TEXT,
     'buff_mask': HOST_READ_BUFF_MASK,
+    'dict_count': HOST_READ_COUNT_DICT,
 }
 # 返回值类型：thunk 调完原函数后按什么形状取返回值（int 在 RAX、float 在 XMM0）
 HOST_RET_VOID = 0
@@ -410,6 +428,11 @@ def host_alive(block):
         return False
     try:
         if int(block.cfg.magic) != HOST_MAGIC:
+            return False
+        # 版本协商（A3）：DLL 比这份 Python 老 → 它不认识新协议段/新读链步，
+        # 配置写进去会全错，按没活处理。反之 DLL 更新则放行 —— 校验别写死
+        # 等号（立绘淡出那次教训：hdr[1]!=4 一刀切，旧存档直接判死）。
+        if int(block.cfg.version) < HOST_VERSION:
             return False
         if not int(block.cfg.ga_found):
             return False
@@ -778,6 +801,25 @@ class Host:
                                 off, code = int(step["list_val"]), HOST_STEP_LIST_VAL
                             elif "array_val" in step:
                                 off, code = int(step["array_val"]), HOST_STEP_ARRAY_VAL
+                            elif "dict" in step or "dict_val" in step:
+                                # Dictionary 步（v6）：'dict': 下标 / 'dict_val': 下标
+                                # （值类型 value）。'iter': True 或下标写 'iter' 表示
+                                # 遍历链 —— 一次命中对每个活跃 value 各发一个事件。
+                                # off 是打包位域（WARP_DICT_PACK）不是普通偏移。
+                                if "dict" in step:
+                                    code, key = HOST_STEP_DICT_VALUE, step["dict"]
+                                else:
+                                    code, key = HOST_STEP_DICT_VALUE32, step["dict_val"]
+                                is_iter = (key == "iter") or bool(step.get("iter"))
+                                if isinstance(key, int) and not isinstance(key, bool):
+                                    idx = key
+                                else:
+                                    idx = int(step.get("index", 0))
+                                off = (((int(step.get("value_off", 0)) & 0xFF))
+                                       | ((int(step.get("stride", 0)) & 0xFF) << 8)
+                                       | ((idx & 0x7FFF) << 16))
+                                if is_iter:
+                                    off |= 0x80000000
                             else:
                                 code = _step_code(step.get("deref", True))
                                 off = int(step.get("index", 0)) if code in (
@@ -789,9 +831,15 @@ class Host:
                             # 绝大多数跳到 next 是对象引用，内嵌 struct 才显式写 False。
                             code = _step_code(flags[k]) if k < len(flags) else 1
                         off, code = int(off), int(code)
-                        if not (0 <= code <= HOST_STEP_ARRAY_VAL):
+                        if not (0 <= code <= HOST_STEP_DICT_VALUE32):
                             code = HOST_STEP_DEREF
-                        off = max(-0x7FFFFF, min(0x7FFFFF, off))
+                        if code >= HOST_STEP_DICT_VALUE:
+                            # 打包位域带 bit31 ITER 位：补码成 32 位有符号再落盘
+                            # （c_int32 收不下 0x80000000 的正数），不走钳制。
+                            if off >= 0x80000000:
+                                off -= 0x100000000
+                        else:
+                            off = max(-0x7FFFFF, min(0x7FFFFF, off))
                         ctypes.c_int32.from_address(
                             at + HostRead.off.offset + k * 4).value = off
                         ctypes.c_int32.from_address(
