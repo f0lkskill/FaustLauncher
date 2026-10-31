@@ -395,6 +395,103 @@ int warp_cmd_make(int argc, int slot, const char *argkinds_text)
     return WARP_CMD_RES_OK;
 }
 
+/* ------------------------------------------------------------------ */
+/* methodPointer 直调（v0.9.24）                                        */
+/*                                                                     */
+/* runtime_invoke 在本机就是有毒：六次崩溃的 AV 全部落在 invoke 路径，  */
+/* 连最简单的静态 getter 都炸（v0.9.23 真机验证，worker 舱接住后确认）。*/
+/* 旧插件 BattleBGMExtend 稳跑多年靠的从来不是 runtime_invoke —— 它取   */
+/* MethodInfo 第一个字段（methodPointer），VirtualQuery 验证指针落在    */
+/* GameAssembly 里之后直接按 C 调用约定调。这里照搬：                   */
+/*   实例方法  ret f(this, args..., const MethodInfo*)                  */
+/*   静态方法  ret f(args..., const MethodInfo*)                        */
+/*   引用返回  隐藏 sret 首参（Win x64：大于 8 字节的返回走 rcx）        */
+/* bool/int 返回在 rax 低 32 位（il2cpp 代码生成对 bool 做 movzx，高位  */
+/* 干净）；float 返回在 xmm0。参数只收 64 位通用寄存器可容的形状         */
+/* （指针/整型）—— 浮点参数、更多参数以后按需再加。                     */
+/* ------------------------------------------------------------------ */
+
+/* methodPointer 必须落在 GameAssembly 的可执行页里才敢调。 */
+static int warp_direct_fp_ok(const void *fp)
+{
+    MEMORY_BASIC_INFORMATION mb;
+    HMODULE ga;
+
+    if (!fp || !VirtualQuery(fp, &mb, sizeof(mb)))
+        return 0;
+    ga = GetModuleHandleW(L"GameAssembly.dll");
+    if (!ga || mb.AllocationBase != (void *)ga)
+        return 0;
+    return (mb.Protect & (PAGE_EXECUTE | PAGE_EXECUTE_READ |
+                          PAGE_EXECUTE_READWRITE |
+                          PAGE_EXECUTE_WRITECOPY)) != 0;
+}
+
+#define WDC_VA_0
+#define WDC_VA_1 void *,
+#define WDC_VA_2 void *, void *,
+#define WDC_VA_3 void *, void *, void *,
+#define WDC_VA_4 void *, void *, void *, void *,
+#define WDC_VA_5 void *, void *, void *, void *, void *,
+
+#define WDC_AI_0
+#define WDC_AI_1 a[0],
+#define WDC_AI_2 a[0], a[1],
+#define WDC_AI_3 a[0], a[1], a[2],
+#define WDC_AI_4 a[0], a[1], a[2], a[3],
+#define WDC_AI_5 a[0], a[1], a[2], a[3], a[4],
+
+#define WDC_INVOKE(N) do { \
+    if (retkind == WARP_CMD_RET_REF) { \
+        void *sret = NULL; \
+        if (target) \
+            ((void (*)(void *, WDC_VA_##N void *, void *))fp)(&sret, target, WDC_AI_##N mi); \
+        else \
+            ((void (*)(WDC_VA_##N void *, void *))fp)(&sret, WDC_AI_##N mi); \
+        *out_ref = sret; \
+    } else if (retkind == WARP_CMD_RET_FLOAT) { \
+        if (target) \
+            *out_flt = ((float (*)(void *, WDC_VA_##N void *))fp)(target, WDC_AI_##N mi); \
+        else \
+            *out_flt = ((float (*)(WDC_VA_##N void *))fp)(WDC_AI_##N mi); \
+    } else { \
+        if (target) \
+            *out_int = (long long)(uintptr_t)((void *(*)(void *, WDC_VA_##N void *))fp)(target, WDC_AI_##N mi); \
+        else \
+            *out_int = (long long)(uintptr_t)((void *(*)(WDC_VA_##N void *))fp)(WDC_AI_##N mi); \
+    } } while (0)
+
+/* 返回 0 成功（值经 out_int/out_flt/out_ref 带出）；负数 = 没进调用就失败。 */
+static int warp_direct_call(void *method, void *target, void **params, int argc,
+                            int retkind, long long *out_int, float *out_flt,
+                            void **out_ref)
+{
+    void *a[5] = {0};
+    void *fp;
+    void *mi = method;
+    int i;
+
+    if (!method)
+        return -1;
+    memcpy(&fp, method, sizeof(fp));    /* MethodInfo 首字段 = methodPointer */
+    if (!warp_direct_fp_ok(fp))
+        return -2;
+    if (argc < 0 || argc > 5)
+        return -3;
+    for (i = 0; i < argc; i++)
+        a[i] = params[i] ? *(void **)params[i] : NULL;
+
+    switch (argc) {
+    case 0: WDC_INVOKE(0); break;
+    case 1: WDC_INVOKE(1); break;
+    case 2: WDC_INVOKE(2); break;
+    case 3: WDC_INVOKE(3); break;
+    case 4: WDC_INVOKE(4); break;
+    default: WDC_INVOKE(5); break;
+    }
+    return 0;
+}
+
 int warp_cmd_call(int argc, int slot, int retkind, int out_slot, const char *argkinds_text)
 {
     char kinds[8];
@@ -408,8 +505,6 @@ int warp_cmd_call(int argc, int slot, int retkind, int out_slot, const char *arg
     void *klass;
     void *method;
     void *target = NULL;
-    void *ret;
-    void *exc = NULL;
     int rc;
 
     if (out_slot >= WARP_OBJECT_COUNT)
@@ -453,22 +548,28 @@ int warp_cmd_call(int argc, int slot, int retkind, int out_slot, const char *arg
     rc = warp_cmd_build_params(argc, kinds, params, ival, fval, pval);
     if (rc)
         return rc;
-    ret = warp_safe_invoke(method, target, params, &exc);
-    if (exc)
-        return WARP_CMD_RES_EXCEPTION;
-    if (retkind == WARP_CMD_RET_INT32 || retkind == WARP_CMD_RET_FLOAT) {
-        /* box 出来的值类型对象，真值在 +0x10（对象头 8B + klass 8B）。 */
-        if (ret) {
-            int bits = *(const int *)((const char *)ret + 0x10);
-            g_hdr->vars[6] = bits;
-        } else {
-            g_hdr->vars[6] = 0;
+    /* v0.9.24：runtime_invoke 在本机有毒（六次崩溃全在这条路径上），改走
+     * 旧插件的 methodPointer 直调；方法查找、参数打包、签名匹配都不变。
+     * worker 舱的 VEH 保护仍在 —— 万一游戏方法自己有毒，照样只记一次失败。 */
+    {
+        long long bits = 0;
+        float xf = 0.0f;
+        void *ref = NULL;
+
+        rc = warp_direct_call(method, target, params, argc, retkind,
+                              &bits, &xf, &ref);
+        if (rc)
+            return WARP_CMD_RES_FAIL;  /* -1 无方法 / -2 指针验证不过 / -3 参数超限 */
+        if (retkind == WARP_CMD_RET_INT32)
+            g_hdr->vars[6] = (int)(bits & 0xFFFFFFFFll);
+        else if (retkind == WARP_CMD_RET_FLOAT) {
+            memcpy(&g_hdr->vars[6], &xf, 4);   /* 位模式直通，py 侧按 float 解 */
+        } else if (retkind == WARP_CMD_RET_REF) {
+            if (out_slot < 0)
+                return WARP_CMD_RES_BAD_SLOT;
+            /* 返回的引用挂强句柄，py 用完 release —— 不挂的话下次 GC 一到就没了。 */
+            warp_slot_put(out_slot, ref, 1);
         }
-    } else if (retkind == WARP_CMD_RET_REF) {
-        if (out_slot < 0)
-            return WARP_CMD_RES_BAD_SLOT;
-        /* 返回的引用挂强句柄，py 用完 release —— 不挂的话下次 GC 一到就没了。 */
-        warp_slot_put(out_slot, ret, 1);
     }
     return WARP_CMD_RES_OK;
 }
