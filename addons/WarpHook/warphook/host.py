@@ -1537,7 +1537,7 @@ class Host:
             # 宿主用 CMD_RES_NAMES 里的说法；只有真的跑完才读缓冲。
             if isinstance(msg, str) and not msg.startswith("成功"):
                 return msg
-        raw = self.read_buf(0, HOST_CMD_BUF_COUNT * HOST_CMD_BUF_SIZE)
+        raw = self.read_buf_all()
         if not raw:
             return []
         return [part.decode("utf-8", "replace") for part in raw.split(bytes([0])) if part]
@@ -1638,6 +1638,18 @@ class Host:
         size = max(0, min(int(size), HOST_CMD_BUF_SIZE))
         base = block.address + HOST_CMD_BUF_OFFSET + index * HOST_CMD_BUF_SIZE
         return ctypes.string_at(base, size)
+
+    def read_buf_all(self):
+        """读整个命令 out 缓冲（4 块连续共 256 字节的原始字节）。
+
+        LIST 这类结果横跨多块的命令用它 —— read_buf 的 size 被钳在单块
+        64 字节里，跨块记录的第二段会被静默丢掉（真机 2026-11-01：
+        IsLoadedBank(string) 那条其实一直在缓冲里，只是读不到）。"""
+        block = self.block()
+        if block is None:
+            return None
+        base = block.address + HOST_CMD_BUF_OFFSET
+        return ctypes.string_at(base, HOST_CMD_BUF_COUNT * HOST_CMD_BUF_SIZE)
 
     def clear_buf(self, index=0):
         """把 out 缓冲第 ``index`` 块清零（调带 out 参数的方法前先调它）。"""
