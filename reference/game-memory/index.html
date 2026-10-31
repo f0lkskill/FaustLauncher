@@ -1,0 +1,1212 @@
+
+<!doctype html>
+<html lang="zh" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="基于 WarpHook 的插件二次开发：从空插件到读取全场对象与 buff">
+      
+      
+      
+        <link rel="canonical" href="https://f0lkskill.github.io/FaustLauncher/reference/game-memory/">
+      
+      
+        <link rel="prev" href="../../tutorial/">
+      
+      
+        <link rel="next" href="../dev-notes/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.0">
+    
+    
+      
+        <title>游戏内存探索 - FaustLauncher 插件开发文档</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.57a0d79d.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.fb2fffe2.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#_1" class="md-skip">
+          跳转至
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="页眉">
+    <a href="../.." title="FaustLauncher 插件开发文档" class="md-header__button md-logo" aria-label="FaustLauncher 插件开发文档" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            FaustLauncher 插件开发文档
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              游戏内存探索
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="切到深色"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="切到深色" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m17.75 4.09-2.53 1.94.91 3.06-2.63-1.81-2.63 1.81.91-3.06-2.53-1.94L12.44 4l1.06-3 1.06 3zm3.5 6.91-1.64 1.25.59 1.98-1.7-1.17-1.7 1.17.59-1.98L15.75 11l2.06-.05L18.5 9l.69 1.95zm-2.28 4.95c.83-.08 1.72 1.1 1.19 1.85-.32.45-.66.87-1.08 1.27C15.17 23 8.84 23 4.94 19.07c-3.91-3.9-3.91-10.24 0-14.14.4-.4.82-.76 1.27-1.08.75-.53 1.93.36 1.85 1.19-.27 2.86.69 5.83 2.89 8.02a9.96 9.96 0 0 0 8.02 2.89m-1.64 2.02a12.08 12.08 0 0 1-7.8-3.47c-2.17-2.19-3.33-5-3.49-7.82-2.81 3.14-2.7 7.96.31 10.98 3.02 3.01 7.84 3.12 10.98.31"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="切到浅色"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="切到浅色" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 7a5 5 0 0 1 5 5 5 5 0 0 1-5 5 5 5 0 0 1-5-5 5 5 0 0 1 5-5m0 2a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3m0-7 2.39 3.42C13.65 5.15 12.84 5 12 5s-1.65.15-2.39.42zM3.34 7l4.16-.35A7.2 7.2 0 0 0 5.94 8.5c-.44.74-.69 1.5-.83 2.29zm.02 10 1.76-3.77a7.131 7.131 0 0 0 2.38 4.14zM20.65 7l-1.77 3.79a7.02 7.02 0 0 0-2.38-4.15zm-.01 10-4.14.36c.59-.51 1.12-1.14 1.54-1.86.42-.73.69-1.5.83-2.29zM12 22l-2.41-3.44c.74.27 1.55.44 2.41.44.82 0 1.63-.17 2.37-.44z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="搜索" placeholder="搜索" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="查找">
+        
+        <button type="reset" class="md-search__icon md-icon" title="清空当前内容" aria-label="清空当前内容" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            正在初始化搜索引擎
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/f0lkskill/FaustLauncher" title="前往仓库" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    f0lkskill/FaustLauncher
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="导航栏" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="FaustLauncher 插件开发文档" class="md-nav__button md-logo" aria-label="FaustLauncher 插件开发文档" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    FaustLauncher 插件开发文档
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/f0lkskill/FaustLauncher" title="前往仓库" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    f0lkskill/FaustLauncher
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    首页
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../tutorial/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    入门教程
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    入门教程
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    参考手册
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    参考手册
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    游戏内存探索
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    游戏内存探索
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="目录">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      目录
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        一、已验证可读（真机跑通）
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#scene_state" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        二、SCENE_STATE 枚举
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2026-10-28" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        三、战斗单位与状态（2026-10-28 真机验证通过）
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="三、战斗单位与状态（2026-10-28 真机验证通过）">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        选钩子比选偏移更重要（四次探针的教训）
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#_4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        战斗单位
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#_5" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        状态对象
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#obscuredint" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ObscuredInt 布局
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#buff" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        buff 链（读取链表达不了，需要容器遍历）
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#_6" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        战场管理器
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#getter" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        四、一个踩了两次的坑：小 getter 钩不住
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../dev-notes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    WarpHook 开发笔记
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    归档
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    归档
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../archive/session-selfcheck/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    WarpHook 会话总结：立绘修复 + 生态自检 + 规范化准备
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="目录">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      目录
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        一、已验证可读（真机跑通）
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#scene_state" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        二、SCENE_STATE 枚举
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2026-10-28" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        三、战斗单位与状态（2026-10-28 真机验证通过）
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="三、战斗单位与状态（2026-10-28 真机验证通过）">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        选钩子比选偏移更重要（四次探针的教训）
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#_4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        战斗单位
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#_5" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        状态对象
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#obscuredint" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ObscuredInt 布局
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#buff" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        buff 链（读取链表达不了，需要容器遍历）
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#_6" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        战场管理器
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#getter" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        四、一个踩了两次的坑：小 getter 钩不住
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="_1">游戏内存探索<a class="headerlink" href="#_1" title="Permanent link">&para;</a></h1>
+<p>把「在真机里验证过的」和「从 dump.cs 推算但还没验证的」分开记，避免下次又把推算值当成事实。</p>
+<p>dump 来源：<code>cache/hook/dump/E6312D92/out/dump.cs</code>。字段后面那行 <code>// 0xNN</code> 就是偏移，
+<strong>从对象指针算起</strong>（已经含 il2cpp 的 0x10 header），可以直接当读取链的 <code>off</code> 用。</p>
+<hr />
+<h2 id="_2">一、已验证可读（真机跑通）<a class="headerlink" href="#_2" title="Permanent link">&para;</a></h2>
+<p>钩子是 <code>GlobalGameManager::FixedUpdate</code>（60fps，主线程），读取链直接读 <code>self</code> 的字段。</p>
+<table>
+<thead>
+<tr>
+<th>类</th>
+<th>字段</th>
+<th>偏移</th>
+<th>类型</th>
+<th>实测值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>GlobalGameManager</code></td>
+<td><code>sceneState</code></td>
+<td><code>0x64</code></td>
+<td><code>SCENE_STATE</code>（枚举，底层 int）</td>
+<td>主界面 <code>2</code>、战斗 <code>1</code></td>
+</tr>
+<tr>
+<td><code>GlobalGameManager</code></td>
+<td><code>_mainSceneEntryCount</code></td>
+<td><code>0xB8</code></td>
+<td>int</td>
+<td><code>1</code></td>
+</tr>
+<tr>
+<td><code>GlobalGameManager</code></td>
+<td><code>_currentTimeScale</code></td>
+<td><code>0x50</code></td>
+<td>float</td>
+<td><code>1.0</code>（位模式 <code>0x3f800000</code>）</td>
+</tr>
+</tbody>
+</table>
+<p><code>currentTimeScale</code> 那次的原始事件行：</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>#1 hook=7 a=1 b=1 c=1065353216 d=0
+</code></pre></div>
+<p><code>1065353216</code> = <code>0x3F800000</code> = float <strong>1.0</strong>；<code>a=1</code> 是 <code>sceneState</code>（战斗），<code>b=1</code> 是
+<code>_mainSceneEntryCount</code>。三个值同时对上，说明偏移和类型都没错。</p>
+<p>另外验证过 <code>GlobalGameManager::FixedUpdate</code> 的调用频率：<strong>8 秒内命中 4693 次</strong>，
+512 格事件环大约 8.5 秒翻一轮 —— 采样类的钩子必须做去重（值没变就不投递），
+不然环里全是重复行。</p>
+<hr />
+<h2 id="scene_state">二、<code>SCENE_STATE</code> 枚举<a class="headerlink" href="#scene_state" title="Permanent link">&para;</a></h2>
+<p><code>dump.cs:509404</code>：</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="n">Login</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">0</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="n">Battle</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">1</span>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="n">Main</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">2</span>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="n">Story</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">3</span>
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="n">Dungeon</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">4</span>
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="n">MirrorDungeon</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">5</span>
+<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="n">RailwayDungeon</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">6</span>
+<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="n">StoryMirrorDungeon</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">7</span>
+<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a><span class="n">ProjectGS</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">8</span>
+<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a><span class="n">Rpg</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">9</span>
+</code></pre></div>
+<p><code>sceneState</code> 是最便宜的「现在在哪个场景」探针，用它决定要不要启用某批战斗钩子就够了，
+不必去猜 UI 层级。</p>
+<hr />
+<h2 id="2026-10-28">三、战斗单位与状态（2026-10-28 真机验证通过）<a class="headerlink" href="#2026-10-28" title="Permanent link">&para;</a></h2>
+<p><strong>已经用 WarpHook 的读取链在真机读到真实数据</strong>，读到的是战斗中会变的值：
+同一场战斗里 <code>hp</code> 从 233 掉到 222、<code>mp</code> 从 45 掉到 0（45 正好是理智上限）。</p>
+<p>用的钩子是 <strong><code>BattleUnitModel::RefreshSpeed</code></strong>（dump: <code>public virtual void RefreshSpeed()</code>）：</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="p">{</span><span class="s1">&#39;klass&#39;</span><span class="p">:</span> <span class="s1">&#39;BattleUnitModel&#39;</span><span class="p">,</span> <span class="s1">&#39;method&#39;</span><span class="p">:</span> <span class="s1">&#39;RefreshSpeed&#39;</span><span class="p">,</span> <span class="s1">&#39;argc&#39;</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a> <span class="s1">&#39;reads&#39;</span><span class="p">:</span> <span class="p">[</span>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>   <span class="p">{</span><span class="s1">&#39;arg&#39;</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span> <span class="s1">&#39;out&#39;</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span> <span class="s1">&#39;kind&#39;</span><span class="p">:</span> <span class="s1">&#39;obscured&#39;</span><span class="p">,</span>
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>    <span class="s1">&#39;off&#39;</span><span class="p">:</span> <span class="p">[{</span><span class="s1">&#39;off&#39;</span><span class="p">:</span> <span class="mh">0x148</span><span class="p">,</span> <span class="s1">&#39;deref&#39;</span><span class="p">:</span> <span class="kc">True</span><span class="p">},</span> <span class="p">{</span><span class="s1">&#39;off&#39;</span><span class="p">:</span> <span class="mh">0x148</span><span class="p">,</span> <span class="s1">&#39;deref&#39;</span><span class="p">:</span> <span class="kc">False</span><span class="p">}]},</span>  <span class="c1"># 血</span>
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>   <span class="p">{</span><span class="s1">&#39;arg&#39;</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span> <span class="s1">&#39;out&#39;</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span> <span class="s1">&#39;kind&#39;</span><span class="p">:</span> <span class="s1">&#39;obscured&#39;</span><span class="p">,</span>
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>    <span class="s1">&#39;off&#39;</span><span class="p">:</span> <span class="p">[{</span><span class="s1">&#39;off&#39;</span><span class="p">:</span> <span class="mh">0x148</span><span class="p">,</span> <span class="s1">&#39;deref&#39;</span><span class="p">:</span> <span class="kc">True</span><span class="p">},</span> <span class="p">{</span><span class="s1">&#39;off&#39;</span><span class="p">:</span> <span class="mh">0x158</span><span class="p">,</span> <span class="s1">&#39;deref&#39;</span><span class="p">:</span> <span class="kc">False</span><span class="p">}]},</span>  <span class="c1"># 理智</span>
+<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a> <span class="p">]}</span>
+</code></pre></div>
+<h3 id="_3">选钩子比选偏移更重要（四次探针的教训）<a class="headerlink" href="#_3" title="Permanent link">&para;</a></h3>
+<p>同一批偏移，换一个钩子就全错。踩过的坑：</p>
+<table>
+<thead>
+<tr>
+<th>钩子</th>
+<th>结果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>CharacterState::get_Hp</code> / <code>BattleUnitModel::ChangeIntegerPartOfSpeed</code></td>
+<td>命中 0 —— 一行 getter 被 AOT 内联，内存里没有调用指令</td>
+</tr>
+<tr>
+<td><code>BattleObjectManager::OnRoundStart_Prepare</code></td>
+<td>命中，但 <code>self+0xB8</code> 读出 <code>0x68695720</code>，不是 <code>List</code> 指针 —— 那个 <code>self</code> 不是管理器</td>
+</tr>
+<tr>
+<td><code>BattleUnitModel::OnRoundStart_Before</code></td>
+<td>命中，但 <code>self+0x60</code> 读出 <code>0x68695A10</code> —— 该方法定义在父类 <code>CombatUnitModel</code> 上，钩父类实现时 <code>self</code> 不是我们以为的对象</td>
+</tr>
+<tr>
+<td><strong><code>BattleUnitModel::RefreshSpeed</code></strong></td>
+<td>命中，<code>self+0x60=11</code>、<code>self+0x64=98002</code>、<code>self+0x148=0x28ad6731a80</code>（堆指针）—— 全部合理，血量理智都读对</td>
+</tr>
+</tbody>
+</table>
+<p>判断 <code>self</code> 对不对，最便宜的办法是读对象头：<code>+0x00</code> 是 klass 指针、<code>+0x08</code> 是
+monitor（无锁时恒为 0）。klass 落在堆区（<code>0x28xxxxxxxxxx</code>）或 <code>0x7FFx</code> 段就说明
+<code>self</code> 是合法托管对象。<strong>注意 <code>kind: 'int'</code> 只读 4 字节</strong>，64 位指针要读 <code>+0x00</code>
+和 <code>+0x04</code> 再拼起来，别学我第一次那样只看低半就下结论。</p>
+<h3 id="_4">战斗单位<a class="headerlink" href="#_4" title="Permanent link">&para;</a></h3>
+<p><code>BattleUnitModel</code>（<code>dump.cs:538827</code>，<code>public abstract class BattleUnitModel : CombatUnitModel</code>）：</p>
+<table>
+<thead>
+<tr>
+<th>字段</th>
+<th>偏移</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>_instanceID</code></td>
+<td><code>0x60</code></td>
+<td>int，场上唯一实例号</td>
+</tr>
+<tr>
+<td><code>_originID</code></td>
+<td><code>0x64</code></td>
+<td>int，角色/敌人模板 id</td>
+</tr>
+<tr>
+<td><code>_position</code></td>
+<td><code>0x70</code></td>
+<td>站位</td>
+</tr>
+<tr>
+<td><code>_originSpeed</code></td>
+<td><code>0xCC</code></td>
+<td><strong>速度 ×1000 的定点数</strong></td>
+</tr>
+<tr>
+<td><code>_overwritedSpeed</code></td>
+<td><code>0xD0</code></td>
+<td>同上</td>
+</tr>
+<tr>
+<td><code>_thisTurnIntSpeedOnCmdPhase</code></td>
+<td><code>0x184</code></td>
+<td>整数，不缩放</td>
+</tr>
+<tr>
+<td><code>_buffDetail</code></td>
+<td><code>0xE0</code></td>
+<td>→ <code>BuffDetail</code></td>
+</tr>
+<tr>
+<td><code>_state</code></td>
+<td><code>0x148</code></td>
+<td>→ <code>CharacterState</code>（<strong>引用，链上要 deref</strong>）</td>
+</tr>
+</tbody>
+</table>
+<p>速度为什么是 ×1000：<code>BattleUnitModel::GetIntegerOfPureOriginalSpeed()</code> 就是拿 <code>_originSpeed / 1000</code>。</p>
+<h3 id="_5">状态对象<a class="headerlink" href="#_5" title="Permanent link">&para;</a></h3>
+<p><code>CharacterState</code>（<code>dump.cs:535296</code>）：</p>
+<table>
+<thead>
+<tr>
+<th>字段</th>
+<th>偏移</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>_maxHp</code></td>
+<td><code>0x11C</code></td>
+<td><code>ObscuredInt</code></td>
+</tr>
+<tr>
+<td><code>_hp</code></td>
+<td><code>0x148</code></td>
+<td><code>ObscuredInt</code></td>
+</tr>
+<tr>
+<td><code>_mp</code></td>
+<td><code>0x158</code></td>
+<td><code>ObscuredInt</code>，<strong>这就是界面上的理智(SP)</strong>，负数 = 恐慌</td>
+</tr>
+</tbody>
+</table>
+<p>注意 <code>_state</code> 和 <code>CharacterState._hp</code> 都是 <code>0x148</code> —— 一个在 <code>BattleUnitModel</code> 上，
+一个在 <code>CharacterState</code> 上，别混。</p>
+<h3 id="obscuredint"><code>ObscuredInt</code> 布局<a class="headerlink" href="#obscuredint" title="Permanent link">&para;</a></h3>
+<p>游戏用 ACTk 的反作弊整数，三个 int 一组：</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>+0  key
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>+4  hidden
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>+8  fake      （伪装值，干扰用）
+</code></pre></div>
+<p>真值 = <code>hidden ^ key</code>。直接按 int 读会得到垃圾，读取链里必须用 <code>kind: 'obscured'</code>。</p>
+<h3 id="buff">buff 链（读取链表达不了，需要容器遍历）<a class="headerlink" href="#buff" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>BattleUnitModel +0xE0  → BuffDetail
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>BuffDetail      +0x10  → List&lt;BuffModel&gt;
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>BuffModel       +0x68  → BuffStaticData
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>BuffStaticData  +0x18  → string（如 &quot;HanafudaTwo&quot;）
+</code></pre></div>
+<p>il2cpp 容器布局固定：<code>List&lt;T&gt;</code> 的 items 在 <code>+0x10</code>、size 在 <code>+0x18</code>；
+<code>Array</code> 的长度在 <code>+0x18</code>、元素从 <code>+0x20</code> 起；<code>string</code> 的长度在 <code>+0x10</code>、utf16 内容从 <code>+0x14</code> 起。</p>
+<h3 id="_6">战场管理器<a class="headerlink" href="#_6" title="Permanent link">&para;</a></h3>
+<p><code>BattleObjectManager</code>（<code>dump.cs:16882</code>）关键字段：</p>
+<table>
+<thead>
+<tr>
+<th>字段</th>
+<th>偏移</th>
+<th>类型</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>_currTeamPosition</code></td>
+<td><code>0x28</code></td>
+<td><code>TeamPosition</code></td>
+</tr>
+<tr>
+<td><code>_currEnemyTeamPosition</code></td>
+<td><code>0x30</code></td>
+<td><code>TeamPosition</code></td>
+</tr>
+<tr>
+<td><code>_unitList</code></td>
+<td><code>0x78</code></td>
+<td><code>Dictionary&lt;UNIT_FACTION, List&lt;BattleUnit&gt;&gt;</code></td>
+</tr>
+<tr>
+<td><code>_allUnitDictionary</code></td>
+<td><code>0x90</code></td>
+<td><code>Dictionary&lt;int, BattleUnit&gt;</code></td>
+</tr>
+<tr>
+<td><code>_deadUnitList</code></td>
+<td><code>0xB8</code></td>
+<td><code>List&lt;BattleUnitModel&gt;</code></td>
+</tr>
+<tr>
+<td><code>_roundDeathCount</code></td>
+<td><code>0xF4</code></td>
+<td>int</td>
+</tr>
+</tbody>
+</table>
+<p>想从这里拿单位，必须有容器遍历能力（P3 的容器步）。</p>
+<hr />
+<h2 id="getter">四、一个踩了两次的坑：小 getter 钩不住<a class="headerlink" href="#getter" title="Permanent link">&para;</a></h2>
+<p><code>CharacterState::get_Hp</code>、<code>get_Mp</code>、<code>get_IsDead</code>、<code>get_IsPanic</code>、
+<code>BattleUnitModel::IsAlly</code>、<code>get_Position</code> 这几条都<strong>装上了但命中 0</strong>，
+同一轮里 <code>GlobalGameManager::FixedUpdate</code> 命中 22 次（对照组）。</p>
+<p>原因：il2cpp 是 AOT 编译，这种「读字段 + 异或解密」的一行 getter 会被<strong>内联</strong>进每个调用点，
+内存里不存在「call 这个函数」的指令，MinHook 改了入口也没人走到。</p>
+<p><strong>结论：钩子要挑带参数、带循环、体积大的方法。</strong> 判断办法不是看它在不在 dump.cs 里，
+而是挂上去看命中计数 —— 命中 0 就是内联了。</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  回到页面顶部
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.sections", "navigation.top", "navigation.indexes", "content.code.copy", "content.code.annotate", "search.suggest", "search.highlight", "toc.follow"], "search": "../../assets/javascripts/workers/search.a7633da7.min.js", "tags": null, "translations": {"clipboard.copied": "\u5df2\u590d\u5236", "clipboard.copy": "\u590d\u5236", "search.result.more.one": "\u5728\u8be5\u9875\u4e0a\u8fd8\u6709 1 \u4e2a\u7b26\u5408\u6761\u4ef6\u7684\u7ed3\u679c", "search.result.more.other": "\u5728\u8be5\u9875\u4e0a\u8fd8\u6709 # \u4e2a\u7b26\u5408\u6761\u4ef6\u7684\u7ed3\u679c", "search.result.none": "\u6ca1\u6709\u627e\u5230\u7b26\u5408\u6761\u4ef6\u7684\u7ed3\u679c", "search.result.one": "\u627e\u5230 1 \u4e2a\u7b26\u5408\u6761\u4ef6\u7684\u7ed3\u679c", "search.result.other": "# \u4e2a\u7b26\u5408\u6761\u4ef6\u7684\u7ed3\u679c", "search.result.placeholder": "\u952e\u5165\u4ee5\u5f00\u59cb\u641c\u7d22", "search.result.term.missing": "\u7f3a\u5c11", "select.version": "\u9009\u62e9\u5f53\u524d\u7248\u672c"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.c21346df.min.js"></script>
+      
+    
+  </body>
+</html>

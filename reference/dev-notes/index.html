@@ -1,0 +1,1300 @@
+
+<!doctype html>
+<html lang="zh" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="基于 WarpHook 的插件二次开发：从空插件到读取全场对象与 buff">
+      
+      
+      
+        <link rel="canonical" href="https://f0lkskill.github.io/FaustLauncher/reference/dev-notes/">
+      
+      
+        <link rel="prev" href="../game-memory/">
+      
+      
+        <link rel="next" href="../../archive/session-selfcheck/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.0">
+    
+    
+      
+        <title>WarpHook 开发笔记 - FaustLauncher 插件开发文档</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.57a0d79d.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.fb2fffe2.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#warphook" class="md-skip">
+          跳转至
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="页眉">
+    <a href="../.." title="FaustLauncher 插件开发文档" class="md-header__button md-logo" aria-label="FaustLauncher 插件开发文档" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            FaustLauncher 插件开发文档
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              WarpHook 开发笔记
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="切到深色"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="切到深色" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m17.75 4.09-2.53 1.94.91 3.06-2.63-1.81-2.63 1.81.91-3.06-2.53-1.94L12.44 4l1.06-3 1.06 3zm3.5 6.91-1.64 1.25.59 1.98-1.7-1.17-1.7 1.17.59-1.98L15.75 11l2.06-.05L18.5 9l.69 1.95zm-2.28 4.95c.83-.08 1.72 1.1 1.19 1.85-.32.45-.66.87-1.08 1.27C15.17 23 8.84 23 4.94 19.07c-3.91-3.9-3.91-10.24 0-14.14.4-.4.82-.76 1.27-1.08.75-.53 1.93.36 1.85 1.19-.27 2.86.69 5.83 2.89 8.02a9.96 9.96 0 0 0 8.02 2.89m-1.64 2.02a12.08 12.08 0 0 1-7.8-3.47c-2.17-2.19-3.33-5-3.49-7.82-2.81 3.14-2.7 7.96.31 10.98 3.02 3.01 7.84 3.12 10.98.31"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="切到浅色"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="切到浅色" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 7a5 5 0 0 1 5 5 5 5 0 0 1-5 5 5 5 0 0 1-5-5 5 5 0 0 1 5-5m0 2a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3m0-7 2.39 3.42C13.65 5.15 12.84 5 12 5s-1.65.15-2.39.42zM3.34 7l4.16-.35A7.2 7.2 0 0 0 5.94 8.5c-.44.74-.69 1.5-.83 2.29zm.02 10 1.76-3.77a7.131 7.131 0 0 0 2.38 4.14zM20.65 7l-1.77 3.79a7.02 7.02 0 0 0-2.38-4.15zm-.01 10-4.14.36c.59-.51 1.12-1.14 1.54-1.86.42-.73.69-1.5.83-2.29zM12 22l-2.41-3.44c.74.27 1.55.44 2.41.44.82 0 1.63-.17 2.37-.44z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="搜索" placeholder="搜索" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="查找">
+        
+        <button type="reset" class="md-search__icon md-icon" title="清空当前内容" aria-label="清空当前内容" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            正在初始化搜索引擎
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/f0lkskill/FaustLauncher" title="前往仓库" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    f0lkskill/FaustLauncher
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="导航栏" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="FaustLauncher 插件开发文档" class="md-nav__button md-logo" aria-label="FaustLauncher 插件开发文档" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    FaustLauncher 插件开发文档
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/f0lkskill/FaustLauncher" title="前往仓库" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    f0lkskill/FaustLauncher
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    首页
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../tutorial/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    入门教程
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    入门教程
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    参考手册
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    参考手册
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../game-memory/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    游戏内存探索
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    WarpHook 开发笔记
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    WarpHook 开发笔记
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="目录">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      目录
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        一、这个组件到底是什么
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        二、几条已经确定下来的规则
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="二、几条已经确定下来的规则">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        线程归属
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sysmodules" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        重载要清 sys.modules
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sizeof-ctypessizeof" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        结构尺寸以 sizeof / ctypes.sizeof 为准
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#deref" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        顶层 deref 数组要显式写
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#_4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        钩子表变更 = 重装
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_5" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        三、边界：读取链能做什么、不能做什么
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="三、边界：读取链能做什么、不能做什么">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#il2cpp" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        il2cpp 内联
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_6" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        四、下一步（按优先级）
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="四、下一步（按优先级）">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. 容器步（已完成）
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. 去重开关（已完成）
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. 采样率（未做）
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#4-099" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. 中间层（0.9.9 做了，以字段表的形式）
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#5-099-v7" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. 代读与链长（0.9.9，协议 v7）
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#6-v8" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. 读文本（协议 v8，未做）
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_7" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        五、留给后来者的几条教训
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    归档
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    归档
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../archive/session-selfcheck/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    WarpHook 会话总结：立绘修复 + 生态自检 + 规范化准备
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="目录">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      目录
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        一、这个组件到底是什么
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        二、几条已经确定下来的规则
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="二、几条已经确定下来的规则">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        线程归属
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sysmodules" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        重载要清 sys.modules
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sizeof-ctypessizeof" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        结构尺寸以 sizeof / ctypes.sizeof 为准
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#deref" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        顶层 deref 数组要显式写
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#_4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        钩子表变更 = 重装
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_5" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        三、边界：读取链能做什么、不能做什么
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="三、边界：读取链能做什么、不能做什么">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#il2cpp" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        il2cpp 内联
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_6" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        四、下一步（按优先级）
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="四、下一步（按优先级）">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. 容器步（已完成）
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. 去重开关（已完成）
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. 采样率（未做）
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#4-099" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. 中间层（0.9.9 做了，以字段表的形式）
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#5-099-v7" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. 代读与链长（0.9.9，协议 v7）
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#6-v8" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. 读文本（协议 v8，未做）
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_7" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        五、留给后来者的几条教训
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="warphook">WarpHook 开发笔记<a class="headerlink" href="#warphook" title="Permanent link">&para;</a></h1>
+<p>零散的判断、边界和还没做的事。协议细节在 <code>addons/WarpHook/DESIGN.md</code>，
+用法示例在 <code>addons/WarpHook/README.md</code>，这份只记「为什么这么做」和「下一步」。</p>
+<hr />
+<h2 id="_1">一、这个组件到底是什么<a class="headerlink" href="#_1" title="Permanent link">&para;</a></h2>
+<p>一句话：<strong>插件 Python 与游戏 C++ 之间的中间包装</strong>。</p>
+<p>不是「钩子管理器」，也不是「成就引擎」。它只提供四类原语，别的什么都别往里塞：</p>
+<table>
+<thead>
+<tr>
+<th>原语</th>
+<th>干什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>钩子</td>
+<td>声明「哪个类的哪个方法被调用时通知我」，可拦可放</td>
+</tr>
+<tr>
+<td>事件</td>
+<td>命中后把「谁、哪个钩子、几个读出来的值」写进环形队列，Python 逐条取</td>
+</tr>
+<tr>
+<td>读取链</td>
+<td>告诉引擎「从这个对象的这个偏移、跳几下、读几个字节」</td>
+</tr>
+<tr>
+<td>命令通道</td>
+<td>反过来：Python 想让它弹窗 / 崩游戏，写一条命令，游戏主线程执行</td>
+</tr>
+</tbody>
+</table>
+<p>判断标准：<strong>如果一件事能用这四样之一组合出来，就不该加新接口</strong>。
+之前 Service 长出 <code>watch</code> / <code>auto_inject</code> / <code>register_menu</code> 一大堆，就是违反这条被推翻重做的。</p>
+<hr />
+<h2 id="_2">二、几条已经确定下来的规则<a class="headerlink" href="#_2" title="Permanent link">&para;</a></h2>
+<h3 id="_3">线程归属<a class="headerlink" href="#_3" title="Permanent link">&para;</a></h3>
+<p>插件只提供<strong>函数</strong>，线程由 WarpHook 起（用户原话：「让插件提供函数，然后 wh 负责统一起线程」）。
+插件要是自己起线程，重载时旧线程没收住，就会出现「两份日志」「两个实例互相覆盖」。</p>
+<h3 id="sysmodules">重载要清 <code>sys.modules</code><a class="headerlink" href="#sysmodules" title="Permanent link">&para;</a></h3>
+<p>启动器用 <code>exec(compile(...), module_globals)</code> 载入插件，<code>warphook.*</code> 会留在 <code>sys.modules</code> 里。
+不清掉的话，插件重载后子模块不重新执行，模块级单例还是旧的 —— <code>scr.py</code> 开头那段
+<code>for _stale in ...</code> 就是干这个的，不能删。</p>
+<h3 id="sizeof-ctypessizeof">结构尺寸以 <code>sizeof</code> / <code>ctypes.sizeof</code> 为准<a class="headerlink" href="#sizeof-ctypessizeof" title="Permanent link">&para;</a></h3>
+<p>给 <code>WARP_HOOK</code> 加字段后，我按公式手算 <code>272</code>，实际 <code>ctypes</code> 报 <code>264</code>。
+手算会漏 padding，两边不一致的后果是<strong>整块映射错位</strong>，症状是「钩子装上了但读出来全是 0」。</p>
+<h3 id="deref">顶层 <code>deref</code> 数组要显式写<a class="headerlink" href="#deref" title="Permanent link">&para;</a></h3>
+<p>读取链的「跳」有两层含义：加偏移（内嵌 struct）和解引用（class 引用）。
+默认是<strong>解引用</strong>，所以读内嵌字段必须显式 <code>deref: [false]</code>。
+忘了写的后果不是读错数，是<strong>把枚举当指针解引用 → 游戏直接崩</strong>（<code>*(int*)0</code>）。
+C 侧现在有 <code>warp_can_read</code> 兜底（<code>VirtualQuery</code> 查 <code>MEM_COMMIT</code> + 可读保护位），
+但那是保险，不是许可证。</p>
+<h3 id="_4">钩子表变更 = 重装<a class="headerlink" href="#_4" title="Permanent link">&para;</a></h3>
+<p>DLL 装过一次钩子后原来就 <code>continue</code> 了，导致「游戏运行中改配置必须重启游戏」。
+现在控制线程每 250ms 算一次钩子表的 FNV-1a 指纹，变了之后<strong>等 400ms 稳定</strong>再卸了重装。
+400ms 是给 Python 写表留的时间，别调小。</p>
+<hr />
+<h2 id="_5">三、边界：读取链能做什么、不能做什么<a class="headerlink" href="#_5" title="Permanent link">&para;</a></h2>
+<p>能：<strong>内存里的数字</strong>。int / float / bool / 指针 / <code>ObscuredInt</code>，沿偏移链跳最多 4 跳；
+容器也能进 —— <code>List</code>（0.4.0 / 0.7.0）、<code>Dictionary</code>（0.9.7 协议 v6，0.9.8 真机纠错），
+按下标取 or 整批遍历（一条链一次命中枚举出全场单位）。</p>
+<p>不能：</p>
+<ul>
+<li><strong>函数返回值</strong> —— 值在 <code>xmm0</code> / <code>eax</code> 里，不在对象里</li>
+<li><strong>容器的 TKey</strong> —— 遍历吐出来的是 TValue，要键就在配置里另算 key 偏移</li>
+<li><strong>字符串</strong> —— il2cpp string 是变长结构，要读长度再读 utf16</li>
+<li><strong>小 getter 的调用点</strong> —— 见下一节</li>
+</ul>
+<h3 id="il2cpp">il2cpp 内联<a class="headerlink" href="#il2cpp" title="Permanent link">&para;</a></h3>
+<p>AOT 编译会把一行的 getter 内联进所有调用点，内存里没有调用指令，钩子命中 0。
+<code>CharacterState::get_Hp</code> 就是这样。<strong>选钩子要看体积，不是看名字好不好听。</strong></p>
+<hr />
+<h2 id="_6">四、下一步（按优先级）<a class="headerlink" href="#_6" title="Permanent link">&para;</a></h2>
+<h3 id="1">1. 容器步（已完成）<a class="headerlink" href="#1" title="Permanent link">&para;</a></h3>
+<p><code>List&lt;T&gt;</code> 遍历 0.4.0 / 0.7.0；<code>Dictionary&lt;K,V&gt;</code> 0.9.7（协议 v6），0.9.8 真机纠错。
+新增两种步类型 <code>dict</code> / <code>dict_val</code>（deref 6/7）和 <code>iter</code> 位：普通用法按下标取第 k 个活跃值，
+带 iter 位则一次命中枚举全部活跃值、每轮推一条事件。</p>
+<p>真机踩了两个边界，都写进 DESIGN 了：遍历范围用 <code>count</code>（+0x20）不是 entries 容量；
+「从未用过」的槽 hashCode 是 0，只有 <code>Remove</code> 留下的死坑才是 -1。</p>
+<p><code>BattleObjectManager._allUnitDictionary → 每个单元 → _model → _instanceID</code>
+一条四跳链就能拿到全场单位 id，正是成就需要的「遍历全场单位」。</p>
+<h3 id="2">2. 去重开关（已完成）<a class="headerlink" href="#2" title="Permanent link">&para;</a></h3>
+<p>单值去重 0.4.1（<code>flags &amp; WARP_HF_DEDUPE</code>）；批去重 0.9.7 随容器步一起做 ——
+遍历批按「轮 0 快照的 12 格 FNV 哈希 + 轮数」比对，整批不变就不投。
+<code>FixedUpdate</code> 60fps + 512 格环 8.5 秒翻一轮的压力测试通过（连打三回合字典不变只投 1 批）。
+<strong>注意：开关必须显式打开（<code>flags=0x04</code> / Python 侧 <code>dedupe=True</code>），不开位则每回合全量重投。</strong></p>
+<h3 id="3">3. 采样率（未做）<a class="headerlink" href="#3" title="Permanent link">&para;</a></h3>
+<p>用户提过「允许自己配自己的采样率，同时兼容低访问的普通插件」。
+方向：钩子项加 <code>sample_every</code>（每 N 次命中才投递一次），C 侧计数取模，不用 Python 参与。</p>
+<h3 id="4-099">4. 中间层（0.9.9 做了，以字段表的形式）<a class="headerlink" href="#4-099" title="Permanent link">&para;</a></h3>
+<p>用户原话：「如果那些其他映射真翻译不了，那我们可以做中间层，反正包装到极致最好。」
+比如 <code>BattleUnitModel.hp</code> 这种「链 + 解密 + 容器」组合，可以做成语义层：
+配置写 <code>{'unit': 'self', 'field': 'hp'}</code>，底层展开成若干步。位置应该在 WarpHook 里，
+不是插件里 —— 否则每个插件都要重复一遍。</p>
+<p>0.9.9 落地的是它的实用版：<strong><code>warphook/fields.py</code> 字段表</strong>（类名 + 字段名 → 读链，
+偏移只记一处、带 <code>verified</code>/<code>note</code>）+ <strong><code>warphook/objects.py</code> 对象门面</strong>
+（<code>objects.units(host)</code> / <code>Unit.hp()</code> / <code>objects.scene(host)</code>）。插件里写
+<code>fields.read_chain("BattleUnitModel", "_state", "_hp")</code> 就够了，不用记 <code>0x148</code>。
+和原设想差一点：没有做成 C 侧的 <code>{'unit':'self','field':'hp'}</code> 字面语法糖 ——
+那要 DLL 认识类名和方法名，等于把一张字段表塞进共享内存；放在 Python 侧同样
+「写一次、所有插件共用」，而且改表不用重编 DLL。</p>
+<h3 id="5-099-v7">5. 代读与链长（0.9.9，协议 v7）<a class="headerlink" href="#5-099-v7" title="Permanent link">&para;</a></h3>
+<p>读链 4→8 跳；命令通道加 <code>CMD_READ</code>，<code>host.read(slot, chain)</code> 一次往返读一个值。
+<strong>为什么必须先做这个</strong>：插件跑在启动器进程，裸读游戏地址直接段错误
+（0.9.8 实测 exit 139）；没有代读，前面那些能力只能在测试脚本里用，插件用不上。</p>
+<p>0.9.9 之后字段表扩到 <strong>8 类 62 字段</strong>（dump.cs 抽全，<code>test/_dump_fields.py</code> 就是抽取工具），
+<code>Unit.scan()</code> 一次把一个单位的 <code>BattleUnitModel</code> + <code>CharacterState</code> 全读出来，
+<code>objects.scene_full()</code> 读场景对象全字段。剩下的两件没解决：</p>
+<h3 id="6-v8">6. 读文本（协议 v8，未做）<a class="headerlink" href="#6-v8" title="Permanent link">&para;</a></h3>
+<p>现在 <code>kind='text'</code> 的落点是 <code>WARP_READ_TEXT_NUM</code>，只把 il2cpp string 换算成一个数字，
+拿不到原文。所以 <code>buff_id(i)</code> 给的是<strong>名字指纹</strong>而不是「燃烧」「易伤」；单位名、
+技能名、stage 名同理，都读不出中文。方向：给读链加一种「读字符串到文本区」的落点
+（共享内存已有 256×128 的 <code>TEXTS</code> 段），或者命令通道加 <code>CMD_TEXT</code> 把对象槽里的
+string 读进文本段再由 Python 取。</p>
+<p>（采样率仍是第 3 条那个待办，未做。）</p>
+<hr />
+<h2 id="_7">五、留给后来者的几条教训<a class="headerlink" href="#_7" title="Permanent link">&para;</a></h2>
+<ol>
+<li><strong>症状是「全是 0」时，先怀疑偏移和尺寸，别怀疑逻辑。</strong> 三次全部 0，三次都是偏移/尺寸错。</li>
+<li><strong>测试绿不等于对。</strong> <code>warp_host_smoke</code> 曾经一直绿，因为测试和 DLL 用的是同一份旧布局，
+   自洽但都不对；换了新 DLL 立刻变成 <code>bind exports ok (11)</code>。
+   布局变更时，测试里的常量必须手动同步，而且要拿 DLL 真实 <code>sizeof</code> 对一遍。</li>
+<li><strong>void thunk 的「寄存器透传」是运气不是机制。</strong> thunk 声明成 <code>void</code> 时，
+   RAX/XMM0 里 original 留下的返回值只要没人碰就会透传回调用方——但「没人碰」
+   保持不住：发事件、fire 动作，任何后续 C 代码都可能用掉 XMM0。带返回值的钩子
+   （<code>ret_kind</code>）必须在 thunk 的<strong>最后一步</strong>把值显式写回（int→<code>movl %0,%%eax</code>、
+   float→<code>movd %0,%%xmm0</code>），写在函数末尾保证后面没有代码再碰这两个寄存器。</li>
+<li><strong>thunk 形状要完整收发 il2cpp 的隐藏 <code>MethodInfo*</code>。</strong> 形状写成
+   <code>(self, a1..aN, mi)</code> 而不是 <code>(self, a1..aN)</code>：非泛型方法体一般不读 mi，
+   丢了也没事，但九参构造（railway_hist 的 <code>.ctor</code>）不敢赌——多声明一个形参
+   就能完整转发，成本为零。</li>
+<li><strong>宏参数带逗号要整体加括号。</strong> <code>WARP_THUNK_DEF(N, n, DECL, EVT, CALL)</code> 的
+   <code>EVT</code> 摊平后是六个实参，宏只看到十个参数直接炸（<code>passed 10 arguments, but
+   takes just 5</code>）。实参处写 <code>(NULL, a1, …, a6)</code>，配合 <code>WARP_EVT6 EVT</code> 摊平。</li>
+<li><strong>同一件事的两条配置路径必须共用一张翻译表。</strong> <code>ret_kind='int32'</code> 在
+   <code>hook()</code> 关键字路径有名字翻译，<code>_write_config</code> 的 dict 路径却直接 <code>int(value)</code>
+   ——失败后<strong>静默回退 VOID</strong>，返回值悄悄丢了，还不报错。修法是抽
+   <code>HOST_RET_NAMES</code> 常量两边共用。</li>
+<li><strong><code>&amp; (N-1)</code> 掩码钳位只对 2 的幂成立。</strong> 事件八格时 <code>out &amp; 7</code> 是对的，
+   扩成十二格后 <code>out &amp; 11</code> 会把 12 折成 8——非 2 的幂一律用显式
+   <code>max(0, min(x, N-1))</code>。</li>
+<li><strong>删一整段代码前，先把区间里的 <code>def</code> 清单列全再动手。</strong> P5 删老链路时按
+   首尾锚点整段删除，把夹在中间的 574 行规则引擎应用层（<code>handle_line</code> 到
+   <code>_apply_buffs</code>）一起吞了；靠 <code>git show HEAD:</code> 把区间原样提回来才救回。
+   锚点删除必须先断言「区间内 def 列表 == 预期要删的列表」。</li>
+<li><strong>这个仓库不要用 <code>git stash</code>，对照基线一律 <code>git worktree add</code>。</strong> 工作区里
+   常驻忽略文件和别的会话留下的脏改动，stash push/pop 一冲突就出 DU 混沌态；
+   worktree 挂提交号是只读对照，永远干净。</li>
+<li><strong>il2cpp 的 <code>Dictionary</code> 字段序不等于 .NET reference source。</strong> 照文档把
+   <code>freeCount</code> 读在 <code>+0x2C</code>，真机读到的是 <code>version</code>（13），<code>count - freeCount</code>
+   变负数 → <code>dict_count</code> 恒 0。实测是 <code>count@0x20 / freeList@0x24 / freeCount@0x28 /
+   version@0x2C</code>。最阴的是<strong>单元测试用伪造内存 + 同一个错误假设，全绿</strong>；
+   「测试绿 ≠ 对」这次又应验了一遍。</li>
+<li><strong>只比 <code>version</code> 区分不了同协议号的两次构建。</strong> 改完源码编到 <code>test/</code> 忘了拷
+   到 <code>addons/WarpHook/</code>，游戏跑的还是旧 DLL：<code>hdr.version</code> 照样是 6，症状却是
+   「<code>dict_count</code> 读出 1682595280 = buckets 指针低 32 位、iter 批只出 1 条」。
+   现在 DLL 启动打一行 <code>build &lt;DATE&gt; &lt;TIME&gt; proto vN</code>，Python 侧 <code>host_build()</code>
+   对得上才算同版。</li>
+<li><strong>声明式配置里每个「顺手给的默认值」都是一颗雷。</strong> 钩子 dict 不写
+    <code>actions</code> 时，<code>configure</code> 的缺省值是 <code>ACT_POPUP</code>——于是一条只想抓单例的
+    每帧钩子变成了「每帧弹一次空窗」，日志刷 <code>fire actions (1)</code> /
+    <code>popup: empty text</code>，游戏里肉眼可见地闪。<strong>默认值要选「什么都不做」</strong>，
+    有动作的必须显式写。同一个函数里 <code>cache=(arg, 槽)</code> 元组也没被认（只认
+    平铺的 <code>cache_arg</code>/<code>cache_slot</code>），钩子装上了、对象槽永远空——两个坑叠在
+    一起，症状还会互相掩盖。</li>
+<li><strong>保留位必须写在能被读到的地方。</strong> <code>GlobalGameManager.FixedUpdate</code> 是命令
+    泵自己钩的入口，插件再钩一次只会让泵无处落脚（<code>pump: no free entry point</code>），
+    而 <code>CMD_READ</code> 就是泵驱动的——整条代读能力静默失效。对象槽 30/31 同理（每帧
+    回调的魔法值 + 函数指针）。这类「谁也不能碰」的位子，得写在 <code>warp_layout.h</code>
+    的注释里、<code>objects.py</code> 的常量旁边、README 的第一段，而不是靠人记住。</li>
+</ol>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  回到页面顶部
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.sections", "navigation.top", "navigation.indexes", "content.code.copy", "content.code.annotate", "search.suggest", "search.highlight", "toc.follow"], "search": "../../assets/javascripts/workers/search.a7633da7.min.js", "tags": null, "translations": {"clipboard.copied": "\u5df2\u590d\u5236", "clipboard.copy": "\u590d\u5236", "search.result.more.one": "\u5728\u8be5\u9875\u4e0a\u8fd8\u6709 1 \u4e2a\u7b26\u5408\u6761\u4ef6\u7684\u7ed3\u679c", "search.result.more.other": "\u5728\u8be5\u9875\u4e0a\u8fd8\u6709 # \u4e2a\u7b26\u5408\u6761\u4ef6\u7684\u7ed3\u679c", "search.result.none": "\u6ca1\u6709\u627e\u5230\u7b26\u5408\u6761\u4ef6\u7684\u7ed3\u679c", "search.result.one": "\u627e\u5230 1 \u4e2a\u7b26\u5408\u6761\u4ef6\u7684\u7ed3\u679c", "search.result.other": "# \u4e2a\u7b26\u5408\u6761\u4ef6\u7684\u7ed3\u679c", "search.result.placeholder": "\u952e\u5165\u4ee5\u5f00\u59cb\u641c\u7d22", "search.result.term.missing": "\u7f3a\u5c11", "select.version": "\u9009\u62e9\u5f53\u524d\u7248\u672c"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.c21346df.min.js"></script>
+      
+    
+  </body>
+</html>
