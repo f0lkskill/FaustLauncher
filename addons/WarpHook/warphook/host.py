@@ -1578,7 +1578,11 @@ class Host:
         kinds = []
         for value in args:
             if isinstance(value, tuple) and len(value) == 2 and value[0] == "slot":
-                bits_list.append(self.object_ptr(value[1]))
+                # v10.1：vars 是 32 位整数槽，只能传槽号；指针由宿主侧查对象表。
+                idx = int(value[1])
+                if not 0 <= idx < HOST_OBJECT_COUNT:
+                    raise ValueError(f"对象槽 {idx} 超出 0..{HOST_OBJECT_COUNT - 1}")
+                bits_list.append(idx)
                 kinds.append("p")
                 continue
             if isinstance(value, tuple) and len(value) == 2 and value[0] == "buf":

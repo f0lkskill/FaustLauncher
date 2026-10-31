@@ -315,7 +315,11 @@ static int warp_cmd_build_params(int argc, const char *kinds,
             params[i] = &fval[i];
             break;
         case WARP_CMD_ARG_P:
-            pval[i] = (void *)(intptr_t)v;
+            /* v10.1：vars 只有 32 位，塞 64 位指针必被截断（游戏拿到野指针直接 AV）。
+             * 现在约定 vars 里放的是「对象槽号」，指针在宿主侧查表取。 */
+            if (v < 0 || v >= WARP_OBJECT_COUNT)
+                return WARP_CMD_RES_BAD_ARGC;
+            pval[i] = warp_objects()[v];
             params[i] = &pval[i];
             break;
         case WARP_CMD_ARG_M:

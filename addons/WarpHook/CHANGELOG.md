@@ -1,3 +1,19 @@
+## 0.9.19 — 对象参数传槽号，修掉 64 位指针被截断
+
+`WARP_HEADER.vars` 是 8 个 **32 位**整数槽，而 `call(..., args=(('slot', 27),))` 往里面塞的是
+64 位对象指针 —— 高 32 位在写进共享内存时就丢了。游戏侧拿到的是截断后的野指针，
+访问其字段即 AV。
+
+真机表现：`IsLoadedBank` / `LoadBankFromLocal` 一调就「方法抛了异常」或直接超时，
+随后进程崩，崩溃栈永远是 `hk_warp_pump → warp_pump_commands → warp_cmd_call →
+warp_safe_invoke+0x22`（`call *0x30(%rax)` 即 `runtime_invoke`）。看起来像「调游戏方法
+就会崩」，实际是参数根本没传对。
+
+- C 侧 `warp_cmd_build_params` 的 `WARP_CMD_ARG_P` 分支：`vars[i]` 现在按**对象槽号**
+  解释，指针由宿主侧 `warp_objects()[v]` 查表取出（越界返回 `BAD_ARGC`）。
+- Python 侧 `Host._pack_args` 的 `('slot', n)` 改为传真槽号，不再传真指针。
+- 教训：共享内存里跨进程传的东西，先问清楚「这个字段有多宽」，别假设 C 的 `int` 装得下指针。
+
 ## 0.9.18 — 协议 v10：按参数类型选重载
 
 **这次是「防崩」而不是「加功能」**：0.9.16/0.9.17 三次把游戏打崩，根因
