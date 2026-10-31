@@ -29,7 +29,7 @@ import ctypes.wintypes
 import os
 
 from . import objects
-from .base import log
+from .base import log as _log
 
 BGM_PREFIX = 'event:/BGM/Battle/'
 
@@ -86,6 +86,46 @@ def _ok(result):
     return result == '已执行'
 
 
+def ensure_bank(host, bank, timeout=2.0):
+    """把音库文件加载进 FMOD（照旧插件 ``preload_bank`` 的四步）。
+
+    单例走 ``static_get('SoundManager::_instance')`` —— v0.9.29 起是手动读
+    static_fields，绕开必 AV 的混淆导出 ``field_static_get_value``；
+    ``IsLoadedBank`` / ``LoadBankFromLocal`` 是普通实例方法，直调安全。
+
+    Returns:
+        ``(ok, reason)`` —— 失败不阻断换曲：目标曲恰好在本战斗已加载的
+        音库里时，不预载也能放。
+    """
+    made = host.make_str(bank, slot=SLOT_BANK_NAME, timeout=timeout)
+    if isinstance(made, str) and made != '已执行':
+        return False, f'音库名造不出来：{made}'
+    got = host.static_get('SoundManager::_instance', out_slot=SLOT_SOUND,
+                          timeout=timeout)
+    if isinstance(got, str) and got != '已执行':
+        return False, f'SoundManager 单例拿不到：{got}'
+    kw = dict(slot=SLOT_SOUND, timeout=timeout)
+    loaded = host.call('SoundManager::IsLoadedBank', args=(('slot', SLOT_BANK_NAME),),
+                       sig='S', ret='bool', **kw)
+    if _ok(loaded) and loaded is True:
+        return True, '已加载'
+    base = ('LimbusCompany_Data/StreamingAssets/Assets/Sound/'
+            'FMODBuilds/Desktop/')
+    for suffix in ('.assets.bank', '.bank'):
+        made = host.make_str(base + bank + suffix, slot=SLOT_BANK_NAME,
+                             timeout=timeout)
+        if isinstance(made, str) and made != '已执行':
+            continue
+        # FMOD 加载几十 MB 的音库可能要秒级，别用查询的超时
+        host.call('SoundManager::LoadBankFromLocal',
+                  args=(('slot', SLOT_BANK_NAME), 0, 0),
+                  sig='S,B,B', ret='void', timeout=max(timeout * 2.5, 5.0))
+    loaded = host.call('SoundManager::IsLoadedBank', args=(('slot', SLOT_BANK_NAME),),
+                       sig='S', ret='bool', **kw)
+    return (_ok(loaded) and loaded is True,
+            '已加载' if _ok(loaded) and loaded is True else '加载后复查未通过')
+
+
 def play(host, name, bank=None, stop_current=True, timeout=2.0,
          require_battle=True, check=False):
     """放一首战斗 BGM。返回 ``{'ok', 'name', 'path', 'reason'}``。
@@ -125,6 +165,13 @@ def play(host, name, bank=None, stop_current=True, timeout=2.0,
                     'reason': f'不在战斗场景（scene={scene}）'}
 
     slot = SLOT_SCRATCH
+    if bank:
+        # 音库预载（0.9.29 恢复）：曲名不在已加载音库里时 StartAddBGM
+        # 内部异常 → 直调 AV → worker 连环报废（「第一次成功之后全部
+        # 失败」的真凶）。预载失败不阻断 —— 撞运气试播。
+        ok, why = ensure_bank(host, str(bank), timeout=timeout)
+        if not ok:
+            _log(f'音库预载未通过（{bank}：{why}），继续试播')
     made = host.make_str(short, slot=slot, timeout=timeout)
     if isinstance(made, str) and made != '已执行':
         return {'ok': False, 'name': short, 'path': path, 'reason': made}
