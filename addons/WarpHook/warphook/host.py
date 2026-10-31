@@ -34,7 +34,7 @@ from .base import (
 )
 
 HOST_MAGIC = 0x54534857           # "WHST"
-HOST_VERSION = 9                  # v9：命令的 out 参数缓冲（CALL 能拿回值类型）
+HOST_VERSION = 10                 # v9：命令的 out 参数缓冲（CALL 能拿回值类型）
                                   # （v8：钩子参数改写；v7：代读读链；v6：字典容器步）
 # v5：尾部追加 buff 关注哈希表段（BUF 行）。
 # v4：钩子表 16→32（成就 25 条 + NoGacha 2 条装不下 16 槽）
@@ -48,7 +48,7 @@ HOST_TEXT_LEN = 128
 HOST_KLASS_LEN = 48
 HOST_METHOD_LEN = 48
 HOST_LOG_LEN = 48
-HOST_EXPORT_COUNT = 15
+HOST_EXPORT_COUNT = 22
 HOST_NAME_MAX = 64
 HOST_VAR_COUNT = 8
 HOST_CMD_TEXT_LEN = 256
@@ -280,9 +280,14 @@ SAFE_CALLS = frozenset((
     "BattleSoundGenerator::PauseBGM",
     "BattleSoundGenerator::TryStartBattleBgmByName",
     "SoundManager::StopBGM",
-    # 音库：事件所在的 bank 没加载时 StartAddBGM 会静默失败（0.9.16 实测静音）
-    "SoundManager::LoadBank",
-    "SoundManager::LoadBankFromLocal",
+    # v10：类型签名（sig='S'）能精确挑中 IsLoadedBank(string)，不再误选
+    # AssetReference 重载，所以这条重新放开 —— 它只查状态、不改游戏。
+    "SoundManager::IsLoadedBank",
+    # 注意：**不要**放开 SoundManager::LoadBank / LoadBankFromLocal。
+    # 0.9.16 真机实测：对一个已经加载过的 bank 重复 LoadBankFromLocal，
+    # 崩在 GameAssembly 内部（栈 hk_warp_pump -> warp_pump_commands ->
+    # warp_cmd_call -> runtime_invoke -> AV），第一次「成功」第二次就死。
+    # 加载 Master.strings.bank 同样直接崩。音库这条路封了。
     # v9：换曲前预检（旧插件 switch_rule 的第一步）。第二个参数是
     # FMOD.Studio.EventInstance& —— 值类型 out，走 MAP 尾部的 out 缓冲。
     "SoundManager::TryCreateInstance",
@@ -330,6 +335,14 @@ HOST_EXPORT_ORDER = [
     "il2cpp_class_get_parent",
     "il2cpp_gchandle_new",
     "il2cpp_gchandle_free",
+    # v10：按参数类型选重载（重载区分）+ 读静态字段要用的元数据接口
+    "il2cpp_class_get_methods",
+    "il2cpp_method_get_name",
+    "il2cpp_method_get_param_count",
+    "il2cpp_method_get_param",
+    "il2cpp_method_get_return_type",
+    "il2cpp_type_get_name",
+    "il2cpp_free",
 ]
 
 class HostHeader(ctypes.Structure):
@@ -1634,7 +1647,7 @@ class Host:
         return self._command(CMD_STR, text, timeout, slot=slot)
 
     def call(self, method, slot=None, args=(), ret="int32", out_slot=-1,
-             timeout=2.0, unsafe=False):
+             timeout=2.0, unsafe=False, sig=None):
         """调一个方法：``host.call("Foo::get_value", slot=24, ret="int32")``。
 
         !! danger "默认只放白名单"
@@ -1652,6 +1665,11 @@ class Host:
                 "ref" 落 out_slot 槽（返回槽号）。
             out_slot: ret="ref" 时结果落的槽。
             unsafe: 允许调用不在白名单里的方法。
+            sig: 参数类型签名，用来在同名同参数个数的重载里挑对那一个。
+                逗号分隔，`S`=String `B`=bool `I`=int `F`=float
+                `L`=long `D`=double `V`=void，`O`/`?` 表示不校验；
+                末尾 `&` 表示 byref。例：`sig="S,B,B"`、
+                `sig="S,FMOD.Studio.EventInstance&"`。
 
         Returns:
             ret 为 int32/float 时返回数值（失败返回结果字符串）；
@@ -1670,7 +1688,11 @@ class Host:
             return f"对象槽 {slot} 超出 0..{HOST_OBJECT_COUNT - 1}"
         if retkind == CMD_RET_REF and not 0 <= int(out_slot) < HOST_OBJECT_COUNT:
             return f"输出槽 {out_slot} 超出 0..{HOST_OBJECT_COUNT - 1}"
-        text = method if not kinds else f"{method}#{kinds}"
+        if sig:
+            # C 侧按 '|' 切出类型串，前提是 '#' 段存在
+            text = f"{method}#{kinds or 'i' * len(packed)}|{sig}"
+        else:
+            text = method if not kinds else f"{method}#{kinds}"
         this_slot = -1 if slot is None else int(slot)
         result = self._command(CMD_CALL, text, timeout, args=packed,
                                retkind=retkind, slot=this_slot, out_slot=out_slot)

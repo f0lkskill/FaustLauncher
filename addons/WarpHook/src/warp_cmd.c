@@ -157,6 +157,147 @@ static void warp_cmd_name_until(const char *text, char *out, size_t max)
     out[n] = '\0';
 }
 
+/* ---- 按参数类型选重载（v10） -------------------------------------
+ * 老路子 warp_find_method 只按「名字 + 参数个数」找，碰到
+ * IsLoadedBank(AssetReference) / IsLoadedBank(string) 这种同参数个数的
+ * 重载会挑错，把字符串当对象指针传进去 —— 崩在游戏内部（0.9.16 实测）。
+ * 这里照旧插件 BattleBGMExtend 的 method() 做法，把每个参数的类型名也
+ * 一起比一遍。类型串写在 cmd_text 的 '|' 之后，逗号分隔：
+ *   S=System.String  B=System.Boolean  I=System.Int32  F=System.Single
+ *   L=System.Int64   D=System.Double   V=System.Void
+ *   O 或 ?=不校验（任意类型）
+ * 末尾带 '&' 表示 byref（例如 EventInstance&），比对时按 byref 处理。
+ */
+static void warp_cmd_sig(const char *text, char *sig, size_t max)
+{
+    const char *bar;
+    size_t n;
+
+    sig[0] = '\0';
+    if (!text || max < 2)
+        return;
+    bar = strchr(text, '|');
+    if (!bar)
+        return;
+    bar++;
+    n = strlen(bar);
+    if (n >= max)
+        n = max - 1;
+    memcpy(sig, bar, n);
+    sig[n] = '\0';
+}
+
+static const char *warp_type_full(char abbr)
+{
+    switch (abbr) {
+    case 'S': return "System.String";
+    case 'B': return "System.Boolean";
+    case 'I': return "System.Int32";
+    case 'F': return "System.Single";
+    case 'L': return "System.Int64";
+    case 'D': return "System.Double";
+    case 'V': return "System.Void";
+    default:  return NULL;
+    }
+}
+
+/* 比对第 index 个参数；want 可以是单字符缩写，也可以是全名。 */
+static int warp_param_matches(const void *method, int index, const char *want)
+{
+    const void *type;
+    char *actual;
+    char buf[96];
+    size_t n;
+    int ok;
+
+    if (!g_ic.method_get_param || !g_ic.type_get_name)
+        return 0;
+    n = strlen(want);
+    while (n && (want[n - 1] == '&' || want[n - 1] == ' '))
+        n--;
+    if (n == 0)
+        return 0;
+    if (n == 1 && (want[0] == 'O' || want[0] == '?'))
+        return 1;                       /* 通配，不校验 */
+    if (n == 1) {
+        const char *full = warp_type_full(want[0]);
+
+        if (!full)
+            return 0;
+        n = strlen(full);
+        if (n >= sizeof(buf))
+            return 0;
+        memcpy(buf, full, n + 1);
+    } else {
+        if (n >= sizeof(buf))
+            n = sizeof(buf) - 1;
+        memcpy(buf, want, n);
+        buf[n] = '\0';
+    }
+    type = g_ic.method_get_param(method, (unsigned int)index);
+    if (!type)
+        return 0;
+    actual = g_ic.type_get_name(type);
+    if (!actual)
+        return 0;
+    ok = (strcmp(actual, buf) == 0);
+    if (!ok) {
+        /* 有的版本把 byref 写成 "Type&"，也认 */
+        size_t alen = strlen(actual);
+        size_t blen = strlen(buf);
+
+        if (alen == blen + 1 && actual[alen - 1] == '&' &&
+            strncmp(actual, buf, blen) == 0)
+            ok = 1;
+    }
+    if (g_ic.free_mem)
+        g_ic.free_mem(actual);
+    return ok;
+}
+
+static int warp_sig_match(const void *method, int argc, const char *sig)
+{
+    const char *p = sig;
+    int i;
+
+    for (i = 0; i < argc; i++) {
+        const char *comma = strchr(p, ',');
+        size_t n = comma ? (size_t)(comma - p) : strlen(p);
+        char want[96];
+
+        if (n >= sizeof(want))
+            n = sizeof(want) - 1;
+        memcpy(want, p, n);
+        want[n] = '\0';
+        if (!warp_param_matches(method, i, want))
+            return 0;
+        if (!comma)
+            return (i == argc - 1);
+        p = comma + 1;
+    }
+    return 1;
+}
+
+static void *warp_find_method_typed(void *klass, const char *name, int argc,
+                                    const char *sig)
+{
+    void *iter = NULL;
+    const void *m;
+
+    if (!g_ic.class_get_methods || !g_ic.method_get_name ||
+        !g_ic.method_get_param_count)
+        return NULL;
+    while ((m = g_ic.class_get_methods(klass, &iter)) != NULL) {
+        if (strcmp(g_ic.method_get_name(m), name) != 0)
+            continue;
+        if ((int)g_ic.method_get_param_count(m) != argc)
+            continue;
+        if (warp_sig_match(m, argc, sig))
+            return (void *)m;
+    }
+    return NULL;
+}
+
 static int warp_cmd_build_params(int argc, const char *kinds,
                                  void *params[], int *ival, float *fval,
                                  void **pval)
@@ -269,7 +410,15 @@ int warp_cmd_call(int argc, int slot, int retkind, int out_slot, const char *arg
     klass = warp_find_class(g_domain, name);
     if (!klass)
         return WARP_CMD_RES_NO_CLASS;
-    method = warp_find_method(klass, mname, argc);
+    {
+        char sig[WARP_CMD_SIG_MAX];
+
+        warp_cmd_sig(sep, sig, sizeof(sig));
+        if (sig[0])
+            method = warp_find_method_typed(klass, mname, argc, sig);
+        else
+            method = warp_find_method(klass, mname, argc);
+    }
     if (!method)
         return WARP_CMD_RES_NO_METHOD;
     if (slot >= 0) {

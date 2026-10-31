@@ -217,18 +217,17 @@ def game_dir():
 
 
 def ensure_bank(host, bank, timeout=5.0):
-    """把音库 ``bank`` 加载进来（重复调用无害）。
+    """查音库是否已加载；**不再主动加载**。
 
-    游戏自己的 ``LoadBankFromLocal`` 收的是**绝对路径**，一个音库要加两个
-    文件：``X.assets.bank`` 与 ``X.bank``（旧插件就是按这个顺序加两遍的）。
-    音库由游戏持有和卸载，插件只触发加载。
+    v10 起 ``SoundManager.IsLoadedBank`` 能用类型签名（``sig='S'``）精确
+    挑中 ``IsLoadedBank(string)`` 这个重载 —— 之前按「名字 + 参数个数」找
+    会挑到 ``IsLoadedBank(AssetReference)``，把字符串当对象指针传进去，
+    崩在游戏内部（0.9.16 三连崩的起因）。
 
-    注意**不要**用 ``SoundManager.IsLoadedBank`` 先查状态：它有两个 1 参
-    重载（``AssetReference`` / ``string``），宿主按「名字 + 参数个数」选
-    方法会挑错重载，把字符串当对象指针传进去 —— 直接崩（0.9.16 实测）。
+    ``LoadBankFromLocal`` 仍**不调用**：0.9.16 实测对已加载的 bank 再加载
+    一次就崩（连 ``Master.strings.bank`` 都崩）。所以这里只查状态，
+    音库没加载就返回 ``ok=False``，让调用方决定怎么办。
     """
-    from .base import log
-
     root = game_dir()
     if not root:
         return {'ok': False, 'reason': '找不到游戏进程'}
@@ -237,33 +236,18 @@ def ensure_bank(host, bank, timeout=5.0):
                         out_slot=SLOT_SOUND, timeout=timeout)
         if not host.object_ptr(SLOT_SOUND):
             return {'ok': False, 'reason': f'拿不到 SoundManager（{got}）'}
-
-    base_dir = os.path.join(root, 'LimbusCompany_Data', 'StreamingAssets',
-                            'Assets', 'Sound', 'FMODBuilds', 'Desktop')
-    slot = SLOT_BANK_NAME
-    tried = []
-    try:
-        for suffix in ('.assets', ''):
-            target = os.path.join(base_dir, f'{bank}{suffix}.bank')
-            if not os.path.exists(target):
-                tried.append(f'{bank}{suffix}.bank 不存在')
-                continue
-            made = host.make_str(target, slot=slot, timeout=timeout)
-            if isinstance(made, str) and made != '已执行':
-                return {'ok': False, 'reason': made}
-            result = host.call('SoundManager::LoadBankFromLocal',
-                               slot=SLOT_SOUND,
-                               args=(('slot', slot), 0, 0),
-                               timeout=max(timeout, 10.0))
-            if not _ok(result):
-                return {'ok': False, 'reason': f'LoadBankFromLocal: {result}'}
-            tried.append(f'{bank}{suffix}.bank')
-    finally:
-        host.release(slot)
-    if not tried:
-        return {'ok': False, 'reason': f'音库里没有可用文件（{bank}）'}
-    log(f'音库就绪：{", ".join(tried)}')
-    return {'ok': True, 'reason': '', 'files': tried}
+    made = host.make_str(bank, slot=SLOT_BANK_NAME, timeout=timeout)
+    if isinstance(made, str) and made != '已执行':
+        return {'ok': False, 'reason': made}
+    result = host.call('SoundManager::IsLoadedBank', slot=SLOT_SOUND,
+                       args=(('slot', SLOT_BANK_NAME),), sig='S',
+                       timeout=timeout)
+    if isinstance(result, str):
+        return {'ok': False, 'reason': f'IsLoadedBank: {result}'}
+    if result:
+        return {'ok': True, 'reason': '', 'loaded': True}
+    return {'ok': False, 'loaded': False,
+            'reason': f'音库 {bank} 还没被游戏加载（自动加载已停用）'}
 
 
 def stop(host, restore=True, timeout=2.0):
