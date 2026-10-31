@@ -16,9 +16,6 @@
 /* 像写普通代码一样一行搞定，又不用担心理线程碰 Unity UI。              */
 /* ------------------------------------------------------------------ */
 
-/* 每个对象槽至多一个强句柄，0 = 这槽上的对象没挂句柄（cache 钩子落的裸指针）。 */
-unsigned int g_gc_handles[WARP_OBJECT_COUNT];
-
 /* ------------------------------------------------------------------ */
 /* invoke 保护                                                         */
 /*                                                                     */
@@ -99,13 +96,13 @@ void warp_slot_put(int slot, void *obj, int with_handle)
     objs = warp_objects();
     if (!objs)
         return;
-    if (g_gc_handles[slot] && g_ic.gchandle_free) {
-        g_ic.gchandle_free(g_gc_handles[slot]);
-        g_gc_handles[slot] = 0;
-    }
+    /* 0.9.15：原本这里对旧槽值调 il2cpp_gchandle_free / il2cpp_gchandle_new。
+     * 真机实测第二次写同一个槽时 free 会崩在 GameAssembly 内部（栈是
+     * warp_slot_put -> gchandle_free），第一次却正常 —— 句柄本身不可信。
+     * 对象槽里装的都是长命对象（场景单例、战斗单例）和当场用掉的临时对象，
+     * 本来就不需要强句柄保护，所以整条句柄路径关掉，槽里只放裸指针。 */
+    (void)with_handle;
     objs[slot] = obj;
-    if (with_handle && obj && g_ic.gchandle_new)
-        g_gc_handles[slot] = g_ic.gchandle_new(obj, 1);
 }
 
 void *warp_slot_get(int slot)
@@ -439,8 +436,12 @@ void warp_pump_commands(void)
         return;
 
     type = g_hdr->cmd_type;
-    /* 先记账再执行：弹窗里可能重入（弹窗自己又触发钩子），不能重复执行。 */
+    /* 先记账再执行：弹窗里可能重入（弹窗自己又触发钩子），不能重复执行。
+       但记账之后、执行完之前 cmd_result 还停在上一条的旧值 —— py 侧一看到
+       ack 到位就把旧值当成结果读走，表现为莫名其妙的「失败(-1)」。所以
+       先标成 BUSY，真跑完再把 rc 写回。 */
     g_hdr->cmd_ack = seq;
+    g_hdr->cmd_result = WARP_CMD_RES_BUSY;
 
     switch (WARP_CMD_CODE(type)) {
     case WARP_CMD_POPUP:
