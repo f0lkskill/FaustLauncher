@@ -115,6 +115,7 @@ class Live:
         self._scene = None
         self._scene_at = 0.0
         self._hooks_on = False
+        self._pushed_ok = False
 
     # ---------- 连接 ----------
 
@@ -452,7 +453,9 @@ class Live:
         host = self.host()
         hooks = self._live_hooks() if self._hooks_on else []
         host.configure(hooks=hooks, texts=[])
-        return host.push(True) not in ('共享内存不可用',)
+        ok = host.push(True) not in ('共享内存不可用',)
+        self._pushed_ok = bool(ok)
+        return self._pushed_ok
 
     def _ensure_hooks(self):
         if self._hooks_on:
@@ -472,6 +475,14 @@ class Live:
         while not self._stop.is_set():
             try:
                 host.beat()
+                # 游戏未启动时首推会静默失败：pump 每轮补装直到成功
+                if self._hooks_on and not self._pushed_ok:
+                    try:
+                        if self._push():
+                            log('回合钩子已补装（游戏就绪后自动重试成功）',
+                                prefix=f'[{self.owner}]')
+                    except Exception:  # noqa: BLE001
+                        pass
                 if self._round_cbs:
                     hits = host.hits(method='OnRoundStart_Model')
                     if last_round is None:
