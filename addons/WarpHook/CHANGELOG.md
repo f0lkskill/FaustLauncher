@@ -1,3 +1,32 @@
+## 0.9.18 — 协议 v10：按参数类型选重载
+
+**这次是「防崩」而不是「加功能」**：0.9.16/0.9.17 三次把游戏打崩，根因
+都是**同参数个数的重载选错**。
+
+### 重载歧义是病根
+`SoundManager.IsLoadedBank` 有 `IsLoadedBank(AssetReference)` 与
+`IsLoadedBank(string)` 两个 1 参重载。宿主原来只按「名字 + 参数个数」找
+方法（`il2cpp_class_get_method_from_name`），必然挑到第一个 —— 把 C 字符串
+当对象指针传进去，崩在 GameAssembly 内部。
+
+### v10 的做法（照旧插件 BattleBGMExtend 的 `method()`）
+- 新增 7 个导出：`il2cpp_class_get_methods` / `method_get_name` /
+  `method_get_param_count` / `method_get_param` /
+  `method_get_return_type` / `type_get_name` / `il2cpp_free`
+  （`WARP_EXPORT_COUNT 15 → 22`，MAP 178064 字节）。
+- `warp_find_method_typed()` 遍历类的全部方法，名字、参数个数、每个参数的
+  类型名三重比对才返回；`il2cpp_class_get_method_from_name` 退为兜底。
+- `Host.call(..., sig=...)` 传类型串，写在命令文本的 `|` 之后：
+  `S`=String `B`=bool `I`=int `F`=float `L`=long `D`=double `V`=void，
+  `O`/`?` 不校验，末尾 `&` 表示 byref。
+  例：`sig="S"`、`sig="S,B,B"`、`sig="S,FMOD.Studio.EventInstance&"`。
+
+### 音库加载彻底关掉
+`LoadBankFromLocal` 对已加载的 bank 重复调用会崩（连 `Master.strings.bank`
+都崩）。白名单里**永久移除** `SoundManager::LoadBank` / `LoadBankFromLocal`；
+`audio.ensure_bank()` 改成只查 `IsLoadedBank(string)`（`sig='S'`），
+没加载就返回失败，交给调用方决定。
+
 # WarpHook 更新记录
 
 这里只记 WarpHook 自身的改动。启动器本体（`functions/`、`web/`）的改动不在这个文件里。

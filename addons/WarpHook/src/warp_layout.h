@@ -49,7 +49,7 @@
 /* 数值转字符串（构建戳用）：warp_log("proto v" WARP_STR(WARP_VERSION)) */
 #define WARP_STR_(x)      #x
 #define WARP_STR(x)       WARP_STR_(x)
-#define WARP_VERSION      9                /* v9：命令的 out 参数缓冲（CALL 的参数
+#define WARP_VERSION      10                /* v9：命令的 out 参数缓冲（CALL 的参数
                                             * 类型多一个 'm'，指向 MAP 尾部的可写
                                             * 块）——值类型 out 参数（FMOD 的
                                             * EventInstance&）终于能传了。
@@ -73,7 +73,7 @@
 #define WARP_KLASS_LEN    48
 #define WARP_METHOD_LEN   48
 #define WARP_LOG_LEN      48
-#define WARP_EXPORT_COUNT 15
+#define WARP_EXPORT_COUNT 22
 #define WARP_NAME_MAX     64
 
 #define WARP_POLL_MS      250
@@ -82,6 +82,7 @@
 #define WARP_SETTLE_MS    1500
 #define WARP_HB_STALE_MS  10000
 #define WARP_VAR_COUNT    8      /* 钩子之间共享的整数槽个数（WARP_HEADER.vars） */
+#define WARP_CMD_SIG_MAX  96   /* 类型签名串上限 */
 #define WARP_CMD_TEXT_LEN 256   /* 命令里的弹窗正文长度 */
 
 /* 命令类型。cmd_type 是一个打包字：低 8 位命令号，8-11 位参数个数，
@@ -427,4 +428,12 @@ typedef void *(*fn_array_new)(void *klass, size_t length);
 typedef void *(*fn_class_get_parent)(void *klass);
 typedef unsigned int (*fn_gchandle_new)(void *obj, unsigned int strong);
 typedef void (*fn_gchandle_free)(unsigned int handle);
+/* v10：按参数类型选重载 + 读静态字段要用的元数据接口 */
+typedef void *(*fn_class_get_methods)(void *klass, void **iter);
+typedef const char *(*fn_method_get_name)(const void *method);
+typedef unsigned int (*fn_method_get_param_count)(const void *method);
+typedef void *(*fn_method_get_param)(const void *method, unsigned int index);
+typedef void *(*fn_method_get_return_type)(const void *method);
+typedef char *(*fn_type_get_name)(const void *type);
+typedef void (*fn_free_mem)(void *mem);
 

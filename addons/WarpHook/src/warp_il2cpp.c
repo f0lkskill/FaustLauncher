@@ -63,6 +63,15 @@ int warp_bind_exports(void)
      * 所以不进「前 5 个」那种命脉检查。 */
     g_ic.gchandle_new               = (fn_gchandle_new)find_export(ga, 13);
     g_ic.gchandle_free              = (fn_gchandle_free)find_export(ga, 14);
+    /* v10：重载区分。缺了不致命（退回按名字+个数找），但 call 就会失去
+     * 「按类型选重载」的保护 —— 别用它在同名不同参的方法上赌运气。 */
+    g_ic.class_get_methods          = (fn_class_get_methods)find_export(ga, 15);
+    g_ic.method_get_name            = (fn_method_get_name)find_export(ga, 16);
+    g_ic.method_get_param_count     = (fn_method_get_param_count)find_export(ga, 17);
+    g_ic.method_get_param           = (fn_method_get_param)find_export(ga, 18);
+    g_ic.method_get_return_type     = (fn_method_get_return_type)find_export(ga, 19);
+    g_ic.type_get_name              = (fn_type_get_name)find_export(ga, 20);
+    g_ic.free_mem                   = (fn_free_mem)find_export(ga, 21);
 
     for (i = 0; i < WARP_EXPORT_COUNT; i++) {
         void *p = find_export(ga, i);

@@ -26,6 +26,13 @@ typedef struct {
     fn_class_get_parent           class_get_parent;
     fn_gchandle_new               gchandle_new;
     fn_gchandle_free              gchandle_free;
+    fn_class_get_methods              class_get_methods;
+    fn_method_get_name              method_get_name;
+    fn_method_get_param_count              method_get_param_count;
+    fn_method_get_param              method_get_param;
+    fn_method_get_return_type              method_get_return_type;
+    fn_type_get_name              type_get_name;
+    fn_free_mem              free_mem;
 } WARP_IC;
 
 typedef struct {

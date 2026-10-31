@@ -23,6 +23,13 @@ const char *g_export_names[WARP_EXPORT_COUNT] = {
     "il2cpp_class_get_parent",
     "il2cpp_gchandle_new",
     "il2cpp_gchandle_free",
+    "il2cpp_class_get_methods",
+    "il2cpp_method_get_name",
+    "il2cpp_method_get_param_count",
+    "il2cpp_method_get_param",
+    "il2cpp_method_get_return_type",
+    "il2cpp_type_get_name",
+    "il2cpp_free",
 };
 
 /* ------------------------------------------------------------------ */
