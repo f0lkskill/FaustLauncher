@@ -99,8 +99,12 @@ void *warp_safe_invoke(void *method, void *target, void **params, void **exc)
  * IsLoadedBank 崩溃同根）。所以句柄回归，并且用完整 64 位。 */
 static uintptr_t g_gc_handles[WARP_OBJECT_COUNT];
 
-/* 往对象槽落一个指针。所有写入都走这里：写之前先把旧句柄解掉，同一槽被
- * 反复 make 时前面的对象能正常被 GC 回收，不会攒一桌面没用的强引用。 */
+/* 往对象槽落一个指针。句柄清理只允许挂新句柄的路径（worker 命令线程）
+ * 做 —— 游戏线程的钩子事件落槽（with_handle=0）绝不 free：游戏线程没有
+ * GC 挂起权，gchandle_free 撞上 GC 移动/回收窗口直接 AV。第 8/9 次崩溃
+ * 栈（Player.log）：warp_hook stub → warp_slot_put → gchandle_free
+ * （返回地址 RVA 0x3541）。旧句柄多保活一两个旧对象无害，留给下一次
+ * with_handle=1 的 put 统一清理（旧插件的做法同款：钩子路径不碰句柄）。 */
 void warp_slot_put(int slot, void *obj, int with_handle)
 {
     void **objs;
@@ -110,7 +114,7 @@ void warp_slot_put(int slot, void *obj, int with_handle)
     objs = warp_objects();
     if (!objs)
         return;
-    if (g_gc_handles[slot]) {
+    if (with_handle && g_gc_handles[slot]) {
         if (g_ic.gchandle_free)
             g_ic.gchandle_free(g_gc_handles[slot]);
         g_gc_handles[slot] = 0;
