@@ -38,6 +38,21 @@
 - **`warp_layout.h` 加编译期尺寸校验**：`sizeof(WARP_READ) == WARP_READ_SIZE`、
   `WARP_READ_STEPS == 8` 不符合直接编译失败，不让「布局漂移」跑到真机上变成
   「数不对但不报错」。
+- **真机首次接线暴露的两个坑（都已修）**：
+  - **`actions` 缺省值原本是 `WARP_ACT_POPUP`**。声明式 dict 路径没写
+    `actions` 的钩子一律变成「弹窗动作」——真机实测：装了条每帧的
+    `GlobalGameManager.FixedUpdate`，DLL 每帧刷 `fire actions (1)` 与
+    `popup: empty text`（游戏里每帧弹一次空窗）。缺省改 **0**，要动作用显式
+    写。既有插件（AutoBoom / gacha）本来就显式写 `'actions': 0`，未受影响。
+  - **声明式 dict 路径不认 `cache=(arg, 槽)` 元组**，只认平铺的
+    `cache_arg`/`cache_slot`，于是 `bind_manager()` 传的 cache 被静默丢掉，
+    钩子装上了、对象槽永远空。现在两条路径同一套语义。
+- **命令泵入口是保留位**：`GlobalGameManager.FixedUpdate` / `Update` 由宿主
+  自己钩来跑命令泵。插件也钩它的话 `warp_target_taken` 会让泵找不到落点，
+  日志是 `pump: no free entry point, cmd channel off`，`CMD_READ` 全线失效。
+  现在装配时遇到这两个方法会打 warning；场景对象改由泵每帧缓存在
+  **对象槽 29**（`WARP_SLOT_SCENE`），`bind_scene()` 只等不钩。
+  对象槽 30/31 是每帧回调保留位（`"SKT1"` 魔法值 + 函数指针），别占用。
 
 ## 0.9.8
 

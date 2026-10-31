@@ -178,6 +178,15 @@
 #define WARP_OBJECTS_OFFSET (WARP_READ_OFFSET + WARP_READ_MAX * WARP_READ_SIZE)
 #define WARP_OBJ_ARG_BASE 0x100 /* 读链的 arg 写 0x100+n = 从第 n 个对象槽出发 */
 
+/* 对象槽的保留位（别写别的东西进去）：
+ *   30 = 每帧回调魔法值 "SKT1"、31 = 每帧回调函数指针（warp_pump_ticks）
+ *   29 = 命令泵顺手缓存的 GlobalGameManager 单例（hk_warp_pump 每帧写）
+ * 想要「场景根对象」直接读 29 就行，不要自己再钩 FixedUpdate —— 那是命令
+ * 泵的入口，抢了它 pump 装不上，命令通道整个失效（v0.9.9 真机实测）。 */
+#define WARP_SLOT_SCENE   29
+#define WARP_SLOT_TICK_MAGIC 30
+#define WARP_SLOT_TICK_FN    31
+
 /* buff 关注哈希表（v5）：Python 把成就规则里出现的 buff 名 FNV-1a 64 之后
  * 写在这里，0 是哨兵（FNV-1a 64 的结果不会是 0）。C 侧 buff_mask 读法
  * 遍历单位 buff 链、对每个 buff 名算同一个哈希、按表置位 —— 事件里带

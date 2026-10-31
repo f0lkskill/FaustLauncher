@@ -168,3 +168,15 @@ AOT 编译会把一行的 getter 内联进所有调用点，内存里没有调�
    「`dict_count` 读出 1682595280 = buckets 指针低 32 位、iter 批只出 1 条」。
    现在 DLL 启动打一行 `build <DATE> <TIME> proto vN`，Python 侧 `host_build()`
    对得上才算同版。
+12. **声明式配置里每个「顺手给的默认值」都是一颗雷。** 钩子 dict 不写
+    `actions` 时，`configure` 的缺省值是 `ACT_POPUP`——于是一条只想抓单例的
+    每帧钩子变成了「每帧弹一次空窗」，日志刷 `fire actions (1)` /
+    `popup: empty text`，游戏里肉眼可见地闪。**默认值要选「什么都不做」**，
+    有动作的必须显式写。同一个函数里 `cache=(arg, 槽)` 元组也没被认（只认
+    平铺的 `cache_arg`/`cache_slot`），钩子装上了、对象槽永远空——两个坑叠在
+    一起，症状还会互相掩盖。
+13. **保留位必须写在能被读到的地方。** `GlobalGameManager.FixedUpdate` 是命令
+    泵自己钩的入口，插件再钩一次只会让泵无处落脚（`pump: no free entry point`），
+    而 `CMD_READ` 就是泵驱动的——整条代读能力静默失效。对象槽 30/31 同理（每帧
+    回调的魔法值 + 函数指针）。这类「谁也不能碰」的位子，得写在 `warp_layout.h`
+    的注释里、`objects.py` 的常量旁边、README 的第一段，而不是靠人记住。
