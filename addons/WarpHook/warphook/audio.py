@@ -248,25 +248,37 @@ SLOT_BATTLE_BGM = 25
 # 不用每回合重推钩子表；「先解锁 → 放曲 → 再上锁」的时序也顺势绕开了
 # 旧插件 own_call() 那套「自己的调用要放行」的复杂度。
 LOCK_SLOT = 4        # vars[4]：1=放行（游戏管曲） 0=锁（只许我们的曲）
+# 辅段一共只有 5 格（27..31），门面回合钩子要占 1 格：锁钩子最多 4 条。
+# 回合内的「盖回默认曲」实际只走 StartBGM / StartAddBGM / StopBGM 三条，
+# TryStartBattleBgmByName / TryResumeBattleBgm 是场景切换恢复路径（出战斗
+# 时插件已经解锁交还，不需要拦），留 1 格余量。
 LOCK_TARGETS = (
     ('BattleSoundGenerator', 'StartBGM', 2),
     ('BattleSoundGenerator', 'StartAddBGM', 3),
     ('BattleSoundGenerator', 'StopBGM', 2),
-    ('BattleSoundGenerator', 'TryStartBattleBgmByName', 1),
-    ('BattleSoundGenerator', 'TryResumeBattleBgm', 1),
 )
 
 
-def install_guard_hooks(host):
-    """装 5 条换曲锁钩子（block + guard=LOCK_SLOT==1 放行），整表推一次。
+def guard_hook_defs():
+    """锁钩子定义列表（并入门面钩子表、与回合钩子一次 push 共存）。"""
+    return [{'klass': k, 'method': m, 'argc': a, 'actions': 0,
+             'block': True, 'guard': (LOCK_SLOT, 1)}
+            for k, m, a in LOCK_TARGETS]
 
-    游戏早期 ``BattleSoundGenerator`` 可能还没加载 —— 宿主每 2 秒重试
-    late 安装（0.9.12 起），装上为止。装完记得 ``lock(host, True)`` 初始放行。
+
+def install_guard_hooks(host):
+    """装换曲锁钩子（独立 push；门面请改用 :func:`guard_hook_defs` 合并）。
+
+    .. deprecated:: v0.9.27
+       独立 push 会覆盖同一 owner 的回合钩子（钩子表按 owner 分段、
+       configure 全量重写）——门面 :meth:`Battle.bgm_lock_install` 已改为
+       把 :func:`guard_hook_defs` 并进自己钩子表一次 push。本函数仅
+       保留给没有回合回调的裸 Host 用户。
     """
     host.clear_hooks()
-    for klass, method, argc in LOCK_TARGETS:
-        host.hook(klass, method, argc=argc, block=True,
-                  guard=(LOCK_SLOT, 1))
+    for item in guard_hook_defs():
+        host.hook(item['klass'], item['method'], argc=item['argc'],
+                  block=True, guard=(LOCK_SLOT, 1))
     host.configure(hooks=host.hooks(), texts=list(host.texts or []))
     host.push(True)
     return {'ok': True, 'targets': len(LOCK_TARGETS)}
