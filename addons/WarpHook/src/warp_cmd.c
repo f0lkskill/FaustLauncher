@@ -7,6 +7,8 @@
  * （g_gc_handles），不进共享内存 —— 对象槽本身只有指针，Python 不需要看到句柄。
  */
 #include <stdio.h>
+#include <stdint.h>
+#include <string.h>
 
 #include "warp_internal.h"
 
@@ -87,6 +89,15 @@ void *warp_safe_invoke(void *method, void *target, void **params, void **exc)
     return ret;
 }
 
+/* v10.2: GC 句柄表 —— 必须 pointer-sized。0.9.14 以前它是 unsigned int[32]，
+ * 而 Unity 6（Boehm 64 位）的 il2cpp_gchandle_new 返回 64 位句柄：存进 32 位
+ * 槽位被截断，之后 gchandle_free(截断值) 直接 AV —— 这才是 0.9.15 拆句柄时
+ * 误判的「句柄不可信」的真因。拆句柄后换来新雷：make_str 造的字符串裸指针
+ * 躺在共享内存里，GC 扫描范围不含 MAP，下一次 GC 就把字符串回收，随后的
+ * call 拿到悬空指针崩在游戏内部（0.9.18 / 0.9.19 / 0.9.21 三次
+ * IsLoadedBank 崩溃同根）。所以句柄回归，并且用完整 64 位。 */
+static uintptr_t g_gc_handles[WARP_OBJECT_COUNT];
+
 /* 往对象槽落一个指针。所有写入都走这里：写之前先把旧句柄解掉，同一槽被
  * 反复 make 时前面的对象能正常被 GC 回收，不会攒一桌面没用的强引用。 */
 void warp_slot_put(int slot, void *obj, int with_handle)
@@ -98,13 +109,14 @@ void warp_slot_put(int slot, void *obj, int with_handle)
     objs = warp_objects();
     if (!objs)
         return;
-    /* 0.9.15：原本这里对旧槽值调 il2cpp_gchandle_free / il2cpp_gchandle_new。
-     * 真机实测第二次写同一个槽时 free 会崩在 GameAssembly 内部（栈是
-     * warp_slot_put -> gchandle_free），第一次却正常 —— 句柄本身不可信。
-     * 对象槽里装的都是长命对象（场景单例、战斗单例）和当场用掉的临时对象，
-     * 本来就不需要强句柄保护，所以整条句柄路径关掉，槽里只放裸指针。 */
-    (void)with_handle;
+    if (g_gc_handles[slot]) {
+        if (g_ic.gchandle_free)
+            g_ic.gchandle_free(g_gc_handles[slot]);
+        g_gc_handles[slot] = 0;
+    }
     objs[slot] = obj;
+    if (with_handle && obj && g_ic.gchandle_new)
+        g_gc_handles[slot] = g_ic.gchandle_new(obj, 0);
 }
 
 void *warp_slot_get(int slot)
@@ -595,6 +607,7 @@ void warp_pump_ticks(void)
     4×64=256 字节），py 侧用 read_buf(0) 取回。 */
 static int warp_cmd_list(void)
 {
+    char text[WARP_CMD_TEXT_LEN];
     char name[64];
     char mname[48];
     char sig[WARP_CMD_SIG_MAX];
@@ -614,17 +627,26 @@ static int warp_cmd_list(void)
         !g_ic.method_get_return_type || !g_ic.type_get_name)
         return WARP_CMD_RES_NO_METHOD;
 
-    sep = strstr(g_hdr->cmd_text, "::");
+    /* 先在本地副本上把 "|签名" 切掉，否则方法名会连签名一起被读出来。 */
+    lstrcpynA(text, g_hdr->cmd_text, sizeof(text));
+    warp_cmd_sig(g_hdr->cmd_text, sig, sizeof(sig));
+    {
+        char *bar = strchr(text, '|');
+        if (bar)
+            *bar = 0;
+    }
+    sep = strstr(text, "::");
     if (!sep)
         return WARP_CMD_RES_NO_METHOD;
-    warp_cmd_name_until(g_hdr->cmd_text, name, sizeof(name));
+    warp_cmd_name_until(text, name, sizeof(name));
     warp_cmd_name_until(sep + 2, mname, sizeof(mname));
-    warp_cmd_sig(sep + 2, sig, sizeof(sig));
     klass = warp_find_class(g_domain, name);
     if (!klass)
         return WARP_CMD_RES_NO_CLASS;
 
-    out[0] = '\0';
+    /* 整块清零：只清 out[0] 的话上一次 LIST 的残留行还在，py 侧按 \0 切分
+     * 会切出「m.Boolean)->S」这类碎片（0.9.21 真机输出证实过）。 */
+    memset(out, 0, cap);
     /* 沿基类链往上找：il2cpp_class_get_methods 只列本类声明的方法，
        get_Instance 这类继承来的 getter 必须往上走才能列出来。 */
     for (depth = 0; klass != NULL && depth < 8; depth++) {
