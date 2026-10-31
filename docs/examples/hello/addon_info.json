@@ -1,0 +1,15 @@
+{
+    "name": "你好世界",
+    "desc": "最小的 WarpHook 插件：不钩任何东西、不改任何数值，只在日志里打一行字，用来确认「插件被加载了」这条链路是通的。",
+    "authors": {
+        "you": "https://example.com"
+    },
+    "requires": [
+        "WarpHook"
+    ],
+    "settings": {
+        "enable": true,
+        "招呼语": "你好，世界"
+    },
+    "version": "0.1.0"
+}

@@ -31,6 +31,10 @@ flowchart LR
 | --- | --- | --- |
 | `start(menu=())` | `Live` | 启动后台心跳 + 注册托盘菜单。插件里调一次 |
 | `popup(text, timeout=2.0, wait=True, wait_timeout=120.0)` | `str` | 让游戏弹一句话，返回回执（`已执行` / `共享内存不可用` / …） |
+| `bgm(name, stop_current=True, wait=True, wait_timeout=120.0, timeout=2.0)` | `dict` | 战斗里换 BGM，返回 `{'ok','name','path','reason'}` |
+| `bgm_stop(restore=True, timeout=2.0)` | `dict` | 停附加曲，`restore=True` 放回游戏原曲 |
+| `bgm_playing()` | `bool` | 有没有 BGM 在播 |
+| `bgm_index()` | `int` | 游戏自己的当前曲目编号 |
 | `status()` | `dict` | 宿主状态字典，见下表 |
 | `describe()` | `str` | 一行人类可读的状态文本 |
 | `scene(timeout=1.0)` | `dict` | `{'value','name','time_scale','entries'}` |
@@ -83,6 +87,9 @@ live.start(menu=(('看状态', lambda: print(live.describe())),))
 | `.scene(timeout)` / `.battle(timeout)` | 同上 |
 | `.units()` / `.count()` / `.unit()` / `.player()` | 同上 |
 | `.popup(text, timeout, wait, wait_timeout)` | 同上 |
+| `.bgm(name, stop_current, wait, wait_timeout, timeout)` | 同上 |
+| `.bgm_stop(restore)` / `.bgm_playing()` / `.bgm_index()` | 同上 |
+| `.wait_ready(wait_timeout=120.0)` | 等宿主能发命令；`popup` / `bgm` 内部用它 |
 | `.log(message)` | 带插件名前缀打日志 |
 | `.on_round_start` / `.on_scene_changed` / `.on_battle_start` / `.on_battle_end` | 注册回调 |
 

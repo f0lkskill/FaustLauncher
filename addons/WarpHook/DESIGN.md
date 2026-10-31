@@ -873,3 +873,55 @@ u.buff(0)                    # 按序号
 - **字典只给 TValue**：`_allUnitDictionary` 是 `Dictionary<int, BattleUnit>`，
   遍历拿不到 key，想要 key 得按 `count` 逐 index 取。
 - **遍历范围用 `count`（+0x20）**，不要用 entries 数组容量。
+
+## 18. 音频：放一首 BGM（v0.9.10）
+
+### 18.1 为什么不复用老插件的做法
+
+老的 `BattleBGMExtend` 是自带 DLL 的插件：它钩住 30 多个音频方法
+（`SoundManager.ChangeBGM`、`BattleSoundGenerator.StartBGM/StopAddedBGM`、
+FMOD 原生 `EventInstance_Stop` 等），用自己的调用打 TLS 标记来豁免，
+靠这套「互斥」把游戏自己的换曲锁住。
+
+WarpHook 这边不需要那把锁 —— 我们只是想在战斗里换一首，不是要接管音频系统。
+所以只留播放序列本身。
+
+### 18.2 播放序列（照抄老插件的成功路径）
+
+```
+短名 = "event:/BGM/Battle/" 之后的部分
+BattleSoundGenerator.StopBGM(0, 0)              // 停当前的
+BattleSoundGenerator.StartAddBGM(短名, 1, 0)    // 播附加曲，STOP_MODE=1 立刻停
+```
+
+**`StartAddBGM` 收的是短名，不是完整 event 路径**。老代码里 `r->path + 18`
+就是这个意思（`strlen("event:/BGM/Battle/") == 18`），传全长路径会静默不播。
+
+`audio.play()` 里做的是：`make_str(短名, slot=27)` → `call(StopBGM)` →
+`call(StartAddBGM, args=(('slot', 27), 1, 0))` → `release(27)`。
+字符串必须先落进对象槽再用 `('slot', n)` 传 —— `call` 的 `p` 类参数只认指针。
+
+### 18.3 接口
+
+| 位置 | 签名 | 说明 |
+| --- | --- | --- |
+| `game` | `bgm(name, stop_current=True, wait=True, wait_timeout=120.0, timeout=2.0)` | 一行换曲，默认等宿主就绪 |
+| `game` | `bgm_stop(restore=True, timeout=2.0)` | 停附加曲，`restore` 让游戏原曲回来 |
+| `game` | `bgm_playing()` / `bgm_index()` | 状态查询 |
+| `audio` | `play(host, name, ...)` / `stop(host, restore)` / `pause(host, value)` / `is_playing(host)` / `current_index(host)` | 自己拼序列时用 |
+| `audio` | `full_path(name)` / `short_name(name)` | 补/截 `event:/BGM/Battle/` 前缀 |
+
+`name` 两种写法都行：`'Battle_Cp9_Boss_10'` 或 `'event:/BGM/Battle/Battle_Cp9_Boss_10'`。
+
+### 18.4 边界
+
+- **只在战斗场景有意义**。主界面/剧情用的是另一套 BGM 系统，`StartAddBGM`
+  是 `BattleSoundGenerator` 的静态方法。
+- **游戏可能自己把附加曲掐掉**。回合切换、战斗结束时游戏会调 `StopAddedBGM`
+  / `StartBGM`。老插件靠钩子锁，我们靠「每回合重放」——`BattleBGMExtend`
+  移植版就是这么做的（`on_round_start` 里重新判定并重放）。
+- **不预加载 bank**。`SoundManager.LoadBankFromLocal` 那套要求知道
+  `StreamingAssets` 的绝对路径，WarpHook 不碰游戏文件。曲子都在游戏自带的
+  战斗 BGM bank 里，不需要额外加载。
+- **没有音量/淡入淡出控制**。要淡入得自己调 `SetParameterByName`，那属于
+  「接管音频」，超出这层的范围。

@@ -12,8 +12,9 @@
 | 读单位的血量、理智、速度、人格 ID | [读一个单位](tutorial/04-unit.md) |
 | 拿到一个单位身上六十多个字段 | [把属性都拿出来](tutorial/05-props.md) |
 | 解析 buff 的层数、回合、英文 ID | [解析 buff](tutorial/06-buffs.md) |
-| 插件怎么收尾、什么不能做 | [生命周期与线程](tutorial/07-lifecycle.md) |
-| 想拦下游戏的动作、自己写钩子 | [想到底层去](tutorial/08-inside.md) |
+| 插件怎么收尾、什么不能做 | [生命周期与线程](tutorial/08-lifecycle.md) |
+| 想换战斗里的 BGM | [放一首 BGM](tutorial/07-bgm.md) |
+| 想拦下游戏的动作、自己写钩子 | [想到底层去](tutorial/09-inside.md) |
 | 查某个函数 / 常量的完整签名 | [技术文档](technical/index.md) |
 
 ## 三层结构，从头到尾都能用

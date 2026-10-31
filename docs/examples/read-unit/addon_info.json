@@ -1,0 +1,10 @@
+{
+    "name": "看看我方",
+    "desc": "读懂场上一个单位的血量、理智和速度",
+    "authors": ["你的名字"],
+    "requires": ["WarpHook"],
+    "settings": {
+        "enable": true
+    },
+    "version": "0.1.0"
+}
