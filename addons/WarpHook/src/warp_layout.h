@@ -46,7 +46,8 @@
 #include "MinHook.h"
 
 #define WARP_MAGIC        0x54534857u      /* "WHST" */
-#define WARP_VERSION      4                /* v4：钩子表 16→32（成就 25 条 + NoGacha 2 条
+#define WARP_VERSION      5                /* v5：尾部追加 buff 关注哈希表段（BUF 行）。
+                                            * v4：钩子表 16→32（成就 25 条 + NoGacha 2 条
                                             * 已经装不下 16 槽，_layout 截断是静默的，
                                             * 真机上 NoGacha 的钩子整条消失） */
 
@@ -142,7 +143,16 @@
 #define WARP_OBJECT_SIZE  8     /* 一个 void* */
 #define WARP_OBJECTS_OFFSET (WARP_READ_OFFSET + WARP_READ_MAX * WARP_READ_SIZE)
 #define WARP_OBJ_ARG_BASE 0x100 /* 读链的 arg 写 0x100+n = 从第 n 个对象槽出发 */
-#define WARP_MAP_BYTES    (WARP_OBJECTS_OFFSET + WARP_OBJECT_COUNT * WARP_OBJECT_SIZE)
+
+/* buff 关注哈希表（v5）：Python 把成就规则里出现的 buff 名 FNV-1a 64 之后
+ * 写在这里，0 是哨兵（FNV-1a 64 的结果不会是 0）。C 侧 buff_mask 读法
+ * 遍历单位 buff 链、对每个 buff 名算同一个哈希、按表置位 —— 事件里带
+ * 一张位掩码，Python 端按名单展开。表空（首字节 0）时读法直接放弃，
+ * 没成就用 buff 的插件零开销。 */
+#define WARP_BUFF_WATCH_COUNT 32
+#define WARP_BUFF_WATCH_SIZE  8 /* fnv1a64 */
+#define WARP_BUFF_WATCH_OFFSET (WARP_OBJECTS_OFFSET + WARP_OBJECT_COUNT * WARP_OBJECT_SIZE)
+#define WARP_MAP_BYTES    (WARP_BUFF_WATCH_OFFSET + WARP_BUFF_WATCH_COUNT * WARP_BUFF_WATCH_SIZE)
 
 /* 读出来的值怎么解释 */
 #define WARP_READ_INT     0     /* int32 */
@@ -153,6 +163,9 @@
 #define WARP_READ_SUM_LIST  5   /* 落点是 List<4B 值类型>：把所有元素求和（铁路通关回合） */
 #define WARP_READ_COUNT_LIST 6  /* 落点是 List/Array：只取元素个数 */
 #define WARP_READ_TEXT_NUM  7   /* 落点是 il2cpp string*：抽出 ASCII 数字串拼成 int（UI 显示文本） */
+#define WARP_READ_BUFF_MASK 8   /* 落点是战斗单位：遍历 buff 链对每个 buff 名算 fnv1a64，
+                                 * 命中关注表（WARP_BUFF_WATCH_OFFSET）就置位 —— out=位掩码。
+                                 * off[0..3] = 单位buff详情/列表/模型数据/静态id 四个字段偏移。 */
 
 /* 原函数返回值怎么取（thunk 调原函数后按这个类型拿返回值） */
 #define WARP_RET_VOID  0        /* 不关心返回值（原 thunk 的行为） */

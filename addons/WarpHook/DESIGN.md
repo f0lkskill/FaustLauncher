@@ -220,8 +220,11 @@ WARP_HOOK   288B×32 klass[48] method[48] argc event_id every chance actions fla
 事件 ctrl   16B      head / tail / dropped / pad（环形队列游标）
 事件队列    60B×2048 WARP_EVENT { id, hook, tick, a, b, …, l }（12 格）
 读取链      48B×128  WARP_READ { arg, nsteps, kind, out, off[4], deref[4] }
-对象槽      8B×32    cache 钩子与 P6 构造对象落指针的地方
-总长        172672B（协议 version=4：v3 加 2 导出，v4 钩子表 16→32）
+对象槽      8B×32    cache 钩子与 P6 构造对象落指针的地方；[30]/[31] tick 共享槽
+buff 关注   8B×32    fnv1a64(名字) 列表，0 哨兵 —— buff_mask 读法按它置位
+                     （成就侧 watched_buff_names() 的位序，v5 新段）
+总长        172928B（协议 version=5：v3 加 2 导出，v4 钩子表 16→32，
+                     v5 尾部追加 buff 关注哈希表）
 ```
 
 钩子表 → 行为的三段式表达力：
@@ -261,6 +264,11 @@ il2cpp 取字段只有「加偏移 / 先解引用」两种动作，所以前两�
 的 `clear_turns` 参数（List<int>，九参构造）一条配置求出铁路总回合。
 `text` 是**字符串读**：按 il2cpp string 布局（len@+0x10、UTF-16 data@+0x14）
 读出内容、取开头的数字（"86" → 86），UI 文本类的信号源就够用了。
+`buff_mask` 是**唯一的 C 特化读法**（v5）：从战斗单位出发走
+「单位→buff详情→List→模型→名字串」四跳（`off[0..3]` 是字段偏移参数包，
+不走通用步循环），每个 buff 的名字做 fnv1a64 后比对共享内存尾部的关注
+哈希表，命中就把对应位置 1，产出 32 位掩码。表空（没有成就看 buff）直接
+放弃，零开销。
 
 成就那十六种 `BWK_*` 读法全都是「参数形状 × 读路径 × 输出方式」的组合，
 有了读取链和容器步，它们退化成十六行配置。

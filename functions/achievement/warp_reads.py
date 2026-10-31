@@ -269,16 +269,24 @@ SLOT_MP = 4
 SLOT_ORIGIN_SPEED = 5
 SLOT_OVERWRITED_SPEED = 6
 SLOT_INT_SPEED_TURN = 7
+# BUF 行的两格（v0.9.6，只有存在 buff 类成就时才配）：
+SLOT_BUFF_MASK = 8     # 关注 buff 命中位掩码（bit i = 名单第 i 项）
+SLOT_BUFF_COUNT = 9    # 该单位 buff 总数（链断时 -1，用来区分「没关注 buff」和「没读到」）
 
 
-def unit_frame(offsets):
+def unit_frame(offsets, with_buffs=False):
     """self 身上的八个字段，一次读完：编号、模板、血量三件套、速度三件套。
 
     速度那三个是**定点数**（存的是 ×1000 的值），原样带回 Python 再除，
     免得在这里做整数除法把 -1 哨兵变成 0。
+
+    ``with_buffs=True`` 追加 BUF 行的 mask/count 两格。mask 是 C 特化读法
+    ``buff_mask``：off[0..3] 是「单位→buff详情→List→模型→名字串」的四个
+    字段偏移参数包（C 侧不走通用步循环，deref 全 False 只是语义标记）。
+    count 用现成的 count 聚合：走到 List 指针再取 +0x18。
     """
     state = offsets['unit_state']
-    return [
+    reads = [
         _read(0, [(offsets['unit_instance_id'], False)], SLOT_IID),
         _read(0, [(offsets['unit_origin_id'], False)], SLOT_OID),
         _read(0, [(state, True), (offsets['state_hp'], False)], SLOT_HP, 'obscured'),
@@ -288,6 +296,17 @@ def unit_frame(offsets):
         _read(0, [(offsets['unit_overwrited_speed'], False)], SLOT_OVERWRITED_SPEED),
         _read(0, [(offsets['unit_int_speed_turn'], False)], SLOT_INT_SPEED_TURN),
     ]
+    if with_buffs:
+        detail = offsets['unit_buff_detail']
+        listing = offsets['buff_detail_list']
+        model = offsets['buff_model_data']
+        name = offsets['buff_static_id']
+        reads.append(_read(0, [(detail, False), (listing, False),
+                               (model, False), (name, False)],
+                           SLOT_BUFF_MASK, 'buff_mask'))
+        reads.append(_read(0, [(detail, True), (listing, True)],
+                           SLOT_BUFF_COUNT, 'count'))
+    return reads
 
 
 # 每种读法「默认」读哪些槽。调用方可以在此基础上增删。
@@ -343,10 +362,16 @@ _KIND_READS = {
 
 # 需要返回值/POST 语义的读法：hook_spec 把这些并进 spec，
 # warp_source 塞进 Host.hook(when=..., ret_kind=..., ret_slot=...)。
+# unit 三种也在 POST 列表里：SetSpeed/SetRandomSpeed 是「写速度」的方法，
+# PRE 读 self 的速度拿到的是写入前的 -1 —— 浮士德 9 速成就真机踩坑
+# （v0.9.6 实锤：os=4469 说明读法没错，错在时机）。POST 一律无害。
 KIND_EVENT_WHEN_POST = (
     KIND_RAILWAY_TOTAL,      # 返回值语义上就是「调完才有」
     KIND_RAILWAY_NODE, KIND_RAILWAY_HIST, KIND_RAILWAY_UI_TEXT,
+    KIND_UNIT, KIND_UNIT_INT_BOOL, KIND_UNIT_GET_INT,
 )
+# unit 一帧的读法：with_buffs=True 时追加 BUF 行的 mask/count 两格。
+UNIT_FRAME_KINDS = (KIND_UNIT, KIND_UNIT_INT_BOOL, KIND_UNIT_GET_INT)
 KIND_RETURN = {
     # 读法: (ret_kind 名字, 直出的事件格)
     KIND_RAILWAY_TOTAL: ('int32', 0),
@@ -377,11 +402,13 @@ CACHE_SLOTS = {
 }
 
 
-def hook_spec(kind, klass, method, offsets=None, **extra):
+def hook_spec(kind, klass, method, offsets=None, unit_buffs=False, **extra):
     """把一种读法翻译成 `Host.hook()` 能直接吃的参数。
 
     返回 dict，键是 `klass/method/argc/reads/native/kind`，额外关键字原样并入。
     `offsets` 为空时 `reads` 为空（只报事件不读值），并保留 `native` 说明。
+    ``unit_buffs=True``（仅 unit 一帧的读法）：追加 BUF 行的 mask/count 两格
+    读链 —— 有 buff 类成就盯着时才开，没成就看就零开销。
     """
     if kind not in KIND_SIGNATURES:
         raise ValueError('未知读法：%r' % (kind,))
@@ -390,7 +417,10 @@ def hook_spec(kind, klass, method, offsets=None, **extra):
     argc = max(0, KIND_SIGNATURES[kind][0] - 1)
     reads = []
     if offsets:
-        builder = _KIND_READS[kind]
+        if kind in UNIT_FRAME_KINDS and unit_buffs:
+            builder = lambda off: unit_frame(off, with_buffs=True)
+        else:
+            builder = _KIND_READS[kind]
         try:
             reads = builder(offsets)
         except KeyError as exc:

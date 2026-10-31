@@ -126,12 +126,16 @@ def default_offsets():
     return dict(BW.FALLBACK_FIELDS)
 
 
-def build_hooks(names=None, offsets=None):
+def build_hooks(names=None, offsets=None, buffs=None):
     """把选中的老钩子翻译成 `Host.hook()` / 钩子 dict 能吃的形状。
 
     Args:
         names: 钩子名序列，默认 :data:`FIRST_BATCH`。
         offsets: 字段偏移表，默认 :func:`default_offsets`。
+        buffs: buff 关注名单（buff 名序列）。``None`` = 自动问规则引擎
+            （:func:`battle_watch.watched_buff_names`，有 buff 类成就盯着
+            就非空）；显式传 ``()`` 可强制关掉。非空时 unit 一帧的读法
+            追加 BUF 行的 mask/count 两格（v0.9.6：BUF 事件转发）。
 
     Returns:
         钩子 dict 列表，每项含 `klass/method/argc/event/reads/dedupe` 与
@@ -139,6 +143,12 @@ def build_hooks(names=None, offsets=None):
     """
     names = tuple(names or FIRST_BATCH)
     offsets = offsets if offsets is not None else default_offsets()
+    if buffs is None:
+        try:
+            buffs = tuple(BW.watched_buff_names())
+        except Exception:
+            buffs = ()
+    buffs = tuple(buffs or ())
     hooks = []
     event_no = 0
     for name in names:
@@ -149,7 +159,8 @@ def build_hooks(names=None, offsets=None):
         klass, _, method = target.partition('::')
         if not method:
             raise ValueError('钩子名不是 类::方法 的形状：%s' % target)
-        spec = WR.hook_spec(kind, klass, method, offsets=offsets)
+        spec = WR.hook_spec(kind, klass, method, offsets=offsets,
+                            unit_buffs=bool(buffs))
         cache = spec.get('cache')
         # 纯缓存钩（不发事件）与「事件钩自带缓存」要分开：node_state 这类
         # 带缓存的读法照样占事件号、照样投递（v0.9.4 起 node_cleared /
@@ -206,8 +217,13 @@ def _speed_int(raw):
     return raw // BW.SPEED_SCALE
 
 
-def unit_lines(tag, ev):
-    """一个 unit 事件还原成 SPD + VAL 两行（顺序与老 DLL 一致：先速度后血量）。"""
+def unit_lines(tag, ev, with_buffs=False):
+    """一个 unit 事件还原成 SPD + VAL 两行（顺序与老 DLL 一致：先速度后血量）。
+
+    ``with_buffs=True`` 追加 BUF 行（v0.9.6）：i=关注 buff 位掩码、
+    j=buff 总数（-1=链没走到，解析侧当「读不到」而非「没 buff」）。
+    字段名与老链路 `battle_watch._apply_buffs` 的解析一一对应。
+    """
     iid = int(ev.get('a', 0))
     oid = int(ev.get('b', 0))
     hp = int(ev.get('c', 0))
@@ -216,12 +232,16 @@ def unit_lines(tag, ev):
     os_raw = int(ev.get('f', 0))
     ow_raw = int(ev.get('g', 0))
     its = int(ev.get('h', 0))
-    return [
+    lines = [
         'SPD tag=%s iid=%d oid=%d os=%d osi=%d ow=%d owi=%d its=%d'
         % (tag, iid, oid, os_raw, _speed_int(os_raw), ow_raw, _speed_int(ow_raw), its),
         'VAL tag=%s iid=%d oid=%d hp=%d mhp=%d mp=%d'
         % (tag, iid, oid, hp, max_hp, mp),
     ]
+    if with_buffs:
+        lines.append('BUF tag=%s iid=%d oid=%d m=%d n=%d'
+                     % (tag, iid, oid, int(ev.get('i', 0)), int(ev.get('j', -1))))
+    return lines
 
 
 def node_lines(tag, ev):
@@ -292,10 +312,13 @@ def railway_lines(kind, tag, ev):
     return []
 
 
-def event_lines(kind, tag, ev):
-    """按读法把事件翻成文本行。认不出的读法返回空列表（第一批不接）。"""
+def event_lines(kind, tag, ev, with_buffs=False):
+    """按读法把事件翻成文本行。认不出的读法返回空列表（第一批不接）。
+
+    ``with_buffs`` 只影响 unit 一帧：开了才有 BUF 行（v0.9.6）。
+    """
     if kind in UNIT_KINDS:
-        return unit_lines(tag, ev)
+        return unit_lines(tag, ev, with_buffs)
     if kind in ACTION_KINDS:
         return action_lines(tag, ev)
     if kind in PLAIN_KINDS:
@@ -356,6 +379,10 @@ class WarpSource:
         self._stop = threading.Event()
         self.lines_in = 0
         self.events_out = 0
+        # BUF 行（v0.9.6）：关注名单与哈希段的热同步状态。
+        self._buff_names = ()
+        self._unit_buffs = False
+        self._buff_synced = 0.0
 
     # ---- 装配 ----------------------------------------------------------
     def host(self):
@@ -409,8 +436,16 @@ class WarpSource:
         if factory is None:
             self._log('[成就] 没找到 WarpHook，成就钩子无处可挂')
             return False
+        # buff 关注名单：有 buff 类成就（如"心脏，心脏！"的 eyebuff 条件）
+        # 盯着时非空 —— unit 一帧的读法带上 BUF 行的 mask/count 两格。
         try:
-            self._hooks = build_hooks(self.names, self.offsets)
+            buffs = tuple(BW.watched_buff_names())
+        except Exception:                     # noqa: BLE001 —— 规则没加载就当没有
+            buffs = ()
+        self._buff_names = buffs
+        self._unit_buffs = bool(buffs)
+        try:
+            self._hooks = build_hooks(self.names, self.offsets, buffs=buffs)
         except (KeyError, ValueError) as exc:
             self._log('[成就] 钩子配置有问题：%s' % exc)
             return False
@@ -441,6 +476,7 @@ class WarpSource:
         except Exception as exc:              # noqa: BLE001
             self._log('[成就] 注入失败：%s' % exc)
             return False
+        self._buff_sync_write()
         self._log('[成就] 已挂 %d 个钩子（WarpHook 引擎）' % len(self._hooks))
         try:
             from warphook import diag          # host() 成功后 warphook 必可导入
@@ -451,11 +487,58 @@ class WarpSource:
             self._diag = _NullDiag()
         return True
 
+    # ---- buff 关注名单的热同步（v0.9.6）--------------------------------
+    def _buff_sync_write(self):
+        """把当前名单的 fnv1a64 哈希写进共享内存的关注段（0 哨兵收尾）。"""
+        host = self._host
+        if host is None:
+            return
+        try:
+            hashes = [BW.fnv1a64(name) for name in self._buff_names]
+            host.write_buff_watch(hashes)
+            if self._buff_names:
+                self._log('[成就] buff 关注名单 %d 项已同步：%s'
+                          % (len(self._buff_names), '、'.join(self._buff_names)))
+        except Exception as exc:              # noqa: BLE001
+            self._log('[成就] buff 哈希段写不进去：%s' % exc)
+
+    def _buff_sync(self, force=False):
+        """名单变了 → 重写哈希段；开/关状态翻转 → 重挂钩子（读链条数变了）。
+
+        规则引擎可以中途加成就（热加载），C 侧 buff_mask 读法按段里的哈希
+        置位 —— 名单一变，掩码位序就变，必须整体重写。每 5 秒查一次，
+        查询本身是纯 Python 的排序遍历，成本可忽略。
+        只在轮询线程里干活（``running``）：外部手动 pump 的场景（测试、
+        一次性排水）不做热同步，免得把调用方装配好的 Host 悄悄换掉。
+        """
+        if not self.running:
+            return
+        now = time.time()
+        if not force and now - self._buff_synced < 5.0:
+            return
+        self._buff_synced = now
+        try:
+            names = tuple(BW.watched_buff_names())
+        except Exception:                     # noqa: BLE001
+            return
+        if names == self._buff_names:
+            return
+        was = self._unit_buffs
+        self._buff_names = names
+        self._unit_buffs = bool(names)
+        self._buff_sync_write()
+        if was != self._unit_buffs and self._host is not None:
+            # BUF 两格的有无会改变钩子表指纹，直接重走装配（注入幂等）。
+            self._log('[成就] buff 关注名单%s，重挂钩子'
+                      % ('启用' if self._unit_buffs else '清空'))
+            self.attach()
+
     # ---- 轮询 ----------------------------------------------------------
     def pump(self):
         """读一批事件，翻译成行喂给规则引擎。返回这轮喂了几行。"""
         if self._host is None:
             return 0
+        self._buff_sync()
         try:
             lost_before = self._host.events_lost
             events = self._host.events()
@@ -472,7 +555,8 @@ class WarpSource:
                 self._diag.event(self, ev, {'method': '?未登记'}, [])
                 continue
             self.events_out += 1
-            lines = event_lines(hook['kind'], hook['name'], ev)
+            lines = event_lines(hook['kind'], hook['name'], ev,
+                                with_buffs=self._unit_buffs)
             self._diag.event(self, ev, hook, lines)
             for line in lines:
                 try:
