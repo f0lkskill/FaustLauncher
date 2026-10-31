@@ -457,12 +457,19 @@ class Live:
     # ---------- 内部 ----------
 
     def _live_hooks(self):
-        """门面自己要用的钩子：回合开始 + 插件登记的改写钩子。"""
+        """门面自己要用的钩子：回合开始 + 插件登记的改写钩子。
+
+        回合钩子必须带 ``event``（→ actions|EVENT）：事件动作才会把 self
+        （BattleObjectManager 实例）落进 SLOT_MANAGER，``battle()`` 就有现成
+        指针可用。裸 ``actions=0`` 只数命中不落槽，``battle()`` 只好去调
+        ``get_Instance`` —— 那是泛型共享方法，直调必 AV（0.9.25 定案）。
+        """
         hooks = [{
             'klass': 'BattleObjectManager',
             'method': 'OnRoundStart_Model',
             'argc': 1,
             'actions': 0,
+            'event': 30,
             'cache': (0, objects.SLOT_MANAGER),
         }]
         hooks.extend(self._extra_hooks)
