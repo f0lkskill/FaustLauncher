@@ -135,7 +135,7 @@ void *warp_safe_invoke(void *method, void *target, void **params, void **exc);
 int warp_retry_hooks(void);
 int warp_cmd_make(int argc, int slot, const char *argkinds);
 int warp_cmd_call(int argc, int slot, int retkind, int out_slot, const char *argkinds);
-int warp_cmd_str(int slot);
+int warp_cmd_str(int slot, const char *text);
 int warp_cmd_release(int slot);
 int warp_kill_game(void);
 void __stdcall hk_warp_pump(void *self);
