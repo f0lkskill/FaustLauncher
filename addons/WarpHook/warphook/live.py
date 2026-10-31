@@ -127,6 +127,7 @@ class Live:
 
     def start(self, menu=()):
         """开始等游戏 / 注入 / 跟踪场景。调一次就行，重复调无副作用。"""
+        self._stop.clear()   # close() 过的实例可复活（防御：_LIVES 除名是主修）
         if self._service is not None:
             return self
         self._service = Service(
@@ -169,6 +170,13 @@ class Live:
             except Exception:  # noqa: BLE001
                 pass
             self._service = None
+        # 从单例缓存里除名：插件重载后 ``live()`` 必须给全新实例。
+        # 不除名的后果（0.9.27 真机教训）：重载拿到旧实例，``_stop`` 还是
+        # set 状态，``_pump`` 起来第一轮就退出 —— 不补装钩子、不读命中、
+        # 所有回调全哑，而注入/同步调用（battle/scene）照常工作，
+        # 日志只留下「等待游戏加载」一条，看起来像装死。
+        if _LIVES.get(self.owner) is self:
+            _LIVES.pop(self.owner, None)
 
     def status(self):
         """宿主状态（``hooked`` / ``status_text`` / ``log_tail`` 这些）。"""
