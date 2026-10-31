@@ -524,11 +524,20 @@ int warp_cmd_call(int argc, int slot, int retkind, int out_slot, const char *arg
     void *pval[6];
     char name[64];
     char mname[48];
+    char text2[256];
     const char *sep;
     void *klass;
     void *method;
     void *target = NULL;
     int rc;
+    /* v0.9.25b：text 尾部带 "~i" = 走 runtime_invoke 而不是 methodPointer 直调。
+     * 为什么要双通道：泛型基类方法（SingletonBehavior`1::get_Instance）的
+     * 直调尾参是 MethodInfo*，但共享泛型代码要 RGCTX —— 真机探针
+     * （test/_v925_probe.py，0.9.25 日志版）证明：方法找到、指针验证通过、
+     * 调用本身 AV。runtime_invoke 走 invoker_method 转发器，正确处理泛型
+     * 上下文 —— v0.9.23 真机 get_Instance invoke 成功拿到过单例。
+     * 普通类方法仍走直调（旧插件 23 条 hook 同款姿势）。 */
+    int via_invoke = 0;
 
     if (out_slot >= WARP_OBJECT_COUNT)
         return WARP_CMD_RES_BAD_SLOT;
@@ -543,6 +552,17 @@ int warp_cmd_call(int argc, int slot, int retkind, int out_slot, const char *arg
      * 函数本身不再读共享 MAP —— worker 执行期间 py 覆盖 cmd_text 也不会撕裂。 */
     if (!argkinds_text || !argkinds_text[0])
         return WARP_CMD_RES_NO_METHOD;
+    /* 私有拷贝上剥 "~i" 标志 —— 原文可能是共享 MAP（pump 路径），就地改不干净。
+     * 标志放在 text 任意处都行（类名/方法名/sig 都不含 '~'），约定放末尾。 */
+    lstrcpynA(text2, argkinds_text, (int)sizeof(text2));
+    {
+        char *tilde = strchr(text2, '~');
+        if (tilde && tilde[1] == 'i') {
+            via_invoke = 1;
+            *tilde = '\0';
+        }
+    }
+    argkinds_text = text2;
     sep = strstr(argkinds_text, "::");
     if (!sep)
         return WARP_CMD_RES_NO_METHOD;
@@ -577,6 +597,29 @@ int warp_cmd_call(int argc, int slot, int retkind, int out_slot, const char *arg
     rc = warp_cmd_build_params(argc, kinds, params, ival, fval, pval);
     if (rc)
         return rc;
+    if (via_invoke) {
+        /* ~i 通道：泛型共享方法专用。invoke 对值类型返回 boxed 对象（头 16
+         * 字节后是值），引用类型直接返回对象指针。AV 由 worker 舱的 VEH 接住
+         * （v0.9.23 起真机验证进程不死），只会记一次 recovered。 */
+        void *ret = NULL;
+        void *exc = NULL;
+
+        ret = warp_safe_invoke(method, target, params, &exc);
+        if (exc)
+            return WARP_CMD_RES_FAIL;
+        if (retkind == WARP_CMD_RET_INT32)
+            g_hdr->vars[6] = ret ? *(int *)((char *)ret + 16) : 0;
+        else if (retkind == WARP_CMD_RET_FLOAT) {
+            float fv = ret ? *(float *)((char *)ret + 16) : 0.0f;
+
+            memcpy(&g_hdr->vars[6], &fv, 4);
+        } else if (retkind == WARP_CMD_RET_REF) {
+            if (out_slot < 0)
+                return WARP_CMD_RES_BAD_SLOT;
+            warp_slot_put(out_slot, ret, 1);
+        }
+        return WARP_CMD_RES_OK;
+    }
     /* v0.9.24：runtime_invoke 在本机有毒（六次崩溃全在这条路径上），改走
      * 旧插件的 methodPointer 直调；方法查找、参数打包、签名匹配都不变。
      * worker 舱的 VEH 保护仍在 —— 万一游戏方法自己有毒，照样只记一次失败。 */

@@ -1,3 +1,14 @@
+## 0.9.26 — CALL 双通道：`~i` 标志走 runtime_invoke（泛型共享方法专用）
+
+- **真机定案**（0.9.25 日志版探针 `test/_v925_probe.py`）：`SingletonBehavior<T>::get_Instance`
+  直调时方法找到、methodPointer 验证通过、**调用本身 AV** —— 共享泛型代码的
+  隐藏参数要 RGCTX，直调传的 MethodInfo* 被拿去当 RGCTX 解引用，必死。
+- `CALL` 文本尾部支持 `~i` 标志：走 `warp_safe_invoke`（invoker_method 转发器
+  正确处理泛型上下文；0.9.23 真机 get_Instance invoke 成功拿到过单例）。
+  普通类方法保持 methodPointer 直调（旧插件姿势）。AV 由 worker 舱 VEH 接住，
+  只记一次 `recovered`，进程不死。
+- py 侧 `Host.call(..., via="invoke")`；值类型返回按 boxed 对象 +0x10 解包。
+
 ## 0.9.22 — GC 句柄回归（64 位）：三次「IsLoadedBank 崩溃」同根定案
 
 **结论先行**：0.9.18 / 0.9.19 / 0.9.21 三次 `IsLoadedBank` 崩溃（同形栈
