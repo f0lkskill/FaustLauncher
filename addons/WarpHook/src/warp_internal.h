@@ -109,6 +109,15 @@ void *warp_pick_thunk(int index, int argc);
 void **warp_objects(void);
 void warp_slot_put(int slot, void *obj, int with_handle);
 void *warp_slot_get(int slot);
+/* v7：命令通道代读要复用钩子那条读链执行器（原来只在 warp_action.c 内部用）。
+ * nth=-1 是普通求值，iter_total 只有遍历链才有意义。返回 1 成功 / 0 没读到。 */
+int warp_read_chain(const WARP_READ *r, void *self, int argc,
+                    void *a1, void *a2, void *a3,
+                    void *a4, void *a5, void *a6, int nth, int *out,
+                    int *iter_total);
+/* 从第 slot 个对象槽出发执行 cmd_read 段里的那条链，结果写 vars[6]（值）
+ * 与 vars[7]（遍历链的活跃数）。返回 WARP_CMD_RES_*。 */
+int warp_cmd_read(int slot);
 int warp_cmd_make(int argc, int slot, const char *argkinds);
 int warp_cmd_call(int argc, int slot, int retkind, int out_slot, const char *argkinds);
 int warp_cmd_str(int slot);

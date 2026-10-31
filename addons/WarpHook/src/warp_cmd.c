@@ -249,6 +249,40 @@ int warp_cmd_release(int slot)
     return WARP_CMD_RES_OK;
 }
 
+/* v7 代读：Python 把一条读链写进 MAP 尾部的 cmd_read 段，这里在游戏主线程上
+ * 按槽取对象、执行链，结果写 vars[6]（值）与 vars[7]（遍历链的活跃数）。
+ *
+ * 为什么要绕命令通道这么一圈：插件跑在启动器进程，游戏对象在另一个进程里，
+ * 插件自己按地址读就是访问违规（0.9.8 之前 read_object 就是这么崩的）。
+ * 只有这里的 warp_can_read 校验才有意义 —— 读到坏地址当"没读到"返回。 */
+int warp_cmd_read(int slot)
+{
+    WARP_READ *r;
+    void *self;
+    int out[WARP_EVENT_SLOTS];
+    int total = 0;
+    int ok, i;
+
+    if (slot < 0 || slot >= WARP_OBJECT_COUNT)
+        return WARP_CMD_RES_BAD_SLOT;
+    if (!g_hdr)
+        return WARP_CMD_RES_FAIL;
+
+    self = warp_slot_get(slot);
+    if (!self)
+        return WARP_CMD_RES_FAIL;   /* 槽是空的：钩子还没命中过，或对象已被释放 */
+
+    r = (WARP_READ *)(void *)((char *)g_hdr + WARP_CMD_READ_OFFSET);
+    for (i = 0; i < WARP_EVENT_SLOTS; i++)
+        out[i] = 0;
+
+    ok = warp_read_chain(r, self, 0, NULL, NULL, NULL, NULL, NULL, NULL,
+                         -1, out, &total);
+    g_hdr->vars[6] = out[0];
+    g_hdr->vars[7] = total;
+    return ok ? WARP_CMD_RES_OK : WARP_CMD_RES_FAIL;
+}
+
 int warp_kill_game(void)
 {
     HANDLE proc = GetCurrentProcess();
@@ -361,6 +395,10 @@ void warp_pump_commands(void)
         break;
     case WARP_CMD_RELEASE:
         rc = warp_cmd_release(WARP_CMD_SLOT(type));
+        break;
+    case WARP_CMD_READ:
+        /* 代读不是"动作"，不计 fired —— 它是查询，每秒可以来几十次 */
+        rc = warp_cmd_read(WARP_CMD_SLOT(type));
         break;
     default:
         rc = WARP_CMD_RES_UNKNOWN;      /* 未知命令 */

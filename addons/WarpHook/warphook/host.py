@@ -34,8 +34,8 @@ from .base import (
 )
 
 HOST_MAGIC = 0x54534857           # "WHST"
-HOST_VERSION = 6                  # v6：读取链新增 Dictionary 容器步（6/7）与
-                                  # 字典计数 kind=9（见 warp_layout.h 同版注释）。
+HOST_VERSION = 7                  # v7：读链 4→8 跳 + 命令通道代读 CMD_READ
+                                  # （v6：读取链 Dictionary 容器步 6/7 与字典计数 kind=9）
 # v5：尾部追加 buff 关注哈希表段（BUF 行）。
 # v4：钩子表 16→32（成就 25 条 + NoGacha 2 条装不下 16 槽）
 HOST_MAP_DEFAULT = "Local\\WarpHost_Default"
@@ -61,6 +61,7 @@ CMD_MAKE = 3      # 构造对象（object_new + .ctor）→ 对象槽
 CMD_CALL = 4      # 调方法（runtime_invoke），槽内对象当 this（无槽 = 静态）
 CMD_STR = 5       # 造 il2cpp 字符串 → 对象槽
 CMD_RELEASE = 6   # 解掉槽上 GC 句柄并清槽
+CMD_READ = 7      # 代读：按 HOST_CMD_READ_OFFSET 处那条链读对象槽，结果 vars[6]/[7]
 
 # CALL 的返回值形状（retkind 打进 cmd_type 12-15 位）
 CMD_RET_INT32 = 0   # box 返回，真值在 +0x10，位模式写回 vars[6]
@@ -84,8 +85,8 @@ CMD_RES_NAMES = {
 
 HOST_HEADER_SIZE = 432   # 160 状态头 + 命令槽（4 个 int + 256 字节文本）
 HOST_HOOK_OFFSET = HOST_HEADER_SIZE
-#: 一条读取链最多走几跳。
-HOST_READ_STEPS = 4
+#: 一条读取链最多走几跳（v7：4 → 8，容器遍历 + 深字段不再顶格）。
+HOST_READ_STEPS = 8
 # 读取链每一步的动作。deref 位存的既是「要不要解引用」也是「做什么」：
 # 0 加偏移 / 1 解引用 / 2 List 取下标 / 3 Array 取下标 /
 # 4 List 取下标（值类型，元素 4B）/ 5 Array 取下标（值类型，元素 4B）/
@@ -158,7 +159,9 @@ HOST_WHEN_PRE = 0
 HOST_WHEN_POST = 1
 #: 全进程共用的读取链条数。
 HOST_READ_MAX = 128
-HOST_READ_SIZE = 48
+#: 全进程共用的读取链条数。
+HOST_READ_MAX = 128
+HOST_READ_SIZE = 80
 
 
 HOST_HOOK_SIZE = 288
@@ -182,7 +185,9 @@ HOST_OBJ_ARG_BASE = 0x100   # 读取链的 arg 写 0x100+n = 从第 n 个对象�
 HOST_BUFF_WATCH_COUNT = 32
 HOST_BUFF_WATCH_SIZE = 8    # fnv1a64
 HOST_BUFF_WATCH_OFFSET = HOST_OBJECTS_OFFSET + HOST_OBJECT_COUNT * HOST_OBJECT_SIZE
-HOST_MAP_BYTES = HOST_BUFF_WATCH_OFFSET + HOST_BUFF_WATCH_COUNT * HOST_BUFF_WATCH_SIZE
+# v7：命令通道的「代读」读链（一条 WARP_READ，MAP 尾部追加）。
+HOST_CMD_READ_OFFSET = HOST_BUFF_WATCH_OFFSET + HOST_BUFF_WATCH_COUNT * HOST_BUFF_WATCH_SIZE
+HOST_MAP_BYTES = HOST_CMD_READ_OFFSET + HOST_READ_SIZE
 
 # ---- 多作者分段（v0.9.2）------------------------------------------------
 # 成就观测跑在独立子进程，它有自己的一份 Host；NoGacha 等插件在启动器主进程
@@ -422,6 +427,92 @@ def _step_code(value):
         return int(value) & 0x7
     except (TypeError, ValueError):
         return HOST_STEP_DEREF
+
+
+def _encode_read(at, spec, default_arg=1):
+    """把一条 Python 侧读法写进 ``at`` 处的 HostRead 结构，返回落点格号。
+
+    ``spec`` 的写法与 ``hook(reads=[...])`` 里的元素完全一致::
+
+        {'arg': 0, 'kind': 'int', 'out': 0,
+         'off': [0x90, {'dict': 'iter'}, {'off': 0x10, 'deref': True}]}
+
+    **钩子表与命令代读共用这一份编码。** 同一件事的两条配置路径各写一份代码，
+    迟早有一边漏改（dict 步的缺省 value_off/stride 就这么漏过一次，落盘成 0，
+    真机上读到一堆垃圾值）。所以 :meth:`Host._write_config` 与 :meth:`Host.read`
+    都走这里，不要各自实现。
+    """
+    arg = int(spec.get("arg", default_arg))
+    chain = list(spec.get("off") or spec.get("chain") or ())[:HOST_READ_STEPS]
+    # 两种写法都收：元素级 {'off':..,'deref':..}，或者顶层并列写
+    # off=[...] / deref=[True, False]（跟 C 那张表一样）。
+    flags = list(spec.get("deref") or ())
+    kind = spec.get("kind", HOST_READ_INT)
+    if isinstance(kind, str):
+        kind = HOST_READ_NAMES.get(kind.lower(), HOST_READ_INT)
+    # out 是事件里的第几格：0..11（十二格）。不是 2 的幂，用钳制不用掩码。
+    out = max(0, min(int(spec.get("out", 0)), HOST_EVENT_SLOTS - 1))
+
+    ctypes.c_int32.from_address(at + HostRead.arg.offset).value = arg
+    ctypes.c_int32.from_address(at + HostRead.nsteps.offset).value = len(chain)
+    ctypes.c_int32.from_address(at + HostRead.kind.offset).value = int(kind)
+    ctypes.c_int32.from_address(at + HostRead.out.offset).value = out
+
+    for k, step in enumerate(chain):
+        if isinstance(step, dict):
+            if "list" in step:
+                off, code = int(step["list"]), HOST_STEP_LIST
+            elif "array" in step:
+                off, code = int(step["array"]), HOST_STEP_ARRAY
+            elif "list_val" in step:
+                off, code = int(step["list_val"]), HOST_STEP_LIST_VAL
+            elif "array_val" in step:
+                off, code = int(step["array_val"]), HOST_STEP_ARRAY_VAL
+            elif "dict" in step or "dict_val" in step:
+                # Dictionary 步（v6）：'dict': 下标 / 'dict_val': 下标（值类型
+                # value）。'iter': True 或下标写 'iter' 表示遍历链 —— 一次命中
+                # 对每个活跃 value 各发一个事件。off 是打包位域不是普通偏移。
+                if "dict" in step:
+                    code, key = HOST_STEP_DICT_VALUE, step["dict"]
+                else:
+                    code, key = HOST_STEP_DICT_VALUE32, step["dict_val"]
+                is_iter = (key == "iter") or bool(step.get("iter"))
+                if isinstance(key, int) and not isinstance(key, bool):
+                    idx = key
+                else:
+                    idx = int(step.get("index", 0))
+                # 缺省值必须与 il2cpp 标准布局一致：entry =
+                # {hashCode(4), next(4), key(4/8), value}，stride=24、
+                # value_off=16。写 0 会退化成「永远取 entry[0] 的 hashCode
+                # 当 value」——真机实测过一次，out 全是垃圾值。
+                off = (((int(step.get("value_off", 16)) & 0xFF))
+                       | ((int(step.get("stride", 24)) & 0xFF) << 8)
+                       | ((idx & 0x7FFF) << 16))
+                if is_iter:
+                    off |= 0x80000000
+            else:
+                code = _step_code(step.get("deref", True))
+                off = int(step.get("index", 0)) if code in (
+                    HOST_STEP_LIST, HOST_STEP_ARRAY) else int(
+                    step.get("off", 0))
+        else:
+            off = int(step)
+            # 顶层 deref 没写到这一位，就按「解引用」处理：绝大多数跳到 next
+            # 是对象引用，内嵌 struct 才显式写 False。
+            code = _step_code(flags[k]) if k < len(flags) else 1
+        off, code = int(off), int(code)
+        if not (0 <= code <= HOST_STEP_DICT_VALUE32):
+            code = HOST_STEP_DEREF
+        if code >= HOST_STEP_DICT_VALUE:
+            # 打包位域带 bit31 ITER 位：补码成 32 位有符号再落盘
+            # （c_int32 收不下 0x80000000 的正数），不走钳制。
+            if off >= 0x80000000:
+                off -= 0x100000000
+        else:
+            off = max(-0x7FFFFF, min(0x7FFFFF, off))
+        ctypes.c_int32.from_address(at + HostRead.off.offset + k * 4).value = off
+        ctypes.c_int32.from_address(at + HostRead.deref.offset + k * 4).value = code
+    return out
 
 
 def host_alive(block):
@@ -809,82 +900,10 @@ class Host:
                 ctypes.c_int32.from_address(
                     slot + HostHook.read_count.offset).value = take
                 for j in range(take):
-                    spec = reads[j]
-                    arg = int(spec.get("arg", 1))
-                    chain = list(spec.get("off") or spec.get("chain") or ())[:HOST_READ_STEPS]
-                    # 两种写法都收：元素级 {'off':..,'deref':..}，或者
-                    # 顶层并列写 off=[...] / deref=[True, False]（跟 C 那张表一样）。
-                    flags = list(spec.get("deref") or ())
+                    spec = dict(reads[j])
+                    spec.setdefault("out", j)
                     at = read_addr + (rbase + read_used[gi] + j) * HOST_READ_SIZE
-                    ctypes.c_int32.from_address(at + HostRead.arg.offset).value = arg
-                    ctypes.c_int32.from_address(at + HostRead.nsteps.offset).value = len(chain)
-                    kind = spec.get("kind", HOST_READ_INT)
-                    if isinstance(kind, str):
-                        kind = HOST_READ_NAMES.get(kind.lower(), HOST_READ_INT)
-                    ctypes.c_int32.from_address(
-                        at + HostRead.kind.offset).value = int(kind)
-                    # out 是事件里的第几格：0..11（十二格，damage 一条钩子
-                    # 要装下 ACT+VAL 两行的数）。不是 2 的幂，用钳制不用掩码。
-                    out = max(0, min(int(spec.get("out", j)), HOST_EVENT_SLOTS - 1))
-                    ctypes.c_int32.from_address(at + HostRead.out.offset).value = out
-                    for k, step in enumerate(chain):
-                        if isinstance(step, dict):
-                            if "list" in step:
-                                off, code = int(step["list"]), HOST_STEP_LIST
-                            elif "array" in step:
-                                off, code = int(step["array"]), HOST_STEP_ARRAY
-                            elif "list_val" in step:
-                                off, code = int(step["list_val"]), HOST_STEP_LIST_VAL
-                            elif "array_val" in step:
-                                off, code = int(step["array_val"]), HOST_STEP_ARRAY_VAL
-                            elif "dict" in step or "dict_val" in step:
-                                # Dictionary 步（v6）：'dict': 下标 / 'dict_val': 下标
-                                # （值类型 value）。'iter': True 或下标写 'iter' 表示
-                                # 遍历链 —— 一次命中对每个活跃 value 各发一个事件。
-                                # off 是打包位域（WARP_DICT_PACK）不是普通偏移。
-                                if "dict" in step:
-                                    code, key = HOST_STEP_DICT_VALUE, step["dict"]
-                                else:
-                                    code, key = HOST_STEP_DICT_VALUE32, step["dict_val"]
-                                is_iter = (key == "iter") or bool(step.get("iter"))
-                                if isinstance(key, int) and not isinstance(key, bool):
-                                    idx = key
-                                else:
-                                    idx = int(step.get("index", 0))
-                                # 缺省值必须与 il2cpp 标准布局一致：
-                                # entry = {hashCode(4), next(4), key(4/8), value}，
-                                # stride=24、value_off=16。写 0 会退化成「永远取
-                                # entry[0] 的 hashCode 当 value」——真机实测过一次，
-                                # 结果 out 全是垃圾值，排查花很久。
-                                off = (((int(step.get("value_off", 16)) & 0xFF))
-                                       | ((int(step.get("stride", 24)) & 0xFF) << 8)
-                                       | ((idx & 0x7FFF) << 16))
-                                if is_iter:
-                                    off |= 0x80000000
-                            else:
-                                code = _step_code(step.get("deref", True))
-                                off = int(step.get("index", 0)) if code in (
-                                    HOST_STEP_LIST, HOST_STEP_ARRAY) else int(
-                                    step.get("off", 0))
-                        else:
-                            off = int(step)
-                            # 顶层 deref 没写到这一位，就按「解引用」处理：
-                            # 绝大多数跳到 next 是对象引用，内嵌 struct 才显式写 False。
-                            code = _step_code(flags[k]) if k < len(flags) else 1
-                        off, code = int(off), int(code)
-                        if not (0 <= code <= HOST_STEP_DICT_VALUE32):
-                            code = HOST_STEP_DEREF
-                        if code >= HOST_STEP_DICT_VALUE:
-                            # 打包位域带 bit31 ITER 位：补码成 32 位有符号再落盘
-                            # （c_int32 收不下 0x80000000 的正数），不走钳制。
-                            if off >= 0x80000000:
-                                off -= 0x100000000
-                        else:
-                            off = max(-0x7FFFFF, min(0x7FFFFF, off))
-                        ctypes.c_int32.from_address(
-                            at + HostRead.off.offset + k * 4).value = off
-                        ctypes.c_int32.from_address(
-                            at + HostRead.deref.offset + k * 4).value = code
+                    _encode_read(at, spec)
                 read_used[gi] += take
             # 同一个钩子（类名与方法都没变）如果 DLL 已经标记过「触发过」，
             # 把标记补回去，一次性钩子才不会重复触发。
@@ -1299,17 +1318,64 @@ class Host:
         addr = block.address + HOST_OBJECTS_OFFSET + slot * HOST_OBJECT_SIZE
         return int(ctypes.c_uint64.from_address(addr).value)
 
-    def read_object(self, slot, chain, kind="int"):
-        """从第 slot 个对象槽里存着的那个对象出发，按读取链读一个值。
+    def read(self, slot, chain, kind="int", timeout=2.0, default=None,
+             detail=False):
+        """让游戏主线程代读：从第 slot 个对象槽出发，按链读一个值。
 
-        这是「对象槽」的读端：钩子命中时把对象留在槽里（``cache=(arg, slot)``），
-        过一会儿再用这条链去读它的字段。链的写法与 ``reads=`` 完全一致，
-        读不到返回 ``None``（对象已销毁 / 链走岔了都会是 None，不会崩）。
+        **v7 起，插件读游戏对象一律走这里。** ``read_object`` 是在启动器进程里
+        对本进程地址空间裸读，游戏对象的指针在别的进程里，裸读轻则读到垃圾、
+        重则直接段错误（0.9.8 真机实测 exit 139）。这条命令把读链写进 MAP 尾部
+        那一条 ``WARP_READ``，由 DLL 在游戏主线程上跑 ``warp_read_chain``，
+        结果经 ``vars[6]`` 回来 —— 全程在游戏进程里，不会崩。
+
+        链的写法与 ``reads=`` 完全一致（可以写 ``{'dict': 'iter'}``：遍历链在
+        代读里只回报活跃数，不展开）；``detail=True`` 时返回
+        ``{"value":..., "total":..., "ok":...}``，``total`` 是遍历链的活跃数。
+        读不到（槽空 / 对象已销毁 / 链走岔）返回 ``default``。
+        """
+        slot = int(slot)
+        if slot < 0 or slot >= HOST_OBJECT_COUNT:
+            raise ValueError(f"对象槽 {slot} 超出 0..{HOST_OBJECT_COUNT - 1}")
+        block = self.block()
+        if block is None:
+            return default if not detail else {"value": default,
+                                               "total": 0, "ok": False}
+        spec = {"arg": 0, "kind": kind, "out": 0, "off": list(chain or ())}
+        _encode_read(block.address + HOST_CMD_READ_OFFSET, spec)
+        msg = self._command(CMD_READ, slot=slot, timeout=timeout)
+        ok = (msg == CMD_RES_NAMES.get(0, "已执行"))
+        bits = int(block.cfg.vars[6]) & 0xFFFFFFFF
+        total = int(block.cfg.vars[7])
+        if isinstance(kind, str) and kind.strip().lower() == "float":
+            value = struct.unpack("<f", struct.pack("<I", bits))[0]
+        elif isinstance(kind, str) and kind.strip().lower() in ("int", "obscured"):
+            # int 落点在 C 侧是有符号的，按 32 位补码还原，别把 -1 读成 42 亿。
+            value = ctypes.c_int32(bits).value
+        else:
+            value = bits
+        if not ok:
+            value = default
+        if detail:
+            return {"value": value, "total": total, "ok": ok, "reason": msg}
+        return value
+
+    def read_local(self, slot, chain, kind="int"):
+        """在**本进程**里裸读（只对同进程地址有效，跨进程必崩）。
+
+        留给诊断和单测用；插件要读游戏对象请用 :meth:`read`。
         """
         ptr = self.object_ptr(slot)
         if not ptr:
             return None
         return read_chain(ptr, chain, kind)
+
+    def read_object(self, slot, chain, kind="int", timeout=2.0, default=None):
+        """从第 slot 个对象槽出发读一个值（走 DLL 代读，跨进程安全）。
+
+        旧版是 ``read_local`` 那种本进程裸读，跨进程会崩，v7 起改为代读。
+        """
+        return self.read(slot, chain, kind=kind, timeout=timeout,
+                         default=default)
 
     def object_slot(self, slot, out=0, kind="int"):
         """把「从第 slot 个对象槽出发」写成一条读链，配合 ``reads=`` 使用。

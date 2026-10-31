@@ -219,15 +219,21 @@ WARP_HOOK   288B×32 klass[48] method[48] argc event_id every chance actions fla
 导出表      64B×15   标准名按固定顺序映射成混淆名（v3 起 + gchandle_new/free）
 事件 ctrl   16B      head / tail / dropped / pad（环形队列游标）
 事件队列    60B×2048 WARP_EVENT { id, hook, tick, a, b, …, l }（12 格）
-读取链      48B×128  WARP_READ { arg, nsteps, kind, out, off[4], deref[4] }
+读取链      80B×128  WARP_READ { arg, nsteps, kind, out, off[8], deref[8] }
 对象槽      8B×32    cache 钩子与 P6 构造对象落指针的地方；[30]/[31] tick 共享槽
 buff 关注   8B×32    fnv1a64(名字) 列表，0 哨兵 —— buff_mask 读法按它置位
                      （成就侧 watched_buff_names() 的位序，v5 新段）
-总长        172928B（协议 version=6：v3 加 2 导出，v4 钩子表 16→32，
+代读链      80B×1    v7 追加：命令通道 CMD_READ 用的一条读链（MAP 最尾部）
+总长        177104B（协议 version=7：v3 加 2 导出，v4 钩子表 16→32，
                      v5 尾部追加 buff 关注哈希表，v6 只改读链语义（字典步
-                     6/7 + kind 9），布局不变；Python 侧按 version≥6 校验
-                     宿主，旧 DLL 拒绝装配）
+                     6/7 + kind 9），布局不变；v7 读链 4→8 跳（48B→80B）、
+                     尾部再追加一条代读链，前面所有偏移不变。Python 侧按
+                     version≥7 校验宿主，旧 DLL 拒绝装配）
 ```
+
+**v7 为什么要加宽读链**：能进容器之后，「遍历 → 单位 → 模型 → 状态 → 血量」
+正好 4 跳，一步富余都没有；buff 名字那条要 6 跳（模型→buff详情→List→元素→
+静态数据→名字串），4 跳根本进不去。加宽到 8 跳后，一条链能从头走到尾。
 
 钩子表 → 行为的三段式表达力：
 
@@ -239,8 +245,9 @@ buff 关注   8B×32    fnv1a64(名字) 列表，0 哨兵 —— buff_mask 读�
    让原方法不执行。`every` / `chance` / `delay_ms` / `dedupe_ms` / `HF_ONCE` 决定何时触发。
 
 读取链（`reads=`）是第 1 条的通用版：探针只能「调一个 0 参 getter 拿 int」，
-读取链能「从任意参数出发，按偏移跳最多 4 跳，落点按 int/float/bool/ptr/obscured/
-sum/count/text 解释」，结果直接写进事件槽。每跳的动作由 `deref` 位决定：
+读取链能「从任意参数出发，按偏移跳最多 8 跳（v7 起；v6 是 4 跳），落点按
+int/float/bool/ptr/obscured/sum/count/text 解释」，结果直接写进事件槽。
+每跳的动作由 `deref` 位决定：
 
 | `deref` 值 | 动作 |
 | --- | --- |
@@ -454,6 +461,18 @@ v6 起遍历批模式把 `g_last_valid` 用到 2=批），
 一条内部钩子（用户钩子已占该地址时自动跳过）。所以 `host.popup("...")` 一行就能让
 游戏弹窗，不用关心线程，也不用等战斗回合。
 
+**代读（v7 新增，`CMD_READ = 7`）**：命令通道原先只会「做事」，不会「读数」——
+插件想看一眼某个对象的字段，只能自己装钩子制造事件。v7 把读取链也搬进命令通道：
+Python 把一条 `WARP_READ` 写到 MAP 尾部那段 `代读链`（`WARP_CMD_READ_OFFSET`），
+连同对象槽号一起发命令，DLL 在游戏主线程上跑 `warp_read_chain`，把值写回
+`vars[6]`、遍历链的活跃数写 `vars[7]`。于是 `host.read(slot, chain)` 变成一次
+同步往返（真机 20–40 ms），不占钩子槽、不需要重装钩子表、随时能调。
+
+为什么不干脆在 Python 里读指针？因为插件跑在启动器进程，游戏对象在另一个
+进程里 —— 直接 `ReadProcessMemory` 要常驻一个句柄和一套读链实现，裸读则直接
+段错误（0.9.8 真机踩过，exit 139）。代读让「读」回到游戏进程内，安全检查
+（`warp_can_read`）也全在那边。
+
 `warp_on_event()` 返回位掩码：bit0 = 拦原函数、bit1 = 执行动作，由 160 个独立
 thunk 按 `argc`(0..9) 分派——形状是 `(self, a1..aN, MethodInfo*)`，il2cpp 的
 隐藏 `MethodInfo*` 参数也照收照转（非泛型方法体一般不读它，但 `.ctor` 这类
@@ -566,10 +585,16 @@ md5sum addons/WarpHook/warp_host.dll          # 与刚编出来的产物一致
 | --- | --- | --- |
 | `env.py` | 19 | 插件作用域：`ADDON_ARG` / `ADDON_NAME` / `ADDON_MANAGER` |
 | `base.py` | 732 | Win32、共享内存、il2cpp 导出名解析、注入、读取链翻译 |
-| `host.py` | 1310 | `Host`：钩子表与文案池的配置端、命令通道客户端 |
+| `host.py` | 1310 | `Host`：钩子表与文案池的配置端、命令通道客户端、代读 `read()` |
+| `fields.py` | 183 | 字段表：类名 + 字段名 → 读链（偏移只在这一处记） |
+| `objects.py` | 198 | 对象门面：`units()` / `Unit` / `snapshot()` / `scene()` 一键读 |
 | `game.py` | 197 | `Gacha` / `GachaBill`：抽卡语义层 |
 | `service.py` | 690 | `Runtime` / `Service`：等游戏、注入、心跳、状态播报 |
 | `registry.py` | 171 | 组装 `warp` 命名空间、卸载收尾 |
+
+**双轨**：底层原语（`hook(reads=...)` / `Host.read(slot, chain)` / 手拼链）
+一直可用，`fields` / `objects` 只是把最常见的几件事做成一脚油门 —— 它们最终
+都落到同一条 `_encode_read`，不存在「高层一套、底层另一套」的分叉。
 
 **两条必须知道的规则**：
 
@@ -645,3 +670,39 @@ host.release(slot)                                        # 用完还回去
 驱动命令泵，26 项断言覆盖 MAKE（0 参 / 带参 #if）、CALL（实例 / 静态 /
 int32 / float / ref）、STR、RELEASE（句柄分配与解放全程核对）、五个
 错误码。布局常量直接 `import warphook.host`，永不漂移。
+
+## 16. 对象门面与字段表（v7）
+
+底层读完一个字段的完整姿势是：装钩子 → 拿对象槽 → 拼 4~8 跳的链 → 解析
+事件。写一次行，写十次就想骂人。v7 把这件事拆成两层：
+
+**`fields.py` —— 偏移只记一处**。类名 + 字段名翻译成读链，每条记录带
+`verified` 标记（真机对过数没有）和 `note`（踩过的坑）::
+
+    from warphook import fields
+    fields.read_chain("BattleUnitModel", "_state", "_hp")
+    # {'off': [{'off': 0x148, 'deref': True}, {'off': 0x148, 'deref': False}],
+    #  'kind': 'obscured'}
+
+**`objects.py` —— 一键读**，走命令通道代读，不占钩子槽::
+
+    from warphook import objects
+
+    bom = objects.bind_manager(host)          # 装钩子抓单例（等一回合）
+    for u in objects.units(host, bom):        # 全场单位
+        print(u.instance_id(), u.hp(), "/", u.max_hp(),
+              "理智", u.mp(), "速度", u.speed())
+    objects.snapshot(host, bom)               # [{...}, {...}] 整场
+    objects.scene(host)                       # {'scene': 1, 'time_scale': 1.0}
+
+代价与边界要说清楚：
+
+- **一次属性访问 = 一次代读往返**（真机 20–40 ms）。3 个单位 × 4 字段
+  ≈ 0.5 s，做 1 Hz 采样够用；要「变化的一瞬间」还是得装 `reads=` 钩子。
+- **对象槽是共享资源**：插件请用 24..31（0..23 主段留给成就观测）。
+- **`_allUnitDictionary` 只给 TValue**：`Dictionary<int, BattleUnit>` 的 key
+  （阵营/序号）读不到，遍历只吐 value。要按阵营分就用 `_unitList`
+  （`Dictionary<UNIT_FACTION, List<BattleUnit>>`），那是另一条键。
+- **遍历范围只能用 `count`（+0x20）**，不是 entries 数组容量：容量是 2 的幂、
+  通常大于 count，富余槽会被当成活跃单位；空槽的 hashCode 是 0，只有
+  Remove 留下的死坑才是 -1。

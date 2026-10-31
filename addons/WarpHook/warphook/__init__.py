@@ -23,5 +23,7 @@ from .base import (  # noqa: F401
 from .game import Gacha, GachaBill, GachaWatcher, gacha  # noqa: F401
 from .host import Host, host_alive  # noqa: F401
 from . import diag  # noqa: F401
+from . import fields  # noqa: F401
+from . import objects  # noqa: F401
 from .registry import on_unload, register  # noqa: F401
 from .service import Runtime, Service  # noqa: F401

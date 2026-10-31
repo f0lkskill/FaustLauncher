@@ -4,6 +4,41 @@
 
 看完整历史：`git log --oneline -- addons/WarpHook/`
 
+## 0.9.9
+
+协议 **v7**：让插件能用「一行调用」读游戏对象。三件事——读链加宽、命令通道
+代读、高层门面。
+
+- **读链 4 跳 → 8 跳（`WARP_READ` 48B → 80B）**。「遍历 → 单位 → 模型 →
+  状态 → 血量」刚好 4 跳，一步富余都没有；buff 名字那条要 6 跳，4 跳进不去。
+  加宽后一条链能从头走到尾。`WARP_MAP_BYTES` 172928 → 177104（前面所有偏移
+  不变，只在尾部追加），`HOST_VERSION`/`WARP_VERSION` = 7，`host_alive` 按
+  `version≥7` 拒绝旧 DLL。
+- **新增命令 `CMD_READ = 7`（代读）**。Python 把一条 `WARP_READ` 写到 MAP 尾部
+  的 `代读链`（`WARP_CMD_READ_OFFSET`），连同对象槽号发命令，DLL 在游戏主线程
+  跑 `warp_read_chain`，值写 `vars[6]`、遍历链活跃数写 `vars[7]`。
+  `warp_read_chain` 去掉 `static` 供 `warp_cmd.c` 调用。**为什么必须代读**：
+  插件在启动器进程，裸读游戏地址必崩（0.9.8 实测 exit 139）。
+- **`Host.read(slot, chain, kind, detail=False)`**：一次同步往返读一个值，
+  真机 20–40 ms，不占钩子槽、不用重装钩子表；`read_object()` 改走它
+  （保留 `read_local()` 给同进程诊断）。
+- **新增 `warphook/fields.py`（字段表）**。类名 + 字段名 → 读链，偏移只在这一处
+  记；每条带 `verified`（真机验过没有）与 `note`（踩过的坑）。覆盖
+  BattleObjectManager / BattleUnit / BattleUnitModel / CharacterState /
+  GlobalGameManager / BuffDetail / BuffModel / BuffStaticData。
+- **新增 `warphook/objects.py`（对象门面）**：
+  `bind_manager()` / `units()` / `unit(i)` / `snapshot()` / `count()` /
+  `scene()`，`Unit` 有 `instance_id()/hp()/max_hp()/mp()/speed()/alive()`。
+  双轨设计：底层 `hook(reads=...)` / `Host.read(slot, chain)` 原样保留，
+  门面与底层共用同一个 `_encode_read`，不存在两套翻译表。
+- **`_encode_read` 抽成共用函数**。钩子表装配与命令代读原先各写一份读链编码，
+  现在只有一份（dict 步缺省值漏改过一次，就是这么漏的）。
+- **`env.py` 版本号改成读 `addon_info.json`**。原先硬写 `"0.9.6"`，
+  `addon_info.json` 已经 0.9.8 了日志里还播 0.9.6 —— 又一个「同一常量抄两份」。
+- **`warp_layout.h` 加编译期尺寸校验**：`sizeof(WARP_READ) == WARP_READ_SIZE`、
+  `WARP_READ_STEPS == 8` 不符合直接编译失败，不让「布局漂移」跑到真机上变成
+  「数不对但不报错」。
+
 ## 0.9.8
 
 0.9.7 上真机后必修的一轮：**il2cpp 的 Dictionary 字段序和 .NET 参考源码不一样**，

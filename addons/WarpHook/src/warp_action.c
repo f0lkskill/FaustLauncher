@@ -416,10 +416,10 @@ static int warp_buff_mask(const void *unit, const WARP_READ *r, int *out)
  *       ITER 标记且 iter_total 非空，则改成只统计活跃 entry 数写 *iter_total
  *       并返回 1（不写 out）—— 上层用这个数决定遍历几轮。
  *   >=0 遍历模式：Dictionary 步取第 nth 个活跃 value，链尾照常走。 */
-static int warp_read_chain(const WARP_READ *r, void *self, int argc,
-                           void *a1, void *a2, void *a3,
-                           void *a4, void *a5, void *a6, int nth, int *out,
-                           int *iter_total)
+int warp_read_chain(const WARP_READ *r, void *self, int argc,
+                    void *a1, void *a2, void *a3,
+                    void *a4, void *a5, void *a6, int nth, int *out,
+                    int *iter_total)
 {
     void *p;
     int i;
