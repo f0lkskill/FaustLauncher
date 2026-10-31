@@ -3,7 +3,7 @@
 插件通过 ``env.ADDON_ARG['Namespaces'].space('warp')`` 取到这里导出的全部东西。
 """
 
-from . import env
+from . import env, fields, objects
 from .base import (
     ensure_exports,
     export_mapped,
@@ -21,6 +21,7 @@ from .base import (
     GAME_PROCESS,
 )
 from .game import GACHA_TYPE_NAMES, Gacha, GachaBill, GachaWatcher, gacha
+from . import live
 from .host import (
     ACT_KILL,
     ACT_PANEL,
@@ -107,6 +108,61 @@ _NAMESPACES = {
         'GachaBill': GachaBill,
         'GachaWatcher': GachaWatcher,
         'GACHA_TYPE_NAMES': GACHA_TYPE_NAMES,
+        # ---- 门面：插件只用这几行，不用认识类名/偏移/对象槽 ----
+        'Live': live.Live,
+        'Battle': live.Battle,
+        'live': live.live,
+        'start': live.start,
+        'status': live.status,
+        'describe': live.describe,
+        'popup': live.popup,
+        'scene': live.scene,
+        'battle': live.battle,
+        'units': live.units,
+        'count': live.count,
+        'unit': live.unit,
+        'player': live.player,
+        'on_round_start': live.on_round_start,
+        'on_scene_changed': live.on_scene_changed,
+        'on_battle_start': live.on_battle_start,
+        'on_battle_end': live.on_battle_end,
+        'close': live.close,
+        'SCENES': live.SCENES,
+    },
+    # 对象/字段的门面（Unit / Buff / Access）单独一个子分区，和 game 分开取
+    'object': {
+        'Unit': objects.Unit,
+        'Buff': objects.Buff,
+        'Access': objects.Access,
+        'access': objects.access,
+        'units': objects.units,
+        'unit': objects.unit,
+        'count': objects.count,
+        'snapshot': objects.snapshot,
+        'scene': objects.scene,
+        'scene_full': objects.scene_full,
+        'scene_name': objects.scene_name,
+        'scan_class': objects.scan_class,
+        'scan_object': objects.scan_object,
+        'bind_manager': objects.bind_manager,
+        'bind_scene': objects.bind_scene,
+        'SCENES': objects.SCENES,
+        'SLOT_MANAGER': objects.SLOT_MANAGER,
+        'SLOT_SCENE': objects.SLOT_SCENE,
+        'SLOT_SCRATCH': objects.SLOT_SCRATCH,
+    },
+    # 字段表：查偏移、看某条链是怎么拼的
+    'field': {
+        'field': fields.field,
+        'has': fields.has,
+        'kind_of': fields.kind_of,
+        'read_chain': fields.read_chain,
+        'unit_path': fields.unit_path,
+        'units_chain': fields.units_chain,
+        'units_iter': fields.units_iter,
+        'verified_names': fields.verified_names,
+        'unverified_names': fields.unverified_names,
+        'FIELD_TABLE': fields.FIELD_TABLE,
     },
     'plugin': {
         'Runtime': Runtime,
@@ -186,6 +242,9 @@ def register():
         warp.inject     找进程 / 等引擎 / 远程线程注入
         warp.shm        共享内存
         warp.plugin     共享宿主（Runtime / Host）
+        warp.game       门面：popup / units / scene / on_round_start（新手用这个）
+        warp.object     对象门面：Unit / Buff / Access（要更细的时候用）
+        warp.field      字段表：查偏移、看读链怎么拼
         warp.log        日志
 
     子分区既可以从根上扁平取（``NS['warp.il2cpp']``），也可以从 warp 里
@@ -213,7 +272,11 @@ def register():
 
 
 def on_unload():
-    """插件卸载：停掉所有插件的后台流程与抽卡循环，关掉共享内存映射。"""
+    """插件卸载：停掉所有插件的后台流程、门面实例与抽卡循环，关掉共享内存映射。"""
+    try:
+        live.close_all()
+    except Exception:  # noqa: BLE001
+        pass
     try:
         gacha.stop_all()
     except Exception:  # noqa: BLE001
