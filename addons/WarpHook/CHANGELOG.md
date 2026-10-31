@@ -81,6 +81,14 @@
   按 ObscuredInt 解会恒 181。
 - **buff 明细**：`BuffInfo._stack@0x6C`（强度/层数）、`_turn@0x70`（次数）、
   `_maxStack@0x64`、`_maxTurn@0x68`；名字原文走一次跨进程读（`access.reader()`）。
+- **buff 英文 ID（`Buff.key`）**：`BuffInfo._name` 只是本地化显示名（"呼吸法"），
+  插件判断 buff 要用 `BuffStaticData.id@0x18` —— 真机值如
+  `BurningWoundYisangMask` / `Breath` / `Combustion` / `Protection`。
+  门面：`b.key` / `b.icon`(iconId) / `b.type_id`(BUFF_UNIQUE_KEYWORD) /
+  `b.has("Breath")`、`u.has_buff("Breath")`、`u.buff("Breath")`（英文 ID 与
+  中文名都认）。`BuffStaticData` 同时补了 `_id/iconId/buffClass/buffType/
+  attributeType/totalStack/stackLimitPerTurn/maxStack/maxTurn`。
+  `Unit.buff_id(i)` 的 8 跳末端从 `name` 改指英文 ID；要原文用 `Buff.key`。
 
 ## 0.9.8
 

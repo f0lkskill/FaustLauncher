@@ -362,7 +362,119 @@ class WarpNamespace(Protocol):
     log: Log
 
 
+class Buff(Protocol):
+    """``Unit.buffs[i]``：一个 buff 的门面。
+
+    层数/次数走命令通道代读；``name`` 是 UTF-16 原文，走一次跨进程读
+    （拿不到读句柄时为 ``None``）。
+    """
+
+    index: int
+    key: str | None
+    """**英文 ID**（插件判断用），如 ``"Breath"``/``"Combustion"``。"""
+
+    name: str | None
+    """buff 名字原文（给人看），如 ``"呼吸法"``。"""
+
+    icon: str | None
+    """图标资源 ID，如 ``"UnlockBuff_3"``。"""
+
+    type_id: int | None
+    """``BUFF_UNIQUE_KEYWORD`` 枚举值。"""
+
+    stack: int | None
+    """强度/层数（界面上那个大数字）。"""
+
+    turn: int | None
+    """剩余次数/回合。"""
+
+    max_stack: int | None
+    max_turn: int | None
+    stack_ratio: float | None
+
+    def has(self, key) -> bool:
+        """按英文 ID 或中文名判断是不是这个 buff。"""
+
+    def raw(self) -> dict:
+        """``{'index','key','name','icon','type_id','stack','turn','max_stack','max_turn'}``。"""
+
+
+class Unit(Protocol):
+    """``warp.game.access(host).get_obj(id=1)``：一个战场单位。
+
+    每个属性访问都是一次 DLL 代读往返（约 20–40 ms），循环里别读太多次；
+    要「变化的一瞬间」请用钩子，不要轮询。
+    """
+
+    index: int
+    """在这本字典里的序号（不是战斗编号）。"""
+
+    id: int
+    """战斗内编号（1/2/3…）。"""
+
+    identity: int
+    """人格 ID（角色静态 id，浮士德 = 101xx）。原字段 ``_originID``。"""
+
+    hp: int
+    max_hp: int
+    sp: int
+    """理智（SP），负数表示恐慌计数。"""
+
+    speed: float
+    alive: bool
+    is_dead: bool
+    is_panic: bool
+    """恐慌（理智归零后的失控）。"""
+    is_break: bool
+    """混乱/崩溃。"""
+    is_low_morale: bool
+    hp_ratio: float
+
+    buffs: list[Buff]
+    """身上全部 buff。"""
+
+    def buff(self, key, default=None) -> Buff | None:
+        """按序号（``0``）、英文 ID（``"Breath"``）或中文名（``"呼吸法"``）找一个 buff。"""
+
+    def has_buff(self, key) -> bool:
+        """身上有没有某个 buff。"""
+
+    def get_pro(self, key: str, default=None):
+        """通用取值：``"origin_id"`` / ``"_hp"`` / ``"CharacterState._maxHp"``。"""
+
+    def props(self, timeout: float = 1.0) -> dict:
+        """全部字段（62 个，摸底用，慢）。"""
+
+    def read(self, *chain, kind: str = "int", default=None, timeout: float = 2.0):
+        """底层：从这个对象出发自己拼读链。"""
+
+
+class Access(Protocol):
+    """``warp.game.access(host)``：场景访问器。"""
+
+    def manager(self, timeout: float = 3.0, force: bool = False) -> int | None:
+        """保证 BattleObjectManager 已进对象槽，返回它的指针。"""
+
+    def units(self, limit: int | None = None) -> list[Unit]:
+        """场上全部单位。"""
+
+    def get_obj(self, id: int | None = None, index: int | None = None) -> Unit | None:
+        """按战斗内编号或序号取一个单位。"""
+
+    def count(self) -> int:
+        """场上单位数。"""
+
+    def scene(self) -> dict:
+        """``{'scene','time_scale','scene_entries'}``。"""
+
+    def close(self) -> None:
+        """关掉跨进程读句柄（用完记得调）。"""
+
+
 class Game(Protocol):
     """``warp.game``：游戏概念层。"""
 
     gacha: Gacha
+
+    def access(self, host=None, slot=None) -> Access:
+        """场景对象访问器（0.9.9 起）。"""

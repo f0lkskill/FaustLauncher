@@ -753,19 +753,38 @@ objects.scene_full(host)                                            # 同上，�
 `scan()` 是**摸底工具不是业务接口**：一个单位 63 个字段、每字段一次代读
 往返，整场 11 个单位要 20 秒上下。真跑业务请只读关心的几个字段。
 
-### 16.3 buff 的边界（v8 要做的事）
+### 16.3 buff 的边界
 
-`u.buff_count()` / `u.buff_ids()` 现在能拿到「身上几个 buff」和每个 buff 名字的
-**32 位哈希指纹**，拿不到原文：
+纯命令通道那条路（8 跳用满）拿的是 buff **英文 ID** 的 32 位指纹：
 
 ```
 BattleUnit → _model(+0x10) → _buffDetail(+0xE0) → list(+0x10)
-          → [i] → _staticData(+0x68) → name(+0x18)   ← 正好 8 跳，用满
+          → [i] → _staticData(+0x68) → id(+0x18)   ← 正好 8 跳，用满
 ```
 
 `kind='text'` 的落点是 `WARP_READ_TEXT_NUM`，它把 il2cpp string 换算成一个
-数字（长度/哈希），**不是 UTF-16 原文**。要拿原文得让宿主支持「把对象槽里的
-字符串读出到共享内存文本区」—— 那是协议 v8 的事，记在开发笔记的下一步里。
+数字（长度/哈希），**不是 UTF-16 原文**。
+
+要原文，走 `access.reader()` 的跨进程读（0.9.9 已提供，不用等 v8）：
+
+```python
+b = u.buffs[0]
+b.key      # "Breath"（BuffStaticData.id，插件判断用这个）
+b.name     # "呼吸法"（BuffInfo._name，给人看）
+b.icon     # "UnlockBuff_3" / None
+b.type_id  # BUFF_UNIQUE_KEYWORD 枚举
+b.stack, b.turn, b.max_stack, b.max_turn
+u.buff("Breath")      # 英文 ID 或中文名都能查
+u.has_buff("Breath")
+```
+
+实测（人格 10115，9 个 buff）：`BurningWoundYisangMask`(1/0)、
+`BlessingOfIndexPrescriptAlly`(9/0)、`StackYisangSpecialSkill`(9/0)、
+`Breath`(85/28)、`UnlockBuffAlly_3`(1/0)、`Shin_IndexFingerYisang`(1/0)、
+`IndexPrescriptYi_3`(1/0)、`Protection`(1/0)、`Combustion`(3/1)。
+
+> 中文名（`BuffInfo._name`）是**本地化显示值**，不同语言会变；跨版本判断
+> buff 一律用 `key`。这条是踩过的：先按显示名做判断，换语言就全废。
 
 ## 17. 场景对象访问（门面层，v0.9.9 起）
 
@@ -810,19 +829,29 @@ dump 原名（`_originID`/`_hp`）、`类名.字段` 的点路径。
 ```python
 u.buffs                      # [Buff, ...]
 for b in u.buffs:
-    b.name                   # "呼吸法"（UTF-16 原文，走一次跨进程读）
+    b.key                    # "Breath"  英文 ID（判断用这个）
+    b.name                   # "呼吸法"  中文显示名（给人看，别用来判断）
+    b.icon                   # "UnlockBuff_3" 或 None
+    b.type_id                # BUFF_UNIQUE_KEYWORD 枚举
     b.stack                  # 85   强度/层数（界面上的大数字）
     b.turn                   # 28   剩余次数/回合
     b.max_stack, b.max_turn   # 99, 99
     b.stack_ratio            # 0.859
+    b.raw()                  # 上面全部打包成 dict
 
-u.buff("呼吸法").stack        # 按名字找
+u.buff("Breath").stack       # 按英文 ID 找
+u.buff("呼吸法").stack        # 按中文名找
+u.has_buff("Combustion")     # True/False
 u.buff(0)                    # 按序号
 ```
 
 `stack`/`turn` 走 `CMD_READ` 代读（`BuffInfo._stack@0x6C` / `_turn@0x70`）；
-名字原文是 il2cpp string，命令通道只回 32 位读不了，所以 `Buff.name` 走一次
+`key`/`name`/`icon` 是 il2cpp string，命令通道只回 32 位读不了，所以走一次
 跨进程读（`access.reader()`，懒加载，读不到就返回 `None`，其余字段照常）。
+
+**`key` 和 `name` 是两个不同字段**：`key` = `BuffStaticData.id@0x18`
+（`"Breath"`），`name` = `BuffInfo._name@0x28`（`"呼吸法"`，本地化）。插件
+里判断「有没有某个 buff」必须用 `key`。
 
 ### 17.4 ObscuredBool 的解码
 
