@@ -104,6 +104,15 @@ host.configure(hooks=[{
 host.push()
 ```
 
+三个容易踩的地方：
+
+- **不要钩 `GlobalGameManager.FixedUpdate` / `Update`**。那是宿主命令泵的入口，
+  钩了它 `host.read` 会全线失效（日志：`pump: no free entry point`）。
+  场景状态宿主每帧缓存在对象槽 29，`objects.scene(host)` 直接读。
+- **对象槽 30/31 是保留位**（每帧回调的魔法值 + 函数指针），插件用 24..29。
+- **钩子 dict 不写 `actions` 就是「只看不动」**。老版本缺省是 `ACT_POPUP`——
+  忘了写就会每帧弹空窗，这条真机踩过。
+
 对象槽 24..31 留给插件，0..23 主段是成就观测在用。
 
 ## 编译

@@ -853,6 +853,14 @@ class Host:
             if hook is None:
                 continue
             hook = dict(hook)
+            # 声明式 dict 也能写 cache=(arg, 槽)，与 Host.hook(cache=...) 同一套
+            # 语义（arg 0=self / 1..3=第几个参数）。原来 dict 路径只认
+            # cache_arg/cache_slot 两个平铺键，传 cache= 元组会被静默丢掉 ——
+            # 真机踩过：钩子装上了、事件也有了，对象槽永远空。
+            if hook.get("cache") is not None:
+                c_arg, c_slot = list(hook["cache"])[:2]
+                hook.setdefault("cache_arg", int(c_arg))
+                hook.setdefault("cache_slot", int(c_slot))
             # 声明式 dict 也能直接写 event=事件号，效果等同 Host.hook(event=...)：
             # 少了这一位，DLL 只数命中次数、不往事件队列里塞东西。
             if hook.get("event") is not None:
@@ -867,7 +875,7 @@ class Host:
             _write_fixed(slot + HostHook.probe_method.offset,
                          hook.get("probe_method", ""), HOST_METHOD_LEN)
             for name, default in (("argc", 0), ("event_id", i), ("every", 1),
-                                  ("chance", 100), ("actions", ACT_POPUP),
+                                  ("chance", 100), ("actions", 0),
                                   ("flags", 0), ("hold_ms", 0), ("delay_ms", 0),
                                   ("guard_index", -1), ("guard_value", 0),
                                   ("probe_index", 0), ("probe_slot", -1),

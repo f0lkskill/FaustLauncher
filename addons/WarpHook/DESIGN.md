@@ -699,7 +699,16 @@ int32 / float / ref）、STR、RELEASE（句柄分配与解放全程核对）、
 
 - **一次属性访问 = 一次代读往返**（真机 20–40 ms）。3 个单位 × 4 字段
   ≈ 0.5 s，做 1 Hz 采样够用；要「变化的一瞬间」还是得装 `reads=` 钩子。
-- **对象槽是共享资源**：插件请用 24..31（0..23 主段留给成就观测）。
+- **对象槽是共享资源**：插件请用 24..29（0..23 主段留给成就观测）。
+  29/30/31 是宿主保留位，见下条。
+- **别钩 `GlobalGameManager.FixedUpdate` / `Update`**：那是命令泵自己的入口。
+  插件也钩它，`warp_target_taken` 会让泵找不到落点，日志打
+  `pump: no free entry point, cmd channel off`，`CMD_READ`（也就是
+  `host.read`）全线失效。场景根对象宿主已经每帧缓存在**对象槽 29**，
+  `objects.scene(host)` 直接读；`bind_scene()` 只等不钩。
+  对象槽 **30/31** 是「每帧回调」保留位（`objects[30]=="SKT1"` 魔法值、
+  `objects[31]`=回调函数指针，`warp_pump_ticks` 每帧代跑），写别的进去会让
+  别人的 tick 静默失效。
 - **`_allUnitDictionary` 只给 TValue**：`Dictionary<int, BattleUnit>` 的 key
   （阵营/序号）读不到，遍历只吐 value。要按阵营分就用 `_unitList`
   （`Dictionary<UNIT_FACTION, List<BattleUnit>>`），那是另一条键。

@@ -33,9 +33,12 @@ from . import fields
 from .host import HOST_OBJECT_COUNT
 
 # 对象槽分配：24..31 留给插件/诊断（主段 0..23 是成就观测在用）
+# 注意 29/30/31 是宿主保留位：
+#   29 = 命令泵每帧顺手缓存的 GlobalGameManager 单例
+#   30 = 每帧回调魔法值 "SKT1"、31 = 每帧回调函数指针
 SLOT_MANAGER = 28   # BattleObjectManager 单例
-SLOT_SCENE = 29     # GlobalGameManager 单例
-SLOT_SCRATCH = 30   # 临时抓取
+SLOT_SCENE = 29     # GlobalGameManager 单例（宿主已缓存，别自己钩 FixedUpdate）
+SLOT_SCRATCH = 27   # 临时抓取（避开 29/30/31 保留位）
 
 _MANAGER_DICT = fields.field("BattleObjectManager", "_allUnitDictionary")["off"]
 
@@ -144,8 +147,10 @@ def bind_manager(host, klass="BattleObjectManager", method="OnRoundStart_Model",
     已有钩子把 manager 缓存好的话不用调这个，直接 ``objects.units(host, 那个槽)``。
     """
     hooks = list(extra_hooks)
+    # 只要 cache，不要事件：抓单例不需要往事件环里塞东西，塞了反而会跟
+    # 真正关心命中的插件抢环位（事件环是单 tail，多消费者会互吃）。
     hooks.append({"klass": klass, "method": method, "argc": int(argc),
-                  "cache": (0, int(slot)), "event": 0})
+                  "cache": (0, int(slot))})
     _push_hooks(host, hooks)
     deadline = time.time() + float(timeout)
     while time.time() < deadline:
@@ -156,11 +161,15 @@ def bind_manager(host, klass="BattleObjectManager", method="OnRoundStart_Model",
 
 
 def bind_scene(host, klass="GlobalGameManager", method="FixedUpdate", argc=0,
-               slot=SLOT_SCENE, timeout=180.0):
-    """抓 GlobalGameManager 单例（它每帧 FixedUpdate，命中最快）。"""
-    hooks = [{"klass": klass, "method": method, "argc": int(argc),
-              "cache": (0, int(slot)), "event": 0}]
-    _push_hooks(host, hooks)
+               slot=SLOT_SCENE, timeout=10.0):
+    """等宿主把 GlobalGameManager 单例缓存好，返回槽号。
+
+    由 DLL 的命令泵在它自己那条 FixedUpdate 钩子里每帧顺手写槽 29，所以
+    **不要**再自己装一条 ``GlobalGameManager.FixedUpdate`` 钩子：那是命令泵
+    的入口，抢了它 pump 装不上，``CMD_READ``（也就是 ``host.read``）整个失效
+    —— v0.9.9 真机实测日志 ``pump: no free entry point, cmd channel off``。
+    这里只等，不装钩子。
+    """
     deadline = time.time() + float(timeout)
     while time.time() < deadline:
         if host.object_ptr(slot):

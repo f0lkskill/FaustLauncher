@@ -327,6 +327,12 @@ void __stdcall hk_warp_pump(void *self)
     typedef void (__stdcall *warp_fixedupdate_fn)(void *);
     if (g_pump_original)
         ((warp_fixedupdate_fn)g_pump_original)(self);
+    /* 顺手把 self（GlobalGameManager 单例）缓存进对象槽 29：外面要读
+       场景 / 时间缩放直接读这个槽，不必自己再钩 FixedUpdate —— 那会把
+       命令泵的入口抢掉（真机实测：抢了就 pump: no free entry point，
+       CMD_READ 全废）。 */
+    if (self)
+        warp_slot_put(WARP_SLOT_SCENE, self, 0);
     warp_pump_commands();
     warp_pump_ticks();
 }
@@ -343,9 +349,9 @@ void warp_pump_ticks(void)
     if (!g_hdr)
         return;
     slot = (void **)((char *)g_hdr + WARP_OBJECTS_OFFSET);
-    if (slot[30] != WARP_TICK_MAGIC)
+    if (slot[WARP_SLOT_TICK_MAGIC] != WARP_TICK_MAGIC)
         return;
-    tick = (void (*)(void))slot[31];
+    tick = (void (*)(void))slot[WARP_SLOT_TICK_FN];
     if (tick)
         tick();
 }
@@ -485,14 +491,21 @@ int warp_install_hooks(void)
         if (!h->klass[0] || !h->method[0])
             continue;
         total++;
+        /* GlobalGameManager 的 FixedUpdate / Update 是命令泵自己占的入口：
+         * 用户钩了它，pump 就找不到空位，CMD_READ / 弹窗 / 每帧回调全线
+         * 失效（真机实测日志：pump: no free entry point）。场景对象宿主
+         * 已经每帧缓存进 WARP_SLOT_SCENE，改读那个槽即可。 */
+        if (!strcmp(h->klass, "GlobalGameManager")
+            && (!strcmp(h->method, "FixedUpdate") || !strcmp(h->method, "Update")))
+            warp_log("warn: GlobalGameManager timeline is the command pump "
+                     "entry, hooking it disables CMD_READ (slot)", i);
         if (g_slots[i].installed) {
             installed++;
             continue;
         }
 
         klass = warp_find_class(domain, h->klass);
-        if (!klass) {
-            warp_log("hook: class not found", i);
+        if (!klass) {            warp_log("hook: class not found", i);
             continue;
         }
         method = warp_find_method(klass, h->method, h->argc);
