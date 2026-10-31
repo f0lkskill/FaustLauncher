@@ -53,6 +53,24 @@
   现在装配时遇到这两个方法会打 warning；场景对象改由泵每帧缓存在
   **对象槽 29**（`WARP_SLOT_SCENE`），`bind_scene()` 只等不钩。
   对象槽 30/31 是每帧回调保留位（`"SKT1"` 魔法值 + 函数指针），别占用。
+- **字段表扩到 8 类 62 字段**（`warphook/fields.py`）。原先只有十几个「够用就行」
+  的字段，现在按 dump.cs 把 `BattleUnitModel`(37) / `CharacterState`(26) /
+  `GlobalGameManager`(13) / `BattleObjectManager`(13) 的字段全收了；每条带
+  `verified`，`fields.unverified_names(cls)` 一次列出「还只是照 dump 抄的」。
+  抽取工具 `test/_dump_fields.py`（大文件必须用 bash grep，ops_grep 在 81 MB
+  的 dump.cs 上匹配不到东西）。
+- **`Unit` 门面扩了属性和扫描**：`is_panic()/is_break()/is_low_morale()/
+  hp_ratio()/buff_count()/buff_id(i)/buff_ids()/scan()`，以及
+  `objects.scan_class()` / `objects.scene_full()`。`scan()` 把一个单位的
+  BattleUnitModel + CharacterState **全部 63 个字段**读一遍，是摸底工具
+  （每字段一次往返，整场要十几秒），不是业务接口。
+- **buff 名字只有指纹**：`buff_id(i)` 走 8 跳正好用满链长，落点 `kind='text'`
+  给的是 il2cpp string 的数字换算而不是原文；要原文得等协议 v8 支持
+  「读 UTF-16 到文本区」。
+- **新增 `test/_v9_scan_all.py`**：一条命令扫出「当前场景全部对象与属性」
+  （探协议/构建戳 → 抓 manager → 场景全字段 → 逐单位 63 字段 + buff 指纹，
+  可 `--json` 落盘）；`test/_v9_fields_check.py` 离线校验字段表结构与链长
+  （不超 8 跳）。
 
 ## 0.9.8
 
