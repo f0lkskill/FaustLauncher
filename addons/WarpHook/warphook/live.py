@@ -608,6 +608,16 @@ def bgm_unhook(push=True):
     return live().bgm_unhook(push=push)
 
 
+def bgm_lock_install():
+    """装换曲锁钩子（每插件一次；宿主自动 late 重试）。"""
+    return live().bgm_lock_install()
+
+
+def bgm_lock(allow):
+    """开/关换曲锁：``True`` 放行游戏换曲；``False`` 锁死。"""
+    return live().bgm_lock(allow)
+
+
 def on_round_start(handler):
     """每回合开始调 ``handler(battle)``。"""
     return live().on_round_start(handler)
