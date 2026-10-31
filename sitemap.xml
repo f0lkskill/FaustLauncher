@@ -45,6 +45,10 @@
          <lastmod>2026-10-31</lastmod>
     </url>
     <url>
+         <loc>https://f0lkskill.github.io/FaustLauncher/technical/07-audio/</loc>
+         <lastmod>2026-10-31</lastmod>
+    </url>
+    <url>
          <loc>https://f0lkskill.github.io/FaustLauncher/tutorial/</loc>
          <lastmod>2026-10-31</lastmod>
     </url>
@@ -73,11 +77,15 @@
          <lastmod>2026-10-31</lastmod>
     </url>
     <url>
-         <loc>https://f0lkskill.github.io/FaustLauncher/tutorial/07-lifecycle/</loc>
+         <loc>https://f0lkskill.github.io/FaustLauncher/tutorial/07-bgm/</loc>
          <lastmod>2026-10-31</lastmod>
     </url>
     <url>
-         <loc>https://f0lkskill.github.io/FaustLauncher/tutorial/08-inside/</loc>
+         <loc>https://f0lkskill.github.io/FaustLauncher/tutorial/08-lifecycle/</loc>
+         <lastmod>2026-10-31</lastmod>
+    </url>
+    <url>
+         <loc>https://f0lkskill.github.io/FaustLauncher/tutorial/09-inside/</loc>
          <lastmod>2026-10-31</lastmod>
     </url>
 </urlset>

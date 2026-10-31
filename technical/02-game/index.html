@@ -311,6 +311,8 @@
       
         
       
+        
+      
     
     
     
@@ -540,14 +542,14 @@
   
   
     <li class="md-nav__item">
-      <a href="../../tutorial/07-lifecycle/" class="md-nav__link">
+      <a href="../../tutorial/07-bgm/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-    07 生命周期与线程
+    07 放一首 BGM
   
 
     
@@ -568,14 +570,42 @@
   
   
     <li class="md-nav__item">
-      <a href="../../tutorial/08-inside/" class="md-nav__link">
+      <a href="../../tutorial/08-lifecycle/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-    08 想到底层去
+    08 生命周期与线程
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorial/09-inside/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    09 想到底层去
   
 
     
@@ -609,6 +639,8 @@
       
         
           
+        
+      
         
       
         
@@ -984,6 +1016,34 @@
     
   
     06 底层四件套
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../07-audio/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    07 warp.audio
   
 
     
@@ -1405,6 +1465,26 @@
 <td>让游戏弹一句话，返回回执（<code>已执行</code> / <code>共享内存不可用</code> / …）</td>
 </tr>
 <tr>
+<td><code>bgm(name, stop_current=True, wait=True, wait_timeout=120.0, timeout=2.0)</code></td>
+<td><code>dict</code></td>
+<td>战斗里换 BGM，返回 <code>{'ok','name','path','reason'}</code></td>
+</tr>
+<tr>
+<td><code>bgm_stop(restore=True, timeout=2.0)</code></td>
+<td><code>dict</code></td>
+<td>停附加曲，<code>restore=True</code> 放回游戏原曲</td>
+</tr>
+<tr>
+<td><code>bgm_playing()</code></td>
+<td><code>bool</code></td>
+<td>有没有 BGM 在播</td>
+</tr>
+<tr>
+<td><code>bgm_index()</code></td>
+<td><code>int</code></td>
+<td>游戏自己的当前曲目编号</td>
+</tr>
+<tr>
 <td><code>status()</code></td>
 <td><code>dict</code></td>
 <td>宿主状态字典，见下表</td>
@@ -1577,6 +1657,18 @@
 <tr>
 <td><code>.popup(text, timeout, wait, wait_timeout)</code></td>
 <td>同上</td>
+</tr>
+<tr>
+<td><code>.bgm(name, stop_current, wait, wait_timeout, timeout)</code></td>
+<td>同上</td>
+</tr>
+<tr>
+<td><code>.bgm_stop(restore)</code> / <code>.bgm_playing()</code> / <code>.bgm_index()</code></td>
+<td>同上</td>
+</tr>
+<tr>
+<td><code>.wait_ready(wait_timeout=120.0)</code></td>
+<td>等宿主能发命令；<code>popup</code> / <code>bgm</code> 内部用它</td>
 </tr>
 <tr>
 <td><code>.log(message)</code></td>
