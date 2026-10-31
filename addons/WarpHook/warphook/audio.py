@@ -114,17 +114,17 @@ def play(host, name, stop_current=True, timeout=2.0, require_battle=True,
     # 最后才 StartAddBGM。少一步 SoundManager.StopBGM 就是 0.9.10 的崩溃。
     try:
         sound = host.call('SoundManager::get_Instance', ret='ref',
-                          out_slot=SLOT_SOUND, timeout=timeout)
+                          out_slot=SLOT_SOUND, timeout=timeout, unsafe=True)
         has_sound = bool(host.object_ptr(SLOT_SOUND))
         if stop_current:
             host.call('BattleSoundGenerator::StopBGM', args=(0, 0),
-                      timeout=timeout)
+                      timeout=timeout, unsafe=True)
             if has_sound:
                 host.call('SoundManager::StopBGM', slot=SLOT_SOUND,
-                          args=(0,), timeout=timeout)
+                          args=(0,), timeout=timeout, unsafe=True)
         result = host.call('BattleSoundGenerator::StartAddBGM',
                            args=(('slot', slot), STOP_MODE_IMMEDIATE, 0),
-                           timeout=timeout)
+                           timeout=timeout, unsafe=True)
     finally:
         host.release(slot)
 
@@ -136,13 +136,14 @@ def play(host, name, stop_current=True, timeout=2.0, require_battle=True,
 def stop(host, restore=True, timeout=2.0):
     """停掉附加曲；``restore=True`` 时把游戏自己的战斗曲接回来。"""
     result = host.call('BattleSoundGenerator::StopAddedBGM',
-                       args=(STOP_MODE_IMMEDIATE, 0), timeout=timeout)
+                       args=(STOP_MODE_IMMEDIATE, 0), timeout=timeout,
+                       unsafe=True)
     if isinstance(result, str) and result != '已执行':
         return {'ok': False, 'reason': result}
     if restore:
         # StartBGM(-1, 0)：index=-1 = 让游戏按当前关卡自己挑
         host.call('BattleSoundGenerator::StartBGM', args=(-1, 0),
-                  timeout=timeout)
+                  timeout=timeout, unsafe=True)
     return {'ok': True, 'reason': ''}
 
 
@@ -162,6 +163,6 @@ def is_playing(host, timeout=2.0):
 
 def pause(host, value=True, timeout=2.0):
     """暂停 / 继续战斗曲。"""
-    result = host.call('BattleSoundGenerator::PauseBGM', args=(1 if value else 0,),
+    result = host.call('BattleSoundGenerator::PauseBGM', args=(1 if value else 0,), unsafe=True,
                        timeout=timeout)
     return {'ok': _ok(result), 'reason': '' if _ok(result) else result}

@@ -4,6 +4,40 @@
 
 看完整历史：`git log --oneline -- addons/WarpHook/`
 
+## 0.9.14
+
+`Host.call()` 这条路本身就是风险源 —— 这一版不再试图「保护」它，而是
+默认不让它走。另外补掉 0.9.12 引入的一个重装回归。
+
+**一、`Host.call` 改白名单。**
+真机 18:08 / 18:21 / 18:44 三次崩溃全部源于「插件调了游戏自己的方法」。
+现在 `call()` 只放 `SAFE_CALLS` 里的四条：
+
+- `BattleObjectManager::get_Instance`
+- `GlobalGameManager::get_Instance`
+- `BattleSoundGenerator::IsBattleBgmPlaying`（只读 getter，实测 0.02s）
+- `BattleSoundGenerator::get_CurrentBgmIndex`（同上）
+
+其他方法一律返回 `未在安全白名单（...）`，要试必须显式 `unsafe=True`。
+`audio.play()` / `stop()` / `pause()` 内部那几个换曲调用已标好 `unsafe=True`。
+
+**二、VEH + `longjmp` 彻底废弃。**
+0.9.12 的异常保护在真机上的表现是：接住第一击之后游戏还能活一分多钟，
+然后崩在完全无关的地方 —— `Player.log` 里整条栈上一个 `warp_host` 帧
+都没有。原因是 `longjmp` 跳过了 il2cpp 的托管栈展开，运行时状态变脏，
+最后由游戏自己踩到。
+
+托管异常本来就通过 `&exc` 正常返回，不需要插手；原生访问违例拦下来也
+救不回来，只会把状态弄得更烂。所以 `warp_safe_invoke()` 里的 VEH 注册
+改成 `if (0)` 关掉，只保留直调 + `exc` 检查。
+
+**三、修 0.9.12 的重装回归：`s_mh_ready` 没复位。**
+`warp_uninstall()` 里 `MH_Uninitialize()` 之后忘了清 `s_mh_ready`，于是
+第二次重装时 `warp_mh_ensure()` 看见标志还是 TRUE 就直接返回，而 MinHook
+其实已经反初始化 —— 结果 23 条钩子全部 `hook: create failed`，整张钩子表
+死掉（含成就），只能重启游戏。真机 18:35 撞到。现在 `MH_Uninitialize()`
+后面紧跟 `s_mh_ready = FALSE;`。
+
 ## 0.9.13
 
 `Host.call()` 依然能弄死游戏 —— 0.9.12 的异常保护有个真 bug，而且
