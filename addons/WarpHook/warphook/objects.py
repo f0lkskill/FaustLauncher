@@ -53,7 +53,7 @@ _MODEL_STATE = fields.field("BattleUnitModel", "_state")["off"]
 _MODEL_BUFF = fields.field("BattleUnitModel", "_buffDetail")["off"]
 _BUFF_LIST = fields.field("BuffDetail", "list")["off"]
 _BUFF_STATIC = fields.field("BuffModel", "_staticData")["off"]
-_BUFF_NAME = fields.field("BuffStaticData", "name")["off"]
+_BUFF_ID = fields.field("BuffStaticData", "id")["off"]
 _BUFF_INFO = fields.field("BuffModel", "_buffInfo")["off"]
 
 # 容器字段当读链末端时，落点要换成「数/g个数」，而不是容器步本身。
@@ -118,12 +118,50 @@ class Buff:
         self.index = int(index)
 
     def __repr__(self):
-        return f"<Buff #{self.index} {self.name!r} stack={self.stack} turn={self.turn}>"
+        return f"<Buff #{self.index} {self.key or self.name!r} stack={self.stack} turn={self.turn}>"
 
     def _read(self, off, default=None):
         return self.unit.host.read(self.unit.slot,
                                    self.unit._buff_chain(self.index, off),
                                    kind="int", default=default)
+
+    def _static(self):
+        """``(reader, BuffStaticData 指针)``；拿不到返回 ``(None, 0)``。"""
+        acc = self.unit._acc
+        if acc is None:
+            return None, 0
+        rd = acc.reader()
+        if rd is None:
+            return None, 0
+        return rd, acc.buff_static_ptr(self.unit.index, self.index)
+
+    @property
+    def key(self):
+        """**英文 ID**（``BuffStaticData.id``），如 ``"Breath"``/``"Combustion"``。
+
+        这是插件里应该用来判断 buff 的稳定标识；``name`` 是给人看的中文。
+        读不到读句柄时返回 ``None``。
+        """
+        rd, data = self._static()
+        if not rd or not data:
+            return None
+        return _utf16(rd, rd.u64(data + 0x18))
+
+    @property
+    def icon(self):
+        """图标资源 ID（如 ``"UnlockBuff_3"``），可能为 ``None``。"""
+        rd, data = self._static()
+        if not rd or not data:
+            return None
+        return _utf16(rd, rd.u64(data + 0x38))
+
+    @property
+    def type_id(self):
+        """``BUFF_UNIQUE_KEYWORD`` 枚举值（``BuffStaticData._id@0x20``）。"""
+        rd, data = self._static()
+        if not rd or not data:
+            return None
+        return rd.i32(data + 0x20)
 
     @property
     def name(self):
@@ -166,9 +204,15 @@ class Buff:
         return s / float(mx)
 
     def raw(self):
-        return {"index": self.index, "name": self.name, "stack": self.stack,
-                "turn": self.turn, "max_stack": self.max_stack,
-                "max_turn": self.max_turn}
+        return {"index": self.index, "key": self.key, "name": self.name,
+                "icon": self.icon, "type_id": self.type_id,
+                "stack": self.stack, "turn": self.turn,
+                "max_stack": self.max_stack, "max_turn": self.max_turn}
+
+    def has(self, key):
+        """按英文 ID（``"Breath"``）或中文名（``"呼吸法"``）判断是不是这个 buff。"""
+        k = str(key)
+        return k in (self.key, self.name)
 
 
 class Access:
@@ -249,8 +293,8 @@ class Access:
             return 0
         return rd.dict_nth(rd.u64(bom + _MANAGER_DICT), int(index)) or 0
 
-    def buff_info_ptr(self, index, buff_index, unit_ptr=None):
-        """序号 + buff 序号 → ``BuffInfo`` 指针。"""
+    def buff_model_ptr(self, index, buff_index, unit_ptr=None):
+        """序号 + buff 序号 → ``BuffModel`` 指针。"""
         rd = self.reader()
         if rd is None:
             return 0
@@ -270,10 +314,27 @@ class Access:
         n = rd.i32(lst + 0x18) or 0
         if not items or not (0 <= int(buff_index) < n):
             return 0
-        bm = rd.u64(items + 0x20 + int(buff_index) * 8)
+        return rd.u64(items + 0x20 + int(buff_index) * 8) or 0
+
+    def buff_info_ptr(self, index, buff_index, unit_ptr=None):
+        """序号 + buff 序号 → ``BuffInfo`` 指针（层数/次数/显示名）。"""
+        rd = self.reader()
+        if rd is None:
+            return 0
+        bm = self.buff_model_ptr(index, buff_index, unit_ptr=unit_ptr)
         if not bm:
             return 0
         return rd.u64(bm + _BUFF_INFO) or 0
+
+    def buff_static_ptr(self, index, buff_index, unit_ptr=None):
+        """序号 + buff 序号 → ``BuffStaticData`` 指针（英文 ID / 图标 / 上限）。"""
+        rd = self.reader()
+        if rd is None:
+            return 0
+        bm = self.buff_model_ptr(index, buff_index, unit_ptr=unit_ptr)
+        if not bm:
+            return 0
+        return rd.u64(bm + _BUFF_STATIC) or 0
 
     def close(self):
         if self._rd is not None:
@@ -395,10 +456,10 @@ class Unit:
     def props(self, timeout=1.0):
         """把这个单位能读的字段全读一遍（BattleUnitModel + CharacterState）。"""
         out = {}
-        out.update(scan_object(self.host, self.slot, "BattleUnitModel",
-                               base=self._prefix, timeout=timeout))
-        out.update(scan_object(self.host, self.slot, "CharacterState",
-                               base=self._model_prefix(), timeout=timeout))
+        out.update(_scan_fields(self.host, self.slot, self._model_prefix(),
+                                "BattleUnitModel", timeout=timeout))
+        out.update(_scan_fields(self.host, self.slot, self._state_prefix(),
+                                "CharacterState", timeout=timeout))
         return out
 
     # ---- 常用属性（每次访问 = 一次 DLL 代读，约 20–40 ms）----
@@ -476,15 +537,22 @@ class Unit:
         return [Buff(self, i) for i in range(self.buff_count())]
 
     def buff(self, key, default=None):
-        """按序号或名字找一个 buff：``u.buff("呼吸法")`` / ``u.buff(0)``。"""
+        """按序号、英文 ID 或中文名找一个 buff。
+
+        ``u.buff(0)`` / ``u.buff("Breath")`` / ``u.buff("呼吸法")``
+        """
         items = self.buffs
         if isinstance(key, int):
             return items[key] if 0 <= key < len(items) else default
         want = str(key)
         for b in items:
-            if b.name == want:
+            if want in (b.name, b.key):
                 return b
         return default
+
+    def has_buff(self, key):
+        """身上有没有某个 buff（英文 ID 或中文名）。"""
+        return self.buff(key) is not None
 
     def buff_count(self):
         """身上有几个 buff（BuffDetail.list 的元素数）。"""
@@ -494,21 +562,21 @@ class Unit:
         return self.host.read(self.slot, chain, kind="count", default=0)
 
     def buff_id(self, i):
-        """第 i 个 buff 的**名字指纹**（il2cpp string 的哈希，不是原文）。
+        """第 i 个 buff 的**英文 ID 指纹**（``BuffStaticData.id`` 的哈希，不是原文）。
 
-        这条路已经用满 8 跳：unit → model → buffDetail → list → [i] →
-        staticData → name。想要原文得等宿主支持「读 UTF-16 文本」。
+        要原文用 ``Unit.buffs[i].key``（走跨进程读）。这条路是纯命令通道
+        版本，适合「只比较有没有变」的场合。
         """
         chain = self._prefix + [{"off": _UNIT_MODEL, "deref": True},
                                 {"off": _MODEL_BUFF, "deref": True},
                                 {"off": _BUFF_LIST, "deref": True},
                                 {"list": int(i)},
                                 {"off": _BUFF_STATIC, "deref": True},
-                                {"off": _BUFF_NAME, "deref": False}]
+                                {"off": _BUFF_ID, "deref": False}]
         return self.host.read(self.slot, chain, kind="text")
 
     def buff_ids(self):
-        """全部 buff 的名字指纹列表。"""
+        """全部 buff 的英文 ID 指纹列表。"""
         return [self.buff_id(i) for i in range(self.buff_count() or 0)]
 
     def _buff_chain(self, i, field_off):

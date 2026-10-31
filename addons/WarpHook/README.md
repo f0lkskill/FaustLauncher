@@ -78,8 +78,13 @@ u.identity                       # 10115  人格 ID
 u.alive, u.is_panic, u.is_break  # True, False, False
 
 for b in u.buffs:                # 身上的 buff
-    print(b.name, b.stack, b.turn)   # 呼吸法 85 28
+    print(b.key, b.name, b.stack, b.turn)   # Breath 呼吸法 85 28
+u.buff("Breath").stack           # 按英文 ID 找 buff
+u.has_buff("Combustion")         # True / False
 ```
+
+buff 有两个名字，别混：`b.key` 是 `BuffStaticData.id`（英文 ID，如 `"Breath"`），
+跨语言不变、**插件判断用这个**；`b.name` 是本地化显示名（`"呼吸法"`）。
 
 全场：
 
