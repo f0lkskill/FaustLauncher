@@ -16,7 +16,7 @@
         <link rel="prev" href="../01-hello/">
       
       
-        <link rel="next" href="../03-hook/">
+        <link rel="next" href="../03-events/">
       
       
         
@@ -303,6 +303,16 @@
       
         
       
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
     
     
     
@@ -452,32 +462,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#import-warphook" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        先说清楚：为什么不能直接 import warphook 就弹
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#service" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Service 帮你挡掉的四件事
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
   <a href="#_1" class="md-nav__link">
     <span class="md-ellipsis">
       
-        完整代码
+        先花两分钟搞清楚为什么是「一行」
       
     </span>
   </a>
@@ -488,19 +476,30 @@
   <a href="#_2" class="md-nav__link">
     <span class="md-ellipsis">
       
-        三个关键点
+        完整代码
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="三个关键点">
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        三个要知道的点
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="三个要知道的点">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#1-service-start" class="md-nav__link">
+  <a href="#1-gamepopup" class="md-nav__link">
     <span class="md-ellipsis">
       
-        1. Service 要在顶层就创建并 start()
+        1. game.popup() 会等
       
     </span>
   </a>
@@ -508,10 +507,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#2-sync-push" class="md-nav__link">
+  <a href="#2-gamestart" class="md-nav__link">
     <span class="md-ellipsis">
       
-        2. sync 里必须调 push()
+        2. game.start() 是「提前开工」
       
     </span>
   </a>
@@ -519,10 +518,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#3-popup" class="md-nav__link">
+  <a href="#3-on_unload" class="md-nav__link">
     <span class="md-ellipsis">
       
-        3. popup() 是一次往返，不是发完就走
+        3. 回收交给 on_unload
       
     </span>
   </a>
@@ -535,32 +534,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#hooked" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        等等，那个 hooked 是什么
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#_3" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        一个必须知道的大坑
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
   <a href="#_4" class="md-nav__link">
     <span class="md-ellipsis">
       
-        装上去试
+        日志里能看到什么
       
     </span>
   </a>
@@ -571,7 +548,18 @@
   <a href="#_5" class="md-nav__link">
     <span class="md-ellipsis">
       
-        到这一步你该知道的
+        没弹出来？按这个顺序查
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_6" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        这一篇你该记住的
       
     </span>
   </a>
@@ -594,14 +582,154 @@
   
   
     <li class="md-nav__item">
-      <a href="../03-hook/" class="md-nav__link">
+      <a href="../03-events/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-    03 提交钩子
+    03 事情发生时通知我
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../04-unit/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    04 读一个单位
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../05-props/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    05 把属性都拿出来
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../06-buffs/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    06 解析 buff
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../07-lifecycle/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    07 生命周期与线程
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../08-inside/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    08 想到底层去
   
 
     
@@ -861,32 +989,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#import-warphook" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        先说清楚：为什么不能直接 import warphook 就弹
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#service" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Service 帮你挡掉的四件事
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
   <a href="#_1" class="md-nav__link">
     <span class="md-ellipsis">
       
-        完整代码
+        先花两分钟搞清楚为什么是「一行」
       
     </span>
   </a>
@@ -897,19 +1003,30 @@
   <a href="#_2" class="md-nav__link">
     <span class="md-ellipsis">
       
-        三个关键点
+        完整代码
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="三个关键点">
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        三个要知道的点
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="三个要知道的点">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#1-service-start" class="md-nav__link">
+  <a href="#1-gamepopup" class="md-nav__link">
     <span class="md-ellipsis">
       
-        1. Service 要在顶层就创建并 start()
+        1. game.popup() 会等
       
     </span>
   </a>
@@ -917,10 +1034,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#2-sync-push" class="md-nav__link">
+  <a href="#2-gamestart" class="md-nav__link">
     <span class="md-ellipsis">
       
-        2. sync 里必须调 push()
+        2. game.start() 是「提前开工」
       
     </span>
   </a>
@@ -928,10 +1045,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#3-popup" class="md-nav__link">
+  <a href="#3-on_unload" class="md-nav__link">
     <span class="md-ellipsis">
       
-        3. popup() 是一次往返，不是发完就走
+        3. 回收交给 on_unload
       
     </span>
   </a>
@@ -944,32 +1061,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#hooked" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        等等，那个 hooked 是什么
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#_3" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        一个必须知道的大坑
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
   <a href="#_4" class="md-nav__link">
     <span class="md-ellipsis">
       
-        装上去试
+        日志里能看到什么
       
     </span>
   </a>
@@ -980,7 +1075,18 @@
   <a href="#_5" class="md-nav__link">
     <span class="md-ellipsis">
       
-        到这一步你该知道的
+        没弹出来？按这个顺序查
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_6" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        这一篇你该记住的
       
     </span>
   </a>
@@ -1009,280 +1115,186 @@
 
 <h1 id="02">02 让游戏弹一句话<a class="headerlink" href="#02" title="Permanent link">&para;</a></h1>
 <p>上一节的插件只会自己说话。这一节让<strong>游戏</strong>说话。</p>
-<p>目标：游戏跑到标题画面时，弹出一个原版系统弹窗，内容是你在设置里写的那句话。</p>
-<h2 id="import-warphook">先说清楚：为什么不能直接 <code>import warphook</code> 就弹<a class="headerlink" href="#import-warphook" title="Permanent link">&para;</a></h2>
+<p>目标：游戏跑到标题画面，弹出一个原版系统弹窗，内容是你在设置里写的那句话。</p>
+<p>整件事只需要一行：</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="n">game</span><span class="o">.</span><span class="n">popup</span><span class="p">(</span><span class="s1">&#39;来自插件的问候&#39;</span><span class="p">)</span>
+</code></pre></div>
+<h2 id="_1">先花两分钟搞清楚为什么是「一行」<a class="headerlink" href="#_1" title="Permanent link">&para;</a></h2>
 <p>你的 <code>scr.py</code> 跑在<strong>启动器</strong>进程里，游戏是<strong>另一个进程</strong>。两个进程的内存互相看不见，
-你不能在启动器里直接调游戏的函数。</p>
-<p>WarpHook 的做法是往游戏进程里塞一个 DLL（<code>warp_host.dll</code>），再由这个 DLL
-在游戏的线程里替你去调游戏的函数。启动器和这个 DLL 之间靠一块<strong>共享内存</strong>通信：</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>┌─────────────── 启动器进程 ───────────────┐      ┌──────── 游戏进程 ────────┐
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>│  你的 scr.py                              │      │                          │
-<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>│      ↓ 调 host.popup(&quot;你好&quot;)              │      │   warp_host.dll          │
-<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>│  warphook 库 ──写共享内存的命令格─────────┼─────→│   读命令格               │
-<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>│                                          │      │      ↓                   │
-<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>│                                          │      │   在游戏主线程调游戏弹窗 │
-<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>└──────────────────────────────────────────┘      └──────────────────────────┘
+你没法直接调游戏的函数。</p>
+<p>WarpHook 的做法是往游戏进程里塞一个 DLL（<code>warp_host.dll</code>），由它在游戏的线程里替你
+调游戏的函数。启动器和这个 DLL 之间靠一块<strong>共享内存</strong>通信：</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>┌─────────────── 启动器进程 ───────────────┐      ┌──────── 游戏进程 ────────┐
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>│  你的 scr.py                              │      │                          │
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>│      ↓  game.popup(&quot;你好&quot;)                │      │   warp_host.dll          │
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>│  warphook 库 ──写共享内存的命令格─────────┼─────→│   读命令格               │
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>│                                          │      │      ↓                   │
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>│                                          │      │   在游戏主线程调游戏弹窗 │
+<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>└──────────────────────────────────────────┘      └──────────────────────────┘
 </code></pre></div>
-<p>所以「弹窗」这件事分成两半：<strong>注入</strong>（把 DLL 塞进去）和<strong>下命令</strong>（写共享内存）。
-<code>Service</code> 就是替你把前半段全做完的那个类。</p>
-<h2 id="service">Service 帮你挡掉的四件事<a class="headerlink" href="#service" title="Permanent link">&para;</a></h2>
+<p><code>game.popup()</code> 把这条链路上所有麻烦事都做完了：</p>
+<ol>
+<li>等 <code>LimbusCompany.exe</code> 启动；</li>
+<li>等 <code>GameAssembly.dll</code> 加载完（il2cpp 初始化完成）；</li>
+<li>把 <code>warp_host.dll</code> 注入进去（已经注入过就跳过）；</li>
+<li>等宿主开始工作（<code>hooked</code>）；</li>
+<li>写命令、等游戏回话、把结果返回给你。</li>
+</ol>
+<p><strong>这些都不是魔法，但也不是你需要关心的事。</strong> 想自己控制就用后面会讲的
+<code>warp.plugin.Service</code>，不想关心就一行。</p>
+<h2 id="_2">完整代码<a class="headerlink" href="#_2" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="c1"># -*- coding: utf-8 -*-</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="sd">&quot;&quot;&quot;弹一句：让游戏自己弹一个原版系统弹窗。</span>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="sd">这个插件只有三行是有用的：</span>
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="sd">    game = _W.game</span>
+<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="sd">    game.popup(&#39;来自插件的问候&#39;)</span>
+<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a>
+<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="sd">剩下的都是读设置、打日志、收尾。``game.popup()`` 自己会等游戏启动、</span>
+<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a><span class="sd">自己会注入宿主 DLL、自己会等游戏主循环就绪 —— 插件不需要知道这些。</span>
+<a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a><span class="sd">&quot;&quot;&quot;</span>
+<a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a>
+<a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a><span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">cast</span>
+<a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a>
+<a id="__codelineno-2-15" name="__codelineno-2-15" href="#__codelineno-2-15"></a><span class="k">if</span> <span class="kc">False</span><span class="p">:</span>  <span class="c1"># 仅供类型检查器阅读，运行时不会执行</span>
+<a id="__codelineno-2-16" name="__codelineno-2-16" href="#__codelineno-2-16"></a>    <span class="kn">from</span><span class="w"> </span><span class="nn">warphook.base</span><span class="w"> </span><span class="kn">import</span> <span class="n">WarpNamespace</span>
+<a id="__codelineno-2-17" name="__codelineno-2-17" href="#__codelineno-2-17"></a>
+<a id="__codelineno-2-18" name="__codelineno-2-18" href="#__codelineno-2-18"></a><span class="n">ADDON_ARG</span> <span class="o">=</span> <span class="nb">globals</span><span class="p">()</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;ADDON_ARG&#39;</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+<a id="__codelineno-2-19" name="__codelineno-2-19" href="#__codelineno-2-19"></a><span class="n">ADDON_NAME</span> <span class="o">=</span> <span class="n">ADDON_ARG</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;AddonName&#39;</span><span class="p">)</span>
+<a id="__codelineno-2-20" name="__codelineno-2-20" href="#__codelineno-2-20"></a><span class="n">ADDON_MANAGER</span> <span class="o">=</span> <span class="n">ADDON_ARG</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;AddonManager&#39;</span><span class="p">)</span>
+<a id="__codelineno-2-21" name="__codelineno-2-21" href="#__codelineno-2-21"></a><span class="n">_NS</span> <span class="o">=</span> <span class="n">ADDON_ARG</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;Namespaces&#39;</span><span class="p">)</span>
+<a id="__codelineno-2-22" name="__codelineno-2-22" href="#__codelineno-2-22"></a>
+<a id="__codelineno-2-23" name="__codelineno-2-23" href="#__codelineno-2-23"></a><span class="c1"># ADDON_ARG 里的 Namespaces 就是 WarpHook 暴露给插件的入口，</span>
+<a id="__codelineno-2-24" name="__codelineno-2-24" href="#__codelineno-2-24"></a><span class="c1"># game 是「面对游戏」的那一区。</span>
+<a id="__codelineno-2-25" name="__codelineno-2-25" href="#__codelineno-2-25"></a><span class="n">_W</span> <span class="o">=</span> <span class="n">cast</span><span class="p">(</span><span class="s2">&quot;WarpNamespace&quot;</span><span class="p">,</span> <span class="n">_NS</span><span class="o">.</span><span class="n">space</span><span class="p">(</span><span class="s1">&#39;warp&#39;</span><span class="p">)</span> <span class="k">if</span> <span class="n">_NS</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span><span class="p">)</span>
+<a id="__codelineno-2-26" name="__codelineno-2-26" href="#__codelineno-2-26"></a><span class="n">game</span> <span class="o">=</span> <span class="n">_W</span><span class="o">.</span><span class="n">game</span>
+<a id="__codelineno-2-27" name="__codelineno-2-27" href="#__codelineno-2-27"></a>
+<a id="__codelineno-2-28" name="__codelineno-2-28" href="#__codelineno-2-28"></a>
+<a id="__codelineno-2-29" name="__codelineno-2-29" href="#__codelineno-2-29"></a><span class="k">def</span><span class="w"> </span><span class="nf">_log</span><span class="p">(</span><span class="n">message</span><span class="p">):</span>
+<a id="__codelineno-2-30" name="__codelineno-2-30" href="#__codelineno-2-30"></a>    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;[</span><span class="si">{</span><span class="n">ADDON_NAME</span><span class="si">}</span><span class="s1">] </span><span class="si">{</span><span class="n">message</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">,</span> <span class="n">flush</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<a id="__codelineno-2-31" name="__codelineno-2-31" href="#__codelineno-2-31"></a>
+<a id="__codelineno-2-32" name="__codelineno-2-32" href="#__codelineno-2-32"></a>
+<a id="__codelineno-2-33" name="__codelineno-2-33" href="#__codelineno-2-33"></a><span class="k">def</span><span class="w"> </span><span class="nf">_settings</span><span class="p">():</span>
+<a id="__codelineno-2-34" name="__codelineno-2-34" href="#__codelineno-2-34"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;返回 (弹窗内容, 是否自动弹一次)，每次都现读，用户改了立刻生效。&quot;&quot;&quot;</span>
+<a id="__codelineno-2-35" name="__codelineno-2-35" href="#__codelineno-2-35"></a>    <span class="k">try</span><span class="p">:</span>
+<a id="__codelineno-2-36" name="__codelineno-2-36" href="#__codelineno-2-36"></a>        <span class="n">info</span> <span class="o">=</span> <span class="p">(</span><span class="n">ADDON_MANAGER</span><span class="o">.</span><span class="n">get_addon_info</span><span class="p">(</span><span class="n">ADDON_NAME</span><span class="p">)</span>
+<a id="__codelineno-2-37" name="__codelineno-2-37" href="#__codelineno-2-37"></a>                <span class="k">if</span> <span class="n">ADDON_MANAGER</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+<a id="__codelineno-2-38" name="__codelineno-2-38" href="#__codelineno-2-38"></a>    <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>  <span class="c1"># noqa: BLE001</span>
+<a id="__codelineno-2-39" name="__codelineno-2-39" href="#__codelineno-2-39"></a>        <span class="n">info</span> <span class="o">=</span> <span class="p">{}</span>
+<a id="__codelineno-2-40" name="__codelineno-2-40" href="#__codelineno-2-40"></a>    <span class="n">st</span> <span class="o">=</span> <span class="n">info</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;settings&#39;</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+<a id="__codelineno-2-41" name="__codelineno-2-41" href="#__codelineno-2-41"></a>    <span class="k">return</span> <span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">st</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;弹窗内容&#39;</span><span class="p">)</span> <span class="ow">or</span> <span class="s1">&#39;来自插件的问候&#39;</span><span class="p">),</span>
+<a id="__codelineno-2-42" name="__codelineno-2-42" href="#__codelineno-2-42"></a>            <span class="nb">bool</span><span class="p">(</span><span class="n">st</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;自动弹一次&#39;</span><span class="p">,</span> <span class="kc">True</span><span class="p">)))</span>
+<a id="__codelineno-2-43" name="__codelineno-2-43" href="#__codelineno-2-43"></a>
+<a id="__codelineno-2-44" name="__codelineno-2-44" href="#__codelineno-2-44"></a>
+<a id="__codelineno-2-45" name="__codelineno-2-45" href="#__codelineno-2-45"></a><span class="k">def</span><span class="w"> </span><span class="nf">_say</span><span class="p">(</span><span class="n">text</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<a id="__codelineno-2-46" name="__codelineno-2-46" href="#__codelineno-2-46"></a>    <span class="n">text</span> <span class="o">=</span> <span class="n">text</span> <span class="ow">or</span> <span class="n">_settings</span><span class="p">()[</span><span class="mi">0</span><span class="p">]</span>
+<a id="__codelineno-2-47" name="__codelineno-2-47" href="#__codelineno-2-47"></a>    <span class="n">result</span> <span class="o">=</span> <span class="n">game</span><span class="o">.</span><span class="n">popup</span><span class="p">(</span><span class="n">text</span><span class="p">)</span>
+<a id="__codelineno-2-48" name="__codelineno-2-48" href="#__codelineno-2-48"></a>    <span class="n">_log</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;弹窗「</span><span class="si">{</span><span class="n">text</span><span class="si">}</span><span class="s1">」→ </span><span class="si">{</span><span class="n">result</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">)</span>
+<a id="__codelineno-2-49" name="__codelineno-2-49" href="#__codelineno-2-49"></a>    <span class="k">return</span> <span class="n">result</span>
+<a id="__codelineno-2-50" name="__codelineno-2-50" href="#__codelineno-2-50"></a>
+<a id="__codelineno-2-51" name="__codelineno-2-51" href="#__codelineno-2-51"></a>
+<a id="__codelineno-2-52" name="__codelineno-2-52" href="#__codelineno-2-52"></a><span class="c1"># 托盘菜单两项：手动弹一次、看宿主状态。</span>
+<a id="__codelineno-2-53" name="__codelineno-2-53" href="#__codelineno-2-53"></a><span class="c1"># register_menu 是给 Service 用的，这里用最简形式——直接进 on_unload 之外都能调。</span>
+<a id="__codelineno-2-54" name="__codelineno-2-54" href="#__codelineno-2-54"></a><span class="n">game</span><span class="o">.</span><span class="n">start</span><span class="p">(</span><span class="n">menu</span><span class="o">=</span><span class="p">(</span>
+<a id="__codelineno-2-55" name="__codelineno-2-55" href="#__codelineno-2-55"></a>    <span class="p">(</span><span class="s1">&#39;弹一句&#39;</span><span class="p">,</span> <span class="k">lambda</span><span class="p">:</span> <span class="n">_say</span><span class="p">()),</span>
+<a id="__codelineno-2-56" name="__codelineno-2-56" href="#__codelineno-2-56"></a><span class="p">))</span>
+<a id="__codelineno-2-57" name="__codelineno-2-57" href="#__codelineno-2-57"></a>
+<a id="__codelineno-2-58" name="__codelineno-2-58" href="#__codelineno-2-58"></a><span class="k">if</span> <span class="n">_settings</span><span class="p">()[</span><span class="mi">1</span><span class="p">]:</span>
+<a id="__codelineno-2-59" name="__codelineno-2-59" href="#__codelineno-2-59"></a>    <span class="c1"># 放到后台线程里弹，免得卡住启动器的主流程。</span>
+<a id="__codelineno-2-60" name="__codelineno-2-60" href="#__codelineno-2-60"></a>    <span class="kn">import</span><span class="w"> </span><span class="nn">threading</span>
+<a id="__codelineno-2-61" name="__codelineno-2-61" href="#__codelineno-2-61"></a>
+<a id="__codelineno-2-62" name="__codelineno-2-62" href="#__codelineno-2-62"></a>    <span class="n">threading</span><span class="o">.</span><span class="n">Thread</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="n">_say</span><span class="p">,</span> <span class="n">daemon</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
+<a id="__codelineno-2-63" name="__codelineno-2-63" href="#__codelineno-2-63"></a>
+<a id="__codelineno-2-64" name="__codelineno-2-64" href="#__codelineno-2-64"></a>
+<a id="__codelineno-2-65" name="__codelineno-2-65" href="#__codelineno-2-65"></a><span class="k">def</span><span class="w"> </span><span class="nf">on_unload</span><span class="p">():</span>
+<a id="__codelineno-2-66" name="__codelineno-2-66" href="#__codelineno-2-66"></a>    <span class="n">game</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+</code></pre></div>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="p">{</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">    </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;弹一句&quot;</span><span class="p">,</span>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="w">    </span><span class="nt">&quot;desc&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;让游戏弹出一个原版系统弹窗。演示插件如何等游戏启动、注入宿主 DLL、然后调用游戏自己的能力。&quot;</span><span class="p">,</span>
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="w">    </span><span class="nt">&quot;requires&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="w">        </span><span class="s2">&quot;WarpHook&quot;</span>
+<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="w">    </span><span class="p">],</span>
+<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="w">    </span><span class="nt">&quot;settings&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a><span class="w">        </span><span class="nt">&quot;enable&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a><span class="w">        </span><span class="nt">&quot;弹窗内容&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;来自插件的问候&quot;</span><span class="p">,</span>
+<a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a><span class="w">        </span><span class="nt">&quot;自动弹一次&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span>
+<a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a><span class="w">    </span><span class="p">},</span>
+<a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a><span class="w">    </span><span class="nt">&quot;version&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;0.1.0&quot;</span>
+<a id="__codelineno-3-13" name="__codelineno-3-13" href="#__codelineno-3-13"></a><span class="p">}</span>
+</code></pre></div>
+<h2 id="_3">三个要知道的点<a class="headerlink" href="#_3" title="Permanent link">&para;</a></h2>
+<h3 id="1-gamepopup">1. <code>game.popup()</code> 会<strong>等</strong><a class="headerlink" href="#1-gamepopup" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="n">game</span><span class="o">.</span><span class="n">popup</span><span class="p">(</span><span class="s1">&#39;你好&#39;</span><span class="p">)</span>   <span class="c1"># 游戏没开就等它开；最多等 120 秒</span>
+</code></pre></div>
+<p>它不是「发出去就走」，而是等游戏那边回话（默认最多 2 秒）。
+所以<strong>游戏里弹窗没关之前，游戏是停着的</strong>——这是游戏自己的行为，不是插件的锅。</p>
+<p>如果你不想等：</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="n">game</span><span class="o">.</span><span class="n">popup</span><span class="p">(</span><span class="s1">&#39;你好&#39;</span><span class="p">,</span> <span class="n">wait</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>   <span class="c1"># 不等宿主就绪，立刻发（没注入就会失败）</span>
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="n">game</span><span class="o">.</span><span class="n">popup</span><span class="p">(</span><span class="s1">&#39;你好&#39;</span><span class="p">,</span> <span class="n">wait_timeout</span><span class="o">=</span><span class="mi">10</span><span class="p">)</span>  <span class="c1"># 最多等 10 秒</span>
+</code></pre></div>
+<h3 id="2-gamestart">2. <code>game.start()</code> 是「提前开工」<a class="headerlink" href="#2-gamestart" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="n">game</span><span class="o">.</span><span class="n">start</span><span class="p">(</span><span class="n">menu</span><span class="o">=</span><span class="p">(</span>
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>    <span class="p">(</span><span class="s1">&#39;弹一句&#39;</span><span class="p">,</span> <span class="k">lambda</span><span class="p">:</span> <span class="n">_say</span><span class="p">()),</span>
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="p">))</span>
+</code></pre></div>
+<p>不调它也行，第一次 <code>popup()</code> / <code>units()</code> 时会自动开工。
+提前调的好处是能顺便把<strong>托盘菜单</strong>挂上——用户右键插件就能点。</p>
+<h3 id="3-on_unload">3. 回收交给 <code>on_unload</code><a class="headerlink" href="#3-on_unload" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="k">def</span><span class="w"> </span><span class="nf">on_unload</span><span class="p">():</span>
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>    <span class="n">game</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+</code></pre></div>
+<p><code>close()</code> 会停掉后台线程、断开共享内存。不写也不会立刻出事（进程退出时系统会收），
+但插件被反复重载时会攒下一堆线程。</p>
+<h2 id="_4">日志里能看到什么<a class="headerlink" href="#_4" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>[弹一句] 等待游戏启动…
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>[弹一句] 已注入（PID 12345）
+<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>[弹一句] 工作中，命中 0 次 / 已生效 0 次
+<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a>[弹一句] 弹窗「来自插件的问候」→ 已执行
+</code></pre></div>
+<p>最后那句的 <code>已执行</code> 是游戏那边的回执。常见的其它回执：</p>
 <table>
 <thead>
 <tr>
-<th>你可能没想到的麻烦</th>
-<th>Service 的处理</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>游戏还没启动</td>
-<td>等，直到 <code>LimbusCompany.exe</code> 出现</td>
-</tr>
-<tr>
-<td>游戏启动了但 il2cpp 还没初始化</td>
-<td>再等，直到 <code>GameAssembly.dll</code> 加载完</td>
-</tr>
-<tr>
-<td>DLL 已经注入过了</td>
-<td>检测心跳，跳过重复注入</td>
-</tr>
-<tr>
-<td>游戏重启了</td>
-<td>托盘里点一下就会重新走一遍；卸载时自动收尾</td>
-</tr>
-</tbody>
-</table>
-<p>你只交两样东西：</p>
-<ul>
-<li><strong><code>sync</code></strong>：一个函数，把「你现在想启用哪些钩子、哪些设置」写进共享内存；</li>
-<li><strong><code>menu</code></strong>：托盘菜单里那几项，以及点了调什么函数。</li>
-</ul>
-<h2 id="_1">完整代码<a class="headerlink" href="#_1" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="c1"># -*- coding: utf-8 -*-</span>
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="sd">&quot;&quot;&quot;弹一句：让游戏自己弹一个原版系统弹窗。</span>
-<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>
-<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="sd">这一篇比 hello 多出来的东西只有一件：**我们和游戏之间隔着一个进程**。</span>
-<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="sd">插件跑在启动器里，游戏是另一个进程，所以要让游戏做事，必须先把宿主的</span>
-<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="sd">``warp_host.dll`` 注入进去，然后通过共享内存给它下命令。</span>
-<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>
-<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="sd">这些事全在 ``warp.plugin.Service`` 里，插件只需要交两样东西：</span>
-<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a><span class="sd">``sync``（怎么把设置写进去）和 ``menu``（托盘里点哪一项干什么）。</span>
-<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a><span class="sd">&quot;&quot;&quot;</span>
-<a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a>
-<a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a><span class="kn">import</span><span class="w"> </span><span class="nn">threading</span>
-<a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a><span class="kn">import</span><span class="w"> </span><span class="nn">time</span>
-<a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a><span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">cast</span>
-<a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a>
-<a id="__codelineno-1-16" name="__codelineno-1-16" href="#__codelineno-1-16"></a><span class="k">if</span> <span class="kc">False</span><span class="p">:</span>  <span class="c1"># 只为让类型检查器知道 WarpNamespace 长什么样，运行时不会执行</span>
-<a id="__codelineno-1-17" name="__codelineno-1-17" href="#__codelineno-1-17"></a>    <span class="kn">from</span><span class="w"> </span><span class="nn">warphook.base</span><span class="w"> </span><span class="kn">import</span> <span class="n">WarpNamespace</span>
-<a id="__codelineno-1-18" name="__codelineno-1-18" href="#__codelineno-1-18"></a>
-<a id="__codelineno-1-19" name="__codelineno-1-19" href="#__codelineno-1-19"></a><span class="n">ADDON_ARG</span> <span class="o">=</span> <span class="nb">globals</span><span class="p">()</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;ADDON_ARG&#39;</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
-<a id="__codelineno-1-20" name="__codelineno-1-20" href="#__codelineno-1-20"></a><span class="n">ADDON_NAME</span> <span class="o">=</span> <span class="n">ADDON_ARG</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;AddonName&#39;</span><span class="p">)</span>
-<a id="__codelineno-1-21" name="__codelineno-1-21" href="#__codelineno-1-21"></a><span class="n">ADDON_MANAGER</span> <span class="o">=</span> <span class="n">ADDON_ARG</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;AddonManager&#39;</span><span class="p">)</span>
-<a id="__codelineno-1-22" name="__codelineno-1-22" href="#__codelineno-1-22"></a><span class="n">_NS</span> <span class="o">=</span> <span class="n">ADDON_ARG</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;Namespaces&#39;</span><span class="p">)</span>
-<a id="__codelineno-1-23" name="__codelineno-1-23" href="#__codelineno-1-23"></a>
-<a id="__codelineno-1-24" name="__codelineno-1-24" href="#__codelineno-1-24"></a><span class="c1"># ADDON_ARG 里的 Namespaces 就是 WarpHook 暴露给插件的入口。</span>
-<a id="__codelineno-1-25" name="__codelineno-1-25" href="#__codelineno-1-25"></a><span class="n">_W</span> <span class="o">=</span> <span class="n">cast</span><span class="p">(</span><span class="s2">&quot;WarpNamespace&quot;</span><span class="p">,</span> <span class="n">_NS</span><span class="o">.</span><span class="n">space</span><span class="p">(</span><span class="s1">&#39;warp&#39;</span><span class="p">)</span> <span class="k">if</span> <span class="n">_NS</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span><span class="p">)</span>
-<a id="__codelineno-1-26" name="__codelineno-1-26" href="#__codelineno-1-26"></a>
-<a id="__codelineno-1-27" name="__codelineno-1-27" href="#__codelineno-1-27"></a>
-<a id="__codelineno-1-28" name="__codelineno-1-28" href="#__codelineno-1-28"></a><span class="k">def</span><span class="w"> </span><span class="nf">_log</span><span class="p">(</span><span class="n">message</span><span class="p">):</span>
-<a id="__codelineno-1-29" name="__codelineno-1-29" href="#__codelineno-1-29"></a>    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;[</span><span class="si">{</span><span class="n">ADDON_NAME</span><span class="si">}</span><span class="s1">] </span><span class="si">{</span><span class="n">message</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">,</span> <span class="n">flush</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
-<a id="__codelineno-1-30" name="__codelineno-1-30" href="#__codelineno-1-30"></a>
-<a id="__codelineno-1-31" name="__codelineno-1-31" href="#__codelineno-1-31"></a>
-<a id="__codelineno-1-32" name="__codelineno-1-32" href="#__codelineno-1-32"></a><span class="k">def</span><span class="w"> </span><span class="nf">_settings</span><span class="p">():</span>
-<a id="__codelineno-1-33" name="__codelineno-1-33" href="#__codelineno-1-33"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;返回 (弹窗内容, 是否自动弹一次)，每次都现读，用户改了立刻生效。&quot;&quot;&quot;</span>
-<a id="__codelineno-1-34" name="__codelineno-1-34" href="#__codelineno-1-34"></a>    <span class="k">try</span><span class="p">:</span>
-<a id="__codelineno-1-35" name="__codelineno-1-35" href="#__codelineno-1-35"></a>        <span class="n">info</span> <span class="o">=</span> <span class="p">(</span><span class="n">ADDON_MANAGER</span><span class="o">.</span><span class="n">get_addon_info</span><span class="p">(</span><span class="n">ADDON_NAME</span><span class="p">)</span>
-<a id="__codelineno-1-36" name="__codelineno-1-36" href="#__codelineno-1-36"></a>                <span class="k">if</span> <span class="n">ADDON_MANAGER</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
-<a id="__codelineno-1-37" name="__codelineno-1-37" href="#__codelineno-1-37"></a>    <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>  <span class="c1"># noqa: BLE001</span>
-<a id="__codelineno-1-38" name="__codelineno-1-38" href="#__codelineno-1-38"></a>        <span class="n">info</span> <span class="o">=</span> <span class="p">{}</span>
-<a id="__codelineno-1-39" name="__codelineno-1-39" href="#__codelineno-1-39"></a>    <span class="n">st</span> <span class="o">=</span> <span class="n">info</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;settings&#39;</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
-<a id="__codelineno-1-40" name="__codelineno-1-40" href="#__codelineno-1-40"></a>    <span class="k">return</span> <span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">st</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;弹窗内容&#39;</span><span class="p">)</span> <span class="ow">or</span> <span class="s1">&#39;来自插件的问候&#39;</span><span class="p">),</span>
-<a id="__codelineno-1-41" name="__codelineno-1-41" href="#__codelineno-1-41"></a>            <span class="nb">bool</span><span class="p">(</span><span class="n">st</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;自动弹一次&#39;</span><span class="p">,</span> <span class="kc">True</span><span class="p">)))</span>
-<a id="__codelineno-1-42" name="__codelineno-1-42" href="#__codelineno-1-42"></a>
-<a id="__codelineno-1-43" name="__codelineno-1-43" href="#__codelineno-1-43"></a>
-<a id="__codelineno-1-44" name="__codelineno-1-44" href="#__codelineno-1-44"></a><span class="k">def</span><span class="w"> </span><span class="nf">_push</span><span class="p">():</span>
-<a id="__codelineno-1-45" name="__codelineno-1-45" href="#__codelineno-1-45"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;把当前设置写进共享内存 —— Service 在注入前、注入后各调一次。</span>
-<a id="__codelineno-1-46" name="__codelineno-1-46" href="#__codelineno-1-46"></a>
-<a id="__codelineno-1-47" name="__codelineno-1-47" href="#__codelineno-1-47"></a><span class="sd">    这个插件没有要钩的方法，所以 ``hooks`` 是空表；``push()`` 仍然要做，</span>
-<a id="__codelineno-1-48" name="__codelineno-1-48" href="#__codelineno-1-48"></a><span class="sd">    因为它同时负责把「本插件启用了哪些东西」告诉 DLL。</span>
-<a id="__codelineno-1-49" name="__codelineno-1-49" href="#__codelineno-1-49"></a><span class="sd">    &quot;&quot;&quot;</span>
-<a id="__codelineno-1-50" name="__codelineno-1-50" href="#__codelineno-1-50"></a>    <span class="n">host</span> <span class="o">=</span> <span class="n">service</span><span class="o">.</span><span class="n">host</span><span class="p">()</span>
-<a id="__codelineno-1-51" name="__codelineno-1-51" href="#__codelineno-1-51"></a>    <span class="n">host</span><span class="o">.</span><span class="n">configure</span><span class="p">(</span><span class="n">hooks</span><span class="o">=</span><span class="p">[],</span> <span class="n">texts</span><span class="o">=</span><span class="p">[])</span>
-<a id="__codelineno-1-52" name="__codelineno-1-52" href="#__codelineno-1-52"></a>    <span class="k">return</span> <span class="n">host</span><span class="o">.</span><span class="n">push</span><span class="p">(</span><span class="kc">True</span><span class="p">)</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">(</span><span class="s1">&#39;共享内存不可用&#39;</span><span class="p">,)</span>
-<a id="__codelineno-1-53" name="__codelineno-1-53" href="#__codelineno-1-53"></a>
-<a id="__codelineno-1-54" name="__codelineno-1-54" href="#__codelineno-1-54"></a>
-<a id="__codelineno-1-55" name="__codelineno-1-55" href="#__codelineno-1-55"></a><span class="k">def</span><span class="w"> </span><span class="nf">_say</span><span class="p">(</span><span class="n">text</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
-<a id="__codelineno-1-56" name="__codelineno-1-56" href="#__codelineno-1-56"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;让游戏弹一句。&quot;&quot;&quot;</span>
-<a id="__codelineno-1-57" name="__codelineno-1-57" href="#__codelineno-1-57"></a>    <span class="n">text</span> <span class="o">=</span> <span class="n">text</span> <span class="ow">or</span> <span class="n">_settings</span><span class="p">()[</span><span class="mi">0</span><span class="p">]</span>
-<a id="__codelineno-1-58" name="__codelineno-1-58" href="#__codelineno-1-58"></a>    <span class="n">result</span> <span class="o">=</span> <span class="n">service</span><span class="o">.</span><span class="n">host</span><span class="p">()</span><span class="o">.</span><span class="n">popup</span><span class="p">(</span><span class="n">text</span><span class="p">)</span>
-<a id="__codelineno-1-59" name="__codelineno-1-59" href="#__codelineno-1-59"></a>    <span class="n">_log</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;弹窗「</span><span class="si">{</span><span class="n">text</span><span class="si">}</span><span class="s1">」→ </span><span class="si">{</span><span class="n">result</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">)</span>
-<a id="__codelineno-1-60" name="__codelineno-1-60" href="#__codelineno-1-60"></a>    <span class="k">return</span> <span class="n">result</span>
-<a id="__codelineno-1-61" name="__codelineno-1-61" href="#__codelineno-1-61"></a>
-<a id="__codelineno-1-62" name="__codelineno-1-62" href="#__codelineno-1-62"></a>
-<a id="__codelineno-1-63" name="__codelineno-1-63" href="#__codelineno-1-63"></a><span class="k">def</span><span class="w"> </span><span class="nf">_auto_once</span><span class="p">():</span>
-<a id="__codelineno-1-64" name="__codelineno-1-64" href="#__codelineno-1-64"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;等宿主挂上之后自动弹一次，然后线程退出。</span>
-<a id="__codelineno-1-65" name="__codelineno-1-65" href="#__codelineno-1-65"></a>
-<a id="__codelineno-1-66" name="__codelineno-1-66" href="#__codelineno-1-66"></a><span class="sd">    为什么要等：插件载入时游戏可能还没起来。``service.status()`` 里的</span>
-<a id="__codelineno-1-67" name="__codelineno-1-67" href="#__codelineno-1-67"></a><span class="sd">    ``hooked`` 变成 True，就说明 DLL 已经在游戏进程里跑起来了。</span>
-<a id="__codelineno-1-68" name="__codelineno-1-68" href="#__codelineno-1-68"></a><span class="sd">    &quot;&quot;&quot;</span>
-<a id="__codelineno-1-69" name="__codelineno-1-69" href="#__codelineno-1-69"></a>    <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">1200</span><span class="p">):</span>  <span class="c1"># 最多等两分钟</span>
-<a id="__codelineno-1-70" name="__codelineno-1-70" href="#__codelineno-1-70"></a>        <span class="k">try</span><span class="p">:</span>
-<a id="__codelineno-1-71" name="__codelineno-1-71" href="#__codelineno-1-71"></a>            <span class="n">st</span> <span class="o">=</span> <span class="n">service</span><span class="o">.</span><span class="n">status</span><span class="p">()</span>
-<a id="__codelineno-1-72" name="__codelineno-1-72" href="#__codelineno-1-72"></a>        <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>  <span class="c1"># noqa: BLE001</span>
-<a id="__codelineno-1-73" name="__codelineno-1-73" href="#__codelineno-1-73"></a>            <span class="n">st</span> <span class="o">=</span> <span class="p">{}</span>
-<a id="__codelineno-1-74" name="__codelineno-1-74" href="#__codelineno-1-74"></a>        <span class="k">if</span> <span class="n">st</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;hooked&#39;</span><span class="p">):</span>
-<a id="__codelineno-1-75" name="__codelineno-1-75" href="#__codelineno-1-75"></a>            <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mf">1.0</span><span class="p">)</span>  <span class="c1"># 给游戏主循环一点时间，别卡在加载画面里</span>
-<a id="__codelineno-1-76" name="__codelineno-1-76" href="#__codelineno-1-76"></a>            <span class="n">_say</span><span class="p">()</span>
-<a id="__codelineno-1-77" name="__codelineno-1-77" href="#__codelineno-1-77"></a>            <span class="k">return</span>
-<a id="__codelineno-1-78" name="__codelineno-1-78" href="#__codelineno-1-78"></a>        <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mf">0.1</span><span class="p">)</span>
-<a id="__codelineno-1-79" name="__codelineno-1-79" href="#__codelineno-1-79"></a>    <span class="n">_log</span><span class="p">(</span><span class="s1">&#39;等了 2 分钟没等到宿主挂上，放弃自动弹窗&#39;</span><span class="p">)</span>
-<a id="__codelineno-1-80" name="__codelineno-1-80" href="#__codelineno-1-80"></a>
-<a id="__codelineno-1-81" name="__codelineno-1-81" href="#__codelineno-1-81"></a>
-<a id="__codelineno-1-82" name="__codelineno-1-82" href="#__codelineno-1-82"></a><span class="n">service</span> <span class="o">=</span> <span class="n">_W</span><span class="o">.</span><span class="n">plugin</span><span class="o">.</span><span class="n">Service</span><span class="p">(</span>
-<a id="__codelineno-1-83" name="__codelineno-1-83" href="#__codelineno-1-83"></a>    <span class="n">addon_name</span><span class="o">=</span><span class="n">ADDON_NAME</span><span class="p">,</span>
-<a id="__codelineno-1-84" name="__codelineno-1-84" href="#__codelineno-1-84"></a>    <span class="n">name</span><span class="o">=</span><span class="n">ADDON_NAME</span><span class="p">,</span>
-<a id="__codelineno-1-85" name="__codelineno-1-85" href="#__codelineno-1-85"></a>    <span class="n">sync</span><span class="o">=</span><span class="n">_push</span><span class="p">,</span>
-<a id="__codelineno-1-86" name="__codelineno-1-86" href="#__codelineno-1-86"></a>    <span class="n">auto</span><span class="o">=</span><span class="k">lambda</span><span class="p">:</span> <span class="kc">True</span><span class="p">,</span>          <span class="c1"># True = 插件启用着的时候，游戏一起来就自动注入</span>
-<a id="__codelineno-1-87" name="__codelineno-1-87" href="#__codelineno-1-87"></a>    <span class="n">menu</span><span class="o">=</span><span class="p">(</span>
-<a id="__codelineno-1-88" name="__codelineno-1-88" href="#__codelineno-1-88"></a>        <span class="p">(</span><span class="s1">&#39;弹一句&#39;</span><span class="p">,</span> <span class="k">lambda</span><span class="p">:</span> <span class="n">_say</span><span class="p">()),</span>
-<a id="__codelineno-1-89" name="__codelineno-1-89" href="#__codelineno-1-89"></a>        <span class="p">(</span><span class="s1">&#39;注入并弹一句&#39;</span><span class="p">,</span> <span class="k">lambda</span><span class="p">:</span> <span class="p">(</span><span class="n">service</span><span class="o">.</span><span class="n">inject_now</span><span class="p">(</span><span class="n">wait</span><span class="o">=</span><span class="kc">True</span><span class="p">),</span> <span class="n">_say</span><span class="p">())),</span>
-<a id="__codelineno-1-90" name="__codelineno-1-90" href="#__codelineno-1-90"></a>    <span class="p">),</span>
-<a id="__codelineno-1-91" name="__codelineno-1-91" href="#__codelineno-1-91"></a><span class="p">)</span>
-<a id="__codelineno-1-92" name="__codelineno-1-92" href="#__codelineno-1-92"></a><span class="n">service</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
-<a id="__codelineno-1-93" name="__codelineno-1-93" href="#__codelineno-1-93"></a>
-<a id="__codelineno-1-94" name="__codelineno-1-94" href="#__codelineno-1-94"></a><span class="k">if</span> <span class="n">_settings</span><span class="p">()[</span><span class="mi">1</span><span class="p">]:</span>
-<a id="__codelineno-1-95" name="__codelineno-1-95" href="#__codelineno-1-95"></a>    <span class="n">threading</span><span class="o">.</span><span class="n">Thread</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="n">_auto_once</span><span class="p">,</span> <span class="n">daemon</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
-<a id="__codelineno-1-96" name="__codelineno-1-96" href="#__codelineno-1-96"></a>
-<a id="__codelineno-1-97" name="__codelineno-1-97" href="#__codelineno-1-97"></a>
-<a id="__codelineno-1-98" name="__codelineno-1-98" href="#__codelineno-1-98"></a><span class="k">def</span><span class="w"> </span><span class="nf">on_unload</span><span class="p">():</span>
-<a id="__codelineno-1-99" name="__codelineno-1-99" href="#__codelineno-1-99"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;卸载时收尾：Service 会停掉自己的线程、断开映射。&quot;&quot;&quot;</span>
-<a id="__codelineno-1-100" name="__codelineno-1-100" href="#__codelineno-1-100"></a>    <span class="k">return</span> <span class="n">service</span><span class="o">.</span><span class="n">stop</span><span class="p">()</span>
-</code></pre></div>
-<p>配套的清单：</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="p">{</span>
-<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="w">    </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;弹一句&quot;</span><span class="p">,</span>
-<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">    </span><span class="nt">&quot;desc&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;让游戏弹出一个原版系统弹窗。演示插件如何等游戏启动、注入宿主 DLL、然后调用游戏自己的能力。&quot;</span><span class="p">,</span>
-<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">    </span><span class="nt">&quot;requires&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
-<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="w">        </span><span class="s2">&quot;WarpHook&quot;</span>
-<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="w">    </span><span class="p">],</span>
-<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="w">    </span><span class="nt">&quot;settings&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="w">        </span><span class="nt">&quot;enable&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
-<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="w">        </span><span class="nt">&quot;弹窗内容&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;来自插件的问候&quot;</span><span class="p">,</span>
-<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a><span class="w">        </span><span class="nt">&quot;自动弹一次&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span>
-<a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a><span class="w">    </span><span class="p">},</span>
-<a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a><span class="w">    </span><span class="nt">&quot;version&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;0.1.0&quot;</span>
-<a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a><span class="p">}</span>
-</code></pre></div>
-<h2 id="_2">三个关键点<a class="headerlink" href="#_2" title="Permanent link">&para;</a></h2>
-<h3 id="1-service-start">1. <code>Service</code> 要在顶层就创建并 <code>start()</code><a class="headerlink" href="#1-service-start" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="n">service</span> <span class="o">=</span> <span class="n">_W</span><span class="o">.</span><span class="n">plugin</span><span class="o">.</span><span class="n">Service</span><span class="p">(</span>
-<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>    <span class="n">addon_name</span><span class="o">=</span><span class="n">ADDON_NAME</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="n">ADDON_NAME</span><span class="p">,</span>
-<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>    <span class="n">sync</span><span class="o">=</span><span class="n">_push</span><span class="p">,</span> <span class="n">auto</span><span class="o">=</span><span class="k">lambda</span><span class="p">:</span> <span class="kc">True</span><span class="p">,</span>
-<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>    <span class="n">menu</span><span class="o">=</span><span class="p">((</span><span class="s1">&#39;弹一句&#39;</span><span class="p">,</span> <span class="k">lambda</span><span class="p">:</span> <span class="n">_say</span><span class="p">()),),</span>
-<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="p">)</span>
-<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="n">service</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
-</code></pre></div>
-<p><code>sync</code> 传的是<strong>函数本身</strong>，不是调用结果——<code>Service</code> 会在注入前后各调它一次。
-<code>auto</code> 是「要不要自动注入」的判断函数，返回 <code>True</code> 就自动做。</p>
-<h3 id="2-sync-push">2. <code>sync</code> 里必须调 <code>push()</code><a class="headerlink" href="#2-sync-push" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="k">def</span><span class="w"> </span><span class="nf">_push</span><span class="p">():</span>
-<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>    <span class="n">host</span> <span class="o">=</span> <span class="n">service</span><span class="o">.</span><span class="n">host</span><span class="p">()</span>
-<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>    <span class="n">host</span><span class="o">.</span><span class="n">configure</span><span class="p">(</span><span class="n">hooks</span><span class="o">=</span><span class="p">[],</span> <span class="n">texts</span><span class="o">=</span><span class="p">[])</span>   <span class="c1"># 这个插件没有钩子，交空表</span>
-<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>    <span class="k">return</span> <span class="n">host</span><span class="o">.</span><span class="n">push</span><span class="p">(</span><span class="kc">True</span><span class="p">)</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">(</span><span class="s1">&#39;共享内存不可用&#39;</span><span class="p">,)</span>
-</code></pre></div>
-<p><code>configure()</code> 只是改内存里的草稿，<code>push()</code> 才真正写进共享内存并通知 DLL。
-这两步分开是为了让插件能一次改好几样东西再一起提交。</p>
-<p>返回值的判断别省：万一共享内存没建起来（比如游戏还没注入），<code>push()</code> 会返回
-<code>'共享内存不可用'</code> 这样的字符串而不是成功。</p>
-<h3 id="3-popup">3. <code>popup()</code> 是一次往返，不是发完就走<a class="headerlink" href="#3-popup" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="n">result</span> <span class="o">=</span> <span class="n">service</span><span class="o">.</span><span class="n">host</span><span class="p">()</span><span class="o">.</span><span class="n">popup</span><span class="p">(</span><span class="s1">&#39;你好&#39;</span><span class="p">)</span>
-</code></pre></div>
-<p>它会等游戏那边回一句「已执行」或错误原因，默认最多等 2 秒（<code>timeout=2.0</code>）。
-<strong>所以别在钩子回调里同步调它</strong>——弹窗会占住游戏主线程一会儿，弹窗没关之前
-游戏是停着的。要连弹好几个，见第 07 篇的线程那一节。</p>
-<h2 id="hooked">等等，那个 <code>hooked</code> 是什么<a class="headerlink" href="#hooked" title="Permanent link">&para;</a></h2>
-<p><code>service.status()</code> 返回一个字典，常用的几项：</p>
-<table>
-<thead>
-<tr>
-<th>键</th>
+<th>回执</th>
 <th>含义</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><code>ready</code></td>
-<td>共享内存映射成功了吗</td>
+<td><code>已执行</code></td>
+<td>成功</td>
 </tr>
 <tr>
-<td><code>hooked</code></td>
-<td><strong>DLL 已经在游戏进程里跑起来了吗</strong>（最常看的）</td>
+<td><code>共享内存不可用</code></td>
+<td>宿主没起来（游戏没开 / 注入失败）</td>
 </tr>
 <tr>
-<td><code>status_text</code></td>
-<td>一行中文状态，直接打日志用</td>
+<td><code>游戏未就绪</code></td>
+<td>DLL 在，但游戏主循环还没跑起来</td>
 </tr>
 <tr>
-<td><code>hook_installed</code> / <code>hook_total</code></td>
-<td>要挂的钩子挂上了几个 / 一共几个</td>
-</tr>
-<tr>
-<td><code>evt_count</code></td>
-<td>你登记的钩子命中了多少次</td>
-</tr>
-<tr>
-<td><code>standalone</code></td>
-<td><code>True</code> = 启动器已退出，DLL 还在游戏里独立跑</td>
-</tr>
-<tr>
-<td><code>log_tail</code></td>
-<td>宿主 DLL 最后一行日志，出错时先看这个</td>
+<td><code>超时</code></td>
+<td>游戏卡住了（比如你弹窗没关）</td>
 </tr>
 </tbody>
 </table>
-<p>判断「能不能下命令」就看 <code>hooked</code>。本文的示例里用了个后台线程一直轮询它。</p>
-<h2 id="_3">一个必须知道的大坑<a class="headerlink" href="#_3" title="Permanent link">&para;</a></h2>
-<div class="admonition danger">
-<p class="admonition-title">别钩 <code>GlobalGameManager.FixedUpdate</code> 和 <code>Update</code></p>
-<p>宿主自己要用 <code>GlobalGameManager</code> 的 <code>FixedUpdate</code> 当「每帧干活的入口」，
-靠它来执行你的弹窗、读内存这类命令。如果你抢先把这两个方法钩了，
-宿主就找不到落脚点，日志里会出现：</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>pump: no free entry point, cmd channel off
-</code></pre></div>
-<p>结果是 <code>popup</code>、<code>read</code>、<code>call</code> 这些<strong>全部失效</strong>（而且不会报错，只是没反应）。</p>
-<p>要每帧做点什么，用钩子钩别的方法；要拿场景根对象，直接读<strong>对象槽 29</strong>：</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="n">scene</span> <span class="o">=</span> <span class="n">service</span><span class="o">.</span><span class="n">host</span><span class="p">()</span><span class="o">.</span><span class="n">object_ptr</span><span class="p">(</span><span class="mi">29</span><span class="p">)</span>   <span class="c1"># GlobalGameManager 的指针</span>
-</code></pre></div>
-</div>
-<h2 id="_4">装上去试<a class="headerlink" href="#_4" title="Permanent link">&para;</a></h2>
+<h2 id="_5">没弹出来？按这个顺序查<a class="headerlink" href="#_5" title="Permanent link">&para;</a></h2>
 <ol>
-<li>把 <code>弹一句/</code> 放进 <code>addons/</code>；</li>
-<li>重启启动器，进游戏；</li>
-<li>标题画面出来后约 1 秒，游戏里弹出一句「来自插件的问候」；</li>
-<li>日志里能看到：</li>
+<li><code>game.status()</code> 里 <code>hooked</code> 是 <code>False</code> → 看 <code>log_tail</code> 那一行，通常是注入失败；</li>
+<li><code>game.status()</code> 里 <code>standalone</code> 是 <code>True</code> → 启动器已经退出了，DLL 还在游戏里跑（正常现象）；</li>
+<li>日志里有 <code>pump: no free entry point</code> → 有人抢占了宿主的命令通道，见第 08 篇；</li>
+<li>弹窗内容为空字符串 → 游戏会直接忽略，日志里是 <code>popup: empty text</code>。</li>
 </ol>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>[弹一句] 等待游戏启动…
-<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>[弹一句] 已注入（PID 12345）
-<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>[弹一句] 游戏中，命中 0 次 / 已生效 0 次
-<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a>[弹一句] 弹窗「来自插件的问候」→ 已执行
-</code></pre></div>
-<p>没弹出来？按顺序查：</p>
-<ol>
-<li><code>service.status()['hooked']</code> 是不是 <code>False</code> —— 是的话看 <code>log_tail</code>；</li>
-<li>日志里有没有 <code>pump: no free entry point</code> —— 你（或别的插件）钩了 FixedUpdate；</li>
-<li>游戏是不是在加载画面里 —— 弹出去了但被加载画面盖住，等进标题再点菜单试；</li>
-<li><code>addons/WarpHook/warp_host.log</code> 里有没有 <code>popup: empty text</code> —— 那说明弹的是空字符串。</li>
-</ol>
-<h2 id="_5">到这一步你该知道的<a class="headerlink" href="#_5" title="Permanent link">&para;</a></h2>
+<h2 id="_6">这一篇你该记住的<a class="headerlink" href="#_6" title="Permanent link">&para;</a></h2>
 <ul>
-<li>插件 → 共享内存 → DLL → 游戏，这条链路是<strong>所有</strong>功能的基础</li>
-<li><code>Service</code> = 等游戏 + 注入 + 心跳 + 托盘菜单</li>
-<li><code>sync</code> 里 <code>configure</code> 改草稿、<code>push</code> 提交</li>
-<li><code>hooked</code> 是「能不能下命令」的判据</li>
-<li>别碰 <code>GlobalGameManager</code> 的 <code>FixedUpdate</code> / <code>Update</code></li>
+<li><strong>一行 <code>game.popup('...')</code> 就能让游戏说话</strong>，等游戏、注入、回执都在里面</li>
+<li>插件跑在启动器进程，游戏在另一个进程，中间靠 <code>warp_host.dll</code> + 共享内存</li>
+<li><code>game.start(menu=...)</code> 可以提前开工并挂托盘菜单</li>
+<li><code>on_unload()</code> 里 <code>game.close()</code></li>
 </ul>
-<p>下一篇开始钩游戏的方法——那才是真正能「在游戏做某件事的时候插一脚」的能力。</p>
+<p>下一篇换个方向：让游戏在发生事情的时候主动通知你。</p>
 
 
 

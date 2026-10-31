@@ -303,6 +303,16 @@
       
         
       
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
     
     
     
@@ -420,14 +430,154 @@
   
   
     <li class="md-nav__item">
-      <a href="03-hook/" class="md-nav__link">
+      <a href="03-events/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-    03 提交钩子
+    03 事情发生时通知我
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="04-unit/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    04 读一个单位
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="05-props/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    05 把属性都拿出来
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="06-buffs/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    06 解析 buff
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="07-lifecycle/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    07 生命周期与线程
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="08-inside/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    08 想到底层去
   
 
     
@@ -690,6 +840,17 @@
   <a href="#_2" class="md-nav__link">
     <span class="md-ellipsis">
       
+        这个教程的写法
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
         读之前需要知道的四个词
       
     </span>
@@ -739,44 +900,49 @@
 <td>让游戏用自己的系统弹窗说一句话</td>
 </tr>
 <tr>
-<td><a href="03-hook/">03</a></td>
-<td>提交钩子</td>
-<td>在游戏函数被调用的瞬间插一脚，甚至拦下它</td>
+<td><a href="03-events/">03</a></td>
+<td>事情发生时通知我</td>
+<td>回合开始、切场景、进出战斗时自动执行你的函数</td>
 </tr>
 <tr>
-<td><a href="04-speed.md">04</a></td>
-<td>读一个值</td>
-<td>读到某个单位的「速度」</td>
+<td><a href="04-unit/">04</a></td>
+<td>读一个单位</td>
+<td>编号、人格 ID、血量、理智、速度、混乱/恐慌</td>
 </tr>
 <tr>
-<td><a href="05-props.md">05</a></td>
-<td>读全部属性</td>
-<td>血量、理智、身份、死亡/恐慌/混乱</td>
+<td><a href="05-props/">05</a></td>
+<td>把属性都拿出来</td>
+<td>一个单位身上六十多个字段，以及字段表</td>
 </tr>
 <tr>
-<td><a href="06-buff.md">06</a></td>
+<td><a href="06-buffs/">06</a></td>
 <td>解析 buff</td>
-<td>每个 buff 的英文 ID、层数、剩余回合</td>
+<td>每个 buff 的中文名、英文 ID、层数、剩余次数</td>
 </tr>
 <tr>
-<td><a href="07-lifecycle.md">07</a></td>
+<td><a href="07-lifecycle/">07</a></td>
 <td>生命周期与线程</td>
-<td>插件怎么收尾、什么不能做</td>
+<td>插件怎么启动、怎么收尾、什么不能做</td>
 </tr>
 <tr>
-<td><a href="08-pitfalls.md">08</a></td>
-<td>常见坑与调试</td>
-<td>数不对时怎么自己查</td>
+<td><a href="08-inside/">08</a></td>
+<td>想到底层去</td>
+<td>自己写钩子、拦下游戏动作、读别的对象</td>
 </tr>
 </tbody>
 </table>
-<h2 id="_2">读之前需要知道的四个词<a class="headerlink" href="#_2" title="Permanent link">&para;</a></h2>
+<h2 id="_2">这个教程的写法<a class="headerlink" href="#_2" title="Permanent link">&para;</a></h2>
+<p><strong>先用包装好的函数，再讲它背后的东西。</strong> 前七篇你不会看到类名、方法名、内存偏移这些
+东西——你需要的是 <code>game.popup()</code>、<code>game.units()</code>、<code>u.hp</code> 这样一句话就能用的接口。
+第 08 篇才下潜到钩子和读链，那是给「想改游戏行为」的人准备的。</p>
+<h2 id="_3">读之前需要知道的四个词<a class="headerlink" href="#_3" title="Permanent link">&para;</a></h2>
 <ul>
 <li><strong>钩子（hook）</strong>：在游戏的某个函数上挂一个回调，函数一被调用就通知你（或干脆不让它执行）。</li>
 <li><strong>读链（read chain）</strong>：一串「先加偏移、再解引用、再进容器」的步骤，用来从一个对象走到你关心的字段。</li>
 <li><strong>对象槽（object slot）</strong>：共享内存里的 32 个格子，用来临时存放「某个游戏对象的指针」，之后可以反复对它读数。</li>
 <li><strong>命名空间（namespace）</strong>：插件之间的分工方式。<code>WarpHook</code> 提供 <code>warp</code>，你的插件也能注册自己的让别人用。</li>
 </ul>
+<p>前七篇几乎不用直接碰后三个词——它们藏在 <code>warp.game</code> 里面。</p>
 
 
 
