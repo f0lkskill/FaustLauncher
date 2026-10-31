@@ -109,6 +109,31 @@ void **warp_objects(void)
     return (void **)((char *)g_hdr + WARP_OBJECTS_OFFSET);
 }
 
+/* v8：这条钩子命中时要不要把第 arg 个参数换掉。
+ *
+ * 返回非空就由 thunk 覆盖那个形参，再照常调原函数 —— 这是「拦截并改写」的
+ * 基础动作：插件想改游戏传进去的曲名、路径、ID，不必自己去 invoke 游戏方法
+ * （那条路 0.9.10~0.9.14 崩过五次）。
+ *
+ * 只在对象槽里取材，宿主自己一个字节都不分配：String 归 Python 侧 make_str
+ * 创建并持有，宿主只搬指针。钩子表越界/未配置一律返回空，等同「不改」。 */
+void *warp_rewrite_value(int hook_index, int arg_index)
+{
+    const WARP_REWRITE *r;
+    void **objs;
+
+    if (!g_hdr || hook_index < 0 || hook_index >= WARP_REWRITE_COUNT || arg_index <= 0)
+        return NULL;
+    r = (const WARP_REWRITE *)((const char *)g_hdr + WARP_REWRITE_OFFSET)
+        + hook_index;
+    if (r->arg != arg_index || r->slot < 0 || r->slot >= WARP_OBJECT_COUNT)
+        return NULL;
+    objs = warp_objects();
+    if (!objs)
+        return NULL;
+    return objs[r->slot];
+}
+
 /* 读之前先问系统这段内存能不能读。
  *
  * 插件把偏移写错一个字节就会崩游戏 —— 真实发生过：把场景状态（0~15 的枚举）

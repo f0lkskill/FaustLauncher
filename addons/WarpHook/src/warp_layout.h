@@ -49,7 +49,16 @@
 /* 数值转字符串（构建戳用）：warp_log("proto v" WARP_STR(WARP_VERSION)) */
 #define WARP_STR_(x)      #x
 #define WARP_STR(x)       WARP_STR_(x)
-#define WARP_VERSION      7                /* v7：读链 4→8 跳 + 命令通道代读 CMD_READ
+#define WARP_VERSION      9                /* v9：命令的 out 参数缓冲（CALL 的参数
+                                            * 类型多一个 'm'，指向 MAP 尾部的可写
+                                            * 块）——值类型 out 参数（FMOD 的
+                                            * EventInstance&）终于能传了。
+                                            * v8：钩子参数改写（MAP 尾部追加
+                                            * WARP_REWRITE 段）——命中时把第 N
+                                            * 个参数换成对象槽里的指针，让插件
+                                            * 「改掉游戏自己要传的值」而不必自己
+                                            * 去调游戏方法。
+                                            * v7：读链 4→8 跳 + CMD_READ 代读
                                             * （MAP 尾部追加 WARP_CMD_READ 段）。
                                             * v6：读取链 Dictionary 容器步（deref=6/7）
                                             * 与字典计数 kind=9；
@@ -104,6 +113,7 @@
 #define WARP_CMD_ARG_I 'i'      /* int32：vars 值就是参数 */
 #define WARP_CMD_ARG_F 'f'      /* float：vars 值按位解释 */
 #define WARP_CMD_ARG_P 'p'      /* 引用：vars 值就是对象指针（槽引用已在 py 侧解好） */
+#define WARP_CMD_ARG_M 'm'      /* out 缓冲：vars 值 = MAP 内缓冲块内偏移 */
 
 /* 命令结果码 */
 #define WARP_CMD_RES_OK        0
@@ -199,7 +209,36 @@
 /* v7：命令通道的「代读」读链。只有一条 —— 命令是 Python 同步等 ack 的，
  * 不需要排队；结构就是一条 WARP_READ，放 MAP 末尾追加，前面所有偏移不动。 */
 #define WARP_CMD_READ_OFFSET (WARP_BUFF_WATCH_OFFSET + WARP_BUFF_WATCH_COUNT * WARP_BUFF_WATCH_SIZE)
-#define WARP_MAP_BYTES    (WARP_CMD_READ_OFFSET + WARP_READ_SIZE)
+
+/* v8：钩子参数改写。命中时把第 arg 个参数换成对象槽 slot 里的指针 —— 通常是
+ * Python 侧事先用 make_str 放进槽里的 il2cpp String。这样插件能「改掉游戏自己
+ * 要传进去的值」，而不是自己调游戏方法（invoke 那条路踩过太多坑）。
+ *
+ * 只放指针、不在 C 侧造对象：String 的生命周期归创建它的 Python 侧管，宿主
+ * 只负责在 thunk 里替换那一个寄存器/栈槽。arg=0 或 slot<0 表示这条钩子不
+ * 改写（默认值，兼容 v7 配置）。和 v7 一样追加在 MAP 尾部，前面偏移不动。 */
+#define WARP_REWRITE_COUNT WARP_MAX_HOOKS
+#define WARP_REWRITE_SIZE  8
+#define WARP_REWRITE_OFFSET (WARP_CMD_READ_OFFSET + WARP_READ_SIZE)
+
+/* v9：命令的 out 参数缓冲。有些游戏方法要一个可写的值类型落点
+ * （``SoundManager.TryCreateInstance(string, out EventInstance)`` 的第二个
+ * 参数），il2cpp 的 runtime_invoke 要求 params[i] 直接指向那块内存。共享内存
+ * 本身在游戏进程里就是可读写的，把 MAP 尾部一块缓冲的地址当参数传进去即可：
+ * 游戏往里写，Python 侧读同一块。参数类型写 ``'m'``，vars 里存块内偏移。
+ *
+ * 4 块 × 64 字节足够放 FMOD 的 EventInstance（struct，含一个 IntPtr）和一般
+ * 的小值类型；不够再加块数，别改前面任何偏移。 */
+#define WARP_CMD_BUF_COUNT 4
+#define WARP_CMD_BUF_SIZE  64
+#define WARP_CMD_BUF_OFFSET (WARP_REWRITE_OFFSET + WARP_REWRITE_COUNT * WARP_REWRITE_SIZE)
+#define WARP_MAP_BYTES    (WARP_CMD_BUF_OFFSET + WARP_CMD_BUF_COUNT * WARP_CMD_BUF_SIZE)
+
+/* 一条钩子的改写规则：rewrites[钩子下标] */
+typedef struct _WARP_REWRITE {
+    int arg;    /* 0  改写第几个参数（1..9；0 = 不改写） */
+    int slot;   /* 4  从哪个对象槽取替换值（0..WARP_OBJECT_COUNT-1；<0 = 关闭） */
+} WARP_REWRITE; /* 8 */
 
 /* 读出来的值怎么解释 */
 #define WARP_READ_INT     0     /* int32 */

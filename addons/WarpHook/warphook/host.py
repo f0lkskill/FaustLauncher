@@ -34,8 +34,8 @@ from .base import (
 )
 
 HOST_MAGIC = 0x54534857           # "WHST"
-HOST_VERSION = 7                  # v7：读链 4→8 跳 + 命令通道代读 CMD_READ
-                                  # （v6：读取链 Dictionary 容器步 6/7 与字典计数 kind=9）
+HOST_VERSION = 9                  # v9：命令的 out 参数缓冲（CALL 能拿回值类型）
+                                  # （v8：钩子参数改写；v7：代读读链；v6：字典容器步）
 # v5：尾部追加 buff 关注哈希表段（BUF 行）。
 # v4：钩子表 16→32（成就 25 条 + NoGacha 2 条装不下 16 槽）
 HOST_MAP_DEFAULT = "Local\\WarpHost_Default"
@@ -189,7 +189,20 @@ HOST_BUFF_WATCH_SIZE = 8    # fnv1a64
 HOST_BUFF_WATCH_OFFSET = HOST_OBJECTS_OFFSET + HOST_OBJECT_COUNT * HOST_OBJECT_SIZE
 # v7：命令通道的「代读」读链（一条 WARP_READ，MAP 尾部追加）。
 HOST_CMD_READ_OFFSET = HOST_BUFF_WATCH_OFFSET + HOST_BUFF_WATCH_COUNT * HOST_BUFF_WATCH_SIZE
-HOST_MAP_BYTES = HOST_CMD_READ_OFFSET + HOST_READ_SIZE
+# v8：钩子参数改写。每条钩子一对 (arg, slot)：命中时把第 arg 个参数换成
+# 对象槽 slot 里的指针（通常是 make_str 放进去的 il2cpp String）。同在
+# MAP 尾部追加，前面所有偏移不动；arg=0 或 slot<0 表示不改写。
+HOST_REWRITE_COUNT = HOST_MAX_HOOKS
+HOST_REWRITE_SIZE = 8
+HOST_REWRITE_OFFSET = HOST_CMD_READ_OFFSET + HOST_READ_SIZE
+# v9：命令的 out 参数缓冲。有些游戏方法要一个可写的值类型落点
+# （``SoundManager.TryCreateInstance(string, out EventInstance)``），il2cpp 的
+# runtime_invoke 要求参数直接指向那块内存。共享内存在游戏进程里就是可读写的，
+# 把 MAP 尾部缓冲的地址当参数传进去：游戏写、Python 读同一块。
+HOST_CMD_BUF_COUNT = 4
+HOST_CMD_BUF_SIZE = 64
+HOST_CMD_BUF_OFFSET = HOST_REWRITE_OFFSET + HOST_REWRITE_COUNT * HOST_REWRITE_SIZE
+HOST_MAP_BYTES = HOST_CMD_BUF_OFFSET + HOST_CMD_BUF_COUNT * HOST_CMD_BUF_SIZE
 
 # ---- 多作者分段（v0.9.2）------------------------------------------------
 # 成就观测跑在独立子进程，它有自己的一份 Host；NoGacha 等插件在启动器主进程
@@ -246,16 +259,33 @@ HF_ONCE = 0x02       # 只触发一次
 HF_DEDUPE = 0x04     # 读链的值没变就不投递事件（配了 reads 才有意义）
 
 # Host.call 的白名单：只有这些 runtime_invoke 调用在真机上验证过稳定。
-# 0.9.10~0.9.13 三次真机崩溃全是「插件调了游戏自己的方法」引起的——
-# invoke 进 il2cpp 之后，方法内部一旦碰到没初始化好的子系统（战斗曲的
-# FMOD 实例、泛型单例的静态字段）就是原生访问违例，Python 侧拦不住。
-# 要加新条目，先在真机上单独验证「连调 20 次不崩」再加。
+# 0.9.10~0.9.14 的五次真机崩溃里，前面几次的锅是 invoke 进的游戏方法
+# 本身，最后一次（0.9.15 查到的那条栈）却是对象槽里 il2cpp_gchandle_free
+# —— 跟方法无关。句柄拆掉之后 get_Instance 连调 10 次全稳，换曲那几步也
+# 一并放开；要再加新条目，先在真机上单独验证「连调 20 次不崩」再加。
 SAFE_CALLS = frozenset((
     "BattleObjectManager::get_Instance",
     "GlobalGameManager::get_Instance",
+    "SoundManager::get_Instance",
     # 纯读静态字段的无参 getter，实测 0.02s 返回、无副作用：
     "BattleSoundGenerator::IsBattleBgmPlaying",
     "BattleSoundGenerator::get_CurrentBgmIndex",
+    # 换曲三步（旧插件 BattleBGMExtend 走的同一条 invoke 路，多年稳定）：
+    "BattleSoundGenerator::StopBGM",
+    "BattleSoundGenerator::StopAddedBGM",
+    "BattleSoundGenerator::StartBGM",
+    "BattleSoundGenerator::StartAddBGM",
+    # StartAddBGM 只登记待播曲，真正建实例的是 StartAddBGMSystem（0.9.16 补）
+    "BattleSoundGenerator::StartAddBGMSystem",
+    "BattleSoundGenerator::PauseBGM",
+    "BattleSoundGenerator::TryStartBattleBgmByName",
+    "SoundManager::StopBGM",
+    # 音库：事件所在的 bank 没加载时 StartAddBGM 会静默失败（0.9.16 实测静音）
+    "SoundManager::LoadBank",
+    "SoundManager::LoadBankFromLocal",
+    # 注意：**不要**放宽 SoundManager::IsLoadedBank —— 它有两个 1 参重载
+    # （AssetReference / string），宿主按「名字 + 参数个数」选方法，会把
+    # string 当 AssetReference 传进去，游戏内部直接 AV（0.9.16 实测崩过一次）。
 ))
 
 HOST_STATUS_TEXT = {
@@ -867,6 +897,9 @@ class Host:
             old_klass = _read_fixed(slot + HostHook.klass.offset, HOST_KLASS_LEN)
             old_method = _read_fixed(slot + HostHook.method.offset, HOST_METHOD_LEN)
             ctypes.memset(slot, 0, HOST_HOOK_SIZE)
+            # v8：改写规则一并归零（同一段语义：这格钩子被清掉了，改写也得清）
+            ctypes.memset(base + HOST_REWRITE_OFFSET + i * HOST_REWRITE_SIZE,
+                          0, HOST_REWRITE_SIZE)
             hook = hooks[i]
             if hook is None:
                 continue
@@ -931,6 +964,19 @@ class Host:
                     at = read_addr + (rbase + read_used[gi] + j) * HOST_READ_SIZE
                     _encode_read(at, spec)
                 read_used[gi] += take
+            # v8：参数改写 —— (第几个参数, 从哪个对象槽取值)。
+            # 声明式 dict 也能写 rewrite=(arg, slot)，和 hook(rewrite=...) 同义。
+            rw = hook.get("rewrite")
+            if rw:
+                rw_arg, rw_slot = (list(rw) + [0, -1])[:2]
+                try:
+                    rw_arg, rw_slot = int(rw_arg), int(rw_slot)
+                except (TypeError, ValueError):
+                    rw_arg, rw_slot = 0, -1
+                if rw_arg > 0 and rw_slot >= 0:
+                    rw_at = base + HOST_REWRITE_OFFSET + i * HOST_REWRITE_SIZE
+                    ctypes.c_int32.from_address(rw_at).value = rw_arg
+                    ctypes.c_int32.from_address(rw_at + 4).value = rw_slot
             # 同一个钩子（类名与方法都没变）如果 DLL 已经标记过「触发过」，
             # 把标记补回去，一次性钩子才不会重复触发。
             if (old_flags & 0x100) and not hook.get("_reset"):
@@ -959,7 +1005,8 @@ class Host:
 
     def hook(self, klass, method, argc=0, block=False, actions=None,
              probe=None, guard=None, event=None, reads=None, dedupe=False,
-             cache=None, when=None, ret_kind=None, ret_slot=None, **extra):
+             cache=None, rewrite=None, when=None, ret_kind=None, ret_slot=None,
+             **extra):
         """登记一条钩子 —— 用法就是一次普通调用，不是填表格。
 
         ``klass`` / ``method`` 是要挂的方法（``argc`` 按「不含 this」数），
@@ -974,6 +1021,9 @@ class Host:
         ``cache=(参数序号, 槽号)`` 表示命中时把那个参数的指针留在对象槽里，
         之后可以用 ``arg=0x100+槽号`` 的读链从它出发，或者 :meth:`object_ptr`
         直接把地址拿出来 —— 这是老链路 `cache_self` 那类读法的通用版。
+        ``rewrite=(参数序号, 槽号)`` 是 v8 的**改写**：命中时把第 N 个参数换成
+        对象槽里的指针再调原函数（通常是先 ``make_str`` 好放进去的字符串）。
+        它和 ``cache`` 方向相反 —— 一个把游戏的值取出来，一个把我们的值塞进去。
         ``when=1``（POST）表示事件在原函数调用**之后**发——构造函数里要读
         的字段是调用之后才填好的，必须配这个；带 ``ret_kind`` 时自动转 POST。
         ``ret_kind='int32'/'float'`` 让 thunk 按类型取返回值（int 在 RAX、
@@ -1015,6 +1065,12 @@ class Host:
         if cache is not None:
             c_arg, c_slot = list(cache)[:2]
             item.update({"cache_arg": int(c_arg), "cache_slot": int(c_slot)})
+        if rewrite is not None:
+            # v8：(第几个参数, 从哪个对象槽取值)。槽里通常是 make_str 放好的
+            # il2cpp String —— 命中时宿主把那个形参换成它，游戏拿到的就是
+            # 我们想要的值，不用自己再去调游戏方法。
+            r_arg, r_slot = (list(rewrite) + [0, -1])[:2]
+            item["rewrite"] = (int(r_arg), int(r_slot))
         if when is not None:
             item["when"] = int(when)
         if ret_kind is not None:
@@ -1506,10 +1562,46 @@ class Host:
                 bits_list.append(self.object_ptr(value[1]))
                 kinds.append("p")
                 continue
+            if isinstance(value, tuple) and len(value) == 2 and value[0] == "buf":
+                # v9：out 参数，占磁盘里第 n 块缓冲（游戏往里写，我们 read_buf 读）
+                bits_list.append(int(value[1]) * HOST_CMD_BUF_SIZE)
+                kinds.append("m")
+                continue
             bits, kind = self._arg_bits(value)
             bits_list.append(bits)
             kinds.append(kind)
         return bits_list, "".join(kinds)
+
+    def read_buf(self, index=0, size=None):
+        """读命令 out 参数缓冲的第 ``index`` 块（配合 ``args=(('buf', 0),)``）。
+
+        调用完 ``host.call(..., args=(..., ('buf', 0)))`` 之后用这个把游戏写回来的
+        值类型读出来 —— 比如 ``TryCreateInstance`` 的 ``EventInstance``。
+        读不到返回 ``None``。
+        """
+        block = self.block()
+        if block is None:
+            return None
+        index = int(index)
+        if not 0 <= index < HOST_CMD_BUF_COUNT:
+            return None
+        if size is None:
+            size = HOST_CMD_BUF_SIZE
+        size = max(0, min(int(size), HOST_CMD_BUF_SIZE))
+        base = block.address + HOST_CMD_BUF_OFFSET + index * HOST_CMD_BUF_SIZE
+        return ctypes.string_at(base, size)
+
+    def clear_buf(self, index=0):
+        """把 out 缓冲第 ``index`` 块清零（调带 out 参数的方法前先调它）。"""
+        block = self.block()
+        if block is None:
+            return False
+        index = int(index)
+        if not 0 <= index < HOST_CMD_BUF_COUNT:
+            return False
+        base = block.address + HOST_CMD_BUF_OFFSET + index * HOST_CMD_BUF_SIZE
+        ctypes.memset(base, 0, HOST_CMD_BUF_SIZE)
+        return True
 
     def make(self, klass, args=(), slot=24, timeout=2.0):
         """构造一个对象放进对象槽（挂 GC 强句柄）。
