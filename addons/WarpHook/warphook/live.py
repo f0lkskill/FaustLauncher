@@ -141,8 +141,26 @@ class Live:
         return self
 
     def close(self):
-        """收尾：停线程、栈掉 Service。插件卸载时自动调。"""
+        """收尾：停线程、栈掉 Service。插件卸载时自动调。
+
+        必须 join：卸载流程紧接着就会解除共享内存映射（``registry.on_unload``
+        最后那段），线程若还活着，下一轮 ``host.beat()`` 就会读到已释放的内存 ——
+        那是进程级 AV，没有 traceback，整个启动器直接消失。
+        """
         self._stop.set()
+        host = self._host
+        if host is not None:
+            try:
+                # 先关映射视图：线程里正在跑的 read/beat 会立刻拿到默认值返回，
+                # 而不是继续等命令通道超时（一次 scene() 有十几个字段，等超时要十几秒）。
+                host.close()
+            except Exception:  # noqa: BLE001
+                pass
+        thread = self._thread
+        if (thread is not None and thread.is_alive()
+                and thread is not threading.current_thread()):
+            thread.join(timeout=5.0)
+        self._thread = None
         if self._service is not None:
             try:
                 self._service.stop()

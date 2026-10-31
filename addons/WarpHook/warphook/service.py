@@ -619,20 +619,30 @@ class Service:
         return self
 
     def stop(self):
-        """停后台流程，顺便收掉本插件的抽卡循环与映射视图。"""
+        """停后台流程，顺便收掉本插件的抽卡循环与映射视图。
+
+        线程必须 join 掉再关映射：``_worker`` 每轮都会读共享内存，而卸载流程紧接着
+        就会解除映射，读到已释放的地址是进程级 AV（没有 traceback）。
+        """
         try:
             self._stop.set()
         except Exception:  # noqa: BLE001
             pass
+        if self._host is not None:
+            try:
+                # 先关视图，线程里的 read/beat 会立刻返回默认值而不是等超时
+                self._host.close()
+            except Exception:  # noqa: BLE001
+                pass
+        thread = getattr(self, "_thread", None)
+        if (thread is not None and thread.is_alive()
+                and thread is not threading.current_thread()):
+            thread.join(timeout=5.0)
+        self._thread = None
         try:
             gacha.stop(self.addon_name)
         except Exception:  # noqa: BLE001
             pass
-        if self._host is not None:
-            try:
-                self._host.close()
-            except Exception:  # noqa: BLE001
-                pass
         self._closed = True
         _service_registry().pop(self.addon_name, None)
         return True

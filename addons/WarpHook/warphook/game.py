@@ -48,7 +48,12 @@ class GachaWatcher:
         self.owner = owner
 
     def stop(self):
+        """停这个循环，并等它真的退出（卸载紧接着就要解除共享内存映射）。"""
         self.stop_event.set()
+        thread = self.thread
+        if (thread is not None and thread.is_alive()
+                and thread is not threading.current_thread()):
+            thread.join(timeout=2.0)
 
     @property
     def running(self):
