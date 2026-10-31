@@ -235,16 +235,16 @@ class Access:
 
     # ---- 基础 ----
     def manager(self, timeout=3.0, force=False):
-        """保证对象槽里有 manager 指针，返回它（失败 ``None``）。"""
+        """对象槽里的 manager 指针（没有就 ``None``）。
+
+        槽由回合钩子的 cache 落槽填充（事件动作），这里**绝不**兜底调
+        ``get_Instance``：它是 ``SingletonBehavior<T>`` 的泛型共享方法，
+        直调必 AV（0.9.25 定案），一次就把 worker 的 il2cpp 路径全污染。
+        """
         ptr = self.host.object_ptr(self.slot)
         if ptr and not force:
             return ptr
-        try:
-            self.host.call("BattleObjectManager::get_Instance",
-                           ret="ref", out_slot=self.slot, timeout=timeout)
-        except Exception:  # noqa: BLE001
-            return self.host.object_ptr(self.slot)
-        return self.host.object_ptr(self.slot)
+        return None
 
     def count(self):
         return count(self.host, self.slot)
