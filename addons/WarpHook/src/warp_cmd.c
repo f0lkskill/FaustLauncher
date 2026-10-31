@@ -9,6 +9,7 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <string.h>
+#include <setjmp.h>
 
 #include "warp_internal.h"
 
@@ -419,11 +420,15 @@ int warp_cmd_call(int argc, int slot, int retkind, int out_slot, const char *arg
             return WARP_CMD_RES_BAD_SLOT;
         slot = -1;
     }
-    /* cmd_text = "Ns.Klass::Method#kind..."；类名必有，this 可选（slot<0 = 静态调用）。 */
-    sep = strstr(g_hdr->cmd_text, "::");
+    /* text = "Ns.Klass::Method#kind..."；类名必有，this 可选（slot<0 = 静态调用）。
+     * v0.9.23 起文本由调用方传入（泵传 g_hdr->cmd_text，worker 传任务拷贝），
+     * 函数本身不再读共享 MAP —— worker 执行期间 py 覆盖 cmd_text 也不会撕裂。 */
+    if (!argkinds_text || !argkinds_text[0])
+        return WARP_CMD_RES_NO_METHOD;
+    sep = strstr(argkinds_text, "::");
     if (!sep)
         return WARP_CMD_RES_NO_METHOD;
-    warp_cmd_name_until(g_hdr->cmd_text, name, sizeof(name));
+    warp_cmd_name_until(argkinds_text, name, sizeof(name));
     warp_cmd_name_until(sep + 2, mname, sizeof(mname));
     klass = warp_find_class(g_domain, name);
     if (!klass)
@@ -468,13 +473,13 @@ int warp_cmd_call(int argc, int slot, int retkind, int out_slot, const char *arg
     return WARP_CMD_RES_OK;
 }
 
-int warp_cmd_str(int slot)
+int warp_cmd_str(int slot, const char *text)
 {
     void *str;
 
     if (slot < 0 || slot >= WARP_OBJECT_COUNT)
         return WARP_CMD_RES_BAD_SLOT;
-    str = g_ic.string_new(g_hdr->cmd_text);
+    str = g_ic.string_new(text ? text : "");
     if (!str)
         return WARP_CMD_RES_FAIL;
     warp_slot_put(slot, str, 1);
@@ -605,7 +610,7 @@ void warp_pump_ticks(void)
 
     结果按 ``\0`` 分隔写进 MAP 尾部的命令缓冲（WARP_CMD_BUF_* 那段，
     4×64=256 字节），py 侧用 read_buf(0) 取回。 */
-static int warp_cmd_list(void)
+static int warp_cmd_list(const char *text_src)
 {
     char text[WARP_CMD_TEXT_LEN];
     char name[64];
@@ -626,10 +631,12 @@ static int warp_cmd_list(void)
         !g_ic.method_get_param_count || !g_ic.method_get_param ||
         !g_ic.method_get_return_type || !g_ic.type_get_name)
         return WARP_CMD_RES_NO_METHOD;
+    if (!text_src || !text_src[0])
+        return WARP_CMD_RES_NO_METHOD;
 
     /* 先在本地副本上把 "|签名" 切掉，否则方法名会连签名一起被读出来。 */
-    lstrcpynA(text, g_hdr->cmd_text, sizeof(text));
-    warp_cmd_sig(g_hdr->cmd_text, sig, sizeof(sig));
+    lstrcpynA(text, text_src, sizeof(text));
+    warp_cmd_sig(text_src, sig, sizeof(sig));
     {
         char *bar = strchr(text, '|');
         if (bar)
@@ -689,6 +696,187 @@ static int warp_cmd_list(void)
     return count > 0 ? 0 : WARP_CMD_RES_NO_METHOD;
 }
 
+/* ------------------------------------------------------------------ */
+/* worker 线程：invoke 类命令的隔离舱（v0.9.23）                        */
+/*                                                                     */
+/* 六次崩溃的教训：CALL/LIST/MAKE/STR 这类要进 il2cpp 元数据与 runtime  */
+/* 的命令跑在游戏主线程（FixedUpdate 泵）上，一旦踩到坏指针就是整个进程  */
+/* 陪葬；在栈上挂 VEH+longjmp 救场又会弄脏 trampoline 链（0.9.12-0.9.14）。*/
+/* 旧插件 BattleBGMExtend 在自己的 worker 线程 attach 后 runtime_invoke  */
+/* 稳跑多年 —— 这次彻底照抄它的线程模型：invoke 类命令全部投递 worker，  */
+/* 主线程泵只负责投递；worker 上挂只认自己 TID 的 VEH，就算踩到 AV 也是  */
+/* longjmp 回 worker 循环顶记一次失败，进程不死。                        */
+/* ------------------------------------------------------------------ */
+
+typedef struct {
+    int  seq;                       /* 对应提交时的 hdr->cmd_seq */
+    int  type;                      /* 完整打包的命令字 */
+    int  out_slot;                  /* call 的 vars[7] */
+    char text[WARP_CMD_TEXT_LEN];   /* cmd_text 的任务私有拷贝 */
+} WARP_WORK;
+
+static HANDLE s_work_ev;
+static HANDLE s_work_thread;
+static DWORD  s_work_tid;
+static volatile LONG s_work_quit;
+static volatile LONG s_work_armed;      /* jmp_buf 是否有效（VEH 里判断） */
+static jmp_buf s_work_jmp;
+static void  *s_veh;
+static CRITICAL_SECTION s_work_cs;
+static WARP_WORK s_work;
+
+/* 只接 worker 自己线程的 AV。主线程任何异常都不经这里（CONTINUE_SEARCH），
+ * 不重演 0.9.12「任何线程的 AV 都被 longjmp 进别人的栈」的事故。 */
+static LONG WINAPI work_veh(EXCEPTION_POINTERS *ep)
+{
+    (void)ep;
+    if (s_work_armed && GetCurrentThreadId() == s_work_tid) {
+        s_work_armed = 0;
+        longjmp(s_work_jmp, 1);
+    }
+    return EXCEPTION_CONTINUE_SEARCH;
+}
+
+static DWORD WINAPI work_main(LPVOID arg)
+{
+    (void)arg;
+    /* 旧插件哲学：worker 线程先 attach 再碰 il2cpp，一次就够。 */
+    if (g_ic.thread_attach) {
+        void *dom = g_domain ? g_domain :
+                    (g_ic.domain_get ? g_ic.domain_get() : NULL);
+        if (dom)
+            g_ic.thread_attach(dom);
+    }
+    for (;;) {
+        DWORD w = WaitForSingleObject(s_work_ev, 1000);
+        if (s_work_quit)
+            break;
+        if (w != WAIT_OBJECT_0)
+            continue;
+        {
+            WARP_WORK job;
+            volatile int jseq;          /* longjmp 后寄存器变量不可靠 */
+            int rc = WARP_CMD_RES_FAIL;
+
+            EnterCriticalSection(&s_work_cs);
+            job = s_work;
+            LeaveCriticalSection(&s_work_cs);
+            jseq = job.seq;
+
+            if (setjmp(s_work_jmp) == 0) {
+                /* armed 必须在 setjmp 正常返回之后再置位：否则 AV 落在
+                   setjmp 前的窗口里，VEH 会 longjmp 进未初始化的 jmp_buf。 */
+                s_work_armed = 1;
+                switch (WARP_CMD_CODE(job.type)) {
+                case WARP_CMD_MAKE:
+                    rc = warp_cmd_make(WARP_CMD_ARGC(job.type),
+                                       WARP_CMD_SLOT(job.type), job.text);
+                    if (rc == 0 && g_hdr)
+                        g_hdr->fired++;
+                    break;
+                case WARP_CMD_CALL:
+                    rc = warp_cmd_call(WARP_CMD_ARGC(job.type),
+                                       WARP_CMD_SLOT(job.type),
+                                       WARP_CMD_RETKIND(job.type), job.out_slot,
+                                       job.text);
+                    if (rc == 0 && g_hdr)
+                        g_hdr->fired++;
+                    break;
+                case WARP_CMD_STR:
+                    rc = warp_cmd_str(WARP_CMD_SLOT(job.type), job.text);
+                    if (rc == 0 && g_hdr)
+                        g_hdr->fired++;
+                    break;
+                case WARP_CMD_LIST:
+                    rc = warp_cmd_list(job.text);
+                    break;
+                default:
+                    rc = WARP_CMD_RES_UNKNOWN;
+                    break;
+                }
+            } else {
+                /* VEH 接住 AV 跳回这里：命令记失败，线程活着继续下一单。 */
+                warp_log("worker: exception recovered", 0);
+                rc = WARP_CMD_RES_FAIL;
+            }
+            s_work_armed = 0;
+
+            if (g_hdr) {
+                g_hdr->cmd_result = rc;
+                g_hdr->cmd_ack = jseq;
+            }
+        }
+    }
+    return 0;
+}
+
+void warp_work_start(void)
+{
+    if (s_work_thread)
+        return;
+    InitializeCriticalSection(&s_work_cs);
+    s_work_quit = 0;
+    s_work_armed = 0;
+    s_work_ev = CreateEventW(NULL, FALSE, FALSE, NULL);
+    s_veh = AddVectoredExceptionHandler(1, work_veh);
+    s_work_thread = CreateThread(NULL, 0, work_main, NULL, 0, &s_work_tid);
+    if (!s_work_thread) {
+        warp_log("worker: create failed", 0);
+        if (s_veh) {
+            RemoveVectoredExceptionHandler(s_veh);
+            s_veh = NULL;
+        }
+        if (s_work_ev) {
+            CloseHandle(s_work_ev);
+            s_work_ev = NULL;
+        }
+        DeleteCriticalSection(&s_work_cs);
+        return;
+    }
+    warp_log("worker started", 0);
+}
+
+void warp_work_stop(void)
+{
+    if (s_work_thread) {
+        s_work_quit = 1;
+        SetEvent(s_work_ev);
+        if (WaitForSingleObject(s_work_thread, 3000) != WAIT_OBJECT_0)
+            warp_log("worker: stop timeout", 0);
+        CloseHandle(s_work_thread);
+        s_work_thread = NULL;
+    }
+    if (s_veh) {
+        RemoveVectoredExceptionHandler(s_veh);
+        s_veh = NULL;
+    }
+    s_work_armed = 0;
+    if (s_work_ev) {
+        CloseHandle(s_work_ev);
+        s_work_ev = NULL;
+    }
+    DeleteCriticalSection(&s_work_cs);
+}
+
+/* 泵投递一个任务。返回 0=已受理（结果稍后由 worker 写回），非 0=没跑成。 */
+static int work_submit(int seq, int type, int out_slot)
+{
+    WARP_WORK job;
+
+    if (!s_work_thread || s_work_quit || !s_work_ev || !g_hdr)
+        return -1;
+    ZeroMemory(&job, sizeof(job));
+    job.seq = seq;
+    job.type = type;
+    job.out_slot = out_slot;
+    lstrcpynA(job.text, g_hdr->cmd_text, WARP_CMD_TEXT_LEN);
+    EnterCriticalSection(&s_work_cs);
+    s_work = job;
+    LeaveCriticalSection(&s_work_cs);
+    SetEvent(s_work_ev);
+    return 0;
+}
+
 void warp_pump_commands(void)
 {
     int seq;
@@ -720,24 +908,19 @@ void warp_pump_commands(void)
         rc = warp_kill_game();
         break;
     case WARP_CMD_MAKE:
-        rc = warp_cmd_make(WARP_CMD_ARGC(type), WARP_CMD_SLOT(type), g_hdr->cmd_text);
-        if (rc == 0 && g_hdr)
-            g_hdr->fired++;
-        break;
     case WARP_CMD_CALL:
-        rc = warp_cmd_call(WARP_CMD_ARGC(type), WARP_CMD_SLOT(type),
-                           WARP_CMD_RETKIND(type), (int)g_hdr->vars[7],
-                           g_hdr->cmd_text);
-        if (rc == 0 && g_hdr)
-            g_hdr->fired++;
-        break;
     case WARP_CMD_STR:
-        rc = warp_cmd_str(WARP_CMD_SLOT(type));
-        if (rc == 0 && g_hdr)
-            g_hdr->fired++;
-        break;
     case WARP_CMD_LIST:
-        rc = warp_cmd_list();
+        /* v0.9.23：这四类要进 il2cpp runtime/元数据的命令全部投递 worker
+         * 隔离舱，主线程泵不再亲自执行（六次崩溃都在这条路径上）。先标
+         * BUSY，结果与 ack 由 worker 写回；worker 没起来就记 FAIL，绝不
+         * 回退主线程执行。 */
+        g_hdr->cmd_result = WARP_CMD_RES_BUSY;
+        if (work_submit(seq, type, (int)g_hdr->vars[7]) != 0) {
+            g_hdr->cmd_result = WARP_CMD_RES_FAIL;
+            warp_log("worker unavailable, cmd dropped", 0);
+        }
+        rc = -1;                        /* 告诉尾部：结果已有人写，别覆盖 */
         break;
     case WARP_CMD_RELEASE:
         rc = warp_cmd_release(WARP_CMD_SLOT(type));
@@ -751,7 +934,7 @@ void warp_pump_commands(void)
         break;
     }
 
-    if (g_hdr)
+    if (g_hdr && rc != -1)
         g_hdr->cmd_result = rc;
 }
 
@@ -949,6 +1132,10 @@ int warp_install_hooks(void)
     } else if (total > 0) {
         warp_status(WARP_ST_ERROR, WARP_ERR_NO_TARGET);
     }
+
+    /* worker 隔离舱随钩子装配一起就位：domain 已就绪（上面 find_class 用过），
+       invoke 类命令从此有了安全的落脚点。 */
+    warp_work_start();
     return installed;
 }
 
@@ -1018,6 +1205,9 @@ int warp_retry_hooks(void)
 void warp_uninstall(void)
 {
     int i;
+    /* 先停 worker：它可能正在 invoke，带着 trampoline 外的栈等它退出，
+     * 之后才能安全拆 MinHook 与 VEH。 */
+    warp_work_stop();
     for (i = 0; i < WARP_MAX_HOOKS; i++) {
         if (!g_slots[i].installed)
             continue;
