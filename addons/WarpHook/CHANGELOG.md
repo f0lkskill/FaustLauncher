@@ -1,3 +1,17 @@
+## 0.9.21 — LIST 标注签名匹配 + 沿基类链列方法
+
+- `LIST` 命令支持 `"类名::方法名|签名串"`：除列出每个重载，还在**会被 `call(sig=...)`
+  选中的那一个**后面标 ` [match]`。纯元数据遍历，不 invoke —— 用它就能在不动游戏
+  的前提下回答「这个签名到底挑到了哪个重载」。
+- `warp_cmd_list` 沿 `il2cpp_class_get_parent` 往上走最多 8 层：原来只列本类声明的
+  方法，`SoundManager::get_Instance` 这类继承来的 getter 永远列不出来（`call` 能调到
+  是因为 `class_get_method_from_name` 会查基类，两条路径的行为本来就不一致）。
+- `il2cpp_class_get_parent` 早在 15 项导出时代就有（index 12），本次只是把 LIST 用上，
+  导出表没有变动。
+- 顺带记一条实测结论：**本机版本 `SoundManager` 没有 `IsLoadedBank(string)`**，
+  只有 `IsLoadedBank(UnityEngine.AddressableAssets.AssetReference)`。所以「先查音库
+  是否已加载」这个思路在本版本走不通，别再用它。
+
 ## 0.9.20 — 新增 LIST 诊断命令：只读方法签名，不再拿游戏试错
 
 `IsLoadedBank` 经 `runtime_invoke` 必崩，而它有两个 1 参重载（`AssetReference` /

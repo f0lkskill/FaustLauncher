@@ -4,7 +4,7 @@
   "authors": {
     "FolkSkill": "https://space.bilibili.com/599331034"
   },
-  "version": "0.9.20",
+  "version": "0.9.21",
   "permanent": true,
   "provides": [
     "warp"
