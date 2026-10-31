@@ -1415,6 +1415,19 @@ class Host:
         return self.status()
 
     # ---- 主动命令：一行调用就让游戏做事 ---------------------------------
+    def set_var(self, index, value):
+        """写共享内存 ``vars[index]`` —— guard 钩子的开关就用这个。
+
+        guard 钩子（``hook(..., guard=(槽号, 值))``）在宿主侧比对这个槽：
+        相等就放行原调用，不等才执行 block/rewrite。于是「锁的开/关」只是
+        一次内存写入，不用每回合重推钩子表。
+        """
+        block = self.block()
+        if block is None:
+            return False
+        block.cfg.vars[int(index)] = int(value)
+        return True
+
     def object_ptr(self, slot):
         """读对象槽里缓存的指针（钩子配了 ``cache=(arg, slot)`` 才会有值）。
 

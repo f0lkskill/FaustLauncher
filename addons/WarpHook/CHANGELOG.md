@@ -1,3 +1,16 @@
+## 0.9.27 — 换曲锁：guard 钩子拦住「回合结束盖回默认曲」
+
+- BGM 打通后（0.9.26 静态链）游戏每回合结束把曲子盖回默认 —— 照旧插件
+  `block_game` 的哲学补上锁：`StartBGM` / `StartAddBGM` / `StopBGM` /
+  `TryStartBattleBgmByName` / `TryResumeBattleBgm` 五个入口 `block=True`
+  挂钩，锁着时游戏想换/想停一律丢弃，FMOD 实例不中断、不重播。
+- **guard 放行机制**：钩子带 `guard=(vars[4], 1)` —— 槽等于 1 时彻底放行。
+  于是「解锁 → 放曲 → 上锁」只是插件先写 `vars[4]=1` 再直调、放完写回 0，
+  锁开关是一次共享内存写入，不用每回合重推钩子表，也绕开了旧插件
+  `own_call()` 那套「自己的调用要放行」的复杂度。
+- py 侧：`Host.set_var(index, value)`、`audio.install_guard_hooks()` /
+  `audio.lock()`、门面 `game.bgm_lock_install()` / `game.bgm_lock(allow)`。
+
 ## 0.9.26 — CALL 双通道：`~i` 标志走 runtime_invoke（泛型共享方法专用）
 
 - **真机定案**（0.9.25 日志版探针 `test/_v925_probe.py`）：`SingletonBehavior<T>::get_Instance`
