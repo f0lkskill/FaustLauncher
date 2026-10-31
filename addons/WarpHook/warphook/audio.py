@@ -111,9 +111,18 @@ def play(host, name, bank=None, stop_current=True, timeout=2.0,
     if not short:
         return {'ok': False, 'name': '', 'path': '', 'reason': '名字是空的'}
 
-    if require_battle and not in_battle(host):
-        return {'ok': False, 'name': short, 'path': path,
-                'reason': '不在战斗场景'}
+    if require_battle:
+        # 场景读数链不可靠（经常 None）。这里只拦「明确不在战斗」：
+        # 读得到且 scene != 1 才拒绝；读不到时放行 —— 回合钩子命中本身
+        # 就说明在战斗里，别让两道门打架（外层已按命中继续，内层又拒）。
+        try:
+            info = objects.scene(host)
+        except Exception:
+            info = None
+        scene = (info or {}).get('scene')
+        if scene is not None and scene != 1:
+            return {'ok': False, 'name': short, 'path': path,
+                    'reason': f'不在战斗场景（scene={scene}）'}
 
     slot = SLOT_SCRATCH
     made = host.make_str(short, slot=slot, timeout=timeout)
