@@ -78,7 +78,12 @@ def short_name(name):
 
 
 def _ok(result):
-    return not isinstance(result, str)
+    """``host.call`` 的成功判定：ret='void' 的成功返回值就是「已执行」字符串
+    （v0.9.27 真机教训：``not isinstance(str)`` 把成功误判成失败，插件于是
+    不上锁 —— 游戏盖回默认曲时和我们的曲撞车，游戏崩溃）。"""
+    if not isinstance(result, str):
+        return True
+    return result == '已执行'
 
 
 def play(host, name, bank=None, stop_current=True, timeout=2.0,
