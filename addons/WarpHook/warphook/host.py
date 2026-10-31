@@ -71,6 +71,7 @@ CMD_RET_INT32 = 0   # box 返回，真值在 +0x10，位模式写回 vars[6]
 CMD_RET_FLOAT = 1   # box 返回 float，位模式写回 vars[6]
 CMD_RET_REF = 2     # 引用返回，落 vars[7] 指定的槽（挂 GC 句柄）
 CMD_RET_NAMES = {"int32": CMD_RET_INT32, "int": CMD_RET_INT32,
+                 "void": CMD_RET_INT32,
                  "float": CMD_RET_FLOAT, "ref": CMD_RET_REF,
                  "ptr": CMD_RET_REF}
 
@@ -1753,8 +1754,10 @@ class Host:
         if len(packed) > 6:
             return "参数太多（vars 最多 6 个）"
         retkind = CMD_RET_NAMES.get(str(ret).lower())
+        if retkind is None and str(ret).lower() == "bool":
+            retkind = CMD_RET_NAMES["int32"]   # bool 走 int32 通道，读法在返回时区分
         if retkind is None:
-            return f"未知返回值形状 {ret!r}（int32/float/ref）"
+            return f"未知返回值形状 {ret!r}（int32/float/ref/bool）"
         if slot is not None and not 0 <= int(slot) < HOST_OBJECT_COUNT:
             return f"对象槽 {slot} 超出 0..{HOST_OBJECT_COUNT - 1}"
         if retkind == CMD_RET_REF and not 0 <= int(out_slot) < HOST_OBJECT_COUNT:
@@ -1777,10 +1780,15 @@ class Host:
             return result
         if retkind == CMD_RET_REF:
             return out_slot
+        if str(ret).lower() == "void":
+            return "已执行"      # void 调用：不读返回值槽
         block = self.block()
         if block is None:
             return "宿主未注入"
         bits = int(block.cfg.vars[6]) & 0xFFFFFFFF
+        if str(ret).lower() == "bool":
+            # v0.9.26：il2cpp 的 bool 返回只写 al，rax 高位是垃圾 —— 按 &0xFF 解
+            return bits & 0xFF
         if retkind == CMD_RET_FLOAT:
             return struct.unpack("<f", struct.pack("<I", bits))[0]
         return bits - (1 << 32) if bits >= (1 << 31) else bits

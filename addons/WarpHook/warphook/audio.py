@@ -1,23 +1,27 @@
-"""播放战斗 BGM（0.9.10，0.9.13 按旧插件流程补全）。
+"""播放战斗 BGM（0.9.26 重写：全静态两步链）。
 
-游戏用 FMOD/Wwise，战斗曲归 ``BattleSoundGenerator`` 管。旧插件
-BattleBGMExtend 为了「锁住」自己放的曲子，钩了三十多个音频方法互相
-放行；我们不需要那套互斥 —— 但**它换曲那三步一步都不能少**
-（``battlebgmextend.c`` 的 ``switch_rule``）：
+0.9.16~0.9.25 的旧链（``get_Instance → ensure_bank → TryCreateInstance``
+预检 → ``StopBGM``×2 → ``StartAddBGM``）每一步都依赖 ``SoundManager``
+单例，而 0.9.25 日志版探针定案：单例这条路在本机走不通 ——
+``get_Instance`` 直调死于泛型 RGCTX、invoke 一次成功一次 AV、
+``static_get`` 的 ``field_static_get_value`` 也 AV。
 
-    sound = SoundManager.get_Instance()
-    StopBGM(false, false)              # 停掉当前战斗曲
-    sound.StopBGM(false)               # 再清一次 SoundManager 侧的状态
-    StartAddBGM(短名, STOP_MODE=1, false)   # 放新曲（1 = 立刻停旧的）
+0.9.26 真机验证的新链（全部 ``BattleSoundGenerator`` 静态方法直调，
+两发命中，用户耳朵确认）::
 
-0.9.10 漏了中间那步 ``SoundManager.StopBGM``，``StartAddBGM`` 内部碰到的
-FMOD 实例状态不干净 —— 真机上是直接访问违例把游戏带走。
+    BattleSoundGenerator::StopBGM(false, false)       # 停当前战斗曲
+    BattleSoundGenerator::StartAddBGM(短名, 1, false)  # 放新曲
 
-``StartAddBGM`` 收的是**短名**（``Battle_Cp9_Boss_10``），不是完整的
-``event:/BGM/Battle/Battle_Cp9_Boss_10`` —— 前缀游戏自己补。
+- ``StartAddBGM`` 收**短名**（``Battle_Cp10_Boss_10``），前缀游戏自己补；
+  名字里的 ``Add`` 是**叠加语义**（在原曲上叠一层，不是替换）—— 所以
+  替换曲子必须先 ``StopBGM``，否则两首一起响（0.9.26 真机实测）。
+- 音库（bank）没法手动预载：``LoadBankFromLocal`` 是实例方法。实战里
+  当前战斗的音库游戏自己已加载（实测 ``Battle_Cp10_Boss_10`` 直放成功）；
+  没加载的音库 ``StartAddBGM`` 会静默失败 —— 用 :func:`is_playing`
+  复查兜底，失败自动 ``StartBGM(-1, 0)`` 接回默认曲（旧插件哲学：
+  绝不留静音）。
 
-全部走 ``Host.make_str`` + ``Host.call``，不需要改 C 代码，也不需要
-自己解析 il2cpp 导出名。
+全部走 ``Host.make_str`` + ``Host.call``，不需要改 C 代码。
 """
 
 import ctypes
@@ -29,14 +33,16 @@ from .base import log
 
 BGM_PREFIX = 'event:/BGM/Battle/'
 
-# FMOD.Studio.STOP_MODE：0=ALLOWFADEOUT 1=IMMEDIATE 2=ALLOWFADEOUT+...
+# FMOD.Studio.STOP_MODE：0=ALLOWFADEOUT 1=IMMEDIATE
 STOP_MODE_IMMEDIATE = 1
 STOP_MODE_FADE = 0
 
 # 对象槽 27 是辅助段的临时槽，用完就还（28/29 被门面占着，30/31 是每帧回调）
 SLOT_SCRATCH = 27
-# 26 留着放 SoundManager 实例（get_Instance 的 ref 出参）
+# 26 曾留着放 SoundManager 实例 —— 0.9.26 起单例通道不可用，槽保留但不再使用
 SLOT_SOUND = 26
+# 24：临时放音库路径字符串（ensure_bank 弃用后仅作占位）
+SLOT_BANK_NAME = 24
 
 
 def in_battle(host, slot=None):
@@ -75,71 +81,25 @@ def _ok(result):
     return not isinstance(result, str)
 
 
-def try_create(host, name, timeout=2.0):
-    """照旧插件的预检：让游戏自己造一个事件实例，造得出来才说明名字有效。
-
-    旧插件的 ``switch_rule`` 在停原曲**之前**先调
-    ``SoundManager.TryCreateInstance(path, out instance)``；失败就报
-    「Cannot create BGM: %s; original music retained.」直接返回。少了这一步，
-    名字拼错时我们会先把原曲停掉、``StartAddBGM`` 再静默失败，玩家就只剩静音
-    （0.9.16 真机踩过一晚上）。
-
-    第二个参数是 ``FMOD.Studio.EventInstance&``（值类型 out），走 v9 的
-    ``('buf', 0)`` 参数：共享内存里那 64 字节交给游戏写，写完我们读回来。
-
-    Returns:
-        ``{'ok', 'result', 'handle', 'raw'}`` —— ``handle`` 是造出来的
-        EventInstance 内部句柄（0 表示没造出来）。
-    """
-    import struct
-
-    path = full_path(name)
-    if not path:
-        return {'ok': False, 'result': '名字是空的', 'handle': 0, 'raw': None}
-    if not host.object_ptr(SLOT_SOUND):
-        host.call('SoundManager::get_Instance', ret='ref',
-                  out_slot=SLOT_SOUND, timeout=timeout)
-    if not host.object_ptr(SLOT_SOUND):
-        return {'ok': False, 'result': '拿不到 SoundManager',
-                'handle': 0, 'raw': None}
-
-    host.clear_buf(0)
-    made = host.make_str(path, slot=SLOT_BANK_NAME, timeout=timeout)
-    if isinstance(made, str) and made != '已执行':
-        return {'ok': False, 'result': made, 'handle': 0, 'raw': None}
-    try:
-        result = host.call('SoundManager::TryCreateInstance', slot=SLOT_SOUND,
-                           args=(('slot', SLOT_BANK_NAME), ('buf', 0)),
-                           timeout=timeout)
-    finally:
-        host.release(SLOT_BANK_NAME)
-    raw = host.read_buf(0)
-    handle = 0
-    if raw and len(raw) >= 8:
-        handle = struct.unpack('<Q', raw[:8])[0]
-    log(f'TryCreateInstance({path}) -> {result} handle=0x{handle:x}')
-    return {'ok': handle != 0, 'result': result, 'handle': handle, 'raw': raw}
-
-
 def play(host, name, bank=None, stop_current=True, timeout=2.0,
-         require_battle=True, check=True):
+         require_battle=True, check=False):
     """放一首战斗 BGM。返回 ``{'ok', 'name', 'path', 'reason'}``。
 
-    顺序照旧插件 ``switch_rule``，但**先把音库准备好，再动原曲** —— 音库
-    没加载时 ``StartAddBGM`` 会静默失败，如果此时已经把原曲停掉，玩家就
-    只剩静音（0.9.16 真机踩过）。
+    v0.9.26 全静态两步链：``StopBGM(false,false)`` → ``StartAddBGM(短名,1,false)``，
+    全部 ``BattleSoundGenerator`` 静态方法直调 —— 零单例、零泛型、零 invoke。
 
     Args:
         host: ``Host`` 实例（``Service.host()`` / ``game.live().host()``）。
         name: 短名（``Battle_Cp9_Boss_10``）或完整路径。
-        bank: 曲目所在音库名（``BGM_Default_S7_3``，不含 ``.bank``）。
-            给了就先调 ``LoadBankFromLocal`` 把它加进来 —— 别的关卡的曲
-            不在当前已加载的音库里，这一步不能省。
-        stop_current: 先停掉当前战斗曲，默认 True。
+        bank: **已忽略**。v0.9.26 起无法手动预载音库（``LoadBankFromLocal``
+            是实例方法，单例通道不可用）；当前战斗的音库游戏自己已加载，
+            没加载的音库会走下方「失败兜底」自动接回默认曲。
+        stop_current: 先停掉当前战斗曲，默认 True —— ``StartAddBGM`` 是
+            叠加语义，不停就是两首一起响。
         require_battle: 先确认在战斗里再放，默认 True —— 非战斗场景下
-            战斗曲的 FMOD 通道没初始化，这一步不能省。
-
-    只读的 :func:`is_playing` / :func:`current_index` 也走同一条命令通道。
+            战斗曲的 FMOD 通道没初始化（0.9.11 崩溃教训）。
+        check: **已弃用**（原 TryCreateInstance 预检依赖单例）。现在的
+            等价物是播放后的 :func:`is_playing` 复查 + 自动回退。
     """
     short = short_name(name)
     path = full_path(name)
@@ -151,47 +111,45 @@ def play(host, name, bank=None, stop_current=True, timeout=2.0,
                 'reason': '不在战斗场景'}
 
     slot = SLOT_SCRATCH
-    # 旧插件顺序：先拿 SoundManager 实例 → 准备音库 → 停旧曲（两个 StopBGM
-    # 都要调）→ StartAddBGM。少一步 SoundManager.StopBGM 就是 0.9.10 的崩溃。
-    sound = host.call('SoundManager::get_Instance', ret='ref',
-                      out_slot=SLOT_SOUND, timeout=timeout)
-    has_sound = bool(host.object_ptr(SLOT_SOUND))
+    made = host.make_str(short, slot=slot, timeout=timeout)
+    if isinstance(made, str) and made != '已执行':
+        return {'ok': False, 'name': short, 'path': path, 'reason': made}
 
     try:
-        if bank:
-            loaded = ensure_bank(host, bank, timeout=max(timeout, 5.0))
-            if not loaded.get('ok'):
-                return {'ok': False, 'name': short, 'path': path,
-                        'reason': loaded.get('reason') or '音库加载失败'}
-
-        # 旧插件的预检：先让游戏造一个事件实例试试名字，造不出来就别停原曲。
-        # 少了这一步，名字拼错 = 停掉原曲 + StartAddBGM 静默失败 = 只剩静音。
-        if check:
-            probe = try_create(host, short, timeout=timeout)
-            if not probe.get('ok'):
-                return {'ok': False, 'name': short, 'path': path,
-                        'reason': f"事件名无效（TryCreateInstance: "
-                                  f"{probe.get('result')}）"}
-
-        made = host.make_str(short, slot=slot, timeout=timeout)
-        if isinstance(made, str) and made != '已执行':
-            return {'ok': False, 'name': short, 'path': path, 'reason': made}
-
         if stop_current:
             host.call('BattleSoundGenerator::StopBGM', args=(0, 0),
-                      timeout=timeout)
-            if has_sound:
-                host.call('SoundManager::StopBGM', slot=SLOT_SOUND,
-                          args=(0,), timeout=timeout)
+                      sig='B,B', ret='void', timeout=timeout)
         result = host.call('BattleSoundGenerator::StartAddBGM',
                            args=(('slot', slot), STOP_MODE_IMMEDIATE, 0),
+                           sig='S,FMOD.Studio.STOP_MODE,B', ret='void',
                            timeout=timeout)
     finally:
         host.release(slot)
 
     if not _ok(result):
         return {'ok': False, 'name': short, 'path': path, 'reason': result}
+    # **不放 is_playing 复查** —— 第 7 次崩溃（0.9.26）的根因就是它：
+    # 回合结束间隙游戏正在重建 FMOD 实例，IsBattleBgmPlaying 直调撞进
+    # 竞态窗口内部 AV，VEH 接住线程但 il2cpp 状态已污染，游戏随后崩。
+    # 旧插件的姿势：放完就走，从不回头问游戏「响了吗」；静音兜底交给
+    # 插件层 —— 规则还命中就下个回合重放。
     return {'ok': True, 'name': short, 'path': path, 'reason': ''}
+
+
+def _restore_default(host, timeout=2.0):
+    """接回游戏默认战斗曲（``StartBGM(-1, 0)``：index=-1 = 按关卡自挑）。
+
+    旧插件 ``switch_rule`` 失败回退用的同一个静态方法。**竞态警告**：
+    同样是直调，回合间隙有 AV 风险 —— 只给 stop(restore=True) 和用户
+    主动操作用，不要塞进自动循环。
+    Returns:
+        成功 ``'已接回默认曲'``；失败带原因。
+    """
+    result = host.call('BattleSoundGenerator::StartBGM', args=(-1, 0),
+                       sig='I,I', ret='void', timeout=timeout)
+    if isinstance(result, str) and result != '已执行':
+        return f'回退默认曲失败：{result}'
+    return '已接回默认曲'
 
 
 def game_dir():
@@ -217,70 +175,62 @@ def game_dir():
 
 
 def ensure_bank(host, bank, timeout=5.0):
-    """查音库是否已加载；**不再主动加载**。
+    """**v0.9.26 起不可用** —— 依赖 ``SoundManager`` 单例（通道已毒）。
 
-    v10 起 ``SoundManager.IsLoadedBank`` 能用类型签名（``sig='S'``）精确
-    挑中 ``IsLoadedBank(string)`` 这个重载 —— 之前按「名字 + 参数个数」找
-    会挑到 ``IsLoadedBank(AssetReference)``，把字符串当对象指针传进去，
-    崩在游戏内部（0.9.16 三连崩的起因）。
-
-    ``LoadBankFromLocal`` 仍**不调用**：0.9.16 实测对已加载的 bank 再加载
-    一次就崩（连 ``Master.strings.bank`` 都崩）。所以这里只查状态，
-    音库没加载就返回 ``ok=False``，让调用方决定怎么办。
+    单例三条路全断：``get_Instance`` 直调死于泛型 RGCTX（0.9.25 探针）、
+    invoke 时灵时不灵、``static_get`` 的 ``field_static_get_value`` AV。
+    ``LoadBankFromLocal``/``IsLoadedBank`` 都是实例方法，拿不到单例就没法查、
+    没法载。实战不需要它：当前战斗的音库游戏自己会加载。
     """
-    root = game_dir()
-    if not root:
-        return {'ok': False, 'reason': '找不到游戏进程'}
-    if not host.object_ptr(SLOT_SOUND):
-        got = host.call('SoundManager::get_Instance', ret='ref',
-                        out_slot=SLOT_SOUND, timeout=timeout)
-        if not host.object_ptr(SLOT_SOUND):
-            return {'ok': False, 'reason': f'拿不到 SoundManager（{got}）'}
-    made = host.make_str(bank, slot=SLOT_BANK_NAME, timeout=timeout)
-    if isinstance(made, str) and made != '已执行':
-        return {'ok': False, 'reason': made}
-    result = host.call('SoundManager::IsLoadedBank', slot=SLOT_SOUND,
-                       args=(('slot', SLOT_BANK_NAME),), sig='S',
-                       timeout=timeout)
-    if isinstance(result, str):
-        return {'ok': False, 'reason': f'IsLoadedBank: {result}'}
-    if result:
-        return {'ok': True, 'reason': '', 'loaded': True}
-    return {'ok': False, 'loaded': False,
-            'reason': f'音库 {bank} 还没被游戏加载（自动加载已停用）'}
+    return {'ok': False,
+            'reason': 'v0.9.26 起 SoundManager 单例通道不可用，无法查询/预载音库；'
+                      '当前战斗的音库游戏自己会加载，直接 play() 即可'}
 
 
 def stop(host, restore=True, timeout=2.0):
-    """停掉附加曲；``restore=True`` 时把游戏自己的战斗曲接回来。"""
-    result = host.call('BattleSoundGenerator::StopAddedBGM',
-                       args=(STOP_MODE_IMMEDIATE, 0), timeout=timeout)
+    """停掉战斗 BGM；``restore=True`` 时把游戏默认曲接回来。
+
+    v0.9.26：改用 ``StopBGM(false,false)``（静态，真机验证）—— 原来的
+    ``StopAddedBGM`` 只停附加曲层，原曲还在响，替换插件语义要的是「全停」。
+    """
+    result = host.call('BattleSoundGenerator::StopBGM', args=(0, 0),
+                       sig='B,B', ret='void', timeout=timeout)
     if isinstance(result, str) and result != '已执行':
         return {'ok': False, 'reason': result}
     if restore:
-        # StartBGM(-1, 0)：index=-1 = 让游戏按当前关卡自己挑
-        host.call('BattleSoundGenerator::StartBGM', args=(-1, 0),
-                  timeout=timeout)
+        reason = _restore_default(host, timeout)
+        return {'ok': True, 'reason': reason}
     return {'ok': True, 'reason': ''}
 
 
 def current_index(host, timeout=2.0):
-    """当前战斗曲的索引（游戏自己的编号，``-1`` 表示没在放）。"""
+    """当前战斗曲的索引（游戏自己的编号，``-1`` 表示没在放）。
+
+    **竞态警告**：直调游戏方法在回合结束/换曲间隙会撞 FMOD 实例重建窗口
+    （0.9.26 第 7 次崩溃根因）。只给菜单「查看状态」这类**手动低频**场景用，
+    不要放进自动循环。
+    """
     result = host.call('BattleSoundGenerator::get_CurrentBgmIndex',
-                       timeout=timeout)
+                       ret='int32', timeout=timeout)
     return result if _ok(result) else None
 
 
 def is_playing(host, timeout=2.0):
-    """游戏认为战斗曲在响吗（``IsBattleBgmPlaying``）。"""
+    """游戏认为战斗曲在响吗（``IsBattleBgmPlaying``）。
+
+    **竞态警告**：同 :func:`current_index` —— 回合间隙直调会 AV（0.9.26
+    实测连 VEH 都接不干净，游戏最终崩溃）。只给菜单手动查询用，**禁止**
+    放进 play() 的自动复查或插件的每回合循环。
+    """
     result = host.call('BattleSoundGenerator::IsBattleBgmPlaying',
-                       timeout=timeout)
+                       ret='bool', timeout=timeout)
     return bool(result) if _ok(result) else False
 
 
 def pause(host, value=True, timeout=2.0):
     """暂停 / 继续战斗曲。"""
     result = host.call('BattleSoundGenerator::PauseBGM',
-                       args=(1 if value else 0,), timeout=timeout)
+                       args=(1 if value else 0,), ret='void', timeout=timeout)
     return {'ok': _ok(result), 'reason': '' if _ok(result) else result}
 
 
@@ -289,8 +239,6 @@ def pause(host, value=True, timeout=2.0):
 # 只改它要传的曲名 —— 命中时把参数换成对象槽里的字符串，原函数照常执行。
 # 好处是整条播放流程都由游戏自己走，插件一次 invoke 都不用发。
 SLOT_BATTLE_BGM = 25
-# 24：临时放音库路径字符串（比 SLOT_BATTLE_BGM 早定义，play() 里也用）
-SLOT_BANK_NAME = 24
 
 
 def hook_battle_bgm(host, name, klass='BattleSoundGenerator',
@@ -303,7 +251,9 @@ def hook_battle_bgm(host, name, klass='BattleSoundGenerator',
     插件一次 invoke 都不用发。曲名走 ``make_str`` 放在对象槽 25 里。
 
     ``method='TryStartBattleBgmByName'`` 可以换成游戏按名字起曲的高层入口
-    （``argc=1``），两者二选一。
+    （``argc=1``）。注意 0.9.26 真机实测 ``TryStartBattleBgmByName`` 直调
+    恒返回 false（内部有场景条件），但**钩它改参数**是另一回事 —— 它的
+    bool 返回和场景条件不影响参数改写路径。
 
     **必须在它被调用之前装好** —— 钩子表变化要 ``push()`` 才生效。
     """
