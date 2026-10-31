@@ -1450,8 +1450,8 @@
 <pre class="mermaid"><code>sequenceDiagram
     autonumber
     participant Game as 游戏主线程
-    participant DLL as warp_host.dll&lt;br/&gt;(thunk 抢在原方法前)
-    participant Py as 你的插件&lt;br/&gt;(轮询线程)
+    participant DLL as warp_host.dll thunk
+    participant Py as 你的插件轮询线程
 
     Game-&gt;&gt;DLL: 调用 BattleUnitModel.OnCreateUnitModel()
     DLL-&gt;&gt;DLL: 命中计数 +1

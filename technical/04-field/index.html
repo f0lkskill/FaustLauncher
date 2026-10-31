@@ -1450,6 +1450,14 @@
 写在这里，变的时候只改一处，还能一眼看出哪些条目在真机对过数。</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="n">fld</span> <span class="o">=</span> <span class="n">_NS</span><span class="o">.</span><span class="n">space</span><span class="p">(</span><span class="s1">&#39;warp&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">field</span>
 </code></pre></div>
+<pre class="mermaid"><code>flowchart LR
+    T["FIELD_TABLE&lt;br/&gt;&lt;i&gt;类 → 字段 → 偏移&lt;/i&gt;"] --&gt;|read_chain| L["读链&lt;br/&gt;&lt;i&gt;[{off, deref}, ...]&lt;/i&gt;"]
+    L --&gt;|塞进 hook 的 reads| H["钩子"]
+    L --&gt;|塞进 host.read| R["代读"]
+    H --&gt;|命中时| E["事件格 a..l&lt;br/&gt;&lt;i&gt;12 个值&lt;/i&gt;"]
+    R --&gt;|vars[6]| V["一个值"]</code></pre>
+<p>两条路共用同一张表：钩子用它批量取值（一次命中读 N 个字段），
+<code>host.read()</code> 用它按需取值（一次一问）。<strong>偏移只写在这一处。</strong></p>
 <h2 id="field_table">核心：<code>FIELD_TABLE</code><a class="headerlink" href="#field_table" title="Permanent link">&para;</a></h2>
 <p>一个两层字典：<code>FIELD_TABLE[类名][字段名] = 记录</code>。共 <strong>8 个类、62 个字段</strong>。</p>
 <table>

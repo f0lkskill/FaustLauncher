@@ -800,6 +800,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#unit" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        数据是怎么走到 Unit 的
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#_1" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -811,7 +822,7 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#unit" class="md-nav__link">
+  <a href="#unit_1" class="md-nav__link">
     <span class="md-ellipsis">
       
         Unit —— 一个战场单位
@@ -1243,6 +1254,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#unit" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        数据是怎么走到 Unit 的
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#_1" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1254,7 +1276,7 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#unit" class="md-nav__link">
+  <a href="#unit_1" class="md-nav__link">
     <span class="md-ellipsis">
       
         Unit —— 一个战场单位
@@ -1374,6 +1396,16 @@
 <a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="n">u</span> <span class="o">=</span> <span class="n">game</span><span class="o">.</span><span class="n">units</span><span class="p">()[</span><span class="mi">0</span><span class="p">]</span>            <span class="c1"># 门面：同一批对象，host 帮你管好了</span>
 </code></pre></div>
 <p>两种拿到的都是同一个 <code>Unit</code> 类，差别只在谁负责创建 <code>Host</code>。</p>
+<h2 id="unit">数据是怎么走到 <code>Unit</code> 的<a class="headerlink" href="#unit" title="Permanent link">&para;</a></h2>
+<pre class="mermaid"><code>flowchart LR
+    A["Access&lt;br/&gt;&lt;i&gt;管理器 + 对象槽&lt;/i&gt;"] --&gt;|+0x90 Dictionary| D["单位字典&lt;br/&gt;&lt;i&gt;11 个 BattleUnit&lt;/i&gt;"]
+    D --&gt;|第 i 个 value| U["Unit&lt;br/&gt;&lt;i&gt;index = i&lt;/i&gt;"]
+    U --&gt;|+0x10 _model| M["BattleUnitModel"]
+    M --&gt;|+0x148 _state| C["CharacterState&lt;br/&gt;&lt;b&gt;hp / sp / 生死&lt;/b&gt;"]
+    M --&gt;|+0xE0 _buffDetail| BL["List of BuffModel"]
+    BL --&gt;|第 k 个| BF["Buff&lt;br/&gt;&lt;b&gt;层数 / 回合 / 英文 ID&lt;/b&gt;"]</code></pre>
+<p><code>Unit</code> 只存了 <code>(host, slot, index)</code> 三样东西 —— 每次读属性都是「现拼读链 + 让 DLL 代读」。
+所以 <code>Unit</code> 对象很便宜，但<strong>属性很贵</strong>（一次一次往返），批量取值要用 <code>props()</code>。</p>
 <h2 id="_1">对象槽常量<a class="headerlink" href="#_1" title="Permanent link">&para;</a></h2>
 <table>
 <thead>
@@ -1404,7 +1436,7 @@
 <div class="admonition warning">
 <p class="admonition-title">0..23 是成就观测的主段，24..26 谁都能用，27..29 见上表，30/31 是每帧回调保留位</p>
 </div>
-<h2 id="unit"><code>Unit</code> —— 一个战场单位<a class="headerlink" href="#unit" title="Permanent link">&para;</a></h2>
+<h2 id="unit_1"><code>Unit</code> —— 一个战场单位<a class="headerlink" href="#unit_1" title="Permanent link">&para;</a></h2>
 <h3 id="_2">属性<a class="headerlink" href="#_2" title="Permanent link">&para;</a></h3>
 <table>
 <thead>

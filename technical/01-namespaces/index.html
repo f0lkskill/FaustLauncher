@@ -1270,6 +1270,20 @@
 <h1 id="01">01 命名空间机制<a class="headerlink" href="#01" title="Permanent link">&para;</a></h1>
 <p>插件之间不直接 import 对方的代码，而是通过启动器提供的<strong>命名空间容器</strong>互相提供能力。
 WarpHook 注册的东西全部挂在 <code>warp</code> 下，别的插件要用就 <code>space('warp')</code>。</p>
+<pre class="mermaid"><code>flowchart TD
+    NS["Namespaces&lt;br/&gt;&lt;i&gt;启动器提供的容器&lt;/i&gt;"]
+    W["space('warp')&lt;br/&gt;&lt;i&gt;WarpHook 根&lt;/i&gt;"]
+    NS --&gt; W
+    W --&gt; G["warp.game&lt;br/&gt;门面：一句话一个动作"]
+    W --&gt; O["warp.object&lt;br/&gt;Unit / Buff / Access"]
+    W --&gt; F["warp.field&lt;br/&gt;偏移表"]
+    W --&gt; P["warp.plugin&lt;br/&gt;Host / Service"]
+    W --&gt; S["warp.shm&lt;br/&gt;共享内存"]
+    W --&gt; I["warp.il2cpp&lt;br/&gt;导出名"]
+    W --&gt; J["warp.inject&lt;br/&gt;找进程 / 注入"]
+    W --&gt; L["warp.log&lt;br/&gt;日志"]</code></pre>
+<p>规则只有一条：<strong>子分区可以直接扁平取（<code>space('warp.game')</code>），也可以一路点下去（<code>space('warp').game</code>）</strong>，
+两种拿到的是同一个对象。</p>
 <h2 id="_1">取能力<a class="headerlink" href="#_1" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="n">_NS</span> <span class="o">=</span> <span class="n">ADDON_ARG</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;Namespaces&#39;</span><span class="p">)</span>
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>

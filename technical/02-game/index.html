@@ -775,6 +775,17 @@
   <a href="#_1" class="md-nav__link">
     <span class="md-ellipsis">
       
+        门面里有什么
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
         模块级函数
       
     </span>
@@ -850,7 +861,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#_2" class="md-nav__link">
+  <a href="#_3" class="md-nav__link">
     <span class="md-ellipsis">
       
         其他
@@ -1235,6 +1246,17 @@
   <a href="#_1" class="md-nav__link">
     <span class="md-ellipsis">
       
+        门面里有什么
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
         模块级函数
       
     </span>
@@ -1310,7 +1332,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#_2" class="md-nav__link">
+  <a href="#_3" class="md-nav__link">
     <span class="md-ellipsis">
       
         其他
@@ -1349,7 +1371,19 @@
 <p>日常插件用的就是这一层。<strong>一句话一个动作</strong>，不需要认识类名、方法名、偏移。</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="n">game</span> <span class="o">=</span> <span class="n">_NS</span><span class="o">.</span><span class="n">space</span><span class="p">(</span><span class="s1">&#39;warp&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">game</span>
 </code></pre></div>
-<h2 id="_1">模块级函数<a class="headerlink" href="#_1" title="Permanent link">&para;</a></h2>
+<h2 id="_1">门面里有什么<a class="headerlink" href="#_1" title="Permanent link">&para;</a></h2>
+<pre class="mermaid"><code>flowchart LR
+    L["Live&lt;br/&gt;&lt;i&gt;一个插件一个&lt;/i&gt;"] --&gt;|battle| B["Battle&lt;br/&gt;&lt;i&gt;这一场&lt;/i&gt;"]
+    L --&gt;|scene| S["场景&lt;br/&gt;编号 / 名字 / 时间缩放"]
+    B --&gt;|units| U["Unit&lt;br/&gt;&lt;i&gt;一个单位&lt;/i&gt;"]
+    B --&gt;|by_identity| U
+    B --&gt;|player| U
+    U --&gt;|buffs| F["Buff&lt;br/&gt;&lt;i&gt;一个 buff&lt;/i&gt;"]
+    L --&gt;|popup| P["游戏弹窗"]
+    L --&gt;|on_round_start| C["你的回调&lt;br/&gt;&lt;i&gt;回合开始时&lt;/i&gt;"]</code></pre>
+<p><code>Live</code> 是<strong>进程内的单例</strong>（按插件名分开记账），<code>Battle</code> / <code>Unit</code> / <code>Buff</code> 都是它的轻量视图——
+拿一次不会读内存，只有真正取属性时才走一次跨进程往返。</p>
+<h2 id="_2">模块级函数<a class="headerlink" href="#_2" title="Permanent link">&para;</a></h2>
 <p>全部是薄包装，内部共用一个按插件名记账的 <code>Live</code> 实例。</p>
 <table>
 <thead>
@@ -1673,7 +1707,7 @@
 </tbody>
 </table>
 <p><code>GACHA_TYPE_NAMES = {0:'普通', 1:'付费单抽', 2:'不能用狂气', 3:'免费'}</code>。</p>
-<h3 id="_2">其他<a class="headerlink" href="#_2" title="Permanent link">&para;</a></h3>
+<h3 id="_3">其他<a class="headerlink" href="#_3" title="Permanent link">&para;</a></h3>
 <table>
 <thead>
 <tr>

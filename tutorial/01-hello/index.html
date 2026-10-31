@@ -1314,6 +1314,12 @@
 <h1 id="01">01 第一个插件<a class="headerlink" href="#01" title="Permanent link">&para;</a></h1>
 <p>这一篇的目标只有一个：<strong>让启动器加载你的插件，并在日志里看到你自己打的一行字。</strong>
 不钩任何游戏函数，不读任何内存。先把「插件能被加载」这条链路跑通，后面所有东西才站得住。</p>
+<pre class="mermaid"><code>flowchart LR
+    D["addons/hello/&lt;br/&gt;addon_info.json + scr.py"] --&gt; M["AddonManager&lt;br/&gt;&lt;i&gt;读清单 · 排依赖&lt;/i&gt;"]
+    M --&gt; E["exec scr.py&lt;br/&gt;&lt;i&gt;你的代码跑了&lt;/i&gt;"]
+    E --&gt; N["注册到 Namespaces&lt;br/&gt;&lt;i&gt;space('warp')&lt;/i&gt;"]
+    E --&gt; S["启动器日志&lt;br/&gt;&lt;i&gt;「初始化完成!」&lt;/i&gt;"]</code></pre>
+<p>一个插件就是<strong>一个目录、两个文件</strong>。没有编译、没有打包、没有入口函数。</p>
 <h2 id="_1">插件长什么样<a class="headerlink" href="#_1" title="Permanent link">&para;</a></h2>
 <p>一个插件就是一个目录，放在启动器目录下的 <code>addons/</code> 里：</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>FaustLauncher/

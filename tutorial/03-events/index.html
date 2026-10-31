@@ -1497,7 +1497,7 @@
     participant Game as 游戏
     participant DLL as warp_host.dll
     participant Py as warp.game 心跳线程
-    participant CB as 你的 _on_round
+    participant CB as 你的回调
 
     Game-&gt;&gt;DLL: 回合开始（OnRoundStart_Model 被调用）
     DLL-&gt;&gt;DLL: 命中计数 +1，把管理器存进对象槽 28
@@ -1505,7 +1505,7 @@
         Py-&gt;&gt;DLL: 读命中计数
     end
     Py-&gt;&gt;Py: 发现计数涨了 → 抓管理器、组一个 Battle
-    Py-&gt;&gt;CB: battle
+    Py-&gt;&gt;CB: 调 _on_round(battle)
     CB-&gt;&gt;CB: 你的代码（在心跳线程上跑）</code></pre>
 <p>所以：<strong>通知最多有 0.25 秒延迟</strong>，而你的回调慢一点也不会卡游戏。</p>
 <h2 id="battle"><code>Battle</code> 是什么<a class="headerlink" href="#battle" title="Permanent link">&para;</a></h2>
