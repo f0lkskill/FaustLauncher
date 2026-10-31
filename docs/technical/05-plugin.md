@@ -7,6 +7,28 @@
 plugin = _NS.space('warp').plugin
 ```
 
+## 三者的关系
+
+```mermaid
+flowchart TD
+    S["Service<br/><i>后台骨架：等游戏 / 注入 / 心跳 / 菜单</i>"]
+    H["Host<br/><i>共享内存句柄：钩子 / 代读 / 命令</i>"]
+    R["Runtime<br/><i>老式：插件自带 DLL</i>"]
+    M["共享内存 177 KB<br/><i>多插件共用的同一块</i>"]
+    D["warp_host.dll<br/><i>注入在游戏进程里</i>"]
+    G["游戏主线程<br/><i>钩子命中点</i>"]
+
+    S -->|持有| H
+    H <-->|读写配置 · 代读回值| M
+    M <-->|每帧泵 / 心跳线程| D
+    D -->|MinHook 挂钩| G
+    R -->|自己一块映射| M
+```
+
+- 用 `Service` + `Host`：**现在的正常写法**，不用写 C。
+- 只用 `Host`：`game.*` 门面内部就是这么干的。
+- 用 `Runtime`：v0.4 时代的老式插件，插件目录里自带一个自己编的 DLL。
+
 ## `Host` —— 共享宿主句柄
 
 ```python

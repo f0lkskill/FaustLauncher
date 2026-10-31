@@ -6,6 +6,23 @@
 game = _NS.space('warp').game
 ```
 
+## 门面里有什么
+
+```mermaid
+flowchart LR
+    L["Live<br/><i>一个插件一个</i>"] -->|battle| B["Battle<br/><i>这一场</i>"]
+    L -->|scene| S["场景<br/>编号 / 名字 / 时间缩放"]
+    B -->|units| U["Unit<br/><i>一个单位</i>"]
+    B -->|by_identity| U
+    B -->|player| U
+    U -->|buffs| F["Buff<br/><i>一个 buff</i>"]
+    L -->|popup| P["游戏弹窗"]
+    L -->|on_round_start| C["你的回调<br/><i>回合开始时</i>"]
+```
+
+`Live` 是**进程内的单例**（按插件名分开记账），`Battle` / `Unit` / `Buff` 都是它的轻量视图——
+拿一次不会读内存，只有真正取属性时才走一次跨进程往返。
+
 ## 模块级函数
 
 全部是薄包装，内部共用一个按插件名记账的 `Live` 实例。
