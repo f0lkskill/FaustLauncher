@@ -672,6 +672,11 @@ def bgm_lock(allow):
     return live().bgm_lock(allow)
 
 
+def inject(wait=False):
+    """手动注入游戏（托盘/插件菜单「注入游戏」用）。"""
+    return live().inject(wait=wait)
+
+
 def on_round_start(handler):
     """每回合开始调 ``handler(battle)``。"""
     return live().on_round_start(handler)
