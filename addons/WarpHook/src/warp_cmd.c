@@ -597,7 +597,8 @@ static int warp_cmd_list(void)
 {
     char name[64];
     char mname[48];
-    char line[192];
+    char sig[WARP_CMD_SIG_MAX];
+    char line[224];
     char *out = (char *)g_hdr + WARP_CMD_BUF_OFFSET;
     size_t cap = (size_t)WARP_CMD_BUF_COUNT * WARP_CMD_BUF_SIZE;
     const char *sep;
@@ -606,6 +607,7 @@ static int warp_cmd_list(void)
     void *m;
     size_t used = 0;
     int count = 0;
+    int depth;
 
     if (!g_ic.class_get_methods || !g_ic.method_get_name ||
         !g_ic.method_get_param_count || !g_ic.method_get_param ||
@@ -617,11 +619,16 @@ static int warp_cmd_list(void)
         return WARP_CMD_RES_NO_METHOD;
     warp_cmd_name_until(g_hdr->cmd_text, name, sizeof(name));
     warp_cmd_name_until(sep + 2, mname, sizeof(mname));
+    warp_cmd_sig(sep + 2, sig, sizeof(sig));
     klass = warp_find_class(g_domain, name);
     if (!klass)
         return WARP_CMD_RES_NO_CLASS;
 
     out[0] = '\0';
+    /* 沿基类链往上找：il2cpp_class_get_methods 只列本类声明的方法，
+       get_Instance 这类继承来的 getter 必须往上走才能列出来。 */
+    for (depth = 0; klass != NULL && depth < 8; depth++) {
+    iter = NULL;
     while ((m = g_ic.class_get_methods(klass, &iter)) != NULL) {
         const char *mn = g_ic.method_get_name(m);
         int argc;
@@ -646,11 +653,16 @@ static int warp_cmd_list(void)
             if (rt && g_ic.free_mem)
                 g_ic.free_mem(rt);
         }
+        if (sig[0] && warp_sig_match(m, argc, sig) &&
+            n + 9 < sizeof(line))
+            snprintf(line + n, sizeof(line) - n, " [match]");
         if (used + strlen(line) + 1 >= cap)
             break;
         lstrcpynA(out + used, line, (int)(cap - used));
         used += strlen(line) + 1;
         count++;
+    }
+    klass = g_ic.class_get_parent ? g_ic.class_get_parent(klass) : NULL;
     }
     return count > 0 ? 0 : WARP_CMD_RES_NO_METHOD;
 }
