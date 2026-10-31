@@ -34,7 +34,8 @@ from .base import (
 )
 
 HOST_MAGIC = 0x54534857           # "WHST"
-HOST_VERSION = 4                  # v4：钩子表 16→32（成就 25 条 + NoGacha 2 条装不下 16 槽）
+HOST_VERSION = 5                  # v5：尾部追加 buff 关注哈希表段（BUF 行）。
+# v4：钩子表 16→32（成就 25 条 + NoGacha 2 条装不下 16 槽）
 HOST_MAP_DEFAULT = "Local\\WarpHost_Default"
 HOST_MAP_ENV = "WARP_HOST_MAP"
 HOST_DLL_NAME = "warp_host.dll"
@@ -109,6 +110,7 @@ HOST_READ_OBSCURED = 4
 HOST_READ_SUM = 5          # 落点是 List<int>：求和（值类型元素）
 HOST_READ_COUNT = 6        # 落点是容器：只取元素个数
 HOST_READ_TEXT = 7         # 落点是 il2cpp 字符串：取开头的数字（"86" → 86）
+HOST_READ_BUFF_MASK = 8    # 落点是战斗单位：遍历 buff 链按关注表置位（BUF 行 m=）
 HOST_READ_NAMES = {
     'int': HOST_READ_INT,
     'float': HOST_READ_FLOAT,
@@ -118,6 +120,7 @@ HOST_READ_NAMES = {
     'sum': HOST_READ_SUM,
     'count': HOST_READ_COUNT,
     'text': HOST_READ_TEXT,
+    'buff_mask': HOST_READ_BUFF_MASK,
 }
 # 返回值类型：thunk 调完原函数后按什么形状取返回值（int 在 RAX、float 在 XMM0）
 HOST_RET_VOID = 0
@@ -153,7 +156,13 @@ HOST_OBJECT_COUNT = 32      # 对象槽个数（与 C 侧 WARP_OBJECT_COUNT 一�
 HOST_OBJECT_SIZE = 8        # 一个 void*
 HOST_OBJECTS_OFFSET = HOST_READ_OFFSET + HOST_READ_MAX * HOST_READ_SIZE
 HOST_OBJ_ARG_BASE = 0x100   # 读取链的 arg 写 0x100+n = 从第 n 个对象槽出发
-HOST_MAP_BYTES = HOST_OBJECTS_OFFSET + HOST_OBJECT_COUNT * HOST_OBJECT_SIZE
+# buff 关注哈希表（v5）：成就规则里的 buff 名 fnv1a64 之后写在这，0 是哨兵。
+# C 侧 buff_mask 读法按表置位 —— BUF 行的 m= 掩码就从这来（与 battle_watch
+# 的 watched_buff_names() 名单顺序一一对应）。
+HOST_BUFF_WATCH_COUNT = 32
+HOST_BUFF_WATCH_SIZE = 8    # fnv1a64
+HOST_BUFF_WATCH_OFFSET = HOST_OBJECTS_OFFSET + HOST_OBJECT_COUNT * HOST_OBJECT_SIZE
+HOST_MAP_BYTES = HOST_BUFF_WATCH_OFFSET + HOST_BUFF_WATCH_COUNT * HOST_BUFF_WATCH_SIZE
 
 # ---- 多作者分段（v0.9.2）------------------------------------------------
 # 成就观测跑在独立子进程，它有自己的一份 Host；NoGacha 等插件在启动器主进程
@@ -1224,6 +1233,25 @@ class Host:
             raise ValueError(f"对象槽 {slot} 超出 0..{HOST_OBJECT_COUNT - 1}")
         return {"arg": HOST_OBJ_ARG_BASE + slot, "off": [], "deref": [],
                 "out": int(out), "kind": kind}
+
+    def write_buff_watch(self, hashes):
+        """重写 buff 关注哈希表（BUF 行的开关名单）。
+
+        ``hashes`` 是 fnv1a64 之后的 64 位哈希序列，顺序即 BUF 行 m= 掩码的
+        位序；表内写 0 做哨兵（C 侧遇到 0 停止扫描）。表为空 = 没有成就
+        在看 buff，C 侧读法直接放弃，连链都不走。
+        """
+        values = [int(h) & 0xFFFFFFFFFFFFFFFF for h in (hashes or ())]
+        if len(values) > HOST_BUFF_WATCH_COUNT:
+            values = values[:HOST_BUFF_WATCH_COUNT]
+        block = self.block()
+        if block is None:
+            return 0
+        addr = block.address + HOST_BUFF_WATCH_OFFSET
+        for i in range(HOST_BUFF_WATCH_COUNT):
+            v = values[i] if i < len(values) else 0
+            ctypes.c_uint64.from_address(addr + i * HOST_BUFF_WATCH_SIZE).value = v
+        return len(values)
 
     def _command(self, cmd_type, text="", timeout=2.0, args=(), retkind=0,
                  slot=-1, out_slot=-1):

@@ -239,6 +239,91 @@ static int warp_text_number(const void *str, int *out)
     return 1;
 }
 
+/* FNV-1a 64（Python 侧 battle_watch.fnv1a64 同款）—— buff 名哈希比对的 key */
+static unsigned long long warp_fnv1a64(const char *s, int len)
+{
+    unsigned long long h = 0xCBF29CE484222325ULL;
+    int i;
+    for (i = 0; i < len; i++) {
+        h ^= (unsigned char)s[i];
+        h *= 0x100000001B3ULL;
+    }
+    return h;
+}
+
+/* WARP_READ_BUFF_MASK：落点是战斗单位，遍历 buff 链对每个 buff 名算哈希，
+ * 命中关注表（尾部哈希段）就置位 —— out = 位掩码（bit i = 命中表第 i 项）。
+ *
+ * off[0..3] 是四个字段偏移的参数包（不走通用步循环）：
+ *   off[0] unit→buff 详情     off[1] 详情→List
+ *   off[2] buff→模型数据      off[3] 模型数据→名字符串（il2cpp string*）
+ * 列表的 items/+0x10、count/+0x18 与元素 +0x20 起按引用类型排布是 il2cpp
+ * 的固定布局，硬编码（老链路 emit_unit_buffs 同款）。
+ * 关注表空（没成就用 buff）直接放弃：链都不读，零开销。 */
+static int warp_buff_mask(const void *unit, const WARP_READ *r, int *out)
+{
+    const unsigned long long *watch;
+    unsigned long long h;
+    uint64_t detail, list, items, elem, model, data, sid;
+    unsigned mask = 0;
+    int watch_n = 0, count, i, j, len, take;
+    char name[64];
+
+    watch = (const unsigned long long *)((const char *)g_hdr + WARP_BUFF_WATCH_OFFSET);
+    while (watch_n < WARP_BUFF_WATCH_COUNT && watch[watch_n])
+        watch_n++;
+    if (!watch_n)
+        return 0;
+    if (!unit || !warp_can_read(unit, 8))
+        return 0;
+    detail = *(const uint64_t *)((const char *)unit + r->off[0]);
+    if (!detail || !warp_can_read((const void *)(uintptr_t)detail, 8))
+        return 0;
+    list = *(const uint64_t *)((const char *)(uintptr_t)detail + r->off[1]);
+    if (!list || !warp_can_read((const void *)(uintptr_t)list, 0x20))
+        return 0;
+    items = *(const uint64_t *)((const char *)(uintptr_t)list + 0x10);
+    count = *(const int *)((const char *)(uintptr_t)list + 0x18);
+    if (!items || count <= 0 || count > 0x100)
+        return 0;
+    if (!warp_can_read((const void *)(uintptr_t)(items + 0x20), count * 8))
+        return 0;
+    for (i = 0; i < count; i++) {
+        elem = *(const uint64_t *)(items + 0x20 + (size_t)i * 8);
+        if (!elem || !warp_can_read((const void *)(uintptr_t)elem, 8))
+            continue;
+        model = elem;
+        data = *(const uint64_t *)((const char *)(uintptr_t)model + r->off[2]);
+        if (!data || !warp_can_read((const void *)(uintptr_t)data, 8))
+            continue;
+        sid = *(const uint64_t *)((const char *)(uintptr_t)data + r->off[3]);
+        if (!sid || !warp_can_read((const void *)(uintptr_t)sid, 0x14))
+            continue;
+        len = *(const int *)((const char *)(uintptr_t)sid + 0x10);
+        if (len <= 0 || len > 60)
+            continue;
+        if (!warp_can_read((const void *)(uintptr_t)(sid + 0x14), len * 2))
+            continue;
+        take = len;
+        for (j = 0; j < take; j++) {
+            unsigned short ch;
+            memcpy(&ch, (const void *)(uintptr_t)(sid + 0x14 + (size_t)j * 2),
+                   sizeof(ch));
+            name[j] = (char)(ch & 0xFF);   /* buff 名都是 ASCII，取低字节 */
+        }
+        name[take] = '\0';
+        h = warp_fnv1a64(name, take);
+        for (j = 0; j < watch_n; j++) {
+            if (watch[j] == h) {
+                mask |= (1u << j);
+                break;
+            }
+        }
+    }
+    *out = (int)mask;
+    return 1;
+}
+
 /* 沿着一条读取链取值。返回 1 表示读到了，0 表示中途碰到空指针。
  *
  * 空指针在 il2cpp 里很常见（对象还没初始化、目标已销毁），所以这里一律
@@ -280,6 +365,10 @@ static int warp_read_chain(const WARP_READ *r, void *self, int argc,
     }
     if (!p)
         return 0;
+
+    /* buff 掩码是 C 特化遍历：off[0..3] 是字段偏移参数包，不走通用步循环。 */
+    if (r->kind == WARP_READ_BUFF_MASK)
+        return warp_buff_mask(p, r, out);
 
     if (r->nsteps <= 0) {
         /* 0 跳 = 这个参数本身就是值/容器，不是指针。

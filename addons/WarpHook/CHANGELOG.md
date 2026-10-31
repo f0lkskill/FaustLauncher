@@ -4,6 +4,26 @@
 
 看完整历史：`git log --oneline -- addons/WarpHook/`
 
+## 0.9.6
+
+第七轮：BUF 事件转发上线 —— buff 类成就（"心脏，心脏！"的 eyebuff
+条件）终于有了数据源。协议 v5。
+
+- **buff 关注哈希表（共享内存尾部新段）**。共享内存 objects 之后追加
+  32×8B：成就侧把规则里盯着的 buff 名做 fnv1a64 写进去（0 哨兵），
+  C 侧新的 `buff_mask` 读法沿「单位→buff详情→List→模型→名字串」遍历，
+  名字哈希命中关注表就置位，产出 32 位掩码。表为空时读法直接放弃，
+  没有成就看 buff 就零开销。`WARP_VERSION`/`HOST_VERSION` 升 5，
+  `WARP_MAP_BYTES` 172672→172928。
+- **BUF 行**。unit 一帧（SPD+VAL）追加第三行
+  `BUF tag=.. iid=.. oid=.. m=<掩码> n=<buff总数>`，格式与老链路
+  `_apply_buffs` 的解析一字不差；`n=-1` 表示链没走到（读不到 ≠ 没 buff）。
+  名单非空时才带这两格读链（`build_hooks(buffs=...)`），名单热变化
+  每 5 秒查一次，开关翻转自动重挂钩子。
+- **unit 钩子改 POST**（顺手修"呃啊，我脚崴了"浮士德 9 速成就的半个
+  根因）：SetSpeed/SetRandomSpeed 是写速度的方法，PRE 读 self 拿到的
+  是写入前的 -1；POST 无害且读的是终值。
+
 ## 0.9.5
 
 真机第五轮：李箱成就触发（v0.9.4 钩点迁移生效）。本轮修「采光本被锁」
