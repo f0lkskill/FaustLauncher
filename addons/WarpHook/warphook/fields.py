@@ -202,7 +202,21 @@ FIELD_TABLE = {
                  "note": "List<BuffModel>"},
     },
     "BuffModel": {
+        "_buffInfo": {"off": 0x58, "ref": "BuffInfo", "kind": INT, "verified": True,
+                      "note": "当前层数/次数在这里（BuffStaticData 只有模板值）"},
         "_staticData": {"off": 0x68, "ref": "BuffStaticData", "kind": INT, "verified": True},
+        "_buffName": {"off": 0xA0, "ref": None, "kind": TEXT, "verified": False,
+                      "note": "il2cpp string，缓存的名字"},
+    },
+    "BuffInfo": {
+        "_name": {"off": 0x28, "ref": None, "kind": TEXT, "verified": True,
+                  "note": "il2cpp string；原名要跨进程读 UTF-16，见 remote.utf16"},
+        "_maxStack": {"off": 0x64, "ref": None, "kind": INT, "verified": True},
+        "_maxTurn": {"off": 0x68, "ref": None, "kind": INT, "verified": True},
+        "_stack": {"off": 0x6C, "ref": None, "kind": INT, "verified": True,
+                   "note": "强度/层数（界面上那个大字数字）"},
+        "_turn": {"off": 0x70, "ref": None, "kind": INT, "verified": True,
+                  "note": "剩余次数/回合"},
     },
     "BuffStaticData": {
         "name": {"off": 0x18, "ref": None, "kind": TEXT, "verified": False,

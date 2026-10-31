@@ -194,4 +194,13 @@ class Gacha:
 gacha = Gacha()
 
 
-gacha = Gacha()
+def access(host=None, slot=None):
+    """拿一个场景访问器（``acc.units()`` / ``acc.get_obj(id=1)``）。
+
+    ``host`` 省略时按调用方的插件名自动开一个，用完记得 ``acc.close()``。
+    """
+    from . import objects
+    if host is None:
+        host = Host(_owner_of_caller())
+        host.push()
+    return objects.access(host, objects.SLOT_MANAGER if slot is None else slot)

@@ -54,6 +54,7 @@ _MODEL_BUFF = fields.field("BattleUnitModel", "_buffDetail")["off"]
 _BUFF_LIST = fields.field("BuffDetail", "list")["off"]
 _BUFF_STATIC = fields.field("BuffModel", "_staticData")["off"]
 _BUFF_NAME = fields.field("BuffStaticData", "name")["off"]
+_BUFF_INFO = fields.field("BuffModel", "_buffInfo")["off"]
 
 # 容器字段当读链末端时，落点要换成「数/g个数」，而不是容器步本身。
 _END_KIND = {
@@ -69,6 +70,222 @@ def _end_kind(record):
     return _END_KIND.get(record["kind"], record["kind"])
 
 
+# ObscuredBool 解码出来的「假」码。
+# 真机 11 个单位对照：_isDead/_isBreak/_isPanic 全是 0xB5（都没死/没混乱），
+# _isActivated 全是 0xD5（都激活）→ 0xB5 是假、其余是真。
+BOOL_FALSE = 0xB5
+
+# 好记的名字 → dump 里的字段名（get_pro / get_obj 用得上）
+_FIELD_ALIAS = {
+    "id": "_instanceID", "instance_id": "_instanceID", "iid": "_instanceID",
+    "origin_id": "_originID", "identity": "_originID", "personality": "_originID",
+    "hp": "_hp", "max_hp": "_maxHp", "sp": "_mp", "mp": "_mp", "san": "_mp",
+    "speed": "_originSpeed", "overwrite_speed": "_overwritedSpeed",
+    "dead": "_isDead", "is_dead": "_isDead",
+    "panic": "_isPanic", "is_panic": "_isPanic",
+    "break": "_isBreak", "is_break": "_isBreak",
+    "low_morale": "_isLowMorale", "is_low_morale": "_isLowMorale",
+    "position": "_position", "state": "_state", "buff_detail": "_buffDetail",
+}
+
+
+def _utf16(rd, addr, limit=256):
+    """读 il2cpp string 的原文：``+0x10`` 是长度，``+0x14`` 起是 UTF-16 字符。"""
+    if not addr:
+        return None
+    n = rd.i32(addr + 0x10)
+    if n is None or n < 0 or n > int(limit):
+        return None
+    raw = rd.read(addr + 0x14, n * 2)
+    if not raw:
+        return None
+    return raw.decode("utf-16-le", "replace")
+
+
+class Buff:
+    """一个 buff 的门面：名字、层数（强度）、剩余次数。
+
+    层数/次数走 ``CMD_READ`` 代读（``BuffInfo._stack@0x6C`` /
+    ``_turn@0x70``）；**名字原文**是 il2cpp string，命令通道只回 32 位读不
+    了，所以要走一次跨进程读（:class:`Access` 持有那个读句柄）。拿不到
+    读句柄时 ``name`` 返回 ``None``，其余字段照常可用。
+    """
+
+    __slots__ = ("unit", "index")
+
+    def __init__(self, unit, index):
+        self.unit = unit
+        self.index = int(index)
+
+    def __repr__(self):
+        return f"<Buff #{self.index} {self.name!r} stack={self.stack} turn={self.turn}>"
+
+    def _read(self, off, default=None):
+        return self.unit.host.read(self.unit.slot,
+                                   self.unit._buff_chain(self.index, off),
+                                   kind="int", default=default)
+
+    @property
+    def name(self):
+        """buff 名字原文（中文），读不到返回 ``None``。"""
+        acc = self.unit._acc
+        if acc is None:
+            return None
+        rd = acc.reader()
+        if rd is None:
+            return None
+        info = acc.buff_info_ptr(self.unit.index, self.index)
+        if not info:
+            return None
+        return _utf16(rd, rd.u64(info + 0x28))
+
+    @property
+    def stack(self):
+        """强度/层数（界面上那个大数字）。"""
+        return self._read(0x6C)
+
+    @property
+    def turn(self):
+        """剩余次数/回合。"""
+        return self._read(0x70)
+
+    @property
+    def max_stack(self):
+        return self._read(0x64)
+
+    @property
+    def max_turn(self):
+        return self._read(0x68)
+
+    @property
+    def stack_ratio(self):
+        """当前层数 / 上限（0..1）。"""
+        s, mx = self.stack, self.max_stack
+        if s is None or not mx:
+            return None
+        return s / float(mx)
+
+    def raw(self):
+        return {"index": self.index, "name": self.name, "stack": self.stack,
+                "turn": self.turn, "max_stack": self.max_stack,
+                "max_turn": self.max_turn}
+
+
+class Access:
+    """场景访问器：``acc.units()`` / ``acc.get_obj(id=1)`` / ``acc.count()``。
+
+    用 ``acc = objects.access(host)`` 拿一个；它自动保证 manager 已进对象槽
+    （空就调一次静态 ``BattleObjectManager::get_Instance``，不需要钩子）。
+
+    ``reader()`` 是懒加载的跨进程读句柄，只给 buff 名字这类「命令通道读不了
+    的 64 位/文本」用；同一台机器上插件进程有权限直接读游戏内存。
+    """
+
+    def __init__(self, host, slot=SLOT_MANAGER, exe="LimbusCompany.exe", pid=None):
+        self.host = host
+        self.slot = int(slot)
+        self.exe = exe
+        self.pid = pid
+        self._rd = None
+        self._rd_failed = False
+
+    # ---- 基础 ----
+    def manager(self, timeout=3.0, force=False):
+        """保证对象槽里有 manager 指针，返回它（失败 ``None``）。"""
+        ptr = self.host.object_ptr(self.slot)
+        if ptr and not force:
+            return ptr
+        try:
+            self.host.call("BattleObjectManager::get_Instance",
+                           ret="ref", out_slot=self.slot, timeout=timeout)
+        except Exception:  # noqa: BLE001
+            return self.host.object_ptr(self.slot)
+        return self.host.object_ptr(self.slot)
+
+    def count(self):
+        return count(self.host, self.slot)
+
+    def units(self, limit=None):
+        total = self.count() or 0
+        if limit is not None:
+            total = min(total, int(limit))
+        return [Unit(self.host, self.slot, i, acc=self) for i in range(total)]
+
+    def get_obj(self, id=None, index=None):
+        """按战斗内编号（``id=1``）或序号（``index=0``）取一个单位。"""
+        if index is not None:
+            return Unit(self.host, self.slot, int(index), acc=self)
+        if id is None:
+            return None
+        for u in self.units():
+            if u.id == int(id):
+                return u
+        return None
+
+    def scene(self, slot=SLOT_SCENE):
+        return scene(self.host, slot=slot)
+
+    # ---- 跨进程读（只给名字这种读不了的东西用）----
+    def reader(self):
+        if self._rd is not None or self._rd_failed:
+            return self._rd
+        try:
+            from . import remote
+            pid = self.pid or remote.RemoteReader.by_process(self.exe)
+            self._rd = remote.RemoteReader(pid) if pid else None
+        except Exception:  # noqa: BLE001
+            self._rd = None
+        if self._rd is None:
+            self._rd_failed = True
+        return self._rd
+
+    def unit_ptr(self, index):
+        """序号 → BattleUnit 指针（跨进程读字典，给 buff 名字用）。"""
+        rd = self.reader()
+        if rd is None:
+            return 0
+        bom = self.host.object_ptr(self.slot)
+        if not bom:
+            return 0
+        return rd.dict_nth(rd.u64(bom + _MANAGER_DICT), int(index)) or 0
+
+    def buff_info_ptr(self, index, buff_index, unit_ptr=None):
+        """序号 + buff 序号 → ``BuffInfo`` 指针。"""
+        rd = self.reader()
+        if rd is None:
+            return 0
+        unit = unit_ptr or self.unit_ptr(index)
+        if not unit:
+            return 0
+        model = rd.u64(unit + _UNIT_MODEL)
+        if not model:
+            return 0
+        detail = rd.u64(model + _MODEL_BUFF)
+        if not detail:
+            return 0
+        lst = rd.u64(detail + _BUFF_LIST)
+        if not lst:
+            return 0
+        items = rd.u64(lst + 0x10)
+        n = rd.i32(lst + 0x18) or 0
+        if not items or not (0 <= int(buff_index) < n):
+            return 0
+        bm = rd.u64(items + 0x20 + int(buff_index) * 8)
+        if not bm:
+            return 0
+        return rd.u64(bm + _BUFF_INFO) or 0
+
+    def close(self):
+        if self._rd is not None:
+            self._rd.close()
+            self._rd = None
+
+
+def access(host, slot=SLOT_MANAGER, **kwargs):
+    """拿一个场景访问器（二次开发的主入口）。"""
+    return Access(host, slot=slot, **kwargs)
+
+
 class Unit:
     """一个战场单位的门面。
 
@@ -77,18 +294,19 @@ class Unit:
     :func:`snapshot`，它把整场扫一遍给你字典列表。
     """
 
-    __slots__ = ("host", "slot", "index", "_prefix")
+    __slots__ = ("host", "slot", "index", "_prefix", "_acc")
 
-    def __init__(self, host, slot, index):
+    def __init__(self, host, slot, index, acc=None):
         self.host = host
         self.slot = int(slot)
         self.index = int(index)
+        self._acc = acc
         # 前缀：manager +0x90 → Dictionary → 第 index 个活跃 value（BattleUnit）
         self._prefix = [{"off": _MANAGER_DICT, "deref": True},
                         {"dict": self.index}]
 
     def __repr__(self):
-        return f"<Unit #{self.index} id={self.instance_id()}>"
+        return f"<Unit #{self.index} id={self.id}>"
 
     # ---- 底层：自己拼链 ----
     def read(self, *chain, kind="int", default=None, timeout=2.0):
@@ -108,55 +326,165 @@ class Unit:
     def _model_prefix(self):
         return self._prefix + [{"off": _UNIT_MODEL, "deref": True}]
 
-    # ---- 常用属性 ----
-    def instance_id(self):
-        """单位唯一 id（小整数，1/2/3…）。"""
+    def _state_prefix(self):
+        return self._model_prefix() + [{"off": _MODEL_STATE, "deref": True}]
+
+    # ---- 通用取值（不动就用它，字段名见 fields.FIELD_TABLE）----
+    def get_pro(self, key, default=None):
+        """按字段名取值，``key`` 可以是简名或带类名前缀的点路径。
+
+        ``u.get_pro("origin_id")`` / ``u.get_pro("_hp")`` /
+        ``u.get_pro("CharacterState._isPanic")`` / ``u.get_pro("_state._hp")``
+
+        优先在 BattleUnitModel 里找，找不到再去它的 ``_state``（CharacterState）
+        里找 —— 也就是「角色自己的字段」和「角色状态里的字段」都能一句拿到。
+        """
+        if not key:
+            return default
+        key = str(key)
+        if key in _FIELD_ALIAS:
+            key = _FIELD_ALIAS[key]
+        parts = [p for p in key.replace(".", " ").split() if p]
+        if len(parts) >= 2:
+            # "CharacterState._hp" / "_state._hp"：第一段当类名或引用字段
+            head, rest = parts[0], parts[1:]
+            if head in fields.FIELD_TABLE:
+                return self._get_from(head, rest, default)
+            if head in fields.FIELD_TABLE.get("BattleUnitModel", {}):
+                return self._get_from("BattleUnitModel", parts, default)
+        if fields.has("BattleUnitModel", parts[0]) and len(parts) == 1:
+            return self._get_from("BattleUnitModel", parts, default)
+        if fields.has("CharacterState", parts[0]) and len(parts) == 1:
+            return self._get_from("CharacterState", parts, default)
+        return self._get_from("BattleUnitModel", parts, default)
+
+    def _get_from(self, cls, path, default=None):
+        try:
+            spec = fields.read_chain(cls, *path)
+        except KeyError:
+            return default
+        if cls == "BattleUnit":
+            base = self._prefix
+        elif cls == "CharacterState":
+            base = self._model_prefix() + [{"off": _MODEL_STATE, "deref": True}]
+        else:
+            base = self._model_prefix()
+        return self.host.read(self.slot, base + list(spec["off"]),
+                              kind=spec["kind"], default=default)
+
+    def _bool_code(self, base, off):
+        """读 ObscuredBool 的**解码码**（一个字节），读不到 ``None``。
+
+        ``+0`` 是 1 字节 key、``+4`` 是 int hiddenValue，真码 = ``hidden ^ key``。
+        真机 11 个单位对照出来的取值：``0xB5`` 一律是假（都没死/没混乱），
+        ``0xD5`` 是真（``_isActivated`` 在所有单位上都是这个码）。
+        """
+        key = self.host.read(self.slot, base + [{"off": int(off), "deref": False}],
+                             kind="int", default=None)
+        hid = self.host.read(self.slot, base + [{"off": int(off) + 4, "deref": False}],
+                             kind="int", default=None)
+        if key is None or hid is None:
+            return None
+        return (hid ^ (key & 0xFF)) & 0xFF
+
+    def _bool_field(self, base, off):
+        """把 ObscuredBool 解成 bool（``0xB5`` 假，其余真）。"""
+        code = self._bool_code(base, off)
+        return None if code is None else code != BOOL_FALSE
+
+    def props(self, timeout=1.0):
+        """把这个单位能读的字段全读一遍（BattleUnitModel + CharacterState）。"""
+        out = {}
+        out.update(scan_object(self.host, self.slot, "BattleUnitModel",
+                               base=self._prefix, timeout=timeout))
+        out.update(scan_object(self.host, self.slot, "CharacterState",
+                               base=self._model_prefix(), timeout=timeout))
+        return out
+
+    # ---- 常用属性（每次访问 = 一次 DLL 代读，约 20–40 ms）----
+    @property
+    def id(self):
+        """战斗内编号（1/2/3…，敌人也有）。"""
         return self._read("_model", "_instanceID")
 
-    def origin_id(self):
+    @property
+    def identity(self):
+        """人格 ID（角色静态 id，浮士德 = 101xx）。:.Unit 的 originID。"""
         return self._read("_model", "_originID")
 
+    origin_id = identity
+
+    @property
     def hp(self):
         """当前血量（ObscuredInt，已解混淆）。"""
         return self._read("_model", "_state", "_hp")
 
+    @property
     def max_hp(self):
         return self._read("_model", "_state", "_maxHp")
 
-    def mp(self):
-        """理智 SP，负数表示恐慌。"""
+    @property
+    def sp(self):
+        """理智（SP），负数表示恐慌计数。"""
         return self._read("_model", "_state", "_mp")
 
+    @property
     def speed(self):
         """原始速度（定点 ×1000，5 速读到 5000，这里除回 1000）。"""
         raw = self._read("_model", "_originSpeed")
         return None if raw is None else raw / 1000.0
 
+    @property
+    def is_dead(self):
+        return self._bool_field(self._state_prefix(), 0x10)
+
+    @property
+    def is_panic(self):
+        """恐慌（理智归零后的失控）。"""
+        return self._bool_field(self._state_prefix(), 0x64)
+
+    @property
+    def is_break(self):
+        """混乱（崩溃条被打满）。"""
+        return self._bool_field(self._state_prefix(), 0x58)
+
+    @property
+    def is_low_morale(self):
+        return self._bool_field(self._state_prefix(), 0x70)
+
+    @property
     def alive(self):
-        """还活着吗：优先看 ``_isDead``（加密布尔），读不到就退回 ``hp > 0``。"""
-        dead = self._read("_model", "_state", "_isDead", default=None)
+        """还活着吗：优先看 ``_isDead``，读不到就退回 ``hp > 0``。"""
+        dead = self.is_dead
         if dead is not None:
             return dead == 0
-        hp = self.hp()
+        hp = self.hp
         return None if hp is None else hp > 0
 
-    def is_panic(self):
-        """恐慌（理智归零后的失控状态）。"""
-        return self._read("_model", "_state", "_isPanic")
-
-    def is_break(self):
-        """混乱/崩溃。"""
-        return self._read("_model", "_state", "_isBreak")
-
-    def is_low_morale(self):
-        return self._read("_model", "_state", "_isLowMorale")
-
+    @property
     def hp_ratio(self):
         """血量比例（0..1），两个字段都读到才算得出来。"""
-        hp, mx = self.hp(), self.max_hp()
+        hp, mx = self.hp, self.max_hp
         if hp is None or not mx:
             return None
         return hp / float(mx)
+
+    # ---- buff ----
+    @property
+    def buffs(self):
+        """身上全部 buff，返回 :class:`Buff` 列表（含名字、层数、次数）。"""
+        return [Buff(self, i) for i in range(self.buff_count())]
+
+    def buff(self, key, default=None):
+        """按序号或名字找一个 buff：``u.buff("呼吸法")`` / ``u.buff(0)``。"""
+        items = self.buffs
+        if isinstance(key, int):
+            return items[key] if 0 <= key < len(items) else default
+        want = str(key)
+        for b in items:
+            if b.name == want:
+                return b
+        return default
 
     def buff_count(self):
         """身上有几个 buff（BuffDetail.list 的元素数）。"""
@@ -183,6 +511,15 @@ class Unit:
         """全部 buff 的名字指纹列表。"""
         return [self.buff_id(i) for i in range(self.buff_count() or 0)]
 
+    def _buff_chain(self, i, field_off):
+        """unit → model → buffDetail → list → [i] → buffInfo → 字段，正好 8 跳。"""
+        return self._prefix + [{"off": _UNIT_MODEL, "deref": True},
+                               {"off": _MODEL_BUFF, "deref": True},
+                               {"off": _BUFF_LIST, "deref": True},
+                               {"list": int(i)},
+                               {"off": _BUFF_INFO, "deref": True},
+                               {"off": int(field_off), "deref": False}]
+
     # ---- 全字段扫描 ----
     def scan(self, classes=("BattleUnitModel", "CharacterState"), timeout=1.0):
         """按字段表把这一类能读的**全部**字段读一遍，返回 ``{字段名: 值}``。
@@ -204,24 +541,31 @@ class Unit:
         """一次拿齐常用字段，返回 dict（每个字段仍是一次往返）。"""
         return {
             "index": self.index,
-            "instance_id": self.instance_id(),
-            "origin_id": self.origin_id(),
-            "hp": self.hp(),
-            "max_hp": self.max_hp(),
-            "mp": self.mp(),
-            "speed": self.speed(),
-            "alive": self.alive(),
-            "panic": self.is_panic(),
-            "break": self.is_break(),
+            "instance_id": self.id,
+            "origin_id": self.identity,
+            "hp": self.hp,
+            "max_hp": self.max_hp,
+            "sp": self.sp,
+            "speed": self.speed,
+            "alive": self.alive,
+            "panic": self.is_panic,
+            "break": self.is_break,
             "buffs": self.buff_count(),
         }
 
 
 def _scan_fields(host, slot, base, cls, timeout=1.0):
-    """在 ``base`` 这个已经指到对象上的链前缀之后，把 ``cls`` 的字段全读一遍。"""
+    """在 ``base`` 这个已经指到对象上的链前缀之后，把 ``cls`` 的字段全读一遍。
+
+    容器字段（List/Array/Dictionary）与文本字段要**先解引用**再落点：字段里
+    存的是对象指针，不解引用就会拿指针当容器头去读，得到的永远是 0 或垃圾
+    （0.9.9 真机踩过：``_allUnitDictionary`` 扫出 0，而 ``count()`` 扫出 11）。
+    """
     out = {}
     for name, record in fields.FIELD_TABLE.get(cls, {}).items():
-        chain = list(base) + [{"off": record["off"], "deref": False}]
+        deref = bool(record.get("ref")) and record["kind"] in (
+            fields.LIST, fields.ARRAY, fields.DICT, fields.TEXT)
+        chain = list(base) + [{"off": record["off"], "deref": deref}]
         out[name] = host.read(slot, chain, kind=_end_kind(record),
                               default=None, timeout=timeout)
     return out
@@ -232,23 +576,34 @@ def scan_class(host, slot, cls, timeout=1.0):
     return _scan_fields(host, slot, [], cls, timeout=timeout)
 
 
+def scan_object(host, slot, cls, base=(), timeout=1.0):
+    """从对象槽出发先走一段 ``base`` 链，再把 ``cls`` 的字段全读一遍。
+
+    ``scan_object(host, 27, "CharacterState",
+                  base=[{"off": 0x148, "deref": True}])`` —— 槽 27 里是
+    BattleUnitModel，先跳 ``_state`` 再扫 CharacterState。
+    """
+    return _scan_fields(host, slot, list(base), cls, timeout=timeout)
+
+
 def count(host, slot=SLOT_MANAGER):
     """场上单位总数（字典 count - freeCount，已跳过 Remove 留下的死坑）。"""
     return host.read(slot, [{"off": _MANAGER_DICT, "deref": True}],
                      kind="dict_count", default=0)
 
 
-def unit(host, index, slot=SLOT_MANAGER):
+def unit(host, index, slot=SLOT_MANAGER, acc=None):
     """按序号取一个单位门面（序号是「活跃 value 的第几个」，不是它的 id）。"""
-    return Unit(host, slot, index)
+    return Unit(host, slot, index, acc=acc or Access(host, slot))
 
 
-def units(host, slot=SLOT_MANAGER, limit=None):
+def units(host, slot=SLOT_MANAGER, limit=None, acc=None):
     """全场单位列表。``limit`` 用来只取前几个（读得慢，先探路用）。"""
+    acc = acc or Access(host, slot)
     total = count(host, slot=slot) or 0
     if limit is not None:
         total = min(total, int(limit))
-    return [Unit(host, slot, i) for i in range(total)]
+    return [Unit(host, slot, i, acc=acc) for i in range(total)]
 
 
 def snapshot(host, slot=SLOT_MANAGER, limit=None):

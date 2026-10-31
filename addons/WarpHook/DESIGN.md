@@ -766,3 +766,81 @@ BattleUnit → _model(+0x10) → _buffDetail(+0xE0) → list(+0x10)
 `kind='text'` 的落点是 `WARP_READ_TEXT_NUM`，它把 il2cpp string 换算成一个
 数字（长度/哈希），**不是 UTF-16 原文**。要拿原文得让宿主支持「把对象槽里的
 字符串读出到共享内存文本区」—— 那是协议 v8 的事，记在开发笔记的下一步里。
+
+## 17. 场景对象访问（门面层，v0.9.9 起）
+
+### 17.1 三层，每层都能直接用
+
+| 层 | 入口 | 什么时候用 |
+| --- | --- | --- |
+| 底层原语 | `host.hook()` / `host.read()` / `host.call()` | 要精确控制钩子、读链、静态调用 |
+| 字段表 | `fields.read_chain("BattleUnit","_model","_state","_hp")` | 知道类名和字段名，自己拼链 |
+| 门面 | `objects.access(host)` → `Unit` / `Buff` | 日常业务，一行拿到值 |
+
+门面不藏底层：`Unit.read(...)` 还是「从这个对象出发自己拼链」，
+`Unit.get_pro(...)` 是查字段表，`access.reader()` 给你跨进程读句柄。
+
+### 17.2 一行读
+
+```python
+from warphook import game
+
+acc = game.access(host)            # 自动保证 manager 已进对象槽（走 get_Instance，不装钩子）
+u = acc.get_obj(id=1)              # 按战斗内编号找；也可以 acc.units()[0]
+
+u.id            # 1                 战斗内编号
+u.identity      # 10115             人格 ID（原字段 _originID）
+u.hp, u.max_hp  # 245, 248
+u.sp            # 45                理智
+u.speed         # 5.661
+u.alive, u.is_panic, u.is_break, u.is_low_morale
+u.hp_ratio      # 0.988
+
+u.get_pro("origin_id")                     # 10215 —— 好记的名字，自动映射到 _originID
+u.get_pro("CharacterState._maxHp")         # 248  —— 带类名前缀
+u.get_pro("_isPanic")                      # False
+u.props()                                  # 62 个字段的字典（摸底用，慢）
+```
+
+`get_pro` 支持三种 key：好记的别名（`origin_id`/`hp`/`sp`/`panic`…）、
+dump 原名（`_originID`/`_hp`）、`类名.字段` 的点路径。
+
+### 17.3 buff
+
+```python
+u.buffs                      # [Buff, ...]
+for b in u.buffs:
+    b.name                   # "呼吸法"（UTF-16 原文，走一次跨进程读）
+    b.stack                  # 85   强度/层数（界面上的大数字）
+    b.turn                   # 28   剩余次数/回合
+    b.max_stack, b.max_turn   # 99, 99
+    b.stack_ratio            # 0.859
+
+u.buff("呼吸法").stack        # 按名字找
+u.buff(0)                    # 按序号
+```
+
+`stack`/`turn` 走 `CMD_READ` 代读（`BuffInfo._stack@0x6C` / `_turn@0x70`）；
+名字原文是 il2cpp string，命令通道只回 32 位读不了，所以 `Buff.name` 走一次
+跨进程读（`access.reader()`，懒加载，读不到就返回 `None`，其余字段照常）。
+
+### 17.4 ObscuredBool 的解码
+
+`_isDead` / `_isPanic` / `_isBreak` / `_isLowMorale` 都是 `ObscuredBool`
+（`byte key@0` + `int hidden@4`），真码 = `hidden ^ key`。C 侧 `kind='obscured'`
+是按 `ObscuredInt`（int key）解的，对这几位会把 key 后面的字节也当 key，
+读出来恒 181 —— 所以门面里分两次读、按 byte 解。
+
+真机 11 个单位对照：假一律 `0xB5`，真 `0xD5`（`_isActivated` 全真）。
+`objects.BOOL_FALSE = 0xB5`，其余算真。同一个单位 `id=28` 读出 `break=True`、
+别的是 `False`，说明区分度是真实的。
+
+### 17.5 边界
+
+- **一次属性访问 = 一次 DLL 往返（20–40 ms）**。循环里读 11 个单位 × 6 个字段
+  ≈ 1 秒。要「变化的一瞬间」用钩子，不要轮询。
+- **对象槽**：24..28 可以自己用（门面默认 28），29 = 场景根（DLL 命令泵写），
+  30/31 = tick 保留位。
+- **字典只给 TValue**：`_allUnitDictionary` 是 `Dictionary<int, BattleUnit>`，
+  遍历拿不到 key，想要 key 得按 `count` 逐 index 取。
+- **遍历范围用 `count`（+0x20）**，不要用 entries 数组容量。

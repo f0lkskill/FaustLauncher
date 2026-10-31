@@ -64,32 +64,48 @@ service.host().kill_game()                     # 结束游戏进程
 
 ## 读游戏里的东西
 
-0.9.9（协议 v7）起，读对象不用自己拼链、不用装钩子：
+0.9.9（协议 v7）起，一行就能读到一个单位的血量、人格、buff：
 
 ```python
-from warphook import objects
+from warphook import game
 
-host = service.host()
+acc = game.access(host)          # 自动把 BattleObjectManager 抓进对象槽
+u = acc.get_obj(id=1)            # 按战斗内编号找
 
-bom = objects.bind_manager(host)        # 抓 BattleObjectManager（等一个回合）
-for u in objects.units(host, bom):      # 全场单位
-    print(u.instance_id(), u.hp(), '/', u.max_hp(), '理智', u.mp())
+u.hp, u.max_hp                   # 245, 248
+u.sp                             # 45   理智
+u.identity                       # 10115  人格 ID
+u.alive, u.is_panic, u.is_break  # True, False, False
 
-print(objects.scene(host))              # {'scene': 1, 'time_scale': 1.0}
+for b in u.buffs:                # 身上的 buff
+    print(b.name, b.stack, b.turn)   # 呼吸法 85 28
 ```
 
-想看「一个单位身上到底有什么」，直接扫：
+全场：
 
 ```python
-u = objects.unit(host, bom, 0)
-u.scan()            # BattleUnitModel + CharacterState 全部 63 个字段
-u.buff_count()      # 身上几个 buff
-u.buff_ids()        # 每个 buff 名字的指纹（原文要等协议 v8）
-objects.scene_full(host)                        # 场景对象全字段
-objects.scan_class(host, objects.SLOT_SCENE, 'GlobalGameManager')
+for u in acc.units():            # 场上每个单位
+    print(u.id, u.identity, u.hp, '/', u.max_hp)
+acc.count()                      # 场上单位数
+acc.scene()                      # {'scene': 1, 'time_scale': 1.0, ...}
 ```
 
-`scan()` 每个字段一次代读往返，整场扫下来十几秒 —— 摸底用它，业务只读你关心的。
+通用取值（好记的名字或 dump 原名都行）：
+
+```python
+u.get_pro("origin_id")                    # 人格 ID
+u.get_pro("CharacterState._maxHp")        # 带类名前缀
+u.props()                                 # 62 个字段的字典（摸底用，慢）
+```
+
+底层一直开着 —— 门面只是便利，不是遮罩：
+
+```python
+u.read({"off": 0x10, "deref": True}, {"off": 0x60, "deref": False})
+host.read(slot, [{"off": 0x90, "deref": True}], kind="dict_count")
+from warphook import fields
+fields.read_chain("BattleUnit", "_model", "_state", "_hp")
+```
 
 想读别的字段就查字段表，或者自己拼链 —— 底层一直开着：
 
