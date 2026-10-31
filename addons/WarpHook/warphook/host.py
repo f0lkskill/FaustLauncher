@@ -283,6 +283,12 @@ SAFE_CALLS = frozenset((
     # 音库：事件所在的 bank 没加载时 StartAddBGM 会静默失败（0.9.16 实测静音）
     "SoundManager::LoadBank",
     "SoundManager::LoadBankFromLocal",
+    # v9：换曲前预检（旧插件 switch_rule 的第一步）。第二个参数是
+    # FMOD.Studio.EventInstance& —— 值类型 out，走 MAP 尾部的 out 缓冲。
+    "SoundManager::TryCreateInstance",
+    # 只读工厂：key -> BGMData，BGMData.Path@0x10 就是游戏真正的事件路径。
+    # 纯查表构造，不改游戏状态（用来把「规则表里的曲名」翻成事件名）。
+    "LimbusCompany.SoundLibs.BGMDataFactoryByKey::Get",
     # 注意：**不要**放宽 SoundManager::IsLoadedBank —— 它有两个 1 参重载
     # （AssetReference / string），宿主按「名字 + 参数个数」选方法，会把
     # string 当 AssetReference 传进去，游戏内部直接 AV（0.9.16 实测崩过一次）。
