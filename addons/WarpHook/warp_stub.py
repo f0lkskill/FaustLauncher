@@ -138,9 +138,15 @@ class Host(Protocol):
         actions: Optional[int] = None,
         probe: Optional[Tuple[str, str, int, int]] = None,
         guard: Optional[Tuple[int, int]] = None,
+        rewrite: Optional[Tuple[int, int]] = None,
         **extra: Any,
     ) -> Dict[str, Any]:
-        """登记一条钩子（``probe``/``guard`` 用来读参数、按参数放行）。"""
+        """登记一条钩子（``probe``/``guard`` 用来读参数、按参数放行）。
+
+        ``rewrite=(参数序号, 槽号)``：命中时把第 N 个参数换成对象槽里的指针，
+        再照常调原函数 —— 让游戏自己用我们准备的曲名 / 目标，插件不必去调
+        游戏方法。
+        """
         ...
 
     def clear_hooks(self) -> None:

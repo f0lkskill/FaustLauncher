@@ -90,6 +90,8 @@ void warp_resolve_popup(void *domain);
 int warp_show_popup(const char *utf8);
 DWORD WINAPI warp_kill_thread(LPVOID param);
 const char *warp_pick_text(int base);
+/* v8：命中时该钩子要不要改写第 arg 个参数；返回替换指针，NULL = 不改。 */
+void *warp_rewrite_value(int hook_index, int arg_index);
 void warp_fire(int hook_index);
 int warp_probe_int(const char *klass_name, const char *method_name, void *obj);
 int warp_on_event(int hook_index, void *self, int argc,

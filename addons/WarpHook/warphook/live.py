@@ -109,6 +109,7 @@ class Live:
 
         self._round_cbs = []
         self._scene_cbs = []
+        self._extra_hooks = []
         self._last_round = None
         self._last_scene = None
         self._scene = None
@@ -308,19 +309,21 @@ class Live:
 
     # ---------- 声音 ----------
 
-    def bgm(self, name, stop_current=True, wait=True, wait_timeout=120.0,
-            timeout=2.0):
+    def bgm(self, name, bank=None, stop_current=True, wait=True,
+            wait_timeout=120.0, timeout=2.0):
         """放一首战斗 BGM：``game.bgm('Battle_Cp9_Boss_10')``。
 
         名字收短名（``Battle_Cp9_Boss_10``）或完整路径
         （``event:/BGM/Battle/Battle_Cp9_Boss_10``）。
-        返回 ``{'ok', 'name', 'path', 'reason'}``；名字不存在时游戏会
-        静默继续放原曲，所以失败要自己看 ``reason``。
+        别的关卡的曲**不在当前已加载的音库里**，要传 ``bank``
+        （``game.bgm('Battle_Cp9_Boss_10', bank='BGM_Default_S7_3')``），
+        否则 ``StartAddBGM`` 会静默失败。
+        返回 ``{'ok', 'name', 'path', 'reason'}``。
         """
         if wait:
             self.wait_ready(wait_timeout)
-        return audio.play(self.host(), name, stop_current=stop_current,
-                          timeout=timeout)
+        return audio.play(self.host(), name, bank=bank,
+                          stop_current=stop_current, timeout=timeout)
 
     def bgm_stop(self, restore=True, timeout=2.0):
         """停掉插件放的附加曲，``restore=True`` 时接回游戏原曲。"""
@@ -333,6 +336,47 @@ class Live:
     def bgm_index(self, timeout=2.0):
         """当前战斗曲的编号（``-1`` = 没在放）。"""
         return audio.current_index(self.host(), timeout=timeout)
+
+    def bgm_hook(self, name, method='StartAddBGM', push=True):
+        """让游戏自己放我们的曲子：改写它起附加曲时传的曲名。
+
+        ``game.bgm('X')`` 是插件自己发调用；这个方法反过来 —— 游戏每次起附
+        加曲都会经过 ``StartAddBGM``，我们把它的曲名参数换成 ``X``，于是整条
+        播放流程都由游戏自己走，插件一次 invoke 都不用发。
+        **要在它被调用之前装。**
+        """
+        short = audio.short_name(name)
+        if not short:
+            return {'ok': False, 'name': '', 'reason': '名字是空的'}
+        host = self.host()
+        made = host.make_str(short, slot=audio.SLOT_BATTLE_BGM)
+        if isinstance(made, str) and made != '已执行':
+            return {'ok': False, 'name': short, 'reason': made}
+        entry = {
+            'klass': 'BattleSoundGenerator',
+            'method': method,
+            'argc': 3 if method == 'StartAddBGM' else 1,
+            'rewrite': (1, audio.SLOT_BATTLE_BGM),
+        }
+        self._extra_hooks = [h for h in self._extra_hooks
+                             if not (h.get('klass') == entry['klass']
+                                     and h.get('method') == entry['method'])]
+        self._extra_hooks.append(entry)
+        if push:
+            self._hooks_on = True
+            self._push()
+        return {'ok': True, 'name': short, 'reason': ''}
+
+    def bgm_unhook(self, push=True):
+        """撤掉 :meth:`bgm_hook` 装的改写钩子。"""
+        kept = [h for h in self._extra_hooks
+                if not h.get('rewrite')]
+        removed = len(self._extra_hooks) - len(kept)
+        self._extra_hooks = kept
+        if push:
+            self._push()
+        self.host().release(audio.SLOT_BATTLE_BGM)
+        return {'ok': True, 'removed': removed}
 
     def log(self, message):
         """带插件名的日志。"""
@@ -377,14 +421,16 @@ class Live:
     # ---------- 内部 ----------
 
     def _live_hooks(self):
-        """门面自己要用的钩子：只有一条「回合开始」。"""
-        return [{
+        """门面自己要用的钩子：回合开始 + 插件登记的改写钩子。"""
+        hooks = [{
             'klass': 'BattleObjectManager',
             'method': 'OnRoundStart_Model',
             'argc': 1,
             'actions': 0,
             'cache': (0, objects.SLOT_MANAGER),
         }]
+        hooks.extend(self._extra_hooks)
+        return hooks
 
     def _push(self):
         host = self.host()
@@ -514,9 +560,10 @@ def player():
     return live().player()
 
 
-def bgm(name, stop_current=True, wait=True, wait_timeout=120.0, timeout=2.0):
-    """放一首战斗 BGM：``game.bgm('Battle_Cp9_Boss_10')``。"""
-    return live().bgm(name, stop_current=stop_current, wait=wait,
+def bgm(name, bank=None, stop_current=True, wait=True, wait_timeout=120.0,
+        timeout=2.0):
+    """放一首战斗 BGM：``game.bgm('Battle_Cp9_Boss_10', bank='BGM_Default_S7_3')``。"""
+    return live().bgm(name, bank=bank, stop_current=stop_current, wait=wait,
                       wait_timeout=wait_timeout, timeout=timeout)
 
 
@@ -533,6 +580,16 @@ def bgm_playing(timeout=2.0):
 def bgm_index(timeout=2.0):
     """当前战斗曲编号（``-1`` = 没在放）。"""
     return live().bgm_index(timeout=timeout)
+
+
+def bgm_hook(name, push=True):
+    """让游戏自己放我们的曲子：``game.bgm_hook('Battle_Cp9_Boss_10')``。"""
+    return live().bgm_hook(name, push=push)
+
+
+def bgm_unhook(push=True):
+    """撤掉 ``game.bgm_hook`` 装的改写钩子。"""
+    return live().bgm_unhook(push=push)
 
 
 def on_round_start(handler):

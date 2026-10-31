@@ -22,12 +22,22 @@
  * 撕成多个宏参数。 */
 #define WARP_EVT6(p1, p2, p3, p4, p5, p6) p1, p2, p3, p4, p5, p6
 
-#define WARP_THUNK_DEF(N, n, DECL, EVT, CALL)                           \
+/* v8：命中时按配置覆盖某个形参（改游戏自己要传进去的值）。
+ * 取值只在共享内存的对象槽里看一眼，没有就直接返回 —— 不分配、不构造。 */
+#define WARP_RW(k, v)                                                   \
+    do {                                                                \
+        void *rw_ = warp_rewrite_value(warp_n_, (k));                         \
+        if (rw_) v = rw_;                                               \
+    } while (0)
+
+#define WARP_THUNK_DEF(N, n, DECL, EVT, CALL, RW)                           \
     static void __fastcall warp_thunk##N##_##n DECL                     \
     {                                                                   \
         WARP_HOOK *h_ = warp_hook_at(n);                                \
+        const int warp_n_ = (n);                                        \
         int act = warp_on_event(n, self, N, WARP_EVT6 EVT);             \
         unsigned long long ret_ = 0;                                    \
+        RW                                                              \
         if (!(act & 0x1) && g_slots[n].installed) {                     \
             if (h_ && h_->ret_kind == WARP_RET_FLOAT) {                 \
                 float f_ = ((float (__fastcall *)DECL)g_slots[n].original) CALL; \
@@ -56,25 +66,34 @@
  * isCritical, info)` 这类方法留的：出手者（attacker）在第 4 个参数上，
  * 只有 a1..a3 的话「谁打的我」永远读不到。7~9 是铁路通关记录的九参构造。 */
 #define WARP_THUNK_0(n) WARP_THUNK_DEF(0, n, (void *self, void *mi), \
-    (NULL, NULL, NULL, NULL, NULL, NULL), (self, mi))
+    (NULL, NULL, NULL, NULL, NULL, NULL), (self, mi), (void)warp_n_;)
 #define WARP_THUNK_1(n) WARP_THUNK_DEF(1, n, (void *self, void *a1, void *mi), \
-    (a1, NULL, NULL, NULL, NULL, NULL), (self, a1, mi))
+    (a1, NULL, NULL, NULL, NULL, NULL), (self, a1, mi), \
+    WARP_RW(1, a1);)
 #define WARP_THUNK_2(n) WARP_THUNK_DEF(2, n, (void *self, void *a1, void *a2, void *mi), \
-    (a1, a2, NULL, NULL, NULL, NULL), (self, a1, a2, mi))
+    (a1, a2, NULL, NULL, NULL, NULL), (self, a1, a2, mi), \
+    WARP_RW(1, a1); WARP_RW(2, a2);)
 #define WARP_THUNK_3(n) WARP_THUNK_DEF(3, n, (void *self, void *a1, void *a2, void *a3, void *mi), \
-    (a1, a2, a3, NULL, NULL, NULL), (self, a1, a2, a3, mi))
+    (a1, a2, a3, NULL, NULL, NULL), (self, a1, a2, a3, mi), \
+    WARP_RW(1, a1); WARP_RW(2, a2); WARP_RW(3, a3);)
 #define WARP_THUNK_4(n) WARP_THUNK_DEF(4, n, (void *self, void *a1, void *a2, void *a3, void *a4, void *mi), \
-    (a1, a2, a3, a4, NULL, NULL), (self, a1, a2, a3, a4, mi))
+    (a1, a2, a3, a4, NULL, NULL), (self, a1, a2, a3, a4, mi), \
+    WARP_RW(1, a1); WARP_RW(2, a2); WARP_RW(3, a3); WARP_RW(4, a4);)
 #define WARP_THUNK_5(n) WARP_THUNK_DEF(5, n, (void *self, void *a1, void *a2, void *a3, void *a4, void *a5, void *mi), \
-    (a1, a2, a3, a4, a5, NULL), (self, a1, a2, a3, a4, a5, mi))
+    (a1, a2, a3, a4, a5, NULL), (self, a1, a2, a3, a4, a5, mi), \
+    WARP_RW(1, a1); WARP_RW(2, a2); WARP_RW(3, a3); WARP_RW(4, a4); WARP_RW(5, a5);)
 #define WARP_THUNK_6(n) WARP_THUNK_DEF(6, n, (void *self, void *a1, void *a2, void *a3, void *a4, void *a5, void *a6, void *mi), \
-    (a1, a2, a3, a4, a5, a6), (self, a1, a2, a3, a4, a5, a6, mi))
+    (a1, a2, a3, a4, a5, a6), (self, a1, a2, a3, a4, a5, a6, mi), \
+    WARP_RW(1, a1); WARP_RW(2, a2); WARP_RW(3, a3); WARP_RW(4, a4); WARP_RW(5, a5); WARP_RW(6, a6);)
 #define WARP_THUNK_7(n) WARP_THUNK_DEF(7, n, (void *self, void *a1, void *a2, void *a3, void *a4, void *a5, void *a6, void *a7, void *mi), \
-    (a1, a2, a3, a4, a5, a6), (self, a1, a2, a3, a4, a5, a6, a7, mi))
+    (a1, a2, a3, a4, a5, a6), (self, a1, a2, a3, a4, a5, a6, a7, mi), \
+    WARP_RW(1, a1); WARP_RW(2, a2); WARP_RW(3, a3); WARP_RW(4, a4); WARP_RW(5, a5); WARP_RW(6, a6); WARP_RW(7, a7);)
 #define WARP_THUNK_8(n) WARP_THUNK_DEF(8, n, (void *self, void *a1, void *a2, void *a3, void *a4, void *a5, void *a6, void *a7, void *a8, void *mi), \
-    (a1, a2, a3, a4, a5, a6), (self, a1, a2, a3, a4, a5, a6, a7, a8, mi))
+    (a1, a2, a3, a4, a5, a6), (self, a1, a2, a3, a4, a5, a6, a7, a8, mi), \
+    WARP_RW(1, a1); WARP_RW(2, a2); WARP_RW(3, a3); WARP_RW(4, a4); WARP_RW(5, a5); WARP_RW(6, a6); WARP_RW(7, a7); WARP_RW(8, a8);)
 #define WARP_THUNK_9(n) WARP_THUNK_DEF(9, n, (void *self, void *a1, void *a2, void *a3, void *a4, void *a5, void *a6, void *a7, void *a8, void *a9, void *mi), \
-    (a1, a2, a3, a4, a5, a6), (self, a1, a2, a3, a4, a5, a6, a7, a8, a9, mi))
+    (a1, a2, a3, a4, a5, a6), (self, a1, a2, a3, a4, a5, a6, a7, a8, a9, mi), \
+    WARP_RW(1, a1); WARP_RW(2, a2); WARP_RW(3, a3); WARP_RW(4, a4); WARP_RW(5, a5); WARP_RW(6, a6); WARP_RW(7, a7); WARP_RW(8, a8); WARP_RW(9, a9);)
 
 WARP_THUNK_0(0)  WARP_THUNK_0(1)  WARP_THUNK_0(2)  WARP_THUNK_0(3)
 WARP_THUNK_0(4)  WARP_THUNK_0(5)  WARP_THUNK_0(6)  WARP_THUNK_0(7)

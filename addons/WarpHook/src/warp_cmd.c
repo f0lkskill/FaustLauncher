@@ -136,7 +136,7 @@ static void warp_cmd_argkinds(const char *text, char *kinds, int max)
     if (hash) {
         for (hash++; *hash && i < max; hash++) {
             if (*hash == WARP_CMD_ARG_I || *hash == WARP_CMD_ARG_F ||
-                *hash == WARP_CMD_ARG_P)
+                *hash == WARP_CMD_ARG_P || *hash == WARP_CMD_ARG_M)
                 kinds[i++] = *hash;
         }
     }
@@ -176,6 +176,13 @@ static int warp_cmd_build_params(int argc, const char *kinds,
         case WARP_CMD_ARG_P:
             pval[i] = (void *)(intptr_t)v;
             params[i] = &pval[i];
+            break;
+        case WARP_CMD_ARG_M:
+            /* out 参数：v 是 MAP 内缓冲的块内偏移，直接把那块地址给 il2cpp。
+             * 游戏往这里写值类型（如 FMOD EventInstance），Python 侧读同一块。 */
+            if (v < 0 || v >= WARP_CMD_BUF_COUNT * WARP_CMD_BUF_SIZE)
+                return WARP_CMD_RES_BAD_ARGC;
+            params[i] = (char *)g_hdr + WARP_CMD_BUF_OFFSET + v;
             break;
         default:
             ival[i] = v;

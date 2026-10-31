@@ -4,6 +4,54 @@
 
 看完整历史：`git log --oneline -- addons/WarpHook/`
 
+## 0.9.17
+
+协议 **v9**：命令通道能接 out 参数了 —— 值类型返回值（FMOD 的
+`EventInstance&`）终于能传出去。这一版把「换 BGM」补成跟旧插件一样的四步。
+
+**一、命令的 out 参数缓冲（`('buf', n)`）。**
+
+有些游戏方法要一个可写的值类型落点，`SoundManager.TryCreateInstance(string,
+out EventInstance)` 就是。il2cpp 的 `runtime_invoke` 要求那个参数直接指向内存，
+而插件进程没法往游戏堆里塞一块（也没法替它分配）。做法是把 MAP 尾部开 4 块
+64 字节缓冲（`WARP_CMD_BUF_OFFSET`），参数类型多一个 `'m'`：C 侧把
+「MAP 基址 + 块内偏移」当参数传进去 —— 共享内存在游戏进程里本来就是可写的，
+游戏写进去，Python 侧 `read_buf(n)` 读同一块。
+
+**二、`audio.try_create`：换曲前先验名字。**
+
+旧插件的 `switch_rule` 在停原曲**之前**先调 `TryCreateInstance`，失败就报
+「Cannot create BGM; original music retained.」直接返回。我们之前没这步，
+于是曲名拼错时先停掉原曲、`StartAddBGM` 再静默失败，玩家只剩静音。
+现在 `audio.play(..., check=True)` 默认走预检，名字无效就不动原曲。
+
+**三、一个反直觉的取证结论。**
+
+`Battle_Cp9_Boss_10` 这类名字**不是 FMOD 事件名**：遍历全部 `.bank`（867 个）
+零命中，只在 `.assets.bank` 里以 `Battle_Cp9_Boss_10_AR` / `_MR` 的形式存在
+（那是音频资源名）。`BGM_Default_S7_3.bank` 里真正的事件名是 `Battle_1_0`、
+`Battle_2_S1` 这种。所以曲名要从 bank 里取，不能照抄规则表。
+
+## 0.9.16
+
+协议 **v8**：钩子能改参数了 —— 从「看着游戏做事」变成「改掉游戏要做的事」。
+另外放开音频方法的直调白名单（0.9.15 已证明崩点是句柄不是 invoke）。
+
+**一、钩子参数改写（`rewrite=`）。**
+
+`Host.hook(..., rewrite=(参数序号, 槽号))`：命中时把第 N 个参数换成对象槽
+里的指针，再照常调原函数。槽里通常先放一个 `make_str` 造好的 il2cpp String，
+于是「游戏要放 A 曲」变成「游戏放 B 曲」，全程不调游戏方法。
+
+C 侧只在 thunk 里替换一个形参，不构造任何对象；String 的归属仍在 Python 侧。
+MAP 尾部追加 `WARP_REWRITE[32]`（8 字节/条），前面所有偏移不动。
+
+**二、`audio.play` 解禁。**
+
+白名单加入 `BattleSoundGenerator` 的 `StartAddBGM` / `StopBGM` /
+`StopAddedBGM` / `StartBGM` / `PauseBGM` 与 `SoundManager::StopBGM`。
+`allow_unsafe` 参数随之取消 —— 换曲走旧插件同一套三步顺序，不再需要逃生门。
+
 ## 0.9.15
 
 0.9.14 的白名单拦住了「乱调游戏方法」，但白名单内第一条真机连调就崩了
