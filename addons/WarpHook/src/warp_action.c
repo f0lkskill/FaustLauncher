@@ -87,7 +87,7 @@ int warp_probe_int(const char *klass_name, const char *method_name, void *obj)
     method = warp_find_method(klass, method_name, 0);
     if (!method)
         return 0;
-    result = g_ic.runtime_invoke(method, obj, NULL, &exc);
+    result = warp_safe_invoke(method, obj, NULL, &exc);
     if (exc || !result)
         return 0;
     /* il2cpp 的 boxed int：对象头 16 字节之后才是值 */
