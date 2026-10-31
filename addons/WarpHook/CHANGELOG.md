@@ -4,6 +4,28 @@
 
 看完整历史：`git log --oneline -- addons/WarpHook/`
 
+## 0.9.7
+
+读取链补上最后一块容器拼图：**Dictionary 遍历**（协议 v6，只改读链语义、
+布局不变，`MAP_BYTES` 仍 172928）。
+
+- **字典容器步 `6`/`7`（`'dict'`/`'dict_val'`）**。`Dictionary<K,V>` 布局
+  固定（entries Array@+0x18、count@+0x20、freeCount@+0x2C，entry 形如
+  `{hashCode@0, next@4, TKey@8, TValue}`），`Remove` 留死坑
+  （hashCode<0）要跳过，活跃数 = count − freeCount。entry 尺寸/ value 偏移
+  由配置方从 dump.cs 算好写进步里（`value_off`/`stride`，缺省 16/24）。
+  拿全场单位从此不用绕 List：`BattleObjectManager._allUnitDictionary`
+  （+0x90）直接下脚。
+- **遍历链（iter）**。字典步写 `'dict': 'iter'` 时一次命中按活跃 value
+  逐轮装载、逐轮发事件（上限 `WARP_ITER_MAX=256`）；配套批去重
+  （轮 0 快照哈希 + 轮数，只缓存一个 int）拦住每帧钩子的重复批。
+- **`dict_count` 落点（kind 9）**。活跃 entry 数一步读出，与 List 的
+  `count`（+0x18）偏移不同。
+- **版本协商（A3 部分修复）**。`host_alive` 校验宿主 `version ≥ HOST_VERSION`：
+  旧 DLL 不认识新步，直接拒绝装配而不是静默出错。
+- 偏移依据：`docs/游戏内存探索.md`；单元测试以 ctypes 伪造 Dictionary
+  内存全过（随机访问/死坑跳过/iter/dict_count/int→int 值直读/链后续跳）。
+
 ## 0.9.6
 
 第七轮：BUF 事件转发上线 —— buff 类成就（"心脏，心脏！"的 eyebuff

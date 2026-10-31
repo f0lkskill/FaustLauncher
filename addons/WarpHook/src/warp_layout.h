@@ -46,7 +46,9 @@
 #include "MinHook.h"
 
 #define WARP_MAGIC        0x54534857u      /* "WHST" */
-#define WARP_VERSION      5                /* v5：尾部追加 buff 关注哈希表段（BUF 行）。
+#define WARP_VERSION      6                /* v6：读取链新增 Dictionary 容器步
+                                            * （deref=6/7）与字典计数 kind=9；
+                                            * v5：尾部追加 buff 关注哈希表段（BUF 行）。
                                             * v4：钩子表 16→32（成就 25 条 + NoGacha 2 条
                                             * 已经装不下 16 槽，_layout 截断是静默的，
                                             * 真机上 NoGacha 的钩子整条消失） */
@@ -125,13 +127,39 @@
 /* 读取链每一步的动作。deref[i] 存的既是「要不要解引用」也是「这一步做什么」：
  * 0 加偏移；1 加偏移后解引用；2/3 把当前指针当容器取引用元素；
  * 4/5 同样取第 off[i] 个元素，但元素本身是 4 字节值类型（List<int> 之类）——
- * 元素值不追指针，直接当位模式带回来交给最后一步的 kind 解释。 */
+ * 元素值不追指针，直接当位模式带回来交给最后一步的 kind 解释。
+ * 6/7 把当前指针当 il2cpp Dictionary<*,*>：跳过被 Remove 留下的空坑
+ * （entry.hashCode < 0），取第 k 个「活跃」entry 的 value。entry 的尺寸和
+ * value 字段偏移随 TKey/TValue 形状变化，配置方从 dump.cs 算好打包进
+ * off[i]（见 WARP_DICT_PACK）；7 表示 value 是 4B 值类型（int→int 字典），
+ * 读出来的是值不是指针，后续步骤把它当普通整数继续加偏移。
+ * off[i] 带 bit31 时这条链是「遍历」链：一次命中对每个活跃 value 各发一个
+ * 事件（warp_apply_reads 负责循环），而不是只取第 k 个。 */
 #define WARP_STEP_PLAIN 0
 #define WARP_STEP_DEREF 1
 #define WARP_STEP_LIST  2   /* List<T>  : items(+0x10) / size(+0x18) */
 #define WARP_STEP_ARRAY 3   /* Array<T> : length(+0x18) / 元素从 +0x20 起 */
 #define WARP_STEP_LIST_VAL  4   /* List<值类型>，元素 stride 4 */
 #define WARP_STEP_ARRAY_VAL 5   /* Array<值类型>，元素 stride 4 */
+#define WARP_STEP_DICT_VALUE   6 /* Dictionary：取第 k 个活跃 entry 的 value 引用 */
+#define WARP_STEP_DICT_VALUE32 7 /* 同 6，但 value 是 4B 值类型（读值不留指针） */
+
+/* Dictionary 步的 off[i] 打包（warp_dict_nth_value 解包）：
+ *   bit0-7   value_off —— value 字段在 entry 内的偏移，0 → 默认 16
+ *   bit8-15  stride    —— entry 尺寸，0 → 默认 24（x64 下 int→引用 / 引用→引用）
+ *   bit16-30 下标 k    —— 随机访问取第 k 个活跃 entry；遍历链由运行时填
+ *   bit31    ITER 标记 —— 遍历链（一次命中发 N 个事件） */
+#define WARP_DICT_PACK(value_off, stride, k, iter) \
+    (((value_off) & 0xFF) | (((stride) & 0xFF) << 8) | \
+     (((k) & 0x7FFF) << 16) | ((iter) ? 0x80000000u : 0u))
+#define WARP_DICT_VALUE_OFF(packed) ((packed) & 0xFF)
+#define WARP_DICT_STRIDE(packed)    (((packed) >> 8) & 0xFF)
+#define WARP_DICT_INDEX(packed)     (((packed) >> 16) & 0x7FFF)
+#define WARP_DICT_ITER(packed)      (((packed) >> 31) & 1u)
+
+/* 遍历链一次命中的事件轮数上限：真用例是全场单位（≤10），给到 256 已经
+ * 覆盖任何合理的字典；偏移写错时 count 可能是天文数字，别真去灌事件环。 */
+#define WARP_ITER_MAX 256
 #define WARP_READ_OFFSET  (WARP_EVENTS_OFFSET + WARP_EVENT_COUNT * WARP_EVENT_SIZE)
 
 /* 对象槽：钩子命中时把某个参数的指针留在这儿，读侧（Python 或另一条读链）
@@ -166,6 +194,9 @@
 #define WARP_READ_BUFF_MASK 8   /* 落点是战斗单位：遍历 buff 链对每个 buff 名算 fnv1a64，
                                  * 命中关注表（WARP_BUFF_WATCH_OFFSET）就置位 —— out=位掩码。
                                  * off[0..3] = 单位buff详情/列表/模型数据/静态id 四个字段偏移。 */
+#define WARP_READ_COUNT_DICT 9  /* 落点是 il2cpp Dictionary<*,*>：活跃 entry 数 =
+                                 * count(+0x20) - freeCount(+0x2C)。注意 List/Array
+                                 * 的计数（kind=6）读的是 +0x18，两者布局不同。 */
 
 /* 原函数返回值怎么取（thunk 调原函数后按这个类型拿返回值） */
 #define WARP_RET_VOID  0        /* 不关心返回值（原 thunk 的行为） */

@@ -6,6 +6,7 @@
  */
 #pragma once
 #include "warp_layout.h"
+#include <string.h>
 
 /* ---- 类型 ---- */
 typedef struct {

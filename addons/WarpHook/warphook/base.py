@@ -565,9 +565,11 @@ STEP_LIST = 2
 STEP_ARRAY = 3
 STEP_LIST_VAL = 4     # List<int> 这类值类型容器：元素是值不是指针
 STEP_ARRAY_VAL = 5
+STEP_DICT_VALUE = 6     # Dictionary：第 k 个活跃 entry 的 value（引用）
+STEP_DICT_VALUE32 = 7   # 同 6，value 是 4B 值类型（int→int 字典）
 
 _STEP_NAMES = {'plain': 0, 'deref': 1, 'list': 2, 'array': 3,
-               'list_val': 4, 'array_val': 5}
+               'list_val': 4, 'array_val': 5, 'dict': 6, 'dict_val': 7}
 
 
 def can_read(addr, size=8):
@@ -626,6 +628,19 @@ def read_chain(addr, chain, kind='int'):
                 code = STEP_LIST_VAL if 'list_val' in item else STEP_ARRAY_VAL
                 steps.append((int(item.get('list_val', item.get('array_val', 0))),
                               code, None))
+            elif 'dict' in item or 'dict_val' in item:
+                # Dictionary 步（v6）：'dict': k / 'dict_val': k / 'dict': 'iter'。
+                # off 打包与 C 侧 WARP_DICT_PACK 一致：
+                # bit0-7 value_off / bit8-15 stride / bit16-30 下标 / bit31 ITER。
+                code = STEP_DICT_VALUE if 'dict' in item else STEP_DICT_VALUE32
+                key = item.get('dict', item.get('dict_val', 0))
+                idx = 0 if key == 'iter' or not isinstance(key, int) else key
+                off = ((int(item.get('value_off', 0)) & 0xFF)
+                       | ((int(item.get('stride', 0)) & 0xFF) << 8)
+                       | ((idx & 0x7FFF) << 16))
+                if key == 'iter' or item.get('iter'):
+                    off |= 0x80000000
+                steps.append((off, code, None))
             else:
                 steps.append((int(item.get('off', 0)),
                               _step_code(item.get('deref', True)),
@@ -634,6 +649,14 @@ def read_chain(addr, chain, kind='int'):
             steps.append((int(item[0]), _step_code(item[1] if len(item) > 1 else True),
                           None))
     if not steps:
+        # 零跳链：addr 本身就是落点。聚合 kind 在这里也要生效（例如参数
+        # 直接就是容器），否则 count/dict_count 会漏成返回裸地址。
+        if kind == 'dict_count' and can_read(int(addr), 0x30):
+            total = ctypes.c_int32.from_address(int(addr) + 0x20).value
+            free = ctypes.c_int32.from_address(int(addr) + 0x2C).value
+            return int(total - free) if total > free else 0
+        if kind == 'count' and can_read(int(addr), 0x20):
+            return int(ctypes.c_int32.from_address(int(addr) + 0x18).value)
         return int(addr) if kind != 'float' else _as_float(int(addr))
 
     cur = int(addr or 0)
@@ -660,6 +683,48 @@ def read_chain(addr, chain, kind='int'):
                 return None
             cur = ctypes.c_int32.from_address(arr + 0x20 + idx * 4).value & 0xFFFFFFFF
             value_mode = True
+            continue
+        if step == STEP_DICT_VALUE or step == STEP_DICT_VALUE32:
+            # Dictionary 步：跳过 Remove 空坑（entry.hashCode < 0）取第 k 个
+            # 活跃 entry 的 value。entry 布局 {hashCode,next,TKey,TValue}，
+            # stride / value_off 从配置打包位里来（0 = 默认 24 / 16）。
+            # 诊断路径的 'iter' 链取第 k 个（默认第 0 个）—— 与 C 侧装载轮
+            # 的单轮行为一致；「发 N 个事件」的批量语义只在宿主 DLL 里发生。
+            stride = (off >> 8) & 0xFF or 24
+            voff = off & 0xFF or 16
+            nth = (off >> 16) & 0x7FFF
+            if not can_read(cur, 0x30):
+                return None
+            entries = ctypes.c_uint64.from_address(cur + 0x18).value
+            count = ctypes.c_int32.from_address(cur + 0x20).value
+            live = count - ctypes.c_int32.from_address(cur + 0x2C).value
+            if not entries or count <= 0 or count > 0x10000:
+                return None
+            if not can_read(entries + 0x20, count * stride):
+                return None
+            cur = None
+            seen = 0
+            for i in range(count):
+                ent = entries + 0x20 + i * stride
+                if ctypes.c_int32.from_address(ent).value < 0:
+                    continue
+                if seen < nth:
+                    seen += 1
+                    continue
+                if step == STEP_DICT_VALUE32:
+                    if not can_read(ent + voff, 4):
+                        return None
+                    cur = ctypes.c_int32.from_address(ent + voff).value & 0xFFFFFFFF
+                    value_mode = True
+                else:
+                    if not can_read(ent + voff, 8):
+                        return None
+                    cur = ctypes.c_uint64.from_address(ent + voff).value
+                    if not cur:
+                        continue
+                break
+            if cur is None:
+                return None
             continue
         if step == STEP_LIST or step == STEP_ARRAY:
             if not can_read(cur, 0x20):
@@ -703,6 +768,14 @@ def read_chain(addr, chain, kind='int'):
         if not can_read(cur, 0x20):
             return None
         return int(ctypes.c_int32.from_address(cur + 0x18).value)
+    if kind == 'dict_count':
+        # Dictionary 活跃数 = count(+0x20) - freeCount(+0x2C)，与 List/Array
+        # 的 count（+0x18）不是一个偏移 —— Remove 不搬数组只改哈希标记。
+        if not can_read(cur, 0x30):
+            return None
+        total = ctypes.c_int32.from_address(cur + 0x20).value
+        free = ctypes.c_int32.from_address(cur + 0x2C).value
+        return int(total - free) if total > free else 0
     if kind == 'text':
         if not can_read(cur, 8):
             return None

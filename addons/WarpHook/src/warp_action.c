@@ -172,6 +172,63 @@ static int warp_step_value_element(int step, void **pp, int idx, int count)
     return 1;
 }
 
+/* Dictionary<*,*> 容器步：取第 nth 个「活跃」entry 的 value。
+ *
+ * il2cpp Dictionary 布局（x64）：+0x10 buckets / +0x18 entries / +0x20 count /
+ * +0x2C freeCount；entry = { int hashCode(+0); int next(+4); TKey(+8); TValue }。
+ * Remove 不搬动数组，只把 hashCode 改成负数挂进空闲链，所以遍历 entries 时
+ * 要按 hashCode < 0 跳过空坑，活跃数 = count - freeCount。
+ * entry 尺寸和 value 偏移随 TKey/TValue 形状变（int→引用 是 24/16，int→int 是
+ * 16/12），C 侧没有类型信息，由配置方从 dump.cs 算好打包进 off[i]
+ * （WARP_DICT_PACK）。val32=1 时 value 是 4B 值类型，读值本身。
+ * 返回 1 = *out 是第 nth 个活跃 value；total 非空时带回活跃总数（可 NULL）。 */
+static int warp_dict_nth_value(const void *dict, int packed, int nth, int val32,
+                               void **out, int *total)
+{
+    const char *entries;
+    int stride = WARP_DICT_STRIDE(packed);
+    int value_off = WARP_DICT_VALUE_OFF(packed);
+    int count, i, seen = 0, live = 0;
+
+    if (!stride)
+        stride = 24;
+    if (!value_off)
+        value_off = 16;
+    if (!dict || !out || nth < 0)
+        return 0;
+    if (!warp_can_read(dict, 0x30))
+        return 0;
+    entries = *(char *const *)((const char *)dict + 0x18);
+    count = *(const int *)((const char *)dict + 0x20);
+    live = count - *(const int *)((const char *)dict + 0x2C);
+    if (total)
+        *total = live > 0 ? live : 0;
+    if (!entries || count <= 0 || count > 0x10000)
+        return 0;
+    if (!warp_can_read(entries + 0x20, (size_t)count * stride))
+        return 0;
+    for (i = 0; i < count; i++) {
+        const char *ent = entries + 0x20 + (size_t)i * stride;
+
+        if (*(const int *)ent < 0)
+            continue;                       /* Remove 留下的空坑 */
+        if (seen++ < nth)
+            continue;
+        if (val32) {
+            if (!warp_can_read(ent + value_off, 4))
+                return 0;
+            *out = (void *)(uintptr_t)(*(const int *)(ent + value_off) & 0xFFFFFFFFu);
+        } else {
+            uint64_t v = *(const uint64_t *)(ent + value_off);
+            if (!v)
+                continue;                   /* value 引用为空（理论少见） */
+            *out = (void *)(uintptr_t)v;
+        }
+        return 1;
+    }
+    return 0;
+}
+
 /* 落点是 List<4B 值类型>：把所有元素加起来（铁路通关回合总和）。
  * 元素个数做个 64K 的上限防呆——偏移写错时 count 可能是个大数，别真去读。 */
 static int warp_sum_list_i32(const void *list, int *out)
@@ -206,6 +263,21 @@ static int warp_count_list(const void *p, int *out)
         return 0;
     count = *(const int *)((const char *)p + 0x18);
     *out = count > 0 ? count : 0;
+    return 1;
+}
+
+/* 落点是 il2cpp Dictionary：活跃 entry 数 = count(+0x20) - freeCount(+0x2C)。
+ * Remove 不搬数组只改哈希标记，直接读 count 会把死坑也算进去。
+ * 跟 List/Array 计数（+0x18）不是一个偏移。读不到就当 0 个。 */
+static int warp_count_dict(const void *p, int *out)
+{
+    int count, free_cnt;
+
+    if (!warp_can_read(p, 0x30))
+        return 0;
+    count = *(const int *)((const char *)p + 0x20);
+    free_cnt = *(const int *)((const char *)p + 0x2C);
+    *out = count > free_cnt ? count - free_cnt : 0;
     return 1;
 }
 
@@ -327,16 +399,25 @@ static int warp_buff_mask(const void *unit, const WARP_READ *r, int *out)
 /* 沿着一条读取链取值。返回 1 表示读到了，0 表示中途碰到空指针。
  *
  * 空指针在 il2cpp 里很常见（对象还没初始化、目标已销毁），所以这里一律
- * 静默返回 0，让上层保留上一次的值 —— 抛出或打印都会把游戏卡住。 */
+ * 静默返回 0，让上层保留上一次的值 —— 抛出或打印都会把游戏卡住。
+ *
+ * nth 的两种用法：
+ *   -1  普通模式：Dictionary 步按 off[i] 打包里的下标随机访问；若这条链带
+ *       ITER 标记且 iter_total 非空，则改成只统计活跃 entry 数写 *iter_total
+ *       并返回 1（不写 out）—— 上层用这个数决定遍历几轮。
+ *   >=0 遍历模式：Dictionary 步取第 nth 个活跃 value，链尾照常走。 */
 static int warp_read_chain(const WARP_READ *r, void *self, int argc,
                            void *a1, void *a2, void *a3,
-                           void *a4, void *a5, void *a6, int *out)
+                           void *a4, void *a5, void *a6, int nth, int *out,
+                           int *iter_total)
 {
     void *p;
     int i;
 
     if (!r || !out)
         return 0;
+    if (iter_total)
+        *iter_total = 0;
 
     switch (r->arg) {
     case 0:  p = self; break;
@@ -384,6 +465,8 @@ static int warp_read_chain(const WARP_READ *r, void *self, int argc,
             return warp_count_list(p, out);
         if (r->kind == WARP_READ_TEXT_NUM)
             return warp_text_number(p, out);
+        if (r->kind == WARP_READ_COUNT_DICT)
+            return warp_count_dict(p, out);
         *out = (int)(size_t)p;
         return 1;
     }
@@ -425,6 +508,39 @@ static int warp_read_chain(const WARP_READ *r, void *self, int argc,
             continue;
         }
 
+        if (step == WARP_STEP_DICT_VALUE || step == WARP_STEP_DICT_VALUE32) {
+            /* Dictionary 步：跳过 Remove 空坑取活跃 entry 的 value。
+             * nth<0 且这条链是遍历链 → 只报活跃总数；值类型 value（7）
+             * 读出来是值本身，后续步骤把它当普通整数加偏移（同 4/5 语义）。 */
+            void *val = NULL;
+            int total = 0;
+            int packed = r->off[i];
+
+            if (nth >= 0) {
+                if (!warp_dict_nth_value(p, packed, nth,
+                                         step == WARP_STEP_DICT_VALUE32,
+                                         &val, NULL))
+                    return 0;
+                p = val;
+                continue;
+            }
+            if ((packed >> 31) & 1u) {
+                if (!warp_dict_nth_value(p, packed, 0,
+                                         step == WARP_STEP_DICT_VALUE32,
+                                         &val, &total))
+                    total = 0;
+                if (iter_total)
+                    *iter_total = total;
+                return 1;
+            }
+            if (!warp_dict_nth_value(p, packed, WARP_DICT_INDEX(packed),
+                                     step == WARP_STEP_DICT_VALUE32,
+                                     &val, NULL))
+                return 0;
+            p = val;
+            continue;
+        }
+
         p = (char *)p + r->off[i];
         if (step) {
             if (!warp_can_read(p, (int)sizeof(void *)))
@@ -436,14 +552,17 @@ static int warp_read_chain(const WARP_READ *r, void *self, int argc,
     }
 
     /* 聚合类 kind 在链的**中途**就决定了：落点是容器本身而不是容器里的元素，
-     * 所以只要零跳或普通步走到 List*，剩下的就是求和/计数，不再走落点解释。 */
+     * 所以只要零跳或普通步走到 List 或 Dictionary，剩下的就是求和/计数，
+     * 不再走落点解释。 */
     if (r->kind == WARP_READ_SUM_LIST || r->kind == WARP_READ_COUNT_LIST ||
-        r->kind == WARP_READ_TEXT_NUM) {
+        r->kind == WARP_READ_TEXT_NUM || r->kind == WARP_READ_COUNT_DICT) {
         if (r->kind == WARP_READ_SUM_LIST)
             return warp_sum_list_i32(p, out);
         if (r->kind == WARP_READ_COUNT_LIST)
             return warp_count_list(p, out);
-        return warp_text_number(p, out);
+        if (r->kind == WARP_READ_TEXT_NUM)
+            return warp_text_number(p, out);
+        return warp_count_dict(p, out);
     }
 
     if (!warp_can_read(p, 16))
@@ -475,29 +594,116 @@ static int warp_read_chain(const WARP_READ *r, void *self, int argc,
     return 1;
 }
 
-/* 把钩子声明的读链全跑一遍，结果写进 out[4]（事件的 a/b/c/d）。 */
-static void warp_apply_reads(WARP_HOOK *h, void *self, int argc,
-                             void *a1, void *a2, void *a3,
-                             void *a4, void *a5, void *a6, int *out)
+/* 这条链是「遍历链」吗：某个 Dictionary 步带 ITER 位（off[i] bit31）。 */
+static int warp_read_is_iter(const WARP_READ *r)
+{
+    int k;
+
+    if (!r)
+        return 0;
+    for (k = 0; k < r->nsteps && k < WARP_READ_STEPS; k++)
+        if ((r->deref[k] == WARP_STEP_DICT_VALUE ||
+             r->deref[k] == WARP_STEP_DICT_VALUE32) &&
+            WARP_DICT_ITER(r->off[k]))
+            return 1;
+    return 0;
+}
+
+/* 把钩子声明的读链跑一遍。
+ *
+ * round < 0（摸底轮）：普通链求值写进 out[]；遍历链只统计字典的活跃数，
+ *   返回值 = 遍历轮数（多条遍历链取最小者对齐，没有遍历链时为 1）。
+ * round >= 0（装载轮）：只跑遍历链的第 round 个 value，覆盖写进 out[]；
+ *   普通链不动 —— 调用方先把 round<0 的结果存成基底，每轮在基底上装载。
+ * 之所以拆两半：一次命中发 N 个事件意味着「装载 → 入队」要循环 N 次，
+ *   而普通链的值每轮都一样，不能每轮重算（探针调用有开销还会撞上限）。 */
+static int warp_apply_reads(WARP_HOOK *h, void *self, int argc,
+                            void *a1, void *a2, void *a3,
+                            void *a4, void *a5, void *a6, int *out, int round)
 {
     const WARP_READ *table;
     int i;
+    int rounds = 0;
 
     if (!h || !g_hdr || h->read_count <= 0)
-        return;
+        return 1;
     if (h->read_base < 0 || h->read_base >= WARP_READ_MAX)
-        return;
+        return 1;
 
     table = (const WARP_READ *)((char *)g_hdr + WARP_READ_OFFSET);
     for (i = 0; i < h->read_count && i < WARP_READ_MAX; i++) {
         const WARP_READ *r = &table[h->read_base + i];
         int slot = r->out;
+
         if (h->read_base + i >= WARP_READ_MAX)
             break;
         if (slot < 0 || slot >= WARP_EVENT_SLOTS)
             continue;
-        warp_read_chain(r, self, argc, a1, a2, a3, a4, a5, a6, &out[slot]);
+        if (round < 0) {
+            if (!warp_read_is_iter(r)) {
+                warp_read_chain(r, self, argc, a1, a2, a3, a4, a5, a6,
+                                -1, &out[slot], NULL);
+            } else {
+                int total = 0;
+
+                if (warp_read_chain(r, self, argc, a1, a2, a3, a4, a5, a6,
+                                    -1, &out[slot], &total) && total > 0 &&
+                    (!rounds || total < rounds))
+                    rounds = total;   /* 多链对齐：取最小，短的那条决定轮数 */
+            }
+        } else if (warp_read_is_iter(r)) {
+            warp_read_chain(r, self, argc, a1, a2, a3, a4, a5, a6,
+                            round, &out[slot], NULL);
+        }
     }
+    if (!rounds)
+        rounds = 1;
+    if (rounds > WARP_ITER_MAX)
+        rounds = WARP_ITER_MAX;
+    return rounds;
+}
+
+/* 把一份 12 格快照装进环形队列。head 只增不减，槽位取模；写之前先保证不越过
+ * tail 一圈，越了就把 tail 往前推（丢最旧的，dropped++）。
+ * 全程只用 Interlocked，读侧（Python）只读 head 与槽内容，不会撕裂。 */
+static void warp_push_event(int hook_index, WARP_HOOK *h, const int *out)
+{
+    int *ctrl;
+    WARP_EVENT *slot;
+    LONG head, tail;
+    int index;
+
+    if (!g_hdr)
+        return;
+
+    ctrl = (int *)((char *)g_hdr + WARP_EV_CTRL_OFFSET);
+    head = InterlockedIncrement((LONG *)&ctrl[0]) - 1;
+    tail = ctrl[1];
+    if (head - tail >= WARP_EVENT_COUNT) {
+        /* 读侧跟不上，最旧的那批要被覆盖掉 —— 交给 Python 一个准确的数字，
+         * 它才知道「我漏了 37 条事件」，而不是默默丢。 */
+        int drop = head - tail - WARP_EVENT_COUNT + 1;
+        ctrl[1] = head - WARP_EVENT_COUNT + 1;
+        InterlockedAdd((LONG *)&ctrl[2], drop);
+    }
+
+    index = (int)(head % WARP_EVENT_COUNT);
+    slot = (WARP_EVENT *)((char *)g_hdr + WARP_EVENTS_OFFSET) + index;
+    slot->id = h->event_id ? h->event_id : hook_index;
+    slot->hook = hook_index;
+    slot->tick = (int)GetTickCount();
+    slot->a = out[0];
+    slot->b = out[1];
+    slot->c = out[2];
+    slot->d = out[3];
+    slot->e = out[4];
+    slot->f = out[5];
+    slot->g = out[6];
+    slot->h = out[7];
+    slot->i = out[8];
+    slot->j = out[9];
+    slot->k = out[10];
+    slot->l = out[11];
 }
 
 /* 把这次命中装进环形队列。head 只增不减，槽位取模；写之前先保证不越过
@@ -508,10 +714,6 @@ static void warp_emit_event(int hook_index, WARP_HOOK *h, void *self,
                             int argc, void *a1, void *a2, void *a3,
                             void *a4, void *a5, void *a6, int ret)
 {
-    int *ctrl;
-    WARP_EVENT *slot;
-    LONG head, tail;
-    int index;
     int out[WARP_EVENT_SLOTS];
     int i;
 
@@ -551,56 +753,66 @@ static void warp_emit_event(int hook_index, WARP_HOOK *h, void *self,
             warp_slot_put(h->cache_slot, cached, 0);
     }
 
-    warp_apply_reads(h, self, argc, a1, a2, a3, a4, a5, a6, out);
+    {
+        /* 遍历批：round<0 摸底跑普通链并统计遍历轮数；rounds>1 说明这条
+         * 命中要发 N 个事件（一个活跃 value 一个），逐轮装载入队。
+         * 基底 base 是普通链的值（每轮不变），work 在基底上被各轮遍历链覆盖。 */
+        int base[WARP_EVENT_SLOTS];
+        int work[WARP_EVENT_SLOTS];
+        int rounds;
+        int r;
 
-    /* 值没变就不入队。必须先跑完读链才知道变没变，所以这段在自增 head 之前：
-     * 先占槽位再判断的话，被吞掉的那条会在环形队列里留个空洞。
-     * 只对「开了去重位又确实配了读链」的钩子生效 —— 没配读链时 out[] 装的是
-     * 参数指针，每次都不一样，去重等于没做。 */
-    if ((h->flags & WARP_HF_DEDUPE) && h->read_count > 0) {
-        int same = g_last_valid[hook_index];
+        rounds = warp_apply_reads(h, self, argc, a1, a2, a3, a4, a5, a6,
+                                  out, -1);
+        if (rounds <= 1) {
+            /* 值没变就不入队。必须先跑完读链才知道变没变，所以这段在自增 head 之前：
+             * 先占槽位再判断的话，被吞掉的那条会在环形队列里留个空洞。
+             * 只对「开了去重位又确实配了读链」的钩子生效 —— 没配读链时 out[] 装的是
+             * 参数指针，每次都不一样，去重等于没做。g_last_valid==2 表示这格
+             * 钩子上一发是遍历批，单值快照已经没意义，视为不同。 */
+            if ((h->flags & WARP_HF_DEDUPE) && h->read_count > 0) {
+                int same = g_last_valid[hook_index] == 1;
 
-        for (i = 0; i < WARP_EVENT_SLOTS; i++) {
-            if (g_last_vals[hook_index][i] != out[i]) {
-                same = 0;
-                break;
+                for (i = 0; i < WARP_EVENT_SLOTS; i++) {
+                    if (g_last_vals[hook_index][i] != out[i]) {
+                        same = 0;
+                        break;
+                    }
+                }
+                if (same)
+                    return;
+                for (i = 0; i < WARP_EVENT_SLOTS; i++)
+                    g_last_vals[hook_index][i] = out[i];
+                g_last_valid[hook_index] = 1;
             }
-        }
-        if (same)
+            warp_push_event(hook_index, h, out);
             return;
-        for (i = 0; i < WARP_EVENT_SLOTS; i++)
-            g_last_vals[hook_index][i] = out[i];
-        g_last_valid[hook_index] = 1;
-    }
+        }
 
-    ctrl = (int *)((char *)g_hdr + WARP_EV_CTRL_OFFSET);
-    head = InterlockedIncrement((LONG *)&ctrl[0]) - 1;
-    tail = ctrl[1];
-    if (head - tail >= WARP_EVENT_COUNT) {
-        /* 读侧跟不上，最旧的那批要被覆盖掉 —— 交给 Python 一个准确的数字，
-         * 它才知道「我漏了 37 条事件」，而不是默默丢。 */
-        int drop = head - tail - WARP_EVENT_COUNT + 1;
-        ctrl[1] = head - WARP_EVENT_COUNT + 1;
-        InterlockedAdd((LONG *)&ctrl[2], drop);
-    }
+        /* 遍历批的批级去重用抽样哈希（轮 0 的 12 格 + 轮数），只缓存一个 int。
+         * 逐格比对要 N×12 的缓存还要 N 轮先算两遍；抽样拦得住「字典没变但
+         * 钩子每帧狂跳」的高频场景（遍历链挂每帧方法时），代价是两批内容
+         * 完全一致但轮 0 恰好哈希相撞时多收一批 —— 可接受。 */
+        memcpy(base, out, sizeof(base));
+        if (h->flags & WARP_HF_DEDUPE) {
+            unsigned hash = (unsigned)rounds * 2654435761u;
 
-    index = (int)(head % WARP_EVENT_COUNT);
-    slot = (WARP_EVENT *)((char *)g_hdr + WARP_EVENTS_OFFSET) + index;
-    slot->id = h->event_id ? h->event_id : hook_index;
-    slot->hook = hook_index;
-    slot->tick = (int)GetTickCount();
-    slot->a = out[0];
-    slot->b = out[1];
-    slot->c = out[2];
-    slot->d = out[3];
-    slot->e = out[4];
-    slot->f = out[5];
-    slot->g = out[6];
-    slot->h = out[7];
-    slot->i = out[8];
-    slot->j = out[9];
-    slot->k = out[10];
-    slot->l = out[11];
+            memcpy(work, base, sizeof(work));
+            warp_apply_reads(h, self, argc, a1, a2, a3, a4, a5, a6, work, 0);
+            for (i = 0; i < WARP_EVENT_SLOTS; i++)
+                hash = (hash ^ (unsigned)work[i]) * 16777619u;
+            if (g_last_valid[hook_index] == 2 &&
+                hash == (unsigned)g_last_vals[hook_index][0])
+                return;
+            g_last_valid[hook_index] = 2;
+            g_last_vals[hook_index][0] = (int)hash;
+        }
+        for (r = 0; r < rounds; r++) {
+            memcpy(work, base, sizeof(work));
+            warp_apply_reads(h, self, argc, a1, a2, a3, a4, a5, a6, work, r);
+            warp_push_event(hook_index, h, work);
+        }
+    }
 }
 
 /* 这次命中该在原函数返回之后才发事件吗？

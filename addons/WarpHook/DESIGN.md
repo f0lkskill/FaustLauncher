@@ -223,8 +223,10 @@ WARP_HOOK   288B×32 klass[48] method[48] argc event_id every chance actions fla
 对象槽      8B×32    cache 钩子与 P6 构造对象落指针的地方；[30]/[31] tick 共享槽
 buff 关注   8B×32    fnv1a64(名字) 列表，0 哨兵 —— buff_mask 读法按它置位
                      （成就侧 watched_buff_names() 的位序，v5 新段）
-总长        172928B（协议 version=5：v3 加 2 导出，v4 钩子表 16→32，
-                     v5 尾部追加 buff 关注哈希表）
+总长        172928B（协议 version=6：v3 加 2 导出，v4 钩子表 16→32，
+                     v5 尾部追加 buff 关注哈希表，v6 只改读链语义（字典步
+                     6/7 + kind 9），布局不变；Python 侧按 version≥6 校验
+                     宿主，旧 DLL 拒绝装配）
 ```
 
 钩子表 → 行为的三段式表达力：
@@ -248,22 +250,56 @@ sum/count/text 解释」，结果直接写进事件槽。每跳的动作由 `der
 | `3` / `'array'` | 把当前指针当 `Array<T>`，取第 `off` 个**引用**元素 |
 | `4` / `'list_val'` | 同 `list`，但元素按 4 字节**值**取（`List<int>`） |
 | `5` / `'array_val'` | 同 `array`，但元素按 4 字节**值**取 |
+| `6` / `'dict'` | 把当前指针当 `Dictionary<K,V>`，取第 k 个**活跃** entry 的 value（引用）。步字典写 `'dict': k` 或 `'dict': 'iter'`（遍历，见下） |
+| `7` / `'dict_val'` | 同 `dict`，但 value 是 4 字节**值**类型（`Dictionary<int,int>`） |
 
 链长为 **0** 是另一种意思：不往前走，把参数本身的值当结果。这专给「参数是
 值类型」的钩子用 —— `IsNodeCleared(int main, int sub, int node)` 的三个参数
 就躺在寄存器上，没有任何偏移可跟。
 
-il2cpp 取字段只有「加偏移 / 先解引用」两种动作，所以前两种就够；后四种是为了
+il2cpp 取字段只有「加偏移 / 先解引用」两种动作，所以前两种就够；中间四种是为了
 **进容器** —— 管理器身上的单位列表是 `List<BattleUnitModel>`，不遍历就够不着单位。
 `List<T>` 的布局固定（`_items` 在 +0x10、`_size` 在 +0x18），`Array` 的 `max_length`
 在 +0x18、元素从 +0x20 起，所以按下标取元素不需要类型信息。引用容器取 8 字节
 指针，值容器（`list_val`/`array_val`）取 4 字节值、取完这个值就是终点。
 
+`Dictionary<K,V>`（v6 的 6/7 步）布局同样是固定的：+0x18 指向 entries **Array
+对象**（entry 数据从 +0x20 起）、+0x20 是 count、+0x2C 是 freeCount；entry 形如
+`{ hashCode@+0, next@+4, TKey@+8, TValue }`，`Remove` 不搬数组只把 hashCode 改负
+挂进空闲链，所以要按 `hashCode < 0` **跳过死坑**，活跃数 = count − freeCount。
+entry 尺寸和 value 偏移随 `K`/`V` 形状变（int→引用 是 24/16，int→int 是 16/12），
+C 侧没有类型信息，这两个数由配置方从 dump.cs 算好写进步里（`'value_off'` /
+`'stride'`，缺省 16 / 24）。`BattleObjectManager._allUnitDictionary`
+（`Dictionary<int, BattleUnit>`）就在 +0x90 —— 拿全场单位从此不用再找 List。
+
+**遍历链（v6）**：字典步的下标写 `'iter'`（或配 `iter: true`）时，一次钩子命中
+不再只取第 k 个 —— C 侧先摸底数出活跃 value 个数 N，然后对第 0..N−1 个 value
+逐轮装载、各自发一个事件（上限 `WARP_ITER_MAX=256`，防偏移写错灌爆事件环）。
+普通读链的值每轮不变，只算一次。批去重用「轮 0 快照哈希 + 轮数」抽样比对
+（只缓存一个 int），拦得住「字典没变但钩子挂在每帧方法上狂跳」的高频场景。
+真机用例（`Dictionary<int, BattleUnit>`，value_off/stride 从 dump.cs 的
+`Dictionary<int, BattleUnit>` entry 布局算出）：
+
+```python
+host.hook('BattleObjectManager', 'SomeBulkyMethod', argc=0, event=1,
+          reads=[
+              # 事件 a：全场活单位数（聚合，整批只算一次）
+              {'arg': 0, 'out': 0, 'kind': 'dict_count', 'off': [0x90]},
+              # 事件 b/c：第 0..N-1 个单位的 hp / instanceID，每轮各发一条事件
+              {'arg': 0, 'out': 1, 'kind': 'int',
+               'off': [{'dict': 'iter', 'off': 0x90, 'value_off': 16, 'stride': 24},
+                       {'off': 0x148, 'deref': True}]},
+          ],
+          dedupe=True)   # 字典没变（哈希+人数一致）整批不投
+```
+
 落点里 `sum` / `count` 是**聚合读**：从当前指针（应当是 `List<int>`）一次求出
 总和 / 个数，写给 `out` 槽 —— `RailwayDungeonHistoryDataByCollection::.ctor`
 的 `clear_turns` 参数（List<int>，九参构造）一条配置求出铁路总回合。
-`text` 是**字符串读**：按 il2cpp string 布局（len@+0x10、UTF-16 data@+0x14）
-读出内容、取开头的数字（"86" → 86），UI 文本类的信号源就够用了。
+`dict_count`（v6）是字典版：活跃 entry 数 = count(−0x20) − freeCount(+0x2C)，
+「场上还有几个活单位」一类信号一条配置读出，与 List 的 `count`（+0x18）偏移
+不同、别混用。`text` 是**字符串读**：按 il2cpp string 布局（len@+0x10、UTF-16
+data@+0x14）读出内容、取开头的数字（"86" → 86），UI 文本类的信号源就够用了。
 `buff_mask` 是**唯一的 C 特化读法**（v5）：从战斗单位出发走
 「单位→buff详情→List→模型→名字串」四跳（`off[0..3]` 是字段偏移参数包，
 不走通用步循环），每个 buff 的名字做 fnv1a64 后比对共享内存尾部的关注
@@ -394,7 +430,8 @@ host.hook('GlobalGameManager', 'FixedUpdate', argc=0, event=1,
    命中计数（`reserved[0]`）全都不受去重影响 —— 去重管的是「要不要告诉 Python」，
    不是「要不要做事」。
 
-「上次的值」存在 DLL 进程的静态内存（`g_last_vals[16][12]` + `g_last_valid[16]`），
+「上次的值」存在 DLL 进程的静态内存（`g_last_vals[32][12]` + `g_last_valid[32]`，
+v6 起遍历批模式把 `g_last_valid` 用到 2=批），
 不进共享内存：布局少改一处就少一次两边对不上的机会，而且插件本来也不需要读它。
 
 命令通道（P5）：除了「挂钩子等游戏自己触发」，py 还能主动命令游戏做事。
