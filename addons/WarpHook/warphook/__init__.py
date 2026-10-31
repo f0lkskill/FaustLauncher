@@ -21,6 +21,8 @@ from .base import (  # noqa: F401
     wait_for_gameassembly,
 )
 from .game import Gacha, GachaBill, GachaWatcher, gacha  # noqa: F401
+from . import live  # noqa: F401
+from .live import Battle, Live  # noqa: F401
 from .host import Host, host_alive  # noqa: F401
 from . import diag  # noqa: F401
 from . import fields  # noqa: F401
