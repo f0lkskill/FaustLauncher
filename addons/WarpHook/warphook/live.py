@@ -183,6 +183,12 @@ class Live:
             return self._service.describe(st)
         return self.host().status_line(st)
 
+    def inject(self, wait=False):
+        """手动注入游戏（右键菜单「注入」用；游戏已在跑则直接连接）。"""
+        if self._service is None:
+            self.start()
+        return self._service.inject_now(wait=wait)
+
     # ---------- 数据 ----------
 
     def scene(self, timeout=1.0):
@@ -339,12 +345,25 @@ class Live:
         return audio.current_index(self.host(), timeout=timeout)
 
     def bgm_lock_install(self):
-        """装换曲锁钩子（每插件一次；宿主自动 late 重试）。
+        """装换曲锁钩子（并进门面钩子表，与回合钩子一次 push 共存）。
 
-        锁的原理见 :func:`warphook.audio.install_guard_hooks`：拦住游戏
-        回合结束的「盖回默认曲」，让插件放的曲子不中断、不重播。
+        锁的原理见 :func:`warphook.audio.guard_hook_defs`：拦住游戏回合
+        结束的「盖回默认曲」，让插件放的曲子不中断、不重播。钩子表按
+        owner 分段、configure 全量重写 —— 锁钩子必须和回合钩子**合并
+        push**，独立 push 会把回合钩子清掉（回调从此失联）。
         """
-        return audio.install_guard_hooks(self.host())
+        defs = audio.guard_hook_defs()
+        have = {(h.get('klass'), h.get('method')) for h in self._extra_hooks}
+        added = 0
+        for item in defs:
+            key = (item['klass'], item['method'])
+            if key not in have:
+                self._extra_hooks.append(item)
+                added += 1
+        self._hooks_on = True
+        ok = self._push()
+        audio.lock(self.host(), True)          # 初始放行
+        return {'ok': bool(ok), 'added': added}
 
     def bgm_lock(self, allow):
         """开/关换曲锁。``True`` 放行游戏换曲；``False`` 锁死，游戏盖不回去。
