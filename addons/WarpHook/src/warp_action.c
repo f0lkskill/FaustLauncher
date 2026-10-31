@@ -174,13 +174,21 @@ static int warp_step_value_element(int step, void **pp, int idx, int count)
 
 /* Dictionary<*,*> 容器步：取第 nth 个「活跃」entry 的 value。
  *
- * il2cpp Dictionary 布局（x64）：+0x10 buckets / +0x18 entries / +0x20 count /
- * +0x2C freeCount；entry = { int hashCode(+0); int next(+4); TKey(+8); TValue }。
+ * il2cpp Dictionary 布局（x64，字段顺序与 .NET reference source 不同！）：
+ * +0x10 buckets / +0x18 entries / +0x20 count / +0x24 freeList（-1 = 无死坑
+ * 哨兵）/ +0x28 freeCount / +0x2C version；
+ * entry = { int hashCode(+0); int next(+4); TKey(+8); TValue }。
  * Remove 不搬动数组，只把 hashCode 改成负数挂进空闲链，所以遍历 entries 时
  * 要按 hashCode < 0 跳过空坑，活跃数 = count - freeCount。
  * entry 尺寸和 value 偏移随 TKey/TValue 形状变（int→引用 是 24/16，int→int 是
  * 16/12），C 侧没有类型信息，由配置方从 dump.cs 算好打包进 off[i]
  * （WARP_DICT_PACK）。val32=1 时 value 是 4B 值类型，读值本身。
+ * 两个真机踩过的坑：
+ *   1) 遍历范围只能用 count(+0x20)，不能用 entries 数组长度 —— 后者是容量
+ *      （2 的幂，一般大于 count），富余槽 hashCode=0 / value=0，当活跃单位读
+ *      会把长度灌大（真机一局里 count=11 而容量 17）；
+ *   2) 「从未用过」的槽 hashCode 是 0，只有 Remove 留下的死坑才是 -1，
+ *      所以不能用 hashCode<=0 判死坑。
  * 返回 1 = *out 是第 nth 个活跃 value；total 非空时带回活跃总数（可 NULL）。 */
 static int warp_dict_nth_value(const void *dict, int packed, int nth, int val32,
                                void **out, int *total)
@@ -200,7 +208,7 @@ static int warp_dict_nth_value(const void *dict, int packed, int nth, int val32,
         return 0;
     entries = *(char *const *)((const char *)dict + 0x18);
     count = *(const int *)((const char *)dict + 0x20);
-    live = count - *(const int *)((const char *)dict + 0x2C);
+    live = count - *(const int *)((const char *)dict + 0x28);
     if (total)
         *total = live > 0 ? live : 0;
     if (!entries || count <= 0 || count > 0x10000)
@@ -266,8 +274,10 @@ static int warp_count_list(const void *p, int *out)
     return 1;
 }
 
-/* 落点是 il2cpp Dictionary：活跃 entry 数 = count(+0x20) - freeCount(+0x2C)。
+/* 落点是 il2cpp Dictionary：活跃 entry 数 = count(+0x20) - freeCount(+0x28)。
  * Remove 不搬数组只改哈希标记，直接读 count 会把死坑也算进去。
+ * 注意 il2cpp 的字段顺序是 count/freeList/freeCount/version，freeCount 在
+ * +0x28 而不是 reference source 的 +0x2C（+0x2C 是 version）。
  * 跟 List/Array 计数（+0x18）不是一个偏移。读不到就当 0 个。 */
 static int warp_count_dict(const void *p, int *out)
 {
@@ -276,7 +286,7 @@ static int warp_count_dict(const void *p, int *out)
     if (!warp_can_read(p, 0x30))
         return 0;
     count = *(const int *)((const char *)p + 0x20);
-    free_cnt = *(const int *)((const char *)p + 0x2C);
+    free_cnt = *(const int *)((const char *)p + 0x28);
     *out = count > free_cnt ? count - free_cnt : 0;
     return 1;
 }

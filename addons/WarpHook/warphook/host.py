@@ -127,7 +127,9 @@ HOST_READ_TEXT = 7         # 落点是 il2cpp 字符串：取开头的数字（"
 HOST_READ_BUFF_MASK = 8    # 落点是战斗单位：遍历 buff 链按关注表置位（BUF 行 m=）
 HOST_READ_COUNT_DICT = 9   # 落点是 Dictionary：活跃 entry 数 = count-freeCount
                            # （注意 List/Array 的 count kind=6 读 +0x18，
-                           #  字典活跃数读 +0x20 与 +0x2C，两个 kind 别混用）
+                           #  字典活跃数读 +0x20 与 +0x28，两个 kind 别混用；
+                           #  il2cpp 字段序是 count/freeList/freeCount/version，
+                           #  +0x2C 是 version 不是 freeCount）
 HOST_READ_NAMES = {
     'int': HOST_READ_INT,
     'float': HOST_READ_FLOAT,
@@ -423,7 +425,15 @@ def _step_code(value):
 
 
 def host_alive(block):
-    """宿主 DLL 是否已经在目标进程里跑（看心跳是否新鲜）。"""
+    """宿主 DLL 是否已经在目标进程里跑。
+
+    判据分两种情形：
+    * 正常态：启动器进程活着、在写 heartbeat —— 心跳必须新鲜（10s 内）。
+    * standalone 态：启动器退出后 DLL 独立存活（线程隔离设计），此时**没有
+      心跳写方**，心跳必然过期，只能换证据：hooked=1 且 evt_count 还在推进
+      才算活。别把 standalone 当死 —— 真机实测踩过：进阶后 age 涨到 41 万 ms，
+      host_alive 一律 False，外部诊断脚本连不上。
+    """
     if block is None:
         return False
     try:
@@ -436,9 +446,35 @@ def host_alive(block):
             return False
         if not int(block.cfg.ga_found):
             return False
-        return abs(int(_tick32()) - int(block.cfg.heartbeat)) < 10000
+        if abs(int(_tick32()) - int(block.cfg.heartbeat)) < 10000:
+            return True
+        if int(block.cfg.standalone):
+            return int(block.cfg.hooked) > 0
+        return False
     except Exception:  # noqa: BLE001
         return False
+
+
+def host_build(log_path=None):
+    """读宿主 DLL 自己打的那行构建戳，返回 `'Oct 31 2026 13:48:12'` 之类的字符串。
+
+    DLL 启动时往 warp_host.log 写一行 ``build <__DATE__> <__TIME__> proto vN``。
+    用途：确认游戏里跑的到底是哪一版 —— 只比 ``hdr.version`` 没用，同一个协议
+    号的两次构建看不出新旧。真机上踩过：源码改完、编到 test/ 忘了拷，游戏里
+    仍是上一版，读链新语义全落进旧分支，输出一堆垃圾值，从现象反推源码完全
+    推不出来。
+    """
+    if log_path is None:
+        log_path = os.path.join(_warp_dir(), "warp_host.log")
+    try:
+        with open(log_path, "r", encoding="utf-8", errors="replace") as fh:
+            lines = fh.readlines()[-400:]
+    except OSError:
+        return None
+    for line in reversed(lines):
+        if " build " in line:
+            return line.split(" build ", 1)[1].strip()
+    return None
 
 
 def _owner_of_caller():
@@ -815,8 +851,13 @@ class Host:
                                     idx = key
                                 else:
                                     idx = int(step.get("index", 0))
-                                off = (((int(step.get("value_off", 0)) & 0xFF))
-                                       | ((int(step.get("stride", 0)) & 0xFF) << 8)
+                                # 缺省值必须与 il2cpp 标准布局一致：
+                                # entry = {hashCode(4), next(4), key(4/8), value}，
+                                # stride=24、value_off=16。写 0 会退化成「永远取
+                                # entry[0] 的 hashCode 当 value」——真机实测过一次，
+                                # 结果 out 全是垃圾值，排查花很久。
+                                off = (((int(step.get("value_off", 16)) & 0xFF))
+                                       | ((int(step.get("stride", 24)) & 0xFF) << 8)
                                        | ((idx & 0x7FFF) << 16))
                                 if is_iter:
                                     off |= 0x80000000

@@ -264,9 +264,18 @@ il2cpp 取字段只有「加偏移 / 先解引用」两种动作，所以前两�
 指针，值容器（`list_val`/`array_val`）取 4 字节值、取完这个值就是终点。
 
 `Dictionary<K,V>`（v6 的 6/7 步）布局同样是固定的：+0x18 指向 entries **Array
-对象**（entry 数据从 +0x20 起）、+0x20 是 count、+0x2C 是 freeCount；entry 形如
+对象**（entry 数据从 +0x20 起）、+0x20 是 count；**字段顺序与 .NET reference
+source 不同**，il2cpp 是 count(+0x20) / freeList(+0x24) / freeCount(**+0x28**) /
+version(+0x2C) —— `freeList` 初值 -1 表示无死坑。真机实测纠错记录：曾按
+reference source 把 freeCount 读在 +0x2C，结果读出 version（13）而 count 只有
+3，`count - freeCount` 变负数、`dict_count` 恒 0；entries 里 hashCode/key/value
+却是完好的（三槽全活跃）。entry 形如
 `{ hashCode@+0, next@+4, TKey@+8, TValue }`，`Remove` 不搬数组只把 hashCode 改负
 挂进空闲链，所以要按 `hashCode < 0` **跳过死坑**，活跃数 = count − freeCount。
+**两个真机踩过的边界**：①遍历范围只能用 `count`(+0x20)，**不能用 entries 数组
+长度** —— 后者是容量（2 的幂、一般大于 count），富余槽 `hashCode=0 / value=0`，
+当活跃单位读会把长度灌大（实测一局 `count=11` 而容量 17）；②「从未用过」的槽
+`hashCode` 是 **0**，只有 `Remove` 留下的死坑才是 **-1**，别用 `<=0` 判死坑。
 entry 尺寸和 value 偏移随 `K`/`V` 形状变（int→引用 是 24/16，int→int 是 16/12），
 C 侧没有类型信息，这两个数由配置方从 dump.cs 算好写进步里（`'value_off'` /
 `'stride'`，缺省 16 / 24）。`BattleObjectManager._allUnitDictionary`
@@ -277,6 +286,10 @@ C 侧没有类型信息，这两个数由配置方从 dump.cs 算好写进步里
 逐轮装载、各自发一个事件（上限 `WARP_ITER_MAX=256`，防偏移写错灌爆事件环）。
 普通读链的值每轮不变，只算一次。批去重用「轮 0 快照哈希 + 轮数」抽样比对
 （只缓存一个 int），拦得住「字典没变但钩子挂在每帧方法上狂跳」的高频场景。
+**批去重只在钩子带 `HF_DEDUPE`（`flags=0x04`，便捷 API 的 `dedupe=True`）时生效**：
+这一位没开，引擎只做普通单值去重，遍历批每回合都会全量重投 —— 真机实测，连打
+三个回合、字典内容完全不变时，开位只投第一批，没开位三批全出。这是行为边界，
+不是 bug。
 真机用例（`Dictionary<int, BattleUnit>`，value_off/stride 从 dump.cs 的
 `Dictionary<int, BattleUnit>` entry 布局算出）：
 
@@ -296,7 +309,7 @@ host.hook('BattleObjectManager', 'SomeBulkyMethod', argc=0, event=1,
 落点里 `sum` / `count` 是**聚合读**：从当前指针（应当是 `List<int>`）一次求出
 总和 / 个数，写给 `out` 槽 —— `RailwayDungeonHistoryDataByCollection::.ctor`
 的 `clear_turns` 参数（List<int>，九参构造）一条配置求出铁路总回合。
-`dict_count`（v6）是字典版：活跃 entry 数 = count(−0x20) − freeCount(+0x2C)，
+`dict_count`（v6）是字典版：活跃 entry 数 = count(+0x20) − freeCount(**+0x28**)，
 「场上还有几个活单位」一类信号一条配置读出，与 List 的 `count`（+0x18）偏移
 不同、别混用。`text` 是**字符串读**：按 il2cpp string 布局（len@+0x10、UTF-16
 data@+0x14）读出内容、取开头的数字（"86" → 86），UI 文本类的信号源就够用了。
@@ -527,13 +540,21 @@ NS['warp.plugin'].Host            # 扁平访问，等价
 | `warp_cmd.c` | 命令泵 + 对象构造（`popup` / `kill_game` / `make` / `call` / `str` / `release`） |
 | `warp_host.c` | 控制线程、`DllMain`（只剩入口） |
 
-编译（`MH` 是 MinHook 目录）：
+编译（`MH` 是 MinHook 目录）。**产物必须直接落在 `addons/WarpHook/warp_host.dll`** ——
+那是 `Host.dll_path()` 唯一会去注入的路径（`warphook/host.py` 的 `_warp_dir()/HOST_DLL_NAME`）。
+编到 `test/` 再忘了拷，会让「源码已改、机器上跑的仍是旧 DLL」，症状极难认：
 
 ```bash
-gcc -shared -O2 -Wall -s -static-libgcc -o test/warp_host.dll \
+gcc -shared -O2 -Wall -s -static-libgcc -o addons/WarpHook/warp_host.dll \
   addons/WarpHook/src/warp_*.c \
   "$MH/src/hook.c" "$MH/src/buffer.c" "$MH/src/trampoline.c" "$MH/src/hde/hde64.c" \
   -I addons/WarpHook/src -I "$MH/include" -I "$MH/src/hde"
+```
+
+编完立刻核对版本与体积（旧 DLL 没被换掉的话，游戏里 `hdr.version` 和新源码对不上）：
+
+```bash
+md5sum addons/WarpHook/warp_host.dll          # 与刚编出来的产物一致
 ```
 
 ### Python 侧（`warphook/` 包）

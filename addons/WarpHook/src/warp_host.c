@@ -16,6 +16,11 @@ DWORD WINAPI warp_thread(LPVOID param)
     (void)param;
     if (!warp_open_map())
         warp_log("open map failed", (int)GetLastError());
+    /* 构建戳：注入的是哪一版 DLL，日志里必须看得出来。
+     * 真机排查踩过一次「源码改了、机器上跑的仍是上一版 DLL」，症状是读链
+     * 语义对不上（新的 kind/step 全落进旧分支，输出全是垃圾值），从现象
+     * 反推源码根本推不出来。编完看一眼这行就知道换没换新。 */
+    warp_log("build " __DATE__ " " __TIME__ " proto v" WARP_STR(WARP_VERSION), 0);
     warp_status(WARP_ST_IDLE, WARP_ERR_OK);
 
     for (;;) {
