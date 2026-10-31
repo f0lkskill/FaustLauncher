@@ -725,12 +725,36 @@ int warp_cmd_static(const char *text_src, int out_slot)
                  (unsigned long long)(uintptr_t)holder);
         warp_log(tbuf, 0);
     }
-    g_ic.field_static_get_value(holder, field, &value);
+    /* field_static_get_value（混淆导出）在本机就是 AV（0.9.25 实测）。
+     * 改手动读：FieldInfo.offset 在 +0x18（il2cpp 全版本稳定，静态字段的
+     * offset 是 static_fields 内偏移）；Il2CppClass.static_fields 在 +0xB8
+     * （v24..v29 都在这一带），读出来先过 VirtualQuery 验证再解引用。 */
     {
-        char tbuf[128];
-        snprintf(tbuf, sizeof(tbuf), "static: got=%llx",
+        int foff = *(const int *)((const char *)field + 0x18);
+        void *sf = *(void **)((char *)holder + 0xB8);
+        MEMORY_BASIC_INFORMATION mb;
+        char tbuf[160];
+        int sf_ok = 0;
+
+        if (sf && VirtualQuery(sf, &mb, sizeof(mb)) == sizeof(mb) &&
+            mb.State == MEM_COMMIT &&
+            (mb.Protect & (PAGE_READONLY | PAGE_READWRITE |
+                           PAGE_WRITECOPY | PAGE_EXECUTE_READ |
+                           PAGE_EXECUTE_READWRITE))) {
+            void *cell = (char *)sf + foff;
+            if (VirtualQuery(cell, &mb, sizeof(mb)) == sizeof(mb) &&
+                mb.State == MEM_COMMIT) {
+                value = *(void **)cell;
+                sf_ok = 1;
+            }
+        }
+        snprintf(tbuf, sizeof(tbuf),
+                 "static: manual off=%x sf=%llx ok=%d val=%llx",
+                 foff, (unsigned long long)(uintptr_t)sf, sf_ok,
                  (unsigned long long)(uintptr_t)value);
         warp_log(tbuf, 0);
+        if (!sf_ok)
+            return WARP_CMD_RES_FAIL;
     }
     if (!value)
         return WARP_CMD_RES_FAIL;       /* 单例还没初始化（非战斗期） */
