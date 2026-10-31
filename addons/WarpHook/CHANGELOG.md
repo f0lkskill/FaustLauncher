@@ -4,6 +4,28 @@
 
 看完整历史：`git log --oneline -- addons/WarpHook/`
 
+## 0.9.11
+
+修掉「重载插件时启动器整个消失」的崩溃（没有 traceback，日志停在
+`载入插件 WarpHook...` 那一行）。
+
+根因不在载入，而在**上一步的卸载**：`on_unload()` 会解除共享内存映射，可
+`Live` / `Service` / `gacha` 起的后台线程只收到 `_stop.set()` 就没人等了。
+线程下一轮 `host.beat()` / `host.read()` 访问的正是刚被解除映射的那块地址 ——
+访问违规发生在后台线程，主线程日志已经往前走了几行，所以看起来像
+「载入时崩」。没开游戏也会崩，因为 `Host.block()` 会自己建映射。
+
+- **`Host.close()` 新增 `_closed` 标记**，关闭后 `block()` 一律返回 `None`。
+  这样还在跑的线程拿到的是一次立刻返回的 `False` / `None`，不会再碰已释放的地址，
+  也不会把映射重新建起来（只置 `_block=None` 是拦不住的，`block()` 是惰性打开的）。
+- **`Live.close()` / `Service.stop()` 先 `host.close()` 再 join 线程**（5 秒）。
+  顺序很关键：先关视图，线程里正在跑的 `scene()` 一次十几个字段本来每个都要等
+  命令通道超时，关掉视图后立刻返回，join 才等得及。
+- **`GachaWatcher.stop()` 也 join**。
+- 新增复现脚本 `test/_reload_crash.py`：同一进程内模拟启动器
+  `reload_addons()` 三轮（载入 WarpHook + BattleBGMExtend → 卸载 → 删
+  `sys.modules` → 再来一轮），修复前稳定 `EXIT=139`，修复后三轮全过。
+
 ## 0.9.10
 
 给插件「放一首 BGM」的能力，并把 `BattleBGMExtend` 从自带 DLL 的老插件移植成

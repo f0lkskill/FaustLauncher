@@ -654,6 +654,7 @@ class Host:
             self.texts = []
             self._owners = {}
             self._block = None
+            self._closed = False
             # 引擎侧丢了多少条事件（读侧太慢、环形队列被覆盖）。累计值，
             # 只增不减；events() 每读一次就把增量并进来。
             self.events_lost = 0
@@ -788,7 +789,9 @@ class Host:
     # ---------- 共享内存 ----------
 
     def block(self):
-        """打开（必要时创建）宿主共享内存，返回 SharedMap。"""
+        """打开（必要时创建）宿主共享内存，返回 SharedMap；已关闭则返回 None。"""
+        if getattr(self, "_closed", False):
+            return None
         if self._block is not None:
             return self._block
 
@@ -1287,7 +1290,15 @@ class Host:
     # ---------- 单步原语（插件自己决定什么时候调）----------
 
     def close(self):
-        """关掉映射视图。不碰任何线程 —— 线程归插件自己管。"""
+        """关掉映射视图并标记这个 Host 已关闭。不碰任何线程 —— 线程归插件自己管。
+
+        ``_closed`` 是必需的：``block()`` 是惰性打开的，只把 ``_block`` 置空的话，
+        一个还在跑的后台线程下一次 ``beat()`` 就会把映射重新建起来；而卸载流程紧接
+        着已经把 ``base._maps`` 里那块解除映射了 —— 线程随后读到释放的内存，就是
+        进程级 AV（没有 traceback，启动器直接消失）。关掉之后 ``block()`` 一律返回
+        ``None``，调用方只会拿到 ``False`` 或异常，不会再碰已释放的地址。
+        """
+        self._closed = True
         self._block = None
 
     def beat(self):
