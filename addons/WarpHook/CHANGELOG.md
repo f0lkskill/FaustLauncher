@@ -1,3 +1,18 @@
+## 0.9.20 — 新增 LIST 诊断命令：只读方法签名，不再拿游戏试错
+
+`IsLoadedBank` 经 `runtime_invoke` 必崩，而它有两个 1 参重载（`AssetReference` /
+`string`）。v10 的类型匹配看起来对，但每次验证都以「游戏崩了」结束 —— 这种靠赔一次
+重启来排除变量的方式不可接受，所以加了一条**只读**诊断通道。
+
+- 新命令 `WARP_CMD_LIST`（8）：给 `"类名::方法名"`，宿主遍历 `class_get_methods`，
+  把每个重载拼成 `Name(参数类型,参数类型)->返回类型` 写进 MAP 尾部的命令缓冲
+  （`WARP_CMD_BUF_*`，4×64=256 字节），py 侧 `read_buf(0)` 取回。
+- 只调元数据接口（`class_get_methods` / `method_get_name` / `method_get_param_count` /
+  `method_get_param` / `method_get_return_type` / `type_get_name`），**绝不 invoke**。
+- py 侧 `Host.list_methods(name, timeout)`。
+- 附 `test/_v10_list.py`：一次列出 `IsLoadedBank` / `LoadBankFromLocal` /
+  `TryCreateInstance` / `StartAddBGM` / `TryStartBattleBgmByName` / `ApplyBGMData` 的重载。
+
 ## 0.9.19 — 对象参数传槽号，修掉 64 位指针被截断
 
 `WARP_HEADER.vars` 是 8 个 **32 位**整数槽，而 `call(..., args=(('slot', 27),))` 往里面塞的是
