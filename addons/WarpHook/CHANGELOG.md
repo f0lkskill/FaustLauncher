@@ -72,6 +72,16 @@
   可 `--json` 落盘）；`test/_v9_fields_check.py` 离线校验字段表结构与链长
   （不超 8 跳）。
 
+- **门面层（0.9.9 补）**：`objects.Access` / `Unit` / `Buff`。`game.access(host)`
+  → `acc.get_obj(id=1)` → `u.hp` / `u.sp` / `u.identity` / `u.is_panic` /
+  `u.buffs[i].name·stack·turn`；`u.get_pro("origin_id")` 走别名表，
+  `u.props()` 一次拿 62 个字段。底层 `read()` / `fields.read_chain()` 不变。
+- **ObscuredBool 解码**：`_isDead/_isPanic/_isBreak/_isLowMorale` 分两次读、
+  按 byte 解（`hidden ^ key`），假码 `0xB5`、真码 `0xD5`；C 侧 `kind='obscured'`
+  按 ObscuredInt 解会恒 181。
+- **buff 明细**：`BuffInfo._stack@0x6C`（强度/层数）、`_turn@0x70`（次数）、
+  `_maxStack@0x64`、`_maxTurn@0x68`；名字原文走一次跨进程读（`access.reader()`）。
+
 ## 0.9.8
 
 0.9.7 上真机后必修的一轮：**il2cpp 的 Dictionary 字段序和 .NET 参考源码不一样**，
