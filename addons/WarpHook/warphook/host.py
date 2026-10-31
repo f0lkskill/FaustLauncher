@@ -72,6 +72,8 @@ CMD_RET_NAMES = {"int32": CMD_RET_INT32, "int": CMD_RET_INT32,
                  "ptr": CMD_RET_REF}
 
 # 命令执行结果码（DLL 写 cmd_result）
+CMD_RES_BUSY = -2  # 与 C 侧 WARP_CMD_RES_BUSY 一致：已取走、还在执行
+
 CMD_RES_NAMES = {
     0: "已执行",
     1: "失败",
@@ -1473,6 +1475,10 @@ class Host:
         while time.time() < deadline:
             if int(hdr.cmd_ack) == seq:
                 rc = int(hdr.cmd_result)
+                if rc == CMD_RES_BUSY:
+                    # DLL 已经把命令取走了，但还没跑完 —— 接着等，别把旧值当结果。
+                    time.sleep(0.005)
+                    continue
                 return CMD_RES_NAMES.get(rc, "失败(%d)" % rc)
             time.sleep(0.02)
         return "超时"

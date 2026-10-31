@@ -114,6 +114,7 @@
 #define WARP_CMD_RES_NO_METHOD 5
 #define WARP_CMD_RES_BAD_SLOT  6   /* 槽号越界 */
 #define WARP_CMD_RES_BAD_ARGC  7   /* 参数个数超出 vars 容量（>6） */
+#define WARP_CMD_RES_BUSY     (-2) /* 已取走、还在执行（py 侧见到要接着等） */
 
 #define WARP_HEADER_SIZE  432   /* 160 状态头 + 命令槽 4*4 + 256 字节文本 */
 #define WARP_HOOK_OFFSET  WARP_HEADER_SIZE

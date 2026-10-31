@@ -72,7 +72,6 @@ extern void *const   g_thunks6[WARP_MAX_HOOKS];
 extern void *const   g_thunks7[WARP_MAX_HOOKS];
 extern void *const   g_thunks8[WARP_MAX_HOOKS];
 extern void *const   g_thunks9[WARP_MAX_HOOKS];
-extern unsigned int  g_gc_handles[WARP_OBJECT_COUNT];
 
 /* ---- 函数 ---- */
 void warp_pump_commands(void);

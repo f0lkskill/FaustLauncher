@@ -4,6 +4,38 @@
 
 看完整历史：`git log --oneline -- addons/WarpHook/`
 
+## 0.9.15
+
+0.9.14 的白名单拦住了「乱调游戏方法」，但白名单内第一条真机连调就崩了
+—— 崩点不在游戏方法里，在我们自己写槽的句柄回收上。
+
+**一、对象槽不再挂 GC 句柄（崩溃修复）。**
+
+现象：`host.call("BattleObjectManager::get_Instance", ret="ref", out_slot=28)`
+第一次成功，第二次起 `失败(-1)`，随后整条命令通道超时、游戏崩。
+
+`Player-prev.log` 的栈把范围缩到 `warp_slot_put`：
+
+```
+warp_slot_put.part.0+0x3F   <- call il2cpp_gchandle_free
+warp_cmd_call+0x31F
+warp_pump_commands+0x164
+hk_warp_pump+0x36
+GameAssembly (gchandle_free 内部)
+```
+
+即「往同一个槽写第二次」时，先解掉上一次挂的强句柄，`gchandle_free`
+在 GameAssembly 内部炸了。句柄本身不可信，这条路径整段关掉：对象槽
+只存裸指针。槽里装的都是长命对象（场景单例、战斗单例）和当场用掉的
+临时对象，不需要强引用保护。
+
+**二、命令结果加 BUSY 哨兵。**
+
+`warp_pump_commands()` 是先记 `cmd_ack` 再执行，而 `cmd_result` 要到执行
+完才写。py 侧一看到 ack 到位就把上一条的旧值当结果读走 —— 这就是那次
+第二次调用返回 `失败(-1)` 的直接原因。现在取走命令时先写
+`WARP_CMD_RES_BUSY`(-2)，跑完再写 rc；py 侧遇到 BUSY 继续等。
+
 ## 0.9.14
 
 `Host.call()` 这条路本身就是风险源 —— 这一版不再试图「保护」它，而是
