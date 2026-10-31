@@ -49,8 +49,10 @@
 /* 数值转字符串（构建戳用）：warp_log("proto v" WARP_STR(WARP_VERSION)) */
 #define WARP_STR_(x)      #x
 #define WARP_STR(x)       WARP_STR_(x)
-#define WARP_VERSION      6                /* v6：读取链新增 Dictionary 容器步
-                                            * （deref=6/7）与字典计数 kind=9；
+#define WARP_VERSION      7                /* v7：读链 4→8 跳 + 命令通道代读 CMD_READ
+                                            * （MAP 尾部追加 WARP_CMD_READ 段）。
+                                            * v6：读取链 Dictionary 容器步（deref=6/7）
+                                            * 与字典计数 kind=9；
                                             * v5：尾部追加 buff 关注哈希表段（BUF 行）。
                                             * v4：钩子表 16→32（成就 25 条 + NoGacha 2 条
                                             * 已经装不下 16 槽，_layout 截断是静默的，
@@ -83,6 +85,7 @@
 #define WARP_CMD_CALL     4     /* 调方法：runtime_invoke，槽内对象当 this（无槽=静态） */
 #define WARP_CMD_STR      5     /* 造字符串：il2cpp_string_new(cmd_text) → 对象槽 */
 #define WARP_CMD_RELEASE  6     /* 解掉槽上 GC 句柄并清槽 */
+#define WARP_CMD_READ     7     /* 代读：按 MAP 尾部那条读链，从对象槽读出值写 vars[6] */
 
 #define WARP_CMD_CODE(t)    ((t) & 0xFF)
 #define WARP_CMD_ARGC(t)    (((t) >> 8) & 0xF)
@@ -124,8 +127,8 @@
 #define WARP_EV_CTRL_SIZE 16    /* head / tail / dropped / pad */
 #define WARP_EVENTS_OFFSET (WARP_EV_CTRL_OFFSET + WARP_EV_CTRL_SIZE)
 #define WARP_READ_MAX     128   /* 全进程共用的读取链条数（damage 一条钩子就要 11 条） */
-#define WARP_READ_SIZE    48
-#define WARP_READ_STEPS   4     /* 一条链最多走几跳 */
+#define WARP_READ_SIZE    80
+#define WARP_READ_STEPS   8     /* 一条链最多走几跳（v7：4 → 8） */
 
 /* 读取链每一步的动作。deref[i] 存的既是「要不要解引用」也是「这一步做什么」：
  * 0 加偏移；1 加偏移后解引用；2/3 把当前指针当容器取引用元素；
@@ -183,7 +186,10 @@
 #define WARP_BUFF_WATCH_COUNT 32
 #define WARP_BUFF_WATCH_SIZE  8 /* fnv1a64 */
 #define WARP_BUFF_WATCH_OFFSET (WARP_OBJECTS_OFFSET + WARP_OBJECT_COUNT * WARP_OBJECT_SIZE)
-#define WARP_MAP_BYTES    (WARP_BUFF_WATCH_OFFSET + WARP_BUFF_WATCH_COUNT * WARP_BUFF_WATCH_SIZE)
+/* v7：命令通道的「代读」读链。只有一条 —— 命令是 Python 同步等 ack 的，
+ * 不需要排队；结构就是一条 WARP_READ，放 MAP 末尾追加，前面所有偏移不动。 */
+#define WARP_CMD_READ_OFFSET (WARP_BUFF_WATCH_OFFSET + WARP_BUFF_WATCH_COUNT * WARP_BUFF_WATCH_SIZE)
+#define WARP_MAP_BYTES    (WARP_CMD_READ_OFFSET + WARP_READ_SIZE)
 
 /* 读出来的值怎么解释 */
 #define WARP_READ_INT     0     /* int32 */
@@ -319,8 +325,14 @@ typedef struct _WARP_READ {
     int kind;              /* 8  WARP_READ_* */
     int out;               /* 12 写进事件的哪一格（0=a 1=b 2=c 3=d） */
     int off[WARP_READ_STEPS];    /* 16 每跳的偏移 */
-    int deref[WARP_READ_STEPS];  /* 32 每跳是否先解引用 */
-} WARP_READ;                /* 48 */
+    int deref[WARP_READ_STEPS];  /* 48 每跳是否先解引用 */
+} WARP_READ;                /* 80 */
+
+/* 编译期尺寸校验：C 侧改了结构体、Python 侧没跟上（或反过来），这里先炸，
+ * 而不是等到真机上读出一堆垃圾值。读链是「钩子表」和「命令代读」共用的
+ * 一块内存，两边尺寸一旦漂移，症状全是「数不对」而不是「报错」。 */
+typedef char _warp_read_size_check[(sizeof(WARP_READ) == WARP_READ_SIZE) ? 1 : -1];
+typedef char _warp_read_steps_check[(WARP_READ_STEPS == 8) ? 1 : -1];
 
 /* 环形队列里的一个事件：py 侧按 events() 批量读走，读完推进 tail。
  *

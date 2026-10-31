@@ -62,6 +62,50 @@ service.host().popup('这行字是 Python 下发的')   # 游戏里立刻弹原�
 service.host().kill_game()                     # 结束游戏进程
 ```
 
+## 读游戏里的东西
+
+0.9.9（协议 v7）起，读对象不用自己拼链、不用装钩子：
+
+```python
+from warphook import objects
+
+host = service.host()
+
+bom = objects.bind_manager(host)        # 抓 BattleObjectManager（等一个回合）
+for u in objects.units(host, bom):      # 全场单位
+    print(u.instance_id(), u.hp(), '/', u.max_hp(), '理智', u.mp())
+
+print(objects.scene(host))              # {'scene': 1, 'time_scale': 1.0}
+```
+
+想读别的字段就查字段表，或者自己拼链 —— 底层一直开着：
+
+```python
+from warphook import fields
+
+spec = fields.read_chain('BattleUnitModel', '_state', '_mp')
+host.read(slot, spec['off'], kind=spec['kind'])          # 一次代读往返
+
+host.read(slot, [{'off': 0x90, 'deref': True}, {'dict': 'iter'}],
+          kind='dict_count')                            # 遍历链只回报活跃数
+```
+
+要「变化的一瞬间」而不是「现在是多少」，就用钩子 + `reads=`：
+
+```python
+host.configure(hooks=[{
+    'klass': 'BattleObjectManager', 'method': 'OnRoundStart_Model', 'argc': 1,
+    'cache': (0, 28), 'flags': 0x04,                     # HF_DEDUPE
+    'reads': [{'arg': 0, 'kind': 'dict_count', 'off': [0x90], 'out': 0},
+              {'arg': 0, 'kind': 'int', 'off': [0x90, {'dict': 'iter'},
+                                                {'off': 0x10}, {'off': 0x60}],
+               'out': 1}],
+}])
+host.push()
+```
+
+对象槽 24..31 留给插件，0..23 主段是成就观测在用。
+
 ## 编译
 
 需要 MinGW-w64 与 MinHook 源码：
@@ -81,7 +125,7 @@ gcc -shared -O2 -Wall -s -static-libgcc -o warp_host.dll \
 
 - 代码在 `main` 上，跟着仓库一起演进；`.gitignore` 对 `addons/WarpHook/**` 开了白名单，
   但 `warp_host.dll`、`__pycache__`、运行日志不入库。
-- 版本号在 `warphook/env.py` 的 `WARP_HOOK_VERSION` 与 `addon_info.json` 里，
+- 版本号唯一来源是 `addon_info.json`（`warphook/env.py` 启动时读它，不再各写一份），
   发布时打 `warphook/vX.Y.Z` 标签（不要和启动器本体的版本混在一起）。
 - 改动写进本目录的 `CHANGELOG.md`；提交信息用 `feat(warphook): ...` 这种 scope，
   这样 `git log --grep warphook` 就能把它的历史单独筛出来。

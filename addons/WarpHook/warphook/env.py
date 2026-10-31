@@ -5,7 +5,29 @@
 所以 scr.py 先调 :func:`bind` 把三样东西放进来。
 """
 
-WARP_HOOK_VERSION = "0.9.6"
+import json
+import os
+
+
+def _detect_version():
+    """版本号的唯一来源是插件根的 ``addon_info.json``。
+
+    以前这里硬写一个字符串，结果 ``addon_info.json`` 改成 0.9.8 了、这里还是
+    0.9.6，日志里播报的版本是假的（典型的「同一个常量抄了两份」）。现在读不到
+    才退回下面的兜底值，并且只用于「文件缺失/损坏」这种异常情况。
+    """
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    try:
+        with open(os.path.join(root, "addon_info.json"), "r", encoding="utf-8") as fh:
+            version = json.load(fh).get("version")
+        if version:
+            return str(version)
+    except Exception:
+        pass
+    return "0.0.0-unknown"
+
+
+WARP_HOOK_VERSION = _detect_version()
 
 ADDON_ARG = None
 ADDON_NAME = ""
