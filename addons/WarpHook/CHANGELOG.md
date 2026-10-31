@@ -4,6 +4,34 @@
 
 看完整历史：`git log --oneline -- addons/WarpHook/`
 
+## 0.9.12
+
+修三件事，都是 BGM 真机验收时暴露的。
+
+**一、`Host.call()` 能把游戏打崩 —— 现在打不动了。**
+0.9.10 的 `audio.play` 直接 `runtime_invoke` 了 `StartAddBGM`，在非战斗场景下
+它内部碰 FMOD 的句柄会访问违例，整个游戏进程直接消失（`Player.log` 栈顶三帧
+全在 `warp_host`，反查到 `warp_cmd_call` 里 `call *0x30(%rax)`，即
+`g_ic.runtime_invoke`）。插件一个调用就能崩掉用户的游戏，这是不能留的。
+
+- `warp_cmd.c` 新增 `warp_safe_invoke()`：用 `AddVectoredExceptionHandler`
+  只接管「我们正在 invoke」这个窗口里的异常，`longjmp` 回来变成一次失败返回；
+  正常路径零开销。`warp_cmd_call` 与 `warp_probe_int` 都改走它。
+- `audio.play()` 新增 `require_battle=True`：先确认 `sceneState == 1`（战斗）
+  再放，不在战斗里返回 `{'ok': False, 'reason': '不在战斗场景'}`。
+
+**二、装配阶段「类还没加载」的钩子槽现在会重试。**
+il2cpp 的类是懒加载的，DLL 在 `engine ready` 就装配，那会儿
+`BattleObjectManager` 还不存在 → `hook: class not found` → 该槽一辈子装不上，
+插件表现成「逻辑不执行、也不报错」。BattleBGMExtend 的回合钩子就是这么丢的。
+
+- 新增 `warp_retry_hooks()`，主循环每 2 秒补一次未装上的槽，装上打印
+  `hook installed (late)`。
+- MinHook 初始化提成 `warp_mh_ensure()`，重试路径也能确保它已就绪。
+
+**三、`StartAddBGM` 只能点在战斗里这件事写进文档。**
+`audio.py` 的模块注释与 `play()` 的 docstring 都写明时机约束。
+
 ## 0.9.11
 
 修掉「重载插件时启动器整个消失」的崩溃（没有 traceback，日志停在

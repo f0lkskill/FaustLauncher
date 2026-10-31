@@ -14,6 +14,7 @@ BattleBGMExtend 为了「锁住」自己放的曲子，钩了三十多个音频�
 自己解析 il2cpp 导出名。
 """
 
+from . import objects
 from .base import log
 
 BGM_PREFIX = 'event:/BGM/Battle/'
@@ -24,6 +25,22 @@ STOP_MODE_FADE = 0
 
 # 对象槽 27 是辅助段的临时槽，用完就还（28/29 被门面占着，30/31 是每帧回调）
 SLOT_SCRATCH = 27
+
+
+def in_battle(host, slot=None):
+    """当前是不是在战斗场景里。
+
+    ``StartAddBGM`` 内部会碰 FMOD 的战斗曲通道，非战斗场景下这些句柄没
+    初始化 —— 真机上直接访问违例把游戏带走（0.9.11 实测过一次）。所以
+    播放前必须先确认场景；读不到场景时按「不在战斗」处理，宁可不出声。
+    """
+    try:
+        info = objects.scene(host, slot) if slot is not None else objects.scene(host)
+    except Exception:
+        return False
+    if not info:
+        return False
+    return info.get('scene') == 1
 
 
 def full_path(name):
@@ -46,7 +63,7 @@ def _ok(result):
     return not isinstance(result, str)
 
 
-def play(host, name, stop_current=True, timeout=2.0):
+def play(host, name, stop_current=True, timeout=2.0, require_battle=True):
     """放一首战斗 BGM。返回 ``{'ok', 'name', 'path', 'reason'}``。
 
     Args:
@@ -54,6 +71,8 @@ def play(host, name, stop_current=True, timeout=2.0):
         name: 短名（``Battle_Cp9_Boss_10``）或完整路径。
         stop_current: 先停掉当前战斗曲，默认 True。留在原曲上面叠着
             会两条一起响，一般不需要关掉。
+        require_battle: 先确认在战斗里再放，默认 True。关掉它就得自己
+            保证时机 —— 非战斗场景下调用会把游戏带走。
 
     名字写错时 ``ok=False``，游戏那边会继续放原曲（``StartAddBGM`` 找
     不到 event 会静默失败，返回码看不出来），所以失败时建议再调一次
@@ -63,6 +82,10 @@ def play(host, name, stop_current=True, timeout=2.0):
     path = full_path(name)
     if not short:
         return {'ok': False, 'name': '', 'path': '', 'reason': '名字是空的'}
+
+    if require_battle and not in_battle(host):
+        return {'ok': False, 'name': short, 'path': path,
+                'reason': '不在战斗场景'}
 
     slot = SLOT_SCRATCH
     made = host.make_str(short, slot=slot, timeout=timeout)

@@ -7,6 +7,7 @@
 #pragma once
 #include "warp_layout.h"
 #include <string.h>
+#include <setjmp.h>
 
 /* ---- 类型 ---- */
 typedef struct {
@@ -118,6 +119,12 @@ int warp_read_chain(const WARP_READ *r, void *self, int argc,
 /* 从第 slot 个对象槽出发执行 cmd_read 段里的那条链，结果写 vars[6]（值）
  * 与 vars[7]（遍历链的活跃数）。返回 WARP_CMD_RES_*。 */
 int warp_cmd_read(int slot);
+
+/* 带异常保护地调一个 il2cpp 方法（VEH 接管访问违例）。 */
+void *warp_safe_invoke(void *method, void *target, void **params, void **exc);
+
+/* 重试装配阶段因「类还没加载」而失败的钩子槽，返回新装上的数量。 */
+int warp_retry_hooks(void);
 int warp_cmd_make(int argc, int slot, const char *argkinds);
 int warp_cmd_call(int argc, int slot, int retkind, int out_slot, const char *argkinds);
 int warp_cmd_str(int slot);

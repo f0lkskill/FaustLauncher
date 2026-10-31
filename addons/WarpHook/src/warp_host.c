@@ -57,6 +57,17 @@ DWORD WINAPI warp_thread(LPVOID param)
                 warp_uninstall();
                 g_sig_pending = 0;
             }
+
+            /* 装配阶段「类还没加载」的槽，每两秒回来补一次 —— il2cpp 的类
+               是按需加载的，战斗类要等真的进战斗才存在。不补的话这些钩子
+               一辈子装不上，插件表现成「逻辑不执行也不报错」。 */
+            {
+                static ULONGLONG last_retry;
+                if (now2 - last_retry > 2000) {
+                    last_retry = now2;
+                    warp_retry_hooks();
+                }
+            }
             continue;
         }
 

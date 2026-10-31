@@ -19,6 +19,59 @@
 /* 每个对象槽至多一个强句柄，0 = 这槽上的对象没挂句柄（cache 钩子落的裸指针）。 */
 unsigned int g_gc_handles[WARP_OBJECT_COUNT];
 
+/* ------------------------------------------------------------------ */
+/* invoke 保护                                                         */
+/*                                                                     */
+/* 调用方传错参数、或时机不对（比如不在战斗里调战斗音频接口），il2cpp   */
+/* 或者它内部的 native 代码会直接访问违例，把整个游戏带走。这里用一个   */
+/* VEH 只接管「我们正在 invoke」这个窗口里的异常，把它变成一次失败的    */
+/* 返回值。                                                            */
+/*                                                                     */
+/* longjmp 会跳过 il2cpp 的栈展开，异常之后它自己的中间状态可能不干净， */
+/* 所以异常路径只做「退出去」：命令返回失败、钩子里当没读到。正常路径   */
+/* 完全不受影响（VEH 只在异常时才会被调用）。                          */
+/* ------------------------------------------------------------------ */
+
+static jmp_buf s_invoke_jmp;
+static volatile LONG s_invoke_depth;
+static PVOID s_invoke_veh;
+
+static LONG CALLBACK warp_invoke_veh(EXCEPTION_POINTERS *ep)
+{
+    (void)ep;
+    if (s_invoke_depth <= 0)
+        return EXCEPTION_CONTINUE_SEARCH;
+    s_invoke_depth = 0;
+    longjmp(s_invoke_jmp, 1);
+}
+
+void *warp_safe_invoke(void *method, void *target, void **params, void **exc)
+{
+    void *ret = NULL;
+
+    if (!method || !g_ic.runtime_invoke) {
+        if (exc)
+            *exc = NULL;
+        return NULL;
+    }
+    if (!s_invoke_veh)
+        s_invoke_veh = AddVectoredExceptionHandler(1, warp_invoke_veh);
+    if (exc)
+        *exc = NULL;
+    if (setjmp(s_invoke_jmp) == 0) {
+        s_invoke_depth++;
+        ret = g_ic.runtime_invoke(method, target, params, exc);
+        s_invoke_depth--;
+    } else {
+        /* 跳回来了：调用炸了。给上层一个非 NULL 的 exc，按「抛异常」处理。 */
+        s_invoke_depth = 0;
+        ret = NULL;
+        if (exc)
+            *exc = (void *)(ULONG_PTR)1;
+    }
+    return ret;
+}
+
 /* 往对象槽落一个指针。所有写入都走这里：写之前先把旧句柄解掉，同一槽被
  * 反复 make 时前面的对象能正常被 GC 回收，不会攒一桌面没用的强引用。 */
 void warp_slot_put(int slot, void *obj, int with_handle)
@@ -208,7 +261,7 @@ int warp_cmd_call(int argc, int slot, int retkind, int out_slot, const char *arg
     rc = warp_cmd_build_params(argc, kinds, params, ival, fval, pval);
     if (rc)
         return rc;
-    ret = g_ic.runtime_invoke(method, target, params, &exc);
+    ret = warp_safe_invoke(method, target, params, &exc);
     if (exc)
         return WARP_CMD_RES_EXCEPTION;
     if (retkind == WARP_CMD_RET_INT32 || retkind == WARP_CMD_RET_FLOAT) {
@@ -447,6 +500,23 @@ static int warp_target_taken(void *target)
     return 0;
 }
 
+/* MinHook 初始化只做一次；重试路径也要能确保它已经就绪。 */
+static BOOL s_mh_ready = FALSE;
+
+static BOOL warp_mh_ensure(void)
+{
+    MH_STATUS st;
+
+    if (s_mh_ready)
+        return TRUE;
+    st = MH_Initialize();
+    if (st == MH_OK || st == MH_ERROR_ALREADY_INITIALIZED) {
+        s_mh_ready = TRUE;
+        return TRUE;
+    }
+    return FALSE;
+}
+
 int warp_install_hooks(void)
 {
     void *domain;
@@ -525,7 +595,7 @@ int warp_install_hooks(void)
         }
 
         if (!mh_ready) {
-            if (MH_Initialize() != MH_OK) {
+            if (!warp_mh_ensure()) {
                 warp_status(WARP_ST_ERROR, WARP_ERR_MH_INIT);
                 warp_log("MH_Initialize failed", 0);
                 return installed;
@@ -593,6 +663,69 @@ int warp_install_hooks(void)
         warp_status(WARP_ST_ERROR, WARP_ERR_NO_TARGET);
     }
     return installed;
+}
+
+int warp_retry_hooks(void)
+{
+    void *domain;
+    int i;
+    int newly = 0;
+
+    if (!g_hdr || !g_ic_ready)
+        return 0;
+    domain = g_ic.domain_get();
+    if (!domain)
+        return 0;
+
+    /* il2cpp 的类是按需加载的：DLL 在 engine ready 时就装配，那时战斗类
+       （BattleObjectManager 之类）往往还没被游戏代码碰过，class_from_name
+       返回 NULL。装配阶段放弃的槽如果就这么算了，那些钩子一辈子装不上 ——
+       表现是「插件逻辑不执行、也不报错」。所以主循环定期回来重试一次。 */
+    for (i = 0; i < WARP_MAX_HOOKS; i++) {
+        WARP_HOOK *h = &g_warp_hooks[i];
+        void *klass;
+        void *method;
+        void *target;
+        void *thunk;
+
+        if (!h->klass[0] || !h->method[0])
+            continue;
+        if (g_slots[i].installed)
+            continue;
+        klass = warp_find_class(domain, h->klass);
+        if (!klass)
+            continue;
+        method = warp_find_method(klass, h->method, h->argc);
+        if (!method)
+            continue;
+        target = warp_method_pointer(method);
+        if (!target)
+            continue;
+        thunk = warp_pick_thunk(i, h->argc);
+        if (!thunk)
+            continue;
+        if (warp_target_taken(target))
+            continue;
+        if (!warp_mh_ensure())
+            continue;
+        g_slots[i].argc = h->argc;
+        if (MH_CreateHook(target, thunk, &g_slots[i].original) != MH_OK)
+            continue;
+        if (MH_EnableHook(target) != MH_OK) {
+            MH_RemoveHook(target);
+            continue;
+        }
+        g_slots[i].target = target;
+        g_slots[i].installed = TRUE;
+        newly++;
+        warp_log("hook installed (late)", i);
+    }
+    if (newly && g_hdr) {
+        g_installed += newly;
+        g_hdr->hook_installed = g_installed;
+        g_hdr->hooked = g_installed > 0 ? 1 : 0;
+    }
+    return newly;
 }
 
 void warp_uninstall(void)
