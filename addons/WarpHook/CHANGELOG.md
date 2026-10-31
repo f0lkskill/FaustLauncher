@@ -1,3 +1,23 @@
+## 0.9.22 — GC 句柄回归（64 位）：三次「IsLoadedBank 崩溃」同根定案
+
+**结论先行**：0.9.18 / 0.9.19 / 0.9.21 三次 `IsLoadedBank` 崩溃（同形栈
+`runtime_invoke → AV`）真因**不是重载匹配**，而是 **`make_str` 造的字符串没有
+GC 根**。0.9.15 拆掉句柄后，对象槽里是裸指针，而共享内存 MAP 不在 il2cpp GC
+的扫描范围里 —— 下一次 GC 就把字符串回收，随后的 `call` 拿到悬空指针直接崩。
+0.9.21 的「本机没有 `IsLoadedBank(string)`」结论**作废**：那是 LIST 输出缓冲
+残留造成的误读，dump.cs:571721 明确有两个重载，`sig='S'` 的 typed 匹配一直
+是对的。
+
+- `warp_slot_put` 恢复句柄路径（`gchandle_new` / `gchandle_free`），句柄表
+  `g_gc_handles[]` 从 `unsigned int[32]` 改为 **`uintptr_t[]`**：0.9.15 拆句柄时
+  误判的「free 会崩」真因是 32 位截断 —— Unity 6（Boehm 64 位）的句柄是
+  pointer-sized，截断后的值传回 `gchandle_free` 才 AV。现在 free 的是完整
+  64 位、由我们自己 new 的句柄，恒安全。
+- `warp_cmd_list` 输出缓冲改整块 `memset`（原来只清 `out[0]`，上一次 LIST 的
+  残留行还在，py 侧按 `\0` 切分会切出 `m.Boolean)->S` 这类碎片行）。
+- 事件 cache 落槽（`warp_action.c` 的 `warp_slot_put(...,0)`）行为不变；
+  `MAKE` / `STR` / `CALL` 返回值落槽挂强句柄，`RELEASE` 走 put(NULL) 自动解句柄。
+
 ## 0.9.21 — LIST 标注签名匹配 + 沿基类链列方法
 
 - `LIST` 命令支持 `"类名::方法名|签名串"`：除列出每个重载，还在**会被 `call(sig=...)`
