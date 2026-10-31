@@ -241,6 +241,46 @@ def pause(host, value=True, timeout=2.0):
 SLOT_BATTLE_BGM = 25
 
 
+# ---- 换曲锁（0.9.27）：拦住游戏回合结束的「盖回默认曲」-------------------
+# 旧插件哲学（battlebgmextend.c 的 block_game）：曲子放出来后锁住所有换曲
+# 入口，游戏想换/想停一律丢弃 —— FMOD 实例不中断，不重播。guard 机制
+# （vars[LOCK_SLOT] == 1 时放行原调用）让锁的开/关只是一次内存写入，
+# 不用每回合重推钩子表；「先解锁 → 放曲 → 再上锁」的时序也顺势绕开了
+# 旧插件 own_call() 那套「自己的调用要放行」的复杂度。
+LOCK_SLOT = 4        # vars[4]：1=放行（游戏管曲） 0=锁（只许我们的曲）
+LOCK_TARGETS = (
+    ('BattleSoundGenerator', 'StartBGM', 2),
+    ('BattleSoundGenerator', 'StartAddBGM', 3),
+    ('BattleSoundGenerator', 'StopBGM', 2),
+    ('BattleSoundGenerator', 'TryStartBattleBgmByName', 1),
+    ('BattleSoundGenerator', 'TryResumeBattleBgm', 1),
+)
+
+
+def install_guard_hooks(host):
+    """装 5 条换曲锁钩子（block + guard=LOCK_SLOT==1 放行），整表推一次。
+
+    游戏早期 ``BattleSoundGenerator`` 可能还没加载 —— 宿主每 2 秒重试
+    late 安装（0.9.12 起），装上为止。装完记得 ``lock(host, True)`` 初始放行。
+    """
+    host.clear_hooks()
+    for klass, method, argc in LOCK_TARGETS:
+        host.hook(klass, method, argc=argc, block=True,
+                  guard=(LOCK_SLOT, 1))
+    host.configure(hooks=host.hooks(), texts=list(host.texts or []))
+    host.push(True)
+    return {'ok': True, 'targets': len(LOCK_TARGETS)}
+
+
+def lock(host, allow):
+    """开/关换曲锁。``allow=True`` 放行游戏换曲（解锁）；``False`` 锁死。
+
+    一次共享内存写入，随时可调、零直调。放曲前先 ``lock(host, True)``，
+    否则自己的 StopBGM/StartAddBGM 直调会撞上自己的锁。
+    """
+    return host.set_var(LOCK_SLOT, 1 if allow else 0)
+
+
 def hook_battle_bgm(host, name, klass='BattleSoundGenerator',
                     method='StartAddBGM', push=True):
     """让游戏自己放我们的曲子。

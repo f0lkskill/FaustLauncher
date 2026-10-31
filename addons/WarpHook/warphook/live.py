@@ -337,6 +337,22 @@ class Live:
         """当前战斗曲的编号（``-1`` = 没在放）。"""
         return audio.current_index(self.host(), timeout=timeout)
 
+    def bgm_lock_install(self):
+        """装换曲锁钩子（每插件一次；宿主自动 late 重试）。
+
+        锁的原理见 :func:`warphook.audio.install_guard_hooks`：拦住游戏
+        回合结束的「盖回默认曲」，让插件放的曲子不中断、不重播。
+        """
+        return audio.install_guard_hooks(self.host())
+
+    def bgm_lock(self, allow):
+        """开/关换曲锁。``True`` 放行游戏换曲；``False`` 锁死，游戏盖不回去。
+
+        **放曲前必须先解锁**（``bgm_lock(True)``），否则放曲的两个直调
+        会撞上自己的锁。
+        """
+        return audio.lock(self.host(), allow)
+
     def bgm_hook(self, name, method='StartAddBGM', push=True):
         """让游戏自己放我们的曲子：改写它起附加曲时传的曲名。
 
