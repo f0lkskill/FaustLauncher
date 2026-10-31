@@ -1,0 +1,2433 @@
+
+<!doctype html>
+<html lang="zh" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="基于 WarpHook 的插件二次开发：从空插件到读取全场对象与 buff">
+      
+      
+      
+        <link rel="canonical" href="https://f0lkskill.github.io/FaustLauncher/technical/05-plugin/">
+      
+      
+        <link rel="prev" href="../04-field/">
+      
+      
+        <link rel="next" href="../06-lowlevel/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.0">
+    
+    
+      
+        <title>05 warp.plugin - FaustLauncher 插件开发文档</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.57a0d79d.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.fb2fffe2.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#05-warpplugin" class="md-skip">
+          跳转至
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="页眉">
+    <a href="../.." title="FaustLauncher 插件开发文档" class="md-header__button md-logo" aria-label="FaustLauncher 插件开发文档" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            FaustLauncher 插件开发文档
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              05 warp.plugin
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="切到深色"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="切到深色" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m17.75 4.09-2.53 1.94.91 3.06-2.63-1.81-2.63 1.81.91-3.06-2.53-1.94L12.44 4l1.06-3 1.06 3zm3.5 6.91-1.64 1.25.59 1.98-1.7-1.17-1.7 1.17.59-1.98L15.75 11l2.06-.05L18.5 9l.69 1.95zm-2.28 4.95c.83-.08 1.72 1.1 1.19 1.85-.32.45-.66.87-1.08 1.27C15.17 23 8.84 23 4.94 19.07c-3.91-3.9-3.91-10.24 0-14.14.4-.4.82-.76 1.27-1.08.75-.53 1.93.36 1.85 1.19-.27 2.86.69 5.83 2.89 8.02a9.96 9.96 0 0 0 8.02 2.89m-1.64 2.02a12.08 12.08 0 0 1-7.8-3.47c-2.17-2.19-3.33-5-3.49-7.82-2.81 3.14-2.7 7.96.31 10.98 3.02 3.01 7.84 3.12 10.98.31"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="切到浅色"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="切到浅色" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 7a5 5 0 0 1 5 5 5 5 0 0 1-5 5 5 5 0 0 1-5-5 5 5 0 0 1 5-5m0 2a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3m0-7 2.39 3.42C13.65 5.15 12.84 5 12 5s-1.65.15-2.39.42zM3.34 7l4.16-.35A7.2 7.2 0 0 0 5.94 8.5c-.44.74-.69 1.5-.83 2.29zm.02 10 1.76-3.77a7.131 7.131 0 0 0 2.38 4.14zM20.65 7l-1.77 3.79a7.02 7.02 0 0 0-2.38-4.15zm-.01 10-4.14.36c.59-.51 1.12-1.14 1.54-1.86.42-.73.69-1.5.83-2.29zM12 22l-2.41-3.44c.74.27 1.55.44 2.41.44.82 0 1.63-.17 2.37-.44z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="搜索" placeholder="搜索" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="查找">
+        
+        <button type="reset" class="md-search__icon md-icon" title="清空当前内容" aria-label="清空当前内容" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            正在初始化搜索引擎
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/f0lkskill/FaustLauncher" title="前往仓库" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    f0lkskill/FaustLauncher
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="导航栏" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="FaustLauncher 插件开发文档" class="md-nav__button md-logo" aria-label="FaustLauncher 插件开发文档" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    FaustLauncher 插件开发文档
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/f0lkskill/FaustLauncher" title="前往仓库" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    f0lkskill/FaustLauncher
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    首页
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../tutorial/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    入门教程
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_2" id="__nav_2_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    入门教程
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorial/01-hello/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    01 第一个插件
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorial/02-popup/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    02 让游戏弹一句话
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorial/03-events/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    03 事情发生时通知我
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorial/04-unit/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    04 读一个单位
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorial/05-props/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    05 把属性都拿出来
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorial/06-buffs/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    06 解析 buff
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorial/07-lifecycle/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    07 生命周期与线程
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorial/08-inside/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    08 想到底层去
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" checked>
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    技术文档
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_3" id="__nav_3_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    技术文档
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../01-namespaces/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    01 命名空间
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../02-game/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    02 warp.game
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../03-object/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    03 warp.object
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../04-field/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    04 warp.field
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    05 warp.plugin
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    05 warp.plugin
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="目录">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      目录
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#host" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Host —— 共享宿主句柄
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Host —— 共享宿主句柄">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#hook" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        hook() 的全部参数
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        调用示例
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#service" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Service —— 插件后台骨架
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#runtime-dll" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Runtime —— 自带 DLL 的老式骨架
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        常量
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="常量">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#flags" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        钩子 flags
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        动作位
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#_4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        命令
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#_5" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        读链与事件
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#kind" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        落点 kind
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#_6" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        布局
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#_7" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        结构体
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#_8" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        其他函数
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../06-lowlevel/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    06 底层四件套
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    参考手册
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    参考手册
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/game-memory/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    游戏内存探索
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/dev-notes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    WarpHook 开发笔记
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    归档
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    归档
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../archive/session-selfcheck/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    WarpHook 会话总结：立绘修复 + 生态自检 + 规范化准备
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="目录">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      目录
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#host" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Host —— 共享宿主句柄
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Host —— 共享宿主句柄">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#hook" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        hook() 的全部参数
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        调用示例
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#service" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Service —— 插件后台骨架
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#runtime-dll" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Runtime —— 自带 DLL 的老式骨架
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        常量
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="常量">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#flags" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        钩子 flags
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        动作位
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#_4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        命令
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#_5" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        读链与事件
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#kind" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        落点 kind
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#_6" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        布局
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#_7" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        结构体
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#_8" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        其他函数
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="05-warpplugin">05 warp.plugin —— 宿主与后台骨架<a class="headerlink" href="#05-warpplugin" title="Permanent link">&para;</a></h1>
+<p>这一层是「自己掌控」的地方：<code>Host</code> 是共享内存宿主的 Python 句柄（写钩子、代读、发命令），
+<code>Service</code> 是插件后台流程的骨架，<code>Runtime</code> 是自带 DLL 的老式插件骨架。</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="n">plugin</span> <span class="o">=</span> <span class="n">_NS</span><span class="o">.</span><span class="n">space</span><span class="p">(</span><span class="s1">&#39;warp&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">plugin</span>
+</code></pre></div>
+<h2 id="host"><code>Host</code> —— 共享宿主句柄<a class="headerlink" href="#host" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="n">host</span> <span class="o">=</span> <span class="n">plugin</span><span class="o">.</span><span class="n">Host</span><span class="p">(</span><span class="n">ADDON_NAME</span><span class="p">)</span>                 <span class="c1"># 按插件名分段（多插件共用一块映射）</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="n">host</span> <span class="o">=</span> <span class="n">plugin</span><span class="o">.</span><span class="n">Host</span><span class="p">(</span><span class="n">ADDON_NAME</span><span class="p">,</span> <span class="n">hooks</span><span class="o">=</span><span class="p">[</span><span class="o">...</span><span class="p">])</span>    <span class="c1"># 顺手登记钩子</span>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="n">host</span> <span class="o">=</span> <span class="n">plugin</span><span class="o">.</span><span class="n">Host</span><span class="p">(</span><span class="n">ADDON_NAME</span><span class="p">,</span> <span class="n">enabled</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>   <span class="c1"># 默认启用</span>
+</code></pre></div>
+<table>
+<thead>
+<tr>
+<th>方法</th>
+<th>返回</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>hook(klass, method, ...)</code></td>
+<td><code>dict</code></td>
+<td>登记一条钩子，返回那条 dict（见下）</td>
+</tr>
+<tr>
+<td><code>clear_hooks()</code></td>
+<td>—</td>
+<td>清空本插件的钩子（重新声明前调）</td>
+</tr>
+<tr>
+<td><code>hooks()</code></td>
+<td><code>list</code></td>
+<td>当前登记的钩子</td>
+</tr>
+<tr>
+<td><code>configure(hooks=None, texts=None, dedupe_ms=None)</code></td>
+<td>—</td>
+<td>批量设置（改完要 <code>push()</code>）</td>
+</tr>
+<tr>
+<td><code>push(enabled=None)</code></td>
+<td><code>str</code></td>
+<td>把配置写进共享内存，返回 <code>共享内存不可用</code> 之类表示失败</td>
+</tr>
+<tr>
+<td><code>status(owner=None)</code></td>
+<td><code>dict</code></td>
+<td>状态字典（键见 <code>warp.game.status()</code>）</td>
+</tr>
+<tr>
+<td><code>status_line(st=None)</code></td>
+<td><code>str</code></td>
+<td>一行状态文本</td>
+</tr>
+<tr>
+<td><code>beat()</code></td>
+<td>—</td>
+<td>写心跳（自己写循环时<strong>必须</strong>每轮调）</td>
+</tr>
+<tr>
+<td><code>poll()</code></td>
+<td><code>dict</code></td>
+<td>读一次状态并更新内部缓存</td>
+</tr>
+<tr>
+<td><code>hits(method=None, blocked=False, owner=None)</code></td>
+<td><code>int</code></td>
+<td>某方法累计命中数</td>
+</tr>
+<tr>
+<td><code>events(limit=None)</code></td>
+<td><code>list[HostEvent]</code></td>
+<td>取事件（<strong>消费语义</strong>：取走就推进 tail）</td>
+</tr>
+<tr>
+<td><code>object_ptr(slot)</code></td>
+<td><code>int\|None</code></td>
+<td>对象槽里的指针</td>
+</tr>
+<tr>
+<td><code>read(slot, chain, kind="int", timeout=2.0, default=None, detail=False)</code></td>
+<td>值</td>
+<td><strong>让游戏主线程代读</strong>（v7 起读对象一律走这里）</td>
+</tr>
+<tr>
+<td><code>read_local(slot, chain, kind="int")</code></td>
+<td>值</td>
+<td>本进程裸读，跨进程必崩，仅诊断用</td>
+</tr>
+<tr>
+<td><code>read_object(...)</code></td>
+<td>值</td>
+<td><code>read()</code> 的旧名字</td>
+</tr>
+<tr>
+<td><code>object_slot(slot, out=0, kind="int")</code></td>
+<td>值</td>
+<td>读事件的输出格</td>
+</tr>
+<tr>
+<td><code>write_buff_watch(hashes)</code></td>
+<td>—</td>
+<td>设置 buff 关注列表（bitmask 用）</td>
+</tr>
+<tr>
+<td><code>make(klass, args=(), slot=24, timeout=2.0)</code></td>
+<td>槽号</td>
+<td>在游戏里构造一个对象</td>
+</tr>
+<tr>
+<td><code>make_str(text, slot=24, timeout=2.0)</code></td>
+<td>槽号</td>
+<td>构造一个 il2cpp string</td>
+</tr>
+<tr>
+<td><code>call(method, slot=None, args=(), ret="int32", out_slot=-1, timeout=2.0)</code></td>
+<td>值/槽号</td>
+<td>调游戏方法</td>
+</tr>
+<tr>
+<td><code>release(slot, timeout=2.0)</code></td>
+<td>—</td>
+<td>释放对象槽上的 GC 句柄</td>
+</tr>
+<tr>
+<td><code>popup(text, timeout=2.0)</code></td>
+<td><code>str</code></td>
+<td>让游戏弹窗</td>
+</tr>
+<tr>
+<td><code>kill_game(timeout=2.0)</code></td>
+<td><code>str</code></td>
+<td>让游戏退出进程</td>
+</tr>
+<tr>
+<td><code>set_enabled(on)</code></td>
+<td><code>str</code></td>
+<td>启用 / 停用整套钩子</td>
+</tr>
+<tr>
+<td><code>arm()</code> / <code>disarm()</code></td>
+<td>—</td>
+<td>同一件事的旧写法</td>
+</tr>
+<tr>
+<td><code>inject_now(wait=False, stop_event=None)</code></td>
+<td>—</td>
+<td>手动注入 DLL</td>
+</tr>
+<tr>
+<td><code>dll_path()</code></td>
+<td><code>str</code></td>
+<td><code>warp_host.dll</code> 的完整路径</td>
+</tr>
+<tr>
+<td><code>block()</code></td>
+<td>映射对象</td>
+<td>共享内存块（<strong>方法，不是属性</strong>）</td>
+</tr>
+<tr>
+<td><code>read_mapped()</code> / <code>mapped_texts()</code></td>
+<td>—</td>
+<td>读映射 / 读文案区</td>
+</tr>
+<tr>
+<td><code>log(message, owner=None)</code></td>
+<td>—</td>
+<td>写一行日志</td>
+</tr>
+<tr>
+<td><code>close()</code></td>
+<td>—</td>
+<td>关映射</td>
+</tr>
+</tbody>
+</table>
+<h3 id="hook"><code>hook()</code> 的全部参数<a class="headerlink" href="#hook" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="n">host</span><span class="o">.</span><span class="n">hook</span><span class="p">(</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>    <span class="s1">&#39;BattleUnitModel&#39;</span><span class="p">,</span> <span class="s1">&#39;OnCreateUnitModel&#39;</span><span class="p">,</span>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>    <span class="n">argc</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>                <span class="c1"># 参数个数（不含 self）</span>
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>    <span class="n">block</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>           <span class="c1"># True = 拦下，不执行原方法</span>
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>    <span class="n">actions</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>          <span class="c1"># 动作位；默认 0 = 只看不碰</span>
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>    <span class="n">probe</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>            <span class="c1"># (类, 方法, 参数序号, vars 槽号) 顺手把参数对象的属性读进 vars</span>
+<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>    <span class="n">guard</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>            <span class="c1"># (vars 槽号, 值) 那个槽等于该值时才放行</span>
+<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a>    <span class="n">event</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>               <span class="c1"># 每次命中往事件环塞一条</span>
+<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a>    <span class="n">reads</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>            <span class="c1"># 读取链列表，命中时读值写进事件格</span>
+<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a>    <span class="n">dedupe</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>          <span class="c1"># 读出的值跟上次一样就不投递（挂 FixedUpdate 必开）</span>
+<a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a>    <span class="n">cache</span><span class="o">=</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">27</span><span class="p">),</span>         <span class="c1"># (参数序号, 槽号) 命中时把那个参数的指针存进对象槽</span>
+<a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a>    <span class="n">when</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>             <span class="c1"># 1 = 原方法调用**之后**才处理</span>
+<a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a>    <span class="n">ret_kind</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>         <span class="c1"># &#39;int32&#39; / &#39;float&#39;：取原方法返回值（自动转 POST）</span>
+<a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a>    <span class="n">ret_slot</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>         <span class="c1"># 返回值直出到事件的某一格</span>
+<a id="__codelineno-2-15" name="__codelineno-2-15" href="#__codelineno-2-15"></a><span class="p">)</span>
+</code></pre></div>
+<table>
+<thead>
+<tr>
+<th>参数</th>
+<th>缺省</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>klass</code> / <code>method</code></td>
+<td>—</td>
+<td>类名 / 方法名（必填）</td>
+</tr>
+<tr>
+<td><code>argc</code></td>
+<td><code>0</code></td>
+<td>参数个数，<strong>不含 <code>this</code></strong></td>
+</tr>
+<tr>
+<td><code>block</code></td>
+<td><code>False</code></td>
+<td>拦下原方法</td>
+</tr>
+<tr>
+<td><code>actions</code></td>
+<td><code>0</code></td>
+<td>动作位（<code>ACT_POPUP</code> 等），默认什么也不做</td>
+</tr>
+<tr>
+<td><code>probe</code></td>
+<td><code>None</code></td>
+<td><code>(类, 方法, 参数序号, vars 槽)</code>，把参数对象的属性读进 <code>vars[]</code></td>
+</tr>
+<tr>
+<td><code>guard</code></td>
+<td><code>None</code></td>
+<td><code>(vars 槽, 值)</code>，等于才放行（拿来做开关）</td>
+</tr>
+<tr>
+<td><code>event</code></td>
+<td><code>None</code></td>
+<td>事件号，非 <code>None</code> 就往事件环投递</td>
+</tr>
+<tr>
+<td><code>reads</code></td>
+<td><code>None</code></td>
+<td>读取链列表</td>
+</tr>
+<tr>
+<td><code>dedupe</code></td>
+<td><code>False</code></td>
+<td>去重（值不变不投递）</td>
+</tr>
+<tr>
+<td><code>cache</code></td>
+<td><code>None</code></td>
+<td><code>(参数序号, 槽号)</code>，留住参数指针</td>
+</tr>
+<tr>
+<td><code>when</code></td>
+<td><code>None</code></td>
+<td><code>1</code> = POST（原方法之后）</td>
+</tr>
+<tr>
+<td><code>ret_kind</code></td>
+<td><code>None</code></td>
+<td><code>'int32'</code> / <code>'float'</code></td>
+</tr>
+<tr>
+<td><code>ret_slot</code></td>
+<td><code>None</code></td>
+<td>返回值落哪一格</td>
+</tr>
+</tbody>
+</table>
+<h3 id="_1">调用示例<a class="headerlink" href="#_1" title="Permanent link">&para;</a></h3>
+<p><strong>只看不看、抓住对象</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="n">host</span><span class="o">.</span><span class="n">hook</span><span class="p">(</span><span class="s1">&#39;BattleUnitModel&#39;</span><span class="p">,</span> <span class="s1">&#39;OnCreateUnitModel&#39;</span><span class="p">,</span> <span class="n">argc</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">cache</span><span class="o">=</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">27</span><span class="p">))</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="n">host</span><span class="o">.</span><span class="n">push</span><span class="p">(</span><span class="kc">True</span><span class="p">)</span>
+</code></pre></div>
+<p><strong>拦下抽卡</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="n">host</span><span class="o">.</span><span class="n">hook</span><span class="p">(</span><span class="s1">&#39;MainUI.GachaUIPresenter&#39;</span><span class="p">,</span> <span class="s1">&#39;OnGachaSelected&#39;</span><span class="p">,</span> <span class="n">argc</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">block</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>          <span class="n">guard</span><span class="o">=</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">))</span>
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="n">host</span><span class="o">.</span><span class="n">push</span><span class="p">(</span><span class="kc">True</span><span class="p">)</span>
+</code></pre></div>
+<p><strong>读一个值（代读）</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="n">hp</span> <span class="o">=</span> <span class="n">host</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="mi">28</span><span class="p">,</span> <span class="p">[{</span><span class="s1">&#39;off&#39;</span><span class="p">:</span> <span class="mh">0x90</span><span class="p">,</span> <span class="s1">&#39;deref&#39;</span><span class="p">:</span> <span class="kc">True</span><span class="p">},</span> <span class="p">{</span><span class="s1">&#39;dict&#39;</span><span class="p">:</span> <span class="mi">0</span><span class="p">},</span>
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>                    <span class="p">{</span><span class="s1">&#39;off&#39;</span><span class="p">:</span> <span class="mh">0x10</span><span class="p">,</span> <span class="s1">&#39;deref&#39;</span><span class="p">:</span> <span class="kc">True</span><span class="p">},</span>
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>                    <span class="p">{</span><span class="s1">&#39;off&#39;</span><span class="p">:</span> <span class="mh">0x148</span><span class="p">,</span> <span class="s1">&#39;deref&#39;</span><span class="p">:</span> <span class="kc">True</span><span class="p">},</span>
+<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>                    <span class="p">{</span><span class="s1">&#39;off&#39;</span><span class="p">:</span> <span class="mh">0x148</span><span class="p">,</span> <span class="s1">&#39;deref&#39;</span><span class="p">:</span> <span class="kc">False</span><span class="p">}],</span> <span class="n">kind</span><span class="o">=</span><span class="s1">&#39;obscured&#39;</span><span class="p">)</span>
+</code></pre></div>
+<p><strong>调一个静态方法</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="n">slot</span> <span class="o">=</span> <span class="n">host</span><span class="o">.</span><span class="n">call</span><span class="p">(</span><span class="s1">&#39;BattleObjectManager::get_Instance&#39;</span><span class="p">,</span> <span class="n">ret</span><span class="o">=</span><span class="s1">&#39;ref&#39;</span><span class="p">,</span> <span class="n">out_slot</span><span class="o">=</span><span class="mi">28</span><span class="p">)</span>
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="nb">print</span><span class="p">(</span><span class="n">host</span><span class="o">.</span><span class="n">object_ptr</span><span class="p">(</span><span class="mi">28</span><span class="p">))</span>       <span class="c1"># 管理器地址</span>
+</code></pre></div>
+<p><code>call</code> 的 <code>ret</code> 三种形状：</p>
+<table>
+<thead>
+<tr>
+<th><code>ret</code></th>
+<th>返回</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>'int32'</code></td>
+<td><code>int</code></td>
+<td>返回值当 32 位整数（RAX）</td>
+</tr>
+<tr>
+<td><code>'float'</code></td>
+<td><code>float</code></td>
+<td>返回值当浮点（XMM0）</td>
+</tr>
+<tr>
+<td><code>'ref'</code></td>
+<td>槽号</td>
+<td>返回的对象落进 <code>out_slot</code> 那个槽</td>
+</tr>
+</tbody>
+</table>
+<h2 id="service"><code>Service</code> —— 插件后台骨架<a class="headerlink" href="#service" title="Permanent link">&para;</a></h2>
+<p>不用它也能写插件（<code>game.*</code> 自己管线程），但要做「等游戏 → 注入 → 心跳 → 状态播报 →
+托盘菜单」这一整套，用它最省事。</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="n">service</span> <span class="o">=</span> <span class="n">plugin</span><span class="o">.</span><span class="n">Service</span><span class="p">(</span>
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>    <span class="n">addon_name</span><span class="o">=</span><span class="n">ADDON_NAME</span><span class="p">,</span>
+<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>    <span class="n">name</span><span class="o">=</span><span class="s1">&#39;我的插件&#39;</span><span class="p">,</span>
+<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a>    <span class="n">sync</span><span class="o">=</span><span class="n">_push</span><span class="p">,</span>                                        <span class="c1"># 把设置写进共享内存</span>
+<a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a>    <span class="n">auto</span><span class="o">=</span><span class="k">lambda</span><span class="p">:</span> <span class="kc">True</span><span class="p">,</span>                                  <span class="c1"># 游戏启动时自动注入</span>
+<a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a>    <span class="n">menu</span><span class="o">=</span><span class="p">((</span><span class="s1">&#39;注入&#39;</span><span class="p">,</span> <span class="k">lambda</span><span class="p">:</span> <span class="n">service</span><span class="o">.</span><span class="n">inject_now</span><span class="p">(</span><span class="n">wait</span><span class="o">=</span><span class="kc">True</span><span class="p">)),</span>
+<a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a>          <span class="p">(</span><span class="s1">&#39;解除&#39;</span><span class="p">,</span> <span class="k">lambda</span><span class="p">:</span> <span class="n">service</span><span class="o">.</span><span class="n">set_enabled</span><span class="p">(</span><span class="kc">False</span><span class="p">)),</span>
+<a id="__codelineno-7-8" name="__codelineno-7-8" href="#__codelineno-7-8"></a>          <span class="p">(</span><span class="s1">&#39;应用设置&#39;</span><span class="p">,</span> <span class="k">lambda</span><span class="p">:</span> <span class="n">service</span><span class="o">.</span><span class="n">sync</span><span class="p">())),</span>
+<a id="__codelineno-7-9" name="__codelineno-7-9" href="#__codelineno-7-9"></a><span class="p">)</span>
+<a id="__codelineno-7-10" name="__codelineno-7-10" href="#__codelineno-7-10"></a><span class="n">service</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
+</code></pre></div>
+<table>
+<thead>
+<tr>
+<th>参数</th>
+<th>缺省</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>addon_name</code></td>
+<td>调用方模块名</td>
+<td>记账用的键</td>
+</tr>
+<tr>
+<td><code>name</code></td>
+<td>同 <code>addon_name</code></td>
+<td>日志前缀 / 菜单标题</td>
+</tr>
+<tr>
+<td><code>sync</code></td>
+<td><code>None</code></td>
+<td><code>() -&gt; 任意</code>：把当前设置写进共享内存</td>
+</tr>
+<tr>
+<td><code>auto</code></td>
+<td><code>None</code></td>
+<td><code>() -&gt; bool</code>：游戏启动时要不要自动注入</td>
+</tr>
+<tr>
+<td><code>menu</code></td>
+<td><code>()</code></td>
+<td><code>((标题, 回调), ...)</code> 托盘菜单项</td>
+</tr>
+<tr>
+<td><code>interval</code></td>
+<td><code>0.25</code></td>
+<td>心跳间隔（秒，最小 0.05）</td>
+</tr>
+<tr>
+<td><code>host</code></td>
+<td><code>None</code></td>
+<td>复用已有 <code>Host</code></td>
+</tr>
+<tr>
+<td><code>shared</code></td>
+<td><code>True</code></td>
+<td><code>True</code> = 共享宿主 <code>warp_host.dll</code>；<code>False</code> = 插件自带 DLL</td>
+</tr>
+</tbody>
+</table>
+<table>
+<thead>
+<tr>
+<th>方法</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>start()</code></td>
+<td>起后台线程</td>
+</tr>
+<tr>
+<td><code>stop()</code></td>
+<td>停线程（<code>on_unload</code> 里调）</td>
+</tr>
+<tr>
+<td><code>host()</code></td>
+<td>拿 <code>Host</code></td>
+</tr>
+<tr>
+<td><code>sync()</code></td>
+<td>立刻把设置推一次</td>
+</tr>
+<tr>
+<td><code>on_hit(callback, *, method=None, once=False, delay=0.0, thread=True)</code></td>
+<td>钩子命中后调 <code>callback(host)</code>；<code>thread=True</code> 跑独立线程（可 <code>sleep</code>）</td>
+</tr>
+<tr>
+<td><code>on_event(callback)</code></td>
+<td>事件环有新事件时调</td>
+</tr>
+<tr>
+<td><code>inject_now(wait=False)</code></td>
+<td>手动注入</td>
+</tr>
+<tr>
+<td><code>set_enabled(enabled=True)</code></td>
+<td>启用 / 停用</td>
+</tr>
+<tr>
+<td><code>status()</code></td>
+<td>状态字典</td>
+</tr>
+<tr>
+<td><code>describe(st)</code></td>
+<td>一行状态文本</td>
+</tr>
+<tr>
+<td><code>register_menu()</code></td>
+<td>手动注册菜单</td>
+</tr>
+<tr>
+<td><code>Service.stop_all()</code></td>
+<td>类方法，停掉全部</td>
+</tr>
+</tbody>
+</table>
+<p><code>on_hit</code> 的 <code>once=True</code> 表示同一个方法只回调一次（自爆插件用）。</p>
+<h2 id="runtime-dll"><code>Runtime</code> —— 自带 DLL 的老式骨架<a class="headerlink" href="#runtime-dll" title="Permanent link">&para;</a></h2>
+<p>v0.4 时代的写法，插件自己带一个 DLL、自己一块共享内存。现在的插件基本不用，
+但 <code>COMMON_FIELDS</code> 这个常量还在用：</p>
+<table>
+<thead>
+<tr>
+<th>参数</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>addon_name</code></td>
+<td>插件名</td>
+</tr>
+<tr>
+<td><code>map_name</code></td>
+<td>共享内存名</td>
+</tr>
+<tr>
+<td><code>struct_cls</code></td>
+<td>配置结构体类型</td>
+</tr>
+<tr>
+<td><code>magic</code></td>
+<td>结构体 <code>magic</code> 字段的期望值</td>
+</tr>
+<tr>
+<td><code>dll_name</code></td>
+<td>插件目录下的 DLL 文件名</td>
+</tr>
+<tr>
+<td><code>exports</code></td>
+<td>il2cpp 导出名序列（顺序要与 C 侧一致）</td>
+</tr>
+<tr>
+<td><code>apply</code> / <code>read</code></td>
+<td><code>(block, enabled) -&gt; (ok, msg)</code> / <code>(block) -&gt; dict</code></td>
+</tr>
+<tr>
+<td><code>format_line</code></td>
+<td><code>(status) -&gt; str</code></td>
+</tr>
+<tr>
+<td><code>menu_labels</code></td>
+<td>三个菜单文案</td>
+</tr>
+<tr>
+<td><code>auto_key</code></td>
+<td>settings 里控制自动注入的键名</td>
+</tr>
+</tbody>
+</table>
+<p>方法：<code>log</code> <code>settings</code> <code>block</code> <code>cfg</code> <code>read_mapped</code> <code>push</code> <code>set_enabled</code> <code>arm</code> <code>disarm</code>
+<code>status</code> <code>dll_path</code> <code>beat</code> <code>poll</code> <code>close</code> <code>inject_now</code>。</p>
+<h2 id="_2">常量<a class="headerlink" href="#_2" title="Permanent link">&para;</a></h2>
+<h3 id="flags">钩子 flags<a class="headerlink" href="#flags" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>常量</th>
+<th>值</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>HF_BLOCK</code></td>
+<td><code>0x01</code></td>
+<td>拦下原方法</td>
+</tr>
+<tr>
+<td><code>HF_ONCE</code></td>
+<td><code>0x02</code></td>
+<td>只触发一次</td>
+</tr>
+<tr>
+<td><code>HF_DEDUPE</code></td>
+<td><code>0x04</code></td>
+<td>读值不变就不投递</td>
+</tr>
+</tbody>
+</table>
+<h3 id="_3">动作位<a class="headerlink" href="#_3" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>常量</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ACT_POPUP</code></td>
+<td>弹窗</td>
+</tr>
+<tr>
+<td><code>ACT_PANEL</code></td>
+<td>面板</td>
+</tr>
+<tr>
+<td><code>ACT_KILL</code></td>
+<td>退出游戏</td>
+</tr>
+</tbody>
+</table>
+<p><strong>默认是 <code>0</code>（什么都不做）</strong>——要弹窗自己调 <code>host.popup()</code>。</p>
+<h3 id="_4">命令<a class="headerlink" href="#_4" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>常量</th>
+<th>值</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>CMD_NONE</code></td>
+<td><code>0</code></td>
+<td>空</td>
+</tr>
+<tr>
+<td><code>CMD_POPUP</code></td>
+<td><code>1</code></td>
+<td>弹窗</td>
+</tr>
+<tr>
+<td><code>CMD_KILL</code></td>
+<td><code>2</code></td>
+<td>退出游戏</td>
+</tr>
+<tr>
+<td><code>CMD_MAKE</code></td>
+<td><code>3</code></td>
+<td>构造对象</td>
+</tr>
+<tr>
+<td><code>CMD_CALL</code></td>
+<td><code>4</code></td>
+<td>调方法</td>
+</tr>
+<tr>
+<td><code>CMD_STR</code></td>
+<td><code>5</code></td>
+<td>构造字符串</td>
+</tr>
+<tr>
+<td><code>CMD_RELEASE</code></td>
+<td><code>6</code></td>
+<td>释放句柄</td>
+</tr>
+<tr>
+<td><code>CMD_READ</code></td>
+<td><code>7</code></td>
+<td>代读（v7 新增）</td>
+</tr>
+</tbody>
+</table>
+<h3 id="_5">读链与事件<a class="headerlink" href="#_5" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>常量</th>
+<th>值</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>HOST_STEP_PLAIN</code></td>
+<td><code>0</code></td>
+<td>只加偏移（+ 可选解引用）</td>
+</tr>
+<tr>
+<td><code>HOST_STEP_DEREF</code></td>
+<td><code>1</code></td>
+<td>解引用</td>
+</tr>
+<tr>
+<td><code>HOST_STEP_LIST</code></td>
+<td><code>2</code></td>
+<td>List 约定偏移</td>
+</tr>
+<tr>
+<td><code>HOST_STEP_ARRAY</code></td>
+<td><code>3</code></td>
+<td>Array 约定偏移</td>
+</tr>
+<tr>
+<td><code>HOST_STEP_LIST_VAL</code></td>
+<td><code>4</code></td>
+<td>List 取第 i 个值</td>
+</tr>
+<tr>
+<td><code>HOST_STEP_ARRAY_VAL</code></td>
+<td><code>5</code></td>
+<td>Array 取第 i 个值</td>
+</tr>
+<tr>
+<td><code>HOST_STEP_DICT_VALUE</code></td>
+<td><code>6</code></td>
+<td>Dictionary 取第 k 个活跃 value</td>
+</tr>
+<tr>
+<td><code>HOST_STEP_DICT_VALUE32</code></td>
+<td><code>7</code></td>
+<td>同上，值直出</td>
+</tr>
+<tr>
+<td><code>HOST_READ_STEPS</code></td>
+<td><code>8</code></td>
+<td>一条链最多几步</td>
+</tr>
+<tr>
+<td><code>HOST_READ_SIZE</code></td>
+<td><code>80</code></td>
+<td>一条读链占多少字节</td>
+</tr>
+<tr>
+<td><code>HOST_READ_MAX</code></td>
+<td><code>128</code></td>
+<td>最多几条读链</td>
+</tr>
+<tr>
+<td><code>HOST_EVENT_SLOTS</code></td>
+<td><code>12</code></td>
+<td>一条事件带几格数据（a..l）</td>
+</tr>
+<tr>
+<td><code>HOST_EVENT_COUNT</code></td>
+<td><code>2048</code></td>
+<td>事件环容量</td>
+</tr>
+<tr>
+<td><code>HOST_EVENT_SIZE</code></td>
+<td><code>60</code></td>
+<td>一条事件多少字节</td>
+</tr>
+<tr>
+<td><code>HOST_EVENT_SLOTS</code></td>
+<td><code>12</code></td>
+<td>事件数据格数</td>
+</tr>
+</tbody>
+</table>
+<h3 id="kind">落点 kind<a class="headerlink" href="#kind" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>常量</th>
+<th>值</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>HOST_READ_INT</code></td>
+<td><code>0</code></td>
+<td>int32</td>
+</tr>
+<tr>
+<td><code>HOST_READ_FLOAT</code></td>
+<td><code>1</code></td>
+<td>float</td>
+</tr>
+<tr>
+<td><code>HOST_READ_BOOL</code></td>
+<td><code>2</code></td>
+<td>bool</td>
+</tr>
+<tr>
+<td><code>HOST_READ_PTR</code></td>
+<td><code>3</code></td>
+<td>指针</td>
+</tr>
+<tr>
+<td><code>HOST_READ_OBSCURED</code></td>
+<td><code>4</code></td>
+<td>解混淆 int</td>
+</tr>
+<tr>
+<td><code>HOST_READ_SUM_LIST</code></td>
+<td><code>5</code></td>
+<td>容器求和</td>
+</tr>
+<tr>
+<td><code>HOST_READ_COUNT_LIST</code></td>
+<td><code>6</code></td>
+<td>List/Array 元素数</td>
+</tr>
+<tr>
+<td><code>HOST_READ_TEXT_NUM</code></td>
+<td><code>7</code></td>
+<td>字符串指纹</td>
+</tr>
+<tr>
+<td><code>HOST_READ_BUFF_MASK</code></td>
+<td><code>8</code></td>
+<td>buff 位掩码</td>
+</tr>
+<tr>
+<td><code>HOST_READ_COUNT_DICT</code></td>
+<td><code>9</code></td>
+<td>Dictionary 活跃数</td>
+</tr>
+</tbody>
+</table>
+<h3 id="_6">布局<a class="headerlink" href="#_6" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>常量</th>
+<th>值</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>HOST_MAP_BYTES</code></td>
+<td><code>177104</code></td>
+<td>整块共享内存大小（v7）</td>
+</tr>
+<tr>
+<td><code>HOST_HEADER_SIZE</code></td>
+<td><code>432</code></td>
+<td>头部</td>
+</tr>
+<tr>
+<td><code>HOST_HOOK_OFFSET</code> / <code>HOST_HOOK_SIZE</code></td>
+<td><code>432</code> / <code>288</code></td>
+<td>钩子表起点 / 每条大小</td>
+</tr>
+<tr>
+<td><code>HOST_MAX_HOOKS</code></td>
+<td><code>32</code></td>
+<td>钩子槽总数</td>
+</tr>
+<tr>
+<td><code>HOST_HOOKS_PRIMARY</code></td>
+<td><code>27</code></td>
+<td>成就主段占的钩子数（0..26）</td>
+</tr>
+<tr>
+<td><code>HOST_READS_PRIMARY</code></td>
+<td><code>96</code></td>
+<td>主段读链数</td>
+</tr>
+<tr>
+<td><code>HOST_TEXTS_PRIMARY</code></td>
+<td><code>192</code></td>
+<td>主段文案数</td>
+</tr>
+<tr>
+<td><code>HOST_TEXT_SIZE</code> / <code>HOST_MAX_TEXTS</code></td>
+<td><code>128</code> / <code>256</code></td>
+<td>文案格</td>
+</tr>
+<tr>
+<td><code>HOST_OBJECT_COUNT</code> / <code>HOST_OBJECT_SIZE</code></td>
+<td><code>32</code> / <code>8</code></td>
+<td>对象槽</td>
+</tr>
+<tr>
+<td><code>HOST_OBJ_ARG_BASE</code></td>
+<td><code>0x100</code></td>
+<td>读链里 <code>arg=0x100+n</code> 表示对象槽 n</td>
+</tr>
+<tr>
+<td><code>HOST_VAR_COUNT</code></td>
+<td><code>16</code></td>
+<td><code>vars[]</code> 槽数</td>
+</tr>
+<tr>
+<td><code>HOST_CMD_TEXT_LEN</code></td>
+<td><code>256</code></td>
+<td>命令文本长度</td>
+</tr>
+<tr>
+<td><code>HOST_DLL_NAME</code></td>
+<td><code>warp_host.dll</code></td>
+<td>宿主 DLL 文件名</td>
+</tr>
+</tbody>
+</table>
+<h3 id="_7">结构体<a class="headerlink" href="#_7" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>类</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>HostHeader</code></td>
+<td>共享内存头部（<code>magic</code> <code>version</code> <code>enabled</code> <code>hooked</code> <code>evt_count</code> <code>vars[]</code> …）</td>
+</tr>
+<tr>
+<td><code>HostHook</code></td>
+<td>一条钩子的磁盘布局（写 <code>configure</code> 时不必自己碰）</td>
+</tr>
+<tr>
+<td><code>HostRead</code></td>
+<td>一条读链的磁盘布局</td>
+</tr>
+<tr>
+<td><code>HostEvent</code></td>
+<td>一条事件（<code>id</code> <code>hook</code> <code>tick</code> <code>a</code>..<code>l</code>）</td>
+</tr>
+</tbody>
+</table>
+<h3 id="_8">其他函数<a class="headerlink" href="#_8" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>函数</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>host_alive(block)</code></td>
+<td>映射是否指向一个活的宿主（校验 magic + version + 心跳/钩子状态）</td>
+</tr>
+<tr>
+<td><code>host_build(log_path=None)</code></td>
+<td>读宿主日志尾部的构建戳，如 <code>Oct 31 2026 14:51:57 proto v7</code></td>
+</tr>
+<tr>
+<td><code>COMMON_FIELDS</code></td>
+<td>老式插件共享内存的约定字段名</td>
+</tr>
+<tr>
+<td><code>ensure_exports(block, names, offset, name_max)</code></td>
+<td>填 il2cpp 导出名表</td>
+</tr>
+</tbody>
+</table>
+<div class="admonition danger">
+<p class="admonition-title"><code>host.block</code> 是方法</p>
+<p><code>host.block</code> 返回的是<strong>绑定方法</strong>，不是映射对象。要用 <code>host.block()</code>。
+这个坑踩过一次：<code>host_alive(host.block)</code> 会静默返回 <code>False</code>。</p>
+</div>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  回到页面顶部
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.sections", "navigation.top", "navigation.indexes", "content.code.copy", "content.code.annotate", "search.suggest", "search.highlight", "toc.follow"], "search": "../../assets/javascripts/workers/search.a7633da7.min.js", "tags": null, "translations": {"clipboard.copied": "\u5df2\u590d\u5236", "clipboard.copy": "\u590d\u5236", "search.result.more.one": "\u5728\u8be5\u9875\u4e0a\u8fd8\u6709 1 \u4e2a\u7b26\u5408\u6761\u4ef6\u7684\u7ed3\u679c", "search.result.more.other": "\u5728\u8be5\u9875\u4e0a\u8fd8\u6709 # \u4e2a\u7b26\u5408\u6761\u4ef6\u7684\u7ed3\u679c", "search.result.none": "\u6ca1\u6709\u627e\u5230\u7b26\u5408\u6761\u4ef6\u7684\u7ed3\u679c", "search.result.one": "\u627e\u5230 1 \u4e2a\u7b26\u5408\u6761\u4ef6\u7684\u7ed3\u679c", "search.result.other": "# \u4e2a\u7b26\u5408\u6761\u4ef6\u7684\u7ed3\u679c", "search.result.placeholder": "\u952e\u5165\u4ee5\u5f00\u59cb\u641c\u7d22", "search.result.term.missing": "\u7f3a\u5c11", "select.version": "\u9009\u62e9\u5f53\u524d\u7248\u672c"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.c21346df.min.js"></script>
+      
+    
+  </body>
+</html>
