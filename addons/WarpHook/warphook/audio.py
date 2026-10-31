@@ -1,11 +1,17 @@
-"""播放战斗 BGM（0.9.10）。
+"""播放战斗 BGM（0.9.10，0.9.13 按旧插件流程补全）。
 
 游戏用 FMOD/Wwise，战斗曲归 ``BattleSoundGenerator`` 管。旧插件
 BattleBGMExtend 为了「锁住」自己放的曲子，钩了三十多个音频方法互相
-放行；我们不需要那套互斥 —— 只要把想放的曲子塞进游戏的附加曲通道：
+放行；我们不需要那套互斥 —— 但**它换曲那三步一步都不能少**
+（``battlebgmextend.c`` 的 ``switch_rule``）：
 
+    sound = SoundManager.get_Instance()
     StopBGM(false, false)              # 停掉当前战斗曲
+    sound.StopBGM(false)               # 再清一次 SoundManager 侧的状态
     StartAddBGM(短名, STOP_MODE=1, false)   # 放新曲（1 = 立刻停旧的）
+
+0.9.10 漏了中间那步 ``SoundManager.StopBGM``，``StartAddBGM`` 内部碰到的
+FMOD 实例状态不干净 —— 真机上是直接访问违例把游戏带走。
 
 ``StartAddBGM`` 收的是**短名**（``Battle_Cp9_Boss_10``），不是完整的
 ``event:/BGM/Battle/Battle_Cp9_Boss_10`` —— 前缀游戏自己补。
@@ -25,6 +31,8 @@ STOP_MODE_FADE = 0
 
 # 对象槽 27 是辅助段的临时槽，用完就还（28/29 被门面占着，30/31 是每帧回调）
 SLOT_SCRATCH = 27
+# 26 留着放 SoundManager 实例（get_Instance 的 ref 出参）
+SLOT_SOUND = 26
 
 
 def in_battle(host, slot=None):
@@ -63,25 +71,35 @@ def _ok(result):
     return not isinstance(result, str)
 
 
-def play(host, name, stop_current=True, timeout=2.0, require_battle=True):
+def play(host, name, stop_current=True, timeout=2.0, require_battle=True,
+         allow_unsafe=False):
     """放一首战斗 BGM。返回 ``{'ok', 'name', 'path', 'reason'}``。
+
+    .. danger:: **默认拒绝，因为没有安全路径**
+       ``BattleSoundGenerator.StartAddBGM`` 在 il2cpp ``runtime_invoke`` 下
+       调用时内部会访问违例（0.9.10 崩过两次，0.9.12 的异常保护接住了
+       第一击，但进程随后仍然死）。这条调用链目前**确认不安全**，所以
+       默认直接返回 ``ok=False``，要冒险自己传 ``allow_unsafe=True``。
 
     Args:
         host: ``Host`` 实例（``Service.host()`` / ``game.live().host()``）。
         name: 短名（``Battle_Cp9_Boss_10``）或完整路径。
-        stop_current: 先停掉当前战斗曲，默认 True。留在原曲上面叠着
-            会两条一起响，一般不需要关掉。
-        require_battle: 先确认在战斗里再放，默认 True。关掉它就得自己
-            保证时机 —— 非战斗场景下调用会把游戏带走。
+        stop_current: 先停掉当前战斗曲，默认 True。
+        require_battle: 先确认在战斗里再放，默认 True。
+        allow_unsafe: 真的去调 ``StartAddBGM``。会让游戏进程消失，
+            只在你自己能承受重开游戏时用。
 
-    名字写错时 ``ok=False``，游戏那边会继续放原曲（``StartAddBGM`` 找
-    不到 event 会静默失败，返回码看不出来），所以失败时建议再调一次
-    :func:`stop` 把附加通道清干净。
+    只读的 :func:`is_playing` / :func:`current_index` 是安全的 —— 它们是
+    纯 getter，不会碰 FMOD 的实例状态。
     """
     short = short_name(name)
     path = full_path(name)
     if not short:
         return {'ok': False, 'name': '', 'path': '', 'reason': '名字是空的'}
+
+    if not allow_unsafe:
+        return {'ok': False, 'name': short, 'path': path,
+                'reason': 'StartAddBGM 会让游戏崩，默认不调用（要冒险传 allow_unsafe=True）'}
 
     if require_battle and not in_battle(host):
         return {'ok': False, 'name': short, 'path': path,
@@ -91,10 +109,19 @@ def play(host, name, stop_current=True, timeout=2.0, require_battle=True):
     made = host.make_str(short, slot=slot, timeout=timeout)
     if isinstance(made, str) and made != '已执行':
         return {'ok': False, 'name': short, 'path': path, 'reason': made}
+
+    # 旧插件顺序：先拿 SoundManager 实例，再停旧曲（两个 StopBGM 都要调），
+    # 最后才 StartAddBGM。少一步 SoundManager.StopBGM 就是 0.9.10 的崩溃。
     try:
+        sound = host.call('SoundManager::get_Instance', ret='ref',
+                          out_slot=SLOT_SOUND, timeout=timeout)
+        has_sound = bool(host.object_ptr(SLOT_SOUND))
         if stop_current:
             host.call('BattleSoundGenerator::StopBGM', args=(0, 0),
                       timeout=timeout)
+            if has_sound:
+                host.call('SoundManager::StopBGM', slot=SLOT_SOUND,
+                          args=(0,), timeout=timeout)
         result = host.call('BattleSoundGenerator::StartAddBGM',
                            args=(('slot', slot), STOP_MODE_IMMEDIATE, 0),
                            timeout=timeout)
