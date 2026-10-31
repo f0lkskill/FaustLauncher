@@ -1715,7 +1715,7 @@ class Host:
         return self._command(CMD_STR, text, timeout, slot=slot)
 
     def call(self, method, slot=None, args=(), ret="int32", out_slot=-1,
-             timeout=2.0, unsafe=False, sig=None):
+             timeout=2.0, unsafe=False, sig=None, via="direct"):
         """调一个方法：``host.call("Foo::get_value", slot=24, ret="int32")``。
 
         !! danger "默认只放白名单"
@@ -1733,6 +1733,9 @@ class Host:
                 "ref" 落 out_slot 槽（返回槽号）。
             out_slot: ret="ref" 时结果落的槽。
             unsafe: 允许调用不在白名单里的方法。
+            via: "direct"（默认，methodPointer 直调，旧插件姿势）或
+                "invoke"（runtime_invoke，泛型基类方法如
+                `SingletonBehavior`1::get_Instance` 必须用它）。
             sig: 参数类型签名，用来在同名同参数个数的重载里挑对那一个。
                 逗号分隔，`S`=String `B`=bool `I`=int `F`=float
                 `L`=long `D`=double `V`=void，`O`/`?` 表示不校验；
@@ -1761,6 +1764,12 @@ class Host:
             text = f"{method}#{kinds or 'i' * len(packed)}|{sig}"
         else:
             text = method if not kinds else f"{method}#{kinds}"
+        # v0.9.25b：via="invoke" 走 runtime_invoke（text 尾部 "~i" 标志）。
+        # 泛型基类方法（SingletonBehavior`1::get_Instance 这类）直调会因
+        # RGCTX 缺失 AV —— 0.9.25 探针日志定案；invoke 走 invoker_method
+        # 转发器，正确处理泛型上下文。普通方法保持直调（旧插件姿势）。
+        if str(via).lower() == "invoke":
+            text = f"{text}~i"
         this_slot = -1 if slot is None else int(slot)
         result = self._command(CMD_CALL, text, timeout, args=packed,
                                retkind=retkind, slot=this_slot, out_slot=out_slot)
