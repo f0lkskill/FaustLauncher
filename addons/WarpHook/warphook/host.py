@@ -34,7 +34,8 @@ from .base import (
 )
 
 HOST_MAGIC = 0x54534857           # "WHST"
-HOST_VERSION = 10                 # v9：命令的 out 参数缓冲（CALL 能拿回值类型）
+HOST_VERSION = 11                  # v11：导出表 22→24（静态字段读）+ CMD_STATIC；
+                                   # v10：LIST 诊断命令；v9：CALL 的 out 参数缓冲
                                   # （v8：钩子参数改写；v7：代读读链；v6：字典容器步）
 # v5：尾部追加 buff 关注哈希表段（BUF 行）。
 # v4：钩子表 16→32（成就 25 条 + NoGacha 2 条装不下 16 槽）
@@ -48,7 +49,7 @@ HOST_TEXT_LEN = 128
 HOST_KLASS_LEN = 48
 HOST_METHOD_LEN = 48
 HOST_LOG_LEN = 48
-HOST_EXPORT_COUNT = 22
+HOST_EXPORT_COUNT = 24
 HOST_NAME_MAX = 64
 HOST_VAR_COUNT = 8
 HOST_CMD_TEXT_LEN = 256
@@ -63,6 +64,7 @@ CMD_STR = 5       # 造 il2cpp 字符串 → 对象槽
 CMD_RELEASE = 6   # 解掉槽上 GC 句柄并清槽
 CMD_READ = 7      # 代读：按 HOST_CMD_READ_OFFSET 处那条链读对象槽，结果 vars[6]/[7]
 CMD_LIST = 8      # 诊断：列某类同名方法的全部重载签名（纯元数据，不 invoke）
+CMD_STATIC = 9    # 读静态字段："类名::字段名" → 值落对象槽（引用类型）
 
 # CALL 的返回值形状（retkind 打进 cmd_type 12-15 位）
 CMD_RET_INT32 = 0   # box 返回，真值在 +0x10，位模式写回 vars[6]
@@ -84,6 +86,7 @@ CMD_RES_NAMES = {
     5: "方法没找到",
     6: "对象槽越界",
     7: "参数太多（vars 最多 6 个）",
+    8: "字段没找到",
 }
 
 HOST_HEADER_SIZE = 432   # 160 状态头 + 命令槽（4 个 int + 256 字节文本）
@@ -344,6 +347,9 @@ HOST_EXPORT_ORDER = [
     "il2cpp_method_get_return_type",
     "il2cpp_type_get_name",
     "il2cpp_free",
+    # v0.9.24b：静态字段读（旧插件的单例姿势，如 SingletonBehavior._instance）
+    "il2cpp_class_get_field_from_name",
+    "il2cpp_field_static_get_value",
 ]
 
 class HostHeader(ctypes.Structure):
@@ -1541,6 +1547,27 @@ class Host:
         if not raw:
             return []
         return [part.decode("utf-8", "replace") for part in raw.split(bytes([0])) if part]
+
+    def static_get(self, name, out_slot, timeout=2.0):
+        """读一个类的静态字段（引用类型），值落对象槽。
+
+        这是旧插件 BattleBGMExtend 拿单例的姿势 —— 它从不调 ``get_Instance``
+        （泛型基类方法，直调验证不过），而是读 ``SingletonBehavior<T>`` 的静态
+        字段 ``_instance``。字段可以声明在基类，DLL 侧会沿基类最多 32 层去找。
+
+        Args:
+            name: ``"类名::字段名"``，如 ``"SoundManager::_instance"``。
+            out_slot: 对象槽号，读到的引用写这里（挂 GC 句柄）。
+            timeout: 等宿主执行的秒数。
+
+        Returns:
+            成功返回 ``"已执行"``；失败返回宿主的错误文本（``"字段没找到"``
+            / ``"类没找到"`` / ``"失败"``——后者通常是单例还没初始化）。
+        """
+        if not 0 <= int(out_slot) < HOST_OBJECT_COUNT:
+            return "对象槽越界"
+        return self._command(CMD_STATIC, text=name, timeout=timeout,
+                             out_slot=int(out_slot))
 
     def _command(self, cmd_type, text="", timeout=2.0, args=(), retkind=0,
                  slot=-1, out_slot=-1):

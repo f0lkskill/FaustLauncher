@@ -72,6 +72,9 @@ int warp_bind_exports(void)
     g_ic.method_get_return_type     = (fn_method_get_return_type)find_export(ga, 19);
     g_ic.type_get_name              = (fn_type_get_name)find_export(ga, 20);
     g_ic.free_mem                   = (fn_free_mem)find_export(ga, 21);
+    /* v0.9.24b：静态字段读。缺了不致命（只有 static_get 命令会拒绝工作）。 */
+    g_ic.class_get_field_from_name  = (fn_class_get_field_from_name)find_export(ga, 22);
+    g_ic.field_static_get_value     = (fn_field_static_get_value)find_export(ga, 23);
 
     for (i = 0; i < WARP_EXPORT_COUNT; i++) {
         void *p = find_export(ga, i);

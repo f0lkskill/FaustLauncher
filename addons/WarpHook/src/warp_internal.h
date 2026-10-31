@@ -33,6 +33,8 @@ typedef struct {
     fn_method_get_return_type              method_get_return_type;
     fn_type_get_name              type_get_name;
     fn_free_mem              free_mem;
+    fn_class_get_field_from_name  class_get_field_from_name;
+    fn_field_static_get_value     field_static_get_value;
 } WARP_IC;
 
 typedef struct {
@@ -136,6 +138,7 @@ int warp_retry_hooks(void);
 int warp_cmd_make(int argc, int slot, const char *argkinds);
 int warp_cmd_call(int argc, int slot, int retkind, int out_slot, const char *argkinds);
 int warp_cmd_str(int slot, const char *text);
+int warp_cmd_static(const char *text, int out_slot);
 int warp_cmd_release(int slot);
 int warp_kill_game(void);
 void __stdcall hk_warp_pump(void *self);
