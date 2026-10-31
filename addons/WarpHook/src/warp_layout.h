@@ -49,10 +49,12 @@
 /* 数值转字符串（构建戳用）：warp_log("proto v" WARP_STR(WARP_VERSION)) */
 #define WARP_STR_(x)      #x
 #define WARP_STR(x)       WARP_STR_(x)
-#define WARP_VERSION      10                /* v9：命令的 out 参数缓冲（CALL 的参数
-                                            * 类型多一个 'm'，指向 MAP 尾部的可写
-                                            * 块）——值类型 out 参数（FMOD 的
-                                            * EventInstance&）终于能传了。
+#define WARP_VERSION      11                /* v11：导出表 22→24（静态字段读）+ STATIC 命令。
+                                             * v10：LIST 诊断命令（按参数类型选重载）+
+                                             * v9：命令的 out 参数缓冲（CALL 的参数
+                                             * 类型多一个 'm'，指向 MAP 尾部的可写
+                                             * 块）——值类型 out 参数（FMOD 的
+                                             * EventInstance&）终于能传了。
                                             * v8：钩子参数改写（MAP 尾部追加
                                             * WARP_REWRITE 段）——命中时把第 N
                                             * 个参数换成对象槽里的指针，让插件
@@ -73,7 +75,7 @@
 #define WARP_KLASS_LEN    48
 #define WARP_METHOD_LEN   48
 #define WARP_LOG_LEN      48
-#define WARP_EXPORT_COUNT 22
+#define WARP_EXPORT_COUNT 24
 #define WARP_NAME_MAX     64
 
 #define WARP_POLL_MS      250
@@ -97,6 +99,7 @@
 #define WARP_CMD_RELEASE  6     /* 解掉槽上 GC 句柄并清槽 */
 #define WARP_CMD_READ     7     /* 代读：按 MAP 尾部那条读链，从对象槽读出值写 vars[6] */
 #define WARP_CMD_LIST     8     /* 诊断：列某类同名方法的全部重载签名，纯元数据不 invoke */
+#define WARP_CMD_STATIC   9     /* 读静态字段：cmd_text = "类名::字段名"，值落对象槽（引用类） */
 
 #define WARP_CMD_CODE(t)    ((t) & 0xFF)
 #define WARP_CMD_ARGC(t)    (((t) >> 8) & 0xF)
@@ -126,6 +129,7 @@
 #define WARP_CMD_RES_NO_METHOD 5
 #define WARP_CMD_RES_BAD_SLOT  6   /* 槽号越界 */
 #define WARP_CMD_RES_BAD_ARGC  7   /* 参数个数超出 vars 容量（>6） */
+#define WARP_CMD_RES_NO_FIELD  8   /* 类里没有这个字段（含基类遍历后仍没找到） */
 #define WARP_CMD_RES_BUSY     (-2) /* 已取走、还在执行（py 侧见到要接着等） */
 
 #define WARP_HEADER_SIZE  432   /* 160 状态头 + 命令槽 4*4 + 256 字节文本 */
@@ -437,4 +441,8 @@ typedef void *(*fn_method_get_param)(const void *method, unsigned int index);
 typedef void *(*fn_method_get_return_type)(const void *method);
 typedef char *(*fn_type_get_name)(const void *type);
 typedef void (*fn_free_mem)(void *mem);
+/* v0.9.24b：静态字段读（旧插件的单例姿势 —— SoundManager::_instance 等）。
+ * 字段查找沿基类逐层 class_get_field_from_name，记下声明类的 klass 再取值。 */
+typedef void *(*fn_class_get_field_from_name)(void *klass, const char *name);
+typedef void (*fn_field_static_get_value)(void *klass, void *field, void *value);
 

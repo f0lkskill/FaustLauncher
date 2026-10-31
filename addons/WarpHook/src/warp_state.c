@@ -30,6 +30,8 @@ const char *g_export_names[WARP_EXPORT_COUNT] = {
     "il2cpp_method_get_return_type",
     "il2cpp_type_get_name",
     "il2cpp_free",
+    "il2cpp_class_get_field_from_name",
+    "il2cpp_field_static_get_value",
 };
 
 /* ------------------------------------------------------------------ */

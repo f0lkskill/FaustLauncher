@@ -472,10 +472,33 @@ static int warp_direct_call(void *method, void *target, void **params, int argc,
     int i;
 
     if (!method)
+    {
+        warp_log("direct: no method", 0);
         return -1;
+    }
     memcpy(&fp, method, sizeof(fp));    /* MethodInfo 首字段 = methodPointer */
     if (!warp_direct_fp_ok(fp))
+    {
+        MEMORY_BASIC_INFORMATION mb2;
+        HMODULE ga2 = GetModuleHandleW(L"GameAssembly.dll");
+        char tbuf[160];
+        int q = fp ? VirtualQuery(fp, &mb2, sizeof(mb2)) : 0;
+        snprintf(tbuf, sizeof(tbuf),
+                 "direct: fp check m=%llx fp=%llx ga=%llx q=%d",
+                 (unsigned long long)(uintptr_t)method,
+                 (unsigned long long)(uintptr_t)fp,
+                 (unsigned long long)(uintptr_t)ga2, q);
+        warp_log(tbuf, 0);
+        if (q)
+        {
+            snprintf(tbuf, sizeof(tbuf),
+                     "direct: alloc=%llx protect=%x state=%x",
+                     (unsigned long long)(uintptr_t)mb2.AllocationBase,
+                     (unsigned)mb2.Protect, (unsigned)mb2.State);
+            warp_log(tbuf, 0);
+        }
         return -2;
+    }
     if (argc < 0 || argc > 5)
         return -3;
     for (i = 0; i < argc; i++)
@@ -592,6 +615,59 @@ int warp_cmd_release(int slot)
     if (slot < 0 || slot >= WARP_OBJECT_COUNT)
         return WARP_CMD_RES_BAD_SLOT;
     warp_slot_put(slot, NULL, 0);
+    return WARP_CMD_RES_OK;
+}
+
+/* v0.9.24b：静态字段读。text = "类名::字段名"，值落 out_slot（引用类型）。
+ *
+ * 为什么要它：get_Instance 这类泛型基类方法（SingletonBehavior`1）的
+ * methodPointer 直调验证不过（v0.9.24 真机日志待证），而旧插件
+ * BattleBGMExtend 拿单例从来不用 get_Instance —— 它读静态字段 _instance
+ * （battlebgmextend.c:592 instance_field + :67 singleton）。dump.cs:572303
+ * `private static T _instance;`。字段可能声明在基类（泛型定义类），所以
+ * 沿基类逐层找，记下声明类的 klass（静态字段挂在声明类的 static_fields）。 */
+int warp_cmd_static(const char *text_src, int out_slot)
+{
+    char text[WARP_CMD_TEXT_LEN];
+    char *sep;
+    const char *fname;
+    void *klass, *cur, *field = NULL, *holder = NULL, *value = NULL;
+    int depth;
+
+    if (out_slot < 0 || out_slot >= WARP_OBJECT_COUNT)
+        return WARP_CMD_RES_BAD_SLOT;
+    if (!g_ic.class_get_field_from_name || !g_ic.field_static_get_value ||
+        !g_ic.class_get_parent)
+        return WARP_CMD_RES_FAIL;
+    if (!text_src)
+        return WARP_CMD_RES_FAIL;
+    lstrcpynA(text, text_src, (int)sizeof(text));
+    sep = strstr(text, "::");
+    if (!sep || sep == text || !sep[2])
+        return WARP_CMD_RES_FAIL;
+    *sep = '\0';
+    fname = sep + 2;
+
+    klass = warp_find_class(g_domain, text);
+    if (!klass)
+        return WARP_CMD_RES_NO_CLASS;
+
+    /* 沿基类找字段（学 warp_find_method 的 32 层），holder = 声明类 */
+    for (cur = klass, depth = 0; cur && depth < 32;
+         cur = g_ic.class_get_parent(cur), depth++) {
+        field = g_ic.class_get_field_from_name(cur, fname);
+        if (field) {
+            holder = cur;
+            break;
+        }
+    }
+    if (!field)
+        return WARP_CMD_RES_NO_FIELD;
+
+    g_ic.field_static_get_value(holder, field, &value);
+    if (!value)
+        return WARP_CMD_RES_FAIL;       /* 单例还没初始化（非战斗期） */
+    warp_slot_put(out_slot, value, 1);
     return WARP_CMD_RES_OK;
 }
 
@@ -891,6 +967,11 @@ static DWORD WINAPI work_main(LPVOID arg)
                 case WARP_CMD_LIST:
                     rc = warp_cmd_list(job.text);
                     break;
+                case WARP_CMD_STATIC:
+                    rc = warp_cmd_static(job.text, job.out_slot);
+                    if (rc == 0 && g_hdr)
+                        g_hdr->fired++;
+                    break;
                 default:
                     rc = WARP_CMD_RES_UNKNOWN;
                     break;
@@ -1012,6 +1093,7 @@ void warp_pump_commands(void)
     case WARP_CMD_CALL:
     case WARP_CMD_STR:
     case WARP_CMD_LIST:
+    case WARP_CMD_STATIC:
         /* v0.9.23：这四类要进 il2cpp runtime/元数据的命令全部投递 worker
          * 隔离舱，主线程泵不再亲自执行（六次崩溃都在这条路径上）。先标
          * BUSY，结果与 ack 由 worker 写回；worker 没起来就记 FAIL，绝不
