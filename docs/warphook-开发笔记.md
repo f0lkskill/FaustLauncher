@@ -59,12 +59,14 @@ DLL 装过一次钩子后原来就 `continue` 了，导致「游戏运行中改�
 
 ## 三、边界：读取链能做什么、不能做什么
 
-能：**内存里的数字**。int / float / bool / 指针 / `ObscuredInt`，沿偏移链跳最多 4 跳。
+能：**内存里的数字**。int / float / bool / 指针 / `ObscuredInt`，沿偏移链跳最多 4 跳；
+容器也能进 —— `List`（0.4.0 / 0.7.0）、`Dictionary`（0.9.7 协议 v6，0.9.8 真机纠错），
+按下标取 or 整批遍历（一条链一次命中枚举出全场单位）。
 
 不能：
 
 - **函数返回值** —— 值在 `xmm0` / `eax` 里，不在对象里
-- **容器内容** —— `List` / `Dictionary` 要遍历，读取链只能「跳一次」
+- **容器的 TKey** —— 遍历吐出来的是 TValue，要键就在配置里另算 key 偏移
 - **字符串** —— il2cpp string 是变长结构，要读长度再读 utf16
 - **小 getter 的调用点** —— 见下一节
 
@@ -77,26 +79,31 @@ AOT 编译会把一行的 getter 内联进所有调用点，内存里没有调�
 
 ## 四、下一步（按优先级）
 
-### 1. 容器步（进行中）
+### 1. 容器步（已完成）
 
-`List<T>` / `Dictionary<K,V>` 遍历。做法是在读取链里加一种「步类型」：
-当前指针当容器，读 `+0x10` items / `+0x18` size，按下标取 `Array` 元素，之后照常继续跳。
+`List<T>` 遍历 0.4.0 / 0.7.0；`Dictionary<K,V>` 0.9.7（协议 v6），0.9.8 真机纠错。
+新增两种步类型 `dict` / `dict_val`（deref 6/7）和 `iter` 位：普通用法按下标取第 k 个活跃值，
+带 iter 位则一次命中枚举全部活跃值、每轮推一条事件。
 
-有了它，`BattleObjectManager._unitList → 每个单位 → _state → hp` 就能一条配置写完 ——
-这正是成就需要的「遍历全场单位」。
+真机踩了两个边界，都写进 DESIGN 了：遍历范围用 `count`（+0x20）不是 entries 容量；
+「从未用过」的槽 hashCode 是 0，只有 `Remove` 留下的死坑才是 -1。
 
-### 2. 去重开关
+`BattleObjectManager._allUnitDictionary → 每个单元 → _model → _instanceID`
+一条四跳链就能拿到全场单位 id，正是成就需要的「遍历全场单位」。
 
-`FixedUpdate` 60fps，512 格事件环 8.5 秒就翻一轮。挂钩子时要能声明
-「这一组读出来的值跟上次一样就别投递」。老 `battle_watch.c` 的 `g_vital[]` 干的就是这事，
-在 C 侧做比在 Python 侧过滤省事（Python 看到的时候环已经被重复数据填满了）。
+### 2. 去重开关（已完成）
 
-### 3. 采样率
+单值去重 0.4.1（`flags & WARP_HF_DEDUPE`）；批去重 0.9.7 随容器步一起做 ——
+遍历批按「轮 0 快照的 12 格 FNV 哈希 + 轮数」比对，整批不变就不投。
+`FixedUpdate` 60fps + 512 格环 8.5 秒翻一轮的压力测试通过（连打三回合字典不变只投 1 批）。
+**注意：开关必须显式打开（`flags=0x04` / Python 侧 `dedupe=True`），不开位则每回合全量重投。**
+
+### 3. 采样率（未做）
 
 用户提过「允许自己配自己的采样率，同时兼容低访问的普通插件」。
 方向：钩子项加 `sample_every`（每 N 次命中才投递一次），C 侧计数取模，不用 Python 参与。
 
-### 4. 中间层
+### 4. 中间层（未做）
 
 用户原话：「如果那些其他映射真翻译不了，那我们可以做中间层，反正包装到极致最好。」
 比如 `BattleUnitModel.hp` 这种「链 + 解密 + 容器」组合，可以做成语义层：
@@ -137,3 +144,13 @@ AOT 编译会把一行的 getter 内联进所有调用点，内存里没有调�
 9. **这个仓库不要用 `git stash`，对照基线一律 `git worktree add`。** 工作区里
    常驻忽略文件和别的会话留下的脏改动，stash push/pop 一冲突就出 DU 混沌态；
    worktree 挂提交号是只读对照，永远干净。
+10. **il2cpp 的 `Dictionary` 字段序不等于 .NET reference source。** 照文档把
+   `freeCount` 读在 `+0x2C`，真机读到的是 `version`（13），`count - freeCount`
+   变负数 → `dict_count` 恒 0。实测是 `count@0x20 / freeList@0x24 / freeCount@0x28 /
+   version@0x2C`。最阴的是**单元测试用伪造内存 + 同一个错误假设，全绿**；
+   「测试绿 ≠ 对」这次又应验了一遍。
+11. **只比 `version` 区分不了同协议号的两次构建。** 改完源码编到 `test/` 忘了拷
+   到 `addons/WarpHook/`，游戏跑的还是旧 DLL：`hdr.version` 照样是 6，症状却是
+   「`dict_count` 读出 1682595280 = buckets 指针低 32 位、iter 批只出 1 条」。
+   现在 DLL 启动打一行 `build <DATE> <TIME> proto vN`，Python 侧 `host_build()`
+   对得上才算同版。
