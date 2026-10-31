@@ -18,15 +18,24 @@ game.popup('来自插件的问候')
 WarpHook 的做法是往游戏进程里塞一个 DLL（`warp_host.dll`），由它在游戏的线程里替你
 调游戏的函数。启动器和这个 DLL 之间靠一块**共享内存**通信：
 
-```text
-┌─────────────── 启动器进程 ───────────────┐      ┌──────── 游戏进程 ────────┐
-│  你的 scr.py                              │      │                          │
-│      ↓  game.popup("你好")                │      │   warp_host.dll          │
-│  warphook 库 ──写共享内存的命令格─────────┼─────→│   读命令格               │
-│                                          │      │      ↓                   │
-│                                          │      │   在游戏主线程调游戏弹窗 │
-└──────────────────────────────────────────┘      └──────────────────────────┘
+```mermaid
+sequenceDiagram
+    participant Py as 你的 scr.py
+    participant SHM as 共享内存
+    participant DLL as warp_host.dll
+    participant Game as 游戏主线程
+
+    Py->>SHM: 写命令格 cmd_type=POPUP, cmd_text="你好"
+    DLL->>SHM: 每帧读命令格
+    DLL->>Game: 调游戏自己的弹窗函数
+    Game-->>DLL: 弹窗已排队
+    DLL->>SHM: 写回执 cmd_result=已执行
+    SHM-->>Py: game.popup() 返回 "已执行"
 ```
+
+关键点：**Python 从来不在游戏的线程上**。它只是往共享内存里放一张纸条，
+宿主每帧路过时看一眼，替它去调游戏。
+
 
 `game.popup()` 把这条链路上所有麻烦事都做完了：
 

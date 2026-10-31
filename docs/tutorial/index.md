@@ -27,3 +27,24 @@
 - **命名空间（namespace）**：插件之间的分工方式。`WarpHook` 提供 `warp`，你的插件也能注册自己的让别人用。
 
 前七篇几乎不用直接碰后三个词——它们藏在 `warp.game` 里面。
+
+```mermaid
+flowchart LR
+    subgraph 你的插件
+        S["scr.py"]
+    end
+    subgraph warp.game 门面
+        G1["popup()"]
+        G2["units()"]
+        G3["on_round_start()"]
+    end
+    subgraph 底层
+        H["钩子 dict"]
+        R["读链"]
+        O["对象槽"]
+    end
+    S --> G1 & G2 & G3
+    G1 -.-> H
+    G2 -.-> R
+    R -.-> O
+```
