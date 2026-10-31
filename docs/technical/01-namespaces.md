@@ -3,6 +3,24 @@
 插件之间不直接 import 对方的代码，而是通过启动器提供的**命名空间容器**互相提供能力。
 WarpHook 注册的东西全部挂在 `warp` 下，别的插件要用就 `space('warp')`。
 
+```mermaid
+flowchart TD
+    NS["Namespaces<br/><i>启动器提供的容器</i>"]
+    W["space('warp')<br/><i>WarpHook 根</i>"]
+    NS --> W
+    W --> G["warp.game<br/>门面：一句话一个动作"]
+    W --> O["warp.object<br/>Unit / Buff / Access"]
+    W --> F["warp.field<br/>偏移表"]
+    W --> P["warp.plugin<br/>Host / Service"]
+    W --> S["warp.shm<br/>共享内存"]
+    W --> I["warp.il2cpp<br/>导出名"]
+    W --> J["warp.inject<br/>找进程 / 注入"]
+    W --> L["warp.log<br/>日志"]
+```
+
+规则只有一条：**子分区可以直接扁平取（`space('warp.game')`），也可以一路点下去（`space('warp').game`）**，
+两种拿到的是同一个对象。
+
 ## 取能力
 
 ```python

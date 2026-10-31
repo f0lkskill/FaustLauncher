@@ -4,16 +4,22 @@
 
 ## 插件是怎么被载入的
 
-```text
-启动器启动
-   │
-   ├─ 扫描 addons/ 下每个目录
-   ├─ 读 addon_info.json
-   ├─ 检查 requires：依赖的插件没装 → 跳过
-   ├─ 按依赖顺序 exec 每个 scr.py（当成一个模块执行）
-   │     └─ 你的代码在 import 阶段就跑完了
-   └─ 打印「插件 XXX 初始化完成!」
+```mermaid
+flowchart TD
+    A["启动器启动"] --> B["扫描 addons/ 每个目录"]
+    B --> C["读 addon_info.json"]
+    C --> D{"requires 都装了?"}
+    D -->|没装| X["跳过载入<br/>并记在 dep_skipped"]
+    D -->|装了| E["按依赖顺序 exec scr.py<br/><i>当成模块执行</i>"]
+    E --> F["你的代码在 import 阶段就跑完"]
+    F --> G["打印「插件 XXX 初始化完成!」"]
+    G --> H["（游戏开着时才注入宿主）"]
+    G --> I["停用 / 重载 / 退出"]
+    I --> J["调你的 on_unload()"]
 ```
+
+顺序是**拓扑排序**：`requires` 里写的插件一定先执行完，所以你 `space('warp')` 的时候
+WarpHook 已经注册好了。反过来，别的插件 `space('你的插件')` 也能拿到你 provide 的东西。
 
 **没有 `main()`、没有入口函数。** 模块被执行的那一刻你的插件就活了，所以：
 

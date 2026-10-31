@@ -7,6 +7,18 @@
 fld = _NS.space('warp').field
 ```
 
+```mermaid
+flowchart LR
+    T["FIELD_TABLE<br/><i>类 → 字段 → 偏移</i>"] -->|read_chain| L["读链<br/><i>[{off, deref}, ...]</i>"]
+    L -->|塞进 hook 的 reads| H["钩子"]
+    L -->|塞进 host.read| R["代读"]
+    H -->|命中时| E["事件格 a..l<br/><i>12 个值</i>"]
+    R -->|vars[6]| V["一个值"]
+```
+
+两条路共用同一张表：钩子用它批量取值（一次命中读 N 个字段），
+`host.read()` 用它按需取值（一次一问）。**偏移只写在这一处。**
+
 ## 核心：`FIELD_TABLE`
 
 一个两层字典：`FIELD_TABLE[类名][字段名] = 记录`。共 **8 个类、62 个字段**。

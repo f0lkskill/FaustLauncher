@@ -40,7 +40,7 @@ sequenceDiagram
     participant Game as 游戏
     participant DLL as warp_host.dll
     participant Py as warp.game 心跳线程
-    participant CB as 你的 _on_round
+    participant CB as 你的回调
 
     Game->>DLL: 回合开始（OnRoundStart_Model 被调用）
     DLL->>DLL: 命中计数 +1，把管理器存进对象槽 28
@@ -48,7 +48,7 @@ sequenceDiagram
         Py->>DLL: 读命中计数
     end
     Py->>Py: 发现计数涨了 → 抓管理器、组一个 Battle
-    Py->>CB: battle
+    Py->>CB: 调 _on_round(battle)
     CB->>CB: 你的代码（在心跳线程上跑）
 ```
 

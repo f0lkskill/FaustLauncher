@@ -10,6 +10,21 @@ u = game.units()[0]            # 门面：同一批对象，host 帮你管好了
 
 两种拿到的都是同一个 `Unit` 类，差别只在谁负责创建 `Host`。
 
+## 数据是怎么走到 `Unit` 的
+
+```mermaid
+flowchart LR
+    A["Access<br/><i>管理器 + 对象槽</i>"] -->|+0x90 Dictionary| D["单位字典<br/><i>11 个 BattleUnit</i>"]
+    D -->|第 i 个 value| U["Unit<br/><i>index = i</i>"]
+    U -->|+0x10 _model| M["BattleUnitModel"]
+    M -->|+0x148 _state| C["CharacterState<br/><b>hp / sp / 生死</b>"]
+    M -->|+0xE0 _buffDetail| BL["List of BuffModel"]
+    BL -->|第 k 个| BF["Buff<br/><b>层数 / 回合 / 英文 ID</b>"]
+```
+
+`Unit` 只存了 `(host, slot, index)` 三样东西 —— 每次读属性都是「现拼读链 + 让 DLL 代读」。
+所以 `Unit` 对象很便宜，但**属性很贵**（一次一次往返），批量取值要用 `props()`。
+
 ## 对象槽常量
 
 | 常量 | 值 | 用途 |
