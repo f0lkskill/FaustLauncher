@@ -62,6 +62,7 @@ CMD_CALL = 4      # 调方法（runtime_invoke），槽内对象当 this（无�
 CMD_STR = 5       # 造 il2cpp 字符串 → 对象槽
 CMD_RELEASE = 6   # 解掉槽上 GC 句柄并清槽
 CMD_READ = 7      # 代读：按 HOST_CMD_READ_OFFSET 处那条链读对象槽，结果 vars[6]/[7]
+CMD_LIST = 8      # 诊断：列某类同名方法的全部重载签名（纯元数据，不 invoke）
 
 # CALL 的返回值形状（retkind 打进 cmd_type 12-15 位）
 CMD_RET_INT32 = 0   # box 返回，真值在 +0x10，位模式写回 vars[6]
@@ -1516,6 +1517,30 @@ class Host:
             v = values[i] if i < len(values) else 0
             ctypes.c_uint64.from_address(addr + i * HOST_BUFF_WATCH_SIZE).value = v
         return len(values)
+
+    def list_methods(self, name, timeout=2.0):
+        """列出某个类里同名方法的全部重载签名（纯元数据，**绝不调用游戏代码**）。
+
+        在拿不准「这个方法到底有几个重载、该传什么类型」的时候先跑它 ——
+        它只读 il2cpp 的类型信息，所以不会崩游戏，而 invoke 会。
+
+        Args:
+            name: ``"类名::方法名"``，例如 ``"SoundManager::IsLoadedBank"``。
+            timeout: 等宿主执行的秒数。
+
+        Returns:
+            签名字符串列表（如 ``["IsLoadedBank(System.String)->System.Boolean"]``）；
+            宿主不在或查不到时返回空列表，命令本身失败时返回错误字符串。
+        """
+        msg = self._command(CMD_LIST, text=name, timeout=timeout)
+        if msg != "已执行" and msg != "成功":
+            # 宿主用 CMD_RES_NAMES 里的说法；只有真的跑完才读缓冲。
+            if isinstance(msg, str) and not msg.startswith("成功"):
+                return msg
+        raw = self.read_buf(0, HOST_CMD_BUF_COUNT * HOST_CMD_BUF_SIZE)
+        if not raw:
+            return []
+        return [part.decode("utf-8", "replace") for part in raw.split(bytes([0])) if part]
 
     def _command(self, cmd_type, text="", timeout=2.0, args=(), retkind=0,
                  slot=-1, out_slot=-1):

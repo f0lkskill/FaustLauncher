@@ -96,6 +96,7 @@
 #define WARP_CMD_STR      5     /* 造字符串：il2cpp_string_new(cmd_text) → 对象槽 */
 #define WARP_CMD_RELEASE  6     /* 解掉槽上 GC 句柄并清槽 */
 #define WARP_CMD_READ     7     /* 代读：按 MAP 尾部那条读链，从对象槽读出值写 vars[6] */
+#define WARP_CMD_LIST     8     /* 诊断：列某类同名方法的全部重载签名，纯元数据不 invoke */
 
 #define WARP_CMD_CODE(t)    ((t) & 0xFF)
 #define WARP_CMD_ARGC(t)    (((t) >> 8) & 0xF)

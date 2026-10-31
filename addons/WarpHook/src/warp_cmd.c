@@ -6,6 +6,8 @@
  * 等下一次同槽写入或 py 主动 release 时解掉。句柄表在 DLL 静态内存
  * （g_gc_handles），不进共享内存 —— 对象槽本身只有指针，Python 不需要看到句柄。
  */
+#include <stdio.h>
+
 #include "warp_internal.h"
 
 /* ------------------------------------------------------------------ */
@@ -582,6 +584,77 @@ void warp_pump_ticks(void)
         tick();
 }
 
+/* 诊断：列出某类里同名方法的全部重载签名。
+
+    只碰 il2cpp 的元数据接口（class_get_methods / method_get_name /
+    method_get_param_count / method_get_param / method_get_return_type /
+    type_get_name），**绝不 runtime_invoke**。所以它是安全的 —— 在搞不清
+    某个方法有几个重载、签名长什么样之前，先跑这个，别拿游戏进程试错。
+
+    结果按 ``\0`` 分隔写进 MAP 尾部的命令缓冲（WARP_CMD_BUF_* 那段，
+    4×64=256 字节），py 侧用 read_buf(0) 取回。 */
+static int warp_cmd_list(void)
+{
+    char name[64];
+    char mname[48];
+    char line[192];
+    char *out = (char *)g_hdr + WARP_CMD_BUF_OFFSET;
+    size_t cap = (size_t)WARP_CMD_BUF_COUNT * WARP_CMD_BUF_SIZE;
+    const char *sep;
+    void *klass;
+    void *iter = NULL;
+    void *m;
+    size_t used = 0;
+    int count = 0;
+
+    if (!g_ic.class_get_methods || !g_ic.method_get_name ||
+        !g_ic.method_get_param_count || !g_ic.method_get_param ||
+        !g_ic.method_get_return_type || !g_ic.type_get_name)
+        return WARP_CMD_RES_NO_METHOD;
+
+    sep = strstr(g_hdr->cmd_text, "::");
+    if (!sep)
+        return WARP_CMD_RES_NO_METHOD;
+    warp_cmd_name_until(g_hdr->cmd_text, name, sizeof(name));
+    warp_cmd_name_until(sep + 2, mname, sizeof(mname));
+    klass = warp_find_class(g_domain, name);
+    if (!klass)
+        return WARP_CMD_RES_NO_CLASS;
+
+    out[0] = '\0';
+    while ((m = g_ic.class_get_methods(klass, &iter)) != NULL) {
+        const char *mn = g_ic.method_get_name(m);
+        int argc;
+        int i;
+        size_t n;
+
+        if (!mn || strcmp(mn, mname) != 0)
+            continue;
+        argc = (int)g_ic.method_get_param_count(m);
+        n = (size_t)snprintf(line, sizeof(line), "%s(", mn);
+        for (i = 0; i < argc && n + 1 < sizeof(line); i++) {
+            char *tn = g_ic.type_get_name(g_ic.method_get_param(m, (uint32_t)i));
+            n += (size_t)snprintf(line + n, sizeof(line) - n, "%s%s",
+                                  i ? "," : "", tn ? tn : "?");
+            if (tn && g_ic.free_mem)
+                g_ic.free_mem(tn);
+        }
+        {
+            char *rt = g_ic.type_get_name(g_ic.method_get_return_type(m));
+            if (n + 5 < sizeof(line))
+                snprintf(line + n, sizeof(line) - n, ")->%s", rt ? rt : "?");
+            if (rt && g_ic.free_mem)
+                g_ic.free_mem(rt);
+        }
+        if (used + strlen(line) + 1 >= cap)
+            break;
+        lstrcpynA(out + used, line, (int)(cap - used));
+        used += strlen(line) + 1;
+        count++;
+    }
+    return count > 0 ? 0 : WARP_CMD_RES_NO_METHOD;
+}
+
 void warp_pump_commands(void)
 {
     int seq;
@@ -628,6 +701,9 @@ void warp_pump_commands(void)
         rc = warp_cmd_str(WARP_CMD_SLOT(type));
         if (rc == 0 && g_hdr)
             g_hdr->fired++;
+        break;
+    case WARP_CMD_LIST:
+        rc = warp_cmd_list();
         break;
     case WARP_CMD_RELEASE:
         rc = warp_cmd_release(WARP_CMD_SLOT(type));
