@@ -145,6 +145,7 @@ _NAMESPACES = {
         # ---- 换曲锁（0.9.27）：拦住游戏回合结束的「盖回默认曲」----
         'bgm_lock_install': live.bgm_lock_install,
         'bgm_lock': live.bgm_lock,
+        'inject': live.inject,
     },
     # 声音的底层原语：想自己拼序列时用（play/stop/is_playing/current_index）
     'audio': {
