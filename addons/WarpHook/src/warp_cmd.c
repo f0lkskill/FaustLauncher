@@ -560,6 +560,12 @@ int warp_cmd_call(int argc, int slot, int retkind, int out_slot, const char *arg
         else
             method = warp_find_method(klass, mname, argc);
     }
+    {
+        char tbuf[96];
+        snprintf(tbuf, sizeof(tbuf), "call: m=%llx slot=%d argc=%d",
+                 (unsigned long long)(uintptr_t)method, slot, argc);
+        warp_log(tbuf, 0);
+    }
     if (!method)
         return WARP_CMD_RES_NO_METHOD;
     if (slot >= 0) {
@@ -664,7 +670,21 @@ int warp_cmd_static(const char *text_src, int out_slot)
     if (!field)
         return WARP_CMD_RES_NO_FIELD;
 
+    {
+        char tbuf[128];
+        snprintf(tbuf, sizeof(tbuf),
+                 "static: field=%llx holder=%llx",
+                 (unsigned long long)(uintptr_t)field,
+                 (unsigned long long)(uintptr_t)holder);
+        warp_log(tbuf, 0);
+    }
     g_ic.field_static_get_value(holder, field, &value);
+    {
+        char tbuf[128];
+        snprintf(tbuf, sizeof(tbuf), "static: got=%llx",
+                 (unsigned long long)(uintptr_t)value);
+        warp_log(tbuf, 0);
+    }
     if (!value)
         return WARP_CMD_RES_FAIL;       /* 单例还没初始化（非战斗期） */
     warp_slot_put(out_slot, value, 1);
