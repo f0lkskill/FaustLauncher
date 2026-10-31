@@ -1,0 +1,10 @@
+{
+    "name": "buff 观察",
+    "desc": "读取单位身上的 buff 名字、层数、剩余次数",
+    "authors": ["你的名字"],
+    "requires": ["WarpHook"],
+    "settings": {
+        "enable": true
+    },
+    "version": "0.1.0"
+}

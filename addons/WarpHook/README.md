@@ -149,6 +149,35 @@ host.push()
 
 对象槽 24..31 留给插件，0..23 主段是成就观测在用。
 
+## 放一首 BGM
+
+```python
+game = _W.game
+
+game.bgm('Battle_Cp9_Boss_10')      # 战斗里换曲，前缀可以不写
+game.bgm_playing()                  # True / False
+game.bgm_index()                    # 当前曲目编号
+game.bgm_stop()                     # 停掉附加曲，游戏原曲回来
+```
+
+`game.bgm` 默认等宿主就绪（游戏没开最多等 120 秒），传 `wait=False` 就立刻发。
+
+要自己拼序列（比如先 `PauseBGM` 再播）走 `warp.audio`：
+
+```python
+audio = _W.audio
+audio.play(host, 'event:/BGM/Battle/Battle_Cp9_Boss_10')
+audio.pause(host, True)
+```
+
+两个必须知道的点：
+
+- **`StartAddBGM` 收短名**。`audio.short_name()` 帮你截掉
+  `event:/BGM/Battle/`，传全长路径会静默不播。
+- **游戏会自己掐附加曲**。回合切换/战斗结束时游戏调 `StopAddedBGM`，
+  所以要「保持这首」得每回合重放（`game.on_round_start` 里重放即可）。
+  详见 `BattleBGMExtend` 移植版。
+
 ## 编译
 
 需要 MinGW-w64 与 MinHook 源码：

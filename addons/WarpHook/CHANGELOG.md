@@ -4,6 +4,30 @@
 
 看完整历史：`git log --oneline -- addons/WarpHook/`
 
+## 0.9.10
+
+给插件「放一首 BGM」的能力，并把 `BattleBGMExtend` 从自带 DLL 的老插件移植成
+纯 WarpHook 插件。
+
+- **新增 `warphook/audio.py`**：`play(host, name)` / `stop(host, restore=True)` /
+  `pause(host, value)` / `is_playing(host)` / `current_index(host)`。
+  播放序列照抄老插件的成功路径 —— `BattleSoundGenerator.StopBGM(0, 0)` →
+  `StartAddBGM(短名, STOP_MODE=1, 0)`，短名是 `event:/BGM/Battle/` 之后的部分
+  （`StartAddBGM` 收的是短名，不是完整 event 路径）。
+- **新增 `warp.audio` 命名空间**（给要自己拼序列的插件）与 **`game.bgm()` 门面**
+  （`bgm/bgm_stop/bgm_playing/bgm_index`，默认等宿主就绪再发，和 `popup` 一致）。
+  `Live.wait_ready()` 从 `popup` 里抽出来，两者共用。
+- **`BattleBGMExtend` 移植版（2.0.0）**：删掉自带 `battlebgmextend.dll` 与
+  `il2cpp-api-names.txt`，只留 `rules.json` + `icon.png`，靠 `requires: ["WarpHook"]`
+  取能力。触发侧从「钩 `BuffDetail.RightAfterGetAnyBuff` + `TLS`」。改成
+  `game.on_round_start` + `Unit.buff()`，9 条规则与四种条件原样保留，
+  换战斗自动清状态，战斗结束 `bgm_stop`。
+- 行为差别写在插件里：`has_buff()` 是「buff 在列表里」而不是
+  `HasActivatedBuff` 的「已激活」，判定用 `stack > 0` 近似。
+- **没有搬的部分**：老插件那套 30 多个音频方法的「锁定」（防止游戏把曲子切走）
+  与 bank 预加载。附加曲会不会被游戏自己的换曲逻辑掐掉，要靠真机验证，
+  如果会，走重放而不是拦截。
+
 ## 0.9.9
 
 协议 **v7**：让插件能用「一行调用」读游戏对象。三件事——读链加宽、命令通道

@@ -24,7 +24,7 @@
 import threading
 import time
 
-from . import fields, objects
+from . import audio, fields, objects
 from .base import log
 from .host import Host, _owner_of_caller
 from .service import Service
@@ -258,6 +258,25 @@ class Live:
 
     # ---------- 动作 ----------
 
+    def wait_ready(self, wait_timeout=120.0):
+        """等宿主挂上（``hooked``）。返回是否就绪；游戏没开最多等 ``wait_timeout`` 秒。"""
+        st = self.status()
+        if st.get('hooked'):
+            return True
+        deadline = time.time() + float(wait_timeout)
+        while time.time() < deadline:
+            if not st.get('ready'):
+                try:
+                    self.start()     # 没连接就先把「等游戏 + 注入」跑起来
+                except Exception:    # noqa: BLE001
+                    pass
+            time.sleep(0.2)
+            st = self.status()
+            if st.get('hooked'):
+                time.sleep(0.5)      # 等游戏主循环稳一下，别卡在加载画面
+                return True
+        return False
+
     def popup(self, text, timeout=2.0, wait=True, wait_timeout=120.0):
         """让游戏弹一句原版弹窗。
 
@@ -266,19 +285,36 @@ class Live:
         游戏根本没开时最多等 ``wait_timeout`` 秒，然后返回失败原因。
         """
         if wait:
-            deadline = time.time() + float(wait_timeout)
-            while time.time() < deadline:
-                st = self.status()
-                if st.get('hooked'):
-                    time.sleep(0.5)      # 等游戏主循环稳一下，别卡在加载画面
-                    break
-                if not st.get('ready'):
-                    try:
-                        self.start()     # 没连接就先把「等游戏 + 注入」跑起来
-                    except Exception:    # noqa: BLE001
-                        pass
-                time.sleep(0.2)
+            self.wait_ready(wait_timeout)
         return self.host().popup(text, timeout=timeout)
+
+    # ---------- 声音 ----------
+
+    def bgm(self, name, stop_current=True, wait=True, wait_timeout=120.0,
+            timeout=2.0):
+        """放一首战斗 BGM：``game.bgm('Battle_Cp9_Boss_10')``。
+
+        名字收短名（``Battle_Cp9_Boss_10``）或完整路径
+        （``event:/BGM/Battle/Battle_Cp9_Boss_10``）。
+        返回 ``{'ok', 'name', 'path', 'reason'}``；名字不存在时游戏会
+        静默继续放原曲，所以失败要自己看 ``reason``。
+        """
+        if wait:
+            self.wait_ready(wait_timeout)
+        return audio.play(self.host(), name, stop_current=stop_current,
+                          timeout=timeout)
+
+    def bgm_stop(self, restore=True, timeout=2.0):
+        """停掉插件放的附加曲，``restore=True`` 时接回游戏原曲。"""
+        return audio.stop(self.host(), restore=restore, timeout=timeout)
+
+    def bgm_playing(self, timeout=2.0):
+        """游戏认为战斗曲在响吗。"""
+        return audio.is_playing(self.host(), timeout=timeout)
+
+    def bgm_index(self, timeout=2.0):
+        """当前战斗曲的编号（``-1`` = 没在放）。"""
+        return audio.current_index(self.host(), timeout=timeout)
 
     def log(self, message):
         """带插件名的日志。"""
@@ -458,6 +494,27 @@ def unit(id=None, identity=None, index=None):
 def player():
     """我方第一个单位。"""
     return live().player()
+
+
+def bgm(name, stop_current=True, wait=True, wait_timeout=120.0, timeout=2.0):
+    """放一首战斗 BGM：``game.bgm('Battle_Cp9_Boss_10')``。"""
+    return live().bgm(name, stop_current=stop_current, wait=wait,
+                      wait_timeout=wait_timeout, timeout=timeout)
+
+
+def bgm_stop(restore=True, timeout=2.0):
+    """停掉插件放的附加曲，默认接回游戏原曲。"""
+    return live().bgm_stop(restore=restore, timeout=timeout)
+
+
+def bgm_playing(timeout=2.0):
+    """游戏认为战斗曲在响吗。"""
+    return live().bgm_playing(timeout=timeout)
+
+
+def bgm_index(timeout=2.0):
+    """当前战斗曲编号（``-1`` = 没在放）。"""
+    return live().bgm_index(timeout=timeout)
 
 
 def on_round_start(handler):

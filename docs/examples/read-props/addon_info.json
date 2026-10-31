@@ -1,0 +1,10 @@
+{
+    "name": "全属性",
+    "desc": "把一个单位身上能读的字段全部打出来",
+    "authors": ["你的名字"],
+    "requires": ["WarpHook"],
+    "settings": {
+        "enable": true
+    },
+    "version": "0.1.0"
+}

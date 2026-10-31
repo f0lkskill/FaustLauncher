@@ -75,8 +75,9 @@ nav:
       - 04 读一个单位: tutorial/04-unit.md
       - 05 把属性都拿出来: tutorial/05-props.md
       - 06 解析 buff: tutorial/06-buffs.md
-      - 07 生命周期与线程: tutorial/07-lifecycle.md
-      - 08 想到底层去: tutorial/08-inside.md
+      - 07 放一首 BGM: tutorial/07-bgm.md
+      - 08 生命周期与线程: tutorial/08-lifecycle.md
+      - 09 想到底层去: tutorial/09-inside.md
   - 技术文档:
       - technical/index.md
       - 01 命名空间: technical/01-namespaces.md
@@ -85,6 +86,7 @@ nav:
       - 04 warp.field: technical/04-field.md
       - 05 warp.plugin: technical/05-plugin.md
       - 06 底层四件套: technical/06-lowlevel.md
+      - 07 warp.audio: technical/07-audio.md
   - 参考手册:
       - reference/game-memory.md
       - reference/dev-notes.md

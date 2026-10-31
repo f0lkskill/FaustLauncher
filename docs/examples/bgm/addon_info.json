@@ -1,0 +1,15 @@
+{
+  "name": "换首歌",
+  "desc": "在战斗里把 BGM 换掉，打开菜单点一下就换。演示 game.bgm 的用法。",
+  "authors": {
+    "FolkSkill": "https://space.bilibili.com/599331034"
+  },
+  "requires": [
+    "WarpHook"
+  ],
+  "settings": {
+    "enable": true,
+    "曲目": "Battle_Cp9_Boss_10"
+  },
+  "version": "0.1.0"
+}

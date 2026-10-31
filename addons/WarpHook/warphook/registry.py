@@ -4,6 +4,7 @@
 """
 
 from . import env, fields, objects
+from . import audio
 from .base import (
     ensure_exports,
     export_mapped,
@@ -128,6 +129,25 @@ _NAMESPACES = {
         'on_battle_end': live.on_battle_end,
         'close': live.close,
         'SCENES': live.SCENES,
+        # ---- 声音（0.9.10）：game.bgm('Battle_Cp9_Boss_10') ----
+        'bgm': live.bgm,
+        'bgm_stop': live.bgm_stop,
+        'bgm_playing': live.bgm_playing,
+        'bgm_index': live.bgm_index,
+    },
+    # 声音的底层原语：想自己拼序列时用（play/stop/is_playing/current_index）
+    'audio': {
+        'play': audio.play,
+        'stop': audio.stop,
+        'pause': audio.pause,
+        'is_playing': audio.is_playing,
+        'current_index': audio.current_index,
+        'full_path': audio.full_path,
+        'short_name': audio.short_name,
+        'BGM_PREFIX': audio.BGM_PREFIX,
+        'STOP_MODE_IMMEDIATE': audio.STOP_MODE_IMMEDIATE,
+        'STOP_MODE_FADE': audio.STOP_MODE_FADE,
+        'SLOT_SCRATCH': audio.SLOT_SCRATCH,
     },
     # 对象/字段的门面（Unit / Buff / Access）单独一个子分区，和 game 分开取
     'object': {
@@ -242,9 +262,10 @@ def register():
         warp.inject     找进程 / 等引擎 / 远程线程注入
         warp.shm        共享内存
         warp.plugin     共享宿主（Runtime / Host）
-        warp.game       门面：popup / units / scene / on_round_start（新手用这个）
+        warp.game       门面：popup / bgm / units / scene / on_round_start（新手用这个）
         warp.object     对象门面：Unit / Buff / Access（要更细的时候用）
         warp.field      字段表：查偏移、看读链怎么拼
+        warp.audio      声音原语：play / stop / is_playing（自己拼序列时用）
         warp.log        日志
 
     子分区既可以从根上扁平取（``NS['warp.il2cpp']``），也可以从 warp 里
