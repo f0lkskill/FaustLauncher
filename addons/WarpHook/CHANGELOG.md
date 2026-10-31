@@ -4,6 +4,31 @@
 
 看完整历史：`git log --oneline -- addons/WarpHook/`
 
+## 0.9.13
+
+`Host.call()` 依然能弄死游戏 —— 0.9.12 的异常保护有个真 bug，而且
+`StartAddBGM` 本身就不是能安全调用的方法。
+
+**一、0.9.12 的 VEH 没认线程（真 bug）。**
+`AddVectoredExceptionHandler` 是进程级的，`s_invoke_depth > 0` 时任何线程
+的任何访问违例都会被 `longjmp` 到主线程的 `jmp_buf` 上 —— 拿别人的栈跳回
+自己的帧，两层栈一起坏掉，于是第一击被接住了、几百毫秒后进程还是死
+（`Player.log` 里栈是 `hk_warp_pump → warp_pump_commands → warp_slot_put`，
+全是无辜的路过代码）。
+
+- `warp_safe_invoke()` 记录 `s_invoke_tid`，VEH 里 `GetCurrentThreadId()`
+  不一致就 `EXCEPTION_CONTINUE_SEARCH`。
+
+**二、`StartAddBGM` 确认不能调。**
+就算异常保护修好，它内部对 FMOD 实例状态的操作也会把进程带走。所以
+`audio.play()` 现在**默认直接拒绝**（`ok=False`，不再发命令），要冒险得
+显式传 `allow_unsafe=True`。
+
+只读的 `audio.is_playing()` / `audio.current_index()` 是安全的，实测
+`0.02s` 返回（`IsBattleBgmPlaying → 1`、`get_CurrentBgmIndex → 1`）。
+真要做 BGM 替换，得走「钩住游戏自己的换曲调用、替换字符串参数」那条路，
+需要协议支持字符串参数 —— 还没做。
+
 ## 0.9.12
 
 修三件事，都是 BGM 真机验收时暴露的。

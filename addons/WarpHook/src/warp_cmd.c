@@ -34,12 +34,17 @@ unsigned int g_gc_handles[WARP_OBJECT_COUNT];
 
 static jmp_buf s_invoke_jmp;
 static volatile LONG s_invoke_depth;
+static volatile DWORD s_invoke_tid; /* 谁在 invoke —— VEH 必须认线程 */
 static PVOID s_invoke_veh;
 
 static LONG CALLBACK warp_invoke_veh(EXCEPTION_POINTERS *ep)
 {
     (void)ep;
     if (s_invoke_depth <= 0)
+        return EXCEPTION_CONTINUE_SEARCH;
+    /* 只拦我们自己那次 invoke 所在的线程。别的线程这时候炸，跟我们无关， */
+    /* 拿它的栈去 longjmp 到 s_invoke_jmp 会把两层栈都弄坏。 */
+    if (GetCurrentThreadId() != s_invoke_tid)
         return EXCEPTION_CONTINUE_SEARCH;
     s_invoke_depth = 0;
     longjmp(s_invoke_jmp, 1);
@@ -59,12 +64,15 @@ void *warp_safe_invoke(void *method, void *target, void **params, void **exc)
     if (exc)
         *exc = NULL;
     if (setjmp(s_invoke_jmp) == 0) {
+        s_invoke_tid = GetCurrentThreadId();
         s_invoke_depth++;
         ret = g_ic.runtime_invoke(method, target, params, exc);
         s_invoke_depth--;
+        s_invoke_tid = 0;
     } else {
         /* 跳回来了：调用炸了。给上层一个非 NULL 的 exc，按「抛异常」处理。 */
         s_invoke_depth = 0;
+        s_invoke_tid = 0;
         ret = NULL;
         if (exc)
             *exc = (void *)(ULONG_PTR)1;
