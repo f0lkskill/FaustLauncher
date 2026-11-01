@@ -124,8 +124,30 @@ _LOG_LOCK = threading.Lock()
 _LOG_FAILURE_REPORTED = False
 
 
-def log(message, prefix="[WarpHook]"):
-    """即时输出并保存到 warp_python.log（时间、PID、线程、插件前缀）。"""
+def _start_block():
+    """在当前进程的日志开头写一行块标记。"""
+    import time
+    from . import env as _env
+    stamp = time.strftime('%Y-%m-%d %H:%M:%S')
+    try:
+        _LOGGER.info("""==== WarpHook %s pid=%d 启动于 %s ——— 本进程日志从空文件开始，重跑启动器即覆写 ====""",
+                     getattr(_env, 'WARP_HOOK_VERSION', '?'), os.getpid(), stamp)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def log(message, prefix="[WarpHook]", tag="host"):
+    """即时输出并保存到统一日志 ``warp.log``（时间、PID、线程、类型、插件前缀）。
+
+    WarpHook 的落盘日志只有 ``addons/WarpHook/warp.log`` 这一个文件，按
+    **进程**分块：每次启动器/进程首次写日志时清空重建，之后只追加。块首的
+    ``==== ... ====`` 行就是这个进程的边界（单独运行脚本更明显）。
+
+    Args:
+        message: 日志正文。
+        prefix: 插件名前缀，控制台与文件里都保留。
+        tag: 日志类型，``event`` / ``host`` 之外也可以是插件名。
+    """
     global _LOGGER, _LOG_FAILURE_REPORTED
     line = f"{prefix} {message}"
     try:
@@ -135,7 +157,6 @@ def log(message, prefix="[WarpHook]"):
     try:
         if _LOGGER is None:
             import logging
-            from logging.handlers import RotatingFileHandler
             with _LOG_LOCK:
                 if _LOGGER is None:
                     logger = logging.getLogger('warphook.runtime')
@@ -143,14 +164,18 @@ def log(message, prefix="[WarpHook]"):
                     logger.propagate = False
                     if not logger.handlers:
                         path = os.path.join(os.path.dirname(os.path.dirname(__file__)),
-                                            'warp_python.log')
-                        handler = RotatingFileHandler(path, maxBytes=2 * 1024 * 1024,
-                                                      backupCount=3, encoding='utf-8')
+                                            'warp.log')
+                        # 不轮转：同一个进程只覆盖一次，之后一律追加。
+                        handler = logging.FileHandler(path, mode='w',
+                                                      encoding='utf-8')
                         handler.setFormatter(logging.Formatter(
-                            '%(asctime)s pid=%(process)d thread=%(threadName)s %(message)s'))
+                            '%(asctime)s.%(msecs)03d pid=%(process)d '
+                            'thread=%(threadName)s %(message)s',
+                            datefmt='%Y-%m-%d %H:%M:%S'))
                         logger.addHandler(handler)
                     _LOGGER = logger
-        _LOGGER.info(line)
+            _start_block()
+        _LOGGER.info("[%s] %s", tag, line)
     except Exception as exc:  # 日志设施失效不能终止插件，但要明确报告一次
         if not _LOG_FAILURE_REPORTED:
             _LOG_FAILURE_REPORTED = True

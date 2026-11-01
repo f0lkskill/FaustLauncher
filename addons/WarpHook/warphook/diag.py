@@ -2,9 +2,10 @@
 """warphook 诊断日志 —— C 侧引擎到底在干什么，一眼可见。
 
 与 :mod:`warphook.host` 的关系：host 负责把事件读出来，这里负责把
-「读到了什么、翻成了什么、引擎状态如何」原样落到磁盘。真机上 C 侧
-只有 ``warp_host.log``（引擎自己的安装日志），翻译流水在这里：
-``addons/WarpHook/warp_events.log``（2MB×3 轮转）。
+「读到了什么、翻成了什么、引擎状态如何」原样落到磁盘。落盘位置与
+:mod:`warphook.base` 相同 —— **整个 WarpHook 只有 ``addons/WarpHook/warp.log``
+一个文件**，C 侧宿主 DLL 的事件同样写进这个文件，行首用
+``[event]`` / ``[host]`` 区分类型。
 
 三层结构，全部单行、带时间戳、可 grep：
 
@@ -28,8 +29,10 @@ import logging
 import os
 import threading
 import time
-from logging.handlers import RotatingFileHandler
 
+from .base import _LOGGER as _SHARED_LOGGER
+from .base import _LOG_LOCK as _SHARED_LOCK
+from .base import _start_block as _shared_start
 from .host import (
     HOST_ACT_EVENT,
     HOST_EVENT_SLOTS,
@@ -55,34 +58,35 @@ def _enabled():
 
 
 def _log():
-    """进程级单例：文件随插件源码目录走（addons/WarpHook/warp_events.log）。"""
+    """与 :mod:`warphook.base` 共用同一个 logger / 同一个文件（``warp.log``）。
+
+    以前这里自己开 ``warp_events.log``（2MB×3 轮转），和 base 的
+    ``warp_python.log`` 各写一份、再叠加宿主 DLL 的 ``warp_host.log`` ——
+    一次调试产出一堆文件和 ``.log.1/.2/.3`` 备份，日志类型还分不清谁是谁。
+    现在只有 ``warp.log`` 一个文件，类型靠 ``[event]`` / ``[host]`` 前缀区分。
+    """
     global _logger
     with _Lock:
         if _logger is not None:
             return _logger
-        logger = logging.getLogger("warp.diag")
-        logger.setLevel(logging.INFO)
-        logger.propagate = False
-        try:
-            path = os.path.join(
-                os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                "warp_events.log")
-            handler = RotatingFileHandler(
-                path, maxBytes=2_000_000, backupCount=3, encoding="utf-8")
-            handler.setFormatter(logging.Formatter(
-                "%(asctime)s.%(msecs)03d %(message)s", datefmt="%m-%d %H:%M:%S"))
-            logger.addHandler(handler)
-        except Exception:                     # noqa: BLE001 —— 磁盘不可写就静默
-            pass
-        _logger = logger
-        return logger
+        base_logger = _SHARED_LOGGER
+        if base_logger is None:
+            # 让 base 先把 handler 建好（用一条最小的 host 行触发），再复用。
+            try:
+                from .base import log as _base_log
+                _base_log("事件流水开始", tag="host")
+            except Exception:                # noqa: BLE001
+                pass
+            base_logger = _SHARED_LOGGER
+        _logger = base_logger or logging.getLogger("warphook.runtime")
+        return _logger
 
 
 def _emit(line):
     if not _enabled():
         return
     try:
-        _log().info(line)
+        _log().info("[event] %s", line)
     except Exception:                        # noqa: BLE001
         pass
 

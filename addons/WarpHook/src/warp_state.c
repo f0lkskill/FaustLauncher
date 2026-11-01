@@ -67,6 +67,7 @@ WARP_SLOT g_slots[WARP_MAX_HOOKS];
 int  g_installed = 0;
 int  g_ic_ready = 0;
 int  g_armed = 0;             /* 1 = 门闩已通过 */
+int  g_log_fresh = 1;         /* 1 = 本进程还没写过 warp.log，首写要清空重建 */
 
 void *g_popup_mgr_method = NULL;   /* GlobalGameManager.get_Instance */
 void *g_domain = NULL;             /* 就绪后缓存的 il2cpp 域，探针要用 */
@@ -87,6 +88,7 @@ void warp_log(const char *msg, int value)
     HANDLE f;
     DWORD wrote = 0;
     DWORD path_len;
+    DWORD attr;
     int n;
 
     if (!g_hinst)
@@ -104,25 +106,54 @@ void warp_log(const char *msg, int value)
         }
         *(slash + 1) = 0;
     }
-    if (strlen(path) + sizeof("warp_host.log") > sizeof(path))
+    if (strlen(path) + sizeof(WARP_LOG_FILE) > sizeof(path))
         return;
-    lstrcatA(path, "warp_host.log");
+    lstrcatA(path, WARP_LOG_FILE);
 
     GetLocalTime(&stamp);
     n = snprintf(line, sizeof(line),
-                 "%04u-%02u-%02u %02u:%02u:%02u.%03u [warp][pid=%lu][t%lu] %s (%d)\r\n",
+                 "%04u-%02u-%02u %02u:%02u:%02u.%03u [host] pid=%lu t%lu %s (%d)\r\n",
                  stamp.wYear, stamp.wMonth, stamp.wDay, stamp.wHour,
                  stamp.wMinute, stamp.wSecond, stamp.wMilliseconds,
                  (unsigned long)GetCurrentProcessId(),
                  (unsigned long)GetCurrentThreadId(), msg ? msg : "(null)", value);
     if (n < 0) return;
     if ((size_t)n >= sizeof(line)) n = (int)sizeof(line) - 1;
-    f = CreateFileA(path, FILE_APPEND_DATA, FILE_SHARE_READ | FILE_SHARE_WRITE,
-                    NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
-    if (f != INVALID_HANDLE_VALUE) {
-        WriteFile(f, line, (DWORD)n, &wrote, NULL);
-        CloseHandle(f);
+
+    /* 只有一个日志文件（warp.log）：每个进程第一次写时清空重建，之后追加。
+     * 共享读/写是为了让启动器与诊断工具能在游戏运行中随时 tail。 */
+    attr = GetFileAttributesA(path);
+    f = CreateFileA(path, FILE_APPEND_DATA | FILE_WRITE_DATA,
+                    FILE_SHARE_READ | FILE_SHARE_WRITE, NULL,
+                    (attr == INVALID_FILE_ATTRIBUTES) ? CREATE_ALWAYS : OPEN_EXISTING,
+                    FILE_ATTRIBUTE_NORMAL, NULL);
+    if (f == INVALID_HANDLE_VALUE)
+        return;
+
+    if (g_log_fresh) {
+        LARGE_INTEGER zero;
+        zero.QuadPart = 0;
+        SetFilePointerEx(f, zero, NULL, FILE_BEGIN);
+        SetEndOfFile(f);
+        g_log_fresh = 0;
+        {
+            char head[256];
+            int m = snprintf(head, sizeof(head),
+                             "==== WarpHook host pid=%lu at %04u-%02u-%02u %02u:%02u:%02u "
+                             "injected, truncated (whole addon shares this one file) ====\r\n",
+                             (unsigned long)GetCurrentProcessId(),
+                             stamp.wYear, stamp.wMonth, stamp.wDay,
+                             stamp.wHour, stamp.wMinute, stamp.wSecond);
+            if (m > 0) {
+                if ((size_t)m >= sizeof(head)) m = (int)sizeof(head) - 1;
+                WriteFile(f, head, (DWORD)m, &wrote, NULL);
+            }
+        }
     }
+
+    SetFilePointer(f, 0, NULL, FILE_END);
+    WriteFile(f, line, (DWORD)n, &wrote, NULL);
+    CloseHandle(f);
 
     if (g_hdr) {
         lstrcpynA(g_hdr->log_tail, msg, WARP_LOG_LEN);

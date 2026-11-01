@@ -75,6 +75,9 @@
 #define WARP_KLASS_LEN    48
 #define WARP_METHOD_LEN   48
 #define WARP_LOG_LEN      48
+/* 全 WarpHook 唯一的日志文件：Python 侧（warphook/base.py）与宿主 DLL
+ * （warp_state.c）写同一个 addons/WarpHook/warp.log，靠行首 [host]/[event] 分类型。 */
+#define WARP_LOG_FILE     "warp.log"
 #define WARP_EXPORT_COUNT 24
 #define WARP_NAME_MAX     64
 
