@@ -319,9 +319,9 @@ SLOT_BATTLE_BGM = 25
 # 旧插件 own_call() 那套「自己的调用要放行」的复杂度。
 LOCK_SLOT = 4        # vars[4]：1=放行（游戏管曲） 0=锁（只许我们的曲）
 # 辅段一共只有 5 格（27..31），门面回合钩子要占 1 格：锁钩子最多 4 条。
-# 回合内的「盖回默认曲」实际只走 StartBGM / StartAddBGM / StopBGM 三条，
-# TryStartBattleBgmByName / TryResumeBattleBgm 是场景切换恢复路径（出战斗
-# 时插件已经解锁交还，不需要拦），留 1 格余量。
+# 当前只能覆盖以下三条入口，并非完整复刻旧插件 block_game。
+# 旧版还拦 SoundManager/CurrentBGM/FMOD 等入口；不能无证据宣称它们
+# 只在场景切换时调用。是否仍有绕行路径，需要实际 blocked 计数诊断。
 LOCK_TARGETS = (
     ('BattleSoundGenerator', 'StartBGM', 2),
     ('BattleSoundGenerator', 'StartAddBGM', 3),
@@ -334,6 +334,18 @@ def guard_hook_defs():
     return [{'klass': k, 'method': m, 'argc': a, 'actions': 0,
              'block': True, 'guard': (LOCK_SLOT, 1)}
             for k, m, a in LOCK_TARGETS]
+
+
+def guard_status(host, owner=None):
+    """只读实际锁配置及计数；有配置不等于原生安装成功，更不等于出声。"""
+    targets = {(k, m) for k, m, _ in LOCK_TARGETS}
+    rows = [row for row in host.hook_status(owner=owner)
+            if (row['klass'], row['method']) in targets]
+    configured = {(row['klass'], row['method']) for row in rows}
+    return {'targets': len(targets), 'configured': len(rows), 'rows': rows,
+            'missing': [f'{k}.{m}' for k, m, _ in LOCK_TARGETS
+                        if (k, m) not in configured],
+            'coverage': 'partial', 'installed_verified': False}
 
 
 def install_guard_hooks(host):

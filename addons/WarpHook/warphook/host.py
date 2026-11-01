@@ -931,6 +931,13 @@ class Host:
             if hook is None:
                 continue
             hook = dict(hook)
+            # 声明式配置必须与 hook(block=..., guard=...) 使用相同协议编码。
+            if hook.get('block'):
+                hook['flags'] = int(hook.get('flags', 0)) | int(HF_BLOCK)
+            if hook.get('guard') is not None:
+                guard_slot, guard_value = list(hook['guard'])[:2]
+                hook['guard_var'] = int(guard_slot)
+                hook['guard_value'] = int(guard_value)
             # 声明式 dict 也能写 cache=(arg, 槽)，与 Host.hook(cache=...) 同一套
             # 语义（arg 0=self / 1..3=第几个参数）。原来 dict 路径只认
             # cache_arg/cache_slot 两个平铺键，传 cache= 元组会被静默丢掉 ——
@@ -1316,6 +1323,33 @@ class Host:
         if block is None:
             return 0
         return self._own_hits(block.cfg, owner, method, blocked)
+
+    def hook_status(self, owner=None):
+        """只读已打开的映射，返回本 owner 每条入口的真实安装与拦截计数。
+
+        不打开映射、不推配置、不解析导出，适合诊断而不触发初始化。
+        """
+        block = getattr(self, '_block', None)
+        if block is None:
+            return []
+        owner = owner or self._current_owner()
+        hooks, _, _ = self._layout()
+        rows = []
+        for index, hook in enumerate(hooks):
+            if not hook or hook.get('owner') != owner:
+                continue
+            row = HostHook.from_address(block.address + HOST_HOOK_OFFSET
+                                        + index * HOST_HOOK_SIZE)
+            guard = int(row.guard_var)
+            rows.append({'klass': hook['klass'], 'method': hook['method'],
+                         # 协议没有逐入口 installed/error，不以配置存在冒充安装成功。
+                         'installed': None,
+                         'flags': int(row.flags), 'hits': int(row.hits),
+                         'blocked': int(row.blocked), 'guard_var': guard,
+                         'guard_value': int(row.guard_value),
+                         'guard_current': int(block.cfg.vars[guard])
+                         if 0 <= guard < HOST_VAR_COUNT else None})
+        return rows
 
     def status(self, owner=None):
         """读宿主状态，返回 dict。"""

@@ -1,5 +1,13 @@
 # WarpHook / BattleBGMExtend 修复与真机验收
 
+## 0.9.37 回合末抢曲：锁声明未进入原生配置
+
+- PID 18756 日志 hits=14→19 证明回合入口仍在命中；维持 active/优先级地板本身不证明原游戏已被锁住。确认 audio.guard_hook_defs 使用 block=True、guard=(4,1)，但 Host._write_config 未转换这两个键，实际写入 flags=0、guard_var=-1，因此纯计数而非拦截。现补齐与 Host.hook 相同编码。
+- 保持不每回合重播的策略，不以重播掩盖锁失效。自动判定不再丢弃结果；自动/手动及提交后输出真实配置、每入口 hits/blocked、guard 值和缺失入口。只读已经打开的映射，不新增游戏命令或初始化。逐入口安装状态未在协议中提供，installed=None，不冒充验证成功；blocked 增长才是发生过实际拦截的证据。
+- 旧版参考 battlebgmextend.c:619-637 除当前三入口，还覆盖 SoundGenerator.ApplyBGMData、SoundManager/CurrentBGM、ResetBGM/StopAddedBGM/Interlude 等；:654-656 另保护 owned FMOD 实例。不能断言其他方法只在场景切换调用。当前仍部分覆盖，辅助5槽由多个插件共享；未盲目加入bool方法（旧版被拦返回true，通用BLOCK返回0）或全局FMOD锁。
+- 已知边界：vars[4] 会被五/六参数命令覆盖，零参数命令不会；全局解锁窗口不同于旧版线程局部 own_call。当前 BGM 播放链不使用五/六参，但其他插件可能使用。不能只换另一个 vars 槽或 save/restore 伪称解决在途窗口；后续如有对应实证需独立状态/TLS权限设计。
+- 真机验证：完整退出启动器再载入新 Python（本轮未替换/注入生产 DLL）。触发换曲后跨回合观察三入口 hits/blocked：若 hits 增长但 blocked 不增，检查 flags/guard；若 blocked 已增长仍被抢回，则需定位未覆盖路径，不能继续声称锁已完整复刻。本地回归结果不等于真机出声/跨回合保护确认。
+
 ## 0.9.36 回合可靠投递与无人工延时
 
 - 用户 PID 12532 日志仍有 hits=6->7->8，证明不是所有后续回合均未进原生入口；不能把无业务输出一概归为原生 hook 失效。发现 Python 首次非零忽略、先消费 hits 再取快照导致快照失败永久丢事件，以及配置重推清零 hits 的独立问题。
