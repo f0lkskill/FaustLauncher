@@ -38,6 +38,14 @@ Warphook/
 └── il2cpp-api-names.txt     il2cpp 导出名的期望表
 ```
 
+## 故障排查（0.9.30）
+
+- 首先检查 `warp_python.log`：按时间、PID、线程区分启动器端流程；`waiting_game` 表示持续等待进程，`waiting_gameassembly` 表示等待模块，`inject_result` 仅表示 LoadLibrary 阶段结果，`monitoring` 后还要核对钩子安装数量和错误码。30 秒健康日志没有停止意味着后台仍在等待/监听。
+- `warp_host.log` 是游戏进程内的原生日志；`warp_events.log` 是事件流水。请把三者相同时间段一起保留，不要只凭「已注入」判断业务回调或音频确实成功。
+- 回合日志区分「钩子命中」「战斗快照不可用」「业务回调异常」。BGM 的 `ok=True, verified=False` 只代表命令提交完成，不代表已经听到声音；指定 bank 的预载失败不会停掉原曲。
+- Python 日志按 2 MiB 轮转并保留 3 份备份。后台异常包含 traceback；注入失败包含 API 阶段及 Win32 错误码。停止超时会明确报告并保留在途资源，而不是冒险释放共享映射。
+- 更新原生 DLL 后必须完整退出游戏和启动器再重新运行。DLL 会为在途 Hook 保留跳板并固定模块生命周期，旧游戏进程不能热切换到磁盘上的新 DLL。
+
 ## 插件怎么用
 
 ```python

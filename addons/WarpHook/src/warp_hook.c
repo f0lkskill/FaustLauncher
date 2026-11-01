@@ -33,13 +33,13 @@
 #define WARP_THUNK_DEF(N, n, DECL, EVT, CALL, RW)                           \
     static void __fastcall warp_thunk##N##_##n DECL                     \
     {                                                                   \
-        WARP_HOOK *h_ = warp_hook_at(n);                                \
-        const int warp_n_ = (n);                                        \
-        int act = warp_on_event(n, self, N, WARP_EVT6 EVT);             \
+        const int warp_n_ = (int)g_slots[n].hook_index;                 \
+        WARP_HOOK *h_ = warp_n_ >= 0 ? warp_hook_at(warp_n_) : NULL;                                \
+        int act = h_ ? warp_on_event(warp_n_, self, N, WARP_EVT6 EVT) : 0;             \
         unsigned long long ret_ = 0;                                    \
         RW                                                              \
-        if (!(act & 0x1) && g_slots[n].installed) {                     \
-            if (h_ && h_->ret_kind == WARP_RET_FLOAT) {                 \
+        if (!(act & 0x1) && g_slots[n].original) {                     \
+            if ((h_ ? h_->ret_kind : g_slots[n].ret_kind) == WARP_RET_FLOAT) {                 \
                 float f_ = ((float (__fastcall *)DECL)g_slots[n].original) CALL; \
                 __builtin_memcpy(&ret_, &f_, 4);                        \
             } else {                                                    \
@@ -50,12 +50,12 @@
                  * 游戏把已通关的主线判成 1-11 未解锁（采光本上锁）。 */  \
                 ret_ = (unsigned long long)((long long (__fastcall *)DECL)g_slots[n].original) CALL; \
             }                                                           \
-            warp_on_event_post(n, h_, self, N, WARP_EVT6 EVT, (int)ret_); \
+            warp_on_event_post(warp_n_, h_, self, N, WARP_EVT6 EVT, (int)ret_); \
         }                                                               \
-        if (act & 0x2) warp_fire(n);                                    \
+        if (act & 0x2) warp_fire(warp_n_);                                    \
         /* 离开前无条件写回：int/bool/指针在 RAX（movq 保住 64 位指针），  \
          * float 在 XMM0。BLOCK 路径没调 original，写 0 = 「拦截未成功」。 */ \
-        if (h_ && h_->ret_kind == WARP_RET_FLOAT) {                     \
+        if ((h_ ? h_->ret_kind : g_slots[n].ret_kind) == WARP_RET_FLOAT) {                     \
             __asm__ volatile("movd %0, %%xmm0" :: "r"(ret_) : "xmm0");  \
         } else {                                                        \
             __asm__ volatile("movq %0, %%rax" :: "r"(ret_) : "rax");    \

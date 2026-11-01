@@ -43,7 +43,7 @@ TH32CS_SNAPMODULE32 = 0x00000010
 # 那是 ctypes 内部共享的全局实例，argtypes 挂在函数对象上，两个插件各自定义
 # 同名结构体（PROCESSENTRY32W）时会互相覆盖，表现为
 # "expected LP_PROCESSENTRY32W instance instead of pointer to PROCESSENTRY32W"。
-_kernel32 = ctypes.WinDLL("kernel32.dll")
+_kernel32 = ctypes.WinDLL("kernel32.dll", use_last_error=True)
 
 _kernel32.CreateFileMappingW.restype = _HANDLE
 _kernel32.CreateFileMappingW.argtypes = [_HANDLE, _LPVOID, wintypes.DWORD,
@@ -119,9 +119,50 @@ def _valid_snapshot(handle):
     return bool(handle) and (handle & 0xFFFFFFFFFFFFFFFF) != 0xFFFFFFFFFFFFFFFF
 
 
+_LOGGER = None
+_LOG_LOCK = threading.Lock()
+_LOG_FAILURE_REPORTED = False
+
+
 def log(message, prefix="[WarpHook]"):
-    """统一前缀日志，插件可传自己的前缀便于区分。"""
-    print(f"{prefix} {message}")
+    """即时输出并保存到 warp_python.log（时间、PID、线程、插件前缀）。"""
+    global _LOGGER, _LOG_FAILURE_REPORTED
+    line = f"{prefix} {message}"
+    try:
+        print(line, flush=True)
+    except (OSError, ValueError):
+        pass  # 无控制台的发行版仍需继续写文件
+    try:
+        if _LOGGER is None:
+            import logging
+            from logging.handlers import RotatingFileHandler
+            with _LOG_LOCK:
+                if _LOGGER is None:
+                    logger = logging.getLogger('warphook.runtime')
+                    logger.setLevel(logging.INFO)
+                    logger.propagate = False
+                    if not logger.handlers:
+                        path = os.path.join(os.path.dirname(os.path.dirname(__file__)),
+                                            'warp_python.log')
+                        handler = RotatingFileHandler(path, maxBytes=2 * 1024 * 1024,
+                                                      backupCount=3, encoding='utf-8')
+                        handler.setFormatter(logging.Formatter(
+                            '%(asctime)s pid=%(process)d thread=%(threadName)s %(message)s'))
+                        logger.addHandler(handler)
+                    _LOGGER = logger
+        _LOGGER.info(line)
+    except Exception as exc:  # 日志设施失效不能终止插件，但要明确报告一次
+        if not _LOG_FAILURE_REPORTED:
+            _LOG_FAILURE_REPORTED = True
+            try:
+                print(f'[WarpHook] 运行日志写入失败：{exc!r}', file=sys.stderr, flush=True)
+            except (OSError, ValueError):
+                pass
+
+
+def _win_error(stage, pid):
+    code = ctypes.get_last_error()
+    return f'{stage} 失败 PID={pid} winerror={code}: {ctypes.FormatError(code).strip()}'
 
 
 # ========== warp.inject：进程与注入 ==========
@@ -179,27 +220,33 @@ def has_gameassembly(pid, module=GAME_DLL_NAME):
 
 def wait_for_game(timeout=WAIT_GAME_TIMEOUT, stop_event=None, process=GAME_PROCESS):
     """等游戏进程出现，返回 PID 或 ``None``（超时/被取消）。"""
-    deadline = time.time() + timeout
-    while time.time() < deadline:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
         if stop_event is not None and stop_event.is_set():
             return None
         pid = find_game_pid(process)
         if pid is not None:
             return pid
-        time.sleep(POLL_INTERVAL)
+        if stop_event is not None:
+            stop_event.wait(POLL_INTERVAL)
+        else:
+            time.sleep(POLL_INTERVAL)
     return None
 
 
 def wait_for_gameassembly(pid, timeout=WAIT_DLL_TIMEOUT, stop_event=None,
                           module=GAME_DLL_NAME):
     """等目标进程把 ``GameAssembly.dll`` 加载完，返回是否等到。"""
-    deadline = time.time() + timeout
-    while time.time() < deadline:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
         if stop_event is not None and stop_event.is_set():
             return False
         if has_gameassembly(pid, module):
             return True
-        time.sleep(POLL_INTERVAL)
+        if stop_event is not None:
+            stop_event.wait(POLL_INTERVAL)
+        else:
+            time.sleep(POLL_INTERVAL)
     return False
 
 
@@ -214,48 +261,65 @@ def inject_dll(pid, dll_path):
     Returns:
         ``(ok, message)``。常见失败原因：启动器权限不足、杀毒软件拦截。
     """
+    dll_path = os.path.abspath(dll_path)
     if not os.path.isfile(dll_path):
         return False, f"找不到 {dll_path}"
 
+    started = time.monotonic()
     proc = _kernel32.OpenProcess(PROCESS_ACCESS, False, pid)
     if not proc:
-        return False, "打开游戏进程失败（请用管理员权限运行启动器）"
+        return False, _win_error('OpenProcess（检查权限和进程是否仍存活）', pid)
 
     remote = None
+    may_free = True
     try:
-        path_w = ctypes.c_wchar_p(dll_path)
-        size = (len(dll_path) + 1) * 2
+        # 按 UTF-16 字节计数，兼容路径中的非 BMP 字符。
+        path_bytes = dll_path.encode('utf-16-le') + b'\0\0'
+        path_w = ctypes.create_string_buffer(path_bytes)
+        size = len(path_bytes)
         remote = _kernel32.VirtualAllocEx(proc, None, size,
                                           MEM_COMMIT_RESERVE, PAGE_READWRITE)
         if not remote:
-            return False, "VirtualAllocEx 失败"
+            return False, _win_error('VirtualAllocEx', pid)
 
         written = ctypes.c_size_t()
         if not _kernel32.WriteProcessMemory(proc, remote, path_w, size,
                                             ctypes.byref(written)):
-            return False, "WriteProcessMemory 失败"
+            return False, _win_error('WriteProcessMemory', pid)
+        if written.value != size:
+            return False, f'WriteProcessMemory 不完整 PID={pid} bytes={written.value}/{size}'
 
         kernel32 = _kernel32.GetModuleHandleW("kernel32.dll")
         load_library = _kernel32.GetProcAddress(kernel32, b"LoadLibraryW")
         if not load_library:
-            return False, "无法定位 LoadLibraryW"
+            return False, _win_error('GetProcAddress(LoadLibraryW)', pid)
 
         thread = _kernel32.CreateRemoteThread(proc, None, 0, load_library,
                                               remote, 0, None)
         if not thread:
-            return False, "CreateRemoteThread 失败（杀毒软件可能拦截）"
+            return False, _win_error('CreateRemoteThread', pid)
+        may_free = False
         code = wintypes.DWORD()
         try:
-            _kernel32.WaitForSingleObject(thread, 10000)
-            _kernel32.GetExitCodeThread(thread, ctypes.byref(code))
+            result = _kernel32.WaitForSingleObject(thread, 10000)
+            if result != 0:  # WAIT_OBJECT_0 才能读取退出码和释放路径
+                detail = ('等待 LoadLibraryW 超时（10 秒）' if result == 258
+                          else _win_error(f'WaitForSingleObject result={result:#x}', pid))
+                return False, (f'{detail} PID={pid} DLL={dll_path}；加载结果未知，'
+                               '远端路径保留至进程退出，避免加载线程访问已释放内存')
+            may_free = True
+            if not _kernel32.GetExitCodeThread(thread, ctypes.byref(code)):
+                return False, _win_error('GetExitCodeThread', pid)
         finally:
             _kernel32.CloseHandle(thread)
 
         if not code.value:
-            return False, "DLL 加载失败（远程线程退出码为 0）"
-        return True, f"已注入 {os.path.basename(dll_path)} (PID {pid})"
+            return False, f'DLL 加载失败 PID={pid} exit_code=0 DLL={dll_path}（检查依赖 DLL）'
+        return True, (f'LoadLibraryW 已完成 PID={pid} DLL={dll_path} '
+                      f'exit_code={code.value:#x} elapsed={time.monotonic() - started:.3f}s；'
+                      '仍需检查宿主挂钩状态')
     finally:
-        if remote:
+        if remote and may_free:
             _kernel32.VirtualFreeEx(proc, remote, 0, MEM_RELEASE)
         _kernel32.CloseHandle(proc)
 

@@ -85,7 +85,9 @@ def resolve_site() -> tuple[str, int, str]:
         frame = frame.f_back
     return "?", 0, "?"
 
-_ZERO_STAT_RE = re.compile(r"\s*[:：]?\s*0(?:\s*[个次条项分%])?")
+# Ignore zero-valued counters, not nonzero values starting with 0 (e.g. 0.1/01).
+_ZERO_STAT_RE = re.compile(
+    r"\s*[:：=]?\s*0(?![\d.a-z_])(?:\s*[个次条项分%])?", re.I)
 
 def _mentions(message: str, word: str) -> bool:
     start = 0

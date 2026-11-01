@@ -5,9 +5,24 @@
 """
 
 import ctypes
+import functools
 import struct
 import threading
 import os, sys, time
+
+# Every Host facade writes the same single-slot mailbox. Protect the entire
+# transaction, including read-chain preparation and result decoding, not only
+# sequence publication. RLock permits call/read -> _command nesting.
+_COMMAND_LOCK = threading.RLock()
+
+
+def _command_transaction(fn):
+    @functools.wraps(fn)
+    def locked(*args, **kwargs):
+        with _COMMAND_LOCK:
+            return fn(*args, **kwargs)
+    return locked
+
 
 from . import env
 from .base import (
@@ -263,46 +278,8 @@ HF_BLOCK = 0x01      # 跳过原方法（用于「拦截」类插件）
 HF_ONCE = 0x02       # 只触发一次
 HF_DEDUPE = 0x04     # 读链的值没变就不投递事件（配了 reads 才有意义）
 
-# Host.call 的白名单：只有这些 runtime_invoke 调用在真机上验证过稳定。
-# 0.9.10~0.9.14 的五次真机崩溃里，前面几次的锅是 invoke 进的游戏方法
-# 本身，最后一次（0.9.15 查到的那条栈）却是对象槽里 il2cpp_gchandle_free
-# —— 跟方法无关。句柄拆掉之后 get_Instance 连调 10 次全稳，换曲那几步也
-# 一并放开；要再加新条目，先在真机上单独验证「连调 20 次不崩」再加。
-SAFE_CALLS = frozenset((
-    "BattleObjectManager::get_Instance",
-    "GlobalGameManager::get_Instance",
-    "SoundManager::get_Instance",
-    # 纯读静态字段的无参 getter，实测 0.02s 返回、无副作用：
-    "BattleSoundGenerator::IsBattleBgmPlaying",
-    "BattleSoundGenerator::get_CurrentBgmIndex",
-    # 换曲三步（旧插件 BattleBGMExtend 走的同一条 invoke 路，多年稳定）：
-    "BattleSoundGenerator::StopBGM",
-    "BattleSoundGenerator::StopAddedBGM",
-    "BattleSoundGenerator::StartBGM",
-    "BattleSoundGenerator::StartAddBGM",
-    # StartAddBGM 只登记待播曲，真正建实例的是 StartAddBGMSystem（0.9.16 补）
-    "BattleSoundGenerator::StartAddBGMSystem",
-    "BattleSoundGenerator::PauseBGM",
-    "BattleSoundGenerator::TryStartBattleBgmByName",
-    "SoundManager::StopBGM",
-    # v10：类型签名（sig='S'）能精确挑中 IsLoadedBank(string)，不再误选
-    # AssetReference 重载，所以这条重新放开 —— 它只查状态、不改游戏。
-    "SoundManager::IsLoadedBank",
-    # 注意：**不要**放开 SoundManager::LoadBank / LoadBankFromLocal。
-    # 0.9.16 真机实测：对一个已经加载过的 bank 重复 LoadBankFromLocal，
-    # 崩在 GameAssembly 内部（栈 hk_warp_pump -> warp_pump_commands ->
-    # warp_cmd_call -> runtime_invoke -> AV），第一次「成功」第二次就死。
-    # 加载 Master.strings.bank 同样直接崩。音库这条路封了。
-    # v9：换曲前预检（旧插件 switch_rule 的第一步）。第二个参数是
-    # FMOD.Studio.EventInstance& —— 值类型 out，走 MAP 尾部的 out 缓冲。
-    "SoundManager::TryCreateInstance",
-    # 只读工厂：key -> BGMData，BGMData.Path@0x10 就是游戏真正的事件路径。
-    # 纯查表构造，不改游戏状态（用来把「规则表里的曲名」翻成事件名）。
-    "LimbusCompany.SoundLibs.BGMDataFactoryByKey::Get",
-    # 注意：**不要**放宽 SoundManager::IsLoadedBank —— 它有两个 1 参重载
-    # （AssetReference / string），宿主按「名字 + 参数个数」选方法，会把
-    # string 当 AssetReference 传进去，游戏内部直接 AV（0.9.16 实测崩过一次）。
-))
+# 兼容曾导入此名称的插件；Host.call 不再按方法名阻断调用。
+SAFE_CALLS = frozenset()
 
 HOST_STATUS_TEXT = {
     0: "等待游戏",
@@ -725,6 +702,7 @@ class Host:
             self._view_hooks = []
             self.texts = []
             self._owners = {}
+            self._owner_context = threading.local()
             self._block = None
             self._closed = False
             # 引擎侧丢了多少条事件（读侧太慢、环形队列被覆盖）。累计值，
@@ -751,18 +729,21 @@ class Host:
         """这次操作属于哪个插件。
 
         直接从插件代码调用时靠调用栈里的 env.ADDON_NAME 认；
-        从托盘菜单回调调用时没有那条栈，改用 ``_acting_owner``。
+        从托盘菜单或后台回调调用时，用 ``_act`` 设置的线程本地 owner。
         """
-        return getattr(self, "_acting_owner", None) or _owner_of_caller() or self.addon_name
+        local = getattr(self, "_owner_context", None)
+        return (getattr(local, "owner", None) or _owner_of_caller() or self.addon_name)
 
     def _act(self, owner, fn):
-        """以某个插件的身份执行一个动作（菜单回调走这里）。"""
-        prev = getattr(self, "_acting_owner", None)
-        self._acting_owner = owner
+        """以指定插件身份执行；线程之间不能共享临时 owner。"""
+        # Host 的首次构造发生在插件载入线程，后续所有后台线程复用此对象。
+        local = self._owner_context
+        prev = getattr(local, "owner", None)
+        local.owner = owner
         try:
             return fn()
         finally:
-            self._acting_owner = prev
+            local.owner = prev
 
     def _sync_view(self, owner=None):
         """把「本插件」的配置与开关同步到 self._view_hooks/self.texts/self.enabled。
@@ -929,7 +910,20 @@ class Host:
                 slot + HostHook.flags.offset).value
             old_klass = _read_fixed(slot + HostHook.klass.offset, HOST_KLASS_LEN)
             old_method = _read_fixed(slot + HostHook.method.offset, HOST_METHOD_LEN)
-            ctypes.memset(slot, 0, HOST_HOOK_SIZE)
+            hook = hooks[i]
+            old_argc = ctypes.c_int32.from_address(slot + HostHook.argc.offset).value
+            same_entry = (hook is not None and not hook.get('_reset')
+                          and old_klass == hook.get('klass', '')
+                          and old_method == hook.get('method', '')
+                          and old_argc == int(hook.get('argc', -1)))
+            if same_entry:
+                # 配置重推不能把原生线程递增的回合计数清零；不要读回再写回，
+                # 否则会覆盖读写间的新命中。直接避开运行时计数的内存区间。
+                ctypes.memset(slot, 0, HostHook.hits.offset)
+                after = HostHook.blocked.offset + ctypes.sizeof(ctypes.c_int32)
+                ctypes.memset(slot + after, 0, HOST_HOOK_SIZE - after)
+            else:
+                ctypes.memset(slot, 0, HOST_HOOK_SIZE)
             # v8：改写规则一并归零（同一段语义：这格钩子被清掉了，改写也得清）
             ctypes.memset(base + HOST_REWRITE_OFFSET + i * HOST_REWRITE_SIZE,
                           0, HOST_REWRITE_SIZE)
@@ -1227,7 +1221,7 @@ class Host:
         # 走完 wait_for_gameassembly，所以判定 + 注入要在同一把锁里做。
         owner = self._current_owner()
         with _INJECT_LOCK:
-            if host_alive(self.block()):
+            if has_gameassembly(pid, module=os.path.basename(dll)):
                 self.log("宿主已在运行，跳过重复注入", owner=owner)
                 return True
             ok, message = inject_dll(pid, dll)
@@ -1235,7 +1229,7 @@ class Host:
             self.log(f"注入失败：{message}")
             return False
 
-        self.log(f"已注入（PID {pid}）")
+        self.log(f"PID={pid} {message}")
         return True
 
     # ---------- 状态 ----------
@@ -1454,6 +1448,7 @@ class Host:
         addr = block.address + HOST_OBJECTS_OFFSET + slot * HOST_OBJECT_SIZE
         return int(ctypes.c_uint64.from_address(addr).value)
 
+    @_command_transaction
     def read(self, slot, chain, kind="int", timeout=2.0, default=None,
              detail=False):
         """让游戏主线程代读：从第 slot 个对象槽出发，按链读一个值。
@@ -1544,6 +1539,7 @@ class Host:
             ctypes.c_uint64.from_address(addr + i * HOST_BUFF_WATCH_SIZE).value = v
         return len(values)
 
+    @_command_transaction
     def list_methods(self, name, timeout=2.0):
         """列出某个类里同名方法的全部重载签名（纯元数据，**绝不调用游戏代码**）。
 
@@ -1568,6 +1564,7 @@ class Host:
             return []
         return [part.decode("utf-8", "replace") for part in raw.split(bytes([0])) if part]
 
+    @_command_transaction
     def static_get(self, name, out_slot, timeout=2.0):
         """读一个类的静态字段（引用类型），值落对象槽。
 
@@ -1589,6 +1586,21 @@ class Host:
         return self._command(CMD_STATIC, text=name, timeout=timeout,
                              out_slot=int(out_slot))
 
+    def _command_warning(self, message):
+        """同一宿主的命令停顿合并报告；不改变超时结果、不取消在途请求。"""
+        now = time.monotonic()
+        next_at = getattr(self, '_command_warning_at', 0.0)
+        if now < next_at:
+            self._command_warning_suppressed = getattr(
+                self, '_command_warning_suppressed', 0) + 1
+            return
+        suppressed = getattr(self, '_command_warning_suppressed', 0)
+        self._command_warning_at = now + 30.0
+        self._command_warning_suppressed = 0
+        suffix = f'（期间合并 {suppressed} 条同类等待日志）' if suppressed else ''
+        log(message + suffix)
+
+    @_command_transaction
     def _command(self, cmd_type, text="", timeout=2.0, args=(), retkind=0,
                  slot=-1, out_slot=-1):
         """往命令槽里塞一条命令，等 DLL 在游戏主线程执行完。
@@ -1604,6 +1616,14 @@ class Host:
         if block is None:
             return "宿主未注入"
         hdr = block.cfg
+        idle_deadline = time.monotonic() + float(timeout)
+        while (int(hdr.cmd_seq) != int(hdr.cmd_ack) or
+               int(hdr.cmd_result) == CMD_RES_BUSY):
+            if time.monotonic() >= idle_deadline:
+                self._command_warning(f'命令通道仍忙 seq={int(hdr.cmd_seq)} ack={int(hdr.cmd_ack)} '
+                    f'rc={int(hdr.cmd_result)}；未覆盖在途请求')
+                return "命令通道忙（前一请求未完成）"
+            time.sleep(0.005)
         payload = str(text).encode("utf-8")[:HOST_CMD_TEXT_LEN - 1]
         argc = len(args)
         hdr.cmd_text = payload
@@ -1618,8 +1638,8 @@ class Host:
             seq = 1
         hdr.cmd_seq = seq
 
-        deadline = time.time() + float(timeout)
-        while time.time() < deadline:
+        deadline = time.monotonic() + float(timeout)
+        while time.monotonic() < deadline:
             if int(hdr.cmd_ack) == seq:
                 rc = int(hdr.cmd_result)
                 if rc == CMD_RES_BUSY:
@@ -1628,6 +1648,9 @@ class Host:
                     continue
                 return CMD_RES_NAMES.get(rc, "失败(%d)" % rc)
             time.sleep(0.02)
+        self._command_warning(f'命令等待超时 seq={seq} type={int(cmd_type)} '
+            f'ack={int(hdr.cmd_ack)} rc={int(hdr.cmd_result)} '
+            f'tail={_read_fixed(ctypes.addressof(hdr) + HostHeader.log_tail.offset, HOST_LOG_LEN)}')
         return "超时"
 
     @staticmethod
@@ -1734,15 +1757,14 @@ class Host:
             return f"对象槽 {slot} 超出 0..{HOST_OBJECT_COUNT - 1}"
         return self._command(CMD_STR, text, timeout, slot=slot)
 
+    @_command_transaction
     def call(self, method, slot=None, args=(), ret="int32", out_slot=-1,
              timeout=2.0, unsafe=False, sig=None, via="direct"):
         """调一个方法：``host.call("Foo::get_value", slot=24, ret="int32")``。
 
-        !! danger "默认只放白名单"
-            真机上「调用游戏内部方法」是能崩游戏的：0.9.10~0.9.13 三次崩溃
-            全是插件调了游戏自己的方法。所以除 `SAFE_CALLS` 里那几条之外，
-            这个接口默认直接拒绝，要调必须显式传 `unsafe=True` 并自己承担
-            后果（`unsafe=True` 也不会被异常保护兜住）。
+        不再按方法名维护历史白名单。调用方必须提供正确的对象、参数类型和
+        生命周期；方法不在旧表中不等于它必然崩溃，列在表中也不保证安全。
+        参数、返回槽与签名校验仍然有效；本接口不能隔离游戏内的原生崩溃。
 
         Args:
             method: "Ns.Klass::Method"（不带槽 = 静态调用；带槽 = slot 里的
@@ -1752,7 +1774,7 @@ class Host:
             ret: 返回值形状 —— "int32"/"float" 解包写回（返回该值）；
                 "ref" 落 out_slot 槽（返回槽号）。
             out_slot: ret="ref" 时结果落的槽。
-            unsafe: 允许调用不在白名单里的方法。
+            unsafe: 历史兼容参数；不再影响方法准入。
             via: "direct"（默认，methodPointer 直调，旧插件姿势）或
                 "invoke"（runtime_invoke，泛型基类方法如
                 `SingletonBehavior`1::get_Instance` 必须用它）。
@@ -1766,9 +1788,6 @@ class Host:
             ret 为 int32/float 时返回数值（失败返回结果字符串）；
             ret 为 ref 时返回落好的槽号（失败返回结果字符串）。
         """
-        if not unsafe and str(method).split("#")[0] not in SAFE_CALLS:
-            return (f"未在安全白名单（{method}）—— 真机上调游戏方法会崩，"
-                    "确认要试就传 unsafe=True")
         packed, kinds = self._pack_args(args)
         if len(packed) > 6:
             return "参数太多（vars 最多 6 个）"
@@ -1807,7 +1826,7 @@ class Host:
         bits = int(block.cfg.vars[6]) & 0xFFFFFFFF
         if str(ret).lower() == "bool":
             # v0.9.26：il2cpp 的 bool 返回只写 al，rax 高位是垃圾 —— 按 &0xFF 解
-            return bits & 0xFF
+            return bool(bits & 0xFF)
         if retkind == CMD_RET_FLOAT:
             return struct.unpack("<f", struct.pack("<I", bits))[0]
         return bits - (1 << 32) if bits >= (1 << 31) else bits

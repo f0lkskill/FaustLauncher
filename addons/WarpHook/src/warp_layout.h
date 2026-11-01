@@ -431,8 +431,10 @@ typedef void *(*fn_class_get_type)(void *klass);
 typedef void *(*fn_type_get_object)(void *type);
 typedef void *(*fn_array_new)(void *klass, size_t length);
 typedef void *(*fn_class_get_parent)(void *klass);
-typedef unsigned int (*fn_gchandle_new)(void *obj, unsigned int strong);
-typedef void (*fn_gchandle_free)(unsigned int handle);
+/* Pointer-sized exports: widening only the storage still truncates RAX at
+ * this function-call boundary before the handle reaches that storage. */
+typedef uintptr_t (*fn_gchandle_new)(void *obj, unsigned int strong);
+typedef void (*fn_gchandle_free)(uintptr_t handle);
 /* v10：按参数类型选重载 + 读静态字段要用的元数据接口 */
 typedef void *(*fn_class_get_methods)(void *klass, void **iter);
 typedef const char *(*fn_method_get_name)(const void *method);
@@ -444,5 +446,7 @@ typedef void (*fn_free_mem)(void *mem);
 /* v0.9.24b：静态字段读（旧插件的单例姿势 —— SoundManager::_instance 等）。
  * 字段查找沿基类逐层 class_get_field_from_name，记下声明类的 klass 再取值。 */
 typedef void *(*fn_class_get_field_from_name)(void *klass, const char *name);
-typedef void (*fn_field_static_get_value)(void *klass, void *field, void *value);
+/* IL2CPP export takes FieldInfo + output only, NOT a declaring class.
+ * The old three-argument prototype shifted field/output and caused AV. */
+typedef void (*fn_field_static_get_value)(void *field, void *value);
 
