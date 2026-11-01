@@ -158,6 +158,56 @@ static void test_hooks(void)
     puts("PASS real MinHook: 20 reloads, stable trampoline, row migration, no double hook");
     puts("PASS return ABI: 64-bit integer/pointer, float, nine args and hidden MethodInfo");
 }
+/* warp_on_event is the production pre-hook (formerly called warp_pre).
+ * Exercise it directly AND through a real MinHook detour: no model of guard
+ * logic and no DLL loading/injection is used in this executable. */
+static void test_guard_lock(void)
+{
+    const int row = 27;
+    WARP_HOOK *h = &g_warp_hooks[row];
+    unsigned long long (*volatile fn)(void *, void *) = target_int;
+    int events = g_hdr->evt_count;
+    int hits = g_hit_count[row];
+    memset(h, 0, sizeof(*h));
+    h->flags = WARP_HF_BLOCK;
+    h->guard_index = -1;
+    h->guard_var = 4;
+    h->guard_value = 1;
+    h->cache_arg = -1;
+    h->ret_slot = -1;
+    /* actions=0 is intentional: a pure music lock must still block. */
+    g_hdr->vars[4] = 0;
+    assert(warp_on_event(row, NULL, 0, NULL, NULL, NULL,
+                         NULL, NULL, NULL) == 1);
+    assert(h->hits == hits + 1 && h->blocked == 1);
+    g_hdr->vars[4] = 1;
+    assert(warp_on_event(row, NULL, 0, NULL, NULL, NULL,
+                         NULL, NULL, NULL) == 0);
+    assert(h->hits == hits + 2 && h->blocked == 1);
+    assert(g_hdr->evt_count == events + 2);
+
+    assert(warp_bind_hook(row, (void *)target_int, 0));
+    assert(fn((void *)7, (void *)13) == (7 ^ 13 ^ sentinel));
+    assert(h->hits == hits + 3 && h->blocked == 1);
+    g_hdr->vars[4] = 0;
+    assert(fn((void *)7, (void *)13) == 0);
+    assert(h->hits == hits + 4 && h->blocked == 2);
+    /* Guard is equality-to-1, not truthiness: 2 must remain locked. */
+    g_hdr->vars[4] = 2;
+    assert(fn((void *)7, (void *)13) == 0);
+    assert(h->hits == hits + 5 && h->blocked == 3);
+    g_hdr->vars[4] = 1;
+    assert(fn((void *)7, (void *)13) == (7 ^ 13 ^ sentinel));
+    assert(h->hits == hits + 6 && h->blocked == 3);
+    assert(g_hdr->evt_count == events + 6);
+    warp_uninstall();
+    assert(fn((void *)7, (void *)13) == (7 ^ 13 ^ sentinel));
+    assert(h->hits == hits + 6 && h->blocked == 3);
+    memset(h, 0, sizeof(*h));
+    puts("PASS pre-hook guard_var: actions=0 lock blocks, allow passes, blocked counts only actual blocks");
+    puts("PASS real native guard detour: allow/lock/non-1/reallow, retained original ABI, uninstall passes");
+}
+
 static void test_commands(void)
 {
     HANDLE threads[8];
@@ -313,6 +363,7 @@ int main(void)
     assert(warp_mh_ensure());
     test_signature();
     test_hooks();
+    test_guard_lock();
     test_commands();
     test_static_runtime();
     test_invoke_abi();

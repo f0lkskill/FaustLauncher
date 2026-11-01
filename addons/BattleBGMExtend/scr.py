@@ -183,7 +183,8 @@ def _install_lock():
             _log(f'换曲锁安装未完成（下回合重试）：{result}')
         if _lock_ready:
             _lock(True)                  # 初始放行
-            _log('换曲锁钩子已安装（StartBGM / StartAddBGM / StopBGM 三个拦截点）')
+            _log('换曲锁配置已提交（StartBGM / StartAddBGM / StopBGM；'
+                 '仅部分覆盖，原生安装需结合命中/拦截计数确认）')
     except Exception as exc:             # noqa: BLE001
         _log(f'换曲锁安装失败（下回合重试）：{exc}')
 
@@ -357,7 +358,8 @@ def _apply_locked(battle):
                 _last_error = ''
                 _say(f"换曲调用已提交：「{rule['name'] or rule['id']}」→ {rule['bgm']}"
                      f"（音库 {rule.get('bank') or '未指定'}，优先级 {rule['priority']}，"
-                     f"换曲锁{'已开启' if locked else '未开启'}；未验证实际出声）")
+                     f"换曲锁开关{'已写入' if locked else '写入失败'}；未验证实际拦截/出声）")
+                _log_lock_status()
             except Exception as exc:
                 _last_error = str(exc)
                 _lock(True)
@@ -371,9 +373,30 @@ def _apply_locked(battle):
     return f"已排队换曲：规则 {rule['id']} → {rule['bgm']}（后台提交，未验证出声）"
 
 
+def _log_lock_status():
+    """每次真实回合/手动判定时记录，不增加游戏命令或轮询。"""
+    try:
+        inspect = getattr(_game(), 'bgm_lock_status', None)
+        if inspect is None:
+            return
+        status = inspect()
+        rows = status.get('rows', [])
+        detail = '; '.join(
+            f"{row['method']} flags={row['flags']} "
+            f"guard={row['guard_current']}=={row['guard_value']}放行 "
+            f"hits={row['hits']} blocked={row['blocked']}" for row in rows)
+        _log(f"换曲锁实况：配置 {status.get('configured')}/{status.get('targets')}，"
+             f"原生安装未逐项确认，部分入口覆盖；{detail or '无配置'}"
+             f"；缺失={status.get('missing', [])}")
+    except Exception as exc:
+        _log(f'换曲锁诊断失败：{exc}')
+
+
 def _on_round(battle):
     try:
-        _apply(battle)
+        outcome = _apply(battle)
+        _log(f'回合判定结果：{outcome}')
+        _log_lock_status()
     except Exception as exc:                             # noqa: BLE001
         _log(f'回合判定出错：{exc}')
 
@@ -409,6 +432,7 @@ def _check_now():
                     return
                 outcome = _apply_locked(battle)
                 _log(f'手动检测：{outcome}')
+                _log_lock_status()
         except Exception as exc:
             _log(f'手动检测异常：{exc}')
         finally:

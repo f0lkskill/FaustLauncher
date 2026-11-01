@@ -405,6 +405,10 @@ class Live:
         audio.lock(self.host(), True)          # 初始放行
         return {'ok': bool(ok), 'added': added}
 
+    def bgm_lock_status(self):
+        """只读锁入口、guard 与实际命中/拦截计数。"""
+        return audio.guard_status(self.host(), owner=self.owner)
+
     def bgm_lock(self, allow):
         """开/关换曲锁。``True`` 放行游戏换曲；``False`` 锁死，游戏盖不回去。
 
@@ -747,6 +751,11 @@ def bgm_unhook(push=True):
 def bgm_lock_install():
     """装换曲锁钩子（每插件一次；宿主自动 late 重试）。"""
     return live().bgm_lock_install()
+
+
+def bgm_lock_status():
+    """只读当前插件锁配置及命中/拦截计数。"""
+    return live().bgm_lock_status()
 
 
 def bgm_lock(allow):
