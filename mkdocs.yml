@@ -88,7 +88,8 @@ nav:
       - 06 底层四件套: technical/06-lowlevel.md
       - 07 warp.audio: technical/07-audio.md
   - 参考手册:
-      - reference/game-memory.md
-      - reference/dev-notes.md
+      - 游戏内存与偏移: reference/game-memory.md
+      - 作者笔记: reference/dev-notes.md
+      - 真机验收台账: warphook-bgm-repair-verification.md
   - 归档:
       - archive/session-selfcheck.md

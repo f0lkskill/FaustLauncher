@@ -38,13 +38,23 @@ Warphook/
 └── il2cpp-api-names.txt     il2cpp 导出名的期望表
 ```
 
-## 故障排查（0.9.30）
+## 故障排查（0.9.39）
 
-- 首先检查 `warp_python.log`：按时间、PID、线程区分启动器端流程；`waiting_game` 表示持续等待进程，`waiting_gameassembly` 表示等待模块，`inject_result` 仅表示 LoadLibrary 阶段结果，`monitoring` 后还要核对钩子安装数量和错误码。30 秒健康日志没有停止意味着后台仍在等待/监听。
-- `warp_host.log` 是游戏进程内的原生日志；`warp_events.log` 是事件流水。请把三者相同时间段一起保留，不要只凭「已注入」判断业务回调或音频确实成功。
-- 回合日志区分「钩子命中」「战斗快照不可用」「业务回调异常」。BGM 的 `ok=True, verified=False` 只代表命令提交完成，不代表已经听到声音；指定 bank 的预载失败不会停掉原曲。
-- Python 日志按 2 MiB 轮转并保留 3 份备份。后台异常包含 traceback；注入失败包含 API 阶段及 Win32 错误码。停止超时会明确报告并保留在途资源，而不是冒险释放共享映射。
-- 更新原生 DLL 后必须完整退出游戏和启动器再重新运行。DLL 会为在途 Hook 保留跳板并固定模块生命周期，旧游戏进程不能热切换到磁盘上的新 DLL。
+- **只有一个日志：`addons/WarpHook/warp.log`。** 宿主 DLL 与 Python 侧写同一个文件，凭行内
+  标签区分：`[host]` 是启动器/宿主侧流程（`waiting_game` 持续等待进程、
+  `waiting_gameassembly` 等待模块、`inject_result` 仅为 LoadLibrary 阶段结果、`monitoring`
+  之后还要核对钩子安装数量和错误码、30 秒健康日志没停表示后台仍在等待/监听），
+  `[event]` 是钩子命中的事件流水。
+- **启动即覆写**：每次运行启动器，文件先被清空再重写，所以它只描述当前这一轮，不会
+  让你看到上一轮的残留；也意味着要留档必须在启动器退出前拷走。曾经的
+  `warp_host.log` / `warp_events.log` / `warp_python.log` 及 2 MiB × 3 轮转备份已取消。
+- 回合日志区分「钩子命中」「战斗快照不可用」「业务回调异常」。BGM 的 `ok=True, verified=False`
+  只代表命令提交完成，不代表已经听到声音；指定 bank 的预载失败不会停掉原曲。
+- 后台异常包含 traceback；注入失败包含 API 阶段及 Win32 错误码。停止超时会明确报告并保留在途
+  资源，而不是冒险释放共享映射。
+- 更新原生 DLL 后必须完整退出游戏和启动器再重新运行。DLL 会为在途 Hook 保留跳板并固定模块
+  生命周期，旧游戏进程不能热切换到磁盘上的新 DLL。目录里**只保留最新的 `warp_host.dll`**，
+  不要攒 `*_old.dll`（`.gitignore` 已排除）。
 
 ## 插件怎么用
 
@@ -182,8 +192,9 @@ audio.pause(host, True)
 
 - **`StartAddBGM` 收短名**。`audio.short_name()` 帮你截掉
   `event:/BGM/Battle/`，传全长路径会静默不播。
-- **游戏会自己掐附加曲**。回合切换/战斗结束时游戏调 `StopAddedBGM`，
-  所以要「保持这首」得每回合重放（`game.on_round_start` 里重放即可）。
+- **游戏会自己掐附加曲**。回合切换/战斗结束时游戏调 `StopAddedBGM` / `StartBGM`。
+  保持这首用**换曲锁**：`game.bgm_lock_install()` 装钩子，`game.bgm_lock(False)`
+  锁死，`game.bgm_lock(True)` 放行（放曲前必须先解锁）。别再每回合重放。
   详见 `BattleBGMExtend` 移植版。
 
 ## 编译

@@ -41,16 +41,26 @@ sequenceDiagram
 - **`StopBGM` 两个参数都是 bool**，用 `0/1` 传。
 - **`StartAddBGM` 收短名**，不带 `event:/BGM/Battle/`。
 - 用完 `release(27)`，否则那个槽一直被占着。
+- **场景门是三态**（0.9.36 之后）：只有明确读到 `scene != 1` 才拒绝播放；
+  读数本身拿不到（`None`）时**放行**。原因是回合钩子的命中必然在战斗里，
+  读不到不等于不在战斗 —— 早先按「读不到就拒绝」处理，战斗里偶发读失败
+  会让曲子在无声与有声之间来回抖。
+- **预载不是每次换曲都做**（0.9.39 之后）：同一游戏进程内已提交过的音库加载
+  按 「PID + 进程创建时间」缓存，`IsLoadedBank` 一直返回 False 也不会反复
+  提交同一双文件加载；失败不进缓存。音频链（预载 / 播放 / 停止）串行执行，
+  并发请求合并成一次预载，避免互相改写共享字符串与单例临时槽。
+  外部卸载或音频引擎重置后调 `audio.invalidate_bank_cache()` 让缓存失效。
 
 ## 函数
 
 | 函数 | 返回 | 说明 |
 | --- | --- | --- |
-| `play(host, name, stop_current=True, timeout=2.0)` | `dict` | 停当前 + 播新的 |
+| `play(host, name, bank=None, stop_current=True, timeout=2.0, …)` | `dict` | 停当前 + 播新的；`bank` 给了就先确保该音库已加载 |
 | `stop(host, restore=True, timeout=2.0)` | `dict` | 停附加曲 |
 | `pause(host, value, timeout=2.0)` | `dict` | `value=True` 暂停，`False` 继续 |
 | `is_playing(host, timeout=2.0)` | `bool` | `BattleSoundGenerator.IsBattleBgmPlaying()` |
 | `current_index(host, timeout=2.0)` | `int` 或 `None` | `BattleSoundGenerator.get_CurrentBgmIndex()`，读不到返回 `None` |
+| `invalidate_bank_cache()` | `None` | 清空「本进程已预载音库」缓存（外部卸载音库 / 音频引擎重置后调用） |
 | `full_path(name)` | `str` | 补 `event:/BGM/Battle/` 前缀（已经是全长就原样返回） |
 | `short_name(name)` | `str` | 截掉前缀；传进来的本来就是短名则原样返回 |
 
@@ -120,8 +130,13 @@ if made == '已执行':
 ## 边界
 
 - **只在战斗场景有效**。主界面/剧情用的是另一套 BGM 系统。
-- **游戏会抢**。回合切换时游戏自己调 `StopAddedBGM` / `StartBGM`，曲子会被换回去。
-  要「保持这首」得每回合重放，见 [教程 07](../tutorial/07-bgm.md)。
+- **游戏会抢**。回合切换、战斗结束、进下一阶段时，游戏自己调 `StopAddedBGM` / `StartBGM`，
+  曲子会被换回去。0.9.27 起有**换曲锁**：`bgm_lock_install()` 把四条入口
+  （`StartBGM` / `StartAddBGM` / `StopBGM` / `StopAddedBGM`）装成带 guard 的钩子，
+  `bgm_lock(False)` 一锁，游戏那四路调用直接被丢弃，我们的 FMOD 实例不中断。
+  **不要再每回合重放**（会从头起播，听感一卡一顿），见 [教程 07](../tutorial/07-bgm.md)。
+  `bgm_lock_status()` 可查四条入口是否都分到槽及实际拦截计数；辅段只有 5 格、
+  门面回合钩子占 1 格，所以锁只覆盖这四条，不做 `SoundManager` / FMOD 的全量拦截。
 - **不预加载 bank**。`SoundManager.LoadBankFromLocal` 要求知道 `StreamingAssets`
   绝对路径，WarpHook 不碰游戏文件；战斗曲都在游戏自带的 bank 里。
 - **没有音量控制**。要淡入淡出得自己调 `SetParameterByName`，那属于接管音频。

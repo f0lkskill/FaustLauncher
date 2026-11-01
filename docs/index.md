@@ -49,4 +49,18 @@ flowchart TD
 
 ## 版本
 
-本文档对应 WarpHook `0.9.9`（协议 v7）。协议号变了，偏移和读链写法可能一起变——看 `addons/WarpHook/CHANGELOG.md`。
+本文档对应 WarpHook `0.9.39`（协议 v11）。协议号变了，偏移和读链写法可能一起变——看 `addons/WarpHook/CHANGELOG.md`。
+
+## 出问题时先看哪
+
+整个 WarpHook 只有**一个**日志文件：`addons/WarpHook/warp.log`。宿主 DLL（游戏进程内）和
+Python 侧写的是同一个文件，靠行首的通道标签区分：
+
+| 标签 | 谁写的 | 里面是什么 |
+| --- | --- | --- |
+| `[host]` | 宿主 DLL + 启动器侧 Python | 注入、装配、`configure`、钩子安装、命令通道、`warp.pygame` 调用 |
+| `[event]` | 事件流水 | 每次钩子命中：时间、槽号、返回值、动作 |
+
+启动器每次运行会**覆写**这个文件（不是追加、不轮转、不留 `.1` 备份），所以它永远只描述
+「当前这一轮」。要留档就在启动器退出后自己拷走。判读方法见
+[入门 01](tutorial/01-hello.md#log-file)。
