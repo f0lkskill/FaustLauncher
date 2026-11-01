@@ -169,14 +169,15 @@ value = host.read(27, [{'off': 0x60, 'deref': False}], 'int')  # 从它出发读
 
 1. 把 `单位观察/` 放进 `addons/`，重启启动器，进战斗；
 2. 日志里每回合开始会刷出单位编号；
-3. 想确认钩子真的挂上了，看 `addons/WarpHook/warp_host.log`，应该有：
+3. 想确认钩子真的挂上了，看 `addons/WarpHook/warp.log` 里打 `[host]` 的行，应该有：
 
 ```text
-hook installed (27)
+[host] [WarpHook] hook installed (27)
 ```
 
 括号里是你占的槽号。如果看到 `hook: class not found (27)`，说明类名写错了；
-`hook: method not found (27)` 是方法名写错了。
+`hook: method not found (27)` 是方法名写错了。钩子命中则打 `[event]` 行，
+两路混在同一个文件里，按标签区分即可（见 [入门 01](01-hello.md#log-file)）。
 
 ## 到这一步你该知道的
 

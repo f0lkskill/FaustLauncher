@@ -84,29 +84,46 @@ sequenceDiagram
 这五步（等宿主 / 造字符串 / 停旧的 / 放新的 / 还槽位）都能单独拿出来用，
 见底下的 `warp.audio`。
 
-## 曲子会被游戏抢回去
+## 曲子会被游戏抢回去 —— 用换曲锁按住
 
 这是这套接口唯一需要想清楚的地方。
 
 游戏在回合切换、战斗结束、进入下一阶段时会自己调「停附加曲 / 换回原曲」。
 你在回合开始时换的歌，可能下一回合就没了。
 
-办法是**每回合重放一次**：
+**别用「每回合重放」的土办法**（`on_round_start` 里 `bgm_playing()` 一检查就重推一次）：
+重放会重新走一遍 FMOD 起播，曲子从头再来，听感上就是一卡一顿；而且它和游戏的回合
+流程赛跑，谁先谁后取决于帧序。旧文档教的就是这个写法，0.9.27 起已废弃。
+
+正确的做法是**上换曲锁**，让游戏那四条换曲入口在锁住时直接把调用丢掉，我们的曲子
+根本不中断：
 
 ```python
 SONG = 'Battle_Cp9_Boss_10'
 
-def _keep(battle):
-    if game.bgm_playing():
-        return                      # 还在播，别打断
-    game.bgm(SONG)
+game.bgm_lock_install()     # ① 装锁钩子（并进门面钩子表，一次 push）
+game.bgm_lock(False)        # ② 关锁：游戏想换/想停，一律丢弃
 
-game.on_round_start(_keep)
+game.bgm(SONG)              # ③ 放我们的曲子
 ```
 
+顺序不能反：**放曲前必须先解锁**（`bgm_lock(True)`），否则放曲自己的那两个直调
+会撞上你自己的锁。
+
+| 接口 | 作用 |
+| --- | --- |
+| `game.bgm_lock_install()` | 把四条锁钩子（`StartBGM` / `StartAddBGM` / `StopBGM` / `StopAddedBGM`）并进门面钩子表；返回 `{'ok','added','missing','configured'}` |
+| `game.bgm_lock(allow)` | `False` = 锁死（游戏盖不回去），`True` = 放行。一次共享内存写入，零直调，随时可切 |
+| `game.bgm_lock_status()` | 只读：锁入口是否都分到槽、`guard` 实际命中/拦截计数 |
+
+!!! warning "`ok=True` 不等于出声"
+    `bgm_lock_install()` 的 `ok` 只说明 push 完成、四条入口都配上了；槽位是辅段共享的，
+    真机上要用 `bgm_lock_status()` 看 `missing` 是否为空，**再去日志里看 `[event]` 行
+    有没有拦截记录**，最后靠耳朵确认。
+
 `BattleBGMExtend`（随启动器发布的一个插件）就是这么干的 —— 它按人格和 buff
-判断该放哪首，每回合重新判定、必要时重放。想学怎么把「条件 → 曲子」做成
-规则表，直接读它的 `scr.py`。
+判断该放哪首，条件变了才换曲、换曲前解锁换完再锁回来，曲子本身一次都不会被打断。
+想学怎么把「条件 → 曲子」做成规则表，直接读它的 `scr.py`。
 
 ## 底层：自己拼播放序列
 

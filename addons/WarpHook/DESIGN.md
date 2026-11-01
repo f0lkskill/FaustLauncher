@@ -134,7 +134,7 @@ if (GetModuleHandleW(L"GameAssembly.dll")) {
 | `block` | `ret` | 拦下原方法（返回指定值），配合 `hooks.block = true` | NoGacha 拦截 |
 | `kill` | `delay_ms` | 起独立线程 → Sleep → `TerminateProcess` | AutoBoom |
 | `count` | `field` | 计数器自增（也可直接读 DLL 内部状态） | 通用 |
-| `log` | `text` | 写 `warp_host.log` | 通用 |
+| `log` | `text` | 写 `warp.log` 的 `[host]` 行 | 通用 |
 
 `$random` 在 `texts` 池里随机取一句，由 DLL 内部 xorshift32 完成。
 
@@ -917,9 +917,13 @@ BattleSoundGenerator.StartAddBGM(短名, 1, 0)    // 播附加曲，STOP_MODE=1 
 
 - **只在战斗场景有意义**。主界面/剧情用的是另一套 BGM 系统，`StartAddBGM`
   是 `BattleSoundGenerator` 的静态方法。
-- **游戏可能自己把附加曲掐掉**。回合切换、战斗结束时游戏会调 `StopAddedBGM`
-  / `StartBGM`。老插件靠钩子锁，我们靠「每回合重放」——`BattleBGMExtend`
-  移植版就是这么做的（`on_round_start` 里重新判定并重放）。
+- **游戏会自己把附加曲掐掉**。回合切换、战斗结束时游戏会调 `StopAddedBGM`
+  / `StartBGM`。**0.9.27 起改用换曲锁**（`audio.guard_hook_defs` /
+  `Battle.bgm_lock_install` / `Battle.bgm_lock`）：四条入口装成带
+  `guard=(LOCK_SLOT, 1)` 的钩子，`bgm_lock(False)` 时游戏那四路调用被丢弃，
+  FMOD 实例不中断、不重播。早期版本靠「每回合重放」硬扛，已废弃 —— 重放会让
+  曲子从头起播，且和回合流程赛跑。锁只覆盖 4 条入口（辅段 5 格、门面回合钩子
+  占 1 格），不宣称完整复刻旧插件的 `block_game`。
 - **不预加载 bank**。`SoundManager.LoadBankFromLocal` 那套要求知道
   `StreamingAssets` 的绝对路径，WarpHook 不碰游戏文件。曲子都在游戏自带的
   战斗 BGM bank 里，不需要额外加载。

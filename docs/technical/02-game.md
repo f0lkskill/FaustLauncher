@@ -90,7 +90,8 @@ live.start(menu=(('看状态', lambda: print(live.describe())),))
 | `.bgm(name, stop_current, wait, wait_timeout, timeout)` | 同上 |
 | `.bgm_stop(restore)` / `.bgm_playing()` / `.bgm_index()` | 同上 |
 | `.wait_ready(wait_timeout=120.0)` | 等宿主能发命令；`popup` / `bgm` 内部用它 |
-| `.log(message)` | 带插件名前缀打日志 |
+| `.bgm_lock_install()` / `.bgm_lock(allow)` / `.bgm_lock_status()` | 换曲锁：装钩子 / 开关锁 / 只读诊断，见 [07 warp.audio](07-audio.md) |
+| `.log(message)` | 带插件名前缀打日志（写 `warp.log` 的 `[host]` 行） |
 | `.on_round_start` / `.on_scene_changed` / `.on_battle_start` / `.on_battle_end` | 注册回调 |
 
 ## `Battle` 对象

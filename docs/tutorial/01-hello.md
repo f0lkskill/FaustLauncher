@@ -97,7 +97,37 @@ FaustLauncher/
 | --- | --- |
 | 启动器控制台 | 实时输出，调试最方便 |
 | 启动器目录的 `logs/` | 每次运行一个文件，出问题要发给别人看的是这个 |
-| `addons/WarpHook/warp_host.log` | **宿主 DLL 自己的日志**，游戏里发生的事在这里（第 02 篇起会用到） |
+| `addons/WarpHook/warp.log` | **WarpHook 唯一的日志文件**，宿主 DLL 与插件写在同一个文件里（第 02 篇起会用到） |
+
+### 只看一个文件：`warp.log` {#log-file}
+
+以前 WarpHook 会摊出三个日志（DLL 一份、Python 一份、事件流水一份）外加各自的轮转备份，
+时间一长就是一堆互相错位的文件。现在整个 WarpHook 只写 `addons/WarpHook/warp.log`：
+
+```
+2026-11-01 22:24:33.512 pid=9320 thread=MainThread ==== WarpHook host pid=9320 at 22:24:33 injected, truncated (whole addon shares this one file) ====
+2026-11-01 22:24:33.512 pid=9320 thread=MainThread ==== WarpHook 0.9.39 pid=9320 启动于 2026-11-01 22:24:33 ——— 本进程日志从空文件开始，重跑启动器即覆写 ====
+2026-11-01 22:24:33.640 pid=9320 thread=pygame [host] [WarpHook] 钩子安装 32/32 err=0
+2026-11-01 22:24:34.110 pid=9320 thread=pygame [event] EVT ev=battle.StartBattle slot=12 rv=0
+```
+
+行首那几列（时间、pid、线程）不用记，看后面的部分：
+
+| 位置 | 含义 |
+| --- | --- |
+| `==== … WarpHook host …` | 宿主 DLL 刚注入，这一行**清空**了旧内容 |
+| `==== WarpHook 0.9.39 …` | Python 侧启动，这一行**又**把文件清空 |
+| `[host]` | 启动器 / 宿主 DLL 侧：装配、`configure`、钩子安装、命令通道、异常 |
+| `[event]` | 事件流水：每次钩子命中一条，用来核对「回调到底有没有跑」 |
+| `pid=` / `thread=` | 多线程出问题时先按这两列对齐时间 |
+
+两条 `====` 都在开头是正常的：DLL 先被塞进游戏进程、Python 侧稍后接管，谁先跑谁清空，
+最后活下来的是**这一轮**的完整记录。也正因为「启动即覆写」：
+
+- **别指望它当历史存档。** 想看上一轮的，启动器退出后自己拷走。
+- **别只凭「已注入」就断定成功。** 要看到 `[host]` 里钩子确实装上、`[event]` 里确实有命中。
+- **磁盘上没有别的 WarpHook 日志了。** 还看到 `warp_host.log` / `warp_events.log` /
+  `warp_python.log` 的话，那是旧版本留下的残渣，删掉即可（`.gitignore` 也已排除它们）。
 
 ## 没反应？按这个顺序查
 
