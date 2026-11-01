@@ -250,9 +250,17 @@ web/app_skins/*/profile.*
 !addons/WarpHook/**
 addons/WarpHook/__pycache__/
 addons/WarpHook/warphook/__pycache__/
-addons/WarpHook/warp_host.log
-addons/WarpHook/warp_events.log
 addons/WarpHook/_icon_preview.png
 
-# 编译产物：由 src/ 里的源码生成，不入库
+# 运行期产物：整个 addon 只写一个 warp.log（DLL 与 Python 共用，
+# 启动即覆写，见 warphook/diag.py）；旧文件名与轮转备份一并忽略。
+addons/WarpHook/*.log
+addons/WarpHook/*.log.*
+
+# 编译产物：由 src/ 里的源码生成，不入库。目录里只留最新的 warp_host.dll，
+# 别再手工攒 *_old.dll —— 旧的覆盖不掉就删掉，源码在 git 里。
 addons/WarpHook/warp_host.dll
+addons/WarpHook/*_old.dll
+addons/WarpHook/warp_host_*.dll
+
+.codex/
