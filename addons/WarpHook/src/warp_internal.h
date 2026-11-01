@@ -66,6 +66,7 @@ extern WARP_SLOT     g_slots[WARP_MAX_HOOKS];
 extern int           g_installed;
 extern int           g_ic_ready;
 extern int           g_armed;
+extern int           g_log_fresh;
 extern void         *g_domain;
 extern void         *g_popup_mgr_method;
 extern void         *g_popup_open_method;

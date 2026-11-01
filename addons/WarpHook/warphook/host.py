@@ -57,6 +57,8 @@ HOST_VERSION = 11                  # v11：导出表 22→24（静态字段读�
 HOST_MAP_DEFAULT = "Local\\WarpHost_Default"
 HOST_MAP_ENV = "WARP_HOST_MAP"
 HOST_DLL_NAME = "warp_host.dll"
+# 整个 WarpHook 只有一个日志文件（DLL 与 Python 共用），见 warphook/diag.py。
+LOG_FILE_NAME = "warp.log"
 
 HOST_MAX_HOOKS = 32
 HOST_MAX_TEXTS = 256
@@ -598,21 +600,21 @@ def host_alive(block):
 def host_build(log_path=None):
     """读宿主 DLL 自己打的那行构建戳，返回 `'Oct 31 2026 13:48:12'` 之类的字符串。
 
-    DLL 启动时往 warp_host.log 写一行 ``build <__DATE__> <__TIME__> proto vN``。
-    用途：确认游戏里跑的到底是哪一版 —— 只比 ``hdr.version`` 没用，同一个协议
-    号的两次构建看不出新旧。真机上踩过：源码改完、编到 test/ 忘了拷，游戏里
-    仍是上一版，读链新语义全落进旧分支，输出一堆垃圾值，从现象反推源码完全
-    推不出来。
+    DLL 启动时往统一日志 ``warp.log`` 写一行 ``build <__DATE__> <__TIME__> proto vN``
+    （行首带 ``[host]``）。用途：确认游戏里跑的到底是哪一版 —— 只比
+    ``hdr.version`` 没用，同一个协议号的两次构建看不出新旧。真机上踩过：源码
+    改完、编到 test/ 忘了拷，游戏里仍是上一版，读链新语义全落进旧分支，输出
+    一堆垃圾值，从现象反推源码完全推不出来。
     """
     if log_path is None:
-        log_path = os.path.join(_warp_dir(), "warp_host.log")
+        log_path = os.path.join(_warp_dir(), LOG_FILE_NAME)
     try:
         with open(log_path, "r", encoding="utf-8", errors="replace") as fh:
             lines = fh.readlines()[-400:]
     except OSError:
         return None
     for line in reversed(lines):
-        if " build " in line:
+        if "[host]" in line and " build " in line:
             return line.split(" build ", 1)[1].strip()
     return None
 
