@@ -8,7 +8,7 @@
     "requires": [
         "WarpHook"
     ],
-    "version": "2.0.3",
+    "version": "2.0.4",
     "settings": {
         "enable": true,
         "播报切换": true

@@ -30,7 +30,10 @@ class CounterTests(unittest.TestCase):
         row.hits, row.blocked = 5, 4
         with patch.object(host, 'block', side_effect=AssertionError('must not initialize')):
             status = audio.guard_status(host, owner='test')
-        self.assertEqual(status['configured'], 3)
+        self.assertEqual(status['configured'], 4)
+        added = next(row for row in status['rows'] if row['method'] == 'StopAddedBGM')
+        self.assertTrue(added['flags'] & mod.HF_BLOCK)
+        self.assertEqual(added['guard_var'], audio.LOCK_SLOT)
         self.assertEqual(status['missing'], [])
         self.assertEqual(status['rows'][0]['blocked'], 4)
         self.assertEqual(status['rows'][0]['guard_current'], 0)
@@ -41,6 +44,34 @@ class CounterTests(unittest.TestCase):
                       audio.guard_status(host, owner='test')['missing'])
         host._block = None
         self.assertEqual(audio.guard_status(host, owner='test')['configured'], 0)
+
+    def test_stop_added_lock_is_not_reported_ready_when_shared_slots_exhausted(self):
+        from warphook import audio
+        from warphook.live import Live
+        memory = ctypes.create_string_buffer(2 * 1024 * 1024)
+        cfg = mod.HostHeader.from_buffer(memory)
+        host = object.__new__(mod.Host)
+        host._block = SimpleNamespace(address=ctypes.addressof(memory), cfg=cfg)
+        host.log = lambda *args: None
+        host._owners = {
+            'other': {'on': True, 'hooks': [{'klass': 'Other', 'method': 'Tick'}], 'texts': []},
+            'BattleBGMExtend': {'on': True, 'hooks': [
+                {'klass': 'BattleObjectManager', 'method': 'OnRoundStart_Model'}
+            ] + audio.guard_hook_defs(), 'texts': []}}
+        live = object.__new__(Live)
+        live.owner = 'BattleBGMExtend'
+        live._extra_hooks = []
+        live.host = lambda: host
+        live._push = lambda: True
+        with patch.object(audio, 'lock', return_value=True):
+            result = live.bgm_lock_install()
+        self.assertFalse(result['ok'])
+        self.assertEqual(result['missing'], ['BattleSoundGenerator.StopAddedBGM'])
+        del host._owners['other']
+        with patch.object(audio, 'lock', return_value=True):
+            result = live.bgm_lock_install()
+        self.assertTrue(result['ok'])
+        self.assertEqual(result['configured'], 4)
 
     def test_repush_preserves_live_counters_but_new_entry_resets(self):
         memory = ctypes.create_string_buffer(2 * 1024 * 1024)

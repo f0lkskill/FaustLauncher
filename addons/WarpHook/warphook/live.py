@@ -403,7 +403,11 @@ class Live:
         self._hooks_on = True
         ok = self._push()
         audio.lock(self.host(), True)          # 初始放行
-        return {'ok': bool(ok), 'added': added}
+        status = audio.guard_status(self.host(), owner=self.owner)
+        # 辅段由所有插件共享；push 成功不代表四个锁入口都分到了槽。
+        return {'ok': bool(ok) and not status['missing'], 'added': added,
+                'missing': status['missing'], 'configured': status['configured'],
+                'installed_verified': False}
 
     def bgm_lock_status(self):
         """只读锁入口、guard 与实际命中/拦截计数。"""
@@ -511,7 +515,7 @@ class Live:
         锁钩子（audio.guard_hook_defs）不再等 bgm_lock_install 惰性追加：
         钩子表按 owner 分段、configure 全量重写，任何一次「只含回合钩子」
         的 push 都会把锁清掉（0.9.27 真机实证 28..31 变空）—— 干脆每次
-        push 都是完整集，辅段 5 格 = 回合 1 + 锁 3 + 余 1。
+        push 都是完整集，辅段 5 格 = 回合 1 + 锁 4（仍与其他辅助插件共享）。
         """
         hooks = [{
             'klass': 'BattleObjectManager',

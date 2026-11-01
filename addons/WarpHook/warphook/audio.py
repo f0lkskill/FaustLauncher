@@ -212,7 +212,7 @@ def _restore_default(host, timeout=2.0):
 
     旧插件 ``switch_rule`` 失败回退用的同一个静态方法。**竞态警告**：
     同样是直调，回合间隙有 AV 风险 —— 只给 stop(restore=True) 和用户
-    主动操作用，不要塞进自动循环。
+    主动操作或条件失效时的一次性后台交还使用，不要塞进周期查询循环。
     Returns:
         成功 ``'已接回默认曲'``；失败带原因。
     """
@@ -260,9 +260,14 @@ def game_dir():
 def stop(host, restore=True, timeout=2.0):
     """停掉战斗 BGM；``restore=True`` 时把游戏默认曲接回来。
 
-    v0.9.26：改用 ``StopBGM(false,false)``（静态，真机验证）—— 原来的
-    ``StopAddedBGM`` 只停附加曲层，原曲还在响，替换插件语义要的是「全停」。
+    必须分别停止附加曲与主曲；StopBGM 不能代替 StopAddedBGM。
+    调用前须放行换曲锁，否则插件自己的停止调用也会被阻断。
     """
+    added = host.call('BattleSoundGenerator::StopAddedBGM',
+                      args=(STOP_MODE_IMMEDIATE, 0),
+                      sig='FMOD.Studio.STOP_MODE,B', ret='void', timeout=timeout)
+    if not _ok(added):
+        return {'ok': False, 'reason': f'停止附加曲失败：{added}'}
     result = host.call('BattleSoundGenerator::StopBGM', args=(0, 0),
                        sig='B,B', ret='void', timeout=timeout)
     if isinstance(result, str) and result != '已执行':
@@ -319,13 +324,15 @@ SLOT_BATTLE_BGM = 25
 # 旧插件 own_call() 那套「自己的调用要放行」的复杂度。
 LOCK_SLOT = 4        # vars[4]：1=放行（游戏管曲） 0=锁（只许我们的曲）
 # 辅段一共只有 5 格（27..31），门面回合钩子要占 1 格：锁钩子最多 4 条。
-# 当前只能覆盖以下三条入口，并非完整复刻旧插件 block_game。
+# 当前覆盖以下四条入口，并非完整复刻旧插件 block_game。
 # 旧版还拦 SoundManager/CurrentBGM/FMOD 等入口；不能无证据宣称它们
 # 只在场景切换时调用。是否仍有绕行路径，需要实际 blocked 计数诊断。
 LOCK_TARGETS = (
     ('BattleSoundGenerator', 'StartBGM', 2),
     ('BattleSoundGenerator', 'StartAddBGM', 3),
     ('BattleSoundGenerator', 'StopBGM', 2),
+    # StartAddBGM 的配对停止入口；旧版明确同时保护，不能只拦主曲 StopBGM。
+    ('BattleSoundGenerator', 'StopAddedBGM', 2),
 )
 
 

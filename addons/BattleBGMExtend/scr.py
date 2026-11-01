@@ -162,6 +162,7 @@ WATCHED = _watched()
 _active = None      # 当前生效的规则；None = 没锁，游戏原曲在放
 _pending = False    # 命中规则的放曲线程在排队（_check_now 据此不说「没命中」）
 _prev = {}          # 上一回合快照 {单位 id: {buff 英文 ID: 层数}}
+_transitions = set()  # 已观察到的转换；仅在同一单位的目标 buff 仍有效时保留
 _battle_id = None   # 生命周期哨兵：由战斗结束回调重置，单位名单不是战斗 ID
 _check_guard = threading.Lock()  # 菜单请求只排一个；不得在菜单线程等待状态锁
 _state_lock = threading.RLock()
@@ -183,7 +184,7 @@ def _install_lock():
             _log(f'换曲锁安装未完成（下回合重试）：{result}')
         if _lock_ready:
             _lock(True)                  # 初始放行
-            _log('换曲锁配置已提交（StartBGM / StartAddBGM / StopBGM；'
+            _log('换曲锁配置已提交（StartBGM / StartAddBGM / StopBGM / StopAddedBGM；'
                  '仅部分覆盖，原生安装需结合命中/拦截计数确认）')
     except Exception as exc:             # noqa: BLE001
         _log(f'换曲锁安装失败（下回合重试）：{exc}')
@@ -202,7 +203,7 @@ def _lock(allow):
         return False
 
 
-def _buff_table(unit):
+def _buff_table(unit, strict=False):
     """{英文 ID: Buff}。只收规则关心的那几个，层数用到再读。"""
     table = {}
     try:
@@ -211,17 +212,20 @@ def _buff_table(unit):
             if key and key in WATCHED:
                 table[key] = buff
     except Exception:                                 # noqa: BLE001
-        pass
+        if strict:
+            raise
     return table
 
 
-def _stack(table, key):
+def _stack(table, key, strict=False):
     buff = table.get(key)
     if buff is None:
         return 0
     try:
         return int(buff.stack or 0)
     except Exception:                                 # noqa: BLE001
+        if strict:
+            raise
         return 0
 
 
@@ -249,9 +253,10 @@ def _match(rule, table, previous):
 
 def _scan(battle):
     """一次遍历：挑出优先级最高的规则，同时把本回合快照记下来。"""
-    global _prev
+    global _prev, _transitions
     best = None
     snap = {}
+    transitions = set()
 
     for unit in battle.units:
         identity = unit.identity
@@ -260,14 +265,28 @@ def _scan(battle):
         matched = [r for r in RULES if r['identity'] == identity]
         if not matched:
             continue
-        table = _buff_table(unit)
+        table = _buff_table(unit, strict=True)
         previous = _prev.get(unit.id) or {}
-        snap[unit.id] = {key: _stack(table, key) for key in table}
+        snap[unit.id] = {key: _stack(table, key, strict=True) for key in table}
         for rule in matched:
-            if _match(rule, table, previous):
-                if best is None or rule['priority'] > best['priority']:
+            valid = _match(rule, table, previous)
+            cond = rule['condition']
+            if cond.get('type') == END_TRANSITION:
+                # 边沿只负责激活；随后按目标状态续期，不能因上一回合已无
+                # source 而误判失效。逐单位保留，避免同人格的其他单位续命。
+                key = str(cond.get('keyword') or '')
+                token = (unit.id, identity, rule['id'], key,
+                         str(cond.get('from_keyword') or ''))
+                valid = _stack(table, key) > 0 and (valid or token in _transitions)
+                if valid:
+                    transitions.add(token)
+            if valid:
+                if (best is None or rule['priority'] > best['priority']
+                        or (rule['priority'] == best['priority'] and rule == _active)):
+                    # 平级优先保持仍有效的 active，不因单位/规则遍历次序换曲。
                     best = rule
 
+    _transitions = transitions
     _prev = snap
     return best
 
@@ -289,14 +308,18 @@ def _apply_locked(battle):
       4. 规则还在命中的回合**不重放**，只保持锁 —— 曲子一直是同一个
          实例在响（旧插件同款）。
     """
-    global _active, _battle_id, _prev, _revision, _pending, _pending_rule
+    global _active, _battle_id, _prev, _transitions, _revision, _pending, _pending_rule
 
+    if battle is None or getattr(battle, 'ok', True) is False:
+        return '快照不可用，维持当前规则与换曲锁'
     _install_lock()
+    if not _lock_ready:
+        return '换曲锁配置未完成，未停止原曲/换曲，下回合重试'
     # 不在每次扫描时解锁；实际换曲前才放行，避免游戏抢回原曲。
 
     # Battle 只有当前单位视图，没有稳定战斗 ID。死亡、增援、换波及
     # 单次读失败都会改变名单；不能据此清除生效规则/重播同一首曲子。
-    # 以首次快照进入、on_battle_end 退出维护生命周期（与旧版地板一致）。
+    # 以首次快照进入、on_battle_end 退出维护生命周期；规则另按当前条件续期。
     if _battle_id is None:
         _battle_id = object()
         _lock(True)
@@ -304,15 +327,16 @@ def _apply_locked(battle):
         _pending, _pending_rule = False, None
         _active = None
         _prev = {}
+        _transitions = set()
 
     best = _scan(battle)
     if best is None:
+        if _pending and _pending_rule is None:
+            return '规则已失效，恢复原曲正在排队'
         _revision += 1
         _pending, _pending_rule = False, None
         if _active is not None:
-            # 旧版 cfg->priority 是整场战斗的地板，不因瞬时条件消失降级。
-            _lock(False)
-            return '当前无更高命中，维持生效规则及优先级地板'
+            return _queue_release(_revision)
         else:
             _lock(True)
             # 诊断行：无命中时把扫描现场打出来（人格 ID + buff key），
@@ -326,12 +350,16 @@ def _apply_locked(battle):
                  f"{' / '.join(rows) or '空场'}")
         _active = None
         return '当前无命中规则，保持游戏原曲'
-    if _active is not None and best['priority'] <= _active['priority']:
-        _lock(False)                     # 3'. 优先级地板：保持锁，不重放
-        return f"维持规则 {_active['id']}，未超过优先级地板 {_active['priority']}"
+    if _active is not None and best == _active:
+        # 当前有效的最优规则未变：取消过时换曲/恢复任务，只续锁不重播。
+        if _pending:
+            _revision += 1
+            _pending, _pending_rule = False, None
+        _lock(False)
+        return f"维持规则 {_active['id']}，当前条件仍满足"
 
-    # 同一命中尚在排队时不重复开线程；较高优先级命中可替换旧任务。
-    if _pending_rule is not None and best['priority'] <= _pending_rule['priority']:
+    # 仅同一有效规则去重；旧高优先级失效后低优先级也必须替换令牌。
+    if _pending_rule is not None and best == _pending_rule:
         return f"跳过重复提交：规则 {_pending_rule['id']} 正在排队"
     rule = best
     _revision += 1
@@ -353,8 +381,10 @@ def _apply_locked(battle):
                 if not isinstance(result, dict) or not result.get('ok'):
                     raise RuntimeError((result.get('reason') or str(result))
                                        if isinstance(result, dict) else str(result))
+                if not _lock_ready or not _lock(False):
+                    raise RuntimeError('换曲调用已提交，但换曲锁写入失败，未确认规则生效')
                 _active = rule
-                locked = _lock_ready and _lock(False)
+                locked = True
                 _last_error = ''
                 _say(f"换曲调用已提交：「{rule['name'] or rule['id']}」→ {rule['bgm']}"
                      f"（音库 {rule.get('bank') or '未指定'}，优先级 {rule['priority']}，"
@@ -373,6 +403,36 @@ def _apply_locked(battle):
     return f"已排队换曲：规则 {rule['id']} → {rule['bgm']}（后台提交，未验证出声）"
 
 
+def _queue_release(revision):
+    """条件失效时异步交还音乐；revision 防止旧恢复任务覆盖新命中。"""
+    global _pending, _pending_rule
+    _pending, _pending_rule = True, None
+
+    def _release():
+        global _active, _pending, _pending_rule, _last_error
+        with _state_lock:
+            if revision != _revision:
+                return
+            try:
+                if not _lock(True):
+                    raise RuntimeError('条件失效后解锁失败，未停止附加曲')
+                result = _game().bgm_stop()
+                if not isinstance(result, dict) or not result.get('ok'):
+                    raise RuntimeError(f'恢复原曲调用失败：{result}')
+                _active = None
+                _last_error = ''
+                _say('规则条件已失效：已解锁并提交停止附加曲/恢复原曲调用')
+            except Exception as exc:
+                # 保留 active 供下次无命中重试，不假报已交还游戏。
+                _last_error = str(exc)
+                _log(f'规则条件失效后的恢复失败：{exc}')
+            finally:
+                _pending, _pending_rule = False, None
+
+    threading.Thread(target=_release, daemon=True, name='bgm-release').start()
+    return '当前无命中规则，已排队解锁并恢复原曲（后台提交，未验证出声）'
+
+
 def _log_lock_status():
     """每次真实回合/手动判定时记录，不增加游戏命令或轮询。"""
     try:
@@ -383,7 +443,8 @@ def _log_lock_status():
         rows = status.get('rows', [])
         detail = '; '.join(
             f"{row['method']} flags={row['flags']} "
-            f"guard={row['guard_current']}=={row['guard_value']}放行 "
+            f"guard={row['guard_current']} expected_allow={row['guard_value']} "
+            f"state={'放行' if row['guard_current'] == row['guard_value'] else '阻断'} "
             f"hits={row['hits']} blocked={row['blocked']}" for row in rows)
         _log(f"换曲锁实况：配置 {status.get('configured')}/{status.get('targets')}，"
              f"原生安装未逐项确认，部分入口覆盖；{detail or '无配置'}"
@@ -403,12 +464,13 @@ def _on_round(battle):
 
 def _on_battle_end(_scene):
     """取消排队播放并解锁；离开战斗后不再调用战斗音频通道。"""
-    global _active, _prev, _battle_id, _revision, _pending, _pending_rule
+    global _active, _prev, _transitions, _battle_id, _revision, _pending, _pending_rule
     with _state_lock:
         _revision += 1
         _pending, _pending_rule = False, None
         _lock(True)
         _active, _prev, _battle_id = None, {}, None
+        _transitions = set()
         _say('战斗结束：已取消排队换曲并解锁，场景音乐由游戏接管')
 
 
@@ -453,11 +515,12 @@ def _show_status():
 
 def _restore():
     """菜单：取消待播任务、清除规则状态并恢复原曲。"""
-    global _active, _prev, _revision, _pending, _pending_rule
+    global _active, _prev, _transitions, _revision, _pending, _pending_rule
     with _state_lock:
         _revision += 1
         _pending, _pending_rule = False, None
         _active, _prev = None, {}
+        _transitions = set()
         if not _lock(True):
             return
         result = _game().bgm_stop()
@@ -469,12 +532,13 @@ def _restore():
 
 def _reload():
     """菜单：改完 rules.json 不用重启启动器。"""
-    global RULES, WATCHED, _revision, _pending, _pending_rule
+    global RULES, WATCHED, _transitions, _revision, _pending, _pending_rule
     with _state_lock:
         _revision += 1
         _pending, _pending_rule = False, None
         RULES = _load_rules()
         WATCHED = _watched()
+        _transitions = set()
     _say(f'规则已重新载入：{len(RULES)} 条')
 
 
