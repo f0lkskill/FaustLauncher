@@ -1,5 +1,12 @@
 # WarpHook / BattleBGMExtend 修复与真机验收
 
+## 0.9.39 音库重复预载与潜在卡顿
+
+- 用户 17:06:51 日志所示 .assets.bank 和 .bank 是不同文件的一对加载，不是写磁盘。单段日志不能证明重复加载或掉帧根因；但代码确实每次 ensure_bank 都查 IsLoadedBank，已知本地预载后该查询可一直 False，导致同进程后续换曲再次加载大音库。
+- 新增按 PID + GetProcessTimes 创建时间区分进程实例的成功提交缓存，重复 bank 跳过查询和加载；并发音频链共用 RLock，防止共享临时槽交错。失败/会话不明不缓存，游戏中途重启不记成功，提供 invalidate_bank_cache 处理已知卸载/音频引擎重置。缓存不是驻留或出声验证，外部静默卸载仍属已知边界。
+- 阶段日志记录 load-complete/complete/cache-hit、elapsed_ms/wait_ms，另记录 stop/start 与音频操作总耗时。包含 IPC 排队、游戏线程执行与轮询等待，不能等同一帧卡顿。首次双文件加载仍可能阻塞游戏线程，不擅改 LoadBankFromLocal 的未验证布尔参数，也未加入逐帧状态轮询。
+- 离线验收：同进程查询永远 False 仍只提交一对、不同 bank/PID创建时间隔离、并发合并、失败重试、无会话不复用、显式失效、加载中进程重启；真机需比较同进程第二次换曲是否 stage=cache-hit，以及卡顿是否仍发生于无加载时。重启启动器后缓存重建，属于保守重新预载；本轮仅 Python，无 DLL 替换或注入。
+
 ## 0.9.38 主曲被拦但附加曲被停止
 
 - PID 14688 在换曲后 StartBGM blocked=3→4，证明此前编码修复已拦截部分游戏换曲；临时曲仍静音，现有三入口不能覆盖全部停止路径。旧版 battlebgmextend.c:632 明确同时 hook StopAddedBGM(2)，当前却遗漏该附加曲配对停止入口。补为第四锁入口，不能仅凭日志就声称已证明真机静音必定由它引起。
