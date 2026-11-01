@@ -89,6 +89,7 @@ DWORD WINAPI warp_thread(LPVOID param)
     }
 
     warp_uninstall();
+    warp_work_stop();
     return 0;
 }
 
@@ -100,6 +101,15 @@ void warp_start(void)
 {
     if (g_thread)
         return;
+    /* Detours may still be on arbitrary game stacks after DisableHook. Pin
+     * the module: FreeLibrary must not unmap their return addresses/code. */
+    {
+        HMODULE pinned;
+        if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+                                GET_MODULE_HANDLE_EX_FLAG_PIN,
+                                (LPCWSTR)(ULONG_PTR)warp_start, &pinned))
+            return;
+    }
     g_rng = (unsigned int)(GetTickCount64() ^ (ULONGLONG)(ULONG_PTR)&g_rng);
     g_stop = CreateEventW(NULL, TRUE, FALSE, NULL);
     if (!g_stop)
@@ -113,15 +123,9 @@ void warp_stop_cleanup(void)
 {
     if (g_stop)
         SetEvent(g_stop);
-    /* 不同步等待：在 DllMain 里等线程会和 loader lock 抢，实测会卡死 */
-    if (g_hdr) {
-        UnmapViewOfFile(g_hdr);
-        g_hdr = NULL;
-    }
-    if (g_map) {
-        CloseHandle(g_map);
-        g_map = NULL;
-    }
+    /* Called under loader lock: never wait or unmap the shared view here.
+     * A worker or detour can still use it. The pinned host/map are reclaimed
+     * by the OS on process exit, not by racing an in-flight game callback. */
 }
 
 BOOL APIENTRY DllMain(HMODULE module, DWORD reason, LPVOID reserved)

@@ -3,6 +3,7 @@
  * 由 warp_host.c 拆分而来（原第 162-292 行）。
  */
 #include "warp_internal.h"
+#include <stdio.h>
 
 WARP_IC g_ic;
 
@@ -80,15 +81,18 @@ unsigned int g_rng = 0x9E3779B9u;
 
 void warp_log(const char *msg, int value)
 {
-    char line[160];
+    char line[512];
     char path[MAX_PATH];
+    SYSTEMTIME stamp;
     HANDLE f;
     DWORD wrote = 0;
+    DWORD path_len;
     int n;
 
     if (!g_hinst)
         return;
-    if (!GetModuleFileNameA(g_hinst, path, MAX_PATH))
+    path_len = GetModuleFileNameA(g_hinst, path, MAX_PATH);
+    if (!path_len || path_len >= MAX_PATH)
         return;
     {
         char *slash = path;
@@ -100,10 +104,19 @@ void warp_log(const char *msg, int value)
         }
         *(slash + 1) = 0;
     }
+    if (strlen(path) + sizeof("warp_host.log") > sizeof(path))
+        return;
     lstrcatA(path, "warp_host.log");
 
-    n = wsprintfA(line, "[warp][t%lu] %s (%d)\r\n",
-                  (unsigned long)GetCurrentThreadId(), msg, value);
+    GetLocalTime(&stamp);
+    n = snprintf(line, sizeof(line),
+                 "%04u-%02u-%02u %02u:%02u:%02u.%03u [warp][pid=%lu][t%lu] %s (%d)\r\n",
+                 stamp.wYear, stamp.wMonth, stamp.wDay, stamp.wHour,
+                 stamp.wMinute, stamp.wSecond, stamp.wMilliseconds,
+                 (unsigned long)GetCurrentProcessId(),
+                 (unsigned long)GetCurrentThreadId(), msg ? msg : "(null)", value);
+    if (n < 0) return;
+    if ((size_t)n >= sizeof(line)) n = (int)sizeof(line) - 1;
     f = CreateFileA(path, FILE_APPEND_DATA, FILE_SHARE_READ | FILE_SHARE_WRITE,
                     NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
     if (f != INVALID_HANDLE_VALUE) {

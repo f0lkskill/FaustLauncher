@@ -42,6 +42,9 @@ typedef struct {
     void *original;
     BOOL  installed;
     int   argc;
+    /* Native thunk identity is process-lifetime; configuration rows may move. */
+    volatile LONG hook_index;  /* -1 while disabled */
+    int ret_kind;              /* preserve return ABI while logically unbound */
 } WARP_SLOT;
 
 /* ---- 全局状态 ---- */
@@ -141,7 +144,9 @@ int warp_cmd_str(int slot, const char *text);
 int warp_cmd_static(const char *text, int out_slot);
 int warp_cmd_release(int slot);
 int warp_kill_game(void);
-void __stdcall hk_warp_pump(void *self);
+void __stdcall hk_warp_pump(void *self, void *mi);
+void warp_work_start(void);
+void warp_work_stop(void);
 int warp_install_hooks(void);
 void warp_uninstall(void);
 unsigned int warp_hook_signature(void);

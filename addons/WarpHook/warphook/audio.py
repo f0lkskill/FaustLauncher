@@ -1,27 +1,8 @@
-"""播放战斗 BGM（0.9.26 重写：全静态两步链）。
+"""战斗 BGM 原语。
 
-0.9.16~0.9.25 的旧链（``get_Instance → ensure_bank → TryCreateInstance``
-预检 → ``StopBGM``×2 → ``StartAddBGM``）每一步都依赖 ``SoundManager``
-单例，而 0.9.25 日志版探针定案：单例这条路在本机走不通 ——
-``get_Instance`` 直调死于泛型 RGCTX、invoke 一次成功一次 AV、
-``static_get`` 的 ``field_static_get_value`` 也 AV。
-
-0.9.26 真机验证的新链（全部 ``BattleSoundGenerator`` 静态方法直调，
-两发命中，用户耳朵确认）::
-
-    BattleSoundGenerator::StopBGM(false, false)       # 停当前战斗曲
-    BattleSoundGenerator::StartAddBGM(短名, 1, false)  # 放新曲
-
-- ``StartAddBGM`` 收**短名**（``Battle_Cp10_Boss_10``），前缀游戏自己补；
-  名字里的 ``Add`` 是**叠加语义**（在原曲上叠一层，不是替换）—— 所以
-  替换曲子必须先 ``StopBGM``，否则两首一起响（0.9.26 真机实测）。
-- 音库（bank）没法手动预载：``LoadBankFromLocal`` 是实例方法。实战里
-  当前战斗的音库游戏自己已加载（实测 ``Battle_Cp10_Boss_10`` 直放成功）；
-  没加载的音库 ``StartAddBGM`` 会静默失败 —— 用 :func:`is_playing`
-  复查兜底，失败自动 ``StartBGM(-1, 0)`` 接回默认曲（旧插件哲学：
-  绝不留静音）。
-
-全部走 ``Host.make_str`` + ``Host.call``，不需要改 C 代码。
+沿用独立旧版的短名 StartAddBGM 通道、指定音库预载和停曲顺序。
+音库预载失败不停止原曲；不自动轮询 FMOD 播放状态（场景切换存在竞态）。
+返回 ok 仅表示命令成功执行，verified=False 明示未证实实际出声。
 """
 
 import ctypes
@@ -39,9 +20,9 @@ STOP_MODE_FADE = 0
 
 # 对象槽 27 是辅助段的临时槽，用完就还（28/29 被门面占着，30/31 是每帧回调）
 SLOT_SCRATCH = 27
-# 26 曾留着放 SoundManager 实例 —— 0.9.26 起单例通道不可用，槽保留但不再使用
+# 26：静态字段读取取得的 SoundManager 临时实例
 SLOT_SOUND = 26
-# 24：临时放音库路径字符串（ensure_bank 弃用后仅作占位）
+# 24：音库名与绝对路径字符串临时槽
 SLOT_BANK_NAME = 24
 
 
@@ -82,48 +63,74 @@ def _ok(result):
     （v0.9.27 真机教训：``not isinstance(str)`` 把成功误判成失败，插件于是
     不上锁 —— 游戏盖回默认曲时和我们的曲撞车，游戏崩溃）。"""
     if not isinstance(result, str):
-        return True
+        return isinstance(result, (bool, int, float)) and result is not False
     return result == '已执行'
 
 
-def ensure_bank(host, bank, timeout=2.0):
-    """把音库文件加载进 FMOD（照旧插件 ``preload_bank`` 的四步）。
+def ensure_bank(host, bank, timeout=5.0):
+    """按旧版预载指定音库；失败不停止当前曲。返回 ``(ok, reason)``。
 
-    单例走 ``static_get('SoundManager::_instance')`` —— v0.9.29 起是手动读
-    static_fields，绕开必 AV 的混淆导出 ``field_static_get_value``；
-    ``IsLoadedBank`` / ``LoadBankFromLocal`` 是普通实例方法，直调安全。
-
-    Returns:
-        ``(ok, reason)`` —— 失败不阻断换曲：目标曲恰好在本战斗已加载的
-        音库里时，不预载也能放。
+    从继承的静态字段取得实例，不调用泛型 get_Instance；两个音库文件均
+    使用游戏安装目录的绝对路径。所有临时槽在成功、失败和异常路径释放。
     """
-    made = host.make_str(bank, slot=SLOT_BANK_NAME, timeout=timeout)
-    if isinstance(made, str) and made != '已执行':
-        return False, f'音库名造不出来：{made}'
-    got = host.static_get('SoundManager::_instance', out_slot=SLOT_SOUND,
-                          timeout=timeout)
-    if isinstance(got, str) and got != '已执行':
-        return False, f'SoundManager 单例拿不到：{got}'
-    kw = dict(slot=SLOT_SOUND, timeout=timeout)
-    loaded = host.call('SoundManager::IsLoadedBank', args=(('slot', SLOT_BANK_NAME),),
-                       sig='S', ret='bool', **kw)
-    if _ok(loaded) and loaded is True:
-        return True, '已加载'
-    base = ('LimbusCompany_Data/StreamingAssets/Assets/Sound/'
-            'FMODBuilds/Desktop/')
-    for suffix in ('.assets.bank', '.bank'):
-        made = host.make_str(base + bank + suffix, slot=SLOT_BANK_NAME,
-                             timeout=timeout)
-        if isinstance(made, str) and made != '已执行':
-            continue
-        # FMOD 加载几十 MB 的音库可能要秒级，别用查询的超时
-        host.call('SoundManager::LoadBankFromLocal',
-                  args=(('slot', SLOT_BANK_NAME), 0, 0),
-                  sig='S,B,B', ret='void', timeout=max(timeout * 2.5, 5.0))
-    loaded = host.call('SoundManager::IsLoadedBank', args=(('slot', SLOT_BANK_NAME),),
-                       sig='S', ret='bool', **kw)
-    return (_ok(loaded) and loaded is True,
-            '已加载' if _ok(loaded) and loaded is True else '加载后复查未通过')
+    bank = str(bank or '').strip()
+    if not bank:
+        return True, '未指定音库'
+    if '/' in bank or '\\' in bank or bank in ('.', '..'):
+        return False, '音库应为短名，不能包含路径'
+    try:
+        got = host.static_get('SoundManager::_instance', out_slot=SLOT_SOUND,
+                              timeout=timeout)
+        if not _ok(got):
+            return False, f'SoundManager 单例拿不到：{got}'
+        made = host.make_str(bank, slot=SLOT_BANK_NAME, timeout=timeout)
+        if not _ok(made):
+            return False, f'音库名造不出来：{made}'
+        # 独立旧版通过 runtime_invoke 调用 SoundManager；该路径要求宿主
+        # 正确区分引用参数（对象本身）和值参数（地址），不能沿用 direct 打包。
+        kw = dict(slot=SLOT_SOUND, timeout=timeout, via='invoke')
+        loaded = host.call('SoundManager::IsLoadedBank',
+                           args=(('slot', SLOT_BANK_NAME),),
+                           sig='S', ret='bool', **kw)
+        _log(f'音库预载 bank={bank} stage=query-before via=invoke result={loaded!r}')
+        if loaded is True:
+            return True, '已加载'
+        if loaded is not False:
+            return False, f'音库查询失败：{loaded}'
+        directory = game_dir()
+        if not directory:
+            return False, '游戏安装目录不可用，未尝试相对路径预载'
+        base = os.path.join(directory, 'LimbusCompany_Data', 'StreamingAssets',
+                            'Assets', 'Sound', 'FMODBuilds', 'Desktop')
+        for suffix in ('.assets.bank', '.bank'):
+            path = os.path.join(base, bank + suffix).replace('\\', '/')
+            # 文件检查提供诊断证据，不把 void 调用返回当作 FMOD 加载成功。
+            try:
+                size = os.path.getsize(path)
+            except OSError:
+                size = None
+            _log(f'音库预载 bank={bank} stage=load via=invoke path={path} bytes={size}')
+            made = host.make_str(path, slot=SLOT_BANK_NAME, timeout=timeout)
+            if not _ok(made):
+                return False, f'音库路径造不出来：{made}'
+            result = host.call('SoundManager::LoadBankFromLocal',
+                               args=(('slot', SLOT_BANK_NAME), 0, 0),
+                               sig='S,B,B', ret='void', slot=SLOT_SOUND,
+                               via='invoke', timeout=max(timeout * 2.5, 5.0))
+            if not _ok(result):
+                return False, f'音库加载失败（{path}）：{result}'
+        # 对齐独立旧版：两次加载调用完成即继续，不以登记查询作为硬门槛。
+        _log(f'音库预载 bank={bank} stage=submitted via=invoke；'
+             '两次加载调用完成，继续尝试播放（未验证出声）')
+        return True, '预载调用已完成，未验证出声'
+    except Exception as exc:
+        return False, f'音库预载异常：{exc}'
+    finally:
+        for slot in (SLOT_BANK_NAME, SLOT_SOUND):
+            try:
+                host.release(slot)
+            except Exception as exc:
+                _log(f'音库临时槽 {slot} 释放失败：{exc}')
 
 
 def play(host, name, bank=None, stop_current=True, timeout=2.0,
@@ -136,15 +143,13 @@ def play(host, name, bank=None, stop_current=True, timeout=2.0,
     Args:
         host: ``Host`` 实例（``Service.host()`` / ``game.live().host()``）。
         name: 短名（``Battle_Cp9_Boss_10``）或完整路径。
-        bank: **已忽略**。v0.9.26 起无法手动预载音库（``LoadBankFromLocal``
-            是实例方法，单例通道不可用）；当前战斗的音库游戏自己已加载，
-            没加载的音库会走下方「失败兜底」自动接回默认曲。
+        bank: 指定音库短名；播放前通过 SoundManager 静态字段取得实例，
+            查询并预载 assets.bank/bank，失败保留原曲。
         stop_current: 先停掉当前战斗曲，默认 True —— ``StartAddBGM`` 是
             叠加语义，不停就是两首一起响。
         require_battle: 先确认在战斗里再放，默认 True —— 非战斗场景下
             战斗曲的 FMOD 通道没初始化（0.9.11 崩溃教训）。
-        check: **已弃用**（原 TryCreateInstance 预检依赖单例）。现在的
-            等价物是播放后的 :func:`is_playing` 复查 + 自动回退。
+        check: 兼容参数，当前不执行有竞态风险的自动播放状态检查。
     """
     short = short_name(name)
     path = full_path(name)
@@ -166,20 +171,23 @@ def play(host, name, bank=None, stop_current=True, timeout=2.0,
 
     slot = SLOT_SCRATCH
     if bank:
-        # 音库预载（0.9.29 恢复）：曲名不在已加载音库里时 StartAddBGM
-        # 内部异常 → 直调 AV → worker 连环报废（「第一次成功之后全部
-        # 失败」的真凶）。预载失败不阻断 —— 撞运气试播。
+        # 和旧版一样：预载失败必须保留原曲，不在未知音库上撞运气。
         ok, why = ensure_bank(host, str(bank), timeout=timeout)
         if not ok:
-            _log(f'音库预载未通过（{bank}：{why}），继续试播')
-    made = host.make_str(short, slot=slot, timeout=timeout)
-    if isinstance(made, str) and made != '已执行':
-        return {'ok': False, 'name': short, 'path': path, 'reason': made}
-
+            return {'ok': False, 'name': short, 'path': path,
+                    'reason': f'音库预载未通过（{bank}）：{why}',
+                    'stage': 'bank', 'bank': str(bank)}
     try:
+        made = host.make_str(short, slot=slot, timeout=timeout)
+        if not _ok(made):
+            return {'ok': False, 'name': short, 'path': path,
+                    'reason': f'曲名创建失败：{made}', 'stage': 'string'}
         if stop_current:
-            host.call('BattleSoundGenerator::StopBGM', args=(0, 0),
-                      sig='B,B', ret='void', timeout=timeout)
+            stopped = host.call('BattleSoundGenerator::StopBGM', args=(0, 0),
+                                sig='B,B', ret='void', timeout=timeout)
+            if not _ok(stopped):
+                return {'ok': False, 'name': short, 'path': path,
+                        'reason': f'停止原曲失败：{stopped}', 'stage': 'stop'}
         result = host.call('BattleSoundGenerator::StartAddBGM',
                            args=(('slot', slot), STOP_MODE_IMMEDIATE, 0),
                            sig='S,FMOD.Studio.STOP_MODE,B', ret='void',
@@ -188,13 +196,15 @@ def play(host, name, bank=None, stop_current=True, timeout=2.0,
         host.release(slot)
 
     if not _ok(result):
-        return {'ok': False, 'name': short, 'path': path, 'reason': result}
+        return {'ok': False, 'name': short, 'path': path, 'reason': f'附加曲调用失败：{result}',
+                'stage': 'start'}
     # **不放 is_playing 复查** —— 第 7 次崩溃（0.9.26）的根因就是它：
     # 回合结束间隙游戏正在重建 FMOD 实例，IsBattleBgmPlaying 直调撞进
     # 竞态窗口内部 AV，VEH 接住线程但 il2cpp 状态已污染，游戏随后崩。
-    # 旧插件的姿势：放完就走，从不回头问游戏「响了吗」；静音兜底交给
-    # 插件层 —— 规则还命中就下个回合重放。
-    return {'ok': True, 'name': short, 'path': path, 'reason': ''}
+    # 旧版另用 FMOD event 验证实际播放；当前桥接不支持该安全预检。
+    # 不把命令成功等同于实际出声，也不额外添加危险自动查询。
+    return {'ok': True, 'name': short, 'path': path, 'reason': '',
+            'stage': 'submitted', 'verified': False}
 
 
 def _restore_default(host, timeout=2.0):
@@ -220,7 +230,18 @@ def game_dir():
     pid = find_game_pid()
     if not pid:
         return None
-    kernel32 = ctypes.windll.kernel32
+    kernel32 = ctypes.WinDLL('kernel32', use_last_error=True)
+    # Win64 HANDLE 不能使用 ctypes 默认 c_int 返回值，否则高位被截断。
+    kernel32.OpenProcess.argtypes = [ctypes.wintypes.DWORD,
+                                    ctypes.wintypes.BOOL,
+                                    ctypes.wintypes.DWORD]
+    kernel32.OpenProcess.restype = ctypes.wintypes.HANDLE
+    kernel32.QueryFullProcessImageNameW.argtypes = [
+        ctypes.wintypes.HANDLE, ctypes.wintypes.DWORD,
+        ctypes.wintypes.LPWSTR, ctypes.POINTER(ctypes.wintypes.DWORD)]
+    kernel32.QueryFullProcessImageNameW.restype = ctypes.wintypes.BOOL
+    kernel32.CloseHandle.argtypes = [ctypes.wintypes.HANDLE]
+    kernel32.CloseHandle.restype = ctypes.wintypes.BOOL
     handle = kernel32.OpenProcess(0x1000, False, pid)  # QUERY_LIMITED
     if not handle:
         return None
@@ -235,18 +256,6 @@ def game_dir():
         kernel32.CloseHandle(handle)
 
 
-def ensure_bank(host, bank, timeout=5.0):
-    """**v0.9.26 起不可用** —— 依赖 ``SoundManager`` 单例（通道已毒）。
-
-    单例三条路全断：``get_Instance`` 直调死于泛型 RGCTX（0.9.25 探针）、
-    invoke 时灵时不灵、``static_get`` 的 ``field_static_get_value`` AV。
-    ``LoadBankFromLocal``/``IsLoadedBank`` 都是实例方法，拿不到单例就没法查、
-    没法载。实战不需要它：当前战斗的音库游戏自己会加载。
-    """
-    return {'ok': False,
-            'reason': 'v0.9.26 起 SoundManager 单例通道不可用，无法查询/预载音库；'
-                      '当前战斗的音库游戏自己会加载，直接 play() 即可'}
-
 
 def stop(host, restore=True, timeout=2.0):
     """停掉战斗 BGM；``restore=True`` 时把游戏默认曲接回来。
@@ -260,7 +269,7 @@ def stop(host, restore=True, timeout=2.0):
         return {'ok': False, 'reason': result}
     if restore:
         reason = _restore_default(host, timeout)
-        return {'ok': True, 'reason': reason}
+        return {'ok': reason == '已接回默认曲', 'reason': reason}
     return {'ok': True, 'reason': ''}
 
 

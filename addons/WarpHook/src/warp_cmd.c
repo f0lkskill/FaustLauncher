@@ -139,8 +139,8 @@ void *warp_slot_get(int slot)
 /*                                                                     */
 /* 参数值从 vars[0..5] 来（打包字里带 argc），每个参数的类型记在         */
 /* cmd_text 的 "#..." 后缀里：i=int32、f=float、p=引用（vars 值就是      */
-/* 指针）。runtime_invoke 的 params 要「指向参数值的指针」，所以这里     */
-/* 按类型把 vars 搬进本地缓冲再取址 —— 引用类型搬的是指针本身。          */
+/* 指针）。先按 direct 所需把参数搬进本地缓冲再取址；runtime_invoke 前 */
+/* 仅将引用参数转换为对象本身，值类型仍传存储地址（两种 ABI 不同）。     */
 /* 返回值：box 值（int/float）在 +0x10 解包写 vars[6]；引用返回落        */
 /* vars[7] 指定的槽并挂句柄。                                           */
 /* ------------------------------------------------------------------ */
@@ -357,6 +357,20 @@ static int warp_cmd_build_params(int argc, const char *kinds,
     return 0;
 }
 
+/* build_params deliberately retains pointer-to-storage packing for direct.
+ * il2cpp_runtime_invoke instead consumes reference objects directly; value and
+ * out-buffer parameters must retain their addresses. Apply only at that ABI. */
+static void warp_cmd_invoke_params(int argc, const char *kinds,
+                                   void *params[], void *pval[])
+{
+    int i;
+
+    for (i = 0; i < argc; i++) {
+        if (kinds[i] == WARP_CMD_ARG_P)
+            params[i] = pval[i];
+    }
+}
+
 int warp_cmd_make(int argc, int slot, const char *argkinds_text)
 {
     char kinds[8];
@@ -364,17 +378,15 @@ int warp_cmd_make(int argc, int slot, const char *argkinds_text)
     int ival[6];
     float fval[6];
     void *pval[6];
+    char name[64];
     void *klass;
     void *obj = NULL;
     int rc;
 
     if (slot < 0 || slot >= WARP_OBJECT_COUNT)
         return WARP_CMD_RES_BAD_SLOT;
-    {
-        char name[64];
-        warp_cmd_name_until(g_hdr->cmd_text, name, sizeof(name));
-        klass = warp_find_class(g_domain, name);
-    }
+    warp_cmd_name_until(g_hdr->cmd_text, name, sizeof(name));
+    klass = warp_find_class(g_domain, name);
     if (!klass)
         return WARP_CMD_RES_NO_CLASS;
     obj = g_ic.object_new(klass);       /* object_new 只分配不调构造 */
@@ -391,6 +403,13 @@ int warp_cmd_make(int argc, int slot, const char *argkinds_text)
         rc = warp_cmd_build_params(argc, kinds, params, ival, fval, pval);
         if (rc)
             return rc;
+        warp_cmd_invoke_params(argc, kinds, params, pval);
+        {
+            char tbuf[160];
+            snprintf(tbuf, sizeof(tbuf), "make: name=%.64s::.ctor via=runtime_invoke argc=%d",
+                     name, argc);
+            warp_log(tbuf, 0);
+        }
         g_ic.runtime_invoke(ctor, obj, params, &exc);
         if (exc)
             return WARP_CMD_RES_EXCEPTION;
@@ -402,11 +421,11 @@ int warp_cmd_make(int argc, int slot, const char *argkinds_text)
 /* ------------------------------------------------------------------ */
 /* methodPointer 直调（v0.9.24）                                        */
 /*                                                                     */
-/* runtime_invoke 在本机就是有毒：六次崩溃的 AV 全部落在 invoke 路径，  */
-/* 连最简单的静态 getter 都炸（v0.9.23 真机验证，worker 舱接住后确认）。*/
-/* 旧插件 BattleBGMExtend 稳跑多年靠的从来不是 runtime_invoke —— 它取   */
-/* MethodInfo 第一个字段（methodPointer），VirtualQuery 验证指针落在    */
-/* GameAssembly 里之后直接按 C 调用约定调。这里照搬：                   */
+/* direct 与 runtime_invoke 的参数 ABI 不同，不能把崩溃归咎于 invoke。 */
+/* 旧插件 BattleBGMExtend 的查音库/加载音库实际使用 runtime_invoke：    */
+/* string 传对象本身，bool 传地址（battlebgmextend.c:275/287）。         */
+/* 这里保留 methodPointer 直调通道；先验证指针位于 GameAssembly 可执行 */
+/* 页，再按 C 调用约定调用。~i 通道另做引用参数转换，不能共用打包：    */
 /*   实例方法  ret f(this, args..., const MethodInfo*)                  */
 /*   静态方法  ret f(args..., const MethodInfo*)                        */
 /*   引用返回  隐藏 sret 首参（Win x64：大于 8 字节的返回走 rcx）        */
@@ -585,8 +604,9 @@ int warp_cmd_call(int argc, int slot, int retkind, int out_slot, const char *arg
             method = warp_find_method(klass, mname, argc);
     }
     {
-        char tbuf[96];
-        snprintf(tbuf, sizeof(tbuf), "call: m=%llx slot=%d argc=%d",
+        char tbuf[240];
+        snprintf(tbuf, sizeof(tbuf), "call: name=%s::%s via=%s m=%llx slot=%d argc=%d",
+                 name, mname, via_invoke ? "runtime_invoke" : "direct",
                  (unsigned long long)(uintptr_t)method, slot, argc);
         warp_log(tbuf, 0);
     }
@@ -608,6 +628,7 @@ int warp_cmd_call(int argc, int slot, int retkind, int out_slot, const char *arg
         void *ret = NULL;
         void *exc = NULL;
 
+        warp_cmd_invoke_params(argc, kinds, params, pval);
         ret = warp_safe_invoke(method, target, params, &exc);
         if (exc)
             return WARP_CMD_RES_FAIL;
@@ -624,9 +645,8 @@ int warp_cmd_call(int argc, int slot, int retkind, int out_slot, const char *arg
         }
         return WARP_CMD_RES_OK;
     }
-    /* v0.9.24：runtime_invoke 在本机有毒（六次崩溃全在这条路径上），改走
-     * 旧插件的 methodPointer 直调；方法查找、参数打包、签名匹配都不变。
-     * worker 舱的 VEH 保护仍在 —— 万一游戏方法自己有毒，照样只记一次失败。 */
+    /* 保留 direct 通道的 pointer-to-storage 打包；只有 ~i 分支转换引用参数。
+     * 不因修复 runtime_invoke ABI 而改变现有 methodPointer 调用约定。 */
     {
         long long bits = 0;
         float xf = 0.0f;
@@ -725,39 +745,17 @@ int warp_cmd_static(const char *text_src, int out_slot)
                  (unsigned long long)(uintptr_t)holder);
         warp_log(tbuf, 0);
     }
-    /* field_static_get_value（混淆导出）在本机就是 AV（0.9.25 实测）。
-     * 改手动读：FieldInfo.offset 在 +0x18（il2cpp 全版本稳定，静态字段的
-     * offset 是 static_fields 内偏移）；Il2CppClass.static_fields 在 +0xB8
-     * （v24..v29 都在这一带），读出来先过 VirtualQuery 验证再解引用。 */
-    {
-        int foff = *(const int *)((const char *)field + 0x18);
-        void *sf = *(void **)((char *)holder + 0xB8);
-        MEMORY_BASIC_INFORMATION mb;
-        char tbuf[160];
-        int sf_ok = 0;
-
-        if (sf && VirtualQuery(sf, &mb, sizeof(mb)) == sizeof(mb) &&
-            mb.State == MEM_COMMIT &&
-            (mb.Protect & (PAGE_READONLY | PAGE_READWRITE |
-                           PAGE_WRITECOPY | PAGE_EXECUTE_READ |
-                           PAGE_EXECUTE_READWRITE))) {
-            void *cell = (char *)sf + foff;
-            if (VirtualQuery(cell, &mb, sizeof(mb)) == sizeof(mb) &&
-                mb.State == MEM_COMMIT) {
-                value = *(void **)cell;
-                sf_ok = 1;
-            }
-        }
-        snprintf(tbuf, sizeof(tbuf),
-                 "static: manual off=%x sf=%llx ok=%d val=%llx",
-                 foff, (unsigned long long)(uintptr_t)sf, sf_ok,
-                 (unsigned long long)(uintptr_t)value);
-        warp_log(tbuf, 0);
-        if (!sf_ok)
-            return WARP_CMD_RES_FAIL;
+    /* Match the standalone plugin: use the runtime's static-field API.
+     * A readable guessed Class+0xB8 is NOT proof of static_fields: on the
+     * current game it produced off=0, readable sf, val=0 for an active singleton.
+     * Do not fall back to version-dependent offsets or invoke generic getters.
+     * This command runs in the worker's guarded runtime context. */
+    g_ic.field_static_get_value(field, &value);
+    if (!value) {
+        warp_log("static: runtime API returned null (uninitialized singleton)", out_slot);
+        return WARP_CMD_RES_FAIL;
     }
-    if (!value)
-        return WARP_CMD_RES_FAIL;       /* 单例还没初始化（非战斗期） */
+    warp_log("static: runtime API resolved reference", out_slot);
     warp_slot_put(out_slot, value, 1);
     return WARP_CMD_RES_OK;
 }
@@ -828,18 +826,18 @@ unsigned int warp_hook_signature(void)
             hash = (hash ^ *p) * 16777619u;
         hash = (hash ^ (unsigned char)'|') * 16777619u;
         hash = (hash ^ (unsigned int)(h->argc & 0xff)) * 16777619u;
-        hash = (hash ^ (unsigned int)(h->actions & 0xff)) * 16777619u;
-        hash = (hash ^ (unsigned int)(h->flags & 0xff)) * 16777619u;
+        /* Only machine-entry identity belongs here. FIRED is runtime state;
+         * actions/flags/return policy are read live by the thunk. */
     }
     return hash;
 }
 
 /* 宿主自己补的那条「泵点」：没有用户钩子的时候也能每帧跑一次命令泵。 */
-void __stdcall hk_warp_pump(void *self)
+void __stdcall hk_warp_pump(void *self, void *mi)
 {
-    typedef void (__stdcall *warp_fixedupdate_fn)(void *);
+    typedef void (__stdcall *warp_fixedupdate_fn)(void *, void *);
     if (g_pump_original)
-        ((warp_fixedupdate_fn)g_pump_original)(self);
+        ((warp_fixedupdate_fn)g_pump_original)(self, mi);
     /* 顺手把 self（GlobalGameManager 单例）缓存进对象槽 29：外面要读
        场景 / 时间缩放直接读这个槽，不必自己再钩 FixedUpdate —— 那会把
        命令泵的入口抢掉（真机实测：抢了就 pump: no free entry point，
@@ -983,6 +981,9 @@ typedef struct {
     char text[WARP_CMD_TEXT_LEN];   /* cmd_text 的任务私有拷贝 */
 } WARP_WORK;
 
+/* Owned from command claim through worker completion, including reentrant hooks. */
+static volatile LONG s_cmd_busy;
+static BOOL s_work_cs_ready;
 static HANDLE s_work_ev;
 static HANDLE s_work_thread;
 static DWORD  s_work_tid;
@@ -997,8 +998,8 @@ static WARP_WORK s_work;
  * 不重演 0.9.12「任何线程的 AV 都被 longjmp 进别人的栈」的事故。 */
 static LONG WINAPI work_veh(EXCEPTION_POINTERS *ep)
 {
-    (void)ep;
-    if (s_work_armed && GetCurrentThreadId() == s_work_tid) {
+    if (ep->ExceptionRecord->ExceptionCode == EXCEPTION_ACCESS_VIOLATION &&
+        s_work_armed && GetCurrentThreadId() == s_work_tid) {
         s_work_armed = 0;
         longjmp(s_work_jmp, 1);
     }
@@ -1073,11 +1074,18 @@ static DWORD WINAPI work_main(LPVOID arg)
                 rc = WARP_CMD_RES_FAIL;
             }
             s_work_armed = 0;
+            {
+                char trace[96];
+                snprintf(trace, sizeof(trace), "worker done seq=%d type=%d rc=%d",
+                         (int)jseq, WARP_CMD_CODE(job.type), rc);
+                warp_log(trace, 0);
+            }
 
             if (g_hdr) {
                 g_hdr->cmd_result = rc;
                 g_hdr->cmd_ack = jseq;
             }
+            InterlockedExchange(&s_cmd_busy, 0);
         }
     }
     return 0;
@@ -1088,11 +1096,13 @@ void warp_work_start(void)
     if (s_work_thread)
         return;
     InitializeCriticalSection(&s_work_cs);
+    s_work_cs_ready = TRUE;
     s_work_quit = 0;
     s_work_armed = 0;
     s_work_ev = CreateEventW(NULL, FALSE, FALSE, NULL);
-    s_veh = AddVectoredExceptionHandler(1, work_veh);
-    s_work_thread = CreateThread(NULL, 0, work_main, NULL, 0, &s_work_tid);
+    s_veh = s_work_ev ? AddVectoredExceptionHandler(1, work_veh) : NULL;
+    if (s_work_ev && s_veh)
+        s_work_thread = CreateThread(NULL, 0, work_main, NULL, 0, &s_work_tid);
     if (!s_work_thread) {
         warp_log("worker: create failed", 0);
         if (s_veh) {
@@ -1104,6 +1114,7 @@ void warp_work_start(void)
             s_work_ev = NULL;
         }
         DeleteCriticalSection(&s_work_cs);
+        s_work_cs_ready = FALSE;
         return;
     }
     warp_log("worker started", 0);
@@ -1114,8 +1125,11 @@ void warp_work_stop(void)
     if (s_work_thread) {
         s_work_quit = 1;
         SetEvent(s_work_ev);
-        if (WaitForSingleObject(s_work_thread, 3000) != WAIT_OBJECT_0)
-            warp_log("worker: stop timeout", 0);
+        if (WaitForSingleObject(s_work_thread, 3000) != WAIT_OBJECT_0) {
+            /* The live thread still owns its CS/event/VEH and may be in il2cpp. */
+            warp_log("worker: stop timeout, resources retained", 0);
+            return;
+        }
         CloseHandle(s_work_thread);
         s_work_thread = NULL;
     }
@@ -1128,7 +1142,10 @@ void warp_work_stop(void)
         CloseHandle(s_work_ev);
         s_work_ev = NULL;
     }
-    DeleteCriticalSection(&s_work_cs);
+    if (s_work_cs_ready) {
+        DeleteCriticalSection(&s_work_cs);
+        s_work_cs_ready = FALSE;
+    }
 }
 
 /* 泵投递一个任务。返回 0=已受理（结果稍后由 worker 写回），非 0=没跑成。 */
@@ -1159,17 +1176,29 @@ void warp_pump_commands(void)
     if (!g_hdr)
         return;
 
-    seq = g_hdr->cmd_seq;
-    if (seq == g_hdr->cmd_ack)
+    if (InterlockedCompareExchange(&s_cmd_busy, 1, 0) != 0)
         return;
+    seq = g_hdr->cmd_seq;
+    if (seq == g_hdr->cmd_ack) {
+        InterlockedExchange(&s_cmd_busy, 0);
+        return;
+    }
 
     type = g_hdr->cmd_type;
+    {
+        char trace[80];
+        snprintf(trace, sizeof(trace), "command claimed seq=%d type=%d", seq,
+                 WARP_CMD_CODE(type));
+        warp_log(trace, 0);
+    }
     /* 先记账再执行：弹窗里可能重入（弹窗自己又触发钩子），不能重复执行。
        但记账之后、执行完之前 cmd_result 还停在上一条的旧值 —— py 侧一看到
        ack 到位就把旧值当成结果读走，表现为莫名其妙的「失败(-1)」。所以
        先标成 BUSY，真跑完再把 rc 写回。 */
-    g_hdr->cmd_ack = seq;
+    /* Publish BUSY before ack; otherwise readers can accept the old result. */
     g_hdr->cmd_result = WARP_CMD_RES_BUSY;
+    MemoryBarrier();
+    g_hdr->cmd_ack = seq;
 
     switch (WARP_CMD_CODE(type)) {
     case WARP_CMD_POPUP:
@@ -1193,6 +1222,7 @@ void warp_pump_commands(void)
         if (work_submit(seq, type, (int)g_hdr->vars[7]) != 0) {
             g_hdr->cmd_result = WARP_CMD_RES_FAIL;
             warp_log("worker unavailable, cmd dropped", 0);
+            InterlockedExchange(&s_cmd_busy, 0);
         }
         rc = -1;                        /* 告诉尾部：结果已有人写，别覆盖 */
         break;
@@ -1208,8 +1238,10 @@ void warp_pump_commands(void)
         break;
     }
 
-    if (g_hdr && rc != -1)
-        g_hdr->cmd_result = rc;
+    if (rc != -1) {
+        if (g_hdr) g_hdr->cmd_result = rc;
+        InterlockedExchange(&s_cmd_busy, 0);
+    }
 }
 
 /* 目标入口是不是已经被别的模块（或本表其他条目）钩过了。
@@ -1261,6 +1293,53 @@ static BOOL warp_mh_ensure(void)
     return FALSE;
 }
 
+/* Physical slots and their trampolines live until process exit. Disable does
+ * not imply that a thread has left the detour (it may be inside runtime_invoke).
+ * Freeing/reusing that trampoline is therefore never safe during hot reload. */
+static int warp_row_installed(int row)
+{
+    int n;
+    for (n = 0; n < WARP_MAX_HOOKS; n++)
+        if (g_slots[n].installed && g_slots[n].hook_index == row) return 1;
+    return 0;
+}
+
+static int warp_bind_hook(int row, void *target, int argc)
+{
+    int n, free_slot = -1;
+    WARP_SLOT *slot;
+    void *thunk;
+    for (n = 0; n < WARP_MAX_HOOKS; n++) {
+        slot = &g_slots[n];
+        if (slot->target == target) {
+            if (slot->installed || slot->argc != argc) return 0;
+            break;
+        }
+        if (!slot->target && free_slot < 0) free_slot = n;
+    }
+    if (n == WARP_MAX_HOOKS) n = free_slot;
+    if (n < 0) { warp_log("hook: retained slot capacity exhausted", row); return 0; }
+    slot = &g_slots[n];
+    if (!slot->target) {
+        thunk = warp_pick_thunk(n, argc);
+        if (!thunk || warp_target_taken(target) || !warp_mh_ensure()) return 0;
+        slot->hook_index = -1;
+        slot->argc = argc;
+        if (MH_CreateHook(target, thunk, &slot->original) != MH_OK) return 0;
+        slot->target = target;
+    }
+    /* Publish all metadata BEFORE enabling: the game can enter immediately. */
+    slot->ret_kind = g_warp_hooks[row].ret_kind;
+    InterlockedExchange(&slot->hook_index, row);
+    slot->installed = TRUE;
+    if (MH_EnableHook(target) != MH_OK) {
+        slot->installed = FALSE;
+        InterlockedExchange(&slot->hook_index, -1);
+        return 0;
+    }
+    return 1;
+}
+
 int warp_install_hooks(void)
 {
     void *domain;
@@ -1300,7 +1379,6 @@ int warp_install_hooks(void)
         void *klass;
         void *method;
         void *target;
-        void *thunk;
 
         if (!h->klass[0] || !h->method[0])
             continue;
@@ -1313,7 +1391,7 @@ int warp_install_hooks(void)
             && (!strcmp(h->method, "FixedUpdate") || !strcmp(h->method, "Update")))
             warp_log("warn: GlobalGameManager timeline is the command pump "
                      "entry, hooking it disables CMD_READ (slot)", i);
-        if (g_slots[i].installed) {
+        if (warp_row_installed(i)) {
             installed++;
             continue;
         }
@@ -1332,36 +1410,14 @@ int warp_install_hooks(void)
             warp_log("hook: null method pointer", i);
             continue;
         }
-        thunk = warp_pick_thunk(i, h->argc);
-        if (!thunk) {
-            warp_log("hook: unsupported argc", h->argc);
-            continue;
-        }
-
         if (!mh_ready) {
-            if (!warp_mh_ensure()) {
-                warp_status(WARP_ST_ERROR, WARP_ERR_MH_INIT);
-                warp_log("MH_Initialize failed", 0);
-                return installed;
-            }
+            if (!warp_mh_ensure()) return installed;
             mh_ready = TRUE;
         }
-        if (warp_target_taken(target)) {
-            warp_log("hook: target already hooked elsewhere", i);
+        if (!warp_bind_hook(i, target, h->argc)) {
+            warp_log("hook: bind failed", i);
             continue;
         }
-
-        g_slots[i].argc = h->argc;
-        if (MH_CreateHook(target, thunk, &g_slots[i].original) != MH_OK) {
-            warp_log("hook: create failed", i);
-            continue;
-        }
-        if (MH_EnableHook(target) != MH_OK) {
-            warp_log("hook: enable failed", i);
-            continue;
-        }
-        g_slots[i].target = target;
-        g_slots[i].installed = TRUE;
         installed++;
         warp_log("hook installed", i);
     }
@@ -1370,7 +1426,10 @@ int warp_install_hooks(void)
        跑到的主线程入口，否则 py 主动调用 popup 要等到下次抽卡才生效。
        FixedUpdate 若已被别的模块钩走（warp_target_taken），退而求其次用
        Update —— 再被占用就只能放弃命令通道，事件钩子照常工作。 */
-    if (mh_ready && !g_pump_installed) {
+    if (mh_ready && !g_pump_installed && g_pump_target) {
+        if (MH_EnableHook(g_pump_target) == MH_OK) g_pump_installed = 1;
+    }
+    if (mh_ready && !g_pump_installed && !g_pump_target) {
         static const char *PUMP_CANDIDATES[] = { "FixedUpdate", "Update" };
         int ci;
         for (ci = 0; ci < 2 && !g_pump_installed; ci++) {
@@ -1434,11 +1493,10 @@ int warp_retry_hooks(void)
         void *klass;
         void *method;
         void *target;
-        void *thunk;
 
         if (!h->klass[0] || !h->method[0])
             continue;
-        if (g_slots[i].installed)
+        if (warp_row_installed(i))
             continue;
         klass = warp_find_class(domain, h->klass);
         if (!klass)
@@ -1449,22 +1507,8 @@ int warp_retry_hooks(void)
         target = warp_method_pointer(method);
         if (!target)
             continue;
-        thunk = warp_pick_thunk(i, h->argc);
-        if (!thunk)
+        if (!warp_bind_hook(i, target, h->argc))
             continue;
-        if (warp_target_taken(target))
-            continue;
-        if (!warp_mh_ensure())
-            continue;
-        g_slots[i].argc = h->argc;
-        if (MH_CreateHook(target, thunk, &g_slots[i].original) != MH_OK)
-            continue;
-        if (MH_EnableHook(target) != MH_OK) {
-            MH_RemoveHook(target);
-            continue;
-        }
-        g_slots[i].target = target;
-        g_slots[i].installed = TRUE;
         newly++;
         warp_log("hook installed (late)", i);
     }
@@ -1479,27 +1523,19 @@ int warp_retry_hooks(void)
 void warp_uninstall(void)
 {
     int i;
-    /* 先停 worker：它可能正在 invoke，带着 trampoline 外的栈等它退出，
-     * 之后才能安全拆 MinHook 与 VEH。 */
-    warp_work_stop();
+    /* Hot reload is a logical unbind, not a trampoline destruction barrier.
+     * Keep worker and all original addresses alive for in-flight calls. */
     for (i = 0; i < WARP_MAX_HOOKS; i++) {
-        if (!g_slots[i].installed)
-            continue;
+        if (!g_slots[i].installed) continue;
         MH_DisableHook(g_slots[i].target);
-        MH_RemoveHook(g_slots[i].target);
         g_slots[i].installed = FALSE;
+        InterlockedExchange(&g_slots[i].hook_index, -1);
     }
     if (g_pump_installed) {
         MH_DisableHook(g_pump_target);
-        MH_RemoveHook(g_pump_target);
         g_pump_installed = 0;
     }
-    MH_Uninitialize();
-    /* MH_Uninitialize 之后必须把「已初始化」的标志也清掉：0.9.12 里忘了
-     * 复位，第二次重装时 warp_mh_ensure 看见 TRUE 直接返回，MinHook 其实
-     * 已经 uninit —— 结果 23 条钩子全部 "hook: create failed"，整张表死掉
-     * （真机 2026-10-31 18:35 撞到，只能重启游戏）。 */
-    s_mh_ready = FALSE;
+    /* No MH_RemoveHook / MH_Uninitialize: both free executable memory. */
     /* 归零，否则控制线程会一直以为「已经装好了」而不去重装新表 */
     g_installed = 0;
     if (g_hdr) {

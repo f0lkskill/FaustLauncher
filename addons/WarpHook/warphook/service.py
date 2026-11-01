@@ -390,6 +390,7 @@ class Service:
         self._thread = None
         self._last_key = None
         self._closed = False
+        self._phase = 'idle'
         self._hit_seen = {}
         self._hit_done = set()
         self._event_callbacks = []
@@ -423,15 +424,12 @@ class Service:
             self._host = Host(addon_name=self.addon_name, hooks=[], texts=[])
         return self._host
 
-    def _already_running(self, host):
-        """目标 DLL 是不是已经挂上了。
-
-        共享宿主看 header 里的心跳（映射是一块多人共用的，只有 DLL 真的在写心跳
-        才说明它在跑）；自带 DLL 的插件看它自己的 ``hooked`` 字段。
-        """
+    def _already_running(self, host, pid=None):
+        """确认目标进程实际加载了 DLL；Python 心跳不是 DLL 存活证据。"""
         if self.shared:
             try:
-                return bool(host_alive(host.block()))
+                pid = pid if pid is not None else find_game_pid()
+                return bool(pid and has_gameassembly(pid, module=os.path.basename(host.dll_path())))
             except Exception:  # noqa: BLE001
                 return False
         try:
@@ -440,14 +438,33 @@ class Service:
             return False
         return bool(st.get('hooked'))
 
+    @staticmethod
+    def _object_read_ready(host, slot):
+        """只检查共享内存，不发探活命令：无主线程泵时不能反复排队代读。"""
+        block = host.block()
+        if block is None:
+            return False
+        cfg = block.cfg
+        if (int(cfg.cmd_seq) != int(cfg.cmd_ack)
+                or int(cfg.cmd_result) == -2):  # WARP_CMD_RES_BUSY
+            return False
+        # 场景槽由 FixedUpdate 泵写入；空槽意味着主线程尚未到场。
+        return bool(host.object_ptr(slot))
+
+    def object_read_ready(self, slot):
+        """后台连接完成且对象/命令槽可用时才允许低优先级轮询。"""
+        return (self._phase == 'monitoring'
+                and self._object_read_ready(self.host(), slot))
+
     def sync(self):
         """把最新设置推给游戏里的宿主。插件自己的 ``_push`` 干这件事。"""
         if self._sync_cb is None:
             return True
         try:
             return self._sync_cb()
-        except Exception as exc:  # noqa: BLE001
-            self.log(f'推送设置失败：{exc}')
+        except Exception:  # noqa: BLE001
+            import traceback
+            self.log(f'推送设置失败\n{traceback.format_exc()}')
             return False
 
     # ---------- 状态文案 ----------
@@ -468,46 +485,91 @@ class Service:
     # ---------- 后台流程 ----------
 
     def _worker(self, stop):
+        # 等待超时、注入失败、游戏退出都不能终结自动连接线程。
+        # gamestart 可能先于进程创建发出，且游戏可以脱离启动器再次启动。
+        import traceback
         host = self.host()
-        dll = host.dll_path()
-        if not os.path.isfile(dll):
-            self.log(f'找不到宿主 DLL：{dll}')
-            return
-
-        self.log('等待游戏启动…')
-        pid = wait_for_game(stop_event=stop)
-        if pid is None:
-            return
-        if not wait_for_gameassembly(pid, stop_event=stop):
-            self.log('等待 GameAssembly.dll 超时')
-            return
-
-        self.sync()
-        if self._already_running(host):
-            self.log('宿主已在运行，跳过重复注入')
-        else:
-            ok, message = inject_dll(pid, dll)
-            if not ok:
-                self.log(f'注入失败：{message}')
-                return
-            self.log(f'已注入（PID {pid}）')
-            self.sync()
-
+        pid = None
+        next_probe = next_health = next_error = 0.0
+        self._phase = 'waiting_game'
+        self.log(f'阶段=waiting_game 等待游戏启动；DLL={host.dll_path()}')
         while not stop.is_set():
             try:
+                now = time.monotonic()
+                if pid is None or now >= next_probe:
+                    found = find_game_pid()
+                    next_probe = now + 2.0
+                    if found != pid:
+                        self.log(f'进程变化 old_pid={pid} new_pid={found}')
+                        pid = None
+                        self._last_key = None
+                        self._hit_seen.clear()
+                        self._hit_done.clear()
+                    if pid is None:
+                        if found is None:
+                            self._phase = 'waiting_game'
+                            if now >= next_health:
+                                self.log('阶段=waiting_game 游戏尚未运行，持续等待')
+                                next_health = now + 30.0
+                            if stop.wait(max(self.interval, 0.5)):
+                                break
+                            continue
+                        self._phase = 'waiting_gameassembly'
+                        self.log(f'阶段=waiting_gameassembly PID={found}')
+                        if not wait_for_gameassembly(found, stop_event=stop):
+                            if not stop.is_set():
+                                self.log(f'PID={found} 等待 GameAssembly.dll 超时，将重新检测进程')
+                                stop.wait(2.0)
+                            continue
+                        if stop.is_set():
+                            break
+                        dll = host.dll_path()
+                        if not os.path.isfile(dll):
+                            self.log(f'阶段=inject_failed PID={found} 找不到宿主 DLL：{dll}')
+                            stop.wait(5.0)
+                            continue
+                        self._phase = 'syncing'
+                        if self.sync() is False:
+                            self.log(f'PID={found} 配置同步失败，暂不注入，稍后重试')
+                            stop.wait(2.0)
+                            continue
+                        self._phase = 'injecting'
+                        with _INJECT_LOCK:
+                            if self._already_running(host, pid=found):
+                                ok, message = True, '宿主已在运行，复用连接'
+                            else:
+                                ok, message = inject_dll(found, dll)
+                        self.log(f'阶段=inject_result PID={found} ok={ok} {message}')
+                        if not ok:
+                            stop.wait(5.0)
+                            continue
+                        pid = found
+                        self._phase = 'monitoring'
+                        self.sync()
+                        next_health = 0.0
                 host.beat()
                 self._dispatch_hits(host, stop)
                 self._dispatch_events(host)
                 st = host.poll()
                 if st:
                     key = self._state_key(st)
-                    if key != self._last_key:
+                    if key != self._last_key or now >= next_health:
                         self._last_key = key
-                        self.log(self.describe(st))
+                        next_health = now + 30.0
+                        self.log(f'阶段={self._phase} PID={pid} {self.describe(st)} '
+                                 f'global_installed={st.get("hook_installed")} '
+                                 f'owner_requested={st.get("hook_total")} '
+                                 f'error={st.get("last_error")} tail={st.get("log_tail", "")}')
             except Exception:  # noqa: BLE001
-                pass
+                now = time.monotonic()
+                if now >= next_error:
+                    next_error = now + 10.0
+                    self.log(f'后台异常（继续重试）phase={self._phase} PID={pid}\n'
+                             f'{traceback.format_exc()}')
             if stop.wait(self.interval):
                 break
+        self._phase = 'stopped'
+        self.log('后台连接线程已停止')
 
     # ---------- 钩子命中派发 ----------
 
@@ -536,7 +598,9 @@ class Service:
                 try:
                     callback(host, event)
                 except Exception:  # noqa: BLE001
-                    pass
+                    import traceback
+                    self.log(f'事件回调异常 handler={getattr(callback, "__qualname__", repr(callback))}\n'
+                             f'{traceback.format_exc()}')
 
     def on_hit(self, callback, *, method=None, once=False, delay=0.0,
                thread=True):
@@ -596,8 +660,10 @@ class Service:
                 if delay > 0 and stop.wait(delay):
                     return
                 callback(host)
-            except Exception as exc:  # noqa: BLE001
-                self.log(f'命中回调出错：{exc}')
+            except Exception:  # noqa: BLE001
+                import traceback
+                self.log(f'命中回调异常 handler={getattr(callback, "__qualname__", repr(callback))}\n'
+                         f'{traceback.format_exc()}')
 
         if use_thread:
             threading.Thread(target=_go, daemon=True,
@@ -628,23 +694,23 @@ class Service:
             self._stop.set()
         except Exception:  # noqa: BLE001
             pass
-        if self._host is not None:
-            try:
-                # 先关视图，线程里的 read/beat 会立刻返回默认值而不是等超时
-                self._host.close()
-            except Exception:  # noqa: BLE001
-                pass
+        # 共享 Host 不能随一个 Service 一起关闭；其他插件仍在读写它。
         thread = getattr(self, "_thread", None)
         if (thread is not None and thread.is_alive()
                 and thread is not threading.current_thread()):
             thread.join(timeout=5.0)
+        if thread is not None and thread.is_alive():
+            self.log('停止服务超时：保留线程引用及映射，不执行不安全释放')
+            return False
         self._thread = None
         try:
             gacha.stop(self.addon_name)
         except Exception:  # noqa: BLE001
             pass
         self._closed = True
-        _service_registry().pop(self.addon_name, None)
+        registry = _service_registry()
+        if registry.get(self.addon_name) is self:
+            registry.pop(self.addon_name, None)
         return True
 
     def _on_game_start(self):
@@ -664,29 +730,16 @@ class Service:
     # ---------- 对外动作 ----------
 
     def inject_now(self, wait=False):
-        """立刻注入当前游戏；``wait=True`` 就在后台等它起来。"""
-        if wait:
-            self.start()
-            return True
-        host = self.host()
-        pid = wait_for_game(timeout=1.0)
-        if pid is None:
+        """提交后台注入请求；返回是否受理，不表示宿主已就绪。
+
+        ``wait`` 为兼容参数；无论取值都不能在插件初始化、重载或游戏启动
+        回调线程里等待进程/GameAssembly。实际结果由后台阶段日志报告。
+        """
+        if self._closed:
             return False
-        if not wait_for_gameassembly(pid, timeout=10.0):
-            return False
-        self.sync()
-        if self._already_running(host):
-            self.log('宿主已在运行，跳过重复注入')
-            self.start()
-            return True
-        ok, message = inject_dll(pid, host.dll_path())
-        if ok:
-            self.log(f'已注入（PID {pid}）')
-            self.sync()
-            self.start()
-        else:
-            self.log(f'注入失败：{message}')
-        return ok
+        self.start()
+        self.log('注入请求已交后台处理（不代表宿主已就绪）')
+        return True
 
     def set_enabled(self, enabled=True):
         """开/关，并把最新设置推给游戏。"""
@@ -721,9 +774,13 @@ class Service:
 
     @classmethod
     def stop_all(cls):
+        ok = True
         for service in list(cls._services.values()):
             try:
-                service.stop()
+                if service.stop() is False:
+                    ok = False
             except Exception:  # noqa: BLE001
-                pass
-        cls._services.clear()
+                import traceback
+                log(f'停止服务失败\n{traceback.format_exc()}')
+                ok = False
+        return ok

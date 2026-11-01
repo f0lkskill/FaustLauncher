@@ -111,9 +111,14 @@ class Live:
         self._scene_cbs = []
         self._extra_hooks = []
         self._last_round = None
+        self._round_pending = False
+        self._round_retry_at = 0.0
+        self._round_backoff = 0.25
         self._last_scene = None
         self._scene = None
         self._scene_at = 0.0
+        self._scene_retry_at = 0.0
+        self._scene_backoff = 0.5
         self._hooks_on = False
         self._pushed_ok = False
 
@@ -133,6 +138,7 @@ class Live:
         self._service = Service(
             addon_name=self.owner,
             name=self.owner,
+            host=self.host(),
             sync=self._push,
             auto=(lambda: self._auto) if self._auto else None,
             menu=tuple(menu),
@@ -151,24 +157,25 @@ class Live:
         那是进程级 AV，没有 traceback，整个启动器直接消失。
         """
         self._stop.set()
-        host = self._host
-        if host is not None:
-            try:
-                # 先关映射视图：线程里正在跑的 read/beat 会立刻拿到默认值返回，
-                # 而不是继续等命令通道超时（一次 scene() 有十几个字段，等超时要十几秒）。
-                host.close()
-            except Exception:  # noqa: BLE001
-                pass
+        # Host 是所有插件共享的，单个 Live 卸载不能 close() 全局宿主。
+        # 映射只在 registry.on_unload 确认线程退出后统一释放。
         thread = self._thread
         if (thread is not None and thread.is_alive()
                 and thread is not threading.current_thread()):
             thread.join(timeout=5.0)
+        if thread is not None and thread.is_alive():
+            log('停止监听超时：保留线程引用及共享映射，避免在途访问失效',
+                prefix=f'[{self.owner}]')
+            return False
         self._thread = None
         if self._service is not None:
             try:
-                self._service.stop()
+                if self._service.stop() is False:
+                    return False
             except Exception:  # noqa: BLE001
-                pass
+                import traceback
+                log(f'[{self.owner}] 停止 Service 异常，保留引用和共享映射\n{traceback.format_exc()}')
+                return False
             self._service = None
         # 从单例缓存里除名：插件重载后 ``live()`` 必须给全新实例。
         # 不除名的后果（0.9.27 真机教训）：重载拿到旧实例，``_stop`` 还是
@@ -177,6 +184,7 @@ class Live:
         # 日志只留下「等待游戏加载」一条，看起来像装死。
         if _LIVES.get(self.owner) is self:
             _LIVES.pop(self.owner, None)
+        return True
 
     def status(self):
         """宿主状态（``hooked`` / ``status_text`` / ``log_tail`` 这些）。"""
@@ -207,17 +215,41 @@ class Live:
         """
         host = self.host()
         out = {'value': None, 'name': '未知', 'time_scale': None, 'entries': None}
-        try:
-            raw = objects.scene_full(host, objects.SLOT_SCENE, timeout=timeout)
-        except Exception:  # noqa: BLE001
-            raw = None
-        if isinstance(raw, dict) and raw:
-            value = raw.get('scene')
-            out['value'] = value
-            out['name'] = SCENES.get(value, f'未知({value})') if value is not None else '未知'
-            out['time_scale'] = raw.get('time_scale')
-            out['entries'] = raw.get('scene_entries')
-        return out
+        # 多个调用者共用一次采样；未知/失败不拿旧场景冒充新状态。
+        with self._lock:
+            now = time.monotonic()
+            if now < self._scene_retry_at:
+                return dict(self._scene) if self._scene is not None else out
+            self._scene = None
+            try:
+                ready = (self._service.object_read_ready(objects.SLOT_SCENE)
+                         if self._service is not None else
+                         Service._object_read_ready(host, objects.SLOT_SCENE))
+                if not ready:
+                    return out
+                # scene_full 会扫描全部字段；这里只读公开接口需要的三个，
+                # 任一失败立即停止，避免同一轮剩余字段不断撞 busy/timeout。
+                for key, field in (('value', 'sceneState'),
+                                   ('time_scale', '_currentTimeScale'),
+                                   ('entries', '_mainSceneEntryCount')):
+                    spec = fields.read_chain('GlobalGameManager', field)
+                    result = host.read(objects.SLOT_SCENE, spec['off'],
+                                       kind=spec['kind'], timeout=timeout, detail=True)
+                    if not result.get('ok'):
+                        return {'value': None, 'name': '未知',
+                                'time_scale': None, 'entries': None}
+                    out[key] = result['value']
+                value = out['value']
+                out['name'] = SCENES.get(value, f'未知({value})')
+                self._scene = dict(out)
+                self._scene_at = now
+                self._scene_backoff = 0.5
+                self._scene_retry_at = now + 0.5
+                return out
+            finally:
+                if self._scene is None:
+                    self._scene_retry_at = time.monotonic() + self._scene_backoff
+                    self._scene_backoff = min(10.0, self._scene_backoff * 2.0)
 
     def battle(self, timeout=1.0):
         """当前战斗的全场快照；不在战斗里（或拿不到管理器）返回 ``None``。"""
@@ -495,8 +527,11 @@ class Live:
     def _push(self):
         host = self.host()
         hooks = self._live_hooks() if self._hooks_on else []
-        host.configure(hooks=hooks, texts=[])
-        ok = host.push(True) not in ('共享内存不可用',)
+        def push_owned():
+            host.configure(hooks=hooks, texts=[])
+            return host.push(True)
+        message = host._act(self.owner, push_owned)
+        ok = message not in ('共享内存不可用',)
         self._pushed_ok = bool(ok)
         return self._pushed_ok
 
@@ -505,57 +540,100 @@ class Live:
             return
         self._hooks_on = True
         self.start()
+        # 注册发生在插件 scr.py 的同步 exec 中。Host.push/block 会解析导出表，
+        # 绝不能在这里连接游戏或扫描 GameAssembly；Service 后台就绪时统一推送。
+        self._pushed_ok = False
+
+    def _poll_round(self):
+        """只由真实命中建立待投递；多次命中合并成最新的一份战斗快照。
+
+        计数可能因重连/重配归零，不能一直拿旧高水位比较。首次非零也代表
+        已命中，而非应丢弃的 baseline。快照失败不消费事件，只有失败退避；
+        正常命中立即尝试，不额外 sleep，也不按周期伪造业务回调。
+        """
+        if not self._round_cbs or self._stop.is_set():
+            return False
+        hits = self.host().hits(method='OnRoundStart_Model', owner=self.owner)
+        previous = self._last_round
+        self._last_round = hits
+        if hits > (previous if previous is not None else 0) or (
+                previous is not None and hits < previous and hits > 0):
+            self._round_pending = True
+            log(f'回合命中 owner={self.owner} hits={previous}->{hits} '
+                f'callbacks={len(self._round_cbs)}', prefix=f'[{self.owner}]')
+        if (not self._round_pending or self._stop.is_set()
+                or time.monotonic() < self._round_retry_at):
+            return False
+        battle = None
         try:
-            self._push()
-        except Exception as exc:  # noqa: BLE001
-            log(f'回合钩子写入失败：{exc}', prefix=f'[{self.owner}]')
+            battle = self.battle()
+        finally:
+            if battle is None:
+                self._round_retry_at = time.monotonic() + self._round_backoff
+                self._round_backoff = min(4.0, self._round_backoff * 2.0)
+        if battle is None:
+            log('回合已命中但战斗快照不可用（保留待重试，未调用业务回调）',
+                prefix=f'[{self.owner}]')
+            return False
+        if self._stop.is_set():
+            return False
+        for cb in list(self._round_cbs):
+            if self._stop.is_set():
+                return False
+            self._safe(cb, battle)
+        self._round_pending = False
+        self._round_retry_at = 0.0
+        self._round_backoff = 0.25
+        return True
 
     def _pump(self):
         """后台循环：心跳 + 回合命中 + 场景变化。"""
         host = self.host()
-        last_round = None
         last_scene = None
+        next_error = 0.0
         while not self._stop.is_set():
+            # beat/status/hits 都可能经 Host.block 初始化共享内存并解析导出。
+            # 在 Service 确认 GameAssembly、同步并注入前不要抢跑（更不能阻塞重载）。
+            if (self._service is None
+                    or self._service._phase != 'monitoring'):
+                if self._stop.wait(0.25):
+                    break
+                continue
             try:
                 host.beat()
-                # 游戏未启动时首推会静默失败：pump 每轮补装直到成功
+                # 后台连接完成后补装，直到成功
                 if self._hooks_on and not self._pushed_ok:
-                    try:
-                        if self._push():
-                            log('回合钩子已补装（游戏就绪后自动重试成功）',
-                                prefix=f'[{self.owner}]')
-                    except Exception:  # noqa: BLE001
-                        pass
-                if self._round_cbs:
-                    hits = host.hits(method='OnRoundStart_Model')
-                    if last_round is None:
-                        last_round = hits
-                    elif hits > last_round:
-                        last_round = hits
-                        battle = self.battle()
-                        if battle is not None:
-                            for cb in list(self._round_cbs):
-                                self._safe(cb, battle)
-                    elif hits < last_round:
-                        last_round = hits
+                    if self._push():
+                        log('回合钩子配置已写入（是否安装成功请看宿主状态）',
+                            prefix=f'[{self.owner}]')
+                self._poll_round()
                 if self._scene_cbs:
                     scene = self.scene()
-                    if last_scene is None:
+                    if scene.get('value') is None:
+                        pass  # 加载/通道忙不是离开战斗，不派发虚假的场景变化。
+                    elif last_scene is None:
                         last_scene = scene.get('value')
                     elif scene.get('value') != last_scene:
                         last_scene = scene.get('value')
                         for cb in list(self._scene_cbs):
                             self._safe(cb, scene)
             except Exception:  # noqa: BLE001
-                pass
+                import traceback
+                now = time.monotonic()
+                if now >= next_error:
+                    next_error = now + 10.0
+                    log(f'实时监听异常（继续重试）owner={self.owner}\n'
+                        f'{traceback.format_exc()}', prefix=f'[{self.owner}]')
             if self._stop.wait(0.25):
                 break
 
     def _safe(self, handler, argument):
         try:
             handler(argument)
-        except Exception as exc:  # noqa: BLE001
-            log(f'回调出错：{exc}', prefix=f'[{self.owner}]')
+        except Exception:  # noqa: BLE001
+            import traceback
+            log(f'回调出错 handler={getattr(handler, "__qualname__", repr(handler))}\n'
+                f'{traceback.format_exc()}', prefix=f'[{self.owner}]')
 
 
 def live(owner=None, host=None):
@@ -570,12 +648,16 @@ def live(owner=None, host=None):
 
 def close_all():
     """停掉所有门面实例（插件卸载时由 WarpHook 调）。"""
+    ok = True
     for inst in list(_LIVES.values()):
         try:
-            inst.close()
+            if inst.close() is False:
+                ok = False
         except Exception:  # noqa: BLE001
-            pass
-    _LIVES.clear()
+            import traceback
+            log(f'关闭实时监听失败\n{traceback.format_exc()}')
+            ok = False
+    return ok
 
 
 # ========== 模块级转发：插件写 warp.game.units() 就够 ==========

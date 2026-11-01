@@ -315,18 +315,23 @@ def register():
 
 def on_unload():
     """插件卸载：停掉所有插件的后台流程、门面实例与抽卡循环，关掉共享内存映射。"""
+    safe_to_unmap = True
     try:
-        live.close_all()
+        safe_to_unmap = live.close_all() is not False
     except Exception:  # noqa: BLE001
-        pass
+        safe_to_unmap = False
     try:
         gacha.stop_all()
     except Exception:  # noqa: BLE001
-        pass
+        safe_to_unmap = False
     try:
-        Service.stop_all()
+        safe_to_unmap = (Service.stop_all() is not False) and safe_to_unmap
     except Exception:  # noqa: BLE001
-        pass
+        safe_to_unmap = False
+    if not safe_to_unmap:
+        from .base import log
+        log('卸载尚有在途线程：保留共享映射，避免释放后访问；请完整退出启动器后更新')
+        return False
     from .base import _maps
     for block in list(_maps.values()):
         try:
