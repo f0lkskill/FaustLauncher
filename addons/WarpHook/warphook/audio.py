@@ -8,6 +8,59 @@
 import ctypes
 import ctypes.wintypes
 import os
+import threading
+import time
+from functools import wraps
+
+
+def _audio_transaction(fn):
+    @wraps(fn)
+    def run(*args, **kwargs):
+        queued = time.perf_counter()
+        with _BANK_LOCK:
+            started = time.perf_counter()
+            try:
+                return fn(*args, **kwargs)
+            finally:
+                _log(f'音频操作 operation={fn.__name__} '
+                     f'elapsed_ms={(time.perf_counter() - started) * 1000:.1f} '
+                     f'wait_ms={(started - queued) * 1000:.1f}；包含跨进程等待，非帧耗时')
+    return run
+
+# Cache means submitted successfully, not verified FMOD residency or audible playback.
+_BANK_LOCK = threading.RLock()
+_BANK_SESSION = None
+_BANK_SUBMITTED = set()
+
+
+def _bank_session():
+    """Identify a process incarnation, not just a reusable PID; failure disables caching."""
+    from .base import find_game_pid, _kernel32
+    pid = find_game_pid()
+    if not pid:
+        return None
+    handle = _kernel32.OpenProcess(0x1000, False, pid)
+    if not handle:
+        return None
+    try:
+        get_times = _kernel32.GetProcessTimes
+        get_times.argtypes = [ctypes.wintypes.HANDLE] + [ctypes.POINTER(ctypes.wintypes.FILETIME)] * 4
+        get_times.restype = ctypes.wintypes.BOOL
+        creation, exit_time, kernel, user = (ctypes.wintypes.FILETIME() for _ in range(4))
+        if not get_times(handle, ctypes.byref(creation), ctypes.byref(exit_time),
+                         ctypes.byref(kernel), ctypes.byref(user)):
+            return None
+        return pid, (creation.dwHighDateTime << 32) | creation.dwLowDateTime
+    finally:
+        _kernel32.CloseHandle(handle)
+
+
+def invalidate_bank_cache():
+    """Explicit invalidation after known external bank unload / audio-engine reset."""
+    global _BANK_SESSION
+    with _BANK_LOCK:
+        _BANK_SUBMITTED.clear()
+        _BANK_SESSION = None
 
 from . import objects
 from .base import log as _log
@@ -68,6 +121,39 @@ def _ok(result):
 
 
 def ensure_bank(host, bank, timeout=5.0):
+    """Serialize shared scratch slots; deduplicate completed loads per process incarnation."""
+    global _BANK_SESSION
+    bank = str(bank or '').strip()
+    queued = time.perf_counter()
+    with _BANK_LOCK:
+        waited_ms = (time.perf_counter() - queued) * 1000
+        try:
+            session = _bank_session()
+        except Exception:
+            session = None
+        if session != _BANK_SESSION or session is None:
+            _BANK_SUBMITTED.clear()
+            _BANK_SESSION = session
+        if session is not None and bank in _BANK_SUBMITTED:
+            _log(f'音库预载 bank={bank} stage=cache-hit pid={session[0]} '
+                 f'wait_ms={waited_ms:.1f}；本进程预载已提交，跳过重复查询/加载（未验证驻留）')
+            return True, '本进程预载已提交，跳过重复加载'
+        started = time.perf_counter()
+        result = _ensure_bank_once(host, bank, timeout)
+        if result[0] and bank and session is not None:
+            # Do not retain a result if the game exited/restarted during the call.
+            try:
+                if _bank_session() == session:
+                    _BANK_SUBMITTED.add(bank)
+            except Exception:
+                pass
+        _log(f'音库预载 bank={bank} stage=complete ok={result[0]} '
+             f'elapsed_ms={(time.perf_counter() - started) * 1000:.1f} '
+             f'wait_ms={waited_ms:.1f}')
+        return result
+
+
+def _ensure_bank_once(host, bank, timeout=5.0):
     """按旧版预载指定音库；失败不停止当前曲。返回 ``(ok, reason)``。
 
     从继承的静态字段取得实例，不调用泛型 get_Instance；两个音库文件均
@@ -113,10 +199,14 @@ def ensure_bank(host, bank, timeout=5.0):
             made = host.make_str(path, slot=SLOT_BANK_NAME, timeout=timeout)
             if not _ok(made):
                 return False, f'音库路径造不出来：{made}'
+            started = time.perf_counter()
             result = host.call('SoundManager::LoadBankFromLocal',
                                args=(('slot', SLOT_BANK_NAME), 0, 0),
                                sig='S,B,B', ret='void', slot=SLOT_SOUND,
                                via='invoke', timeout=max(timeout * 2.5, 5.0))
+            _log(f'音库预载 bank={bank} stage=load-complete '
+                 f'file={bank + suffix} elapsed_ms={(time.perf_counter() - started) * 1000:.1f} '
+                 f'result={result!r}；耗时包含命令排队/游戏线程执行')
             if not _ok(result):
                 return False, f'音库加载失败（{path}）：{result}'
         # 对齐独立旧版：两次加载调用完成即继续，不以登记查询作为硬门槛。
@@ -133,6 +223,7 @@ def ensure_bank(host, bank, timeout=5.0):
                 _log(f'音库临时槽 {slot} 释放失败：{exc}')
 
 
+@_audio_transaction
 def play(host, name, bank=None, stop_current=True, timeout=2.0,
          require_battle=True, check=False):
     """放一首战斗 BGM。返回 ``{'ok', 'name', 'path', 'reason'}``。
@@ -183,15 +274,19 @@ def play(host, name, bank=None, stop_current=True, timeout=2.0,
             return {'ok': False, 'name': short, 'path': path,
                     'reason': f'曲名创建失败：{made}', 'stage': 'string'}
         if stop_current:
+            stop_started = time.perf_counter()
             stopped = host.call('BattleSoundGenerator::StopBGM', args=(0, 0),
                                 sig='B,B', ret='void', timeout=timeout)
+            _log(f'换曲阶段 stage=stop elapsed_ms={(time.perf_counter() - stop_started) * 1000:.1f}')
             if not _ok(stopped):
                 return {'ok': False, 'name': short, 'path': path,
                         'reason': f'停止原曲失败：{stopped}', 'stage': 'stop'}
+        start_started = time.perf_counter()
         result = host.call('BattleSoundGenerator::StartAddBGM',
                            args=(('slot', slot), STOP_MODE_IMMEDIATE, 0),
                            sig='S,FMOD.Studio.STOP_MODE,B', ret='void',
                            timeout=timeout)
+        _log(f'换曲阶段 stage=start elapsed_ms={(time.perf_counter() - start_started) * 1000:.1f}')
     finally:
         host.release(slot)
 
@@ -257,6 +352,7 @@ def game_dir():
 
 
 
+@_audio_transaction
 def stop(host, restore=True, timeout=2.0):
     """停掉战斗 BGM；``restore=True`` 时把游戏默认曲接回来。
 
