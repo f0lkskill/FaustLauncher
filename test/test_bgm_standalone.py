@@ -151,6 +151,25 @@ class AudioRegression(unittest.TestCase):
                 self.assertIn(('release', 27), host.events)
                 self.assertFalse(any(e[0] == 'call' for e in host.events))
 
+    def test_restore_stops_added_channel_before_main_and_default(self):
+        host = Host()
+        self.assertTrue(self.audio.stop(host)['ok'])
+        calls = [e for e in host.events if e[0] == 'call']
+        self.assertEqual([e[1] for e in calls], [
+            'BattleSoundGenerator::StopAddedBGM',
+            'BattleSoundGenerator::StopBGM', 'BattleSoundGenerator::StartBGM'])
+        self.assertEqual(calls[0][2]['args'], (self.audio.STOP_MODE_IMMEDIATE, 0))
+        self.assertEqual(calls[0][2]['sig'], 'FMOD.Studio.STOP_MODE,B')
+
+    def test_added_stop_failure_does_not_start_default_music(self):
+        host = Host()
+        host.error = ('BattleSoundGenerator::StopAddedBGM', '超时')
+        result = self.audio.stop(host)
+        self.assertFalse(result['ok'])
+        self.assertIn('停止附加曲失败', result['reason'])
+        self.assertEqual([e[1] for e in host.events if e[0] == 'call'],
+                         ['BattleSoundGenerator::StopAddedBGM'])
+
     def test_default_restore_failure_is_reported(self):
         host = Host()
         host.error = ('BattleSoundGenerator::StartBGM', '失败')
@@ -249,6 +268,46 @@ class PluginRegression(unittest.TestCase):
         QueuedThread.queue.pop()()
         self.assertFalse(any(c[0] == 'play' for c in self.game.calls))
 
+    def test_incomplete_lock_install_does_not_queue_or_stop_music(self):
+        with patch.object(self.game, 'bgm_lock_install', return_value={'ok': False}):
+            with contextlib.redirect_stdout(io.StringIO()):
+                outcome = self.plugin._apply(self.battle)
+        self.assertIn('未停止原曲', outcome)
+        self.assertEqual(QueuedThread.queue, [])
+        self.assertEqual(self.game.calls, [])
+        self.plugin._apply(self.battle)
+        self.assertEqual(len(QueuedThread.queue), 1)
+
+    def test_lock_failure_does_not_claim_active_rule(self):
+        self.plugin._apply(self.battle)
+        with patch.object(self.plugin, '_lock', side_effect=lambda allow: allow):
+            with contextlib.redirect_stdout(io.StringIO()) as output:
+                QueuedThread.queue.pop()()
+        self.assertIsNone(self.plugin._active)
+        self.assertIn('换曲锁写入失败', output.getvalue())
+        self.assertNotIn('换曲调用已提交：「', output.getvalue())
+
+    def test_invalid_snapshot_and_explicit_buff_read_failure_keep_active(self):
+        self.plugin._apply(self.battle)
+        QueuedThread.queue.pop()()
+        self.battle.ok = False
+        self.battle.units = []
+        self.plugin._apply(self.battle)
+        self.assertIs(self.plugin._active, self.rule)
+        self.assertEqual(QueuedThread.queue, [])
+        class BrokenUnit:
+            id = 1
+            identity = 1
+            @property
+            def buffs(self):
+                raise RuntimeError('mock buff read failed')
+        self.battle.ok = True
+        self.battle.units = [BrokenUnit()]
+        with self.assertRaisesRegex(RuntimeError, 'mock buff read failed'):
+            self.plugin._apply(self.battle)
+        self.assertIs(self.plugin._active, self.rule)
+        self.assertEqual(QueuedThread.queue, [])
+
     def test_errors_are_visible_even_when_announcements_disabled(self):
         self.game.result = {'ok': False, 'reason': '音库未加载'}
         self.plugin._apply(self.battle)
@@ -286,27 +345,127 @@ class PluginRegression(unittest.TestCase):
         self.assertEqual(QueuedThread.queue, [])
         self.assertEqual(sum(c[0] == 'play' for c in self.game.calls), 1)
 
-    def test_priority_floor_survives_absent_condition_and_empty_roster(self):
+    def test_absent_condition_releases_once_in_background(self):
         self.plugin._apply(self.battle)
         QueuedThread.queue.pop()()
         self.battle.units[0].buffs = []
         self.plugin._apply(self.battle)
+        self.plugin._apply(self.battle)
+        self.assertEqual(len(QueuedThread.queue), 1)
+        self.assertFalse(any(c[0] == 'stop' for c in self.game.calls))
+        QueuedThread.queue.pop()()
+        self.assertIsNone(self.plugin._active)
+        self.assertEqual(self.game.calls[-2:], [('lock', True), ('stop',)])
         self.battle.units = []
         self.plugin._apply(self.battle)
-        self.assertIs(self.plugin._active, self.rule)
         self.assertEqual(QueuedThread.queue, [])
-        self.assertEqual(self.game.calls[-1], ('lock', False))
 
-    def test_lower_priority_cannot_replace_active_even_after_condition_disappears(self):
+    def test_lower_priority_replaces_active_after_condition_disappears(self):
         self.rule['priority'] = 100
+        lower = dict(self.rule, id='lower', priority=1, bgm='Battle_Lower',
+                     condition={'type': 'round_start_without_buff', 'keyword': 'TestBuff'})
+        self.plugin.RULES = [self.rule, lower]
         self.plugin._apply(self.battle)
         QueuedThread.queue.pop()()
-        lower = dict(self.rule, id='lower', priority=1, bgm='Battle_Lower')
-        self.plugin.RULES = [lower]
+        self.battle.units[0].buffs = []
+        self.plugin._apply(self.battle)
+        QueuedThread.queue.pop()()
+        self.assertIs(self.plugin._active, lower)
+        self.assertEqual([c[1] for c in self.game.calls if c[0] == 'play'],
+                         ['Battle_Test', 'Battle_Lower'])
+        self.assertEqual(self.game.calls[-1], ('lock', False))
+
+    def test_equal_priority_keeps_still_valid_active_despite_rule_order(self):
+        self.plugin._apply(self.battle)
+        QueuedThread.queue.pop()()
+        peer = dict(self.rule, id='peer', bgm='Battle_Peer')
+        self.plugin.RULES = [peer, self.rule]
         self.plugin._apply(self.battle)
         self.assertIs(self.plugin._active, self.rule)
         self.assertEqual(QueuedThread.queue, [])
         self.assertEqual(sum(c[0] == 'play' for c in self.game.calls), 1)
+        self.plugin.RULES = [peer]
+        self.plugin._apply(self.battle)
+        QueuedThread.queue.pop()()
+        self.assertIs(self.plugin._active, peer)
+
+    def test_lower_priority_replaces_stale_queued_higher_rule(self):
+        self.rule['priority'] = 100
+        self.plugin._apply(self.battle)
+        lower = dict(self.rule, id='lower', priority=1, bgm='Battle_Lower')
+        self.plugin.RULES = [lower]
+        self.plugin._apply(self.battle)
+        QueuedThread.queue.pop(0)()
+        self.assertTrue(self.plugin._pending)
+        QueuedThread.queue.pop(0)()
+        self.assertEqual([c[1] for c in self.game.calls if c[0] == 'play'], ['Battle_Lower'])
+
+    def test_reactivated_rule_cancels_queued_restore_without_replay(self):
+        self.plugin._apply(self.battle)
+        QueuedThread.queue.pop()()
+        buffs = self.battle.units[0].buffs
+        self.battle.units[0].buffs = []
+        self.plugin._apply(self.battle)
+        self.battle.units[0].buffs = buffs
+        self.plugin._apply(self.battle)
+        QueuedThread.queue.pop()()
+        self.assertIs(self.plugin._active, self.rule)
+        self.assertFalse(any(c[0] == 'stop' for c in self.game.calls))
+        self.assertEqual(sum(c[0] == 'play' for c in self.game.calls), 1)
+
+    def test_release_unlock_and_stop_failures_remain_visible_and_retryable(self):
+        for failure in ('unlock', 'stop'):
+            with self.subTest(failure=failure):
+                self.plugin._active = self.rule
+                self.plugin._battle_id = object()
+                self.battle.units[0].buffs = []
+                self.game.calls.clear()
+                with patch.object(self.plugin, '_lock', return_value=failure != 'unlock'), \
+                     patch.object(self.game, 'bgm_stop', return_value={'ok': False}) as stop:
+                    self.plugin._apply(self.battle)
+                    with contextlib.redirect_stdout(io.StringIO()) as output:
+                        QueuedThread.queue.pop()()
+                    self.assertIn('恢复失败', output.getvalue())
+                    self.assertIs(self.plugin._active, self.rule)
+                    self.assertFalse(self.plugin._pending)
+                    self.assertEqual(stop.call_count, int(failure == 'stop'))
+                self.plugin._apply(self.battle)
+                QueuedThread.queue.pop()()
+                self.assertIsNone(self.plugin._active)
+
+    def test_transition_remains_valid_until_target_disappears_or_unit_leaves(self):
+        self.rule['condition'] = {'type': 'round_end_buff_transition',
+                                  'from_keyword': 'Source', 'keyword': 'Target'}
+        self.plugin.WATCHED = {'Source', 'Target'}
+        unit = self.battle.units[0]
+        unit.buffs = [types.SimpleNamespace(key='Source', stack=1)]
+        self.plugin._apply(self.battle)
+        self.assertEqual(QueuedThread.queue, [])
+        unit.buffs = [types.SimpleNamespace(key='Target', stack=1)]
+        self.plugin._apply(self.battle)
+        QueuedThread.queue.pop()()
+        self.plugin._apply(self.battle)
+        self.assertIs(self.plugin._active, self.rule)
+        self.assertEqual(QueuedThread.queue, [])
+        unit.buffs = []
+        self.plugin._apply(self.battle)
+        QueuedThread.queue.pop()()
+        self.assertFalse(self.plugin._transitions)
+        unit.buffs = [types.SimpleNamespace(key='Target', stack=1)]
+        self.plugin._apply(self.battle)
+        self.assertEqual(QueuedThread.queue, [])  # 无新边沿不重新激活
+        unit.buffs = [types.SimpleNamespace(key='Source', stack=1)]
+        self.plugin._apply(self.battle)
+        unit.buffs = [types.SimpleNamespace(key='Target', stack=1)]
+        self.plugin._apply(self.battle)
+        QueuedThread.queue.pop()()
+        self.battle.units = []
+        self.plugin._apply(self.battle)
+        QueuedThread.queue.pop()()
+        self.assertFalse(self.plugin._transitions)
+        self.battle.units = [unit]
+        self.plugin._apply(self.battle)
+        self.assertEqual(QueuedThread.queue, [])
 
     def test_new_battle_after_end_allows_same_rule_again(self):
         self.plugin._apply(self.battle)
