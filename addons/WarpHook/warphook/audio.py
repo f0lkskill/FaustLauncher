@@ -64,6 +64,7 @@ def invalidate_bank_cache():
 
 from . import objects
 from .base import log as _log
+from .host import HF_SOFT_LOCK
 
 BGM_PREFIX = 'event:/BGM/Battle/'
 
@@ -434,9 +435,15 @@ LOCK_TARGETS = (
 
 
 def guard_hook_defs():
-    """锁钩子定义列表（并入门面钩子表、与回合钩子一次 push 共存）。"""
+    """锁钩子定义列表（并入门面钩子表、与回合钩子一次 push 共存）。
+
+    ``HF_SOFT_LOCK``：启动器断开后宿主把这些钩子的参数门改写成放行。锁着的
+    时候 Python 没了就再没人解锁（换曲调用全被丢弃、战斗里没有 BGM），所以
+    这把锁只该活到驱动它的进程为止；抽卡那种拦截钩子不加这一位。
+    """
     return [{'klass': k, 'method': m, 'argc': a, 'actions': 0,
-             'block': True, 'guard': (LOCK_SLOT, 1)}
+             'block': True, 'guard': (LOCK_SLOT, 1),
+             'flags': HF_SOFT_LOCK}
             for k, m, a in LOCK_TARGETS]
 
 

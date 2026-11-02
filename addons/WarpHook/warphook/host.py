@@ -297,6 +297,9 @@ ACT_KILL = 0x04      # 结束游戏进程
 HF_BLOCK = 0x01      # 跳过原方法（用于「拦截」类插件）
 HF_ONCE = 0x02       # 只触发一次
 HF_DEDUPE = 0x04     # 读链的值没变就不投递事件（配了 reads 才有意义）
+# 启动器断开后自动解锁：宿主转入 standalone 时把这个钩子的参数门改写成
+# 「放行」。给换曲锁这类挡住游戏自身行为的钩子用；拦截类不要加。
+HF_SOFT_LOCK = 0x08
 
 # 兼容曾导入此名称的插件；Host.call 不再按方法名阻断调用。
 SAFE_CALLS = frozenset()

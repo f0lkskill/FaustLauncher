@@ -318,6 +318,9 @@ typedef struct _WARP_REWRITE {
 #define WARP_HF_BLOCK   0x01
 #define WARP_HF_ONCE    0x02   /* 只触发一次 */
 #define WARP_HF_DEDUPE  0x04   /* 读链读出来的值没变就不投递事件 */
+/* 软锁：启动器断开（standalone）时把这个钩子的参数门改写成「放行」。
+ * 用于换曲锁这类「挡住游戏自身行为」的锁 —— 驱动它的进程没了，锁不该留下。 */
+#define WARP_HF_SOFT_LOCK 0x08
 #define WARP_HF_FIRED   0x0100 /* 运行时标记：已经触发过 */
 
 typedef struct _WARP_HEADER {

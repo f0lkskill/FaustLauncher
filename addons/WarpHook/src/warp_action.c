@@ -37,6 +37,36 @@ const char *warp_pick_text(int base)
     return g_texts + (base + (int)(warp_rand() % (unsigned)used)) * WARP_TEXT_SIZE;
 }
 
+/* 启动器断开后，把「软锁」钩子的参数门改写成放行。
+ *
+ * 换曲锁的做法是 guard_var=4 / guard_value=1：vars[4]==1 时游戏自己的换曲
+ * 调用照常执行，写成 0 就全部丢弃。锁着的时候启动器没了，游戏就再也换不了
+ * 曲 —— 战斗里彻底没有 BGM，只能重开游戏。这类锁不该比驱动它的进程活得久。
+ *
+ * 拦截类的钩子（抽卡、弹窗）恰好相反：断开后正该继续拦，所以只处理显式
+ * 声明了 WARP_HF_SOFT_LOCK 的钩子，不做「一刀切解锁」。
+ *
+ * 返回放行的钩子数（写进 standalone 那条日志，便于真机核对）。 */
+int warp_release_soft_locks(void)
+{
+    int released = 0;
+    int i;
+
+    if (!g_warp_hooks || !g_hdr)
+        return 0;
+    for (i = 0; i < WARP_MAX_HOOKS; i++) {
+        WARP_HOOK *h = &g_warp_hooks[i];
+
+        if (!(h->flags & WARP_HF_SOFT_LOCK))
+            continue;
+        if (h->guard_var < 0 || h->guard_var >= WARP_VAR_COUNT)
+            continue;
+        g_hdr->vars[h->guard_var] = h->guard_value;
+        released++;
+    }
+    return released;
+}
+
 void warp_fire(int hook_index)
 {
     WARP_HOOK *h;

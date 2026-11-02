@@ -1,3 +1,10 @@
+## 0.9.43 — 启动器断开时自动放行软锁
+
+- 新增钩子标志 `WARP_HF_SOFT_LOCK`（Python 侧 `HF_SOFT_LOCK = 0x08`）。宿主心跳过期转入 standalone 的那一刻，把带这一位的钩子的参数门改写成「放行」，并把这批数量写进 `launcher gone, standalone` 那行日志。
+- 动机：换曲锁是 `vars[4]==1` 放行的设计。锁着的时候把启动器关掉，游戏自己的 `StartBGM` / `StopBGM` 会被永久丢弃 —— 下一场战斗直接没有 BGM，只能重开游戏。锁不该比驱动它的进程活得久。
+- 拦截类钩子（抽卡、弹窗）**不加**这一位：启动器没了正该继续拦。所以这里不是「一刀切解锁」，而是逐个钩子声明。
+- `audio.guard_hook_defs()` 的四条换曲锁钩子已加上该标志。**需要重装 `warp_host.dll`**（C 侧改动），Python 侧单独更新不起作用。
+
 ## 0.9.42 — 抽卡拦截支持 DLL 侧原生弹窗
 
 - 新增 `Gacha.watch_native(host, allow_paid)`：把「拦 + 弹」整单交给宿主，`OnGachaSelected` 钩子带 `ACT_POPUP`，命中后由 `warp_fire()` 从本插件文案段里随机挑一句弹出来。这条路径全在游戏进程里完成，**启动器退出后 DLL 转入 standalone 仍然照弹**。
