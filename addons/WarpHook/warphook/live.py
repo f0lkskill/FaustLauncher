@@ -26,7 +26,7 @@ import time
 
 from . import audio, fields, objects
 from .base import log
-from .host import Host, _owner_of_caller
+from .host import Host, _owner_of_caller, command_quiet
 from .service import Service
 
 # 场景编号 -> 名字（与 objects.SCENES 同源，这里只做转发，方便插件少记一个名字）
@@ -615,16 +615,22 @@ class Live:
                         log('回合钩子配置已写入（是否安装成功请看宿主状态）',
                             prefix=f'[{self.owner}]')
                 self._poll_round()
-                if self._scene_cbs:
-                    scene = self.scene()
-                    if scene.get('value') is None:
-                        pass  # 加载/通道忙不是离开战斗，不派发虚假的场景变化。
-                    elif last_scene is None:
-                        last_scene = scene.get('value')
-                    elif scene.get('value') != last_scene:
-                        last_scene = scene.get('value')
-                        for cb in list(self._scene_cbs):
-                            self._safe(cb, scene)
+                if self._scene_cbs and not command_quiet():
+                    # 场景是高频轮询：读命令一来一回要一两秒，照着 0.25s
+                    # 的节奏硬发会把命令通道占满，弹窗这类必须成功的命令
+                    # 就永远等不到空档。通道忙或有弹窗在等，这一拍就跳过。
+                    if host.channel_busy():
+                        pass
+                    else:
+                        scene = self.scene()
+                        if scene.get('value') is None:
+                            pass  # 加载/通道忙不是离开战斗，不派发虚假的场景变化。
+                        elif last_scene is None:
+                            last_scene = scene.get('value')
+                        elif scene.get('value') != last_scene:
+                            last_scene = scene.get('value')
+                            for cb in list(self._scene_cbs):
+                                self._safe(cb, scene)
             except Exception:  # noqa: BLE001
                 import traceback
                 now = time.monotonic()

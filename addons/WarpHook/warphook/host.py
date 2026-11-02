@@ -73,6 +73,22 @@ HOST_NAME_MAX = 64
 HOST_VAR_COUNT = 8
 HOST_CMD_TEXT_LEN = 256
 
+# 「让路」窗口：弹窗这类必须成功的命令在等通道时，把窗口抬高几秒，
+# 让 live 轮询这类高频读命令先别抢。整个进程共用一份（多个 Host 对象
+# 连的是同一块映射，所以不能用实例字段）。
+_QUIET = {"until": 0.0}
+
+
+def command_quiet():
+    """现在是否该把命令通道让出来（有弹窗在等）。"""
+    return time.monotonic() < _QUIET["until"]
+
+
+def request_quiet(seconds):
+    """公告「接下来 N 秒别抢命令通道」。"""
+    _QUIET["until"] = max(_QUIET["until"], time.monotonic() + float(seconds))
+
+
 # 命令类型：py 一行调用 → 游戏主线程执行
 CMD_NONE = 0
 CMD_POPUP = 1     # 弹原版系统弹窗
@@ -1524,6 +1540,13 @@ class Host:
         if block is None:
             return default if not detail else {"value": default,
                                                "total": 0, "ok": False}
+        # 通道被读命令挤满时，插进去只会一起排队两秒再超时，顺带把弹窗
+        # 这种必须成功的命令挡在门外。这一拍直接返回默认值，下一拍再来。
+        if command_quiet() or self.channel_busy():
+            reason = "有弹窗在等" if command_quiet() else "通道忙"
+            return (default if not detail
+                    else {"value": default, "total": 0, "ok": False,
+                          "reason": reason})
         spec = {"arg": 0, "kind": kind, "out": 0, "off": list(chain or ())}
         _encode_read(block.address + HOST_CMD_READ_OFFSET, spec)
         msg = self._command(CMD_READ, slot=slot, timeout=timeout)
@@ -1638,6 +1661,20 @@ class Host:
             return "对象槽越界"
         return self._command(CMD_STATIC, text=name, timeout=timeout,
                              out_slot=int(out_slot))
+
+    def channel_busy(self):
+        """命令通道里还有没跑完的请求吗。
+
+        高频轮询（``live`` 每 0.25s 读一次场景）看到通道忙就该让一让，
+        否则后面的弹窗永远等不到空档：`_command` 是「空闲才发」的，
+        抢不过每秒好几发的读命令。
+        """
+        block = self.block()
+        if block is None:
+            return True
+        hdr = block.cfg
+        return (int(hdr.cmd_seq) != int(hdr.cmd_ack)
+                or int(hdr.cmd_result) == CMD_RES_BUSY)
 
     def _command_warning(self, message):
         """同一宿主的命令停顿合并报告；不改变超时结果、不取消在途请求。"""
@@ -1897,10 +1934,21 @@ class Host:
         返回 DLL 的回话（``"已执行"`` 之类的中文），失败时同时写一条日志 ——
         弹窗是最容易「静默没反应」的一条路（宿主没注入 / 命令超时 / 游戏里
         找不到 OpenGlobalPopup），不落日志就只能靠猜。
+
+        命令通道是「空闲才发」的单槽：别的插件每 0.25s 读一次场景时，
+        通道几乎一直是忙的，弹窗会在门口就被挡回去。所以这里先公告一个
+        让路窗口（``request_quiet``），再重试几次「通道忙」。
         """
-        result = self._command(CMD_POPUP, text, timeout)
-        if result != CMD_RES_NAMES.get(0, "已执行"):
-            self.log(f"弹窗没有弹出来：{result}（文案：{text}）")
+        request_quiet(float(timeout) + 3.0)
+        result = "超时"
+        for attempt in range(3):
+            result = self._command(CMD_POPUP, text, timeout)
+            if result == CMD_RES_NAMES.get(0, "已执行"):
+                return result
+            if "忙" not in str(result):
+                break
+            time.sleep(0.15)
+        self.log(f"弹窗没有弹出来：{result}（文案：{text}）")
         return result
 
     def kill_game(self, timeout=2.0):
