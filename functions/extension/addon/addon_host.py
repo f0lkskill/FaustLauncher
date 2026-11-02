@@ -43,6 +43,7 @@ _IDLE_LIMIT = 1800.0
 
 _DETACHED_PROCESS = 0x00000008
 _CREATE_NEW_PROCESS_GROUP = 0x00000200
+_CREATE_NO_WINDOW = 0x08000000
 
 _INVALID_HANDLE = ctypes.c_void_p(-1).value
 """``CreateFileW`` 失败时返回的句柄（64 位下是 0xFFFFFFFFFFFFFFFF）。"""
@@ -305,7 +306,8 @@ def spawn_host() -> bool:
             stdin=subprocess.DEVNULL,
             stdout=log,
             stderr=log,
-            creationflags=_DETACHED_PROCESS | _CREATE_NEW_PROCESS_GROUP,
+            creationflags=(_DETACHED_PROCESS | _CREATE_NEW_PROCESS_GROUP |
+                           _CREATE_NO_WINDOW),
             close_fds=True,
         )
     except Exception as exc:
@@ -479,8 +481,27 @@ def _watch(manager) -> None:
         time.sleep(_POLL_SECONDS)
 
 
+def _hide_console() -> None:
+    """把宿主自己的控制台窗口收掉。
+
+    创建标志只能约束被直接拉起的那个进程：``venv/Scripts/python.exe`` 是
+    重定向器，它再起真正的解释器时不会带上 ``CREATE_NO_WINDOW``，控制台子
+    系统于是又给自己配了一个窗口。宿主一进来就 ``FreeConsole``，比指望创建
+    标志一路传下去可靠；标准输出此时已重定向到日志文件，不受影响。
+    """
+
+    try:
+        k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        k32.FreeConsole()
+    except Exception:
+        pass
+
+
 def run_host(debug: bool = False) -> None:
     """宿主进程入口（``--addon-host`` 分发到这里）。"""
+
+    if not debug:
+        _hide_console()
 
     try:
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[attr-defined]
