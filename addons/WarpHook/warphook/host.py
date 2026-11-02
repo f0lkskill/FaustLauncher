@@ -1892,8 +1892,16 @@ class Host:
         return self._command(CMD_RELEASE, "", timeout, slot=slot)
 
     def popup(self, text, timeout=2.0):
-        """让游戏弹出原版系统弹窗：`host.popup("你好")`。"""
-        return self._command(CMD_POPUP, text, timeout)
+        """让游戏弹出原版系统弹窗：`host.popup("你好")`。
+
+        返回 DLL 的回话（``"已执行"`` 之类的中文），失败时同时写一条日志 ——
+        弹窗是最容易「静默没反应」的一条路（宿主没注入 / 命令超时 / 游戏里
+        找不到 OpenGlobalPopup），不落日志就只能靠猜。
+        """
+        result = self._command(CMD_POPUP, text, timeout)
+        if result != CMD_RES_NAMES.get(0, "已执行"):
+            self.log(f"弹窗没有弹出来：{result}（文案：{text}）")
+        return result
 
     def kill_game(self, timeout=2.0):
         """让游戏进程立刻结束。"""
