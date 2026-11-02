@@ -21,11 +21,13 @@
 皮肤目录为什么不是一个固定路径
 ------------------------------
 源码运行: ``<仓库>/web/app_skins``。
-打包运行: PyInstaller 把整个 ``web/`` 收进 ``_internal``, 于是内置皮肤在
+打包运行: PyInstaller 把整个 ``web/`` 收进 ``_internal``, 于是皮肤在
 ``<exe>/_internal/web/app_skins`` (:func:`functions.base.common.path_utils.get_web_root`
-的第一候选)。``_internal`` 可能只读 (装在 Program Files) 且升级时会被整体
-替换, 所以下载的皮肤按「内置目录 → ``<exe>/app_skins`` → ``%APPDATA%``」的
-顺序挑第一个**真的能写**的目录; 读取时这些根目录合并, 同 id 以可写目录为准。
+的第一候选)。安装包本身**不再内置任何皮肤包**, 下载的皮肤就解压进这个目录,
+升级时由 ``tools/build_temp/updater.vbs`` 第 2.4 步把它补回来。
+
+``_internal`` 也可能只读 (装在 Program Files), 这时按「皮肤目录 →
+``<exe>/app_skins``」的顺序挑第一个**真的能写**的落点; 读取时两个根目录合并。
 """
 
 from __future__ import annotations
@@ -139,22 +141,29 @@ def builtin_root() -> str:
 
 
 def user_root() -> str:
-    """用户专属皮肤目录 —— 下载落点, 同时也是读取时优先级最高的目录。
+    """皮肤目录 —— 下载落点与读取目录, 源码版与构建版是同一个位置。
 
-    * 源码仓库版: 仍是 ``web/app_skins``, 与内置皮肤同处一地 (开发时所见即所得);
-    * 构建版: ``%APPDATA%/FaustLauncher/app_skins``。
+    * 源码仓库版: ``web/app_skins``;
+    * 构建版: ``_internal/web/app_skins`` (由 ``path_utils.get_web_root`` 定位)。
 
-    构建版单独放一份的理由: 升级时整个 ``_internal`` 会被替换, 放在里面的皮肤
-    每次更新都要重新下载。挪到 APPDATA 后与原安装目录隔离, 更新不再波及。
+    构建版也放这里而不是 %APPDATA%: 升级时整个 ``_internal`` 会被换掉, 但
+    ``tools/build_temp/updater.vbs`` 第 2.4 步会把旧目录里的皮肤目录原样补回来,
+    所以没必要再另开一个用户目录。
     """
-    if not _FROZEN:
-        return builtin_root()
-    return _appdata_root()
+    return builtin_root()
 
 
-def _appdata_root() -> str:
-    base = os.environ.get("APPDATA") or os.path.expanduser("~")
-    return os.path.join(base, "FaustLauncher", "app_skins")
+def default_skin_id() -> str:
+    """新用户首次启动时自动装上的皮肤 (构建版不再随包带任何皮肤)。
+
+    没有配置 ``default_skin`` 时返回空串 = 保持启动器原生外观。
+    """
+    try:
+        from functions.base.web_config import get_web_config
+        sid = str((get_web_config() or {}).get("default_skin") or "").strip()
+    except Exception:
+        return ""
+    return sid
 
 
 def _can_write(folder: str) -> bool:
@@ -173,8 +182,8 @@ def _can_write(folder: str) -> bool:
 def writable_root() -> str:
     """下载皮肤的落盘目录; 一个都写不进去时返回空串。
 
-    优先用 :func:`user_root`; 它不可写时 (APPDATA 被限制的极端情况) 才退到
-    ``<exe>/app_skins`` 与内置目录。
+    首选皮肤目录; 装在 Program Files 等写不进去的位置时 (内置目录只读),
+    才退到 ``<exe>/app_skins`` —— 它同样不会被升级覆盖, 只是用户看不见。
     """
     with _WRITABLE_LOCK:
         if _WRITABLE["ready"]:
@@ -182,7 +191,6 @@ def writable_root() -> str:
         candidates = [user_root()]
         if _FROZEN:
             candidates.append(os.path.join(_PROJECT_ROOT, "app_skins"))
-        candidates.append(builtin_root())
         chosen = ""
         for folder in candidates:
             if folder and _can_write(folder):
@@ -198,7 +206,7 @@ def writable_root() -> str:
 
 
 def skin_roots() -> list:
-    """所有皮肤根目录, 用户目录排在前面 (读取时它优先覆盖内置同名皮肤)。"""
+    """所有皮肤根目录。两者在正常情况下相同, 只有内置目录只读时才会分叉。"""
     roots = []
     for folder in (user_root(), builtin_root()):
         if folder and folder not in roots:
@@ -213,50 +221,6 @@ def _read_json(path: str) -> dict:
         return data if isinstance(data, dict) else {}
     except Exception:
         return {}
-
-
-def migrate_builtin_skins() -> list:
-    """构建版首次运行时, 把内置目录里用户自己放的皮肤复制到用户目录。
-
-    老版本下载的皮肤落在 ``_internal/web/app_skins``, 而升级会整个替换
-    ``_internal``; 这里在升级后的第一次启动里先把它们抢救出来 —— 只搬
-    用户目录里还没有的目录 (安装包自带的那几款按同名跳过, 不会重复)。
-    已存在的不覆盖, ``.zip`` 等非目录文件不动。
-
-    返回被迁移的皮肤 id 列表 (迁移后会让本地扫描缓存失效)。
-    """
-    if not _FROZEN:
-        return []
-    source = builtin_root()
-    target = user_root()
-    if not source or not target or os.path.normcase(source) == os.path.normcase(target):
-        return []
-    try:
-        names = sorted(os.listdir(source))
-    except OSError:
-        return []
-
-    moved = []
-    for name in names:
-        folder = os.path.join(source, name)
-        if not os.path.isdir(folder) or os.path.basename(name) != name:
-            continue
-        dest = os.path.join(target, name)
-        if os.path.exists(dest):
-            continue
-        if not _can_write(target):
-            print(f"[Skin] 用户皮肤目录不可写, 跳过迁移: {target}")
-            break
-        try:
-            shutil.copytree(folder, dest)
-        except Exception as exc:  # noqa: BLE001 - 单个皮肤迁移失败不影响其它
-            print(f"[Skin] 迁移皮肤 {name} 失败: {type(exc).__name__}: {exc}")
-            continue
-        moved.append(name)
-    if moved:
-        invalidate()
-        print(f"[Skin] 已把 {len(moved)} 个旧皮肤迁移到用户目录: {', '.join(moved)}")
-    return moved
 
 
 def _scan_local() -> dict:
@@ -492,10 +456,6 @@ def prefetch(wait: bool = False) -> dict:
             _THEMES["refreshing"] = True
 
     def _work():
-        try:
-            migrate_builtin_skins()
-        except Exception as exc:  # noqa: BLE001 - 迁移失败不影响这次的云端取数
-            print(f"[Skin] 迁移旧皮肤失败: {type(exc).__name__}: {exc}")
         try:
             text = _fetch_note_text(False)
             items = parse_themes(text) if text.strip() else []

@@ -145,16 +145,18 @@ If fso.FolderExists(internalSrc) Then
         WScript.Quit 1
     End If
 
-    ' ---- 2.4 补回用户自己放的皮肤 ----
-    ' _internal\web\app_skins 是皮肤目录: 用户可能把自己做的/下载的皮肤放了进去,
-    ' 整体替换会连带删掉, 所以把"新包里面没有的"皮肤目录复制回来。
+    ' ---- 2.4 补回用户自己放的/下载的皮肤 ----
+    ' 新包不再内置皮肤包, 但 _internal\web\app_skins 仍是皮肤的存放位置:
+    ' 升级会把整个 _internal 换掉, 所以这里把"新包里没有的"皮肤目录复制回来。
+    ' 只搬子目录 (真正的皮肤包), zip 之类的残留文件不搬。
     skinsNew = fso.BuildPath(internalDst, "web\app_skins")
     skinsOld = fso.BuildPath(internalOld, "web\app_skins")
-    If fso.FolderExists(skinsNew) And fso.FolderExists(skinsOld) Then
+    If fso.FolderExists(skinsOld) Then
         On Error Resume Next
         For Each sk In fso.GetFolder(skinsOld).SubFolders
             If Not fso.FolderExists(fso.BuildPath(skinsNew, sk.Name)) Then
                 Err.Clear
+                If Not fso.FolderExists(skinsNew) Then fso.CreateFolder skinsNew
                 fso.CopyFolder sk.Path, fso.BuildPath(skinsNew, sk.Name), True
             End If
         Next

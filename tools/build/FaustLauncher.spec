@@ -46,9 +46,15 @@ except Exception:
 # 目标目录写 'web': onedir 布局下 PyInstaller 会把它放进 _internal/web/,
 # 与 exe 同级但对用户不可见 (不再作为顶层 web/ 目录出现在发布包中)。
 # 运行时由 functions.base.common.path_utils.get_web_root() 优先在 _internal 下定位。
+#
+# web/app_skins/ 整棵子树**不进包**: 皮肤改为云端清单驱动 (functions/base/skin_store.py),
+# 首次点选时按需下载解压到 %APPDATA%/FaustLauncher/app_skins/。源码仓库里留着的
+# app_skins/*.zip 只是开发时的皮肤包样例, 跟着打包会让每个用户白背几百兆。
+_SKIP_DIRS = {'app_skins'}
 _web_src_dir = _os.path.join(_ROOT, 'web')
 if _os.path.isdir(_web_src_dir):
     for _root, _dirs, _files in _os.walk(_web_src_dir):
+        _dirs[:] = [_d for _d in _dirs if _d not in _SKIP_DIRS]
         for _f in _files:
             _src = _os.path.join(_root, _f)
             _rel = _os.path.relpath(_root, _web_src_dir)

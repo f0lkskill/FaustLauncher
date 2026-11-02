@@ -96,6 +96,10 @@ def active_skin_id() -> str:
         return ""
     if not sid:
         return ""
+    # 皮肤包缺失就当作没启用: 构建版不随包带皮肤, 首次启动、更新后目录被换掉
+    # 或用户手动删过时, 设置里可能还留着上次选的 id, 不能拿它去拼路径。
+    if not skin_dir(sid):
+        return ""
     try:
         from functions.base.user_system import load_user, _value as _user_value
         meta = skin_meta(sid)

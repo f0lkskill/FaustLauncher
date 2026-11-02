@@ -367,12 +367,27 @@ class BuildApi(WindowChromeBridge):
                 raise FileNotFoundError(
                     "PyInstaller 未把 web/ 收进 _internal/web（Web 界面无法启动）；"
                     "请确认 FaustLauncher.spec 的 web/ 收集逻辑与 web/app/index.html 存在")
+            # 皮肤不再随包分发 (spec 已排除 web/app_skins), 留着说明是老产物
+            stale_skins = os.path.join("dist", "FaustLauncher", "_internal", "web", "app_skins")
+            if os.path.isdir(stale_skins):
+                shutil.rmtree(stale_skins, ignore_errors=True)
+                self._log("✔ 已移除 _internal/web/app_skins（皮肤改为云端按需下载）\n", LEVEL_OK)
         except Exception as exc:  # noqa: BLE001
             self._fail(3, f"复制运行环境失败：{exc}")
             self._building = False
             return
         self._step(3, "done")
         self._progress(38)
+
+        # ---- 3.5 兜底清理皮肤目录 ----
+        # 皮肤包不随包分发 (玩家点选时从云端按需下载到 _internal\web\app_skins)。
+        # spec 已经从 web/ 里剔掉 app_skins, 这里再扫一遍产物: 万一哪天有人往
+        # web/ 层加了别的皮肤资源, 也不会被整棵 copytree 带进发布包。
+        for folder in (f"build_{vi}/_internal/web/app_skins",
+                       f"build_{vi}/web/app_skins"):
+            if os.path.isdir(folder):
+                shutil.rmtree(folder, ignore_errors=True)
+                self._log(f"✔ 已移除 {folder}（皮肤改为云端按需下载）\n", LEVEL_OK)
 
         # ---- 4. 复制资产（web/ 已由 spec 收进 _internal） ----
         self._step(4, "running")

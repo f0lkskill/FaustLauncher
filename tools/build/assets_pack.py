@@ -1,12 +1,13 @@
 """资源包（assets pack）制作 / 校验 / 拉取 / 上传。
 
-**为什么要有这个东西**：``assets/images``、``assets/voices`` 与皮肤里的图片合计约 38 MB，
+**为什么要有这个东西**：``assets/images`` 与 ``assets/voices`` 合计约 38 MB，
 放在 git 里会把仓库撑得很大，而它们改动频繁、和代码无关。现在这些文件**不再入库**，
 改成一个独立的资源包，由开发者自己拉取合并（发布包仍然把资源打进 zip 发给最终用户）。
 
-**包格式：解压到仓库根即完成合并。** 包里就是 ``assets/images/...``、
-``web/app_skins/<皮肤>/assets/...`` 这些**和仓库完全一致的相对路径** —— 所以不需要任何
+**包格式：解压到仓库根即完成合并。** 包里就是 ``assets/images/...``
+这些**和仓库完全一致的相对路径** —— 所以不需要任何
 "往哪儿放"的映射逻辑；代码里那些 ``assets/images/icon/icon.ico`` 之类的相对路径原样可用。
+（皮肤包不在资源包里：它们改为云端按需下载，见 ``functions/base/skin_store.py``。）
 包内另带一份 ``.assets-pack/manifest.json``（逐文件 sha256 + 版本 + 生成时间），
 拉取时先校验它、再落盘；``status`` 也靠它判断本地缺了什么。
 
@@ -40,12 +41,11 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), 
 # 资源包里放什么（相对仓库根的 glob；**只收文件**）
 #   · assets/Font/ 不收：那是从汉化包里复制出来的运行期产物，本来就不入库
 #   · resources/   不收：那是启动器运行期自己下载的资源目录，也不入库
+#   · web/app_skins 不收：皮肤已改为云端按需下载，发布包不再内置任何皮肤包，
+#     这里若继续收，会把开发机上的皮肤塞回资源包里（见 skin_store.py）
 PACK_GLOBS = (
     "assets/images/**/*",
     "assets/voices/**/*",
-    "web/app_skins/*/assets/**/*",
-    "web/app_skins/*/source/**/*",
-    "web/app_skins/*/profile.*",
 )
 
 MANIFEST_IN_PACK = ".assets-pack/manifest.json"
