@@ -432,7 +432,7 @@ class BuildApi(WindowChromeBridge):
         self._step(6, "done")
         self._progress(62)
 
-        # ---- 7. 复制资源（仅 7-zip + 战斗观测 DLL） ----
+        # ---- 7. 复制资源（仅 7-zip） ----
         self._step(7, "running")
         self._status("复制资源文件…")
         try:
@@ -440,20 +440,6 @@ class BuildApi(WindowChromeBridge):
             if os.path.isdir("resources/7-zip"):
                 shutil.copytree("resources/7-zip", f"build_{vi}/resources/7-zip",
                                 dirs_exist_ok=True)
-            hook_dll = "functions/achievement/hook_dll"
-            src_dll = os.path.join(hook_dll, "battle_watch.dll")
-            src_c = os.path.join(hook_dll, "battle_watch.c")
-            if os.path.isfile(src_dll):
-                dst_dir = f"build_{vi}/_internal/hook_dll"
-                os.makedirs(dst_dir, exist_ok=True)
-                shutil.copy2(src_dll, os.path.join(dst_dir, "battle_watch.dll"))
-                self._log("✔ battle_watch.dll 已随构建产物发布（{} 字节，{}）\n".format(
-                    os.path.getsize(src_dll),
-                    time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(os.path.getmtime(src_dll)))),
-                    LEVEL_OK)
-                if os.path.isfile(src_c) and os.path.getmtime(src_c) > os.path.getmtime(src_dll):
-                    self._log("⚠ battle_watch.c 比 DLL 新：发布包里是旧构建，"
-                              "请先跑 functions/achievement/hook_dll/build.ps1\n", LEVEL_WARN)
         except Exception as exc:  # noqa: BLE001
             self._fail(7, f"复制 resources 失败：{exc}")
             self._building = False
