@@ -36,8 +36,12 @@ DWORD WINAPI warp_thread(LPVOID param)
             DWORD beat = (DWORD)g_hdr->heartbeat;
             if (now > WARP_HB_STALE_MS && (DWORD)(now - beat) > WARP_HB_STALE_MS) {
                 if (!g_hdr->standalone) {
+                    /* 先放行软锁，再标记 standalone：换曲锁这类锁着的钩子
+                     * 会一直丢弃游戏自己的调用，启动器没了就再没人解锁，
+                     * 战斗里会彻底没有 BGM。拦截类的钩子不受影响。 */
+                    int released = warp_release_soft_locks();
                     g_hdr->standalone = 1;
-                    warp_log("launcher gone, standalone", 1);
+                    warp_log("launcher gone, standalone", released);
                 }
             }
         }

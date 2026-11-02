@@ -106,6 +106,10 @@ const char *warp_pick_text(int base);
 /* v8：命中时该钩子要不要改写第 arg 个参数；返回替换指针，NULL = 不改。 */
 void *warp_rewrite_value(int hook_index, int arg_index);
 void warp_fire(int hook_index);
+/* 启动器断开（standalone）时把 WARP_HF_SOFT_LOCK 钩子的参数门改成放行，
+ * 返回放行条数。见 warp_action.c 里的说明：挡游戏行为的锁不该比驱动它的
+ * 进程活得久，拦截类钩子则不在此列。 */
+int warp_release_soft_locks(void);
 int warp_probe_int(const char *klass_name, const char *method_name, void *obj);
 int warp_on_event(int hook_index, void *self, int argc,
                   void *a1, void *a2, void *a3,
