@@ -2637,6 +2637,20 @@ body.no-hw .ver-card { animation: verCardInLite .38s cubic-bezier(.22, .9, .24, 
 .skin-card.downloading { cursor: progress; }
 .skin-card.downloading .skin-card-bg { filter: brightness(.72); }
 
+/* 列表渐入: 卡片依次浮上来 (animationend 后 JS 会摘掉这个类) */
+@keyframes skinCardIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: none; }
+}
+.skin-card.skin-card-in {
+  animation: skinCardIn .34s cubic-bezier(.22, .61, .36, 1) backwards;
+}
+/* 侧栏本身也从"正在读取"的空态渐入, 避免文字突然被替换 */
+.skin-list { animation: fadeIn .22s ease; }
+@media (prefers-reduced-motion: reduce) {
+  .skin-card.skin-card-in { animation: none; }
+}
+
 @media (max-width: 760px) {
   .user-card { padding: 18px; }
   .user-card-head h2 { font-size: 21px; }

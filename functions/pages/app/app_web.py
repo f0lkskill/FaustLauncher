@@ -557,6 +557,94 @@ def _skin_profile_file(skin_id):
             return p
     return ""
 
+def _skin_background_dirs(entries):
+    """批量统计每个已安装皮肤的背景图数量 ``{皮肤 id: 张数}``。
+
+    玻璃窗列表只显示张数, 没必要把图片列表真的洗牌取出 (``_background_files``
+    会随机排序, 每张卡都做一遍纯属浪费)。结果按"目录 + mtime"缓存:
+    皮肤包没变动时双击进玻璃窗就是纯内存读取。
+    """
+    out = {}
+    for item in entries or ():
+        sid = str(item.get("id") or "")
+        if not sid or not item.get("installed"):
+            continue
+        out[sid] = _skin_bg_count(sid)
+    return out
+
+def _skin_bg_count(skin_id):
+    """数一个皮肤有几张背景图 (带缓存, 见 :func:`_skin_background_dirs`)。"""
+    # 默认皮肤没有皮肤目录, 背景图取自启动器自己的 assets/images/background
+    folder = _skin_background_dir(skin_id) if skin_id else _default_background_dir()
+    if not folder:
+        return 0
+    try:
+        stamp = os.path.getmtime(folder)
+    except OSError:
+        return 0
+    key = (folder, stamp)
+    with _SKIN_BG_LOCK:
+        hit = _SKIN_BG_COUNT.get(key)
+    if hit is not None:
+        return hit
+    count = len(_image_files_in(folder))
+    with _SKIN_BG_LOCK:
+        _SKIN_BG_COUNT[key] = count
+    return count
+
+#: 皮肤背景图张数缓存: {(背景目录, mtime): 张数}
+_SKIN_BG_COUNT = {}
+_SKIN_BG_LOCK = threading.Lock()
+
+def _skin_local_profile_uris(entries):
+    """已安装皮肤的封面图 ``{皮肤 id: data-uri}``, 只读本地 ``profile.*``。
+
+    首屏用: PIL 缩一张本地小图是毫秒级, 不进线程池也不会拖慢列表。
+    """
+    out = {}
+    for item in entries or ():
+        sid = str(item.get("id") or "")
+        if not sid or not item.get("installed"):
+            continue
+        profile = _skin_profile_file(sid)
+        if profile:
+            out[sid] = _file_uri(profile, max_side=640, quality=85) or ""
+    return out
+
+def _skin_profile_uris(entries, cloud):
+    """完整版封面图 ``{皮肤 id: data-uri}``, 并发跑。
+
+    已安装的读本地 ``profile.*``; 其余用云端 ``icon_url`` 现取 (成功后落在
+    ``cache/theme_icons``, 下次直接命中磁盘)。远程拉图是秒级操作, 串行时
+    光取图就能卡住好几秒, 所以统一扔进线程池, 且只在首屏渲染完之后调用
+    (:meth:`AppApi.get_skin_icons`)。
+    """
+    from functions.base import skin_store
+    from concurrent.futures import ThreadPoolExecutor
+
+    out = _skin_local_profile_uris(entries)
+    jobs = []
+    for item in entries or ():
+        sid = str(item.get("id") or "")
+        if not sid or out.get(sid):
+            continue
+        icon_url = str((cloud or {}).get(sid, {}).get("icon_url") or "")
+        if not icon_url and item.get("installed"):
+            icon_url = str(item.get("icon_url") or "")
+        if icon_url:
+            jobs.append((sid, icon_url))
+    if not jobs:
+        return out
+
+    def _one(job):
+        sid, icon_url = job
+        return sid, skin_store.theme_icon_uri(sid, icon_url)
+
+    with ThreadPoolExecutor(max_workers=min(8, len(jobs))) as pool:
+        for sid, uri in pool.map(_one, jobs):
+            out[sid] = uri or ""
+    return out
+
 #: 本地插件/Mod 图标的内存缓存：{(路径, mtime, 大小): data-uri}。
 #: 图标按页按需取，缓存命中时不再重复读盘 + 缩放 + base64。
 _RES_ICON_CACHE = {}
@@ -813,20 +901,30 @@ class AppApi:
         self._bind_skin_events()
 
     def _bind_skin_events(self):
-        """云端皮肤清单刷新完成后通知前端重绘皮肤页。"""
+        """绑定皮肤的后台任务: 云端清单预取 + 当前皮肤的版本补齐。"""
         try:
             from functions.base import skin_store
         except Exception:
             return
+
         def _changed():
             try:
                 self._push_event("skin_themes_changed", {})
             except Exception:
                 pass
+
+        def _sync_active():
+            """预取完清单再核对当前皮肤, 避免重复联网。"""
+            try:
+                skin_store.prefetch(wait=True)
+                self.sync_active_skin()
+            except Exception as exc:  # noqa: BLE001 - 后台同步失败不影响启动
+                print("[Skin] 当前皮肤同步失败: %s" % exc)
+
         skin_store.set_change_hook(_changed)
         # 启动时预取一次云端皮肤清单, 之后 get_skins 只读内存 (与插件/Mod 云端资源
         # 缓存同策略, 不会每点一次皮肤就访问一次云端笔记)
-        threading.Thread(target=skin_store.prefetch, name="faust-skin-prefetch", daemon=True).start()
+        threading.Thread(target=_sync_active, name="faust-skin-sync", daemon=True).start()
 
     def _start_user_sync(self):
         if self._user_sync_started:
@@ -1112,13 +1210,18 @@ class AppApi:
 
         展示字段 (名字/简介/作者/主题色/解锁条件) 全部来自云端清单;
         未安装的条目只有云端封面图和简介, 点选时才去下载 (见 :meth:`prepare_skin`)。
-        封面图取失败就用空 ``profile_uri``, 前端会显示主题色占位。
+
+        首屏要快: 只算本地小图 (已有缓存), 云端封面图先给空, 由前端随后调
+        :meth:`_push_skin_icons` —— 远程拉图是秒级的, 混进来整个列表就卡住。
         """
         from functions.base import skin_store
         from functions.base.user_system import load_user, _value as _user_value
 
         user_data = load_user()
         unlocked = set(_user_value(user_data, "unlocked_skins", []))
+        entries = skin_store.entry_list()
+        bg_files = _skin_background_dirs(entries)
+        icons = _skin_local_profile_uris(entries)
         skins = [{
             "id": "",
             "name": "默认皮肤",
@@ -1130,11 +1233,9 @@ class AppApi:
             "unlocked": True,
             "installed": True,
             "profile_uri": _get_project_icon_uri(),
-            "background_count": len(_background_files("")),
+            "background_count": _skin_bg_count(""),
         }]
 
-        entries = skin_store.entry_list()
-        cloud = skin_store.cloud_theme_map()
         for item in entries:
             sid = str(item.get("id") or "")
             if not sid:
@@ -1142,11 +1243,6 @@ class AppApi:
             unlock = item.get("unlock") if isinstance(item.get("unlock"), dict) else {"type": "free"}
             is_free = str(unlock.get("type") or "free").lower() == "free"
             installed = bool(item.get("installed"))
-            profile = _skin_profile_file(sid) if installed else ""
-            if profile:
-                icon_uri = _file_uri(profile, max_side=640, quality=85)
-            else:
-                icon_uri = skin_store.theme_icon_uri(sid, cloud.get(sid, {}).get("icon_url") or "")
             skins.append({
                 "id": sid,
                 "name": str(item.get("name") or sid),
@@ -1163,9 +1259,9 @@ class AppApi:
                 "cloud_version": str(item.get("cloud_version") or ""),
                 "needs_install": bool(item.get("needs_install")),
                 "needs_update": bool(item.get("needs_update")),
-                "profile_uri": icon_uri,
+                "profile_uri": icons.get(sid, ""),
                 "icon_url": str(item.get("icon_url") or ""),
-                "background_count": len(_background_files(sid)) if installed else 0,
+                "background_count": bg_files.get(sid, 0) if installed else 0,
             })
         themes = skin_store.cloud_themes()
         return {
@@ -1173,6 +1269,18 @@ class AppApi:
             "active": _active_skin_id(),
             "cloud_error": str(themes.get("error") or ""),
         }
+
+    def get_skin_icons(self):
+        """补齐皮肤卡片的封面图: ``{皮肤 id: data-uri}``, 并发取云端 ``icon_url``。
+
+        列表先用本地图撑住首屏, 这个桥调用在页面渲染之后才发起, 取完由前端
+        原地换图 —— 用户看到的是"卡片先出现、封面稍后到", 而不是整页空等。
+        """
+        from functions.base import skin_store
+
+        entries = skin_store.entry_list()
+        cloud = skin_store.cloud_theme_map()
+        return _skin_profile_uris(entries, cloud)
 
     def _skin_pusher(self):
         """生成皮肤下载的进度回调: 直接推下载抽屉那种 ``status``/``progress`` 事件。
@@ -1217,6 +1325,37 @@ class AppApi:
         result = skin_store._install_from_cloud(sid, theme, self._skin_pusher())
         if result.get("ok"):
             _LAST_BG_PATH.pop("path", None)
+        return result
+
+    def sync_active_skin(self):
+        """启动时把"当前启用的皮肤"补齐到云端版本, 结果推给前端。
+
+        以前只有在玻璃窗里点卡片才会检查, 于是设置里留着某款皮肤、本地包
+        却被删掉或版本落后时, 启动器会一直用着旧外观或裸奔。这里在后台线程
+        里跑 (联网 + 下载不挡启动), 需要下载时走下载抽屉那套事件。
+
+        解锁与否在这里不判: 用户当初能切过去就已经验过了。
+        """
+        from functions.base import skin_store
+
+        sid = str(_active_skin_id() or "").strip()
+        if not sid:
+            return {"ok": True, "skin_id": "", "downloaded": False}
+        theme = skin_store.cloud_theme(sid) or {}
+        if not theme:
+            return {"ok": False, "skin_id": sid, "error": "云端没有该皮肤的信息"}
+        if not theme.get("url"):
+            return {"ok": False, "skin_id": sid, "error": "云端没有该皮肤的下载地址"}
+        item = skin_store.local_skins().get(sid) or {}
+        needs_work = not item or not skin_store.same_version(
+            item.get("version"), theme.get("version"))
+        if needs_work:
+            print("[Skin] %s 需要补齐: 本地 %s -> 云端 %s" % (
+                sid, item.get("version") or "未安装", theme.get("version") or "未知"))
+        result = skin_store.ensure_skin_installed(sid, progress=self._skin_pusher())
+        if result.get("ok"):
+            _LAST_BG_PATH.pop("path", None)
+            self._push_event("skin_assets_changed", {"skin_id": sid})
         return result
 
     def get_skin_backgrounds(self, skin_id=""):
