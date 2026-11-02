@@ -7,7 +7,7 @@
 
    职责:
      1. 在 <body> 顶部插入与主界面同款的 #fl-titlebar (图标 + 标题 + 最小化/关闭)
-     2. 拖动标题栏移动窗口 (绝对屏幕坐标 + requestAnimationFrame 串行化,
+     2. 拖动标题栏移动窗口 (绝对屏幕坐标 + 每帧只发一个在途请求,
         与主界面 web/app/js/core/events.js 的拖动实现一致)
      3. 倒轮询 api.theme_revision(): 主程序切换皮肤后, 子窗口立刻重建
         <style id="fl-theme"> —— 不需要重启子窗口
@@ -160,36 +160,49 @@
     e.stopPropagation();
 
     var raf = null, px = e.screenX, py = e.screenY;
-    var chain = Promise.resolve();
-    var call = function (fn, args) {
+    var sentX = NaN, sentY = NaN;
+    var ready = false, active = true, flight = null;
+    // send 只负责发一个请求; 同一时刻最多一个在途, 中间点丢掉只补发最新坐标
+    // (每个请求到后端都会新起一个线程, 排队发的话窗口会滞后好几帧)。
+    var send = function (fn, args) {
       var f = a[fn];
-      if (!f) return;
-      chain = chain.then(function () {
-        try { return f.apply(a, args); } catch (err) { return null; }
-      }).catch(function () {});
+      if (!f) return Promise.resolve();
+      try { return Promise.resolve(f.apply(a, args)); } catch (err) { return Promise.resolve(); }
     };
-
-    call("begin_resize_window", [edge, e.screenX, e.screenY]);
-
-    var flush = function () {
+    var pump = function () {
       raf = null;
-      call("resize_window", [px, py]);
-      var on = false;
-      try { on = q("fl-tb-max") && q("fl-tb-max").innerHTML.indexOf("\u2750") >= 0; } catch (err) {}
-      if (on) setMaxGlyph(false);
+      if (!active || !ready) return;
+      if (px === sentX && py === sentY) return;
+      sentX = px; sentY = py;
+      flight = send("resize_window", [sentX, sentY]);
+      flight.then(function () { if (active) schedule(); });
+    };
+    var schedule = function () {
+      if (!raf) raf = requestAnimationFrame(pump);
     };
     var onMove = function (ev) {
       px = ev.screenX;
       py = ev.screenY;
-      if (!raf) raf = requestAnimationFrame(flush);
+      schedule();
     };
     var onUp = function () {
+      active = false;
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
       if (raf) { cancelAnimationFrame(raf); raf = null; }
-      call("resize_window", [px, py]);
-      call("end_resize_window", []);
+      var x = px, y = py;
+      flight
+        .then(function () { return send("resize_window", [x, y]); })
+        .then(function () { return send("end_resize_window", []); });
     };
+
+    // 改尺寸期间隐藏"最大化"字形 (固定尺寸以外的窗口才有这个按钮)
+    var on = false;
+    try { on = q("fl-tb-max") && q("fl-tb-max").innerHTML.indexOf("\u2750") >= 0; } catch (err) {}
+    if (on) setMaxGlyph(false);
+
+    flight = send("begin_resize_window", [edge, e.screenX, e.screenY]);
+    flight.then(function () { ready = true; schedule(); });
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
   }
@@ -209,33 +222,42 @@
       e.stopPropagation();
 
       var raf = null, px = e.screenX, py = e.screenY;
-      var chain = Promise.resolve();
-      var call = function (fn, x, y) {
+      var sentX = NaN, sentY = NaN;
+      var ready = false, active = true, flight = null;
+      var send = function (fn, args) {
         var f = a[fn];
-        if (!f) return;
-        chain = chain.then(function () {
-          try { return x === undefined ? f() : f(x, y); } catch (err) { return null; }
-        }).catch(function () {});
+        if (!f) return Promise.resolve();
+        try { return Promise.resolve(f.apply(a, args)); } catch (err) { return Promise.resolve(); }
       };
-
-      call("begin_move_window", e.screenX, e.screenY);
-
-      var flush = function () {
+      var pump = function () {
         raf = null;
-        call("move_window", px, py);
+        if (!active || !ready) return;
+        if (px === sentX && py === sentY) return;
+        sentX = px; sentY = py;
+        flight = send("move_window", [sentX, sentY]);
+        flight.then(function () { if (active) schedule(); });
+      };
+      var schedule = function () {
+        if (!raf) raf = requestAnimationFrame(pump);
       };
       var onMove = function (ev) {
         px = ev.screenX;
         py = ev.screenY;
-        if (!raf) raf = requestAnimationFrame(flush);
+        schedule();
       };
       var onUp = function () {
+        active = false;
         window.removeEventListener("mousemove", onMove);
         window.removeEventListener("mouseup", onUp);
         if (raf) { cancelAnimationFrame(raf); raf = null; }
-        call("move_window", px, py);
-        call("end_move_window");
+        var x = px, y = py;
+        flight
+          .then(function () { return send("move_window", [x, y]); })
+          .then(function () { return send("end_move_window", []); });
       };
+
+      flight = send("begin_move_window", [e.screenX, e.screenY]);
+      flight.then(function () { ready = true; schedule(); });
       window.addEventListener("mousemove", onMove);
       window.addEventListener("mouseup", onUp);
     });

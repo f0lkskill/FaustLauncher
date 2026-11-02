@@ -161,6 +161,13 @@ _faust_enum_proc = None
 _faust_subclass_hwnds = set()
 _system_shutdown_requested = False
 
+# 拖动窗口时用的 SetWindowPos 标志:
+#   SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE 保持尺寸/层级/焦点不变;
+#   SWP_ASYNCWINDOWPOS 让请求直接投递给窗口线程就返回 —— 拖动期间每帧都会
+#   调一次 move_window, 不带它的话每次都要等 UI 线程把当前帧渲染完, 窗口就
+#   会跟不上鼠标(停顿/回跳)。
+_DRAG_SWP_FLAGS = 0x0001 | 0x0004 | 0x0010 | 0x4000
+
 def _disable_system_drag(window):
     global _faust_wndproc, _faust_enum_proc, _faust_subclass_hwnds
     try:
@@ -896,6 +903,7 @@ class AppApi:
         self._pipeline_kind = None
         self._window_drag_lock = threading.Lock()
         self._window_drag_origin = None
+        self._window_drag_hwnd = 0
         self._user_sync_started = False
         self._start_user_sync()
         self._bind_skin_events()
@@ -983,6 +991,12 @@ class AppApi:
         return True
 
     def begin_move_window(self, mouse_x, mouse_y):
+        """记下拖动起点: 鼠标屏幕坐标 + 窗口左上角。
+
+        顺带把 hwnd 缓存到 ``_window_drag_hwnd``: 拖动期间 JS 每帧都会调
+        `move_window`, 而 ``_win32_hwnd`` 在拿不到 ``window.native`` 时会退化成
+        ``FindWindowW`` 全窗口搜索, 每帧搜一次就是白烧时间。
+        """
         try:
             win = self.window_ref.get("win") if self.window_ref else None
             if win is not None:
@@ -993,6 +1007,7 @@ class AppApi:
                     r = _wt.RECT()
                     ctypes.windll.user32.GetWindowRect(hwnd, ctypes.byref(r))
                     with self._window_drag_lock:
+                        self._window_drag_hwnd = hwnd
                         self._window_drag_origin = (
                             float(mouse_x), float(mouse_y), r.left, r.top)
         except Exception:
@@ -1000,21 +1015,25 @@ class AppApi:
         return True
 
     def move_window(self, mouse_x, mouse_y):
+        """把窗口移到「拖动起点 + 鼠标位移」的位置。
+
+        这是拖动期间调用频率最高的接口 (每一帧一次), 而 pywebview 每收到
+        一次 JS 调用都会新起一个线程执行 (``webview/util.py`` 的
+        ``Thread(target=_call)``), 所以这里只做两件事: 算坐标、投递请求。
+        标志位里带 ``SWP_ASYNCWINDOWPOS`` (见 :data:`_DRAG_SWP_FLAGS`),
+        保证不会被 UI 线程的渲染阻塞。
+        """
         try:
-            win = self.window_ref.get("win") if self.window_ref else None
-            if win is not None:
+            with self._window_drag_lock:
+                origin = self._window_drag_origin
+                hwnd = self._window_drag_hwnd
+            if hwnd and origin is not None:
                 import ctypes
-                from ctypes import wintypes
-                hwnd = _win32_hwnd(win)
-                with self._window_drag_lock:
-                    origin = self._window_drag_origin
-                if hwnd and origin is not None:
-                    start_x, start_y, window_x, window_y = origin
-                    x = window_x + round(float(mouse_x) - start_x)
-                    y = window_y + round(float(mouse_y) - start_y)
-                    ctypes.windll.user32.SetWindowPos(
-                        hwnd, None, x, y, 0, 0,
-                        0x0001 | 0x0004 | 0x0010)
+                start_x, start_y, window_x, window_y = origin
+                x = window_x + round(float(mouse_x) - start_x)
+                y = window_y + round(float(mouse_y) - start_y)
+                ctypes.windll.user32.SetWindowPos(
+                    hwnd, None, x, y, 0, 0, _DRAG_SWP_FLAGS)
         except Exception:
             pass
         return True
@@ -1022,6 +1041,7 @@ class AppApi:
     def end_move_window(self):
         with self._window_drag_lock:
             self._window_drag_origin = None
+            self._window_drag_hwnd = 0
         return True
 
     def close_window(self):
