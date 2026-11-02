@@ -66,8 +66,12 @@ class GachaWatcher(Protocol):
 class Gacha(Protocol):
     """``warp.game.gacha``：抽卡事件的开箱即用封装。"""
 
-    def hooks(self, allow_paid: bool = True) -> List[Dict[str, Any]]:
-        """要登记的钩子表；``allow_paid=True`` 时付费单抽直接放行。"""
+    def hooks(self, allow_paid: bool = True,
+              native_popup: bool = False) -> List[Dict[str, Any]]:
+        """要登记的钩子表；``allow_paid=True`` 时付费单抽直接放行。
+
+        ``native_popup=True`` 让拦截钩子自带 ``ACT_POPUP``，命中即弹。
+        """
         ...
 
     def bill(self, host: "Host") -> GachaBill:
@@ -89,6 +93,19 @@ class Gacha(Protocol):
 
         宿主只负责钩子 / 线程 / 心跳；弹不弹、弹什么由 ``handler`` 自己用
         ``host.popup()`` 决定。同一个插件重复调用会自动替换旧循环。
+        """
+
+        ...
+
+    def watch_native(
+        self,
+        host: Optional["Host"] = None,
+        allow_paid: bool = True,
+    ) -> Optional[str]:
+        """把「拦 + 弹」整单交给宿主 DLL，不需要 Python 参与。
+
+        台词先用 ``host.configure(texts=[...])`` 预载；启动器退出后 DLL
+        转入 standalone 仍然照弹。返回推送结果说明，共享内存不可用时为 None。
         """
 
         ...
