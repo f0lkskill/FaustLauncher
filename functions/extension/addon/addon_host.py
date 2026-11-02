@@ -361,36 +361,100 @@ _HANG_SEEN = {}
 _HANG_DONE = set()
 """已经采过现场的 pid，同一个进程只采一次。"""
 
+_EXIT_SEEN = {}
+"""pid -> 连续几次轮询看到「窗口没了、进程还在」，用来抓退出阶段的卡死。"""
 
-def _capture_hang(pids) -> None:
-    """游戏窗口真的卡住了，就把线程现场存下来（退出卡死只能现场取证）。"""
+_EXIT_DONE = set()
+"""已经为退出阶段采过现场的 pid。"""
+
+_WINDOW_SEEN = set()
+"""出过窗口的 pid: 只有它们消失后才可能是退出卡死。"""
+
+
+def _save(pid, tag: str) -> None:
+    """采一次线程现场并落盘，失败只打一行。"""
 
     try:
         from functions.base import hang_probe
-    except Exception:
-        return
+
+        data = hang_probe.sample(pid)
+        path = hang_probe.save_report(data, tag=tag)
+        print(f"[AddonHost] {tag}，线程现场已保存: {path}")
+        print(f"[AddonHost] 栈上出现最多的模块: {hang_probe.summarize(data)}")
+    except Exception as exc:  # noqa: BLE001
+        print(f"[AddonHost] 采集线程现场失败: {type(exc).__name__}: {exc}")
+
+
+def _capture_hang(pids) -> None:
+    """游戏卡住就把线程现场存下来。
+
+    两种卡死：窗口还在但 ``IsHungAppWindow`` 为真（战斗中/加载中），
+    以及窗口已经销毁、进程却迟迟不退 —— 后者是「点退出之后未响应」，
+    窗口都没了，只能靠「没有窗口了但进程还在」这个反向条件发现。
+    """
+
     for pid in pids:
-        if pid in _HANG_DONE:
-            continue
-        try:
-            if not hang_probe.find_hung_windows(pid):
+        if pid not in _HANG_DONE:
+            try:
+                from functions.base import hang_probe
+
+                hung = bool(hang_probe.find_hung_windows(pid))
+            except Exception:  # noqa: BLE001
+                hung = False
+            if not hung:
                 _HANG_SEEN.pop(pid, None)
-                continue
-        except Exception:
-            continue
-        seen = _HANG_SEEN.get(pid, 0) + 1
-        _HANG_SEEN[pid] = seen
-        if seen < 3:
+            else:
+                seen = _HANG_SEEN.get(pid, 0) + 1
+                _HANG_SEEN[pid] = seen
+                if seen >= 3:
+                    _HANG_DONE.add(pid)
+                    _save(pid, "游戏卡死")
+        if pid in _EXIT_DONE:
             continue
         try:
-            data = hang_probe.sample(pid)
-            path = hang_probe.save_report(data, tag="游戏卡死")
-            _HANG_DONE.add(pid)
-            print(f"[AddonHost] 游戏窗口未响应，线程现场已保存: {path}")
-            print(f"[AddonHost] 栈上出现最多的模块: {hang_probe.summarize(data)}")
-        except Exception as exc:
-            _HANG_DONE.add(pid)
-            print(f"[AddonHost] 采集线程现场失败: {type(exc).__name__}: {exc}")
+            from functions.base import hang_probe
+
+            alive_window = hang_probe.has_window(pid)
+        except Exception:  # noqa: BLE001
+            alive_window = True
+        if alive_window:
+            _WINDOW_SEEN.add(pid)
+            _EXIT_SEEN.pop(pid, None)
+            continue
+        if pid not in _WINDOW_SEEN:
+            # 刚启动还没出画面的进程也会「没有窗口」, 不能算退出卡死。
+            continue
+        seen = _EXIT_SEEN.get(pid, 0) + 1
+        _EXIT_SEEN[pid] = seen
+        # 关窗到进程退出正常只要一两秒；超过 ~10 秒还在就是退不掉。
+        if seen >= 5:
+            _EXIT_DONE.add(pid)
+            _save(pid, "退出卡死")
+
+
+def _fire_gamestart(manager) -> None:
+    """替启动器补发一次「游戏已启动」通知。
+
+    插件的 ``Service`` 会在构造时把自己挂进 ``AddonManager.gamestart_funcs``，
+    等的就是启动器在启动游戏流水线里那一下调用 —— 它同时是「开工信号」。
+    宿主进程里没有人发这条通知，插件就永远停在 idle：
+
+    * 2026-11-03 事故：启动器退出交接给宿主后，抽卡拦截的钩子没再登记，
+      拦得住但弹不出来（BGM 替换却正常 —— 它自己在载入时就 ``start()``）。
+
+    所以载入完插件后补发一次，语义与 :meth:`GameLauncher._fire_addon_events`
+    一致，只是不需要进度播报。
+    """
+
+    funcs = list(getattr(manager, "gamestart_funcs", []) or [])
+    if not funcs:
+        return
+    print(f"[AddonHost] 补发启动通知 {len(funcs)} 个")
+    for func in funcs:
+        try:
+            func()
+        except Exception as exc:  # noqa: BLE001
+            print(f"[AddonHost] 启动回调失败: {type(exc).__name__}: {exc}")
 
 
 def _watch(manager) -> None:
@@ -450,6 +514,7 @@ def run_host(debug: bool = False) -> None:
         manager = AddonManager([], app=None)
         manager.run_all_addon()
         print(f"[AddonHost] 插件已载入 {len(manager.loaded_modules)} 个")
+        _fire_gamestart(manager)
         _watch(manager)
     except KeyboardInterrupt:
         print("[AddonHost] 收到中断")

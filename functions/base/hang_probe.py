@@ -323,8 +323,11 @@ def sample(pid: int, max_threads: int = 64) -> dict:
         k32.CloseHandle(hproc)
 
 
-def find_hung_windows(pid: int) -> list:
-    """返回该进程里「已停止响应」的顶层窗口 ``[(hwnd, 标题)]``。"""
+def _visit_windows(pid: int, want_hung: bool = False) -> list:
+    """列出该进程的可见顶层窗口 ``[(hwnd, 标题, 是否无响应)]``。
+
+    ``want_hung`` 为真时只保留「已停止响应」的那些；两种用途共用一次枚举。
+    """
 
     u32 = _user32()
     found = []
@@ -336,17 +339,34 @@ def find_hung_windows(pid: int) -> list:
             return True
         if not u32.IsWindowVisible(hwnd):
             return True
-        if not u32.IsHungAppWindow(hwnd):
+        hung = bool(u32.IsHungAppWindow(hwnd))
+        if want_hung and not hung:
             return True
         title = ctypes.create_unicode_buffer(256)
         u32.GetWindowTextW(hwnd, title, 256)
-        found.append((int(hwnd), title.value))
+        found.append((int(hwnd), title.value, hung))
         return True
 
     # 回调必须在本函数内一直活着，否则 EnumWindows 会调到已回收的 thunk。
     callback = ctypes.WINFUNCTYPE(wt.BOOL, wt.HWND, wt.LPARAM)(_visit)
     u32.EnumWindows(callback, 0)
     return found
+
+
+def find_hung_windows(pid: int) -> list:
+    """返回该进程里「已停止响应」的顶层窗口 ``[(hwnd, 标题)]``。"""
+
+    return [(hwnd, title) for hwnd, title, _ in _visit_windows(pid, want_hung=True)]
+
+
+def has_window(pid: int) -> bool:
+    """该进程还有没有可见的顶层窗口。
+
+    退出游戏时的卡死发生在窗口销毁之后，``IsHungAppWindow`` 已经无从判断，
+    只能反过来盯「窗口没了、进程却还活着」。
+    """
+
+    return bool(_visit_windows(pid))
 
 
 def _format(data: dict) -> str:
