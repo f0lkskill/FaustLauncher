@@ -355,6 +355,44 @@ def handoff(manager=None) -> bool:
     return spawn_host()
 
 
+_HANG_SEEN = {}
+"""pid -> 连续几次轮询看到「未响应」（避免把加载中的短暂无响应当成卡死）。"""
+
+_HANG_DONE = set()
+"""已经采过现场的 pid，同一个进程只采一次。"""
+
+
+def _capture_hang(pids) -> None:
+    """游戏窗口真的卡住了，就把线程现场存下来（退出卡死只能现场取证）。"""
+
+    try:
+        from functions.base import hang_probe
+    except Exception:
+        return
+    for pid in pids:
+        if pid in _HANG_DONE:
+            continue
+        try:
+            if not hang_probe.find_hung_windows(pid):
+                _HANG_SEEN.pop(pid, None)
+                continue
+        except Exception:
+            continue
+        seen = _HANG_SEEN.get(pid, 0) + 1
+        _HANG_SEEN[pid] = seen
+        if seen < 3:
+            continue
+        try:
+            data = hang_probe.sample(pid)
+            path = hang_probe.save_report(data, tag="游戏卡死")
+            _HANG_DONE.add(pid)
+            print(f"[AddonHost] 游戏窗口未响应，线程现场已保存: {path}")
+            print(f"[AddonHost] 栈上出现最多的模块: {hang_probe.summarize(data)}")
+        except Exception as exc:
+            _HANG_DONE.add(pid)
+            print(f"[AddonHost] 采集线程现场失败: {type(exc).__name__}: {exc}")
+
+
 def _watch(manager) -> None:
     """盯游戏进程：游戏退出就收摊，等不到游戏也不会永远常驻。"""
 
@@ -364,8 +402,10 @@ def _watch(manager) -> None:
         if os.path.exists(_stop_file()):
             print("[AddonHost] 收到停止信号，准备退场")
             return
-        if _game_pids():
+        pids = _game_pids()
+        if pids:
             started = True
+            _capture_hang(pids)
         elif started:
             print("[AddonHost] 游戏已退出，回收插件线程")
             return
