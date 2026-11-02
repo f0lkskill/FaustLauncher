@@ -471,11 +471,13 @@ class AddonManager:
     def collect_addon_callbacks(self, addon_name: str) -> _ScratchAddonManager:
         scratch = _ScratchAddonManager()
         addon_path = self.get_addon_path(addon_name)
+
         if not addon_path:
             return scratch
         scr_path = os.path.join(addon_path, 'scr.py')
         if not os.path.exists(scr_path):
             return scratch
+        
         try:
             addon_arg: Dict[str, Any] = {
                 'AddonManager': scratch,
@@ -518,6 +520,7 @@ class AddonManager:
             self.scan_addons()
             print(f"插件 {addon_name} 删除成功")
             return True
+        
         except Exception as e:
             print(f"删除插件失败: {e}")
             return False
@@ -532,34 +535,44 @@ class AddonManager:
         except Exception as exc:
             print(f"载入必需插件声明失败: {exc}")
             return {}
+        
         result = ensure_all(installer=self.required_installer, root=self.addons_dir)
+
         if any((state or {}).get('status') == 'installed' for state in result.values()):
             self.scan_addons()
+
             try:
                 self.reload_all_addons()
             except Exception as exc:
                 print(f"重载插件失败: {exc}")
+
         return result
 
     def run_all_addon(self, ADDON_ARG: Optional[Dict[str, Any]] = None) -> None:
         # 先把「必需插件」补齐（例如 WarpHook）。缺失时不阻塞启动：
         # 下载失败只是让依赖它的功能降级，其它插件照常载入。
         self.ensure_required()
+
         if not self.addon_names:
             self.scan_addons()
+
         self.dep_skipped = {}
         order, skipped = self.resolve_load_order()
         self.dep_skipped = dict(skipped)
+
         for name, reason in skipped.items():
             print(f"插件 {name} 跳过载入（{reason}）")
         args = ADDON_ARG if ADDON_ARG is not None else {}
+
         for name in order:
             try:
                 self.run_addon(name, args)
             except Exception as e:
                 print(f"运行插件 {name} 时发生未捕获错误: {e}")
-        if self.namespaces:
-            print(f"插件命名空间: {self.namespaces.snapshot()}")
+
+        if self.namespaces and '--debug' in sys.argv:
+            print(f"[debug] 插件命名空间: {self.namespaces.snapshot()}")
+
         self._sync_extend_translate_source()
 
     def _sync_extend_translate_source(self) -> None:

@@ -394,6 +394,9 @@ class Service:
         self._hit_seen = {}
         self._hit_done = set()
         self._event_callbacks = []
+        # 游戏启动通知：启动器的 gamestart 回调会 set 这个事件，
+        # _worker 在 waiting_game 阶段优先等它，避免死轮询/死输出。
+        self._game_start_event = threading.Event()
         reg = _service_registry()
         old = reg.get(self.addon_name)
         if old is not None and old is not self:
@@ -508,10 +511,10 @@ class Service:
                     if pid is None:
                         if found is None:
                             self._phase = 'waiting_game'
-                            if now >= next_health:
-                                self.log('阶段=waiting_game 游戏尚未运行，持续等待')
-                                next_health = now + 30.0
-                            if stop.wait(max(self.interval, 0.5)):
+                            # 游戏尚未启动：优先等启动器 gamestart 通知，避免死轮询。
+                            if self._game_start_event.wait(timeout=2.0):
+                                self._game_start_event.clear()
+                            if stop.wait(self.interval):
                                 break
                             continue
                         self._phase = 'waiting_gameassembly'
@@ -723,6 +726,11 @@ class Service:
             if self._auto_cb is not None and not self._auto_cb():
                 self.log('自动注入已关闭，跳过')
                 return
+        except Exception:  # noqa: BLE001
+            pass
+        # 通知 worker 游戏已启动，避免它继续死轮询。
+        try:
+            self._game_start_event.set()
         except Exception:  # noqa: BLE001
             pass
         self.start()
