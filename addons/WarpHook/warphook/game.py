@@ -175,16 +175,31 @@ class Gacha:
 
         def _pump():
             last = self.blocked(host)
+            seen = host.hits(method='OnGachaSelected')
             warned = 0.0
+            allowed = 0.0
             while not stop.is_set():
                 try:
                     host.beat()
                     n = self.blocked(host)
+                    hits = host.hits(method='OnGachaSelected')
+                    # 重新推配置会把计数清零，两个数字都要跟着回落。
+                    if n < last or hits < seen:
+                        last, seen = n, hits
                     if n > last:
                         last = n
                         handler(self.bill(host))
-                    elif n < last:
-                        last = n          # 重新推配置会把计数清零
+                    elif hits > seen:
+                        # 钩子命中了、却没拦下来：参数门（guard）放行了。
+                        # NoGacha 里就是「这单被判成付费单抽」。不打日志的话，
+                        # 现象与「钩子根本没装上」一模一样。
+                        seen = hits
+                        now = time.monotonic()
+                        if now - allowed >= 5.0:
+                            allowed = now
+                            log(f"[{owner}] OnGachaSelected 命中但被放行"
+                                f"（guard 判为付费或参数门命中），不弹窗；"
+                                f"当前 GachaType={self.bill(host).type_id}")
                 except Exception:  # noqa: BLE001
                     # 这里吞掉异常会让「拦下了但没弹窗」变成完全无声的谜案：
                     # 回调本身抛错（读类型失败、文案配置取不到）也走这条路。
