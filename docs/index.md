@@ -1,43 +1,137 @@
-<div class="moyuu-hero">
-  <div class="moyuu-hero-badge">
-    <span>●</span> FaustLauncher 官方插件开发套件
-  </div>
-  <h1 class="moyuu-hero-title">基于 WarpHook 的插件二次开发</h1>
-  <p class="moyuu-hero-desc">
-    从零起步构建专业游戏插件：深入 il2cpp 运行时，从拦截抽卡事件到实时读取全场单位数据、状态与 Buff 链。纯 Python 开发，无需编写 C 代码。
-  </p>
-  <div class="moyuu-btn-group">
-    <a href="tutorial/01-hello.md" class="moyuu-btn moyuu-btn-primary">
-      🚀 快速起步教程
-    </a>
-    <a href="technical/index.md" class="moyuu-btn moyuu-btn-secondary">
-      📖 API 接口字典
-    </a>
-    <a href="https://github.com/f0lkskill/FaustLauncher" target="_blank" class="moyuu-btn moyuu-btn-secondary">
-      GitHub 源码仓库
-    </a>
-  </div>
-</div>
+<div class="moyuu-overview-container">
+  <!-- Moyuu 风格概览引导卡片 -->
+  <div class="moyuu-hero-card">
+    <div class="moyuu-hero-badge">
+      <span>●</span> FaustLauncher 官方插件开发套件
+    </div>
+    <h1 class="moyuu-hero-title">基于 WarpHook 的插件二次开发</h1>
+    <p class="moyuu-hero-desc">
+      几分钟内上手游戏底层插件开发：基于共享内存与 il2cpp 运行时，从拦截抽卡动作到实时读取全场单位数据、属性与 Buff 状态。纯 Python 编写，无需配置 C/C++ 编译器。
+    </p>
+    <div class="moyuu-btn-group">
+      <a href="tutorial/01-hello.md" class="moyuu-btn moyuu-btn-primary">
+        🚀 快速起步教程
+      </a>
+      <a href="technical/index.md" class="moyuu-btn moyuu-btn-secondary">
+        📖 API 接口字典
+      </a>
+      <a href="https://github.com/f0lkskill/FaustLauncher" target="_blank" class="moyuu-btn moyuu-btn-secondary">
+        GitHub 源码仓库
+      </a>
+    </div>
 
-<div class="moyuu-grid">
-  <a href="tutorial/01-hello.md" class="moyuu-card">
-    <div class="moyuu-card-icon">⚡</div>
-    <div class="moyuu-card-title">快速入门教程</div>
-    <div class="moyuu-card-desc">循序渐进掌握插件生命周期：从跑通空插件、弹窗测试到 Hook 监听与单位属性获取。</div>
-    <div class="moyuu-card-footer">开始学习 <span>→</span></div>
-  </a>
-  <a href="technical/index.md" class="moyuu-card">
-    <div class="moyuu-card-icon">📚</div>
-    <div class="moyuu-card-title">技术架构与 API</div>
-    <div class="moyuu-card-desc">详尽的命名空间字典：warp.game, warp.object, warp.field, warp.plugin 签名及规范。</div>
-    <div class="moyuu-card-footer">查看文档 <span>→</span></div>
-  </a>
-  <a href="reference/game-memory.md" class="moyuu-card">
-    <div class="moyuu-card-icon">🧩</div>
-    <div class="moyuu-card-title">内存与偏移参考</div>
-    <div class="moyuu-card-desc">游戏底层数据结构透视，深入掌握单位指针、Buff 结构与内存读链偏移量。</div>
-    <div class="moyuu-card-footer">探索参考 <span>→</span></div>
-  </a>
+    <!-- 步骤引导卡片行（仿照 Moyuu 引导 1. 2. 3.） -->
+    <div class="moyuu-step-grid">
+      <a href="tutorial/01-hello.md" class="moyuu-step-item">
+        <div>
+          <div class="moyuu-step-title">1. 创建首个插件</div>
+          <div class="moyuu-step-desc">编写 addon_info 与 scr.py 跑通空插件</div>
+        </div>
+        <div class="moyuu-step-arrow">→</div>
+      </a>
+      <a href="tutorial/03-events.md" class="moyuu-step-item">
+        <div>
+          <div class="moyuu-step-title">2. 订阅游戏事件</div>
+          <div class="moyuu-step-desc">监听回合开始与切场景，自动执行逻辑</div>
+        </div>
+        <div class="moyuu-step-arrow">→</div>
+      </a>
+      <a href="tutorial/04-unit.md" class="moyuu-step-item">
+        <div>
+          <div class="moyuu-step-title">3. 读取全场对象</div>
+          <div class="moyuu-step-desc">获取单位血量、理智、速度与 Buff 层数</div>
+        </div>
+        <div class="moyuu-step-arrow">→</div>
+      </a>
+    </div>
+  </div>
+
+  <!-- 首个插件示例卡片（仿照 Moyuu 首个 API 请求预览卡片） -->
+  <div class="moyuu-request-preview">
+    <div class="moyuu-request-header">
+      <div class="moyuu-request-label">
+        <span>⚡ 插件代码示例</span>
+        <span class="moyuu-tag-pill">Python 3.10+</span>
+      </div>
+      <div class="moyuu-badges-row">
+        <span class="moyuu-status-badge moyuu-badge-online">● 内存映射在线</span>
+        <span class="moyuu-status-badge moyuu-badge-protected">🔒 共享内存 177 KB</span>
+      </div>
+    </div>
+    <div class="moyuu-request-code">
+<span style="color:#6b7280;"># addons/my_plugin/scr.py</span>
+<span style="color:#f472b6;">import</span> <span style="color:#38bdf8;">warp.game</span> <span style="color:#f472b6;">as</span> game
+<span style="color:#f472b6;">import</span> <span style="color:#38bdf8;">warp.object</span> <span style="color:#f472b6;">as</span> obj
+
+<span style="color:#f472b6;">def</span> <span style="color:#a78bfa;">on_round_start</span>(round_num):
+    units = obj.get_battle_units()
+    <span style="color:#f472b6;">for</span> u <span style="color:#f472b6;">in</span> units:
+        <span style="color:#34d399;">print</span>(f<span style="color:#fef08a;">"[Round {round_num}] 单位 {u.name}: HP={u.hp}/{u.max_hp}, SP={u.mp}"</span>)
+    game.popup_message(<span style="color:#fef08a;">"回合数据分析完毕"</span>)
+    </div>
+    <div class="moyuu-request-footer">
+      <span>协议版本: v11 (WarpHook 0.9.39)</span>
+      <span>运行环境: Windows x64 (il2cpp)</span>
+    </div>
+  </div>
+
+  <!-- 数据看板指标卡片（仿照 Moyuu 用量概览 4 栏卡片） -->
+  <div class="moyuu-stats-grid">
+    <div class="moyuu-stat-card">
+      <div class="moyuu-stat-header">
+        <span>命名空间支持</span>
+        <span>📚</span>
+      </div>
+      <div class="moyuu-stat-value">5 个</div>
+      <div class="moyuu-stat-subtext">game / object / field / plugin / audio</div>
+    </div>
+    <div class="moyuu-stat-card">
+      <div class="moyuu-stat-header">
+        <span>单位属性字段</span>
+        <span>🔍</span>
+      </div>
+      <div class="moyuu-stat-value">60+</div>
+      <div class="moyuu-stat-subtext">包含基础数值、部位判定与 Buff 链表</div>
+    </div>
+    <div class="moyuu-stat-card">
+      <div class="moyuu-stat-header">
+        <span>IPC 共享内存</span>
+        <span>⚡</span>
+      </div>
+      <div class="moyuu-stat-value">177 KB</div>
+      <div class="moyuu-stat-subtext">低延迟双向环形缓冲区，微秒级同步</div>
+    </div>
+    <div class="moyuu-stat-card">
+      <div class="moyuu-stat-header">
+        <span>底层钩子通道</span>
+        <span>🛡️</span>
+      </div>
+      <div class="moyuu-stat-value">零 DLL</div>
+      <div class="moyuu-stat-subtext">统一托管 warp_host 宿主，纯 Python 编写</div>
+    </div>
+  </div>
+
+  <!-- 推荐操作卡片（仿照 Moyuu 模块卡片） -->
+  <div class="moyuu-features-grid">
+    <a href="tutorial/01-hello.md" class="moyuu-feature-card">
+      <div class="moyuu-feature-icon">🚀</div>
+      <div class="moyuu-feature-title">入门教程体系</div>
+      <div class="moyuu-feature-desc">9 个实战小节循序渐进，从空插件、弹窗、事件监听、数据读取直到音乐替换与底层钩子。</div>
+      <div class="moyuu-feature-footer">开始学习 <span>→</span></div>
+    </a>
+    <a href="technical/index.md" class="moyuu-feature-card">
+      <div class="moyuu-feature-icon">📖</div>
+      <div class="moyuu-feature-title">技术接口字典</div>
+      <div class="moyuu-feature-desc">分命名空间详细查阅所有 API 的函数签名、参数类型、返回值、使用约定及经典示例。</div>
+      <div class="moyuu-feature-footer">查阅接口 <span>→</span></div>
+    </a>
+    <a href="reference/game-memory.md" class="moyuu-feature-card">
+      <div class="moyuu-feature-icon">🧩</div>
+      <div class="moyuu-feature-title">游戏内存与偏移</div>
+      <div class="moyuu-feature-desc">深度解析游戏主循环与底层 il2cpp 内存模型，掌握读链偏移与安全取值原则。</div>
+      <div class="moyuu-feature-footer">深入探索 <span>→</span></div>
+    </a>
+  </div>
 </div>
 
 ## 你会学到什么

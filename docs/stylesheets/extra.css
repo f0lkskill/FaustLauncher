@@ -1,87 +1,133 @@
 /* ==========================================================================
-   FaustLauncher Next-Gen Docs Theme (shadcn / Moyuu Style)
-   Dark-first, modern SaaS / console aesthetics, clean typography, rounded cards
+   FaustLauncher Professional Docs Theme (Faithful Moyuu / shadcn Dashboard Clone)
+   - Matches Moyuu's modern dark/light dual theme seamlessly
+   - Supports light & dark schemes without hardcoded dark clash
+   - Inset rounded containers, frosted glass header, stat cards, request preview card
    ========================================================================== */
 
 :root {
-  /* Moyuu Design Tokens (Modern clean dark / light) */
-  --md-primary-fg-color: #3ea4ec;
-  --md-primary-fg-color--light: #54a9ff;
-  --md-primary-fg-color--dark: #0e72bc;
-  
+  /* Moyuu Light Mode Color Tokens */
+  --moyuu-bg: #f8fafc;
+  --moyuu-header-bg: rgba(255, 255, 255, 0.85);
+  --moyuu-card-bg: #ffffff;
+  --moyuu-sidebar-bg: #f8fafc;
+  --moyuu-content-bg: #ffffff;
+  --moyuu-fg: #0f172a;
+  --moyuu-muted-fg: #64748b;
+  --moyuu-subtle-fg: #94a3b8;
+  --moyuu-border: #e2e8f0;
+  --moyuu-input-bg: #f1f5f9;
+  --moyuu-accent: #0284c7;
+  --moyuu-accent-light: #e0f2fe;
+  --moyuu-accent-hover: #0369a1;
+  --moyuu-code-bg: #f8fafc;
+  --moyuu-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.05), 0 1px 2px -1px rgba(0, 0, 0, 0.05);
+
   --radius: 0.75rem;
   --radius-lg: 1rem;
+  --radius-xl: 1.25rem;
   --radius-sm: 0.5rem;
 
   --sl-font-sans: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif;
-  --sl-font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  --sl-font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+/* MkDocs Material Default (Light) mapping */
+[data-md-color-scheme="default"] {
+  --md-default-bg-color: var(--moyuu-bg);
+  --md-default-bg-color--light: #ffffff;
+  --md-default-bg-color--lighter: #f1f5f9;
+  --md-default-fg-color: var(--moyuu-fg);
+  --md-default-fg-color--light: var(--moyuu-muted-fg);
+  --md-default-fg-color--lighter: var(--moyuu-subtle-fg);
+  --md-default-fg-color--lightest: #cbd5e1;
+
+  --md-primary-fg-color: var(--moyuu-accent);
+  --md-accent-fg-color: var(--moyuu-accent);
+  --md-typeset-a-color: var(--moyuu-accent);
+
+  --md-code-bg-color: var(--moyuu-code-bg);
+  --md-code-fg-color: #0f172a;
+
+  --card-bg: var(--moyuu-card-bg);
+  --card-border: var(--moyuu-border);
+  --hero-bg: radial-gradient(ellipse 70% 100% at 85% 0%, rgba(2, 132, 199, 0.12) 0%, transparent 60%),
+             linear-gradient(135deg, #ffffff 0%, #f0f9ff 100%);
+  --hero-title-gradient: linear-gradient(135deg, #0f172a 30%, #334155 100%);
+  --badge-bg: rgba(2, 132, 199, 0.08);
+  --badge-border: rgba(2, 132, 199, 0.25);
+  --badge-fg: #0284c7;
+  --btn-primary-bg: linear-gradient(180deg, #0284c7 0%, #0369a1 100%);
+  --btn-secondary-bg: #ffffff;
+  --btn-secondary-border: #cbd5e1;
+  --code-preview-bg: #f8fafc;
+}
+
+/* MkDocs Material Slate (Dark) mapping — Exactly matching Moyuu Dark */
+[data-md-color-scheme="slate"] {
+  --moyuu-bg: #121316;
+  --moyuu-header-bg: rgba(18, 19, 22, 0.85);
+  --moyuu-card-bg: #18191e;
+  --moyuu-sidebar-bg: #121316;
+  --moyuu-content-bg: #16171c;
+  --moyuu-fg: #f3f4f6;
+  --moyuu-muted-fg: #9ca3af;
+  --moyuu-subtle-fg: #6b7280;
+  --moyuu-border: rgba(255, 255, 255, 0.09);
+  --moyuu-input-bg: #1e2026;
+  --moyuu-accent: #3ea4ec;
+  --moyuu-accent-light: rgba(62, 164, 236, 0.15);
+  --moyuu-accent-hover: #54a9ff;
+  --moyuu-code-bg: #121316;
+  --moyuu-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.35);
+
+  --md-default-bg-color: var(--moyuu-bg);
+  --md-default-bg-color--light: #18191e;
+  --md-default-bg-color--lighter: #202228;
+  --md-default-fg-color: var(--moyuu-fg);
+  --md-default-fg-color--light: var(--moyuu-muted-fg);
+  --md-default-fg-color--lighter: var(--moyuu-subtle-fg);
+  --md-default-fg-color--lightest: #374151;
+
+  --md-primary-fg-color: var(--moyuu-accent);
+  --md-accent-fg-color: var(--moyuu-accent);
+  --md-typeset-a-color: var(--moyuu-accent);
+
+  --md-code-bg-color: var(--moyuu-code-bg);
+  --md-code-fg-color: #e5e7eb;
+
+  --card-bg: var(--moyuu-card-bg);
+  --card-border: var(--moyuu-border);
+  --hero-bg: radial-gradient(ellipse 70% 120% at 85% 0%, rgba(62, 164, 236, 0.18) 0%, transparent 60%),
+             linear-gradient(135deg, rgba(24, 25, 30, 0.96) 0%, rgba(18, 19, 23, 0.98) 100%);
+  --hero-title-gradient: linear-gradient(135deg, #ffffff 30%, #94a3b8 100%);
+  --badge-bg: rgba(62, 164, 236, 0.12);
+  --badge-border: rgba(62, 164, 236, 0.28);
+  --badge-fg: #54a9ff;
+  --btn-primary-bg: linear-gradient(180deg, #3ea4ec 0%, #0e72bc 100%);
+  --btn-secondary-bg: rgba(255, 255, 255, 0.05);
+  --btn-secondary-border: rgba(255, 255, 255, 0.12);
+  --code-preview-bg: #121316;
 }
 
 /* ==========================================================================
-   Dark Palette Overrides (Moyuu Slate/Zinc dark style)
+   Global Reset & Smoothness
    ========================================================================== */
-[data-md-color-scheme="slate"] {
-  --md-default-bg-color: #121316;
-  --md-default-bg-color--light: #18191d;
-  --md-default-bg-color--lighter: #202227;
-  --md-default-fg-color: #f3f4f6;
-  --md-default-fg-color--light: #9ca3af;
-  --md-default-fg-color--lighter: #6b7280;
-  --md-default-fg-color--lightest: #374151;
-
-  --md-card-bg: #18191e;
-  --md-card-border: rgba(255, 255, 255, 0.08);
-  --md-card-hover-border: rgba(62, 164, 236, 0.35);
-
-  --md-code-bg-color: #17181c;
-  --md-code-fg-color: #e5e7eb;
-
-  --md-accent-fg-color: #3ea4ec;
-  --md-typeset-a-color: #3ea4ec;
-
-  --header-bg: rgba(18, 19, 22, 0.82);
-  --sidebar-bg: #121316;
-  --content-bg: #15161a;
-}
-
-/* Light scheme fallback */
-[data-md-color-scheme="default"] {
-  --md-default-bg-color: #f8fafc;
-  --md-default-bg-color--light: #ffffff;
-  --md-default-bg-color--lighter: #f1f5f9;
-  --md-default-fg-color: #0f172a;
-  --md-default-fg-color--light: #64748b;
-  --md-default-fg-color--lighter: #94a3b8;
-  --md-default-fg-color--lightest: #cbd5e1;
-
-  --md-card-bg: #ffffff;
-  --md-card-border: rgba(0, 0, 0, 0.08);
-  --md-card-hover-border: rgba(62, 164, 236, 0.4);
-
-  --md-code-bg-color: #f1f5f9;
-  --md-code-fg-color: #0f172a;
-
-  --header-bg: rgba(255, 255, 255, 0.85);
-  --sidebar-bg: #f8fafc;
-  --content-bg: #ffffff;
-}
-
-/* Global Font & Smoothness */
 body, .md-typeset {
   font-family: var(--sl-font-sans);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  letter-spacing: -0.011em;
+  letter-spacing: -0.012em;
 }
 
 /* ==========================================================================
-   Header Bar (Moyuu Backdrop Blur + Border Bottom + Modern Badges)
+   Header Bar (Moyuu Top Header: Frosted Blur + Micro Border)
    ========================================================================== */
 .md-header {
-  background-color: var(--header-bg) !important;
+  background-color: var(--moyuu-header-bg) !important;
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
-  border-bottom: 1px solid var(--md-card-border);
+  border-bottom: 1px solid var(--moyuu-border);
   box-shadow: none !important;
   color: var(--md-default-fg-color);
   height: 3.75rem;
@@ -102,12 +148,6 @@ body, .md-typeset {
   letter-spacing: -0.02em;
 }
 
-.md-header__topic {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
 .md-header__button {
   color: var(--md-default-fg-color--light);
   border-radius: var(--radius-sm);
@@ -116,28 +156,25 @@ body, .md-typeset {
 
 .md-header__button:hover {
   color: var(--md-default-fg-color);
-  background-color: rgba(255, 255, 255, 0.05);
+  background-color: rgba(125, 125, 125, 0.1);
 }
 
-/* Search bar styling */
+/* Search input mimicking Moyuu Command Palette style */
 .md-search__inner {
   border-radius: var(--radius);
   background: var(--md-default-bg-color--lighter);
-  border: 1px solid var(--md-card-border);
+  border: 1px solid var(--moyuu-border);
   transition: all 0.2s ease;
 }
 
 .md-search__input {
   border-radius: var(--radius) !important;
   font-size: 0.85rem !important;
-}
-
-.md-search__form {
-  border-radius: var(--radius);
+  color: var(--md-default-fg-color) !important;
 }
 
 /* ==========================================================================
-   Navigation Sidebar (Moyuu Inset / Floating Tree Aesthetics)
+   Navigation Sidebar (Moyuu Inset Menu Items)
    ========================================================================== */
 .md-sidebar--primary {
   padding-top: 1rem;
@@ -145,7 +182,7 @@ body, .md-typeset {
 
 .md-sidebar__scrollwrap {
   scrollbar-width: thin;
-  scrollbar-color: var(--md-card-border) transparent;
+  scrollbar-color: var(--moyuu-border) transparent;
 }
 
 .md-nav--primary .md-nav__title {
@@ -174,33 +211,35 @@ body, .md-typeset {
 
 .md-nav__link:hover {
   color: var(--md-default-fg-color);
-  background-color: rgba(255, 255, 255, 0.04);
+  background-color: rgba(125, 125, 125, 0.08);
 }
 
 .md-nav__link--active,
 .md-nav__item--active > .md-nav__link {
-  color: #3ea4ec !important;
-  background-color: rgba(62, 164, 236, 0.1) !important;
+  color: var(--moyuu-accent) !important;
+  background-color: var(--moyuu-accent-light) !important;
   font-weight: 600;
 }
 
-/* Inset Main Container */
+/* ==========================================================================
+   Main Content Area (Floating Card Inset Layout)
+   ========================================================================== */
 .md-main__inner {
   max-width: 1440px;
-  margin: 1rem auto 2rem auto;
+  margin: 1.25rem auto 2.5rem auto;
   gap: 1.5rem;
 }
 
 .md-content {
-  background: var(--content-bg);
-  border: 1px solid var(--md-card-border);
-  border-radius: var(--radius-lg);
-  padding: 2.25rem 2.5rem;
-  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.25);
+  background: var(--moyuu-content-bg);
+  border: 1px solid var(--moyuu-border);
+  border-radius: var(--radius-xl);
+  padding: 2.25rem 2.75rem;
+  box-shadow: var(--moyuu-shadow);
   min-height: 80vh;
 }
 
-/* Right Table of Contents */
+/* Right TOC */
 .md-sidebar--secondary {
   padding-top: 1rem;
 }
@@ -219,10 +258,10 @@ body, .md-typeset {
 }
 
 /* ==========================================================================
-   Content Elements: Typography, Cards, Tables, Code Blocks
+   Typography & Markdown Elements
    ========================================================================== */
 .md-typeset h1 {
-  font-size: 2rem;
+  font-size: 1.85rem;
   font-weight: 700;
   letter-spacing: -0.03em;
   margin-bottom: 1.25rem;
@@ -230,38 +269,20 @@ body, .md-typeset {
 }
 
 .md-typeset h2 {
-  font-size: 1.35rem;
+  font-size: 1.3rem;
   font-weight: 650;
   letter-spacing: -0.02em;
   margin-top: 2rem;
   margin-bottom: 0.75rem;
-  border-bottom: 1px solid var(--md-card-border);
+  border-bottom: 1px solid var(--moyuu-border);
   padding-bottom: 0.5rem;
 }
 
 .md-typeset h3 {
-  font-size: 1.1rem;
+  font-size: 1.05rem;
   font-weight: 600;
   margin-top: 1.5rem;
   margin-bottom: 0.5rem;
-}
-
-/* Code Blocks */
-.md-typeset pre > code {
-  border-radius: var(--radius);
-  border: 1px solid var(--md-card-border);
-  font-family: var(--sl-font-mono);
-  font-size: 0.835rem;
-  line-height: 1.6;
-}
-
-.md-typeset code {
-  font-family: var(--sl-font-mono);
-  border-radius: 0.35rem;
-  padding: 0.15em 0.35em;
-  background-color: var(--md-code-bg-color);
-  font-size: 0.85em;
-  border: 1px solid var(--md-card-border);
 }
 
 /* Clean Tables */
@@ -270,26 +291,26 @@ body, .md-typeset {
   border-collapse: separate;
   border-spacing: 0;
   border-radius: var(--radius);
-  border: 1px solid var(--md-card-border);
+  border: 1px solid var(--moyuu-border);
   overflow: hidden;
   margin: 1.5rem 0;
-  background-color: var(--md-card-bg);
+  background-color: var(--card-bg);
 }
 
 .md-typeset table:not([class]) th {
-  background-color: rgba(255, 255, 255, 0.03);
+  background-color: rgba(125, 125, 125, 0.05);
   font-size: 0.8125rem;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--md-default-fg-color--light);
-  border-bottom: 1px solid var(--md-card-border);
+  border-bottom: 1px solid var(--moyuu-border);
   padding: 0.75rem 1rem;
 }
 
 .md-typeset table:not([class]) td {
   padding: 0.75rem 1rem;
-  border-bottom: 1px solid var(--md-card-border);
+  border-bottom: 1px solid var(--moyuu-border);
   font-size: 0.875rem;
 }
 
@@ -298,35 +319,55 @@ body, .md-typeset {
 }
 
 .md-typeset table:not([class]) tr:hover td {
-  background-color: rgba(255, 255, 255, 0.02);
+  background-color: rgba(125, 125, 125, 0.03);
+}
+
+/* Inline code and blocks */
+.md-typeset code {
+  font-family: var(--sl-font-mono);
+  border-radius: 0.375rem;
+  padding: 0.15em 0.4em;
+  background-color: var(--md-code-bg-color);
+  font-size: 0.85em;
+  border: 1px solid var(--moyuu-border);
+}
+
+.md-typeset pre > code {
+  border-radius: var(--radius);
+  border: 1px solid var(--moyuu-border);
+  font-family: var(--sl-font-mono);
+  font-size: 0.84rem;
+  line-height: 1.6;
 }
 
 /* Admonitions (Callouts) */
 .md-typeset .admonition {
   border-radius: var(--radius);
-  border: 1px solid var(--md-card-border);
+  border: 1px solid var(--moyuu-border);
   box-shadow: none;
   font-size: 0.875rem;
   margin: 1.25rem 0;
 }
 
-.md-typeset .admonition .admonition-title {
-  font-weight: 600;
-  border-radius: var(--radius) var(--radius) 0 0;
+/* ==========================================================================
+   Moyuu Clone Components: Hero, Request Card, Stat Cards, Step Items
+   ========================================================================== */
+
+/* 1. Moyuu Hero Guide Container */
+.moyuu-overview-container {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  margin-bottom: 2.5rem;
 }
 
-/* ==========================================================================
-   Interactive Hero / Dashboard Grid Cards (Moyuu Ecosystem Feature)
-   ========================================================================== */
-.moyuu-hero {
+.moyuu-hero-card {
   position: relative;
   overflow: hidden;
-  border-radius: var(--radius-lg);
-  border: 1px solid var(--md-card-border);
-  background: radial-gradient(ellipse 70% 120% at 85% 0%, rgba(62, 164, 236, 0.18) 0%, transparent 60%),
-              linear-gradient(135deg, rgba(24, 25, 30, 0.95) 0%, rgba(20, 21, 25, 0.98) 100%);
-  padding: 2.5rem;
-  margin-bottom: 2rem;
+  border-radius: var(--radius-xl);
+  border: 1px solid var(--card-border);
+  background: var(--hero-bg);
+  padding: 2.25rem 2.5rem;
 }
 
 .moyuu-hero-badge {
@@ -335,29 +376,33 @@ body, .md-typeset {
   gap: 0.5rem;
   padding: 0.25rem 0.75rem;
   border-radius: 9999px;
-  background: rgba(62, 164, 236, 0.12);
-  border: 1px solid rgba(62, 164, 236, 0.28);
-  color: #54a9ff;
+  background: var(--badge-bg);
+  border: 1px solid var(--badge-border);
+  color: var(--badge-fg);
   font-size: 0.75rem;
   font-weight: 600;
   margin-bottom: 1rem;
 }
 
+.moyuu-hero-badge span {
+  font-size: 0.6rem;
+}
+
 .moyuu-hero-title {
-  font-size: 2.25rem !important;
+  font-size: 2.1rem !important;
   font-weight: 800 !important;
-  line-height: 1.2 !important;
+  line-height: 1.25 !important;
   margin: 0 0 0.75rem 0 !important;
   border: none !important;
-  background: linear-gradient(135deg, #ffffff 30%, #94a3b8 100%);
+  background: var(--hero-title-gradient);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
 }
 
 .moyuu-hero-desc {
-  font-size: 1.05rem;
+  font-size: 0.975rem;
   color: var(--md-default-fg-color--light);
-  max-width: 680px;
+  max-width: 660px;
   margin-bottom: 1.5rem;
   line-height: 1.6;
 }
@@ -374,9 +419,9 @@ body, .md-typeset {
   align-items: center;
   justify-content: center;
   gap: 0.5rem;
-  padding: 0.6rem 1.25rem;
-  border-radius: 0.625rem;
-  font-size: 0.875rem;
+  padding: 0.55rem 1.15rem;
+  border-radius: 0.6rem;
+  font-size: 0.85rem;
   font-weight: 600;
   text-decoration: none !important;
   transition: all 0.15s ease;
@@ -384,41 +429,221 @@ body, .md-typeset {
 }
 
 .moyuu-btn-primary {
-  background: #0e72bc;
-  background: linear-gradient(180deg, #3ea4ec 0%, #0e72bc 100%);
+  background: var(--btn-primary-bg);
   color: #ffffff !important;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.2);
   border: 1px solid rgba(255, 255, 255, 0.15);
 }
 
 .moyuu-btn-primary:hover {
-  opacity: 0.95;
+  opacity: 0.92;
   transform: translateY(-1px);
 }
 
 .moyuu-btn-secondary {
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--btn-secondary-bg);
   color: var(--md-default-fg-color) !important;
-  border: 1px solid var(--md-card-border);
+  border: 1px solid var(--btn-secondary-border);
 }
 
 .moyuu-btn-secondary:hover {
-  background: rgba(255, 255, 255, 0.08);
-  border-color: rgba(255, 255, 255, 0.2);
+  background: rgba(125, 125, 125, 0.08);
 }
 
-/* Feature Cards Grid */
-.moyuu-grid {
+/* 2. Moyuu Guide Step Columns (1. 创建插件 2. 配置清单 3. 读取数据) */
+.moyuu-step-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 1rem;
+  margin: 1.5rem 0;
+}
+
+.moyuu-step-item {
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius);
+  padding: 1rem 1.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  text-decoration: none !important;
+  transition: all 0.15s ease;
+}
+
+.moyuu-step-item:hover {
+  border-color: var(--moyuu-accent);
+  background-color: var(--moyuu-accent-light);
+  transform: translateY(-1px);
+}
+
+.moyuu-step-title {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--md-default-fg-color);
+  margin-bottom: 0.2rem;
+}
+
+.moyuu-step-desc {
+  font-size: 0.775rem;
+  color: var(--md-default-fg-color--light);
+  margin: 0;
+}
+
+.moyuu-step-arrow {
+  color: var(--md-default-fg-color--lighter);
+  font-size: 1rem;
+  transition: transform 0.15s ease;
+}
+
+.moyuu-step-item:hover .moyuu-step-arrow {
+  color: var(--moyuu-accent);
+  transform: translateX(3px);
+}
+
+/* 3. Moyuu Request Preview Card (Code Header + Status Badges + Dark Console Code) */
+.moyuu-request-preview {
+  background: var(--code-preview-bg);
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius-xl);
+  padding: 1.25rem 1.5rem;
+  margin: 1.75rem 0;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.04);
+}
+
+.moyuu-request-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid var(--card-border);
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.moyuu-request-label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.825rem;
+  font-weight: 600;
+  color: var(--md-default-fg-color);
+}
+
+.moyuu-tag-pill {
+  font-size: 0.725rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: 9999px;
+  background: rgba(125, 125, 125, 0.12);
+  color: var(--md-default-fg-color--light);
+  font-family: var(--sl-font-mono);
+}
+
+.moyuu-badges-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.moyuu-status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  padding: 0.2rem 0.55rem;
+  border-radius: 0.375rem;
+}
+
+.moyuu-badge-online {
+  background: rgba(16, 185, 129, 0.12);
+  color: #10b981;
+  border: 1px solid rgba(16, 185, 129, 0.25);
+}
+
+.moyuu-badge-protected {
+  background: rgba(59, 130, 246, 0.12);
+  color: #3b82f6;
+  border: 1px solid rgba(59, 130, 246, 0.25);
+}
+
+.moyuu-request-code {
+  margin: 1rem 0;
+  border-radius: var(--radius);
+  background: #0f1013 !important;
+  color: #e5e7eb;
+  padding: 1rem 1.25rem;
+  font-family: var(--sl-font-mono);
+  font-size: 0.8125rem;
+  line-height: 1.6;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  overflow-x: auto;
+}
+
+.moyuu-request-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.775rem;
+  color: var(--md-default-fg-color--lighter);
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+/* 4. Moyuu Stat Cards (4-column Dashboard Metrics) */
+.moyuu-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+  margin: 1.5rem 0 2rem 0;
+}
+
+.moyuu-stat-card {
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius-lg);
+  padding: 1.25rem 1.35rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.moyuu-stat-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--md-default-fg-color--light);
+  font-size: 0.775rem;
+  font-weight: 500;
+}
+
+.moyuu-stat-value {
+  font-family: var(--sl-font-mono);
+  font-size: 1.65rem;
+  font-weight: 700;
+  color: var(--md-default-fg-color);
+  letter-spacing: -0.03em;
+}
+
+.moyuu-stat-subtext {
+  font-size: 0.725rem;
+  color: var(--md-default-fg-color--lighter);
+}
+
+/* 5. Recommended Actions / Feature Navigation Cards */
+.moyuu-features-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   gap: 1.25rem;
   margin: 1.5rem 0 2.5rem 0;
 }
 
-.moyuu-card {
-  background: var(--md-card-bg);
-  border: 1px solid var(--md-card-border);
-  border-radius: var(--radius);
+.moyuu-feature-card {
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius-lg);
   padding: 1.5rem;
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   text-decoration: none !important;
@@ -427,13 +652,13 @@ body, .md-typeset {
   flex-direction: column;
 }
 
-.moyuu-card:hover {
-  border-color: var(--md-card-hover-border);
+.moyuu-feature-card:hover {
+  border-color: var(--moyuu-accent);
   transform: translateY(-2px);
-  box-shadow: 0 8px 24px -4px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 8px 24px -4px rgba(0, 0, 0, 0.2);
 }
 
-.moyuu-card-icon {
+.moyuu-feature-icon {
   width: 2.25rem;
   height: 2.25rem;
   border-radius: 0.5rem;
@@ -441,31 +666,31 @@ body, .md-typeset {
   align-items: center;
   justify-content: center;
   margin-bottom: 1rem;
-  background: rgba(62, 164, 236, 0.12);
-  color: #3ea4ec;
+  background: var(--moyuu-accent-light);
+  color: var(--moyuu-accent);
   font-size: 1.15rem;
 }
 
-.moyuu-card-title {
-  font-size: 1rem;
+.moyuu-feature-title {
+  font-size: 0.975rem;
   font-weight: 650;
   margin-bottom: 0.4rem;
   color: var(--md-default-fg-color);
 }
 
-.moyuu-card-desc {
-  font-size: 0.85rem;
+.moyuu-feature-desc {
+  font-size: 0.825rem;
   color: var(--md-default-fg-color--light);
   line-height: 1.5;
   margin: 0;
   flex: 1;
 }
 
-.moyuu-card-footer {
+.moyuu-feature-footer {
   margin-top: 1rem;
   font-size: 0.8rem;
   font-weight: 500;
-  color: #3ea4ec;
+  color: var(--moyuu-accent);
   display: flex;
   align-items: center;
   gap: 0.25rem;
