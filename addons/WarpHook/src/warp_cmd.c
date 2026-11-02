@@ -1064,6 +1064,10 @@ static DWORD WINAPI work_main(LPVOID arg)
                     if (rc == 0 && g_hdr)
                         g_hdr->fired++;
                     break;
+                case WARP_CMD_READ:
+                    /* 查询不是"动作"，不计 fired */
+                    rc = warp_cmd_read(WARP_CMD_SLOT(job.type));
+                    break;
                 default:
                     rc = WARP_CMD_RES_UNKNOWN;
                     break;
@@ -1214,10 +1218,16 @@ void warp_pump_commands(void)
     case WARP_CMD_STR:
     case WARP_CMD_LIST:
     case WARP_CMD_STATIC:
-        /* v0.9.23：这四类要进 il2cpp runtime/元数据的命令全部投递 worker
-         * 隔离舱，主线程泵不再亲自执行（六次崩溃都在这条路径上）。先标
-         * BUSY，结果与 ack 由 worker 写回；worker 没起来就记 FAIL，绝不
-         * 回退主线程执行。 */
+    case WARP_CMD_READ:
+        /* v0.9.23：要进 il2cpp runtime/元数据的命令全部投递 worker 隔离舱，
+         * 主线程泵不再亲自执行（六次崩溃都在这条路径上）。先标 BUSY，结果
+         * 与 ack 由 worker 写回；worker 没起来就记 FAIL，绝不回退主线程执行。
+         *
+         * v0.9.46：代读（READ）也并入这一组。原来它在泵上同步执行，退出
+         * 游戏时正好撞上 il2cpp 关机 —— 主线程卡在读里，整局结束时窗口
+         * 就是「未响应」（真机 2026-11-03，日志最后一行正好是 claimed
+         * type=7）。放到 worker 上，同样的卡顿只会挡住后台线程，冻结不了
+         * 游戏的 UI 线程。 */
         g_hdr->cmd_result = WARP_CMD_RES_BUSY;
         if (work_submit(seq, type, (int)g_hdr->vars[7]) != 0) {
             g_hdr->cmd_result = WARP_CMD_RES_FAIL;
@@ -1228,10 +1238,6 @@ void warp_pump_commands(void)
         break;
     case WARP_CMD_RELEASE:
         rc = warp_cmd_release(WARP_CMD_SLOT(type));
-        break;
-    case WARP_CMD_READ:
-        /* 代读不是"动作"，不计 fired —— 它是查询，每秒可以来几十次 */
-        rc = warp_cmd_read(WARP_CMD_SLOT(type));
         break;
     default:
         rc = WARP_CMD_RES_UNKNOWN;      /* 未知命令 */
