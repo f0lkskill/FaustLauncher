@@ -1336,16 +1336,14 @@ class AppApi:
 
         解锁与否在这里不判: 用户当初能切过去就已经验过了。
 
-        设置里没有皮肤时: 本地有皮肤就保持原生外观不动, 一款都没有才去
-        预装云端配置的默认皮肤 (见 :meth:`_adopt_default_skin`)。
+        设置里没有皮肤 = 用户就想用默认外观 (不套第三方皮肤), 这里什么都不做,
+        直接放行。
         """
         from functions.base import skin_store
 
         sid = str(_active_skin_id() or "").strip()
         if not sid:
-            if skin_store.local_skins():
-                return {"ok": True, "skin_id": "", "downloaded": False}
-            return self._adopt_default_skin()
+            return {"ok": True, "skin_id": "", "downloaded": False}
         theme = skin_store.cloud_theme(sid) or {}
         if not theme:
             return {"ok": False, "skin_id": sid, "error": "云端没有该皮肤的信息"}
@@ -1361,29 +1359,6 @@ class AppApi:
         if result.get("ok"):
             _LAST_BG_PATH.pop("path", None)
             self._push_event("skin_assets_changed", {"skin_id": sid})
-        return result
-
-    def _adopt_default_skin(self):
-        """当前没有生效皮肤时, 按云端配置装一次"默认皮肤"(``default_skin``)。
-
-        构建版不再随包带任何皮肤: 全新用户第一次打开玻璃窗时列表全是"未下载",
-        空等着很难受。这里在后台把 ``web_config.json`` 里的 ``default_skin`` 取下来
-        装好, 但**不改用户的设置** —— 想用哪款仍由用户自己点。
-        """
-        from functions.base import skin_store
-
-        sid = str(skin_store.default_skin_id() or "").strip()
-        if not sid:
-            return {"ok": True, "skin_id": "", "downloaded": False}
-        if skin_store.local_skins().get(sid):
-            return {"ok": True, "skin_id": sid, "downloaded": False}
-        theme = skin_store.cloud_theme(sid) or {}
-        if not theme.get("url"):
-            print("[Skin] 默认皮肤 %s 没有下载地址, 跳过预装" % sid)
-            return {"ok": False, "skin_id": sid, "error": "云端没有该皮肤的下载地址"}
-        print("[Skin] 首次启动, 预装默认皮肤: %s" % sid)
-        result = skin_store.ensure_skin_installed(sid, progress=self._skin_pusher())
-        self._push_event("skin_themes_changed", {"skin_id": sid})
         return result
 
     def get_skin_backgrounds(self, skin_id=""):
