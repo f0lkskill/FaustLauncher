@@ -860,7 +860,26 @@ def _goodbye_to_console():
     except Exception:
         pass
 
+_ADDON_HANDOFF = {"manager": None}
+"""真正退出时要交接给独立宿主进程的插件管理器（由 run_web_ui 塞进来）。"""
+
+
+def _handoff_addons():
+    """退出前把插件交给独立宿主，避免「关掉启动器插件就全灭」。"""
+    manager = _ADDON_HANDOFF.get("manager")
+    if manager is None:
+        return
+    _ADDON_HANDOFF["manager"] = None
+    try:
+        from functions.extension.addon import addon_host
+
+        addon_host.handoff(manager)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[AddonHost] 交接失败(忽略): {type(exc).__name__}: {exc}")
+
+
 def _terminate_now():
+    _handoff_addons()
     _goodbye_to_console()
     try:
         import ctypes
@@ -3497,6 +3516,34 @@ def _update_game_state(alive, busy, seed=False):
     _game_state["alive"], _game_state["busy"] = snapshot
     return True
 
+_HANG_REPORT = {"pid": 0, "at": 0.0}
+
+
+def _report_game_hang(pid):
+    """游戏窗口「未响应」时采一次线程现场, 写进 cache/hang。
+
+    退出卡死这类问题在日志里什么都看不到: 进程还活着、消息循环已经停了,
+    Player.log 也不会再多写一行。这里把每个线程停在哪取下来, 顺带在终端里
+    给出「谁占的帧最多」—— 一眼能看出是我们注入的 DLL 还是游戏自己。
+    同一个 PID 两分钟内只采一次, 免得反复卡着时刷屏。
+    """
+    from functions.base import hang_probe
+    now = time.time()
+    if _HANG_REPORT["pid"] == pid and now - _HANG_REPORT["at"] < 120:
+        return
+    _HANG_REPORT.update(pid=pid, at=now)
+    try:
+        data = hang_probe.sample(pid)
+    except Exception as exc:
+        print(f"[Hang] 采集线程现场失败: {exc}")
+        return
+    path = hang_probe.save_report(data, tag="游戏卡死")
+    summary = hang_probe.summarize(data)
+    print(f"[Hang] 游戏窗口未响应, 线程现场已保存: {path or '(写入失败)'}")
+    if summary:
+        print(f"[Hang] 栈上出现最多的模块: {summary}")
+
+
 def _monitor_game_process(window_ref):
     def _push(event, data=None):
         try:
@@ -3508,12 +3555,25 @@ def _monitor_game_process(window_ref):
         except Exception:
             pass
 
+    def _check_hang():
+        """游戏还活着的时候顺手看一眼窗口是不是已经停止响应。"""
+        from functions.base import hang_probe
+        for pid in _game_process_pids():
+            try:
+                if hang_probe.find_hung_windows(pid):
+                    _report_game_hang(pid)
+                    break
+            except Exception:
+                continue
+
     def _run():
         started = False
         exited_at = None
         waited = 0.0
         while True:
             running = _game_process_running()
+            if running:
+                _check_hang()
             if running and not started:
                 started = True
                 exited_at = None
@@ -3759,7 +3819,16 @@ def run_web_ui(debug: bool = False):
     except Exception:
         pass
 
+    try:
+        from functions.extension.addon import addon_host
+
+        addon_host.stop_host(5.0)
+        addon_host.take_over()
+    except Exception as exc:  # noqa: BLE001
+        print(f"[AddonHost] 接管插件宿主锁失败(忽略): {type(exc).__name__}: {exc}")
+
     core.addon_manager = AddonManager([], app=type("WebAppShim", (), {"core": core})())
+    _ADDON_HANDOFF["manager"] = core.addon_manager
     try:
         core.addon_manager.run_all_addon()
     except Exception as e:

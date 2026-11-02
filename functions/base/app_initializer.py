@@ -97,26 +97,39 @@ def run_launcher_mode(debug=False):
         print(f"[LauncherMode] 启动流程失败: {exc}")
 
 
+def run_addon_host(debug=False):
+    """--addon-host：不建窗口的独立插件宿主。
+
+    启动器退出后到这里接着跑插件，生命周期跟着游戏进程走：游戏一退出就
+    ``unload_all_addons()`` 收摊。实现都在
+    :mod:`functions.extension.addon.addon_host`。
+    """
+    from functions.extension.addon.addon_host import run_host
+
+    run_host(debug=bool(debug))
+
+
 LAUNCH_MODE = {
     "--achievement-hook": run_achievement_hook,    
     "--nyos-window": run_prescript_window,
     "--mod-manager-window": run_mod_manager_window,
     "--extension-tools-window": run_extension_tools_window,
     "--custom-translation-window": run_custom_translation_window,
+    "--addon-host": run_addon_host,
     "--launcher-mode": run_launcher_mode
 }
 
 DEBUG_MODE = '--debug' in sys.argv
 
-def _is_achievement_child() -> bool:
-    """本进程是不是成就监测子进程。
+def _is_plain_child() -> bool:
+    """本进程是不是「stdout 已经被别人接管」的后台子进程。
 
-    子进程的 stdout 会被主进程整条泵进 logs/achievement_hook.log —— 走了
-    console_log 的彩色包装之后，一行日志里出现两层时间戳加一串 ANSI 码
-    （文件里就是用户看到的「错误字符」）；镜像进主日志还会凭空多出一份
-    按时间戳命名的新 logs/*.log。所以子进程必须保持 stdout 朴素。
+    成就监测子进程的 stdout 会被主进程整条泵进 logs/achievement_hook.log；
+    独立插件宿主的 stdout 由启动器重定向进 logs/addon_host.log。两种情况若再
+    套一层 console_log，一行日志里就会出现两层时间戳加一串 ANSI 码（文件里
+    就是用户看到的「错误字符」），还会镜像出多余的 logs/*.log。
     """
-    return '--achievement-hook' in sys.argv
+    return '--achievement-hook' in sys.argv or '--addon-host' in sys.argv
 
 
 def base_load():
@@ -125,7 +138,7 @@ def base_load():
 
     harden_stdio()
 
-    if not _is_achievement_child():
+    if not _is_plain_child():
         try:
             from functions.base.console_log import install as _install_console_log
             _install_console_log()
