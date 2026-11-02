@@ -11,9 +11,14 @@ IMAGE_EXTS = (".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp")
 THEME_STYLE_ID = "fl-theme"
 
 def skins_root() -> str:
+    """内置皮肤目录 (打包后是 ``exe/_internal/web/app_skins``)。
+
+    下载的皮肤可能落在别的可写目录, 那种情况请用
+    :func:`functions.base.skin_store.local_skin_dir`, 它会合并所有根目录。
+    """
     try:
-        from functions.base.common.path_utils import get_web_root
-        return get_web_root("app_skins")
+        from functions.base.skin_store import builtin_root
+        return builtin_root()
     except Exception:
         return ""
 
@@ -26,9 +31,15 @@ def _read_json(path: str) -> dict:
         return {}
 
 def skin_dir(skin_id) -> str:
+    """皮肤目录的绝对路径 (内置目录 + 下载目录合并查找); 没有返回空串。"""
     sid = str(skin_id or "").strip()
     if not sid or sid in (".", "..") or os.path.basename(sid) != sid:
         return ""
+    try:
+        from functions.base.skin_store import local_skin_dir
+        return local_skin_dir(sid)
+    except Exception:
+        pass
     root = skins_root()
     if not root:
         return ""
@@ -203,28 +214,32 @@ def _safe_show(window):
         pass
 
 def list_skins() -> list[dict]:
+    """皮肤列表 (默认皮肤 + 全部已安装皮肤)。
+
+    只列本地已安装的皮肤: 云端未安装的条目由
+    :func:`functions.base.skin_store.entry_list` 提供给界面, 因为这里返回的
+    ``profile`` 必须是真实文件路径。
+    """
     out: list[dict] = [{
         "id": "", "name": "默认皮肤", "description": "启动器内置默认外观",
         "theme_color": "", "unlock": {"type": "free"}, "profile": "",
     }]
-    root = skins_root()
-    if not root or not os.path.isdir(root):
-        return out
     try:
-        names = sorted(os.listdir(root))
-    except OSError:
-        return out
-    for n in names:
-        if not skin_dir(n):
+        from functions.base.skin_store import entry_list
+        entries = [item for item in entry_list() if item.get("installed")]
+    except Exception:
+        entries = []
+    for item in entries:
+        sid = str(item.get("id") or "")
+        if not sid:
             continue
-        meta = skin_meta(n)
         out.append({
-            "id": n,
-            "name": meta.get("name") or n,
-            "description": meta.get("description") or "",
-            "theme_color": meta.get("theme_color") or "",
-            "unlock": meta.get("unlock") if isinstance(meta.get("unlock"), dict) else {"type": "free"},
-            "profile": skin_profile_file(n),
+            "id": sid,
+            "name": item.get("name") or sid,
+            "description": item.get("description") or "",
+            "theme_color": item.get("theme_color") or "",
+            "unlock": item.get("unlock") if isinstance(item.get("unlock"), dict) else {"type": "free"},
+            "profile": skin_profile_file(sid),
         })
     return out
 

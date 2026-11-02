@@ -125,6 +125,8 @@ a = Analysis(
     # 用户系统：app_web 在函数内 import 它们（走服务端 API，不再读写用户笔记），显式列一下更稳
     'functions.base.user_system',
     'functions.base.user_api',
+    # 云端皮肤仓库：skin_store 只在皮肤相关方法里延迟导入，PyInstaller 静态分析看不到
+    'functions.base.skin_store',
     # 成就模块：都是**动态/函数内导入**的，PyInstaller 静态分析看不到 —— 漏了就是打包后
     # "[成就] 模块 data.ach_xxx 导入失败: No module named ..."（实测踩过）。
     # 注：achievements.py 里现在也改成静态 import 了一遍（双保险），这里列全是为了
