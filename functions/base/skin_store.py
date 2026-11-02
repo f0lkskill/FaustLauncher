@@ -505,6 +505,10 @@ def prefetch(wait: bool = False) -> dict:
                     print(f"[Skin] 云端皮肤清单已就绪: {len(items)} 个")
                 else:
                     _THEMES["error"] = "云端皮肤清单获取失败 (可能离线)"
+            if items:
+                _fire_change()      # 先让界面看到列表, 链接探测随后在后台补
+                _warm_reach(items)
+                _local_theme_icons({it.get("id"): it for it in items})
         except Exception as exc:  # noqa: BLE001
             with _THEMES_LOCK:
                 _THEMES["error"] = f"{type(exc).__name__}: {exc}"
@@ -556,6 +560,8 @@ def cloud_themes(force: bool = False, wait: bool = False) -> dict:
         if items:
             with _THEMES_LOCK:
                 _THEMES.update({"at": time.time(), "items": items, "error": ""})
+            threading.Thread(target=_warm_reach, args=(items,),
+                             name="faust-skin-reach", daemon=True).start()
             return {"items": items, "error": ""}
         state = _pub_state()
         return {"items": state["items"], "error": state["error"] or "云端皮肤清单暂时获取失败"}
@@ -655,6 +661,25 @@ def theme_icon_uri(skin_id: str, icon_url: str) -> str:
     return uri
 
 
+def _local_theme_icons(themes):
+    """后台把已安装皮肤要用的封面图先缓存一遍 (只算云端图, 本地图由前端按需读)。
+
+    已安装的卡片前端直接读本地 ``profile.*``, 但抽屉和用户页还会用到云端
+    ``icon_url``; 提前取好, 列表和抽屉就不会各等一次几秒的远程拉图。
+    """
+    installed = local_skins()
+    for sid, theme in (themes or {}).items():
+        if sid not in installed:
+            continue
+        url = str(theme.get("icon_url") or "")
+        if not url:
+            continue
+        try:
+            theme_icon_uri(sid, url)
+        except Exception:
+            pass
+
+
 # ---------------- 版本判断与安装 ----------------
 
 def _norm_version(value) -> str:
@@ -674,6 +699,22 @@ def same_version(local_version, cloud_version) -> bool:
     if not local:
         return False
     return local == cloud
+
+
+def _warm_reach(items) -> None:
+    """后台预热"未安装皮肤"的链接探测, 免得打开玻璃窗时现等。
+
+    探测本身是纯网络往返 (蓝奏解析链接 head 一次要一秒多), 结果按 url 缓存,
+    这里提前跑一遍, 列表渲染时就只剩查表。
+    """
+    for item in items or ():
+        url = str(item.get("url") or "")
+        if not url:
+            continue
+        try:
+            _check_reachable(url)
+        except Exception:
+            pass
 
 
 def _check_reachable(url: str) -> bool:
@@ -770,8 +811,14 @@ def entry_list() -> list:
 
     items.sort(key=lambda item: (not item["installed"], str(item["name"])))
     for item in items:
+        # 只给"还没下过"的条目探测链接: 已安装的皮肤不需要, 而 head 一次
+        # 蓝奏解析链接要 1 秒多, 挂进列表里就变成了进玻璃窗要等几秒
+        if item["installed"]:
+            item["publishable"] = True
+            continue
         try:
-            item["publishable"] = _check_reachable(str(themes.get(item["id"], {}).get("url") or ""))
+            item["publishable"] = _check_reachable(
+                str(themes.get(item["id"], {}).get("url") or ""))
         except Exception:
             item["publishable"] = False
     return items

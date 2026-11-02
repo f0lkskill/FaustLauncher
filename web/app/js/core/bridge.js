@@ -183,6 +183,9 @@ window.__onEvent = function (event, data) {
   } else if (event === 'skin_themes_changed') {
     // 云端皮肤清单后台刷新完成: 已进过玻璃窗的话重拉一次列表
     if (typeof refreshCloudSkins === 'function') refreshCloudSkins();
+  } else if (event === 'skin_assets_changed') {
+    // 当前皮肤的包刚被自动补齐 (启动时缺包/版本落后): 重取覆盖层样式与资源
+    if (typeof refreshActiveSkinAssets === 'function') refreshActiveSkinAssets();
   } else if (event === 'version_update') {
     // 应用内版本更新模态窗口: 下载进度/状态 (status/progress/ready/error)
     updateVersionModalProgress(data);

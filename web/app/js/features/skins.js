@@ -9,9 +9,10 @@
  *   · 皮肤覆盖层样式的加载与卸载 (作为 <style> 追加在默认样式之后, 两者合并生效)
  * 本文件提供:
  *  函数: applyBootSkin / loadSkinCss / refreshSkinAssets / enterSkinsPage / loadSkins /
- *        renderSkinList / skinBadges / skinCardMeta / setSkinProgress / clearSkinProgress /
- *        syncSkinProgress / ensureSkinReady / pickSkin / showSkinBackgrounds / renderSkinBg /
- *        skinBgStep / toggleSkinAuto / stopSkinAuto / refreshCloudSkins
+ *        fillSkinIcons / renderSkinList / skinBadges / skinCardMeta / setSkinProgress /
+ *        clearSkinProgress / syncSkinProgress / ensureSkinReady / pickSkin /
+ *        showSkinBackgrounds / renderSkinBg / skinBgStep / toggleSkinAuto / stopSkinAuto /
+ *        refreshCloudSkins / refreshActiveSkinAssets
  *  状态/常量: skinList / skinActiveId / skinBgList / skinBgIdx / skinBgTimer / skinsInited
  * 依赖: 依赖 bootstrap($/api) / state / utils / ui.background(refreshBackgrounds)
  * ============================================================================== */
@@ -95,10 +96,15 @@ function enterSkinsPage() {
   }
 }
 
-async function loadSkins() {
+async function loadSkins(opts) {
   const list = $('#skin-list');
   if (!list) return;
-  list.innerHTML = '<div class="skin-empty">正在读取皮肤…</div>';
+  const quiet = !!(opts && opts.silent) && skinList.length;
+  // 已经有内容时静默刷新: 不闪"正在读取", 也不重播渐入动画
+  if (!quiet) {
+    list.innerHTML = '<div class="skin-empty">正在读取皮肤…</div>';
+    _skinRevealSeq++;
+  }
   let d = { skins: [], active: '' };
   try {
     // 不能套 withTimeout: 超时后 pywebview 仍会回调那个已被删掉的 id,
@@ -109,10 +115,59 @@ async function loadSkins() {
   }
   skinList = d.skins || [];
   skinActiveId = d.active || '';
-  renderSkinList();
+  renderSkinList(quiet ? 0 : _skinRevealSeq);
   // 右侧默认展示"当前正在用的"皮肤的背景 (只预览, 不写设置)
   const cur = skinList.find(s => s.id === skinActiveId) || skinList[0];
   if (cur) showSkinBackgrounds(cur);
+  // 云端封面图是秒级的远程操作, 放在首屏之后补 (取到就原地换图)
+  fillSkinIcons();
+}
+
+// 把后补的封面图贴到已有卡片上 (不重排列表, 只换 <img> 的 src)
+let _skinIconSeq = 0;
+
+function applySkinIcons(map) {
+  const list = $('#skin-list');
+  if (!list || !map) return;
+  skinList.forEach(s => {
+    const uri = map[s.id];
+    if (!uri) return;
+    s.profile_uri = uri;      // 抽屉/解锁框等复用同一个字段
+    const card = list.querySelector('.skin-card[data-skin-id="' + CSS.escape(s.id) + '"]');
+    const img = card && card.querySelector('.skin-card-bg');
+    if (img && img.getAttribute('src') !== uri) img.src = uri;
+  });
+}
+
+async function fillSkinIcons() {
+  if (!api) return;
+  const seq = ++_skinIconSeq;
+  let map = null;
+  try {
+    map = await api.get_skin_icons();
+  } catch (e) {
+    return;
+  }
+  if (seq !== _skinIconSeq) return;   // 期间列表又刷新过, 这次结果作废
+  applySkinIcons(map || {});
+}
+
+// 列表渐入: 卡片一张接一张浮上来 (只做一次, 静默刷新不重播)
+let _skinRevealSeq = 0;
+
+function playSkinReveal(seq) {
+  const list = $('#skin-list');
+  if (!list || seq !== _skinRevealSeq) return;
+  const cards = list.querySelectorAll('.skin-card');
+  cards.forEach((card, i) => {
+    card.style.animationDelay = Math.min(i * 45, 405) + 'ms';
+    card.classList.add('skin-card-in');
+    // 动画结束就摘掉, 免得后续 hover/重排被 transform 干扰
+    card.addEventListener('animationend', () => {
+      card.classList.remove('skin-card-in');
+      card.style.animationDelay = '';
+    }, { once: true });
+  });
 }
 
 
@@ -134,7 +189,7 @@ function skinMaskStyle(themeColor) {
     'rgba(' + c + ',.90) 100%)';
 }
 
-function renderSkinList() {
+function renderSkinList(reveal) {
   const list = $('#skin-list');
   if (!list) return;
   list.innerHTML = '';
@@ -174,6 +229,7 @@ function renderSkinList() {
     card.onclick = () => pickSkin(s);   // 没阻止冒泡 -> 全局点击音效正常
     list.appendChild(card);
   });
+  if (reveal) playSkinReveal(reveal);
   syncSkinProgress();
 }
 
@@ -271,7 +327,7 @@ async function ensureSkinReady(skin) {
   }
   // 装完之后本地信息变了, 重新拉一次列表 (保留当前高亮)
   const keep = skinActiveId;
-  await loadSkins();
+  await loadSkins({ silent: true });
   skinActiveId = keep;
   renderSkinList();
   return true;
@@ -398,5 +454,14 @@ function bindSkinEvents() {
 // 只有已进过玻璃窗才重绘, 免得用户在别的页面时白白重排一遍列表。
 function refreshCloudSkins() {
   if (!skinsInited) return;
-  loadSkins();
+  loadSkins({ silent: true });
+}
+
+// 后端补齐了"当前正在用的皮肤包" (启动时发现包被删/版本落后, 已自动下载):
+// 资源与覆盖层样式要重新取一遍, 否则界面还是旧皮肤的样子。
+async function refreshActiveSkinAssets() {
+  await loadSkinCss(skinActiveId);
+  await refreshSkinAssets();
+  if (typeof refreshBackgrounds === 'function') await refreshBackgrounds();
+  if (skinsInited) loadSkins({ silent: true });
 }
