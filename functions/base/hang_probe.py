@@ -34,6 +34,7 @@ _TH32CS_SNAPMODULE = 0x00000008
 _TH32CS_SNAPMODULE32 = 0x00000010
 
 _PROCESS_QUERY_INFORMATION = 0x0400
+_PROCESS_TERMINATE = 0x0001
 _PROCESS_VM_READ = 0x0010
 
 _THREAD_SUSPEND_RESUME = 0x0002
@@ -479,3 +480,21 @@ def summarize(data: dict, top: int = 4) -> str:
         return ""
     ranked = sorted(counter.items(), key=lambda kv: (-kv[1], kv[0]))
     return "  ".join("%s×%d" % (name, count) for name, count in ranked[:5])
+
+
+def terminate(pid: int) -> bool:
+    """强行结束目标进程，用于「游戏已经存完档却退不掉」时替用户收尾。
+
+    只在进程已经卡在退出阶段时调用；调用方必须先把线程现场存好。
+    """
+
+    k32 = _kernel32()
+    handle = k32.OpenProcess(_PROCESS_TERMINATE, False, int(pid))
+    if not handle:
+        return False
+    try:
+        return bool(k32.TerminateProcess(handle, 1))
+    except OSError:
+        return False
+    finally:
+        k32.CloseHandle(handle)
