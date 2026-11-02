@@ -153,19 +153,6 @@ def user_root() -> str:
     return builtin_root()
 
 
-def default_skin_id() -> str:
-    """新用户首次启动时自动装上的皮肤 (构建版不再随包带任何皮肤)。
-
-    没有配置 ``default_skin`` 时返回空串 = 保持启动器原生外观。
-    """
-    try:
-        from functions.base.web_config import get_web_config
-        sid = str((get_web_config() or {}).get("default_skin") or "").strip()
-    except Exception:
-        return ""
-    return sid
-
-
 def _can_write(folder: str) -> bool:
     """写一个探测文件来确认目录可写 (Windows 上 ``os.access`` 对 ACL 不可靠)。"""
     probe = os.path.join(folder, ".fl_skin_write_test")
