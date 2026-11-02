@@ -817,8 +817,12 @@ class Host:
         for gi, members in enumerate((primaries, secondaries)):
             hooks = []
             texts = []
+            # 文案段是绝对下标：辅段的文案落在 HOST_TEXTS_PRIMARY 之后，
+            # text_base 必须跟着加偏移，否则 C 会去主段里一个空格子取词 ——
+            # 表现就是「拦住了、命中数在涨，但 popup: empty text」。
+            text_off = 0 if gi == 0 else HOST_TEXTS_PRIMARY
             for owner_name, entry in members:
-                base = len(texts)
+                base = text_off + len(texts)
                 for hook in entry["hooks"]:
                     if len(hooks) >= hook_cap[gi]:
                         dropped.append((owner_name, hook.get("method") or "?"))
