@@ -168,6 +168,11 @@ def close_window(window, fade: bool = True) -> bool:
 _drag_lock = threading.Lock()
 _drag_origins: dict[int, tuple] = {}
 
+# 拖动/改尺寸时的 SetWindowPos 标志: SWP_NOZORDER | SWP_NOACTIVATE | SWP_ASYNCWINDOWPOS。
+# 最后那个关键 —— 拖动期间每帧都调一次, 不带它的话每次都要等 UI 线程把这一帧
+# 渲染完才返回, 窗口就会顿一下再跳过去。
+_FRAME_SWP = 0x0004 | 0x0010 | 0x4000
+
 def begin_move_window(window, mouse_x, mouse_y) -> bool:
     hwnd = hwnd_of(window)
     if not hwnd:
@@ -196,7 +201,7 @@ def move_window(window, mouse_x, mouse_y) -> bool:
         sx, sy, wx, wy = origin
         x = wx + round(float(mouse_x) - sx)
         y = wy + round(float(mouse_y) - sy)
-        ctypes.windll.user32.SetWindowPos(hwnd, None, x, y, 0, 0, 0x0001 | 0x0004 | 0x0010)
+        ctypes.windll.user32.SetWindowPos(hwnd, None, x, y, 0, 0, _FRAME_SWP)
         return True
     except Exception:
         return False
@@ -277,7 +282,7 @@ def resize_window(window, mouse_x, mouse_y) -> bool:
         if hwnd in _maximized:
             _maximized.pop(hwnd, None)
         ctypes.windll.user32.SetWindowPos(hwnd, None, x, y, w, h,
-                                          0x0004 | 0x0010)
+                                          _FRAME_SWP)
         return True
     except Exception:
         return False

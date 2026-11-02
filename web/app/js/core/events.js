@@ -131,33 +131,57 @@ function bindEvents() {
     const tbClose = document.getElementById('tb-close');
     if (tbMin) tbMin.addEventListener('click', () => { if (api) api.minimize_window().catch(() => {}); });
     if (tbClose) tbClose.addEventListener('click', () => { if (api) api.close_window().catch(() => {}); });
-    // 拖动使用绝对屏幕坐标，后端根据拖动起点计算窗口位置，避免异步增量请求竞态
+    // 拖动使用绝对屏幕坐标, 后端按拖动起点算窗口位置。
+    // 关键约束: 同一时刻只能有一个 move_window 在路上。pywebview 每次调用都会
+    // 新起一个 Python 线程, 如果每帧都发, 线程会越堆越多、回包顺序也会乱, 窗口
+    // 就会跟不上鼠标(顿一下再跳过去)。这里把中间点全部丢掉, 只在上一帧回包后
+    // 补发最新的那个坐标。
     tb.addEventListener('mousedown', (e) => {
       if (e.button !== 0 || e.target.closest('.tb-btn') || !e.target.closest('.tb-drag') || !api) return;
       e.preventDefault();
       e.stopPropagation();
-      let dragRAF = null, pendingX = e.screenX, pendingY = e.screenY;
-      let moveChain = api.begin_move_window(e.screenX, e.screenY).catch(() => {});
-      const flush = () => {
-        dragRAF = null;
-        const x = pendingX, y = pendingY;
-        moveChain = moveChain.then(() => api.move_window(x, y)).catch(() => {});
+
+      const startX = e.screenX, startY = e.screenY;
+      let pendingX = startX, pendingY = startY;   // 鼠标最新位置
+      let sentX = NaN, sentY = NaN;               // 已经发出去的位置
+      let ready = false;                          // begin 是否已经带到后端
+      let active = true;
+      let raf = null;
+      // flight 始终指向"当前最后一个还没回来的请求"; 松手时先等它回来再落点,
+      // 不然旧坐标可能后到, 把窗口又挪回去。
+      let flight = api.begin_move_window(startX, startY).catch(() => {});
+
+      const pump = () => {
+        raf = null;
+        if (!active || !ready) return;
+        if (pendingX === sentX && pendingY === sentY) return;
+        sentX = pendingX; sentY = pendingY;
+        flight = api.move_window(sentX, sentY).catch(() => {});
+        flight.then(() => { if (active) schedule(); });
+      };
+      const schedule = () => {
+        if (!raf) raf = requestAnimationFrame(pump);
       };
       const onMove = (ev) => {
         pendingX = ev.screenX;
         pendingY = ev.screenY;
-        if (!dragRAF) dragRAF = requestAnimationFrame(flush);
+        schedule();
       };
       const onUp = () => {
+        active = false;
         window.removeEventListener('mousemove', onMove);
         window.removeEventListener('mouseup', onUp);
-        if (dragRAF) { cancelAnimationFrame(dragRAF); dragRAF = null; }
+        if (raf) { cancelAnimationFrame(raf); raf = null; }
         const x = pendingX, y = pendingY;
-        moveChain = moveChain
+        // 落点用松手时的鼠标位置 (绝对坐标, 与拖动起点相加即最终位置)
+        flight
           .then(() => api.move_window(x, y))
+          .catch(() => {})
           .then(() => api.end_move_window())
           .catch(() => {});
       };
+
+      flight.then(() => { ready = true; schedule(); });
       window.addEventListener('mousemove', onMove);
       window.addEventListener('mouseup', onUp);
     });
