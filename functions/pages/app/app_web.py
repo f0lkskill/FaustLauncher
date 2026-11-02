@@ -3518,9 +3518,15 @@ def _update_game_state(alive, busy, seed=False):
 
 _HANG_REPORT = {"pid": 0, "at": 0.0}
 
+_EXIT_SEEN = {}
+"""pid -> 连续几次看到「窗口没了、进程还在」, 用来抓退出阶段的卡死。"""
 
-def _report_game_hang(pid):
-    """游戏窗口「未响应」时采一次线程现场, 写进 cache/hang。
+_WINDOW_SEEN = set()
+"""见过的「出过窗口」的 pid: 只有它们消失后才可能是退出卡死。"""
+
+
+def _report_game_hang(pid, tag="游戏卡死"):
+    """游戏卡住时采一次线程现场, 写进 cache/hang。
 
     退出卡死这类问题在日志里什么都看不到: 进程还活着、消息循环已经停了,
     Player.log 也不会再多写一行。这里把每个线程停在哪取下来, 顺带在终端里
@@ -3537,9 +3543,9 @@ def _report_game_hang(pid):
     except Exception as exc:
         print(f"[Hang] 采集线程现场失败: {exc}")
         return
-    path = hang_probe.save_report(data, tag="游戏卡死")
+    path = hang_probe.save_report(data, tag=tag)
     summary = hang_probe.summarize(data)
-    print(f"[Hang] 游戏窗口未响应, 线程现场已保存: {path or '(写入失败)'}")
+    print(f"[Hang] {tag}, 线程现场已保存: {path or '(写入失败)'}")
     if summary:
         print(f"[Hang] 栈上出现最多的模块: {summary}")
 
@@ -3556,12 +3562,24 @@ def _monitor_game_process(window_ref):
             pass
 
     def _check_hang():
-        """游戏还活着的时候顺手看一眼窗口是不是已经停止响应。"""
+        """游戏还活着的时候顺手看一眼：窗口卡住了，还是窗口没了却不退。"""
         from functions.base import hang_probe
         for pid in _game_process_pids():
             try:
                 if hang_probe.find_hung_windows(pid):
-                    _report_game_hang(pid)
+                    _report_game_hang(pid, "游戏卡死")
+                    break
+                if hang_probe.has_window(pid):
+                    # 只有「先见过窗口」的进程才可能是退出卡死, 否则会把
+                    # 刚启动还没出画面的那十几秒误判成卡死。
+                    _WINDOW_SEEN.add(pid)
+                    _EXIT_SEEN.pop(pid, None)
+                    continue
+                if pid not in _WINDOW_SEEN:
+                    continue
+                _EXIT_SEEN[pid] = _EXIT_SEEN.get(pid, 0) + 1
+                if _EXIT_SEEN[pid] >= 5:
+                    _report_game_hang(pid, "退出卡死")
                     break
             except Exception:
                 continue
