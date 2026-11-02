@@ -161,26 +161,40 @@ def _skin_root() -> str:
     return get_web_root("app_skins")
 
 def skin_metadata() -> dict[str, dict]:
-    root = _skin_root()
+    """全部皮肤的元数据: 本地已安装的 + 云端清单里的 (含未下载的皮肤)。
+
+    未安装的云端皮肤也要能参与解锁校验 (``verify_skin`` / ``unlock_skin``),
+    否则用户在"未下载"的卡片上点解锁会被判成"皮肤不存在"。
+    名字与解锁条件以云端清单为准 (本地 config.json 只在云端没写时兜底)。
+    """
     out: dict[str, dict] = {}
     try:
-        names = sorted(os.listdir(root))
+        from functions.base.skin_store import cloud_theme_map, local_skins
+        installed = local_skins()
+        themes = cloud_theme_map()
     except Exception:
-        return out
-    for name in names:
-        path = os.path.join(root, name)
-        if not os.path.isdir(path) or os.path.basename(name) != name:
+        installed = {}
+        themes = {}
+
+    for sid, item in installed.items():
+        meta = dict(item.get("meta") or {})
+        meta["id"] = sid
+        out[sid] = meta
+
+    for sid, theme in themes.items():
+        unlock = theme.get("unlock")
+        if not isinstance(unlock, dict):
             continue
-        config = os.path.join(path, "config.json")
-        try:
-            data = read_json(config)
-        except Exception:
+        if sid in out:
+            out[sid]["name"] = str(theme.get("name") or out[sid].get("name") or sid)
+            out[sid]["unlock"] = dict(unlock)
             continue
-        if not isinstance(data, dict):
-            continue
-        sid = str(data.get("id") or name).strip()
-        if sid:
-            out[sid] = data
+        out[sid] = {
+            "id": sid,
+            "name": str(theme.get("name") or sid),
+            "unlock": dict(unlock),
+            "installed": False,
+        }
     return out
 
 def _free_skin_ids() -> list[str]:

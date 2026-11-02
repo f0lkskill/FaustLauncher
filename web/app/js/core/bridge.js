@@ -7,7 +7,7 @@
  *   · window.__onResChanged 插件/Mod 增删后刷新已安装状态
  *   · window.__onPathSynced 后端自动填充游戏路径后同步设置页与主页
  *   · window.__onResError  卸载/删除失败提示
- *   · window.__onEvent    进度/状态/步骤/对话框/游戏启动退出/版本更新 的统一分发
+ *   · window.__onEvent    进度/状态/步骤/对话框/游戏启动退出/皮肤下载/版本更新 的统一分发
  * 本文件提供:
  *  全局入口: window.__onLog / window.__onTrayHint / window.__onResChanged / window.__onPathSynced / window.__onResError / window.__onEvent
  * 依赖: 依赖 state/utils/terminal/downloads/pipeline/version_modal (均为运行时调用, 加载顺序不敏感)
@@ -173,6 +173,16 @@ window.__onEvent = function (event, data) {
     // Steam VDF 自动检测到游戏路径 -> 弹模态窗口问用户 (path 为空则直接要求手选)
     if (typeof openPathConfirmModal === 'function') openPathConfirmModal(data || {});
     return;
+  } else if (event === 'skin_progress') {
+    // 兼容旧版后端: 皮肤下载进度只用来画卡片上的小进度条
+    const d = data || {};
+    if (typeof setSkinProgress === 'function' && d.skin_id) {
+      const percent = Number(d.percent);
+      setSkinProgress(d.skin_id, isFinite(percent) ? percent : 0, d.message || '');
+    }
+  } else if (event === 'skin_themes_changed') {
+    // 云端皮肤清单后台刷新完成: 已进过玻璃窗的话重拉一次列表
+    if (typeof refreshCloudSkins === 'function') refreshCloudSkins();
   } else if (event === 'version_update') {
     // 应用内版本更新模态窗口: 下载进度/状态 (status/progress/ready/error)
     updateVersionModalProgress(data);

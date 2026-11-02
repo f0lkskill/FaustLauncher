@@ -2614,6 +2614,29 @@ body.no-hw .ver-card { animation: verCardInLite .38s cubic-bezier(.22, .9, .24, 
 .skin-card-badge.locked-badge { background: rgba(245, 158, 11, .72); }
 .skin-card.locked .skin-card-meta { color: #f0c05a; }
 
+/* ---------- 玻璃窗: 云端皮肤 (未下载 / 可更新 / 下载中) ---------- */
+/* 未下载的皮肤只有云端封面, 压暗一点表示"本地还没有" */
+.skin-card.remote .skin-card-bg { filter: saturate(.9) brightness(.86); }
+.skin-card.remote .skin-card-meta { color: var(--text-2); }
+.skin-card-badge.remote-badge { background: rgba(56, 132, 255, .78); }
+.skin-card-badge.update-badge { background: rgba(34, 197, 94, .75); }
+/* 云端已有条目但皮肤包还没上传: 卡片更暗, 徽章走灰色 */
+.skin-card.offline .skin-card-bg { filter: grayscale(.7) brightness(.62); }
+.skin-card-badge.offline-badge { background: rgba(120, 120, 132, .78); }
+
+/* 下载进度条: 贴在卡片底部, 默认隐藏 */
+.skin-card-progress {
+  position: absolute; left: 0; right: 0; bottom: 0; height: 3px;
+  display: none; background: rgba(255, 255, 255, .16); overflow: hidden;
+}
+.skin-card-progress i {
+  display: block; height: 100%; width: 0;
+  background: linear-gradient(90deg, #4d6bfe, #38bdf8);
+  transition: width .25s ease;
+}
+.skin-card.downloading { cursor: progress; }
+.skin-card.downloading .skin-card-bg { filter: brightness(.72); }
+
 @media (max-width: 760px) {
   .user-card { padding: 18px; }
   .user-card-head h2 { font-size: 21px; }

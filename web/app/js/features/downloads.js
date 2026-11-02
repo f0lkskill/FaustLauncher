@@ -176,7 +176,7 @@ function renderDownloadDrawer() {
         ' onerror="this.src=\'' + PROJECT_ICON + '\'">' +
       '<div class="dl-info">' +
         '<div class="dl-name">' + esc(t.name) +
-          '<span class="dl-kind">' + (t.kind === 'addon' ? '插件' : 'Mod') + '</span></div>' +
+          '<span class="dl-kind">' + (t.kind === 'addon' ? '插件' : t.kind === 'skin' ? '皮肤' : 'Mod') + '</span></div>' +
         '<div class="dl-track"><div class="dl-fill" style="width:' + pct + '%"></div></div>' +
         '<div class="dl-meta">' + info + '</div>' +
       '</div>';
@@ -219,6 +219,38 @@ function startDownloadItem(kind, item) {
     api.download_mod(name, url).catch(e => { toast('下载失败: ' + e, 'error'); failDownloadTask(name, String(e)); });
   } else {
     toast('浏览器预览模式', 'warn');
+  }
+}
+
+// ---- 皮肤包下载: 走同一个抽屉, kind 记成 'skin' ----
+// 后端由 prepare_skin 推送 'status'/'progress' 事件, 任务名统一用皮肤名,
+// 所以 __onEvent 不用区分是插件还是皮肤, 直接按名字更新这一行即可。
+const SKIN_DL_KIND = 'skin';
+
+function startSkinDownload(skin) {
+  if (!skin || !skin.id) return;
+  const name = skin.name || skin.id;
+  if (downloadTasks.some(t => t.name === name && (t.status === 'downloading' || t.status === 'waiting'))) {
+    toggleDrawer(true);
+    return;
+  }
+  // 卡片上的封面已经是 data URI (后端缓存过的云端图); 万一还没取到, 交给
+  // hydrateIcons 用云端 icon_url 现取一次, 抽屉里也能看到同一个图标
+  const icon = skin.profile_uri || skin.icon_url || PROJECT_ICON;
+  addDownloadTask({ name, kind: SKIN_DL_KIND, icon });
+  toggleDrawer(true);
+}
+
+function endSkinDownload(skin, ok, text) {
+  const name = (skin && (skin.name || skin.id)) || '';
+  if (!name) return;
+  const t = downloadTasks.find(x => x.name === name);
+  if (!t) return;
+  if (ok) {
+    t.percent = 100;
+    updateDownloadTask(name, { percent: 100, downloaded: t.total, total: t.total });
+  } else {
+    failDownloadTask(name, text || '下载失败');
   }
 }
 

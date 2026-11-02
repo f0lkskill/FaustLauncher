@@ -392,13 +392,24 @@ _BG_POOL_JPEG_Q = 78
 _LAST_BG_PATH: dict = {}
 
 def _skins_root():
-    from functions.base.common.path_utils import get_web_root
-    return get_web_root("app_skins")
+    """内置皮肤目录 (打包后是 ``exe/_internal/web/app_skins``)。"""
+    try:
+        from functions.base.skin_store import builtin_root
+        return builtin_root()
+    except Exception:
+        from functions.base.common.path_utils import get_web_root
+        return get_web_root("app_skins")
 
 def _skin_dir(skin_id):
+    """皮肤目录: 内置目录与"下载皮肤"目录合并查找 (后者优先)。"""
     sid = str(skin_id or "").strip()
     if not sid or sid in (".", "..") or os.path.basename(sid) != sid:
         return ""
+    try:
+        from functions.base.skin_store import local_skin_dir
+        return local_skin_dir(sid)
+    except Exception:
+        pass
     d = os.path.join(_skins_root(), sid)
     return d if os.path.isdir(d) else ""
 
@@ -516,7 +527,16 @@ def _web_asset_file(skin_id, *rel):
     return ""
 
 def _skin_meta(skin_id):
-    sd = _skin_dir(skin_id)
+    """皮肤 config.json 内容 (走 skin_store 的扫描缓存, 一次渲染只读一次盘)。"""
+    sid = str(skin_id or "").strip()
+    try:
+        from functions.base.skin_store import local_skin_meta
+        meta = local_skin_meta(sid)
+        if meta:
+            return meta
+    except Exception:
+        pass
+    sd = _skin_dir(sid)
     if not sd:
         return {}
     try:
@@ -790,6 +810,23 @@ class AppApi:
         self._window_drag_origin = None
         self._user_sync_started = False
         self._start_user_sync()
+        self._bind_skin_events()
+
+    def _bind_skin_events(self):
+        """云端皮肤清单刷新完成后通知前端重绘皮肤页。"""
+        try:
+            from functions.base import skin_store
+        except Exception:
+            return
+        def _changed():
+            try:
+                self._push_event("skin_themes_changed", {})
+            except Exception:
+                pass
+        skin_store.set_change_hook(_changed)
+        # 启动时预取一次云端皮肤清单, 之后 get_skins 只读内存 (与插件/Mod 云端资源
+        # 缓存同策略, 不会每点一次皮肤就访问一次云端笔记)
+        threading.Thread(target=skin_store.prefetch, name="faust-skin-prefetch", daemon=True).start()
 
     def _start_user_sync(self):
         if self._user_sync_started:
@@ -1071,7 +1108,15 @@ class AppApi:
         return {"backgrounds": out, "total": total, "truncated": total > _BG_POOL_MAX}
 
     def get_skins(self):
+        """皮肤列表: 本地已安装的 + 云端清单里尚未下载的。
+
+        展示字段 (名字/简介/作者/主题色/解锁条件) 全部来自云端清单;
+        未安装的条目只有云端封面图和简介, 点选时才去下载 (见 :meth:`prepare_skin`)。
+        封面图取失败就用空 ``profile_uri``, 前端会显示主题色占位。
+        """
+        from functions.base import skin_store
         from functions.base.user_system import load_user, _value as _user_value
+
         user_data = load_user()
         unlocked = set(_user_value(user_data, "unlocked_skins", []))
         skins = [{
@@ -1083,33 +1128,96 @@ class AppApi:
             "theme_color": "",
             "unlock": {"type": "free", "description": "默认皮肤永久可用"},
             "unlocked": True,
+            "installed": True,
             "profile_uri": _get_project_icon_uri(),
             "background_count": len(_background_files("")),
         }]
-        root = _skins_root()
-        try:
-            names = sorted(n for n in os.listdir(root)
-                           if os.path.isdir(os.path.join(root, n)) and _skin_dir(n))
-        except Exception:
-            names = []
-        for sid in names:
-            meta = _skin_meta(sid)
-            unlock = meta.get("unlock") if isinstance(meta.get("unlock"), dict) else {"type": "free", "description": "免费皮肤"}
-            assert unlock is not None
+
+        entries = skin_store.entry_list()
+        cloud = skin_store.cloud_theme_map()
+        for item in entries:
+            sid = str(item.get("id") or "")
+            if not sid:
+                continue
+            unlock = item.get("unlock") if isinstance(item.get("unlock"), dict) else {"type": "free"}
             is_free = str(unlock.get("type") or "free").lower() == "free"
+            installed = bool(item.get("installed"))
+            profile = _skin_profile_file(sid) if installed else ""
+            if profile:
+                icon_uri = _file_uri(profile, max_side=640, quality=85)
+            else:
+                icon_uri = skin_store.theme_icon_uri(sid, cloud.get(sid, {}).get("icon_url") or "")
             skins.append({
                 "id": sid,
-                "name": str(meta.get("name") or sid),
+                "name": str(item.get("name") or sid),
                 "builtin": False,
-                "description": str(meta.get("description") or ""),
-                "authors": meta.get("authors") or {},
-                "theme_color": str(meta.get("theme_color") or ""),
+                "description": str(item.get("description") or ""),
+                "authors": item.get("authors") or {},
+                "theme_color": str(item.get("theme_color") or ""),
                 "unlock": unlock,
                 "unlocked": bool(is_free or sid in unlocked),
-                "profile_uri": _file_uri(_skin_profile_file(sid), max_side=640, quality=85),
-                "background_count": len(_background_files(sid)),
+                "installed": installed,
+                "cloud": bool(item.get("cloud")),
+                "publishable": bool(item.get("publishable")),
+                "version": str(item.get("version") or ""),
+                "cloud_version": str(item.get("cloud_version") or ""),
+                "needs_install": bool(item.get("needs_install")),
+                "needs_update": bool(item.get("needs_update")),
+                "profile_uri": icon_uri,
+                "icon_url": str(item.get("icon_url") or ""),
+                "background_count": len(_background_files(sid)) if installed else 0,
             })
-        return {"skins": skins, "active": _active_skin_id()}
+        themes = skin_store.cloud_themes()
+        return {
+            "skins": skins,
+            "active": _active_skin_id(),
+            "cloud_error": str(themes.get("error") or ""),
+        }
+
+    def _skin_pusher(self):
+        """生成皮肤下载的进度回调: 直接推下载抽屉那种 ``status``/``progress`` 事件。
+
+        与插件/Mod 下载完全同一条管线 —— 前端 ``__onEvent`` 收到后按任务名
+        更新下载抽屉里对应的那一行, 抽屉会自动弹出。
+        """
+        def _push(payload):
+            try:
+                self._push_event(str(payload.get("event") or "progress"), payload)
+            except Exception:
+                pass
+        return _push
+
+    def prepare_skin(self, skin_id=""):
+        """确保皮肤已在本地: 版本不一致或未安装时下载并解压。
+
+        下载动作会阻塞当前桥调用, 进度按下载抽屉的事件格式推给前端。
+        """
+        from functions.base import skin_store
+
+        sid = str(skin_id or "").strip()
+        if not sid:
+            return {"ok": True, "active": "", "installed": True, "downloaded": False}
+        result = skin_store.ensure_skin_installed(sid, progress=self._skin_pusher())
+        if result.get("ok"):
+            _LAST_BG_PATH.pop("path", None)
+        return result
+
+    def install_skin(self, skin_id=""):
+        """强制重新下载并覆盖安装皮肤 (``needs_update`` 的手动入口)。"""
+        from functions.base import skin_store
+
+        sid = str(skin_id or "").strip()
+        if not sid:
+            return {"ok": False, "error": "缺少皮肤 id"}
+        theme = skin_store.cloud_theme(sid, wait=True)
+        if not theme:
+            return {"ok": False, "error": "云端没有该皮肤的信息"}
+        if not theme.get("url"):
+            return {"ok": False, "error": "云端没有该皮肤的下载地址"}
+        result = skin_store._install_from_cloud(sid, theme, self._skin_pusher())
+        if result.get("ok"):
+            _LAST_BG_PATH.pop("path", None)
+        return result
 
     def get_skin_backgrounds(self, skin_id=""):
         sid = str(skin_id or "").strip()
@@ -1143,9 +1251,16 @@ class AppApi:
             return ""
 
     def set_active_skin(self, skin_id=""):
+        """切换皮肤: 先确认已安装 (必要时走云端下载), 再查解锁并落盘。"""
         sid = str(skin_id or "").strip()
-        if sid and not _skin_dir(sid):
-            return {"error": "皮肤不存在: " + sid}
+        if sid:
+            prepared = self.prepare_skin(sid)
+            if not prepared.get("ok"):
+                return {
+                    "error": str(prepared.get("error") or "皮肤准备失败"),
+                    "skin_id": sid,
+                    "need_download": True,
+                }
         if sid:
             from functions.base.user_system import load_user, _value as _user_value
             meta = _skin_meta(sid)
