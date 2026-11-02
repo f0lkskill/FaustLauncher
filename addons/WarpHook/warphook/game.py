@@ -249,11 +249,12 @@ class Gacha:
 
         返回推送结果说明；共享内存不可用时返回 ``None``。
         """
-        # 后台推送线程里没有插件栈帧，身份得在这里当场认下来。
-        owner = _owner_of_caller()
+        # 身份取「这个线程已经认领过的那个」, 而不是只看调用栈: 后台推送线程
+        # 里没有 scr.py 的栈帧, 只看栈会回落到单例第一次构造时的插件名 ——
+        # 于是钩子记到别人名下、文案却留在这里, 弹窗时挑到的是空串。
         if host is None:
-            host = Host(addon_name=owner or 'gacha', hooks=[], texts=[])
-        owner = owner or host.addon_name
+            host = Host(addon_name=_owner_of_caller() or 'gacha', hooks=[], texts=[])
+        owner = host._current_owner()
         host.bind_owner(owner)
         host.configure(hooks=self.hooks(allow_paid=allow_paid,
                                         native_popup=True))
