@@ -597,7 +597,7 @@ md5sum addons/WarpHook/warp_host.dll          # 与刚编出来的产物一致
 | `host.py` | 1310 | `Host`：钩子表与文案池的配置端、命令通道客户端、代读 `read()` |
 | `fields.py` | 183 | 字段表：类名 + 字段名 → 读链（偏移只在这一处记） |
 | `objects.py` | 198 | 对象门面：`units()` / `Unit` / `snapshot()` / `scene()` 一键读 |
-| `game.py` | 197 | `Gacha` / `GachaBill`：抽卡语义层 |
+| `game.py` | 243 | `Gacha` / `GachaBill`：抽卡语义层（`on_buy` 交 Python 决定，`watch_native` 整单交给 DLL 自弹） |
 | `service.py` | 690 | `Runtime` / `Service`：等游戏、注入、心跳、状态播报 |
 | `registry.py` | 171 | 组装 `warp` 命名空间、卸载收尾 |
 

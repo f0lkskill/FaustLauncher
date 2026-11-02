@@ -1,3 +1,10 @@
+## 0.9.42 — 抽卡拦截支持 DLL 侧原生弹窗
+
+- 新增 `Gacha.watch_native(host, allow_paid)`：把「拦 + 弹」整单交给宿主，`OnGachaSelected` 钩子带 `ACT_POPUP`，命中后由 `warp_fire()` 从本插件文案段里随机挑一句弹出来。这条路径全在游戏进程里完成，**启动器退出后 DLL 转入 standalone 仍然照弹**。
+- 与 `on_buy` 的分工：`on_buy` 把决定权交给 Python（回调里想怎么弹怎么弹，但依赖启动器进程活着）；`watch_native` 只适合「命中即弹窗」，换来的是零线程、零轮询、零命令通道占用。
+- 台词必须先 `host.configure(texts=[...])` 预载：宿主只在**该钩子的文案段**里随机挑，段为空就只有拦截、没有弹窗。
+- `Gacha.hooks(allow_paid=True, native_popup=False)` 多一个开关；默认行为不变。
+
 ## 0.9.41 — 修复后台线程把命中数算到别的插件头上
 
 - `_owner_of_caller()` 靠调用栈里的 `env.ADDON_NAME` 认插件。插件的后台线程（`Service` 的 auto/hit 线程、`Live` 的 pump、抽卡 `on_buy` 的 pump）没有 `scr.py` 的栈帧，于是回落到 `Host` 单例第一次构造时的 `addon_name` —— 也就是「最先载入的那个插件」。结果：`hits()` / `blocked()` 恒读 0，状态行的 `hook_total` 显示成别人的钩子数。

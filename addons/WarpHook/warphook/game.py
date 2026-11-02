@@ -1,7 +1,8 @@
 """warp.game：把「抽卡」这件事包成看得懂的调用。
 
 引擎只知道「哪个方法被钩住了、第几个参数是什么」；这里把它翻译成
-``GachaBill``（哪一类抽卡）与 ``Gacha.on_buy``（抽卡时想干什么）。
+``GachaBill``（哪一类抽卡）与 ``Gacha.on_buy`` / ``Gacha.watch_native``
+（抽卡时想干什么：前者把决定权交给 Python，后者整个交给宿主 DLL）。
 """
 
 import threading
@@ -9,7 +10,8 @@ import time
 import traceback
 
 from .base import log
-from .host import HF_BLOCK, Host, _owner_of_caller, _tick32, host_alive
+from .host import (ACT_POPUP, HF_BLOCK, Host, _owner_of_caller, _tick32,
+                   host_alive)
 
 # ========== 语义层：把「类名 + argc + 参数槽」包成看得懂的调用 ==========
 
@@ -106,8 +108,13 @@ class Gacha:
                 pass
         self._watchers.clear()
 
-    def hooks(self, allow_paid=True):
-        """两条钩子：一条把 GachaType 读进 vars[0]，一条把下单拦下来。"""
+    def hooks(self, allow_paid=True, native_popup=False):
+        """两条钩子：一条把 GachaType 读进 vars[0]，一条把下单拦下来。
+
+        ``native_popup=True`` 让拦截钩子自己带 ``ACT_POPUP``：命中即拦即弹，
+        台词由宿主从该钩子的文案段里随机挑 —— 这条路径全在游戏进程里完成，
+        不需要 Python 参与（见 :meth:`watch_native`）。
+        """
         return [
             {
                 'klass': 'MainUI.GachaUIPresenter',
@@ -124,7 +131,7 @@ class Gacha:
                 'klass': 'MainUI.GachaUIPresenter',
                 'method': 'OnGachaSelected',
                 'argc': 2,
-                'actions': 0,
+                'actions': ACT_POPUP if native_popup else 0,
                 'flags': HF_BLOCK,
                 'guard_var': 0 if allow_paid else -1,
                 'guard_value': 1,
@@ -226,6 +233,35 @@ class Gacha:
             old.stop()                    # 同一插件重复登记：旧的自己退场
         self._watchers[owner] = watcher
         return watcher
+
+    def watch_native(self, host=None, allow_paid=True):
+        """把「拦 + 弹」整单交给宿主 DLL，Python 只在旁边写配置。
+
+        与 :meth:`on_buy` 的区别是**不依赖 Python 存活**：钩子表、参数门、
+        台词都躺在共享内存里，启动器退出后 ``warp_host.dll`` 转入 standalone
+        照样命中、照样弹。适合「命中即弹窗」这类没有额外判断的插件::
+
+            host.configure(texts=["又抽！？瓦夜不想过了？"])
+            warp.game.gacha.watch_native(host=host)
+
+        台词必须先由插件用 ``host.configure(texts=[...])`` 预载：宿主只会
+        在**这个钩子的文案段**里随机挑，段是空的就只有拦截、没有弹窗。
+
+        返回推送结果说明；共享内存不可用时返回 ``None``。
+        """
+        # 后台推送线程里没有插件栈帧，身份得在这里当场认下来。
+        owner = _owner_of_caller()
+        if host is None:
+            host = Host(addon_name=owner or 'gacha', hooks=[], texts=[])
+        owner = owner or host.addon_name
+        host.bind_owner(owner)
+        host.configure(hooks=self.hooks(allow_paid=allow_paid,
+                                        native_popup=True))
+        try:
+            return host.push(True)
+        except Exception as exc:  # noqa: BLE001
+            log(f"[{owner}] 抽卡钩子没能写进共享内存：{exc}")
+            return None
 
 
 gacha = Gacha()
