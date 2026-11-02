@@ -299,8 +299,9 @@ GameAssembly.dll + base_offset → +0xB8 → +0x80 → +0x18 → +0x28 → int32
 
 ### 7.1 索引里的 battle 钩子与 `fields` 段
 
-索引除了上面两类目标，还带两组给**战斗事件观测**用的内容（细节见
-[`functions/achievement/hook_dll/README.md`](../achievement/hook_dll/README.md)）：
+索引除了上面两类目标，还带两组给**战斗事件观测**用的内容（观测走 WarpHook，
+见 [`functions/achievement/warp_source.py`](../achievement/warp_source.py)，
+老的 `battle_watch.dll` 注入链路已下线）：
 
 ```json
 "hooks": {
@@ -318,8 +319,9 @@ GameAssembly.dll + base_offset → +0xB8 → +0x80 → +0x18 → +0x28 → int32
 
 - 这三个 hook 的语义在 `targets.py` 的 `HOOK_TARGETS`（`group="battle"`）里声明，
   要加观测点就加一条；字段清单在 `targets.BATTLE_FIELDS`；
-- 消费方：`functions/achievement/battle_watch.py`（读 RVA / prologue / 字段偏移后写进
-  注入 DLL 的共享内存配置）与 `test/damage_log.py --api-url <笔记地址>`（读 `cheat_damage` 兼容块）。
+- 消费方：`functions/achievement/battle_watch.py`（读 RVA / prologue / 字段偏移，
+  交给 WarpHook 挂点；`cheat_offsets.py` 另有一条供插件用的取偏移链路）
+  与 `test/damage_log.py --api-url <笔记地址>`（读 `cheat_damage` 兼容块）。
 
 ### 7.2 读指针链
 
