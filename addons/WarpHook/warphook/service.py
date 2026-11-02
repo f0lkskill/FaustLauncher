@@ -436,7 +436,7 @@ class Service:
             except Exception:  # noqa: BLE001
                 return False
         try:
-            st = host.poll() or {}
+            st = host.poll(owner=self.addon_name) or {}
         except Exception:  # noqa: BLE001
             return False
         return bool(st.get('hooked'))
@@ -492,6 +492,9 @@ class Service:
         # gamestart 可能先于进程创建发出，且游戏可以脱离启动器再次启动。
         import traceback
         host = self.host()
+        # 这条线程没有插件的栈帧，先认领身份：之后所有 configure/push/计数
+        # 都算在本插件名下，而不是算到「最先载入的那个插件」头上。
+        host.bind_owner(self.addon_name)
         pid = None
         next_probe = next_health = next_error = 0.0
         self._phase = 'waiting_game'
@@ -553,7 +556,7 @@ class Service:
                 host.beat()
                 self._dispatch_hits(host, stop)
                 self._dispatch_events(host)
-                st = host.poll()
+                st = host.poll(owner=self.addon_name)
                 if st:
                     key = self._state_key(st)
                     if key != self._last_key or now >= next_health:
@@ -637,7 +640,7 @@ class Service:
             if method is None:
                 continue
             try:
-                count = host.hits(method=method)
+                count = host.hits(method=method, owner=self.addon_name)
             except Exception:  # noqa: BLE001
                 continue
             if method not in self._hit_seen:
@@ -662,6 +665,7 @@ class Service:
             try:
                 if delay > 0 and stop.wait(delay):
                     return
+                host.bind_owner(self.addon_name)
                 callback(host)
             except Exception:  # noqa: BLE001
                 import traceback
@@ -758,8 +762,13 @@ class Service:
         return ok
 
     def status(self):
-        """当前状态（只读一次，不起线程）。"""
-        st = self.host().poll()
+        """当前状态（只读一次，不起线程）。
+
+        显式带上 ``owner``：状态一般由后台线程轮询，那条线程里没有插件的
+        栈帧，靠反查会拿到单例上「第一个载入的插件」的名字，命中数与
+        钩子总数都会读成别人的。
+        """
+        st = self.host().poll(owner=self.addon_name)
         st['status_text'] = self.describe(st)
         return st
 

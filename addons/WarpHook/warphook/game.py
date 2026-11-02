@@ -139,9 +139,13 @@ class Gacha:
             kind = int(block.cfg.vars[0])
         return GachaBill(kind)
 
-    def blocked(self, host):
-        """本插件一共拦下过几次 —— 数字变大就说明刚发生了一单。"""
-        return host.hits(method='OnGachaSelected', blocked=True)
+    def blocked(self, host, owner=None):
+        """本插件一共拦下过几次 —— 数字变大就说明刚发生了一单。
+
+        轮询线程里没有插件的栈帧，``owner`` 必须由 ``on_buy`` 当场捕获后传进来；
+        不传就只能靠反查，结果是拿别人的计数（恒为 0），表现成「拦得住、不弹窗」。
+        """
+        return host.hits(method='OnGachaSelected', blocked=True, owner=owner)
 
     def on_buy(self, handler, allow_paid=True, interval=0.25, host=None):
         """接住玩家的抽卡请求，宿主替你把钩子和线程跑起来。
@@ -161,9 +165,11 @@ class Gacha:
 
         返回 ``GachaWatcher``，卸载时 ``.stop()`` 一下即可。
         """
-        owner = _owner_of_caller() or 'gacha'
+        # 只在插件自己的栈帧里反查得到名字；下面的线程要复用它。
+        owner = _owner_of_caller()
         if host is None:
-            host = Host(addon_name=owner, hooks=[], texts=[])
+            host = Host(addon_name=owner or 'gacha', hooks=[], texts=[])
+        owner = owner or host.addon_name
         host.configure(hooks=self.hooks(allow_paid=allow_paid))
         try:
             host.push(True)
@@ -174,15 +180,16 @@ class Gacha:
         step = max(0.05, float(interval))
 
         def _pump():
-            last = self.blocked(host)
-            seen = host.hits(method='OnGachaSelected')
+            host.bind_owner(owner)
+            last = self.blocked(host, owner)
+            seen = host.hits(method='OnGachaSelected', owner=owner)
             warned = 0.0
             allowed = 0.0
             while not stop.is_set():
                 try:
                     host.beat()
-                    n = self.blocked(host)
-                    hits = host.hits(method='OnGachaSelected')
+                    n = self.blocked(host, owner)
+                    hits = host.hits(method='OnGachaSelected', owner=owner)
                     # 重新推配置会把计数清零，两个数字都要跟着回落。
                     if n < last or hits < seen:
                         last, seen = n, hits

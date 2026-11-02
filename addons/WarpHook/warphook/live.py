@@ -144,6 +144,7 @@ class Live:
             menu=tuple(menu),
         )
         self._service.start()
+        self.host().bind_owner(self.owner)
         self._thread = threading.Thread(
             target=self._pump, daemon=True, name=f'{self.owner}-live')
         self._thread.start()
@@ -189,7 +190,7 @@ class Live:
     def status(self):
         """宿主状态（``hooked`` / ``status_text`` / ``log_tail`` 这些）。"""
         if self._service is None:
-            return self.host().status()
+            return self.host().status(owner=self.owner)
         return self._service.status()
 
     def describe(self):
