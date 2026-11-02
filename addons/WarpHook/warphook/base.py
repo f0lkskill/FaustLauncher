@@ -453,6 +453,44 @@ class SharedMap:
 # 同名共享内存只建一次，避免多个插件重复映射同一块
 _maps = {}
 
+# 同一块映射的问题每个进程只提示一次：宿主不在 / 旧进程没退时，插件的重试
+# 循环每秒来一次，刷屏会把真正有用的日志顶掉。
+_map_warned = {}
+
+
+def _warn_once(name, message):
+    """同一块共享内存的故障信息只打一次。"""
+    if _map_warned.get(name):
+        return
+    _map_warned[name] = True
+    log(message, "[WarpHook.shm]")
+
+
+class _MEMORY_BASIC_INFORMATION(ctypes.Structure):
+    """``VirtualQuery`` 的返回值形状（只用到 RegionSize）。"""
+
+    _fields_ = [
+        ("BaseAddress", _LPVOID),
+        ("AllocationBase", _LPVOID),
+        ("AllocationProtect", wintypes.DWORD),
+        ("PartitionId", ctypes.c_uint16),
+        ("RegionSize", ctypes.c_size_t),
+        ("State", wintypes.DWORD),
+        ("Protect", wintypes.DWORD),
+        ("Type", wintypes.DWORD),
+    ]
+
+
+def _view_bytes(ptr):
+    """映射视图的实际字节数；查不到返回 0。"""
+    _kernel32.VirtualQuery.restype = ctypes.c_size_t
+    _kernel32.VirtualQuery.argtypes = [
+        _LPVOID, ctypes.POINTER(_MEMORY_BASIC_INFORMATION), ctypes.c_size_t]
+    info = _MEMORY_BASIC_INFORMATION()
+    query = _kernel32.VirtualQuery(ctypes.c_void_p(ptr), ctypes.byref(info),
+                                   ctypes.sizeof(info))
+    return int(info.RegionSize) if query else 0
+
 
 def shm_open(name, size, struct_cls, magic_field=None, magic_value=None,
              init=None):
@@ -478,13 +516,24 @@ def shm_open(name, size, struct_cls, magic_field=None, magic_value=None,
         handle = _kernel32.CreateFileMappingW(
             INVALID_HANDLE_VALUE, None, PAGE_READWRITE, 0, size, name)
     if not handle:
-        log(f"创建共享内存失败（错误码 {ctypes.get_last_error()}）", "[WarpHook.shm]")
+        _warn_once(name, f"创建共享内存失败（错误码 {ctypes.get_last_error()}）")
         return None
 
-    view = _kernel32.MapViewOfFile(handle, FILE_MAP_ALL_ACCESS, 0, 0, size)
+    # 整块映射、自己核尺寸：宿主 DLL 要是别的协议版本，它建的那块大小不一样，
+    # 直接按 size 映射会失败成一句「映射共享内存失败」，什么都看不出来。
+    view = _kernel32.MapViewOfFile(handle, FILE_MAP_ALL_ACCESS, 0, 0, 0)
     if not view:
         _kernel32.CloseHandle(handle)
-        log("映射共享内存失败", "[WarpHook.shm]")
+        _warn_once(name, f"映射共享内存失败（错误码 {ctypes.get_last_error()}）"
+                         f"—— 宿主 DLL 是否已在游戏里跑起来？")
+        return None
+    actual = _view_bytes(view)
+    if actual and actual < size:
+        _kernel32.UnmapViewOfFile(view)
+        _kernel32.CloseHandle(handle)
+        _warn_once(name, f"共享内存尺寸不匹配：插件要 {size} 字节，宿主只建了 "
+                         f"{actual} 字节 —— 宿主 DLL 与本插件的协议版本不一致"
+                         f"（旧游戏进程里跑的还是旧 DLL，重启游戏即可）")
         return None
 
     cfg = struct_cls.from_address(view)
