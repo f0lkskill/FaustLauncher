@@ -1,6 +1,44 @@
-# FaustLauncher 插件开发文档
+<div class="moyuu-hero">
+  <div class="moyuu-hero-badge">
+    <span>●</span> FaustLauncher 官方插件开发套件
+  </div>
+  <h1 class="moyuu-hero-title">基于 WarpHook 的插件二次开发</h1>
+  <p class="moyuu-hero-desc">
+    从零起步构建专业游戏插件：深入 il2cpp 运行时，从拦截抽卡事件到实时读取全场单位数据、状态与 Buff 链。纯 Python 开发，无需编写 C 代码。
+  </p>
+  <div class="moyuu-btn-group">
+    <a href="tutorial/01-hello.md" class="moyuu-btn moyuu-btn-primary">
+      🚀 快速起步教程
+    </a>
+    <a href="technical/index.md" class="moyuu-btn moyuu-btn-secondary">
+      📖 API 接口字典
+    </a>
+    <a href="https://github.com/f0lkskill/FaustLauncher" target="_blank" class="moyuu-btn moyuu-btn-secondary">
+      GitHub 源码仓库
+    </a>
+  </div>
+</div>
 
-这是 FaustLauncher 的插件开发文档。目标很具体：**让你能写出一个真正跑起来的插件**——从打印一行日志，到拦下一抽卡、读出场上每个单位的血量与身上的 buff。
+<div class="moyuu-grid">
+  <a href="tutorial/01-hello.md" class="moyuu-card">
+    <div class="moyuu-card-icon">⚡</div>
+    <div class="moyuu-card-title">快速入门教程</div>
+    <div class="moyuu-card-desc">循序渐进掌握插件生命周期：从跑通空插件、弹窗测试到 Hook 监听与单位属性获取。</div>
+    <div class="moyuu-card-footer">开始学习 <span>→</span></div>
+  </a>
+  <a href="technical/index.md" class="moyuu-card">
+    <div class="moyuu-card-icon">📚</div>
+    <div class="moyuu-card-title">技术架构与 API</div>
+    <div class="moyuu-card-desc">详尽的命名空间字典：warp.game, warp.object, warp.field, warp.plugin 签名及规范。</div>
+    <div class="moyuu-card-footer">查看文档 <span>→</span></div>
+  </a>
+  <a href="reference/game-memory.md" class="moyuu-card">
+    <div class="moyuu-card-icon">🧩</div>
+    <div class="moyuu-card-title">内存与偏移参考</div>
+    <div class="moyuu-card-desc">游戏底层数据结构透视，深入掌握单位指针、Buff 结构与内存读链偏移量。</div>
+    <div class="moyuu-card-footer">探索参考 <span>→</span></div>
+  </a>
+</div>
 
 ## 你会学到什么
 
