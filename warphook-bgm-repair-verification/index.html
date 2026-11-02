@@ -1,0 +1,1841 @@
+
+<!doctype html>
+<html lang="zh" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="基于 WarpHook 的插件二次开发：从空插件到读取全场对象与 buff">
+      
+      
+      
+        <link rel="canonical" href="https://f0lkskill.github.io/FaustLauncher/warphook-bgm-repair-verification/">
+      
+      
+        <link rel="prev" href="../reference/dev-notes/">
+      
+      
+        <link rel="next" href="../archive/session-selfcheck/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.0">
+    
+    
+      
+        <title>真机验收台账 - FaustLauncher 插件开发文档</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.57a0d79d.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.fb2fffe2.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Inter:300,300i,400,400i,700,700i%7CJetBrains+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Inter";--md-code-font:"JetBrains Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../stylesheets/extra.css">
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="custom">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#warphook-battlebgmextend" class="md-skip">
+          跳转至
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="页眉">
+    <a href=".." title="FaustLauncher 插件开发文档" class="md-header__button md-logo" aria-label="FaustLauncher 插件开发文档" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            FaustLauncher 插件开发文档
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              真机验收台账
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="切到浅色"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="切到浅色" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 7a5 5 0 0 1 5 5 5 5 0 0 1-5 5 5 5 0 0 1-5-5 5 5 0 0 1 5-5m0 2a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3m0-7 2.39 3.42C13.65 5.15 12.84 5 12 5s-1.65.15-2.39.42zM3.34 7l4.16-.35A7.2 7.2 0 0 0 5.94 8.5c-.44.74-.69 1.5-.83 2.29zm.02 10 1.76-3.77a7.131 7.131 0 0 0 2.38 4.14zM20.65 7l-1.77 3.79a7.02 7.02 0 0 0-2.38-4.15zm-.01 10-4.14.36c.59-.51 1.12-1.14 1.54-1.86.42-.73.69-1.5.83-2.29zM12 22l-2.41-3.44c.74.27 1.55.44 2.41.44.82 0 1.63-.17 2.37-.44z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="切到深色"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="切到深色" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m17.75 4.09-2.53 1.94.91 3.06-2.63-1.81-2.63 1.81.91-3.06-2.53-1.94L12.44 4l1.06-3 1.06 3zm3.5 6.91-1.64 1.25.59 1.98-1.7-1.17-1.7 1.17.59-1.98L15.75 11l2.06-.05L18.5 9l.69 1.95zm-2.28 4.95c.83-.08 1.72 1.1 1.19 1.85-.32.45-.66.87-1.08 1.27C15.17 23 8.84 23 4.94 19.07c-3.91-3.9-3.91-10.24 0-14.14.4-.4.82-.76 1.27-1.08.75-.53 1.93.36 1.85 1.19-.27 2.86.69 5.83 2.89 8.02a9.96 9.96 0 0 0 8.02 2.89m-1.64 2.02a12.08 12.08 0 0 1-7.8-3.47c-2.17-2.19-3.33-5-3.49-7.82-2.81 3.14-2.7 7.96.31 10.98 3.02 3.01 7.84 3.12 10.98.31"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="搜索" placeholder="搜索" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="查找">
+        
+        <button type="reset" class="md-search__icon md-icon" title="清空当前内容" aria-label="清空当前内容" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            正在初始化搜索引擎
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/f0lkskill/FaustLauncher" title="前往仓库" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    f0lkskill/FaustLauncher
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="导航栏" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="FaustLauncher 插件开发文档" class="md-nav__button md-logo" aria-label="FaustLauncher 插件开发文档" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    FaustLauncher 插件开发文档
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/f0lkskill/FaustLauncher" title="前往仓库" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    f0lkskill/FaustLauncher
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    首页
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../tutorial/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    入门教程
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_2" id="__nav_2_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    入门教程
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorial/01-hello/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    01 第一个插件
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorial/02-popup/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    02 让游戏弹一句话
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorial/03-events/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    03 事情发生时通知我
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorial/04-unit/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    04 读一个单位
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorial/05-props/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    05 把属性都拿出来
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorial/06-buffs/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    06 解析 buff
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorial/07-bgm/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    07 放一首 BGM
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorial/08-lifecycle/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    08 生命周期与线程
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorial/09-inside/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    09 想到底层去
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../technical/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    技术文档
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_3" id="__nav_3_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    技术文档
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../technical/01-namespaces/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    01 命名空间
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../technical/02-game/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    02 warp.game
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../technical/03-object/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    03 warp.object
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../technical/04-field/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    04 warp.field
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../technical/05-plugin/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    05 warp.plugin
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../technical/06-lowlevel/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    06 底层四件套
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../technical/07-audio/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    07 warp.audio
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    参考手册
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    参考手册
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/game-memory/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    游戏内存与偏移
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/dev-notes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    作者笔记
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    真机验收台账
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    真机验收台账
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="目录">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      目录
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        这是什么
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        先看这三节
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#0939" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.9.39 音库重复预载与潜在卡顿
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#0938" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.9.38 主曲被拦但附加曲被停止
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#0937" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.9.37 回合末抢曲：锁声明未进入原生配置
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#0936" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.9.36 回合可靠投递与无人工延时
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#0935" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.9.35 撤销额外自检硬门槛（取代下文旧轮次策略）
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#0934-false" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.9.34 音库加载后仍为 False 的跟进
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#0933" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.9.33 跟进（历史白名单与空闲轮询）
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#0932" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.9.32 跟进（查询超时与启动流程阻塞）
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#0931" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.9.31 跟进（实际回合命中后的音库失败）
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        已定位的独立缺陷
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        与独立旧版的对照边界
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_5" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        离线验证
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_6" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        更新方式
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_7" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        真机验收顺序
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_8" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        应保留的日志
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    归档
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    归档
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../archive/session-selfcheck/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    WarpHook 会话总结：立绘修复 + 生态自检 + 规范化准备
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="目录">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      目录
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        这是什么
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        先看这三节
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#0939" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.9.39 音库重复预载与潜在卡顿
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#0938" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.9.38 主曲被拦但附加曲被停止
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#0937" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.9.37 回合末抢曲：锁声明未进入原生配置
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#0936" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.9.36 回合可靠投递与无人工延时
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#0935" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.9.35 撤销额外自检硬门槛（取代下文旧轮次策略）
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#0934-false" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.9.34 音库加载后仍为 False 的跟进
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#0933" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.9.33 跟进（历史白名单与空闲轮询）
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#0932" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.9.32 跟进（查询超时与启动流程阻塞）
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#0931" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.9.31 跟进（实际回合命中后的音库失败）
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        已定位的独立缺陷
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        与独立旧版的对照边界
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_5" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        离线验证
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_6" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        更新方式
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_7" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        真机验收顺序
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_8" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        应保留的日志
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="warphook-battlebgmextend">WarpHook / BattleBGMExtend 修复与真机验收<a class="headerlink" href="#warphook-battlebgmextend" title="Permanent link">&para;</a></h1>
+<h2 id="_1">这是什么<a class="headerlink" href="#_1" title="Permanent link">&para;</a></h2>
+<p>一份按版本倒序记录的<strong>真机验收台账</strong>：每个版本卡在哪个真机现象、改了什么、
+哪些结论有日志证据、哪些还只是「代码上成立但没验证出声」。它和 CHANGELOG 的
+分工是——CHANGELOG 说「改了什么」，这里说「凭什么认为改对了，以及还差什么」。</p>
+<p>阅读顺序：先看下面「先看这三节」，再按兴趣往下翻历史轮次。</p>
+<div class="admonition info">
+<p class="admonition-title">台账的硬规矩</p>
+<p>里面每一句「未验证」都不是客套。BGM 链路上区分三件事——<strong>命令提交完成</strong>
+（<code>ok=True</code>）、<strong>原生确实拦住</strong>（<code>blocked</code> 增长）、<strong>耳朵听到</strong>。
+上一级不能拿来替代下一级。</p>
+</div>
+<h2 id="_2">先看这三节<a class="headerlink" href="#_2" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>想确认</th>
+<th>看</th>
+<th>判定依据</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>曲子跨回合不被盖回去</td>
+<td><code>0.9.38 主曲被拦但附加曲被停止</code> 与 <code>0.9.37 回合末抢曲：锁声明未进入原生配置</code></td>
+<td>四个锁入口 <code>blocked</code> 是否增长</td>
+</tr>
+<tr>
+<td>换曲没声音 / 卡顿</td>
+<td><code>0.9.39 音库重复预载与潜在卡顿</code> 与 <code>0.9.34 音库加载后仍为 False 的跟进</code></td>
+<td><code>stage=cache-hit</code>、<code>elapsed_ms</code></td>
+</tr>
+<tr>
+<td>回合回调不响</td>
+<td><code>0.9.36 回合可靠投递与无人工延时</code></td>
+<td>真实 hits 增长，不是定时器在装活</td>
+</tr>
+</tbody>
+</table>
+<p>验收动作本身见文末「真机验收顺序」，日志判读见
+<a href="../tutorial/01-hello/#log-file">入门 01</a>。</p>
+<h2 id="0939">0.9.39 音库重复预载与潜在卡顿<a class="headerlink" href="#0939" title="Permanent link">&para;</a></h2>
+<ul>
+<li>用户 17:06:51 日志所示 .assets.bank 和 .bank 是不同文件的一对加载，不是写磁盘。单段日志不能证明重复加载或掉帧根因；但代码确实每次 ensure_bank 都查 IsLoadedBank，已知本地预载后该查询可一直 False，导致同进程后续换曲再次加载大音库。</li>
+<li>新增按 PID + GetProcessTimes 创建时间区分进程实例的成功提交缓存，重复 bank 跳过查询和加载；并发音频链共用 RLock，防止共享临时槽交错。失败/会话不明不缓存，游戏中途重启不记成功，提供 invalidate_bank_cache 处理已知卸载/音频引擎重置。缓存不是驻留或出声验证，外部静默卸载仍属已知边界。</li>
+<li>阶段日志记录 load-complete/complete/cache-hit、elapsed_ms/wait_ms，另记录 stop/start 与音频操作总耗时。包含 IPC 排队、游戏线程执行与轮询等待，不能等同一帧卡顿。首次双文件加载仍可能阻塞游戏线程，不擅改 LoadBankFromLocal 的未验证布尔参数，也未加入逐帧状态轮询。</li>
+<li>离线验收：同进程查询永远 False 仍只提交一对、不同 bank/PID创建时间隔离、并发合并、失败重试、无会话不复用、显式失效、加载中进程重启；真机需比较同进程第二次换曲是否 stage=cache-hit，以及卡顿是否仍发生于无加载时。重启启动器后缓存重建，属于保守重新预载；本轮仅 Python，无 DLL 替换或注入。</li>
+</ul>
+<h2 id="0938">0.9.38 主曲被拦但附加曲被停止<a class="headerlink" href="#0938" title="Permanent link">&para;</a></h2>
+<ul>
+<li>PID 14688 在换曲后 StartBGM blocked=3→4，证明此前编码修复已拦截部分游戏换曲；临时曲仍静音，现有三入口不能覆盖全部停止路径。旧版 battlebgmextend.c:632 明确同时 hook StopAddedBGM(2)，当前却遗漏该附加曲配对停止入口。补为第四锁入口，不能仅凭日志就声称已证明真机静音必定由它引起。</li>
+<li>四锁加回合恰好占辅助5槽，其他辅助插件可能竞争。Live.bgm_lock_install 现在检查实际 layout 中的必需入口，缺任何入口返回失败及 missing，避免明知保护缺失仍报告配置成功。共享协议不提供逐入口安装状态，仍需实际 hits/blocked 验证。</li>
+<li>按用户本轮要求取代整场优先级地板：有效条件存在时保持，不每回合重播；活动规则失效可切换到当前有效低优先级规则；无有效条件时后台释放控制并尝试恢复默认曲。转换事件不能简单下一回合全失效，目标 buff 仍存在时延续，单位退出/目标消失后释放。</li>
+<li>停止/恢复现在先调用 StopAddedBGM(IMMEDIATE, false)，再 StopBGM，最后恢复默认 StartBGM；附加层停止失败不会假报恢复成功。释放任务必须先解锁成功；失败保留 active 供后续重试。快照不可用或显式 buff 读取异常不触发释放，但底层已吞掉异常并返回空列表的情况仍无法区分。</li>
+<li>本轮实际通过：tests 目录 44 项、BGM 独立回归 37 项、生命周期 15 项、命令通道 4 项及原生独立回归；compileall 与限定源码的 git diff --check 通过。覆盖四入口编码/缺槽拒绝、停止附加层顺序、条件消失释放、降级和平级保持、转换续期、失效任务取消与失败重试。</li>
+<li>真机复验：重启启动器载入新 Python；换曲后看 StopAddedBGM 的 hits/blocked 是否增加且临时曲跨回合延续，再验证条件消失后锁放行及恢复曲目。若附加曲仍被杀，须继续定位 CurrentBGM/owned FMOD 路径，当前不宣称完整旧版保护。生产 DLL 未替换或注入。</li>
+</ul>
+<h2 id="0937">0.9.37 回合末抢曲：锁声明未进入原生配置<a class="headerlink" href="#0937" title="Permanent link">&para;</a></h2>
+<ul>
+<li>PID 18756 日志 hits=14→19 证明回合入口仍在命中；维持 active/优先级地板本身不证明原游戏已被锁住。确认 audio.guard_hook_defs 使用 block=True、guard=(4,1)，但 Host._write_config 未转换这两个键，实际写入 flags=0、guard_var=-1，因此纯计数而非拦截。现补齐与 Host.hook 相同编码。</li>
+<li>保持不每回合重播的策略，不以重播掩盖锁失效。自动判定不再丢弃结果；自动/手动及提交后输出真实配置、每入口 hits/blocked、guard 值和缺失入口。只读已经打开的映射，不新增游戏命令或初始化。逐入口安装状态未在协议中提供，installed=None，不冒充验证成功；blocked 增长才是发生过实际拦截的证据。</li>
+<li>旧版参考 battlebgmextend.c:619-637 除当前三入口，还覆盖 SoundGenerator.ApplyBGMData、SoundManager/CurrentBGM、ResetBGM/StopAddedBGM/Interlude 等；:654-656 另保护 owned FMOD 实例。不能断言其他方法只在场景切换调用。当前仍部分覆盖，辅助5槽由多个插件共享；未盲目加入bool方法（旧版被拦返回true，通用BLOCK返回0）或全局FMOD锁。</li>
+<li>已知边界：vars[4] 会被五/六参数命令覆盖，零参数命令不会；全局解锁窗口不同于旧版线程局部 own_call。当前 BGM 播放链不使用五/六参，但其他插件可能使用。不能只换另一个 vars 槽或 save/restore 伪称解决在途窗口；后续如有对应实证需独立状态/TLS权限设计。</li>
+<li>真机验证：完整退出启动器再载入新 Python（本轮未替换/注入生产 DLL）。触发换曲后跨回合观察三入口 hits/blocked：若 hits 增长但 blocked 不增，检查 flags/guard；若 blocked 已增长仍被抢回，则需定位未覆盖路径，不能继续声称锁已完整复刻。本地回归结果不等于真机出声/跨回合保护确认。</li>
+</ul>
+<h2 id="0936">0.9.36 回合可靠投递与无人工延时<a class="headerlink" href="#0936" title="Permanent link">&para;</a></h2>
+<ul>
+<li>用户 PID 12532 日志仍有 hits=6-&gt;7-&gt;8，证明不是所有后续回合均未进原生入口；不能把无业务输出一概归为原生 hook 失效。发现 Python 首次非零忽略、先消费 hits 再取快照导致快照失败永久丢事件，以及配置重推清零 hits 的独立问题。</li>
+<li>Live 抽出 _poll_round：仅真实命中建立 pending，首次非零/计数回退可恢复，快照失败保留并退避，成功才消费，不以周期回调伪造 hook。同入口配置重推直接跳过 hits/blocked 内存，不用读回再写回覆盖原生新命中。</li>
+<li>BGM 移除 sleep(0.1)；手动检测立即日志受理，后台读取/扫描，每条维持、排队、失败路径均有日志。战斗身份改生命周期哨兵，不因单位名单变化反复清 active/预载；无命中维持旧版整场优先级地板，结束重置。</li>
+<li>回合 fake IO 14 项、真实共享配置计数 1 项、BGM 27 项及现有相关测试通过。正常监听仍有轮询调度与跨进程调用耗时，“无延迟”指不再人为 sleep，不是零耗时保证。尚需真机复验多回合及离战事件完整性。</li>
+</ul>
+<h2 id="0935">0.9.35 撤销额外自检硬门槛（取代下文旧轮次策略）<a class="headerlink" href="#0935" title="Permanent link">&para;</a></h2>
+<ul>
+<li>用户 PID 10040 再次确认 invoke 双 bank 调用完成但复查 False。此前增加的加载后 IsLoadedBank=True 硬门槛并非参考旧版的行为，且其登记语义没有证实，现撤销。</li>
+<li>初始 IsLoadedBank=True 仍用于避免重复加载；False 时执行两次预载，调用正常完成就继续 StopBGM/StartAddBGM。调用异常/超时仍中止，verified=False 不宣称已出声。</li>
+<li>不再发起加载后的额外查询。BGM 18 项回归通过，新增语义覆盖查询始终 False 仍尝试播放、真实加载失败保留原曲。本轮仅 Python，无需再次更换 DLL，但需沿用 0.9.34 已修复的原生版本。</li>
+</ul>
+<h2 id="0934-false">0.9.34 音库加载后仍为 False 的跟进<a class="headerlink" href="#0934-false" title="Permanent link">&para;</a></h2>
+<ul>
+<li>PID 27068 原生日志 14:05:24：seq348 查询 rc0，seq350/352 两次加载 rc0，seq354 复查 rc0，但 Python 得到 False。说明请求已执行；rc0 不能证明 FMOD 音库注册成功。磁盘目标 assets.bank（19264448 字节）与 bank（52448 字节）实际存在。</li>
+<li>对照独立旧版 src/battlebgmextend.c:275-287：音库调用实际使用 runtime_invoke，而非现有注释所称旧版只走 methodPointer。当前音库默认 direct 的参数形态本身未证实错误，不能把失败全部归为引用多一层。</li>
+<li>另确证 runtime_invoke 分支存在引用参数打包缺陷：普通 String 应传对象指针，值类型 bool 应传其地址；当前与 direct 共用打包导致 invoke 多一层引用。修复需保持 direct 原行为，并覆盖构造函数路径。音库查询与预载显式选 invoke，以对齐参考实现；仍保留加载后复查，失败不停止原曲。</li>
+<li>增加 bank、阶段、via、绝对路径、文件大小及前后查询结果诊断。该方案不是实际出声保证；不通过删除复查把 False 当作成功。</li>
+<li>已修复 invoke 与 ctor 参数转换，保留 direct 原行为；原生回归实际通过字符串/空引用、bool/int/float 地址、out-buffer、boxed 返回、构造函数及真实 direct 参数兼容测试，既有 MinHook/worker/static 回归也通过。BGM 18 项通过。</li>
+<li>检查无游戏后备份并部署最终新 DLL，SHA256：fb6efe597397ee00e84311fb179b18572cfc5181139c7617c5190b4fc19fad5d；原始生产版备份 test/warp_host_before_0930_4a948d717e67.dll（中间候选另备份为 test/warp_host_before_0930_8eddfba44af1.dll）。必须使用新 DLL 与新 Python 配套，不能只热重载 Python 后在旧 DLL 上走 invoke。需完整重启游戏和启动器验证。</li>
+</ul>
+<h2 id="0933">0.9.33 跟进（历史白名单与空闲轮询）<a class="headerlink" href="#0933" title="Permanent link">&para;</a></h2>
+<ul>
+<li>用户 PID 6236 日志显示 LoadBankFromLocal 在 Python 方法白名单处即被拒绝；本次失败并不是已经进入游戏的音库加载崩溃。删除该方法名准入策略及过时推断，unsafe 仅兼容旧调用。保留对象槽、参数、签名校验；不能据此声称任何游戏方法都安全。</li>
+<li>Live 每 0.25 秒 scene_full 全字段扫描会在主线程泵未工作时制造无效 READ。现在以 monitoring 阶段、非空场景对象槽及命令通道空闲为本地门禁，仅采样公开接口所需三个字段，失败立即停止，重试按 0.5 秒递增至 10 秒。未知场景不触发离战事件。</li>
+<li>命令停顿首次日志仍保留，后续重复日志按 30 秒窗口合并数量；请求超时结果不改变，不取消或覆写在途命令。本次不证明所有真机命令停顿已根除。</li>
+<li>新增方法准入与日志合并 3 项、空闲场景轮询 8 项回归；与非阻塞生命周期 7 项一起运行全部通过。另行重跑命令并发 4 项、BGM 17 项、旧生命周期 15 项通过。</li>
+<li>本轮仍为 Python 修复，不更换 DLL、不启动游戏。需重启启动器后验证主界面日志与实际换曲，未确认出声。</li>
+</ul>
+<h2 id="0932">0.9.32 跟进（查询超时与启动流程阻塞）<a class="headerlink" href="#0932" title="Permanent link">&para;</a></h2>
+<ul>
+<li>PID 21292 在 13:32:27.596 已记录 <code>static: runtime API resolved reference</code>，静态读取修复已真机生效。seq=1931 STATIC 和 seq=1932 STR 均完成；随后两秒是持续 READ 领取，没有音库 CALL 被领取，证明不能将本次超时归为 FMOD 慢或单例为空。</li>
+<li>Host 的单槽命令此前没有 Python 端互斥，后台对象读取可覆盖 BGM 请求。现在提交/结果解码/代读链准备均受全局可重入锁保护；前请求未完成不覆写。新增并发、跨实例结果隔离、BUSY 保留与 bool 类型回归。</li>
+<li>音库层用 is True / is False，但 Host.call 原返回 int 0/1；现在 ret=bool 返回真实 bool，防止解决竞态后仍误报查询失败。</li>
+<li>初始化同步链 on_round_start -&gt; _ensure_hooks -&gt; _push -&gt; Host.push -&gt; ensure_exports 已移至后台；Service.inject_now 不再在启动事件里等待进程/模块。启动器先发事件再创建游戏进程，事件回调不能等待尚未创建的进程。</li>
+<li>本轮只修改 Python，无需更新原生 DLL；重启启动器以加载新模块。实际播放与启动耗时仍需端到端复验。</li>
+</ul>
+<h2 id="0931">0.9.31 跟进（实际回合命中后的音库失败）<a class="headerlink" href="#0931" title="Permanent link">&para;</a></h2>
+<ul>
+<li>用户 PID 6772 的原生日志记录 <code>static: manual off=0 sf=1ae44500e80 ok=1 val=0</code>：可读地址不代表硬编码 Class+0xB8 正确，不能据此认定单例未初始化。</li>
+<li>对照旧版并编译验证发现 <code>fn_field_static_get_value</code> 错写为三个参数，实际 IL2CPP 导出是 <code>(field, out)</code>；已修正 ABI 并移除硬编码偏移读取，改回旧版运行时 API。新增原生继承静态字段读取/空值失败回归通过。仍须真机确认当前导出与实例状态。</li>
+<li>日志分类零统计支持 <code>=</code>，<code>error=0</code> 正常为 INFO；真实失败不降级。6 项分类回归通过。</li>
+<li>健康信息将 <code>global_installed</code> 与 <code>owner_requested</code> 分开，避免把全局 24 条与本插件 4 条错写成比例。</li>
+<li>已检查无游戏进程后部署更新 DLL，SHA256：4a948d717e671ec160d29e1c560266e2abaa3bc3e76bac48d5dc8b5bec3f5fb1。上一轮 DLL 备份：test/warp_host_before_0930_f36509488978.dll。完整重启游戏和启动器后生效，不向运行中的游戏热注入。</li>
+</ul>
+<h2 id="_3">已定位的独立缺陷<a class="headerlink" href="#_3" title="Permanent link">&para;</a></h2>
+<ul>
+<li>旧 Service 等待游戏或 GameAssembly 超时、注入失败后直接结束线程；现在持续探测并重试，跟踪 PID 改变。</li>
+<li>Live 另建空配置的 Service Host，会覆盖同插件的钩子定义；现在传入已有 Host。后台配置 owner 使用线程本地上下文，读取回合命中显式指定 owner。</li>
+<li>单个插件关闭共享 Host，会影响其余插件；现在先停止自身线程，共享映射只在全局卸载且线程确已退出后关闭。超时宁可保留资源，不释放在途访问所需内存。</li>
+<li>Python 写入的共享心跳不能证明游戏进程已载入 DLL；现在在目标 PID 内检查实际 DLL 模块。</li>
+<li>原生热重装可能释放在途 trampoline；现在禁用但保留跳板，并按目标地址复用稳定物理槽。模块固定到游戏进程退出，不支持原地卸载旧模块切换新构建。</li>
+<li>命令 ack / BUSY 的发布顺序和多个泵线程领取存在竞态；现在原子领取并先发布 BUSY。</li>
+<li>GC handle 数组虽然已扩为 uintptr_t，但函数指针原型仍为 unsigned int；64 位句柄在返回阶段就被截断。现在原型也同步为 uintptr_t，原生回归使用高位非零句柄。</li>
+<li>audio.ensure_bank 重复定义，后面的旧弃用版本覆盖了实际实现，并返回不同类型；现在保留唯一的 tuple 实现。</li>
+</ul>
+<h2 id="_4">与独立旧版的对照边界<a class="headerlink" href="#_4" title="Permanent link">&para;</a></h2>
+<p>参考源为用户提供的 BattleBGMExtend-main.zip。复用其短名 StartAddBGM 入口、音库绝对路径、assets.bank 与 bank 双文件预载、预载失败保留原曲的顺序。不得在未知 bank 上停止原曲后盲试。</p>
+<p>旧版 FMOD TryCreateInstance 的安全事件预检和实际播放状态验证，不等同于当前共享命令桥接返回的 void 执行成功。当前结果中的 verified=False 明确表示未确认实际出声；不通过高风险的场景切换期自动 FMOD 查询假装已经验证。恢复完整 FMOD 预检仍需要单独验证 ABI 与对象生命周期。</p>
+<h2 id="_5">离线验证<a class="headerlink" href="#_5" title="Permanent link">&para;</a></h2>
+<ul>
+<li><code>python -m unittest discover -s test -p test_warp_lifecycle_regression.py -v</code>：15 项通过，包含实际 worker 方法的 fake 时钟晚启动、GameAssembly 超时重试、注入失败重试和 PID 重连，以及线程 owner 隔离和注入超时资源保护。</li>
+<li><code>python -m unittest discover -s test -p test_bgm_standalone.py -v</code>：17 项通过，包含双 bank 绝对路径预载、失败不停止原曲、字符串失败/异常释放、旧任务取消、重复排队及插件日志转交持久化 writer。</li>
+<li>原生独立回归实际通过：真实 MinHook 20 次拆装与稳定跳板复用，整数/浮点/9 参数及隐藏 MethodInfo ABI，8 个并发命令泵且恰好执行一次，worker 阻塞停止保资源，64 位高位非零 GC handle 释放。测试使用完整 WARP_MAP_BYTES 内存，未载入游戏。</li>
+<li>最终 DLL 已用 MinGW GCC -O2 -Wall 构建，无告警；检查游戏未运行后部署到 addons/WarpHook/warp_host.dll。SHA256：f3650948897841ad1a842914719b1cfce2681838d28f93620122d2f1015e2f21。旧版备份：test/warp_host_before_0930_7f09bb8869ce.dll。</li>
+<li>原生日志新增毫秒时间、PID、线程和有界格式化；worker 完成记录 seq/type/rc，不打印命令文本。</li>
+<li>Python compileall 与 git diff --check 通过；测试是离线 fake/AST 回归，不是对当前游戏版本的端到端保证。</li>
+<li>BGM 优先级地板维持旧版 locked/priority 语义，本次不擅自改变低优先级回退策略。FMOD TryCreateInstance 预检尚未安全移植。</li>
+<li>BattleBGMExtend 与 test 目录受现有 .gitignore 规则忽略，本次文件已在工作区修改，但普通 git diff 不展示它们；打包或同步时须显式包含，不要仅打包已跟踪差异。</li>
+</ul>
+<h2 id="_6">更新方式<a class="headerlink" href="#_6" title="Permanent link">&para;</a></h2>
+<p>先完整退出游戏和启动器，再替换/使用新的 warp_host.dll。已有游戏进程加载的旧模块不会因为磁盘文件变动而更新。不要重复注入不同路径的候选 DLL 到同一个游戏进程。</p>
+<h2 id="_7">真机验收顺序<a class="headerlink" href="#_7" title="Permanent link">&para;</a></h2>
+<ol>
+<li>游戏关闭时打开启动器并启用 BGM 插件；确认日志持续处于 waiting_game。等待超过原来的等待时限后，再启动游戏。</li>
+<li>核对 waiting_gameassembly、inject_result、monitoring 的同一 PID；核对安装数量和错误码，不能把 LoadLibrary 完成当作业务成功。</li>
+<li>进入战斗，连续触发多次回合开始或手动检测，观察 hits 增量、战斗快照、规则命中、曲目提交。确认后续仍能响应且游戏未退出。</li>
+<li>选择需要跨 bank 的规则，确认 bank 预载；故意配置不存在的 bank 时，应明确失败并保留原曲。</li>
+<li>快速触发检测后离开战斗/关闭插件，确认旧请求不会在新场景补播。随后重新启用，确认重新可检测。</li>
+<li>不退出启动器，退出并重开游戏；确认进程变化及重新注入，不需要重启启动器。</li>
+<li>一个依赖插件卸载时，其余插件仍工作；全局卸载若出现停止超时，日志明确保留共享映射，而非启动器直接消失。</li>
+</ol>
+<h2 id="_8">应保留的日志<a class="headerlink" href="#_8" title="Permanent link">&para;</a></h2>
+<p>只有一个文件：<code>addons/WarpHook/warp.log</code>（整个 WarpHook 共用，启动即覆写、不轮转）。
+两类行按前缀区分：</p>
+<ul>
+<li>行内带 <code>[host]</code>：启动器 PID/线程、阶段、<code>waiting_game</code> / <code>waiting_gameassembly</code>、
+  <code>inject_result</code>、Win32 错误及 traceback，以及游戏进程内的装配、命令与 worker 状态。</li>
+<li>行内带 <code>[event]</code>：事件流水，用于对应命中与回调。</li>
+</ul>
+<p>因为文件每次启动都被清空，<strong>出问题的当轮必须当场拷贝走</strong>；启动器退出后再拷就只剩下一轮了。</p>
+<p>报告时保留问题发生前后的同一时间段，注明启动顺序、游戏 PID、曲目/音库和动作。离线测试与原生自测通过不代表实际游戏版本的音频 ABI、听感与长时间稳定性已验证。</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  回到页面顶部
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.sections", "navigation.top", "navigation.indexes", "content.code.copy", "content.code.annotate", "search.suggest", "search.highlight", "toc.follow"], "search": "../assets/javascripts/workers/search.a7633da7.min.js", "tags": null, "translations": {"clipboard.copied": "\u5df2\u590d\u5236", "clipboard.copy": "\u590d\u5236", "search.result.more.one": "\u5728\u8be5\u9875\u4e0a\u8fd8\u6709 1 \u4e2a\u7b26\u5408\u6761\u4ef6\u7684\u7ed3\u679c", "search.result.more.other": "\u5728\u8be5\u9875\u4e0a\u8fd8\u6709 # \u4e2a\u7b26\u5408\u6761\u4ef6\u7684\u7ed3\u679c", "search.result.none": "\u6ca1\u6709\u627e\u5230\u7b26\u5408\u6761\u4ef6\u7684\u7ed3\u679c", "search.result.one": "\u627e\u5230 1 \u4e2a\u7b26\u5408\u6761\u4ef6\u7684\u7ed3\u679c", "search.result.other": "# \u4e2a\u7b26\u5408\u6761\u4ef6\u7684\u7ed3\u679c", "search.result.placeholder": "\u952e\u5165\u4ee5\u5f00\u59cb\u641c\u7d22", "search.result.term.missing": "\u7f3a\u5c11", "select.version": "\u9009\u62e9\u5f53\u524d\u7248\u672c"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.c21346df.min.js"></script>
+      
+    
+  </body>
+</html>
