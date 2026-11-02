@@ -1,3 +1,9 @@
+## 0.9.44 — 退出游戏不再卡在「未响应」
+
+- `DllMain` 的 `DLL_PROCESS_DETACH` 现在只置 `g_detaching` 标记再叫醒控制线程，控制线程看到标记直接 `return`，**不再调 `warp_uninstall()` / `warp_work_stop()`**。
+- 原因：`MH_DisableHook` 要挂起游戏里所有其它线程才能回填原始字节，而进程退出这一刻系统正在拆线程（有的已进终止流程、有的卡在加载器锁里），挂起/恢复可能永远等不到回应 —— 表现就是点退出之后窗口卡住、报「未响应」。进程反正要结束，补丁与改写过的代码页由 OS 一并回收，退出时再补一次 DisableHook 没有任何收益。
+- 这个卡死是长期问题（Windows 事件日志里 10 天内 50 多次 `Application Hang`，最早 2026-10-24），不是某一版引入的。**需要重装 `warp_host.dll`**。
+
 ## 0.9.43 — 启动器断开时自动放行软锁
 
 - 新增钩子标志 `WARP_HF_SOFT_LOCK`（Python 侧 `HF_SOFT_LOCK = 0x08`）。宿主心跳过期转入 standalone 的那一刻，把带这一位的钩子的参数门改写成「放行」，并把这批数量写进 `launcher gone, standalone` 那行日志。
