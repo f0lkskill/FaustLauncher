@@ -49,8 +49,13 @@ _OFF_RSP = 0x98
 _OFF_RIP = 0xF8
 
 _LIST_MODULES_ALL = 0x03
-_MAX_FRAMES = 12
-_STACK_SCAN = 0x1200
+_MAX_FRAMES = 24
+_STACK_SCAN = 0x3000
+_STACK_STEP = 0x100
+_OFF_RCX = 0x80
+_OFF_RDX = 0x88
+_OFF_R8 = 0xB8
+_OFF_R9 = 0xC0
 
 
 class _MODULEENTRY32(ctypes.Structure):
@@ -247,24 +252,35 @@ def _read_memory(k32, hproc, addr: int, size: int) -> bytes:
 
 
 def _stack_frames(k32, hproc, sp: int, modules: list) -> list:
-    """沿 RSP 向上扫一段栈，把像返回地址的值挑出来（粗略回溯）。"""
+    """沿 RSP 向上扫一段栈，把像返回地址的值挑出来（粗略回溯）。
+
+    按页读：线程栈常常紧贴未提交页，一次性要 0x3000 字节会因为跨到未提交
+    区域而整个失败 —— 之前只有主线程能扫出栈，就是这个原因。
+    """
 
     if not sp:
         return []
-    raw = _read_memory(k32, hproc, sp, _STACK_SCAN)
-    if len(raw) < 8:
-        return []
     frames = []
-    for off in range(0, len(raw) - 8 + 1, 8):
-        value = int.from_bytes(raw[off : off + 8], "little")
-        where = _module_at(value, modules)
-        if not where:
+    addr = sp
+    scanned = 0
+    while scanned < _STACK_SCAN:
+        raw = _read_memory(k32, hproc, addr, _STACK_STEP + 8)
+        if len(raw) < 8:
+            addr += _STACK_STEP
+            scanned += _STACK_STEP
             continue
-        if frames and frames[-1] == where:
-            continue
-        frames.append(where)
-        if len(frames) >= _MAX_FRAMES:
-            break
+        for off in range(0, len(raw) - 8 + 1, 8):
+            value = int.from_bytes(raw[off : off + 8], "little")
+            where = _module_at(value, modules)
+            if not where:
+                continue
+            if frames and frames[-1] == where:
+                continue
+            frames.append(where)
+            if len(frames) >= _MAX_FRAMES:
+                return frames
+        addr += _STACK_STEP
+        scanned += _STACK_STEP
     return frames
 
 
@@ -288,12 +304,20 @@ def _sample_thread(k32, hproc, tid: int, modules: list) -> dict:
                 return {"tid": tid, "error": "取不到上下文"}
             rip = ctypes.c_uint64.from_buffer(ctx, _OFF_RIP).value
             rsp = ctypes.c_uint64.from_buffer(ctx, _OFF_RSP).value
+            args = [
+                ctypes.c_uint64.from_buffer(ctx, _OFF_RCX).value,
+                ctypes.c_uint64.from_buffer(ctx, _OFF_RDX).value,
+                ctypes.c_uint64.from_buffer(ctx, _OFF_R8).value,
+                ctypes.c_uint64.from_buffer(ctx, _OFF_R9).value,
+            ]
         finally:
             k32.ResumeThread(hthread)
         frames = _stack_frames(k32, hproc, rsp, modules)
         return {
             "tid": tid,
             "rip": _module_at(rip, modules) or "0x%X" % rip,
+            "sp": rsp,
+            "args": args,
             "frames": frames,
         }
     finally:
@@ -379,15 +403,33 @@ def _format(data: dict) -> str:
         return "\n".join(lines)
     lines.append("模块 %d 个，线程 %d 个" % (len(data["modules"]), len(data["threads"])))
     lines.append("")
+    names = [m[2] for m in data["modules"]]
+    if names:
+        lines.append("已加载模块: " + ", ".join(names))
+        lines.append("")
     for item in data["threads"]:
         if item.get("error"):
             lines.append("线程 %d: %s" % (item["tid"], item["error"]))
             continue
         lines.append("线程 %d  当前 %s" % (item["tid"], item["rip"]))
+        args = item.get("args") or []
+        if _looks_like_wait(item.get("rip") or "") and args:
+            # 等待类系统调用的第一个参数通常就是「在等哪个地址」，比栈更好认。
+            lines.append("    等待地址 0x%X  (参数 %s)"
+                         % (args[0], " ".join("0x%X" % a for a in args[:4])))
+        if not item["frames"]:
+            lines.append("    栈 %s 扫不到返回地址（可能未提交或读取被拒）"
+                         % ("0x%X" % item["sp"] if item.get("sp") else "空"))
         for frame in item["frames"]:
             lines.append("    " + frame)
         lines.append("")
     return "\n".join(lines)
+
+
+def _looks_like_wait(rip: str) -> bool:
+    """判断这一帧是不是阻塞在等待类系统调用上。"""
+
+    return "ntdll.dll" in rip or "KERNELBASE.dll" in rip
 
 
 def _cache_root() -> str:
