@@ -876,8 +876,16 @@ class Host:
             self.map_name, HOST_MAP_BYTES, HostHeader,
             magic_field="magic", magic_value=HOST_MAGIC, init=_init,
         )
-        if self._block is not None:
-            self._write_config(self._block)
+        if self._block is None:
+            return None
+        # 版本协商的响亮版：宿主 DLL 比这份 Python 老时（协议升过级、游戏里
+        # 还是上个进程的 DLL），写进去的偏移全错，这里直接说明白。
+        dll_version = int(self._block.cfg.version)
+        if dll_version < HOST_VERSION and not getattr(self, "_version_warned", False):
+            self._version_warned = True
+            self.log(f"宿主 DLL 协议 v{dll_version} 低于插件要求的 v{HOST_VERSION}，"
+                     f"本次不挂钩子 —— 关掉游戏重启（旧进程里跑的还是旧 DLL）")
+        self._write_config(self._block)
         return self._block
 
     def _write_config(self, block):
