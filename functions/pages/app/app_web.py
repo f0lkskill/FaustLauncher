@@ -2796,6 +2796,7 @@ if %errorlevel% equ 0 (
                 if isinstance(item, dict):
                     yield item
 
+    @staticmethod
     def _cloud_addon_item(pages, name):
         """在云端插件列表里按名字找一条条目。"""
         want = str(name).strip()
@@ -2867,6 +2868,15 @@ if %errorlevel% equ 0 (
             return False
         return bool(self._install_addon_sync(want, url, pages))
 
+    def _fail_download_task(self, task, text):
+        """把下载抽屉里的一行标记为失败。
+
+        前端 ``__onEvent('status')`` 的约定是「文本里出现失败/错误就把
+        对应任务标红」（`web/app/js/core/bridge.js`）。后端如果只 `print`
+        而不推这一条，抽屉里那一行就会永远停在「等待中...」。
+        """
+        self._push_event('status', {'task': str(task or ''), 'text': str(text or '')})
+
     def download_addon(self, name, url):
         def _run():
             try:
@@ -2881,8 +2891,12 @@ if %errorlevel% equ 0 (
                     except Exception:
                         pass
                     self._notify_res_changed('addon')
+                else:
+                    print(f"插件 {name} 下载失败")
+                    self._fail_download_task(name, f"❌ {name} 下载失败")
             except Exception as e:
                 print(f"下载插件 {name} 失败: {e}")
+                self._fail_download_task(name, f"❌ 下载失败: {e}")
         threading.Thread(target=_run, daemon=True).start()
         return True
 
@@ -2909,8 +2923,10 @@ if %errorlevel% equ 0 (
                     self._notify_res_changed('mod')
                 else:
                     print(f"Mod {name} 下载失败")
+                    self._fail_download_task(name, f"❌ {name} 下载失败")
             except Exception as e:
                 print(f"下载 Mod {name} 失败: {e}")
+                self._fail_download_task(name, f"❌ 下载失败: {e}")
         threading.Thread(target=_run, daemon=True).start()
         return True
 

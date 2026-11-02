@@ -817,10 +817,13 @@ def download_and_extract_mod(gui, target_dir, download_files):
                 ok = download_file_with_gui(url, temp_file, gui, name)
                 print(f"[DownloadCenter] 下载结果: ok={ok}, exists={os.path.exists(temp_file)}")
                 if ok is False:
+                    # 让下载抽屉能把这一行标成失败，而不是一直挂在"等待中"
+                    gui.current_file_var.set(f"❌ {name} 下载失败")
                     return False
                 gui.current_file_var.set(f"正在解压 {name}...")
                 if os.path.exists(temp_file):
                     if not extract_7z_file(temp_file, target_dir):
+                        gui.current_file_var.set(f"❌ {name} 解压失败")
                         return False
                     for junk in ('__MACOSX', '.DS_Store', '.gitkeep'):
                         p = os.path.join(target_dir, junk)
