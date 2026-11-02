@@ -1,3 +1,10 @@
+## 0.9.41 — 修复后台线程把命中数算到别的插件头上
+
+- `_owner_of_caller()` 靠调用栈里的 `env.ADDON_NAME` 认插件。插件的后台线程（`Service` 的 auto/hit 线程、`Live` 的 pump、抽卡 `on_buy` 的 pump）没有 `scr.py` 的栈帧，于是回落到 `Host` 单例第一次构造时的 `addon_name` —— 也就是「最先载入的那个插件」。结果：`hits()` / `blocked()` 恒读 0，状态行的 `hook_total` 显示成别人的钩子数。
+- 症状是「抽卡被拦住了、但永远不弹窗」：拦截发生在 DLL 侧（纯共享内存计数），Python 侧那个 0.25s 轮询线程却永远看不到计数变化，`handle_gacha` 一次都不会被调用。日志里表现为「命中 0 次 / 已生效 0 次」，而同一个 `owner_requested=` 在两个插件上显示同一个数字。
+- 新增 `Host.bind_owner(owner)`：插件自己的后台线程开头认领身份，之后 `configure` / `push` / 计数全部算在本插件名下。`Service` 的 auto 线程与命中回调线程、`Live` 的 pump 线程、`Gacha.on_buy` 的 pump 线程都会调用。
+- `Service.status()` 改为 `host.poll(owner=self.addon_name)`，命中回调计数改 `host.hits(method=..., owner=self.addon_name)`；`Live.status()` 传 `owner=self.owner`；`Gacha.blocked(host, owner=None)` 与 pump 里的两次读取都带上 `on_buy` 当场捕获的 owner。显式传 owner 与线程绑定互为保险，任一处漏了都不会再串到别人头上。
+
 ## 0.9.40 — 钩子表扩容到 128 槽（协议 v12）
 
 - 辅段从 5 格扩到 101 格（主段仍 0..26 留给成就观测）。此前换曲锁自己占 4 条，再加一两个插件就满，「规则: 禁止浪费狂气」的抽卡拦截钩子整条被丢弃且只在日志里说一句，表现为插件静默失效。

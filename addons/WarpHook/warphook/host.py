@@ -754,6 +754,16 @@ class Host:
         local = getattr(self, "_owner_context", None)
         return (getattr(local, "owner", None) or _owner_of_caller() or self.addon_name)
 
+    def bind_owner(self, owner):
+        """把当前线程标记成某个插件，插件自己的后台线程开头调一次。
+
+        没有这一步，线程里既没有 ``scr.py`` 的栈帧、也没有线程本地 owner，
+        ``_current_owner()`` 只能回落到单例第一次构造时那个插件名 —— 于是
+        「读到的命中数」和「push 出去的钩子归属」全都会算到别人头上。
+        """
+        if owner:
+            self._owner_context.owner = str(owner)
+
     def _act(self, owner, fn):
         """以指定插件身份执行；线程之间不能共享临时 owner。"""
         # Host 的首次构造发生在插件载入线程，后续所有后台线程复用此对象。
@@ -1479,9 +1489,13 @@ class Host:
         except Exception:  # noqa: BLE001
             return False
 
-    def poll(self):
-        """读一次宿主状态。调不调、多久调一次、怎么播报，都由插件决定。"""
-        return self.status()
+    def poll(self, owner=None):
+        """读一次宿主状态。调不调、多久调一次、怎么播报，都由插件决定。
+
+        ``owner`` 不传时按调用栈反查；后台线程里没有插件的栈帧，务必自己传
+        —— 否则命中数会读到别的插件那一份（恒为 0）。
+        """
+        return self.status(owner=owner)
 
     # ---- 主动命令：一行调用就让游戏做事 ---------------------------------
     def set_var(self, index, value):
