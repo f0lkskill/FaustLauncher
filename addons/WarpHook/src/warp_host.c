@@ -4,6 +4,10 @@
  */
 #include "warp_internal.h"
 
+/* 进程正在退出（由 DllMain 的 DETACH 置位）。这时控制线程只许安静退出，
+ * 绝不能再碰 MinHook —— 见 warp_thread 末尾的说明。 */
+static volatile LONG g_detaching = 0;
+
 /* ------------------------------------------------------------------ */
 /* 控制线程                                                            */
 /* ------------------------------------------------------------------ */
@@ -92,8 +96,15 @@ DWORD WINAPI warp_thread(LPVOID param)
         warp_install_hooks();
     }
 
-    warp_uninstall();
-    warp_work_stop();
+    /* 进程退出时直接收工：MinHook 的 DisableHook 要挂起游戏里所有其它线程
+     * 去回填原始字节，而这一刻系统正在拆线程（有的已经进了终止流程、有的
+     * 卡在加载器锁里），挂起/恢复可能永远等不到回应 —— 表现就是「点退出，
+     * 窗口卡住不动」。进程反正要结束了，补丁和被改写的代码页由 OS 一并回收，
+     * 这里再补一次 DisableHook 没有收益，只有风险。 */
+    if (!g_detaching) {
+        warp_uninstall();
+        warp_work_stop();
+    }
     return 0;
 }
 
@@ -125,6 +136,8 @@ void warp_start(void)
 
 void warp_stop_cleanup(void)
 {
+    /* 先立退出标记，再叫醒线程：控制线程看到标记就直接 return。 */
+    g_detaching = 1;
     if (g_stop)
         SetEvent(g_stop);
     /* Called under loader lock: never wait or unmap the shared view here.
