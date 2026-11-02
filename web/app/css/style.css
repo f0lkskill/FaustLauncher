@@ -715,9 +715,12 @@ body.modal-open .res-card {
 .res-state-badge {
   font-size: 10.5px; padding: 1px 8px; border-radius: 999px; font-weight: 600;
   margin-left: 8px; vertical-align: 1px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 .res-state-badge.on { color: var(--success); background: rgba(46, 160, 67, 0.15); border: 1px solid rgba(46, 160, 67, 0.35); }
-.res-state-badge.off { color: var(--text-3); background: rgba(var(--tint-rgb), 0.05); border: 1px solid var(--border); }
+.res-state-badge.off { color: var(--text-3); background: rgba(var(--tint-rgb), 0.05); border: 1px solid var(--border);}
 .res-state-badge.installed { color: var(--info); background: rgba(var(--info-rgb), 0.13); border: 1px solid rgba(var(--info-rgb), 0.35); }
 .res-state-badge.is-new { color: rgba(17, 255, 0, 0.696); background: rgba(29, 221, 0, 0.13); border: 1px solid rgba(30, 255, 0, 0.35); }
 /* 插件依赖徽标: 紫色代表"由 WarpHook 之类依赖库提供能力", 缺失时转红 */
