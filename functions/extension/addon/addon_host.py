@@ -369,6 +369,16 @@ _EXIT_SEEN = {}
 _EXIT_DONE = set()
 """已经为退出阶段采过现场的 pid。"""
 
+_EXIT_KILLED = set()
+"""已经替用户结束掉的 pid，不必再轮询。"""
+
+_EXIT_GIVE_UP = 22
+"""连续这么多次轮询（约 44 秒）进程还没退掉，就保留现场并结束它。
+
+    游戏卡在退出阶段时存档早已写完（Player.log 里 ``Quit Local Save`` → ``Save..``
+    都已完成），结束进程不会丢档，比让用户去任务管理器强杀体验好得多。
+"""
+
 _WINDOW_SEEN = set()
 """出过窗口的 pid: 只有它们消失后才可能是退出卡死。"""
 
@@ -387,6 +397,20 @@ def _save(pid, tag: str) -> None:
         print(f"[AddonHost] 采集线程现场失败: {type(exc).__name__}: {exc}")
 
 
+def _finish(pid) -> None:
+    """游戏已经存完档却退不掉：现场早已存好，直接替用户结束进程。"""
+
+    try:
+        from functions.base import hang_probe
+
+        if hang_probe.terminate(pid):
+            print(f"[AddonHost] 游戏卡在退出阶段，已结束进程 {pid}（现场在 cache/hang 下）")
+        else:
+            print(f"[AddonHost] 结束进程 {pid} 失败，可能已经自己退了")
+    except Exception as exc:  # noqa: BLE001
+        print(f"[AddonHost] 结束卡死进程失败: {type(exc).__name__}: {exc}")
+
+
 def _capture_hang(pids) -> None:
     """游戏卡住就把线程现场存下来。
 
@@ -396,6 +420,8 @@ def _capture_hang(pids) -> None:
     """
 
     for pid in pids:
+        if pid in _EXIT_KILLED:
+            continue
         if pid not in _HANG_DONE:
             try:
                 from functions.base import hang_probe
@@ -412,26 +438,30 @@ def _capture_hang(pids) -> None:
                     _HANG_DONE.add(pid)
                     _save(pid, "游戏卡死")
         if pid in _EXIT_DONE:
-            continue
-        try:
-            from functions.base import hang_probe
+            pass
+        else:
+            try:
+                from functions.base import hang_probe
 
-            alive_window = hang_probe.has_window(pid)
-        except Exception:  # noqa: BLE001
-            alive_window = True
-        if alive_window:
-            _WINDOW_SEEN.add(pid)
-            _EXIT_SEEN.pop(pid, None)
-            continue
-        if pid not in _WINDOW_SEEN:
-            # 刚启动还没出画面的进程也会「没有窗口」, 不能算退出卡死。
-            continue
-        seen = _EXIT_SEEN.get(pid, 0) + 1
-        _EXIT_SEEN[pid] = seen
-        # 关窗到进程退出正常只要一两秒；超过 ~10 秒还在就是退不掉。
-        if seen >= 5:
-            _EXIT_DONE.add(pid)
-            _save(pid, "退出卡死")
+                alive_window = hang_probe.has_window(pid)
+            except Exception:  # noqa: BLE001
+                alive_window = True
+            if alive_window:
+                _WINDOW_SEEN.add(pid)
+                _EXIT_SEEN.pop(pid, None)
+                continue
+            if pid not in _WINDOW_SEEN:
+                # 刚启动还没出画面的进程也会「没有窗口」, 不能算退出卡死。
+                continue
+            seen = _EXIT_SEEN.get(pid, 0) + 1
+            _EXIT_SEEN[pid] = seen
+            # 关窗到进程退出正常只要一两秒；超过 ~10 秒还在就是退不掉。
+            if seen >= 5:
+                _EXIT_DONE.add(pid)
+                _save(pid, "退出卡死")
+        if _EXIT_SEEN.get(pid, 0) >= _EXIT_GIVE_UP:
+            _EXIT_KILLED.add(pid)
+            _finish(pid)
 
 
 def _fire_gamestart(manager) -> None:

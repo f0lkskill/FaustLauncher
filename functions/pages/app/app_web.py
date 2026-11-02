@@ -3580,6 +3580,11 @@ def _monitor_game_process(window_ref):
                 _EXIT_SEEN[pid] = _EXIT_SEEN.get(pid, 0) + 1
                 if _EXIT_SEEN[pid] >= 5:
                     _report_game_hang(pid, "退出卡死")
+                if _EXIT_SEEN[pid] >= 22:
+                    # 存档早已写完（Player.log 里 Quit Local Save / Save 都完成），
+                    # 进程却退不掉, 与其让用户去任务管理器强杀, 不如替他收尾。
+                    if hang_probe.terminate(pid):
+                        print(f"[Hang] 游戏卡在退出阶段, 已结束进程 {pid}（现场在 cache/hang 下）")
                     break
             except Exception:
                 continue
