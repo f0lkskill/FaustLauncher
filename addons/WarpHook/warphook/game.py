@@ -5,6 +5,8 @@
 """
 
 import threading
+import time
+import traceback
 
 from .base import log
 from .host import HF_BLOCK, Host, _owner_of_caller, _tick32, host_alive
@@ -173,6 +175,7 @@ class Gacha:
 
         def _pump():
             last = self.blocked(host)
+            warned = 0.0
             while not stop.is_set():
                 try:
                     host.beat()
@@ -183,7 +186,14 @@ class Gacha:
                     elif n < last:
                         last = n          # 重新推配置会把计数清零
                 except Exception:  # noqa: BLE001
-                    pass
+                    # 这里吞掉异常会让「拦下了但没弹窗」变成完全无声的谜案：
+                    # 回调本身抛错（读类型失败、文案配置取不到）也走这条路。
+                    # 限流记录一次，别让每 0.25s 的轮询把日志刷爆。
+                    now = time.monotonic()
+                    if now - warned >= 10.0:
+                        warned = now
+                        log(f"[{owner}] 抽卡回调出错，这一单没有弹窗：\n"
+                            f"{traceback.format_exc()}")
                 stop.wait(step)
 
         thread = threading.Thread(target=_pump, daemon=True, name=f'{owner}-gacha')
