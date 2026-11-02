@@ -49,7 +49,9 @@ from .base import (
 )
 
 HOST_MAGIC = 0x54534857           # "WHST"
-HOST_VERSION = 11                  # v11：导出表 22→24（静态字段读）+ CMD_STATIC；
+HOST_VERSION = 12                  # v12：钩子表 32→128（辅段只剩 5 槽，换曲锁自己
+                                   # 就占 4 条，后面的插件整条被丢弃）；
+                                   # v11：导出表 22→24（静态字段读）+ CMD_STATIC；
                                    # v10：LIST 诊断命令；v9：CALL 的 out 参数缓冲
                                   # （v8：钩子参数改写；v7：代读读链；v6：字典容器步）
 # v5：尾部追加 buff 关注哈希表段（BUF 行）。
@@ -60,7 +62,7 @@ HOST_DLL_NAME = "warp_host.dll"
 # 整个 WarpHook 只有一个日志文件（DLL 与 Python 共用），见 warphook/diag.py。
 LOG_FILE_NAME = "warp.log"
 
-HOST_MAX_HOOKS = 32
+HOST_MAX_HOOKS = 128
 HOST_MAX_TEXTS = 256
 HOST_TEXT_LEN = 128
 HOST_KLASS_LEN = 48
@@ -233,7 +235,7 @@ HOST_MAP_BYTES = HOST_CMD_BUF_OFFSET + HOST_CMD_BUF_COUNT * HOST_CMD_BUF_SIZE
 # 表里就只剩 NoGacha 的 2 条，C 只装 2 条，「成就钩子全死」（v0.9.1 真机实锤）。
 # 现在改成按 owner 名分段、各写各的段，互不覆盖：
 HOST_PRIMARY_MARKS = ('成就', 'achievement')   # owner 名含这些 → 主段作者
-HOST_HOOKS_PRIMARY = 27    # 钩子槽：主段 0..26 / 辅段 27..31（成就 25 条 + 余量）
+HOST_HOOKS_PRIMARY = 27    # 钩子槽：主段 0..26 / 辅段 27..127（成就 25 条 + 余量）
 HOST_READS_PRIMARY = 96    # 读链条目：主段 0..95 / 辅段 96..127
 HOST_TEXTS_PRIMARY = 192   # 文案段：主段 0..191 / 辅段 192..255
 
@@ -766,7 +768,7 @@ class Host:
 
         v0.9.2 起按 owner 分段：主段作者（成就观测，名字含「成就」/
         achievement）占钩子槽 0..26、读链 0..95、文案 0..191；其余作者
-        合占钩子槽 27..31、读链 96..127、文案 192..255。成就观测在子进程
+        合占钩子槽 27..127、读链 96..127、文案 192..255。成就观测在子进程
         有一份独立的 Host，两边各自 push 同一块共享内存——只有分段各写各的，
         才不会互相把对方清掉（v0.9.1 真机事故：NoGacha 后 push，成就 25 条
         全被清掉，C 只装上 NoGacha 的 2 条）。
@@ -823,9 +825,16 @@ class Host:
             out_texts[HOST_TEXTS_PRIMARY + i] = text
         if dropped:
             names = ", ".join(f"{o}.{m}" for o, m in dropped[:6])
-            more = f" 等 {len(dropped)} 条" if len(dropped) > 6 else ""
-            self.log(f"钩子分段容量不够，装不下的钩子被丢弃："
-                     f"{names}{more} —— 检查各插件钩子总数", "warp")
+            # _layout 会被只读接口（hits / hook_status）反复调用，同一批丢弃
+            # 每帧都打一遍会把日志刷爆。只在"丢的这批变了"时打一次。
+            sig = tuple(dropped)
+            if sig != getattr(self, "_dropped_sig", None):
+                self._dropped_sig = sig
+                more = f" 等 {len(dropped)} 条" if len(dropped) > 6 else ""
+                self.log(f"钩子分段容量不够，装不下的钩子被丢弃："
+                         f"{names}{more} —— 检查各插件钩子总数", "warp")
+        else:
+            self._dropped_sig = None
         bands = tuple(
             gi for gi, group in enumerate(
                 ([(n, e) for n, e in self._owners.items()

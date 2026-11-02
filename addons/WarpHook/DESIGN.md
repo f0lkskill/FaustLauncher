@@ -390,7 +390,7 @@ v0.9.1 真机上成就 25 条钩子就是这样被 NoGacha 的 2 条清掉的。
 
 | 段 | 主段（owner 名含「成就/achievement」） | 辅段（其余） |
 | --- | --- | --- |
-| 钩子槽 | 0..26 | 27..31 |
+| 钩子槽 | 0..26 | 27..127 |
 | 读链 | 0..95 | 96..127 |
 | 文案 | 0..191 | 192..255 |
 
@@ -555,9 +555,18 @@ NS['warp.plugin'].Host            # 扁平访问，等价
 | `warp_ready.c` | 引擎就绪门闩（等程序集、稳定期、域初始化） |
 | `warp_popup.c` | 原版弹窗、杀进程 |
 | `warp_action.c` | 挑台词、执行动作、参数探针、单次事件入口 |
-| `warp_hook.c` | thunk 表（argc 0..9，显式收发 `MethodInfo*`）、装配 / 卸载钩子 |
+| `warp_hook.c` | thunk 表装配 / 卸载钩子（thunk 本体由 `warp_thunks.inc` 生成） |
 | `warp_cmd.c` | 命令泵 + 对象构造（`popup` / `kill_game` / `make` / `call` / `str` / `release`） |
 | `warp_host.c` | 控制线程、`DllMain`（只剩入口） |
+
+钩子 thunk 是「每种参数个数 × 每个槽」各一份的定长表（每个 thunk 把槽号硬编码
+进函数体，preprocessor 算不上下标），体积大且机械，改由
+`addons/WarpHook/tools/gen_thunks.py` 生成 `src/warp_thunks.inc`。**改了
+`warp_layout.h` 的 `WARP_MAX_HOOKS` 必须先重跑它再编译**：
+
+```bash
+python addons/WarpHook/tools/gen_thunks.py
+```
 
 编译（`MH` 是 MinHook 目录）。**产物必须直接落在 `addons/WarpHook/warp_host.dll`** ——
 那是 `Host.dll_path()` 唯一会去注入的路径（`warphook/host.py` 的 `_warp_dir()/HOST_DLL_NAME`）。
