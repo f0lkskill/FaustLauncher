@@ -107,6 +107,34 @@ host.hook(
 | `ret_kind` | `None` | `'int32'` / `'float'` |
 | `ret_slot` | `None` | 返回值落哪一格 |
 
+### 同一个方法可以被多个插件分别登记
+
+v0.9.49 起，多个插件（或同一个插件多次）登记**同一个类方法**是允许的：
+
+```python
+# 插件 A
+host.hook('MainUI.GachaUIPresenter', 'OnGachaSelected', argc=2, block=True)
+# 插件 B —— 同一个方法，照样能登记
+host.hook('MainUI.GachaUIPresenter', 'OnGachaSelected', argc=2, event=7)
+```
+
+游戏入口上只装一次 detour，命中时宿主按登记顺序把所有订阅者问一遍，各跑各的
+`guard` / `probe` / 读链 / 事件 / 动作：
+
+| 语义 | 合并规则 |
+| --- | --- |
+| `block` | 取或 —— 任何一个订阅者要拦，这次调用就被拦下 |
+| 参数改写（`rewrite`） | 按登记顺序依次写，后面的覆盖前面的 |
+| 事件 | 每个订阅者按自己的 `event` / `reads` / `dedupe` 独立投递 |
+| 返回值（`ret_kind`） | 所有订阅者看见同一个返回值；`void` 与 `int32` 混登记时按非 `void` 解释 |
+| 动作（`ACT_POPUP` 等） | 各订阅者各自执行，互不影响 |
+
+两个前提：
+
+- 登记时的 `argc` 必须一致 —— 同一个方法被按不同参数个数登记，后来的那条会被
+  拒绝（日志 `hook: shared entry argc mismatch`），因为共用一条跳板时栈参数会读歪。
+- 先登记的那条决定物理入口的形状（thunk 的 `argc`）；后登记的只能对齐，不能改。
+
 ### 调用示例
 
 **只看不看、抓住对象**

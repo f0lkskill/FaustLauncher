@@ -43,7 +43,7 @@ typedef struct {
     BOOL  installed;
     int   argc;
     /* Native thunk identity is process-lifetime; configuration rows may move. */
-    volatile LONG hook_index;  /* -1 while disabled */
+    volatile LONG hook_index;  /* 分发链头（配置行号），-1 while disabled */
     int ret_kind;              /* preserve return ABI while logically unbound */
 } WARP_SLOT;
 
@@ -63,6 +63,9 @@ extern HANDLE        g_stop;
 extern WARP_IC       g_ic;
 extern const char   *g_export_names[WARP_EXPORT_COUNT];
 extern WARP_SLOT     g_slots[WARP_MAX_HOOKS];
+/* 分发链：同一个游戏入口只装一次 detour，命中时按这条链表把每个订阅者
+ * （配置行）依次问一遍。g_link_next[row] 是同一槽里的下一行，-1 结束。 */
+extern int           g_link_next[WARP_MAX_HOOKS];
 extern int           g_installed;
 extern int           g_ic_ready;
 extern int           g_armed;
@@ -111,6 +114,10 @@ void warp_fire(int hook_index);
  * 进程活得久，拦截类钩子则不在此列。 */
 int warp_release_soft_locks(void);
 int warp_probe_int(const char *klass_name, const char *method_name, void *obj);
+/* 分发链的遍历：thunk 里按 slot 走一遍所有订阅者（配置行）。
+ * 声明成函数而不是宏，是为了让 thunk 生成器只需要认这两个名字。 */
+int warp_slot_row_first(int slot);
+int warp_slot_row_next(int slot, int row);
 int warp_on_event(int hook_index, void *self, int argc,
                   void *a1, void *a2, void *a3,
                   void *a4, void *a5, void *a6);

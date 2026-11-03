@@ -1262,7 +1262,6 @@ static int warp_target_taken(void *target)
 {
     unsigned char pro[6];
     MEMORY_BASIC_INFORMATION mb;
-    int j;
 
     if (!target)
         return 0;
@@ -1275,10 +1274,8 @@ static int warp_target_taken(void *target)
         return 1;
     if (pro[0] == 0xFF && pro[1] == 0x25)
         return 1;
-    for (j = 0; j < WARP_MAX_HOOKS; j++) {
-        if (g_slots[j].installed && g_slots[j].target == target)
-            return 1;   /* 表内两条钩子配了同一方法，同样不许 */
-    }
+    /* 表内同 target 的情形不再在这里拦：那条路径已经在 warp_bind_hook 里
+     * 合并到同一条槽的分发链上，走不到新建分支。 */
     return 0;
 }
 
@@ -1302,26 +1299,107 @@ static BOOL warp_mh_ensure(void)
 /* Physical slots and their trampolines live until process exit. Disable does
  * not imply that a thread has left the detour (it may be inside runtime_invoke).
  * Freeing/reusing that trampoline is therefore never safe during hot reload. */
+
+/* ---- 分发链的维护（机制见 warp_hook.c 顶部说明） ----
+ *
+ * 一条物理槽（一个游戏入口）可以挂多个订阅者，用 g_link_next 串起来。
+ * 槽的 hook_index 是链头，行号按链序排列。 */
+static void warp_link_clear(int slot)
+{
+    int row;
+
+    if (slot < 0 || slot >= WARP_MAX_HOOKS)
+        return;
+    row = (int)g_slots[slot].hook_index;
+    while (row >= 0 && row < WARP_MAX_HOOKS) {
+        int next = g_link_next[row];
+        g_link_next[row] = -1;
+        row = next;
+    }
+    InterlockedExchange(&g_slots[slot].hook_index, -1);
+}
+
+static void warp_link_push(int slot, int row)
+{
+    int cur;
+
+    if (slot < 0 || slot >= WARP_MAX_HOOKS || row < 0 || row >= WARP_MAX_HOOKS)
+        return;
+    /* 同一行只该在链上出现一次：重试装配会在槽已装好之后再次绑同一行，
+     * 不去重就会一次命中触发两遍。 */
+    cur = (int)g_slots[slot].hook_index;
+    while (cur >= 0) {
+        if (cur == row)
+            return;
+        if (g_link_next[cur] < 0)
+            break;
+        cur = g_link_next[cur];
+    }
+    g_link_next[row] = -1;
+    if (cur < 0 || cur >= WARP_MAX_HOOKS) {
+        InterlockedExchange(&g_slots[slot].hook_index, row);
+        return;
+    }
+    g_link_next[cur] = row;
+}
+
 static int warp_row_installed(int row)
 {
     int n;
-    for (n = 0; n < WARP_MAX_HOOKS; n++)
-        if (g_slots[n].installed && g_slots[n].hook_index == row) return 1;
+    int cur;
+
+    if (row < 0 || row >= WARP_MAX_HOOKS)
+        return 0;
+    for (n = 0; n < WARP_MAX_HOOKS; n++) {
+        if (!g_slots[n].installed)
+            continue;
+        for (cur = (int)g_slots[n].hook_index; cur >= 0; cur = g_link_next[cur]) {
+            if (cur == row)
+                return 1;
+        }
+    }
     return 0;
 }
 
 static int warp_bind_hook(int row, void *target, int argc)
 {
     int n, free_slot = -1;
+    int ret_kind = g_warp_hooks[row].ret_kind;
     WARP_SLOT *slot;
     void *thunk;
+
+    /* 已经有一条槽挂在这个入口上：不再装第二个 detour。
+     *
+     * MinHook 一个入口只能挂一次；硬装会形成嵌套跳板（后挂者把自己的
+     * original 指向前者的 thunk），调用一次两边各跑两遍，挂载时机一撞就是
+     * 撕裂的跳板 —— v0.9.1 真机上就是这么把游戏崩掉的。改为把这一行接到
+     * 那条槽的分发链上，命中时由 thunk 依次问遍所有订阅者。 */
+    for (n = 0; n < WARP_MAX_HOOKS; n++) {
+        slot = &g_slots[n];
+        if (slot->target != target || !slot->installed)
+            continue;
+        if (slot->argc != argc) {
+            /* 同一个方法被按不同参数个数登记，说明有插件配置写错了：
+             * 共用一条 thunk 会把栈参数读歪，宁可不装。 */
+            warp_log("hook: shared entry argc mismatch", row);
+            return 0;
+        }
+        if (slot->ret_kind == WARP_RET_VOID && ret_kind != WARP_RET_VOID)
+            slot->ret_kind = ret_kind;
+        warp_link_push(n, row);
+        warp_log("hook joined shared entry", row);
+        return 1;
+    }
+
     for (n = 0; n < WARP_MAX_HOOKS; n++) {
         slot = &g_slots[n];
         if (slot->target == target) {
-            if (slot->installed || slot->argc != argc) return 0;
+            if (slot->argc != argc)
+                return 0;
             break;
         }
-        if (!slot->target && free_slot < 0) free_slot = n;
+        if (!slot->target && free_slot < 0)
+            free_slot = n;
     }
     if (n == WARP_MAX_HOOKS) n = free_slot;
     if (n < 0) { warp_log("hook: retained slot capacity exhausted", row); return 0; }
@@ -1333,14 +1411,17 @@ static int warp_bind_hook(int row, void *target, int argc)
         slot->argc = argc;
         if (MH_CreateHook(target, thunk, &slot->original) != MH_OK) return 0;
         slot->target = target;
+    } else {
+        /* 复用的老槽：上一轮的链作废，从这一行重新开头。 */
+        warp_link_clear(n);
     }
     /* Publish all metadata BEFORE enabling: the game can enter immediately. */
-    slot->ret_kind = g_warp_hooks[row].ret_kind;
-    InterlockedExchange(&slot->hook_index, row);
+    slot->ret_kind = ret_kind;
+    warp_link_push(n, row);
     slot->installed = TRUE;
     if (MH_EnableHook(target) != MH_OK) {
         slot->installed = FALSE;
-        InterlockedExchange(&slot->hook_index, -1);
+        warp_link_clear(n);
         return 0;
     }
     return 1;
@@ -1535,7 +1616,7 @@ void warp_uninstall(void)
         if (!g_slots[i].installed) continue;
         MH_DisableHook(g_slots[i].target);
         g_slots[i].installed = FALSE;
-        InterlockedExchange(&g_slots[i].hook_index, -1);
+        warp_link_clear(i);
     }
     if (g_pump_installed) {
         MH_DisableHook(g_pump_target);

@@ -5,8 +5,32 @@
 #include "warp_internal.h"
 
 /* ------------------------------------------------------------------ */
-/* 钩子装配                                                            */
+/* 分发链：一个游戏入口 → N 个订阅者                                     */
 /* ------------------------------------------------------------------ */
+
+/* MinHook 对同一个入口只能挂一次钩。以前第二条配置绑到同一方法时直接被拒
+ * （warp_bind_hook 返回 0，日志里只有一句 "hook: bind failed"），多个插件
+ * 想挂同一个函数时只有先到的那个真正生效（真机 2026-11-03 反馈）。
+ *
+ * 现在 thunk 自己就是总管：入口只装一次 detour，命中时按这条分发链把所有
+ * 订阅者依次问一遍 —— 各跑各的参数门、探针、读链、事件、动作。参数改写
+ * 按链序后写覆盖先写；block 取或（任一订阅者要拦就拦）；返回值按链上第一
+ * 个声明了 ret_kind 的订阅者解释，所有订阅者都看得见同一个返回值。 */
+int g_link_next[WARP_MAX_HOOKS];
+
+int warp_slot_row_first(int slot)
+{
+    if (slot < 0 || slot >= WARP_MAX_HOOKS)
+        return -1;
+    return (int)g_slots[slot].hook_index;
+}
+
+int warp_slot_row_next(int slot, int row)
+{
+    if (slot < 0 || slot >= WARP_MAX_HOOKS || row < 0 || row >= WARP_MAX_HOOKS)
+        return -1;
+    return g_link_next[row];
+}
 
 /* 每个钩子要有独立的 thunk，否则无法知道自己是谁。
  *
@@ -15,7 +39,7 @@
  * 丢掉，六参以内是走运没崩（那些方法体不读 mi）；铁路 9 参构造的栈参数一
  * 多就不敢赌了，索性全部完整转发。
  *
- * 返回值按钩子声明的 ret_kind 取：int 返回在 RAX、float 返回在 XMM0，都按
+ * 返回值按链上声明的 ret_kind 取：int 返回在 RAX、float 返回在 XMM0，都按
  * 位模式带回 post 阶段直出事件格。BLOCK 的钩子拦下原函数，没有返回值可发。
  * 执行顺序仍是「先问要不要拦 → 按需调原函数 → 事件（POST 类）→ 再做动作」。*/
 /* 把括号包住的六个参数摊开成逗号列表：EVT 作为整体传参时不会被内层逗号
@@ -23,39 +47,68 @@
 #define WARP_EVT6(p1, p2, p3, p4, p5, p6) p1, p2, p3, p4, p5, p6
 
 /* v8：命中时按配置覆盖某个形参（改游戏自己要传进去的值）。
- * 取值只在共享内存的对象槽里看一眼，没有就直接返回 —— 不分配、不构造。 */
+ * 取值只在共享内存的对象槽里看一眼，没有就跳过 —— 不分配、不构造。
+ * 分发链上每个订阅者都轮一遍，后面的覆盖前面的。 */
 #define WARP_RW(k, v)                                                   \
     do {                                                                \
-        void *rw_ = warp_rewrite_value(warp_n_, (k));                         \
-        if (rw_) v = rw_;                                               \
+        int rw_i_;                                                      \
+        for (rw_i_ = warp_slot_row_first(slot_n_); rw_i_ >= 0;          \
+             rw_i_ = warp_slot_row_next(slot_n_, rw_i_)) {              \
+            void *rw_ = warp_rewrite_value(rw_i_, (k));                 \
+            if (rw_) v = rw_;                                           \
+        }                                                               \
     } while (0)
 
 #define WARP_THUNK_DEF(N, n, DECL, EVT, CALL, RW)                           \
     static void __fastcall warp_thunk##N##_##n DECL                     \
     {                                                                   \
-        const int warp_n_ = (int)g_slots[n].hook_index;                 \
-        WARP_HOOK *h_ = warp_n_ >= 0 ? warp_hook_at(warp_n_) : NULL;                                \
-        int act = h_ ? warp_on_event(warp_n_, self, N, WARP_EVT6 EVT) : 0;             \
+        unsigned char fire_[WARP_MAX_HOOKS];                            \
+        int nfire_ = 0;                                                 \
+        int blocked_ = 0;                                               \
+        int want_float_ = (g_slots[n].ret_kind == WARP_RET_FLOAT);      \
         unsigned long long ret_ = 0;                                    \
+        const int slot_n_ = (n);                                        \
+        int r_;                                                         \
+        /* 第一遍：问遍所有订阅者，收 block / 动作 / 返回 ABI。 */        \
+        for (r_ = warp_slot_row_first(n); r_ >= 0;                      \
+             r_ = warp_slot_row_next(n, r_)) {                          \
+            WARP_HOOK *h_ = warp_hook_at(r_);                           \
+            int act_;                                                   \
+            if (!h_)                                                    \
+                continue;                                               \
+            act_ = warp_on_event(r_, self, N, WARP_EVT6 EVT);           \
+            if (act_ & 0x1)                                             \
+                blocked_ = 1;                                           \
+            if (act_ & 0x2)                                             \
+                fire_[nfire_++] = (unsigned char)r_;                    \
+            if (h_->ret_kind == WARP_RET_FLOAT)                         \
+                want_float_ = 1;                                        \
+        }                                                               \
         RW                                                              \
-        if (!(act & 0x1) && g_slots[n].original) {                     \
-            if ((h_ ? h_->ret_kind : g_slots[n].ret_kind) == WARP_RET_FLOAT) {                 \
+        if (!blocked_ && g_slots[n].original) {                         \
+            if (want_float_) {                                          \
                 float f_ = ((float (__fastcall *)DECL)g_slots[n].original) CALL; \
                 __builtin_memcpy(&ret_, &f_, 4);                        \
             } else {                                                    \
-                /* 一律按 64 位整数接住 RAX：int/bool/指针的返回值全从     \
-                 * 这里走；VOID 方法的 RAX 没人读，写回去也无害。         \
-                 * 不接住的话，下面的 warp_on_event_post 调用会把         \
-                 * 它覆盖掉——真机实证：IsNodeCleared 永远返回假，        \
-                 * 游戏把已通关的主线判成 1-11 未解锁（采光本上锁）。 */  \
+                /* 一律按 64 位整数接住 RAX：int/bool/指针的返回值全从       \
+                 * 这里走；VOID 方法的 RAX 没人读，写回去也无害。           \
+                 * 不接住的话，下面的 warp_on_event_post 调用会把           \
+                 * 它覆盖掉——真机实证：IsNodeCleared 永远返回假，          \
+                 * 游戏把已通关的主线判成 1-11 未解锁（采光本上锁）。 */    \
                 ret_ = (unsigned long long)((long long (__fastcall *)DECL)g_slots[n].original) CALL; \
             }                                                           \
-            warp_on_event_post(warp_n_, h_, self, N, WARP_EVT6 EVT, (int)ret_); \
+            for (r_ = warp_slot_row_first(n); r_ >= 0;                  \
+                 r_ = warp_slot_row_next(n, r_)) {                      \
+                WARP_HOOK *h_ = warp_hook_at(r_);                       \
+                if (h_)                                                 \
+                    warp_on_event_post(r_, h_, self, N, WARP_EVT6 EVT, (int)ret_); \
+            }                                                           \
         }                                                               \
-        if (act & 0x2) warp_fire(warp_n_);                                    \
-        /* 离开前无条件写回：int/bool/指针在 RAX（movq 保住 64 位指针），  \
+        for (r_ = 0; r_ < nfire_; r_++)                                 \
+            warp_fire((int)fire_[r_]);                                  \
+        /* 离开前无条件写回：int/bool/指针在 RAX（movq 保住 64 位指针）， \
          * float 在 XMM0。BLOCK 路径没调 original，写 0 = 「拦截未成功」。 */ \
-        if ((h_ ? h_->ret_kind : g_slots[n].ret_kind) == WARP_RET_FLOAT) {                     \
+        if (want_float_) {                                              \
             __asm__ volatile("movd %0, %%xmm0" :: "r"(ret_) : "xmm0");  \
         } else {                                                        \
             __asm__ volatile("movq %0, %%rax" :: "r"(ret_) : "rax");    \
@@ -66,7 +119,7 @@
  * isCritical, info)` 这类方法留的：出手者（attacker）在第 4 个参数上，
  * 只有 a1..a3 的话「谁打的我」永远读不到。7~9 是铁路通关记录的九参构造。 */
 #define WARP_THUNK_0(n) WARP_THUNK_DEF(0, n, (void *self, void *mi), \
-    (NULL, NULL, NULL, NULL, NULL, NULL), (self, mi), (void)warp_n_;)
+    (NULL, NULL, NULL, NULL, NULL, NULL), (self, mi), (void)slot_n_;)
 #define WARP_THUNK_1(n) WARP_THUNK_DEF(1, n, (void *self, void *a1, void *mi), \
     (a1, NULL, NULL, NULL, NULL, NULL), (self, a1, mi), \
     WARP_RW(1, a1);)
