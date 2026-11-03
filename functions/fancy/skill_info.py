@@ -209,7 +209,7 @@ def get_passive_files(translate_pack_path) -> list:
         for file in files:
             file:str
             if file.endswith('.json'):
-                if file[:8] == "Passives":
+                if file[:8] == "Passives" or file[:7] == "Passive":
                     passive_info_list.append(os.path.join(root, file))
 
     return passive_info_list
