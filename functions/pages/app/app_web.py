@@ -3530,6 +3530,46 @@ _HANG_SEEN = {}
 _HANG_KILLED = set()
 """已经因为持续无响应被结束掉的 pid。"""
 
+_HANG_DONE = set()
+"""已经采过线程现场的 pid, 同一个进程只采一次。"""
+
+_IDLE_SEEN = {}
+"""pid -> 连续几次轮询「窗口没响应且 CPU 时间一格没涨」。"""
+
+_IDLE_PREV = {}
+"""pid -> 上一次读到的进程 CPU 秒数。"""
+
+_IDLE_CPU_STEP = 0.05
+"""两次轮询之间 CPU 至少该涨这么多秒; 低于它就算「停住了」。"""
+
+_IDLE_GIVE_UP = 6
+"""CPU 停住且窗口无响应连续这么多次（约 12 秒）就结束进程。
+
+    光看 ``IsHungAppWindow`` 会把「加载场景 / 编译着色器」也算成卡死 —— 那时候
+    窗口同样不回消息, 但 CPU 是满的。真卡死正好相反: 消息停了, CPU 也不动。
+    两条一起看, 既能在十几秒内收掉真卡死, 又不会误伤慢加载。
+"""
+
+
+def _idle_count(pid):
+    """窗口没响应的前提下, 看 CPU 时间还在不在动, 返回连续「不动」的次数。"""
+
+    try:
+        from functions.base import hang_probe
+
+        now = hang_probe.cpu_seconds(pid)
+    except Exception:
+        return 0
+    prev = _IDLE_PREV.get(pid)
+    _IDLE_PREV[pid] = now
+    if now < 0 or prev is None or prev < 0:
+        return 0
+    if now - prev < _IDLE_CPU_STEP:
+        _IDLE_SEEN[pid] = _IDLE_SEEN.get(pid, 0) + 1
+    else:
+        _IDLE_SEEN[pid] = 0
+    return _IDLE_SEEN[pid]
+
 
 def _report_game_hang(pid, tag="crash"):
     """游戏卡住时采一次线程现场, 写进 cache/hang。
@@ -3573,18 +3613,22 @@ def _monitor_game_process(window_ref):
         for pid in _game_process_pids():
             try:
                 if hang_probe.find_hung_windows(pid):
-                    # 无响应持续够久（约 60 秒）就替用户收尾：点退出之后
-                    # 窗口还挂在那儿、进程不退，是这个症状最常见的样子；
-                    # 正常战斗里的短暂无响应不会撑这么久。
+                    # 窗口不回消息有两种：真的卡死（CPU 停着），以及加载场景
+                    # 或编译着色器（CPU 满着）。两者混在一起判会误杀慢加载，
+                    # 所以再读一次进程 CPU 时间。
                     _HANG_SEEN[pid] = _HANG_SEEN.get(pid, 0) + 1
-                    if _HANG_SEEN[pid] == 3:
+                    idle = _idle_count(pid)
+                    if (_HANG_SEEN[pid] == 3 or idle >= 3) and pid not in _HANG_DONE:
+                        _HANG_DONE.add(pid)
                         _report_game_hang(pid, "游戏卡死")
-                    if _HANG_SEEN[pid] >= 30 and pid not in _HANG_KILLED:
+                    if (idle >= _IDLE_GIVE_UP or _HANG_SEEN[pid] >= 30) and pid not in _HANG_KILLED:
                         _HANG_KILLED.add(pid)
                         if hang_probe.terminate(pid):
                             print(f"[Hang] 游戏持续无响应, 已结束进程 {pid}（现场在 cache/hang 下）")
                     break
                 _HANG_SEEN.pop(pid, None)
+                _IDLE_SEEN.pop(pid, None)
+                _IDLE_PREV.pop(pid, None)
                 if hang_probe.has_window(pid):
                     # 只有「先见过窗口」的进程才可能是退出卡死, 否则会把
                     # 刚启动还没出画面的那十几秒误判成卡死。
@@ -3596,7 +3640,7 @@ def _monitor_game_process(window_ref):
                 _EXIT_SEEN[pid] = _EXIT_SEEN.get(pid, 0) + 1
                 if _EXIT_SEEN[pid] >= 5:
                     _report_game_hang(pid, "退出卡死")
-                if _EXIT_SEEN[pid] >= 22:
+                if _EXIT_SEEN[pid] >= 8:
                     # 存档早已写完（Player.log 里 Quit Local Save / Save 都完成），
                     # 进程却退不掉, 与其让用户去任务管理器强杀, 不如替他收尾。
                     if hang_probe.terminate(pid):

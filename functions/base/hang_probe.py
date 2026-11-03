@@ -34,6 +34,7 @@ _TH32CS_SNAPMODULE = 0x00000008
 _TH32CS_SNAPMODULE32 = 0x00000010
 
 _PROCESS_QUERY_INFORMATION = 0x0400
+_PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
 _PROCESS_TERMINATE = 0x0001
 _PROCESS_VM_READ = 0x0010
 
@@ -57,6 +58,15 @@ _OFF_RCX = 0x80
 _OFF_RDX = 0x88
 _OFF_R8 = 0xB8
 _OFF_R9 = 0xC0
+
+
+class _FILETIME(ctypes.Structure):
+    """``GetProcessTimes`` 用的 64 位时间戳（高低两段）。"""
+
+    _fields_ = [
+        ("dwLowDateTime", wt.DWORD),
+        ("dwHighDateTime", wt.DWORD),
+    ]
 
 
 class _MODULEENTRY32(ctypes.Structure):
@@ -125,6 +135,14 @@ def _kernel32():
     k32.ReadProcessMemory.restype = wt.BOOL
     k32.CreateToolhelp32Snapshot.argtypes = [wt.DWORD, wt.DWORD]
     k32.CreateToolhelp32Snapshot.restype = wt.HANDLE
+    k32.GetProcessTimes.argtypes = [
+        wt.HANDLE,
+        ctypes.POINTER(_FILETIME),
+        ctypes.POINTER(_FILETIME),
+        ctypes.POINTER(_FILETIME),
+        ctypes.POINTER(_FILETIME),
+    ]
+    k32.GetProcessTimes.restype = wt.BOOL
     k32.Thread32First.argtypes = [wt.HANDLE, ctypes.POINTER(_THREADENTRY32)]
     k32.Thread32Next.argtypes = [wt.HANDLE, ctypes.POINTER(_THREADENTRY32)]
     k32.Module32First.argtypes = [wt.HANDLE, ctypes.POINTER(_MODULEENTRY32)]
@@ -480,6 +498,33 @@ def summarize(data: dict, top: int = 4) -> str:
         return ""
     ranked = sorted(counter.items(), key=lambda kv: (-kv[1], kv[0]))
     return "  ".join("%s×%d" % (name, count) for name, count in ranked[:5])
+
+
+def cpu_seconds(pid: int) -> float:
+    """读目标进程累计占用的 CPU 秒数（用户态 + 内核态），读不到就返回 -1。
+
+    用来区分两种「没响应」：真正的卡死里主线程在等某个永远不会来的信号，
+    CPU 时间几乎不涨；加载场景、编译着色器时窗口也会显示未响应，但 CPU
+    在满负荷跑。只看 ``IsHungAppWindow`` 会把后者也当成卡死。
+    """
+
+    k32 = _kernel32()
+    access = _PROCESS_QUERY_LIMITED_INFORMATION | _PROCESS_QUERY_INFORMATION
+    handle = k32.OpenProcess(access, False, int(pid))
+    if not handle:
+        return -1.0
+    try:
+        ft = [_FILETIME() for _ in range(4)]
+        ok = k32.GetProcessTimes(handle, ft[0], ft[1], ft[2], ft[3])
+        if not ok:
+            return -1.0
+        total = (ft[2].dwHighDateTime << 32) | ft[2].dwLowDateTime
+        total += (ft[3].dwHighDateTime << 32) | ft[3].dwLowDateTime
+        return total / 10000000.0
+    except OSError:
+        return -1.0
+    finally:
+        k32.CloseHandle(handle)
 
 
 def terminate(pid: int) -> bool:
