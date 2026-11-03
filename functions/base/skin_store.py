@@ -132,12 +132,23 @@ def is_free_skin(skin_id) -> bool:
 # ---------------- 本地皮肤目录 ----------------
 
 def builtin_root() -> str:
-    """随安装包发布的皮肤目录 (打包后是 ``_internal/web/app_skins``)。"""
+    """随安装包发布的皮肤目录 (打包后是 ``_internal/web/app_skins``)。
+
+    目录不存在时顺手建一个: 构建脚本只把皮肤包的**内容**剔出发布包, 目录本身要
+    留着当下载落点。老产物或被人手动删过时, 缺了它会退回 exe 同级目录, 装在
+    Program Files 下那里不可写, 表现就是"皮肤下载不下来"。
+    """
     try:
         from functions.base.common.path_utils import get_web_root
-        return get_web_root("app_skins")
+        root = get_web_root("app_skins")
     except Exception:
         return ""
+    if root and not os.path.isdir(root):
+        try:
+            os.makedirs(root, exist_ok=True)
+        except OSError:
+            pass
+    return root
 
 
 def user_root() -> str:
