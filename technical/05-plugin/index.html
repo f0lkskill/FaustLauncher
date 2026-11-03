@@ -927,6 +927,17 @@
   <a href="#_2" class="md-nav__link">
     <span class="md-ellipsis">
       
+        同一个方法可以被多个插件分别登记
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
         调用示例
       
     </span>
@@ -962,7 +973,7 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#_3" class="md-nav__link">
+  <a href="#_4" class="md-nav__link">
     <span class="md-ellipsis">
       
         常量
@@ -985,7 +996,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#_4" class="md-nav__link">
+  <a href="#_5" class="md-nav__link">
     <span class="md-ellipsis">
       
         动作位
@@ -996,7 +1007,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#_5" class="md-nav__link">
+  <a href="#_6" class="md-nav__link">
     <span class="md-ellipsis">
       
         命令
@@ -1007,7 +1018,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#_6" class="md-nav__link">
+  <a href="#_7" class="md-nav__link">
     <span class="md-ellipsis">
       
         读链与事件
@@ -1029,7 +1040,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#_7" class="md-nav__link">
+  <a href="#_8" class="md-nav__link">
     <span class="md-ellipsis">
       
         布局
@@ -1040,7 +1051,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#_8" class="md-nav__link">
+  <a href="#_9" class="md-nav__link">
     <span class="md-ellipsis">
       
         结构体
@@ -1051,7 +1062,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#_9" class="md-nav__link">
+  <a href="#_10" class="md-nav__link">
     <span class="md-ellipsis">
       
         其他函数
@@ -1444,6 +1455,17 @@
   <a href="#_2" class="md-nav__link">
     <span class="md-ellipsis">
       
+        同一个方法可以被多个插件分别登记
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
         调用示例
       
     </span>
@@ -1479,7 +1501,7 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#_3" class="md-nav__link">
+  <a href="#_4" class="md-nav__link">
     <span class="md-ellipsis">
       
         常量
@@ -1502,7 +1524,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#_4" class="md-nav__link">
+  <a href="#_5" class="md-nav__link">
     <span class="md-ellipsis">
       
         动作位
@@ -1513,7 +1535,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#_5" class="md-nav__link">
+  <a href="#_6" class="md-nav__link">
     <span class="md-ellipsis">
       
         命令
@@ -1524,7 +1546,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#_6" class="md-nav__link">
+  <a href="#_7" class="md-nav__link">
     <span class="md-ellipsis">
       
         读链与事件
@@ -1546,7 +1568,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#_7" class="md-nav__link">
+  <a href="#_8" class="md-nav__link">
     <span class="md-ellipsis">
       
         布局
@@ -1557,7 +1579,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#_8" class="md-nav__link">
+  <a href="#_9" class="md-nav__link">
     <span class="md-ellipsis">
       
         结构体
@@ -1568,7 +1590,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#_9" class="md-nav__link">
+  <a href="#_10" class="md-nav__link">
     <span class="md-ellipsis">
       
         其他函数
@@ -1891,25 +1913,70 @@
 </tr>
 </tbody>
 </table>
-<h3 id="_2">调用示例<a class="headerlink" href="#_2" title="Permanent link">&para;</a></h3>
+<h3 id="_2">同一个方法可以被多个插件分别登记<a class="headerlink" href="#_2" title="Permanent link">&para;</a></h3>
+<p>v0.9.49 起，多个插件（或同一个插件多次）登记<strong>同一个类方法</strong>是允许的：</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="c1"># 插件 A</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="n">host</span><span class="o">.</span><span class="n">hook</span><span class="p">(</span><span class="s1">'MainUI.GachaUIPresenter'</span><span class="p">,</span> <span class="s1">'OnGachaSelected'</span><span class="p">,</span> <span class="n">argc</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">block</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="c1"># 插件 B —— 同一个方法，照样能登记</span>
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="n">host</span><span class="o">.</span><span class="n">hook</span><span class="p">(</span><span class="s1">'MainUI.GachaUIPresenter'</span><span class="p">,</span> <span class="s1">'OnGachaSelected'</span><span class="p">,</span> <span class="n">argc</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">event</span><span class="o">=</span><span class="mi">7</span><span class="p">)</span>
+</code></pre></div>
+<p>游戏入口上只装一次 detour，命中时宿主按登记顺序把所有订阅者问一遍，各跑各的
+<code>guard</code> / <code>probe</code> / 读链 / 事件 / 动作：</p>
+<table>
+<thead>
+<tr>
+<th>语义</th>
+<th>合并规则</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>block</code></td>
+<td>取或 —— 任何一个订阅者要拦，这次调用就被拦下</td>
+</tr>
+<tr>
+<td>参数改写（<code>rewrite</code>）</td>
+<td>按登记顺序依次写，后面的覆盖前面的</td>
+</tr>
+<tr>
+<td>事件</td>
+<td>每个订阅者按自己的 <code>event</code> / <code>reads</code> / <code>dedupe</code> 独立投递</td>
+</tr>
+<tr>
+<td>返回值（<code>ret_kind</code>）</td>
+<td>所有订阅者看见同一个返回值；<code>void</code> 与 <code>int32</code> 混登记时按非 <code>void</code> 解释</td>
+</tr>
+<tr>
+<td>动作（<code>ACT_POPUP</code> 等）</td>
+<td>各订阅者各自执行，互不影响</td>
+</tr>
+</tbody>
+</table>
+<p>两个前提：</p>
+<ul>
+<li>登记时的 <code>argc</code> 必须一致 —— 同一个方法被按不同参数个数登记，后来的那条会被
+  拒绝（日志 <code>hook: shared entry argc mismatch</code>），因为共用一条跳板时栈参数会读歪。</li>
+<li>先登记的那条决定物理入口的形状（thunk 的 <code>argc</code>）；后登记的只能对齐，不能改。</li>
+</ul>
+<h3 id="_3">调用示例<a class="headerlink" href="#_3" title="Permanent link">&para;</a></h3>
 <p><strong>只看不看、抓住对象</strong></p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="n">host</span><span class="o">.</span><span class="n">hook</span><span class="p">(</span><span class="s1">'BattleUnitModel'</span><span class="p">,</span> <span class="s1">'OnCreateUnitModel'</span><span class="p">,</span> <span class="n">argc</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">cache</span><span class="o">=</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">27</span><span class="p">))</span>
-<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="n">host</span><span class="o">.</span><span class="n">push</span><span class="p">(</span><span class="kc">True</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="n">host</span><span class="o">.</span><span class="n">hook</span><span class="p">(</span><span class="s1">'BattleUnitModel'</span><span class="p">,</span> <span class="s1">'OnCreateUnitModel'</span><span class="p">,</span> <span class="n">argc</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">cache</span><span class="o">=</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">27</span><span class="p">))</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="n">host</span><span class="o">.</span><span class="n">push</span><span class="p">(</span><span class="kc">True</span><span class="p">)</span>
 </code></pre></div>
 <p><strong>拦下抽卡</strong></p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="n">host</span><span class="o">.</span><span class="n">hook</span><span class="p">(</span><span class="s1">'MainUI.GachaUIPresenter'</span><span class="p">,</span> <span class="s1">'OnGachaSelected'</span><span class="p">,</span> <span class="n">argc</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">block</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
-<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>          <span class="n">guard</span><span class="o">=</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">))</span>
-<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="n">host</span><span class="o">.</span><span class="n">push</span><span class="p">(</span><span class="kc">True</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="n">host</span><span class="o">.</span><span class="n">hook</span><span class="p">(</span><span class="s1">'MainUI.GachaUIPresenter'</span><span class="p">,</span> <span class="s1">'OnGachaSelected'</span><span class="p">,</span> <span class="n">argc</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">block</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>          <span class="n">guard</span><span class="o">=</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">))</span>
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="n">host</span><span class="o">.</span><span class="n">push</span><span class="p">(</span><span class="kc">True</span><span class="p">)</span>
 </code></pre></div>
 <p><strong>读一个值（代读）</strong></p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="n">hp</span> <span class="o">=</span> <span class="n">host</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="mi">28</span><span class="p">,</span> <span class="p">[{</span><span class="s1">'off'</span><span class="p">:</span> <span class="mh">0x90</span><span class="p">,</span> <span class="s1">'deref'</span><span class="p">:</span> <span class="kc">True</span><span class="p">},</span> <span class="p">{</span><span class="s1">'dict'</span><span class="p">:</span> <span class="mi">0</span><span class="p">},</span>
-<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>                    <span class="p">{</span><span class="s1">'off'</span><span class="p">:</span> <span class="mh">0x10</span><span class="p">,</span> <span class="s1">'deref'</span><span class="p">:</span> <span class="kc">True</span><span class="p">},</span>
-<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>                    <span class="p">{</span><span class="s1">'off'</span><span class="p">:</span> <span class="mh">0x148</span><span class="p">,</span> <span class="s1">'deref'</span><span class="p">:</span> <span class="kc">True</span><span class="p">},</span>
-<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>                    <span class="p">{</span><span class="s1">'off'</span><span class="p">:</span> <span class="mh">0x148</span><span class="p">,</span> <span class="s1">'deref'</span><span class="p">:</span> <span class="kc">False</span><span class="p">}],</span> <span class="n">kind</span><span class="o">=</span><span class="s1">'obscured'</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="n">hp</span> <span class="o">=</span> <span class="n">host</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="mi">28</span><span class="p">,</span> <span class="p">[{</span><span class="s1">'off'</span><span class="p">:</span> <span class="mh">0x90</span><span class="p">,</span> <span class="s1">'deref'</span><span class="p">:</span> <span class="kc">True</span><span class="p">},</span> <span class="p">{</span><span class="s1">'dict'</span><span class="p">:</span> <span class="mi">0</span><span class="p">},</span>
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>                    <span class="p">{</span><span class="s1">'off'</span><span class="p">:</span> <span class="mh">0x10</span><span class="p">,</span> <span class="s1">'deref'</span><span class="p">:</span> <span class="kc">True</span><span class="p">},</span>
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>                    <span class="p">{</span><span class="s1">'off'</span><span class="p">:</span> <span class="mh">0x148</span><span class="p">,</span> <span class="s1">'deref'</span><span class="p">:</span> <span class="kc">True</span><span class="p">},</span>
+<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a>                    <span class="p">{</span><span class="s1">'off'</span><span class="p">:</span> <span class="mh">0x148</span><span class="p">,</span> <span class="s1">'deref'</span><span class="p">:</span> <span class="kc">False</span><span class="p">}],</span> <span class="n">kind</span><span class="o">=</span><span class="s1">'obscured'</span><span class="p">)</span>
 </code></pre></div>
 <p><strong>调一个静态方法</strong></p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="n">slot</span> <span class="o">=</span> <span class="n">host</span><span class="o">.</span><span class="n">call</span><span class="p">(</span><span class="s1">'BattleObjectManager::get_Instance'</span><span class="p">,</span> <span class="n">ret</span><span class="o">=</span><span class="s1">'ref'</span><span class="p">,</span> <span class="n">out_slot</span><span class="o">=</span><span class="mi">28</span><span class="p">)</span>
-<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="nb">print</span><span class="p">(</span><span class="n">host</span><span class="o">.</span><span class="n">object_ptr</span><span class="p">(</span><span class="mi">28</span><span class="p">))</span>       <span class="c1"># 管理器地址</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="n">slot</span> <span class="o">=</span> <span class="n">host</span><span class="o">.</span><span class="n">call</span><span class="p">(</span><span class="s1">'BattleObjectManager::get_Instance'</span><span class="p">,</span> <span class="n">ret</span><span class="o">=</span><span class="s1">'ref'</span><span class="p">,</span> <span class="n">out_slot</span><span class="o">=</span><span class="mi">28</span><span class="p">)</span>
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="nb">print</span><span class="p">(</span><span class="n">host</span><span class="o">.</span><span class="n">object_ptr</span><span class="p">(</span><span class="mi">28</span><span class="p">))</span>       <span class="c1"># 管理器地址</span>
 </code></pre></div>
 <p><code>call</code> 的 <code>ret</code> 三种形状：</p>
 <table>
@@ -1941,16 +2008,16 @@
 <h2 id="service"><code>Service</code> —— 插件后台骨架<a class="headerlink" href="#service" title="Permanent link">&para;</a></h2>
 <p>不用它也能写插件（<code>game.*</code> 自己管线程），但要做「等游戏 → 注入 → 心跳 → 状态播报 →
 托盘菜单」这一整套，用它最省事。</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="n">service</span> <span class="o">=</span> <span class="n">plugin</span><span class="o">.</span><span class="n">Service</span><span class="p">(</span>
-<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>    <span class="n">addon_name</span><span class="o">=</span><span class="n">ADDON_NAME</span><span class="p">,</span>
-<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>    <span class="n">name</span><span class="o">=</span><span class="s1">'我的插件'</span><span class="p">,</span>
-<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a>    <span class="n">sync</span><span class="o">=</span><span class="n">_push</span><span class="p">,</span>                                        <span class="c1"># 把设置写进共享内存</span>
-<a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a>    <span class="n">auto</span><span class="o">=</span><span class="k">lambda</span><span class="p">:</span> <span class="kc">True</span><span class="p">,</span>                                  <span class="c1"># 游戏启动时自动注入</span>
-<a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a>    <span class="n">menu</span><span class="o">=</span><span class="p">((</span><span class="s1">'注入'</span><span class="p">,</span> <span class="k">lambda</span><span class="p">:</span> <span class="n">service</span><span class="o">.</span><span class="n">inject_now</span><span class="p">(</span><span class="n">wait</span><span class="o">=</span><span class="kc">True</span><span class="p">)),</span>
-<a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a>          <span class="p">(</span><span class="s1">'解除'</span><span class="p">,</span> <span class="k">lambda</span><span class="p">:</span> <span class="n">service</span><span class="o">.</span><span class="n">set_enabled</span><span class="p">(</span><span class="kc">False</span><span class="p">)),</span>
-<a id="__codelineno-7-8" name="__codelineno-7-8" href="#__codelineno-7-8"></a>          <span class="p">(</span><span class="s1">'应用设置'</span><span class="p">,</span> <span class="k">lambda</span><span class="p">:</span> <span class="n">service</span><span class="o">.</span><span class="n">sync</span><span class="p">())),</span>
-<a id="__codelineno-7-9" name="__codelineno-7-9" href="#__codelineno-7-9"></a><span class="p">)</span>
-<a id="__codelineno-7-10" name="__codelineno-7-10" href="#__codelineno-7-10"></a><span class="n">service</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="n">service</span> <span class="o">=</span> <span class="n">plugin</span><span class="o">.</span><span class="n">Service</span><span class="p">(</span>
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>    <span class="n">addon_name</span><span class="o">=</span><span class="n">ADDON_NAME</span><span class="p">,</span>
+<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>    <span class="n">name</span><span class="o">=</span><span class="s1">'我的插件'</span><span class="p">,</span>
+<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a>    <span class="n">sync</span><span class="o">=</span><span class="n">_push</span><span class="p">,</span>                                        <span class="c1"># 把设置写进共享内存</span>
+<a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a>    <span class="n">auto</span><span class="o">=</span><span class="k">lambda</span><span class="p">:</span> <span class="kc">True</span><span class="p">,</span>                                  <span class="c1"># 游戏启动时自动注入</span>
+<a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a>    <span class="n">menu</span><span class="o">=</span><span class="p">((</span><span class="s1">'注入'</span><span class="p">,</span> <span class="k">lambda</span><span class="p">:</span> <span class="n">service</span><span class="o">.</span><span class="n">inject_now</span><span class="p">(</span><span class="n">wait</span><span class="o">=</span><span class="kc">True</span><span class="p">)),</span>
+<a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a>          <span class="p">(</span><span class="s1">'解除'</span><span class="p">,</span> <span class="k">lambda</span><span class="p">:</span> <span class="n">service</span><span class="o">.</span><span class="n">set_enabled</span><span class="p">(</span><span class="kc">False</span><span class="p">)),</span>
+<a id="__codelineno-8-8" name="__codelineno-8-8" href="#__codelineno-8-8"></a>          <span class="p">(</span><span class="s1">'应用设置'</span><span class="p">,</span> <span class="k">lambda</span><span class="p">:</span> <span class="n">service</span><span class="o">.</span><span class="n">sync</span><span class="p">())),</span>
+<a id="__codelineno-8-9" name="__codelineno-8-9" href="#__codelineno-8-9"></a><span class="p">)</span>
+<a id="__codelineno-8-10" name="__codelineno-8-10" href="#__codelineno-8-10"></a><span class="n">service</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
 </code></pre></div>
 <table>
 <thead>
@@ -2117,7 +2184,7 @@
 </table>
 <p>方法：<code>log</code> <code>settings</code> <code>block</code> <code>cfg</code> <code>read_mapped</code> <code>push</code> <code>set_enabled</code> <code>arm</code> <code>disarm</code>
 <code>status</code> <code>dll_path</code> <code>beat</code> <code>poll</code> <code>close</code> <code>inject_now</code>。</p>
-<h2 id="_3">常量<a class="headerlink" href="#_3" title="Permanent link">&para;</a></h2>
+<h2 id="_4">常量<a class="headerlink" href="#_4" title="Permanent link">&para;</a></h2>
 <h3 id="flags">钩子 flags<a class="headerlink" href="#flags" title="Permanent link">&para;</a></h3>
 <table>
 <thead>
@@ -2145,7 +2212,7 @@
 </tr>
 </tbody>
 </table>
-<h3 id="_4">动作位<a class="headerlink" href="#_4" title="Permanent link">&para;</a></h3>
+<h3 id="_5">动作位<a class="headerlink" href="#_5" title="Permanent link">&para;</a></h3>
 <table>
 <thead>
 <tr>
@@ -2169,7 +2236,7 @@
 </tbody>
 </table>
 <p><strong>默认是 <code>0</code>（什么都不做）</strong>——要弹窗自己调 <code>host.popup()</code>。</p>
-<h3 id="_5">命令<a class="headerlink" href="#_5" title="Permanent link">&para;</a></h3>
+<h3 id="_6">命令<a class="headerlink" href="#_6" title="Permanent link">&para;</a></h3>
 <table>
 <thead>
 <tr>
@@ -2221,7 +2288,7 @@
 </tr>
 </tbody>
 </table>
-<h3 id="_6">读链与事件<a class="headerlink" href="#_6" title="Permanent link">&para;</a></h3>
+<h3 id="_7">读链与事件<a class="headerlink" href="#_7" title="Permanent link">&para;</a></h3>
 <table>
 <thead>
 <tr>
@@ -2370,7 +2437,7 @@
 </tr>
 </tbody>
 </table>
-<h3 id="_7">布局<a class="headerlink" href="#_7" title="Permanent link">&para;</a></h3>
+<h3 id="_8">布局<a class="headerlink" href="#_8" title="Permanent link">&para;</a></h3>
 <table>
 <thead>
 <tr>
@@ -2447,7 +2514,7 @@
 </tr>
 </tbody>
 </table>
-<h3 id="_8">结构体<a class="headerlink" href="#_8" title="Permanent link">&para;</a></h3>
+<h3 id="_9">结构体<a class="headerlink" href="#_9" title="Permanent link">&para;</a></h3>
 <table>
 <thead>
 <tr>
@@ -2474,7 +2541,7 @@
 </tr>
 </tbody>
 </table>
-<h3 id="_9">其他函数<a class="headerlink" href="#_9" title="Permanent link">&para;</a></h3>
+<h3 id="_10">其他函数<a class="headerlink" href="#_10" title="Permanent link">&para;</a></h3>
 <table>
 <thead>
 <tr>
