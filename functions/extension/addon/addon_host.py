@@ -379,15 +379,54 @@ _HANG_GIVE_UP = 30
 """连续这么多次轮询（约 60 秒）都没响应，就当它已经卡死并结束它。
 
     点退出之后窗口还挂着、进程不退，是这个症状最常见的样子；正常战斗里的
-    短暂无响应撑不到 60 秒，所以不会误伤。
+    短暂无响应撑不到 60 秒，所以不会误伤。CPU 时间能读到时，:data:`_IDLE_GIVE_UP`
+    会先一步生效 —— 真卡死的进程 CPU 是停着的，不用等满一分钟。
 """
 
-_EXIT_GIVE_UP = 22
-"""连续这么多次轮询（约 44 秒）进程还没退掉，就保留现场并结束它。
+_EXIT_GIVE_UP = 8
+"""连续这么多次轮询（约 16 秒）进程还没退掉，就保留现场并结束它。
 
     游戏卡在退出阶段时存档早已写完（Player.log 里 ``Quit Local Save`` → ``Save..``
     都已完成），结束进程不会丢档，比让用户去任务管理器强杀体验好得多。
 """
+
+_IDLE_SEEN = {}
+"""pid -> 连续几次轮询「窗口没响应且 CPU 时间一格没涨」。"""
+
+_IDLE_PREV = {}
+"""pid -> 上一次读到的 CPU 秒数。"""
+
+_IDLE_CPU_STEP = 0.05
+"""两次轮询之间 CPU 至少该涨这么多秒；低于它就算「停住了」。"""
+
+_IDLE_GIVE_UP = 6
+"""CPU 停住且无响应连续这么多次（约 12 秒）就结束进程。
+
+    为什么还要单开一条：:func:`hang_probe.find_hung_windows` 只看窗口有没有
+    在回消息，加载场景、编译着色器时窗口照样「未响应」，可 CPU 是满的。
+    卡死在等待原语上的进程正好相反 —— 窗口不回消息，CPU 也不动。两者一起
+    看，既能十几秒内收掉真卡死，又不会把慢加载误杀。
+"""
+
+
+def _idle_count(pid) -> int:
+    """窗口没响应的前提下，看 CPU 时间还在不在动，返回连续「不动」的次数。"""
+
+    try:
+        from functions.base import hang_probe
+
+        now = hang_probe.cpu_seconds(pid)
+    except Exception:  # noqa: BLE001
+        return 0
+    prev = _IDLE_PREV.get(pid)
+    _IDLE_PREV[pid] = now
+    if now < 0 or prev is None or prev < 0:
+        return 0
+    if now - prev < _IDLE_CPU_STEP:
+        _IDLE_SEEN[pid] = _IDLE_SEEN.get(pid, 0) + 1
+    else:
+        _IDLE_SEEN[pid] = 0
+    return _IDLE_SEEN[pid]
 
 _WINDOW_SEEN = set()
 """出过窗口的 pid: 只有它们消失后才可能是退出卡死。"""
@@ -441,39 +480,39 @@ def _capture_hang(pids) -> None:
         if hung:
             seen = _HANG_SEEN.get(pid, 0) + 1
             _HANG_SEEN[pid] = seen
-            if seen >= 3 and pid not in _HANG_DONE:
+            idle = _idle_count(pid)
+            if (seen >= 3 or idle >= 3) and pid not in _HANG_DONE:
                 _HANG_DONE.add(pid)
                 _save(pid, "游戏卡死")
-            if seen >= _HANG_GIVE_UP:
-                # 点退出之后窗口还挂着、进程不退，是这个症状最常见的样子；
-                # 正常战斗里的短暂无响应撑不到这么多次轮询。
+            if idle >= _IDLE_GIVE_UP or seen >= _HANG_GIVE_UP:
+                # 点退出之后窗口还挂着、进程不退，是这个症状最常见的样子。
+                # CPU 停住的那条路不用等满一分钟。
                 _HANG_KILLED.add(pid)
                 _finish(pid)
             continue
         _HANG_SEEN.pop(pid, None)
-        if pid in _EXIT_DONE:
-            pass
-        else:
-            try:
-                from functions.base import hang_probe
+        _IDLE_SEEN.pop(pid, None)
+        _IDLE_PREV.pop(pid, None)
+        try:
+            from functions.base import hang_probe
 
-                alive_window = hang_probe.has_window(pid)
-            except Exception:  # noqa: BLE001
-                alive_window = True
-            if alive_window:
-                _WINDOW_SEEN.add(pid)
-                _EXIT_SEEN.pop(pid, None)
-                continue
-            if pid not in _WINDOW_SEEN:
-                # 刚启动还没出画面的进程也会「没有窗口」, 不能算退出卡死。
-                continue
-            seen = _EXIT_SEEN.get(pid, 0) + 1
-            _EXIT_SEEN[pid] = seen
-            # 关窗到进程退出正常只要一两秒；超过 ~10 秒还在就是退不掉。
-            if seen >= 5:
-                _EXIT_DONE.add(pid)
-                _save(pid, "退出卡死")
-        if _EXIT_SEEN.get(pid, 0) >= _EXIT_GIVE_UP:
+            alive_window = hang_probe.has_window(pid)
+        except Exception:  # noqa: BLE001
+            alive_window = True
+        if alive_window:
+            _WINDOW_SEEN.add(pid)
+            _EXIT_SEEN.pop(pid, None)
+            continue
+        if pid not in _WINDOW_SEEN:
+            # 刚启动还没出画面的进程也会「没有窗口」, 不能算退出卡死。
+            continue
+        seen = _EXIT_SEEN.get(pid, 0) + 1
+        _EXIT_SEEN[pid] = seen
+        # 关窗到进程退出正常只要一两秒；超过 ~10 秒还在就是退不掉。
+        if seen >= 5 and pid not in _EXIT_DONE:
+            _EXIT_DONE.add(pid)
+            _save(pid, "退出卡死")
+        if seen >= _EXIT_GIVE_UP:
             _EXIT_KILLED.add(pid)
             _finish(pid)
 
