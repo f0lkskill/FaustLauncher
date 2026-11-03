@@ -49,7 +49,11 @@ from .base import (
 )
 
 HOST_MAGIC = 0x54534857           # "WHST"
-HOST_VERSION = 12                  # v12：钩子表 32→128（辅段只剩 5 槽，换曲锁自己
+HOST_VERSION = 13                  # v13：文案槽 128→512 字节。128 字节按 UTF-8 硬切会
+                                   # 切在汉字中间，还会把 <color=…> 这类富文本标签切
+                                   # 成半截 —— 游戏用 TMP 渲染，半个标签会把后面整段
+                                   # 吞掉，表现为「弹窗出来了但一个字都没有」；
+                                   # v12：钩子表 32→128（辅段只剩 5 槽，换曲锁自己
                                    # 就占 4 条，后面的插件整条被丢弃）；
                                    # v11：导出表 22→24（静态字段读）+ CMD_STATIC；
                                    # v10：LIST 诊断命令；v9：CALL 的 out 参数缓冲
@@ -64,7 +68,7 @@ LOG_FILE_NAME = "warp.log"
 
 HOST_MAX_HOOKS = 128
 HOST_MAX_TEXTS = 256
-HOST_TEXT_LEN = 128
+HOST_TEXT_LEN = 512
 HOST_KLASS_LEN = 48
 HOST_METHOD_LEN = 48
 HOST_LOG_LEN = 48
@@ -449,8 +453,17 @@ if ctypes.sizeof(HostHook) != HOST_HOOK_SIZE:
 
 
 def _write_fixed(addr, text, size):
-    """把一段 UTF-8 文本写进定长槽位（超长截断，尾部补零）。"""
-    raw = str(text or "").encode("utf-8")[:size - 1]
+    """把一段 UTF-8 文本写进定长槽位（超长按字符边界截断，尾部补零）。
+
+    按**字符**而不是按字节截断：直接切字节会把汉字劈成半个，DLL 那边
+    ``il2cpp_string_new`` 收到非法 UTF-8，轻则乱码，重则整段渲染不出来。
+    先把超长部分切开，再用 ``decode(..., 'ignore')`` 丢掉尾部那个不完整的
+    字符，最后重新编码。
+    """
+
+    raw = str(text or "").encode("utf-8")
+    if len(raw) > size - 1:
+        raw = raw[: size - 1].decode("utf-8", "ignore").encode("utf-8")
     ctypes.memset(addr, 0, size)
     if raw:
         ctypes.memmove(addr, raw, len(raw))

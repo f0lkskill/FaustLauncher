@@ -31,17 +31,17 @@
  * 共享内存布局（Python 侧 warphook/host.py 必须一致）
  *   0      WARP_HEADER       432 字节（状态头 + 命令槽 + 弹窗文本）
  *   432    WARP_HOOK[128]  128 × 288 = 36864
- *   37296  texts[256]      256 × 128 = 32768
- *   70064  exports[24]      24 × 64  = 1536
- *   71600  ev_ctrl            16 字节（head/tail/dropped/pad）
- *   71616  events[2048]   2048 × 60  = 122880
- *   194496 reads[128]      128 × 80  = 10240
- *   204736 objects[32]      32 × 8   = 256
- *   204992 buff_watch[32]   32 × 8   = 256
- *   205248 cmd_read           80 字节（一条读链副本）
- *   205328 rewrite[128]    128 × 8   = 1024
- *   206352 cmd_buf[4]        4 × 64  = 256
- *   206608 (结束)
+ *   37296  texts[256]      256 × 512 = 131072
+ *   168368 exports[24]      24 × 64  = 1536
+ *   169904 ev_ctrl            16 字节（head/tail/dropped/pad）
+ *   169920 events[2048]   2048 × 60  = 122880
+ *   292800 reads[128]      128 × 80  = 10240
+ *   303040 objects[32]      32 × 8   = 256
+ *   303296 buff_watch[32]   32 × 8   = 256
+ *   303552 cmd_read           80 字节（一条读链副本）
+ *   303632 rewrite[128]    128 × 8   = 1024
+ *   304656 cmd_buf[4]        4 × 64  = 256
+ *   304912 (结束)
  *
  * 钩子段之后的每个偏移都由 WARP_MAX_HOOKS 推导，改槽数时这张表和 Python
  * 侧的 HOST_* 常量必须一起变（两边都从常量算，改完用 tools/gen_thunks.py
@@ -57,7 +57,13 @@
 /* 数值转字符串（构建戳用）：warp_log("proto v" WARP_STR(WARP_VERSION)) */
 #define WARP_STR_(x)      #x
 #define WARP_STR(x)       WARP_STR_(x)
-#define WARP_VERSION      12                /* v12：钩子表 32→128（第三方插件挤在辅段
+#define WARP_VERSION      13                /* v13：文案槽 128→512 字节。128 字节按 UTF-8
+                                             * 硬切会切在汉字中间，还会把 <color=…>
+                                             * 这类富文本标签切成半截 —— 游戏用 TMP
+                                             * 渲染，半个标签会把后面整段吞掉，表现
+                                             * 为「弹窗出来了但一个字都没有」。
+                                             * 实测社区文案最长 167 字节，512 留足余量。
+                                             * v12：钩子表 32→128（第三方插件挤在辅段
                                              * 5 个槽里，换曲锁自己就占 4 条，剩下
                                              * 的插件整条被丢弃且只在日志里说一句）。
                                              * v11：导出表 22→24（静态字段读）+ STATIC 命令。
@@ -82,7 +88,7 @@
 
 #define WARP_MAX_HOOKS    128
 #define WARP_MAX_TEXTS    256
-#define WARP_TEXT_LEN     128
+#define WARP_TEXT_LEN     512
 #define WARP_KLASS_LEN    48
 #define WARP_METHOD_LEN   48
 #define WARP_LOG_LEN      48
