@@ -318,6 +318,14 @@
         "step": 0.02,
         "page": "其它"
     },
+    "char_enabled": {
+        "name": "显示角色小人",
+        "type": "boolean",
+        "default": true,
+        "value": true,
+        "description": "关闭后角色小人不再出现，也不会占用交互区域；重新打开立刻恢复。",
+        "page": "其它"
+    },
     "char_appear_interval": {
         "name": "小人出现间隔",
         "type": "range2",

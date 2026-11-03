@@ -172,6 +172,8 @@ function startupRender() {
     console.error('render 出错:', e);
   }
   applyTiltBase();
+  // 角色小人在 bindUI 阶段就启动了, 那时还拿不到设置; bootstrap 到手后按 char_enabled 校正一次
+  try { applyCharacterSetting(); } catch (e) { console.error('小人开关校正失败:', e); }
   const firstPage = document.querySelector('.page');
   if (firstPage) {
     document.documentElement.style.setProperty('--page-w', Math.floor(firstPage.getBoundingClientRect().width) + 'px');

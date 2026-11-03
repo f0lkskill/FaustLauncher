@@ -440,6 +440,7 @@ function applySettingSideEffect(key, v) {
   else if (key === 'bg_gaussian_blur') refreshBackgrounds();
   else if (key === 'glass_factor') { BOOT.settings_schema[key].value = v; applyGlassFactor(); }
   else if (key === 'control_opacity') { BOOT.settings_schema[key].value = v; applyControlOpacity(); }
+  else if (key === 'char_enabled') { BOOT.settings_schema[key].value = v; applyCharacterSetting(); }
   else if (key === 'game_path') updatePathChip();
   else if (s && s.type === 'color') applyTheme(v);
 }
@@ -510,6 +511,7 @@ async function resetAllSettings() {
     SETTING_CHANGES = {};
     const fresh = await api.get_bootstrap();
     BOOT.settings_schema = fresh.settings_schema;
+    applyCharacterSetting();                        // 小人开关是即时生效项, 恢复默认后要跟着装卸
     renderSettings(BOOT.settings_schema);           // 重渲染(会重建按钮), 各分区重播进入动画
     if (blocked.length) {
       toast('已恢复默认设置，但以下项受限未重置：' + blocked.join('、'), 'warn', 6000);
@@ -619,6 +621,7 @@ function buildControl(key, s) {
     wrap.firstChild.querySelector('input').onchange = e => {
       markChanged(key, e.target.checked);
       if (key === 'glass_enabled') { if (BOOT && BOOT.settings_schema) BOOT.settings_schema[key].value = e.target.checked; applyHwAccel(); }   // 毛玻璃即时生效
+      if (key === 'char_enabled') { if (BOOT && BOOT.settings_schema) BOOT.settings_schema[key].value = e.target.checked; applyCharacterSetting(); }   // 角色小人即时装卸
       if (api) api.set_setting(key, e.target.checked).catch(err => toast(String(err), 'error'));
     };
     return wrap;
