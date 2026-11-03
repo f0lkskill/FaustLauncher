@@ -47,9 +47,11 @@ except Exception:
 # 与 exe 同级但对用户不可见 (不再作为顶层 web/ 目录出现在发布包中)。
 # 运行时由 functions.base.common.path_utils.get_web_root() 优先在 _internal 下定位。
 #
-# web/app_skins/ 整棵子树**不进包**: 皮肤改为云端清单驱动 (functions/base/skin_store.py),
-# 首次点选时按需下载解压到 %APPDATA%/FaustLauncher/app_skins/。源码仓库里留着的
-# app_skins/*.zip 只是开发时的皮肤包样例, 跟着打包会让每个用户白背几百兆。
+# web/app_skins/ 整棵子树的**内容**不进包: 皮肤改为云端清单驱动
+# (functions/base/skin_store.py), 首次点选时按需下载解压到 _internal/web/app_skins/。
+# 源码仓库里留着的 app_skins/*.zip 只是开发时的皮肤包样例, 跟着打包会让每个用户白背几百兆。
+# 注意: 目录本身由 build.py 步骤 3.5 创建为空目录再入包 —— 没有这个目录, 皮肤就只能
+# 下载到 exe 同级目录, 装在 Program Files 时那里不可写, 表现为"构建出来的包找不到皮肤"。
 _SKIP_DIRS = {'app_skins'}
 _web_src_dir = _os.path.join(_ROOT, 'web')
 if _os.path.isdir(_web_src_dir):

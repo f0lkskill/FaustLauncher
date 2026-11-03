@@ -367,11 +367,15 @@ class BuildApi(WindowChromeBridge):
                 raise FileNotFoundError(
                     "PyInstaller 未把 web/ 收进 _internal/web（Web 界面无法启动）；"
                     "请确认 FaustLauncher.spec 的 web/ 收集逻辑与 web/app/index.html 存在")
-            # 皮肤不再随包分发 (spec 已排除 web/app_skins), 留着说明是老产物
-            stale_skins = os.path.join("dist", "FaustLauncher", "_internal", "web", "app_skins")
-            if os.path.isdir(stale_skins):
-                shutil.rmtree(stale_skins, ignore_errors=True)
-                self._log("✔ 已移除 _internal/web/app_skins（皮肤改为云端按需下载）\n", LEVEL_OK)
+            # 皮肤不随包分发 (spec 已排除 web/app_skins), 但**目录本身必须留着**:
+            # 玩家点选皮肤时下载解压的落点就是它, 目录缺失会退回 exe 同级目录, 少数
+            # 安装位置 (Program Files) 写不进去, 表现为"新构建的包找不到皮肤"。
+            skins_dir = os.path.join("dist", "FaustLauncher", "_internal", "web", "app_skins")
+            if os.path.isdir(skins_dir):
+                shutil.rmtree(skins_dir, ignore_errors=True)
+            os.makedirs(skins_dir, exist_ok=True)
+            self._log("✔ 已清空 _internal/web/app_skins（保留空目录，皮肤云端按需下载）\n",
+                      LEVEL_OK)
         except Exception as exc:  # noqa: BLE001
             self._fail(3, f"复制运行环境失败：{exc}")
             self._building = False
@@ -379,15 +383,26 @@ class BuildApi(WindowChromeBridge):
         self._step(3, "done")
         self._progress(38)
 
-        # ---- 3.5 兜底清理皮肤目录 ----
-        # 皮肤包不随包分发 (玩家点选时从云端按需下载到 _internal\web\app_skins)。
-        # spec 已经从 web/ 里剔掉 app_skins, 这里再扫一遍产物: 万一哪天有人往
-        # web/ 层加了别的皮肤资源, 也不会被整棵 copytree 带进发布包。
-        for folder in (f"build_{vi}/_internal/web/app_skins",
-                       f"build_{vi}/web/app_skins"):
-            if os.path.isdir(folder):
-                shutil.rmtree(folder, ignore_errors=True)
-                self._log(f"✔ 已移除 {folder}（皮肤改为云端按需下载）\n", LEVEL_OK)
+        # ---- 3.5 皮肤目录: 清空内容但保留目录本身 ----
+        # 皮肤包不随包分发 (玩家点选时从云端按需下载到 _internal\web\app_skins),
+        # 但目录本身必须存在: skin_store.builtin_root() 按目录是否存在定位皮肤根,
+        # 找不到就只能退回 exe 同级目录 —— 装在 Program Files 时那里是只读的,
+        # 结果就是"皮肤下载不下来 / 构建出来的包认不到皮肤"。
+        skins_dir = f"build_{vi}/_internal/web/app_skins"
+        for folder in (skins_dir, f"build_{vi}/web/app_skins"):
+            if not os.path.isdir(folder):
+                continue
+            for name in os.listdir(folder):
+                target = os.path.join(folder, name)
+                if os.path.isdir(target):
+                    shutil.rmtree(target, ignore_errors=True)
+                else:
+                    try:
+                        os.remove(target)
+                    except OSError:
+                        pass
+        os.makedirs(skins_dir, exist_ok=True)
+        self._log("✔ 已清空 _internal/web/app_skins 并保留空目录\n", LEVEL_OK)
 
         # ---- 4. 复制资产（web/ 已由 spec 收进 _internal） ----
         self._step(4, "running")
