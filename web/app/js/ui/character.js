@@ -5,7 +5,7 @@
  *   · 初始化/排期/位姿动画/气泡弹出与坠落/碰撞检测/点击交互
  *   · 配置读取自后端 character_greetings 等数据
  * 本文件提供:
- *  函数: initCharacter / charFallbackItem / charRange / randInRange / scheduleCharacter / randomCharPos / applyCharPose / playCharAnim / startCharSpeech / showCharBubble / hideCharBubble / clearCharTimers / onCharClick / retractCharIfBottom / posCollides / characterCycle
+ *  函数: initCharacter / charEnabled / loadCharAssets / startCharacter / stopCharacter / applyCharacterSetting / charFallbackItem / charRange / randInRange / scheduleCharacter / randomCharPos / applyCharPose / playCharAnim / startCharSpeech / showCharBubble / hideCharBubble / clearCharTimers / onCharClick / retractCharIfBottom / posCollides / characterCycle
  *  状态/常量: charImages / charGreetings / _charGreetingsReady / charEl / CHAR_EDGES / CHAR_COLLIDE_SEL
  * 依赖: 依赖 bootstrap(api), utils
  * 加载顺序: 12/22    (拆分自原 app.js 行 3328-3572)
@@ -19,32 +19,90 @@ let _charGreetingsReady = false;
 let charEl = null, charImgEl = null;
 const CHAR_EDGES = ['right', 'bottom', 'top'];
 
-// ---- 初始化: 读取后端配置(间隔 / 位置范围 / 问候语) ----
+// ---- 初始化 ----
+// 只装监听; 是否真的露面由设置 char_enabled 决定 (关掉时连图片都不去取)
 function initCharacter() {
   charEl = document.getElementById('character');
   if (!charEl) return;
   charImgEl = document.getElementById('character-img');
-  charEl.addEventListener('click', onCharClick);
-  // 图片与问候语都就绪后立即显示一次 (不等冷却)
-  const tryStart = () => {
-    if (charImages.length && _charGreetingsReady) characterCycle();
+  if (!charEl._inited) {
+    charEl._inited = true;
+    charEl.addEventListener('click', onCharClick);
+  }
+  applyCharacterSetting();
+}
+
+// 设置 char_enabled: 缺省视为开启
+function charEnabled() {
+  const s = (typeof BOOT !== 'undefined' && BOOT && BOOT.settings_schema) ? BOOT.settings_schema.char_enabled : null;
+  if (!s) return true;
+  return s.value !== false;
+}
+
+// 读取后端配置 (图片 / 问候语), 只在第一次需要露面时加载
+function loadCharAssets() {
+  if (!charEl || charEl._assetsLoaded || charEl._loading) return;
+  charEl._loading = true;
+  const done = () => {
+    charEl._loading = false;
+    charEl._assetsLoaded = true;
+    // 加载期间用户可能已经关掉小人, 或已经在探头了
+    if (charEnabled() && charEl._edge == null) characterCycle();
   };
-  if (api) {
-    withTimeout(api.get_characters(), 6000, []).then(list => {
-      charImages = (list && list.length) ? list : [charFallbackItem()];
-      tryStart();
-    }).catch(() => { charImages = [charFallbackItem()]; tryStart(); });
-    withTimeout(api.get_character_greetings(), 6000, {}).then(map => {
-      charGreetings = map || {};
-      _charGreetingsReady = true;
-      tryStart();
-    }).catch(() => { charGreetings = {}; _charGreetingsReady = true; tryStart(); });
-  } else {
+  if (!api) {
     charImages = [charFallbackItem()];
     charGreetings = {};
     _charGreetingsReady = true;
-    characterCycle();
+    done();
+    return;
   }
+  Promise.all([
+    withTimeout(api.get_characters(), 6000, []).then(list => {
+      charImages = (list && list.length) ? list : [charFallbackItem()];
+    }).catch(() => { charImages = [charFallbackItem()]; }),
+    withTimeout(api.get_character_greetings(), 6000, {}).then(map => {
+      charGreetings = map || {};
+      _charGreetingsReady = true;
+    }).catch(() => { charGreetings = {}; _charGreetingsReady = true; })
+  ]).then(done);
+}
+
+// 激活小人: 显示容器并立刻探头一次 (数据没加载过就先加载)
+function startCharacter() {
+  if (!charEl) return;
+  if (charEl._hideTimer) { clearTimeout(charEl._hideTimer); charEl._hideTimer = null; }
+  charEl.style.display = '';
+  if (!charEl._assetsLoaded) { loadCharAssets(); return; }
+  if (charEl._edge != null) return;   // 已经在探头, 不打断当前这一轮
+  clearCharTimers();
+  characterCycle();
+}
+
+// 卸载小人: 清掉全部排期与定时器, 缩回并隐藏容器
+// (隐藏后 characterCycle/scheduleCharacter 不会再被排队; 正在露面时先播缩回动画)
+function stopCharacter() {
+  if (!charEl) return;
+  const edge = charEl._edge, pos = charEl._pos;
+  const wasOut = (edge != null) && charEl.style.display !== 'none';
+  clearCharTimers();
+  charEl._edge = null;
+  charEl._pos = null;
+  if (wasOut) {
+    applyCharPose(edge, pos, true);               // 先缩回, 不要原地凭空消失
+    charEl._hideTimer = setTimeout(() => {
+      charEl._hideTimer = null;
+      if (!charEnabled()) charEl.style.display = 'none';
+    }, 760);                                      // 与缩回过渡时长对齐
+  } else {
+    charEl.style.display = 'none';
+  }
+}
+
+// 设置项变化时调用: 开就重新激活, 关就立刻卸载
+function applyCharacterSetting() {
+  if (!charEl) return;
+  if (charEnabled()) startCharacter();
+  else stopCharacter();
 }
 
 function charFallbackItem() {
@@ -65,8 +123,10 @@ function randInRange(r) { return (r[0] || 0) + Math.random() * ((r[1] || r[0] ||
 
 // ---- 排期与位姿: 随机边缘、随机位置、隐藏角落 ----
 function scheduleCharacter() {
+  if (!charEnabled()) return;                             // 关掉后不再排下一轮
   const r = charRange('char_appear_interval', 10, 30);
-  setTimeout(characterCycle, randInRange(r) * 1000);   // 缩回后在范围内随机再次出现
+  if (charEl._schedTimer) { clearTimeout(charEl._schedTimer); charEl._schedTimer = null; }
+  charEl._schedTimer = setTimeout(characterCycle, randInRange(r) * 1000);   // 缩回后在范围内随机再次出现
 }
 
 // 在边缘上随机像素位置 (比率 15%~85%), 并据此计算初始倾斜角度
@@ -177,6 +237,7 @@ function hideCharBubble() {
 }
 
 function clearCharTimers() {
+  if (charEl._schedTimer) { clearTimeout(charEl._schedTimer); charEl._schedTimer = null; }
   if (charEl._wiggleTimer) { clearTimeout(charEl._wiggleTimer); charEl._wiggleTimer = null; }
   if (charEl._stayTimer) { clearTimeout(charEl._stayTimer); charEl._stayTimer = null; }
   if (charEl._speechTimer) { clearTimeout(charEl._speechTimer); charEl._speechTimer = null; }
@@ -227,6 +288,8 @@ function posCollides(edge, pos) {
 }
 
 function characterCycle() {
+  charEl._schedTimer = null;
+  if (!charEnabled()) return;                                  // 设置里关掉了: 什么都不做
   const usable = (charImages || []).filter(x => x && x.uri);   // 没图的条目直接跳过
   if (!charEl || !usable.length) { scheduleCharacter(); return; }
   // 终端展开时避开底部边缘 (底部被终端占用)
