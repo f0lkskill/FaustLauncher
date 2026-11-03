@@ -3531,12 +3531,12 @@ _HANG_KILLED = set()
 """已经因为持续无响应被结束掉的 pid。"""
 
 
-def _report_game_hang(pid, tag="游戏卡死"):
+def _report_game_hang(pid, tag="crash"):
     """游戏卡住时采一次线程现场, 写进 cache/hang。
 
     退出卡死这类问题在日志里什么都看不到: 进程还活着、消息循环已经停了,
     Player.log 也不会再多写一行。这里把每个线程停在哪取下来, 顺带在终端里
-    给出「谁占的帧最多」—— 一眼能看出是我们注入的 DLL 还是游戏自己。
+    给出「谁占的帧最多」—— 一眼能看出是注入的 DLL 还是游戏自己。
     同一个 PID 两分钟内只采一次, 免得反复卡着时刷屏。
     """
     from functions.base import hang_probe
@@ -3867,7 +3867,7 @@ def run_web_ui(debug: bool = False):
         print(f"[AddonHost] 接管插件宿主锁失败(忽略): {type(exc).__name__}: {exc}")
 
     core.addon_manager = AddonManager([], app=type("WebAppShim", (), {"core": core})())
-    _ADDON_HANDOFF["manager"] = core.addon_manager
+    _ADDON_HANDOFF["manager"] = core.addon_manager # type: ignore
     try:
         core.addon_manager.run_all_addon()
     except Exception as e:

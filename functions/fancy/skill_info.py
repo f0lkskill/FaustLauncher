@@ -128,12 +128,20 @@ def handle_base_info(name:str) -> str:
 def handle_skill_structure(skill_content:dict) -> dict: # type: ignore
     dataList = skill_content["dataList"]
     for skill in dataList:
-        if not skill.get('levelList'):
+        # 一个单独的技能信息
+        skill:dict
+
+        levelList = skill.get('levelList')
+        # 无法获取基层结构
+        if not levelList:
             continue
-        levelList = skill["levelList"]
+
         for level in levelList:
+            # 一个解析阶段
             level:dict
+
             if level.get('desc'):
+                # 处理基本描述
                 level['desc'] = handle_base_info(level['desc'])
 
             if not level.get('coinlist'):
@@ -142,8 +150,14 @@ def handle_skill_structure(skill_content:dict) -> dict: # type: ignore
 
             for coin in level['coinlist']:
                 coin:dict
-                if coin == {}:
-                    coin = {"coindescs":[{"desc": "<i><color=#7C5738>无效果的硬币</color></i>"}]}
+
+                if not coin:
+                    # 插入滚木硬币
+                    coin.update(
+                        {"coindescs":
+                          [{"desc": "<i><color=#7C5738>无效果的硬币</color></i>"}]
+                        }
+                    )
                 else:
                     for coindesc in coin['coindescs']:
                         coindesc:dict

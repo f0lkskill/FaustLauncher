@@ -12,7 +12,7 @@
 
 const $ = (sel) => document.querySelector(sel);
 
-// ⚠ pywebview 的 api 是**注入的**，注入时机可能早于也可能晚于本脚本 ——
+// pywebview 的 api 是**注入的**，注入时机可能早于也可能晚于本脚本 ——
 // 所以不能在这里抓成常量（那样永远是 null，界面就会报"pywebview 未就绪"）。
 // 与 web/version_update、web/extension_tools 同一套写法：在事件里**重新取**，
 // 并且立刻也试一次；再补一个短轮询兜底（个别环境不发 pywebviewready）。
