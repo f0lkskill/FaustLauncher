@@ -3524,6 +3524,12 @@ _EXIT_SEEN = {}
 _WINDOW_SEEN = set()
 """见过的「出过窗口」的 pid: 只有它们消失后才可能是退出卡死。"""
 
+_HANG_SEEN = {}
+"""pid -> 连续几次看到「窗口还在但没响应」, 够久就替用户结束进程。"""
+
+_HANG_KILLED = set()
+"""已经因为持续无响应被结束掉的 pid。"""
+
 
 def _report_game_hang(pid, tag="游戏卡死"):
     """游戏卡住时采一次线程现场, 写进 cache/hang。
@@ -3567,8 +3573,18 @@ def _monitor_game_process(window_ref):
         for pid in _game_process_pids():
             try:
                 if hang_probe.find_hung_windows(pid):
-                    _report_game_hang(pid, "游戏卡死")
+                    # 无响应持续够久（约 60 秒）就替用户收尾：点退出之后
+                    # 窗口还挂在那儿、进程不退，是这个症状最常见的样子；
+                    # 正常战斗里的短暂无响应不会撑这么久。
+                    _HANG_SEEN[pid] = _HANG_SEEN.get(pid, 0) + 1
+                    if _HANG_SEEN[pid] == 3:
+                        _report_game_hang(pid, "游戏卡死")
+                    if _HANG_SEEN[pid] >= 30 and pid not in _HANG_KILLED:
+                        _HANG_KILLED.add(pid)
+                        if hang_probe.terminate(pid):
+                            print(f"[Hang] 游戏持续无响应, 已结束进程 {pid}（现场在 cache/hang 下）")
                     break
+                _HANG_SEEN.pop(pid, None)
                 if hang_probe.has_window(pid):
                     # 只有「先见过窗口」的进程才可能是退出卡死, 否则会把
                     # 刚启动还没出画面的那十几秒误判成卡死。

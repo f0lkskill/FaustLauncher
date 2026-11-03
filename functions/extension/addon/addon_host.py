@@ -372,6 +372,16 @@ _EXIT_DONE = set()
 _EXIT_KILLED = set()
 """已经替用户结束掉的 pid，不必再轮询。"""
 
+_HANG_KILLED = set()
+"""因为持续无响应被结束掉的 pid。"""
+
+_HANG_GIVE_UP = 30
+"""连续这么多次轮询（约 60 秒）都没响应，就当它已经卡死并结束它。
+
+    点退出之后窗口还挂着、进程不退，是这个症状最常见的样子；正常战斗里的
+    短暂无响应撑不到 60 秒，所以不会误伤。
+"""
+
 _EXIT_GIVE_UP = 22
 """连续这么多次轮询（约 44 秒）进程还没退掉，就保留现场并结束它。
 
@@ -420,23 +430,27 @@ def _capture_hang(pids) -> None:
     """
 
     for pid in pids:
-        if pid in _EXIT_KILLED:
+        if pid in _EXIT_KILLED or pid in _HANG_KILLED:
             continue
-        if pid not in _HANG_DONE:
-            try:
-                from functions.base import hang_probe
+        try:
+            from functions.base import hang_probe
 
-                hung = bool(hang_probe.find_hung_windows(pid))
-            except Exception:  # noqa: BLE001
-                hung = False
-            if not hung:
-                _HANG_SEEN.pop(pid, None)
-            else:
-                seen = _HANG_SEEN.get(pid, 0) + 1
-                _HANG_SEEN[pid] = seen
-                if seen >= 3:
-                    _HANG_DONE.add(pid)
-                    _save(pid, "游戏卡死")
+            hung = bool(hang_probe.find_hung_windows(pid))
+        except Exception:  # noqa: BLE001
+            hung = False
+        if hung:
+            seen = _HANG_SEEN.get(pid, 0) + 1
+            _HANG_SEEN[pid] = seen
+            if seen >= 3 and pid not in _HANG_DONE:
+                _HANG_DONE.add(pid)
+                _save(pid, "游戏卡死")
+            if seen >= _HANG_GIVE_UP:
+                # 点退出之后窗口还挂着、进程不退，是这个症状最常见的样子；
+                # 正常战斗里的短暂无响应撑不到这么多次轮询。
+                _HANG_KILLED.add(pid)
+                _finish(pid)
+            continue
+        _HANG_SEEN.pop(pid, None)
         if pid in _EXIT_DONE:
             pass
         else:
