@@ -360,14 +360,8 @@ def handoff(manager=None) -> bool:
 _HANG_SEEN = {}
 """pid -> 连续几次轮询看到「未响应」（避免把加载中的短暂无响应当成卡死）。"""
 
-_HANG_DONE = set()
-"""已经采过现场的 pid，同一个进程只采一次。"""
-
 _EXIT_SEEN = {}
 """pid -> 连续几次轮询看到「窗口没了、进程还在」，用来抓退出阶段的卡死。"""
-
-_EXIT_DONE = set()
-"""已经为退出阶段采过现场的 pid。"""
 
 _EXIT_KILLED = set()
 """已经替用户结束掉的 pid，不必再轮询。"""
@@ -376,18 +370,17 @@ _HANG_KILLED = set()
 """因为持续无响应被结束掉的 pid。"""
 
 _HANG_GIVE_UP = 30
-"""连续这么多次轮询（约 60 秒）都没响应，就当它已经卡死并结束它。
+"""连续这么多次轮询（约 60 秒）都没响应，当它是卡死并结束它。
 
-    点退出之后窗口还挂着、进程不退，是这个症状最常见的样子；正常战斗里的
-    短暂无响应撑不到 60 秒，所以不会误伤。CPU 时间能读到时，:data:`_IDLE_GIVE_UP`
-    会先一步生效 —— 真卡死的进程 CPU 是停着的，不用等满一分钟。
+    CPU 时间读得到时用不上这条 —— 真卡死的进程 CPU 是停着的，
+    :data:`_IDLE_GIVE_UP` 会先一步生效；这条是读不到 CPU 时的兜底。
 """
 
-_EXIT_GIVE_UP = 8
-"""连续这么多次轮询（约 16 秒）进程还没退掉，就保留现场并结束它。
+_EXIT_GIVE_UP = 3
+"""连续这么多次轮询（约 6 秒）进程还没退掉就直接结束它。
 
     游戏卡在退出阶段时存档早已写完（Player.log 里 ``Quit Local Save`` → ``Save..``
-    都已完成），结束进程不会丢档，比让用户去任务管理器强杀体验好得多。
+    都已完成），结束进程不会丢档。
 """
 
 _IDLE_SEEN = {}
@@ -399,13 +392,13 @@ _IDLE_PREV = {}
 _IDLE_CPU_STEP = 0.05
 """两次轮询之间 CPU 至少该涨这么多秒；低于它就算「停住了」。"""
 
-_IDLE_GIVE_UP = 6
-"""CPU 停住且无响应连续这么多次（约 12 秒）就结束进程。
+_IDLE_GIVE_UP = 1
+"""CPU 停住且无响应连续这么多次（两轮轮询，约 4 秒）就结束进程。
 
-    为什么还要单开一条：:func:`hang_probe.find_hung_windows` 只看窗口有没有
-    在回消息，加载场景、编译着色器时窗口照样「未响应」，可 CPU 是满的。
-    卡死在等待原语上的进程正好相反 —— 窗口不回消息，CPU 也不动。两者一起
-    看，既能十几秒内收掉真卡死，又不会把慢加载误杀。
+    为什么还要判 CPU：:func:`hang_probe.find_hung_windows` 只看窗口有没有在回
+    消息，加载场景、编译着色器时窗口照样「未响应」，可 CPU 是满的。卡死在等待
+    原语上的进程正好相反 —— 窗口不回消息，CPU 也不动。靠这一条才敢不采现场、
+    检测到就杀。
 """
 
 
@@ -432,28 +425,14 @@ _WINDOW_SEEN = set()
 """出过窗口的 pid: 只有它们消失后才可能是退出卡死。"""
 
 
-def _save(pid, tag: str) -> None:
-    """采一次线程现场并落盘，失败只打一行。"""
-
-    try:
-        from functions.base import hang_probe
-
-        data = hang_probe.sample(pid)
-        path = hang_probe.save_report(data, tag=tag)
-        print(f"[AddonHost] {tag}，线程现场已保存: {path}")
-        print(f"[AddonHost] 栈上出现最多的模块: {hang_probe.summarize(data)}")
-    except Exception as exc:  # noqa: BLE001
-        print(f"[AddonHost] 采集线程现场失败: {type(exc).__name__}: {exc}")
-
-
 def _finish(pid) -> None:
-    """游戏已经存完档却退不掉：现场早已存好，直接替用户结束进程。"""
+    """游戏卡住了：直接结束进程，不再采现场、不写报告。"""
 
     try:
         from functions.base import hang_probe
 
         if hang_probe.terminate(pid):
-            print(f"[AddonHost] 游戏卡在退出阶段，已结束进程 {pid}（现场在 cache/hang 下）")
+            print(f"[AddonHost] 游戏已卡死，结束进程 {pid}")
         else:
             print(f"[AddonHost] 结束进程 {pid} 失败，可能已经自己退了")
     except Exception as exc:  # noqa: BLE001
@@ -461,11 +440,11 @@ def _finish(pid) -> None:
 
 
 def _capture_hang(pids) -> None:
-    """游戏卡住就把线程现场存下来。
+    """游戏卡住就直接结束进程，不采现场。
 
-    两种卡死：窗口还在但 ``IsHungAppWindow`` 为真（战斗中/加载中），
-    以及窗口已经销毁、进程却迟迟不退 —— 后者是「点退出之后未响应」，
-    窗口都没了，只能靠「没有窗口了但进程还在」这个反向条件发现。
+    两种卡死：窗口还在但 ``IsHungAppWindow`` 为真，以及窗口已经销毁、进程却
+    迟迟不退 —— 后者就是「点退出之后未响应」。前者还要再看一眼 CPU 时间：
+    加载场景、编译着色器时窗口同样不回消息，可 CPU 是满的，不能杀。
     """
 
     for pid in pids:
@@ -480,13 +459,7 @@ def _capture_hang(pids) -> None:
         if hung:
             seen = _HANG_SEEN.get(pid, 0) + 1
             _HANG_SEEN[pid] = seen
-            idle = _idle_count(pid)
-            if (seen >= 3 or idle >= 3) and pid not in _HANG_DONE:
-                _HANG_DONE.add(pid)
-                _save(pid, "游戏卡死")
-            if idle >= _IDLE_GIVE_UP or seen >= _HANG_GIVE_UP:
-                # 点退出之后窗口还挂着、进程不退，是这个症状最常见的样子。
-                # CPU 停住的那条路不用等满一分钟。
+            if _idle_count(pid) >= _IDLE_GIVE_UP or seen >= _HANG_GIVE_UP:
                 _HANG_KILLED.add(pid)
                 _finish(pid)
             continue
@@ -508,10 +481,6 @@ def _capture_hang(pids) -> None:
             continue
         seen = _EXIT_SEEN.get(pid, 0) + 1
         _EXIT_SEEN[pid] = seen
-        # 关窗到进程退出正常只要一两秒；超过 ~10 秒还在就是退不掉。
-        if seen >= 5 and pid not in _EXIT_DONE:
-            _EXIT_DONE.add(pid)
-            _save(pid, "退出卡死")
         if seen >= _EXIT_GIVE_UP:
             _EXIT_KILLED.add(pid)
             _finish(pid)

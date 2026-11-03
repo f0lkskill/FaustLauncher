@@ -3516,8 +3516,6 @@ def _update_game_state(alive, busy, seed=False):
     _game_state["alive"], _game_state["busy"] = snapshot
     return True
 
-_HANG_REPORT = {"pid": 0, "at": 0.0}
-
 _EXIT_SEEN = {}
 """pid -> 连续几次看到「窗口没了、进程还在」, 用来抓退出阶段的卡死。"""
 
@@ -3530,9 +3528,6 @@ _HANG_SEEN = {}
 _HANG_KILLED = set()
 """已经因为持续无响应被结束掉的 pid。"""
 
-_HANG_DONE = set()
-"""已经采过线程现场的 pid, 同一个进程只采一次。"""
-
 _IDLE_SEEN = {}
 """pid -> 连续几次轮询「窗口没响应且 CPU 时间一格没涨」。"""
 
@@ -3542,17 +3537,14 @@ _IDLE_PREV = {}
 _IDLE_CPU_STEP = 0.05
 """两次轮询之间 CPU 至少该涨这么多秒; 低于它就算「停住了」。"""
 
-_IDLE_GIVE_UP = 6
-"""CPU 停住且窗口无响应连续这么多次（约 12 秒）就结束进程。
+
+def _idle_count(pid):
+    """窗口没响应的前提下, 看 CPU 时间还在不在动, 返回连续「不动」的次数。
 
     光看 ``IsHungAppWindow`` 会把「加载场景 / 编译着色器」也算成卡死 —— 那时候
     窗口同样不回消息, 但 CPU 是满的。真卡死正好相反: 消息停了, CPU 也不动。
-    两条一起看, 既能在十几秒内收掉真卡死, 又不会误伤慢加载。
-"""
-
-
-def _idle_count(pid):
-    """窗口没响应的前提下, 看 CPU 时间还在不在动, 返回连续「不动」的次数。"""
+    靠这一条把两者分开, 才敢检测到就杀。
+    """
 
     try:
         from functions.base import hang_probe
@@ -3571,31 +3563,6 @@ def _idle_count(pid):
     return _IDLE_SEEN[pid]
 
 
-def _report_game_hang(pid, tag="crash"):
-    """游戏卡住时采一次线程现场, 写进 cache/hang。
-
-    退出卡死这类问题在日志里什么都看不到: 进程还活着、消息循环已经停了,
-    Player.log 也不会再多写一行。这里把每个线程停在哪取下来, 顺带在终端里
-    给出「谁占的帧最多」—— 一眼能看出是注入的 DLL 还是游戏自己。
-    同一个 PID 两分钟内只采一次, 免得反复卡着时刷屏。
-    """
-    from functions.base import hang_probe
-    now = time.time()
-    if _HANG_REPORT["pid"] == pid and now - _HANG_REPORT["at"] < 120:
-        return
-    _HANG_REPORT.update(pid=pid, at=now)
-    try:
-        data = hang_probe.sample(pid)
-    except Exception as exc:
-        print(f"[Hang] 采集线程现场失败: {exc}")
-        return
-    path = hang_probe.save_report(data, tag=tag)
-    summary = hang_probe.summarize(data)
-    print(f"[Hang] {tag}, 线程现场已保存: {path or '(写入失败)'}")
-    if summary:
-        print(f"[Hang] 栈上出现最多的模块: {summary}")
-
-
 def _monitor_game_process(window_ref):
     def _push(event, data=None):
         try:
@@ -3608,23 +3575,20 @@ def _monitor_game_process(window_ref):
             pass
 
     def _check_hang():
-        """游戏还活着的时候顺手看一眼：窗口卡住了，还是窗口没了却不退。"""
+        """游戏卡死就立刻结束进程, 不采现场也不写报告。
+
+        只认「窗口不回消息 + CPU 时间一格没涨」这一种: 加载场景、编译着色器时
+        窗口同样不回消息, 但 CPU 是满的, 不会被误杀。反过来真卡死的进程消息停
+        了、CPU 也停了, 两轮轮询（约 4 秒）足够确认, 直接结束让用户重开。
+        """
         from functions.base import hang_probe
         for pid in _game_process_pids():
             try:
                 if hang_probe.find_hung_windows(pid):
-                    # 窗口不回消息有两种：真的卡死（CPU 停着），以及加载场景
-                    # 或编译着色器（CPU 满着）。两者混在一起判会误杀慢加载，
-                    # 所以再读一次进程 CPU 时间。
-                    _HANG_SEEN[pid] = _HANG_SEEN.get(pid, 0) + 1
-                    idle = _idle_count(pid)
-                    if (_HANG_SEEN[pid] == 3 or idle >= 3) and pid not in _HANG_DONE:
-                        _HANG_DONE.add(pid)
-                        _report_game_hang(pid, "游戏卡死")
-                    if (idle >= _IDLE_GIVE_UP or _HANG_SEEN[pid] >= 30) and pid not in _HANG_KILLED:
+                    if _idle_count(pid) >= 1 and pid not in _HANG_KILLED:
                         _HANG_KILLED.add(pid)
                         if hang_probe.terminate(pid):
-                            print(f"[Hang] 游戏持续无响应, 已结束进程 {pid}（现场在 cache/hang 下）")
+                            print(f"[Hang] 游戏已卡死, 结束进程 {pid}")
                     break
                 _HANG_SEEN.pop(pid, None)
                 _IDLE_SEEN.pop(pid, None)
@@ -3638,13 +3602,11 @@ def _monitor_game_process(window_ref):
                 if pid not in _WINDOW_SEEN:
                     continue
                 _EXIT_SEEN[pid] = _EXIT_SEEN.get(pid, 0) + 1
-                if _EXIT_SEEN[pid] >= 5:
-                    _report_game_hang(pid, "退出卡死")
-                if _EXIT_SEEN[pid] >= 8:
-                    # 存档早已写完（Player.log 里 Quit Local Save / Save 都完成），
-                    # 进程却退不掉, 与其让用户去任务管理器强杀, 不如替他收尾。
+                if _EXIT_SEEN[pid] >= 3:
+                    # 存档早已写完（Player.log 里 Quit Local Save / Save 都完成）,
+                    # 进程却退不掉: 直接结束, 别让人去任务管理器强杀。
                     if hang_probe.terminate(pid):
-                        print(f"[Hang] 游戏卡在退出阶段, 已结束进程 {pid}（现场在 cache/hang 下）")
+                        print(f"[Hang] 游戏卡在退出阶段, 结束进程 {pid}")
                     break
             except Exception:
                 continue
