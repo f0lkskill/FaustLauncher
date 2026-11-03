@@ -79,7 +79,7 @@ def skill_color_process(gameLang: str):
                 if not success:
                     import sys
                     print(f"技能 {skill_content['levelList'][0]['name']} 缺少对应的 config 信息，跳过...")
-                    if sys.argv[1] == '--debug':
+                    if '--debug' in sys.argv:
                         print(f"技能 {skill_content['levelList'][0]['name']} 缺少对应的 config 信息，请求用户输入...")
                         skill_info = {
                             "id": skill_content['id'],
