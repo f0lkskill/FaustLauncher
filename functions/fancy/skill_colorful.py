@@ -69,8 +69,8 @@ def skill_color_process(gameLang: str):
                                         count += 1
                                 return count
                             
-                            if count_length(signal_skill['name']) > 12:
-                                signal_skill['name'] = signal_skill['name'][:12] + '\n' + signal_skill['name'][12:]
+                            if count_length(signal_skill['name']) > 15:
+                                signal_skill['name'] = signal_skill['name'][:15] + '\n' + signal_skill['name'][15:]
 
                             signal_skill['name'] = apply_color_gradient_custom(signal_skill['name'],'ffffff',info_color, skill_text_gradient_rate)
                             success = True
