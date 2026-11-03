@@ -59,20 +59,27 @@ def skill_color_process(gameLang: str):
                             info_type = skill_info.get('type','未知')
                             info_color = sin_color.get(info_type,'ffffff')
 
-                            def count_length(text:str) -> int:
-                                count = 0
-                                for char in text:
-                                    char:str
-                                    if char.isascii():
-                                        count += 2
-                                    else:
-                                        count += 1
-                                return count
-                            
-                            if count_length(signal_skill['name']) > 15:
-                                signal_skill['name'] = signal_skill['name'][:15] + '\n' + signal_skill['name'][15:]
+                            def count_length(text: str) -> int:
+                                return sum(2 if ch.isascii() else 1 for ch in text)
 
-                            signal_skill['name'] = apply_color_gradient_custom(signal_skill['name'],'ffffff',info_color, skill_text_gradient_rate)
+                            def truncate_by_display_len(text: str, max_len: int, ellipsis: str = '...') -> str:
+                                """按显示宽度截断纯文本（不处理富文本标签）"""
+                                count = 0
+                                for i, ch in enumerate(text):
+                                    step = 2 if ch.isascii() else 1
+                                    if count + step > max_len:
+                                        return text[:i] + ellipsis
+                                    count += step
+                                return text
+                            
+                            name = signal_skill['name'] # 此时必须是纯文本
+                            if count_length(name) > 12:
+                                name = truncate_by_display_len(name, 12, '...')
+                            # 着色放最后
+                            signal_skill['name'] = apply_color_gradient_custom(
+                                name, 'ffffff', info_color, skill_text_gradient_rate
+                            )
+                            
                             success = True
                         break
                     
