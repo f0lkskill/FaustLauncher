@@ -74,9 +74,9 @@ def skill_color_process(gameLang: str):
                             
                             name = signal_skill['name'] # 此时必须是纯文本
                             out_flag = False
-                            if count_length(name) > 12:
+                            if count_length(name) > 13:
                                 out_flag = True
-                                name = truncate_by_display_len(name, 12, '')
+                                name = truncate_by_display_len(name, 13, '')
                             # 着色放最后
                             signal_skill['name'] = apply_color_gradient_custom(
                                 name, 'ffffff', info_color, skill_text_gradient_rate
