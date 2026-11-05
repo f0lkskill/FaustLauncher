@@ -59,27 +59,29 @@ def skill_color_process(gameLang: str):
                             info_type = skill_info.get('type','未知')
                             info_color = sin_color.get(info_type,'ffffff')
 
-                            def count_length(text: str) -> int:
-                                return sum(2 if ch.isascii() else 1 for ch in text)
+                            def count_length(text: str) -> float:
+                                return sum(0.5 if ch.isascii() else 1 for ch in text)
 
-                            def truncate_by_display_len(text: str, max_len: int, ellipsis: str = '...') -> str:
+                            def truncate_by_display_len(text: str, max_len: float, ellipsis: str = '') -> str:
                                 """按显示宽度截断纯文本（不处理富文本标签）"""
                                 count = 0
                                 for i, ch in enumerate(text):
-                                    step = 2 if ch.isascii() else 1
+                                    step = 0.5 if ch.isascii() else 1
                                     if count + step > max_len:
                                         return text[:i] + ellipsis
                                     count += step
                                 return text
                             
                             name = signal_skill['name'] # 此时必须是纯文本
+                            out_flag = False
                             if count_length(name) > 12:
-                                name = truncate_by_display_len(name, 12, '...')
+                                out_flag = True
+                                name = truncate_by_display_len(name, 12, '')
                             # 着色放最后
                             signal_skill['name'] = apply_color_gradient_custom(
                                 name, 'ffffff', info_color, skill_text_gradient_rate
-                            )
-                            
+                            ) + ('...' if out_flag else '') # 决定要不要单独补省略号
+
                             success = True
                         break
                     
