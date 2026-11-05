@@ -75,7 +75,7 @@ window.__onEvent = function (event, data) {
         if (txtEl) txtEl.textContent = String(data.text);
         setPipeDetailIconByTask(data.task);
       }
-      // 只有后端明确"❌ 下载失败"这种终态才标红; 中途的阶段文本(原链接失败/
+      // 只有后端明确"下载失败"这种终态才标红; 中途的阶段文本(原链接失败/
       // 解析直链)不算失败 —— 旧逻辑在这里把任务标红后 8 秒删掉, 看上去就像
       // 抽屉自己断掉了任务。
       if (/^❌/.test(String(data.text || '').trim())) {

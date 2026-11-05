@@ -261,7 +261,7 @@ def create_gradient_test_gui(window, root):
     reset_btn = tk.Button(button_frame, text="🔄 重置设置", command=reset_settings, **button_style)
     reset_btn.pack(side=tk.LEFT, padx=(0, 10))
     
-    close_btn = tk.Button(button_frame, text="❌ 关闭", command=root.destroy, 
+    close_btn = tk.Button(button_frame, text="关闭", command=root.destroy, 
                          bg='#e74c3c', fg='white', font=('Microsoft YaHei UI', 10, 'bold'),
                          relief='flat', padx=15, pady=8, cursor='hand2')
     close_btn.pack(side=tk.LEFT)

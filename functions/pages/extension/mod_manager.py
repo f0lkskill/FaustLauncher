@@ -239,7 +239,7 @@ class ModManager:
                     file_status = self.get_file_status(filename)
                     
                     if self.is_file_disabled(filename):
-                        display_name = f"❌ {filename}"
+                        display_name = f"{filename}"
                     else:
                         display_name = f" {filename}"
                     
@@ -250,7 +250,7 @@ class ModManager:
     
     def get_file_status(self, filename):
         if self.is_file_disabled(filename):
-            return "❌ 禁用"
+            return "禁用"
         else:
             return " 启用"
     

@@ -840,7 +840,7 @@ class PageLoader:
         
     def _show_page_error(self, frame, page_name: str, error: Exception):
         error_label = tk.Label(frame, 
-                            text=f"❌ {page_name}加载失败",
+                            text=f"{page_name}加载失败",
                             font=('Microsoft YaHei UI', 16),
                              bg=self.core.bg_color, fg=C.TEXT_WHITE)
         error_label.pack(expand=True)

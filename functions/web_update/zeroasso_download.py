@@ -404,10 +404,10 @@ def download_file_with_gui(url, local_filename, gui, file_name):
         return True
 
     except requests.exceptions.RequestException as e:
-        gui.current_file_var.set(f"❌ 下载失败: {e}")
+        gui.current_file_var.set(f"下载失败: {e}")
         return False
     except Exception as e:
-        gui.current_file_var.set(f"❌ 下载过程中出现错误: {e}")
+        gui.current_file_var.set(f"下载过程中出现错误: {e}")
         return False
 
 def _fetch_download_path(note_name: str, pwd: str, get_path) -> tuple[str, str] | None:
@@ -490,7 +490,7 @@ def _ensure_refer_root(gui) -> str:
         except Exception as e:
             print(f"获取零协会下载地址失败: {e}")
         if not download_url:
-            gui.current_file_var.set("❌ 自动获取参考包失败: 无法获取零协会下载地址")
+            gui.current_file_var.set("自动获取参考包失败: 无法获取零协会下载地址")
             return ""
 
         temp_file = os.path.join('lang', 'LimbusLocalize_latest.7z')
@@ -505,7 +505,7 @@ def _ensure_refer_root(gui) -> str:
         src = os.path.join('lang', 'LimbusCompany_Data', 'Lang', 'LLC_zh-CN')
         target = os.path.abspath(os.path.join('lang', 'LLC_zh-CN'))
         if not os.path.isdir(src):
-            gui.current_file_var.set("❌ 自动获取参考包失败: 解压产物结构异常")
+            gui.current_file_var.set("自动获取参考包失败: 解压产物结构异常")
             return ""
         from functions.base.game_launcher import safe_merge_dirs
         if os.path.isdir(target):
@@ -538,13 +538,13 @@ def _install_ourplay(gui, temp_file, game_path, version, is_god):
     try:
         refer_root = _ensure_refer_root(gui)
         if not refer_root:
-            gui.current_file_var.set("❌ 汉化包处理失败: 参考包获取失败, 无法重命名哈希文件")
+            gui.current_file_var.set("汉化包处理失败: 参考包获取失败, 无法重命名哈希文件")
             print("_install_ourplay: 参考包获取失败")
             return False
         ourplay_root, temp_extract = prepare_ourplay_dir(
             temp_file, refer_root=refer_root)
     except Exception as e:
-        gui.current_file_var.set(f"❌ 汉化包处理失败: {e}")
+        gui.current_file_var.set(f"汉化包处理失败: {e}")
         print(f"_install_ourplay: 汉化包处理失败: {e}")
         return False
 
@@ -576,7 +576,7 @@ def _install_ourplay(gui, temp_file, game_path, version, is_god):
                           f, ensure_ascii=False, indent=2)
         except Exception as e:
             print(f"写入版本信息失败: {e}")
-            gui.current_file_var.set("❌ 汉化包已安装但版本信息写入失败, 下次将重新下载")
+            gui.current_file_var.set("汉化包已安装但版本信息写入失败, 下次将重新下载")
             return False
         return True
     finally:
@@ -591,11 +591,11 @@ def download_and_extract_gui(gui:DownloadGUI, config_path: str = "", download_fi
     game_path = config_path
     
     if not game_path:
-        gui.current_file_var.set("❌ 错误: 未配置游戏路径")
+        gui.current_file_var.set("错误: 未配置游戏路径")
         return False
     
     if not os.path.exists(game_path):
-        gui.current_file_var.set(f"❌ 错误: 路径不存在: {game_path}")
+        gui.current_file_var.set(f"错误: 路径不存在: {game_path}")
         return False
 
     source = get_translate_source()
@@ -660,7 +660,7 @@ def download_and_extract_gui(gui:DownloadGUI, config_path: str = "", download_fi
                     gui.current_file_var.set("正在获取 OurPlay 汉化包下载信息...")
                     info = get_ourplay_download_info(official=not is_god)
                     if not info:
-                        gui.current_file_var.set("❌ 获取 OurPlay 下载信息失败")
+                        gui.current_file_var.set("获取 OurPlay 下载信息失败")
                         return False
                     download_url, md5, size, version = info
                     file_info['url'] = download_url
@@ -672,7 +672,7 @@ def download_and_extract_gui(gui:DownloadGUI, config_path: str = "", download_fi
                         print("检测到新版本，准备更新...")
                 except Exception as e:
                     print(f"获取 OurPlay 下载信息失败: {e}")
-                    gui.current_file_var.set(f"❌ 获取 OurPlay 下载信息失败: {e}")
+                    gui.current_file_var.set(f"获取 OurPlay 下载信息失败: {e}")
                     return False
 
             if not need_update_translate and file_info['name'] == 'OurPlay 汉化包':
@@ -708,14 +708,14 @@ def download_and_extract_gui(gui:DownloadGUI, config_path: str = "", download_fi
 
                     while not download_url:
                         if timeout_counter >= 10:
-                            gui.current_file_var.set("❌ 获取GitHub Release信息失败，已达最大重试次数")
+                            gui.current_file_var.set("获取GitHub Release信息失败，已达最大重试次数")
                             return False
                         
                         download_url, name = get_github_release_url() # type: ignore
 
                         if not download_url:
                             timeout_counter += 1
-                            gui.current_file_var.set(f"❌ 获取GitHub Release信息失败，准备重试...\n(剩余次数 {10 - timeout_counter})")
+                            gui.current_file_var.set(f"获取GitHub Release信息失败，准备重试...\n(剩余次数 {10 - timeout_counter})")
                             time.sleep(1)
                         else:
                             print (f"获取到下载链接: {download_url}\n 零协汉化版本号: {name}")
@@ -743,7 +743,7 @@ def download_and_extract_gui(gui:DownloadGUI, config_path: str = "", download_fi
                         print (f"获取到下载链接: {download_url}\n 零协汉化版本号: {version}")
                         file_info['url'] = download_url
                     else:
-                        gui.current_file_var.set("❌ 获取下载地址失败")
+                        gui.current_file_var.set("获取下载地址失败")
                         return False
 
                     if not check_need_up_translate(version):
@@ -818,12 +818,12 @@ def download_and_extract_mod(gui, target_dir, download_files):
                 print(f"[DownloadCenter] 下载结果: ok={ok}, exists={os.path.exists(temp_file)}")
                 if ok is False:
                     # 让下载抽屉能把这一行标成失败，而不是一直挂在"等待中"
-                    gui.current_file_var.set(f"❌ {name} 下载失败")
+                    gui.current_file_var.set(f"{name} 下载失败")
                     return False
                 gui.current_file_var.set(f"正在解压 {name}...")
                 if os.path.exists(temp_file):
                     if not extract_7z_file(temp_file, target_dir):
-                        gui.current_file_var.set(f"❌ {name} 解压失败")
+                        gui.current_file_var.set(f"{name} 解压失败")
                         return False
                     for junk in ('__MACOSX', '.DS_Store', '.gitkeep'):
                         p = os.path.join(target_dir, junk)

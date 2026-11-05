@@ -3022,13 +3022,13 @@ if %errorlevel% equ 0 (
                     print(f"插件 {name} 已取消下载")
                 else:
                     print(f"插件 {name} 下载失败")
-                    self._fail_download_task(name, f"❌ {name} 下载失败")
+                    self._fail_download_task(name, f"{name} 下载失败")
             except Exception as e:
                 if self._dl_was_cancelled(name):
                     print(f"插件 {name} 已取消下载")
                 else:
                     print(f"下载插件 {name} 失败: {e}")
-                    self._fail_download_task(name, f"❌ 下载失败: {e}")
+                    self._fail_download_task(name, f"下载失败: {e}")
             finally:
                 self._dl_clear_cancel(name)
         threading.Thread(target=_run, daemon=True).start()
@@ -3063,13 +3063,13 @@ if %errorlevel% equ 0 (
                     print(f"Mod {name} 已取消下载")
                 else:
                     print(f"Mod {name} 下载失败")
-                    self._fail_download_task(name, f"❌ {name} 下载失败")
+                    self._fail_download_task(name, f"{name} 下载失败")
             except Exception as e:
                 if self._dl_was_cancelled(name):
                     print(f"Mod {name} 已取消下载")
                 else:
                     print(f"下载 Mod {name} 失败: {e}")
-                    self._fail_download_task(name, f"❌ 下载失败: {e}")
+                    self._fail_download_task(name, f"下载失败: {e}")
             finally:
                 self._dl_clear_cancel(name)
         threading.Thread(target=_run, daemon=True).start()
