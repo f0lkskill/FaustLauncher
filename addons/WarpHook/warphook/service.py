@@ -19,6 +19,7 @@ from .base import (
     has_gameassembly,
     inject_dll,
     log,
+    debug_log,
     wait_for_game,
     wait_for_gameassembly,
     GAME_PROCESS,
@@ -545,7 +546,9 @@ class Service:
                                 ok, message = True, '宿主已在运行，复用连接'
                             else:
                                 ok, message = inject_dll(found, dll)
-                        self.log(f'阶段=inject_result PID={found} ok={ok} {message}')
+                        self.log(f'游戏已连接 PID={found}' if ok else f'注入失败 PID={found}：{message}')
+                        debug_log(f'注入结果 PID={found} ok={ok} DLL={dll} {message}',
+                                  prefix=f'[{self.name}]')
                         if not ok:
                             stop.wait(5.0)
                             continue
@@ -560,12 +563,16 @@ class Service:
                 if st:
                     key = self._state_key(st)
                     if key != self._last_key or now >= next_health:
+                        if key != self._last_key:
+                            self.log(f'{self.describe(st)}' +
+                                     (f'（错误 {st.get("last_error")}）' if st.get('last_error') else ''))
                         self._last_key = key
                         next_health = now + 30.0
-                        self.log(f'阶段={self._phase} PID={pid} {self.describe(st)} '
-                                 f'global_installed={st.get("hook_installed")} '
-                                 f'owner_requested={st.get("hook_total")} '
-                                 f'error={st.get("last_error")} tail={st.get("log_tail", "")}')
+                        debug_log(f'阶段={self._phase} PID={pid} {self.describe(st)} '
+                                  f'global_installed={st.get("hook_installed")} '
+                                  f'owner_requested={st.get("hook_total")} '
+                                  f'error={st.get("last_error")} tail={st.get("log_tail", "")}',
+                                  prefix=f'[{self.name}]')
             except Exception:  # noqa: BLE001
                 now = time.monotonic()
                 if now >= next_error:

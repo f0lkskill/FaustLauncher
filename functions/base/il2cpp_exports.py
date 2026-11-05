@@ -4,10 +4,10 @@
 ``UnityPlayer.dll`` 的 ``.text`` 段里仍然按固定顺序 ``lea`` 引用这些名字。
 本模块复刻这条定位链路，并把它接入启动器的缓存/版本体系：
 
-* 映射结果按 ``GameAssembly.dll`` 的 sha256 缓存到 ``cache/il2cpp_exports/``，
-  同一版本只扫描一次（扫描要读 164MB + 36MB 两个 DLL，约数秒）。
-* 扫描出 234 个名字但顺序和插件的基准表对不上时，直接判定「游戏接口布局
-  已变化」，让插件报出可读原因，而不是在 frida 里静默崩溃。
+* 缓存同时校验两个 DLL、基准表有序内容和解析器版本。
+* 标准导出直接按名字映射；混淆导出依赖游戏注册顺序与基准表一致的约定。
+  数量及唯一性检查只能拒绝部分异常，不能证明同数量重排没有发生。
+* 失败报告导出、字符串和引用三个阶段的计数，不把解析失败归因于基准表缺失。
 * 版本信息取自启动器的 HookIndex（``functions.hook.index``），与
   ``cheat_offsets`` 共用同一套「游戏版本从哪来」的约定。
 """
@@ -19,6 +19,7 @@ import json
 import os
 import re
 import struct
+import tempfile
 from typing import Any, Dict, List, Optional
 
 from functions.base.common.path_utils import get_app_root
@@ -28,10 +29,11 @@ UNITYPLAYER = "UnityPlayer.dll"
 CANONICAL_FILE = "il2cpp-api-names.txt"
 CACHE_DIR_NAME = "il2cpp_exports"
 
-# lea rax/rcx/rdx/rbx/rsp/rbp/rsi/rdi, [rip+disp32]
-_LEA_RE = re.compile(rb"\x48\x8d[\x05\x0d\x15\x1d\x25\x2d\x35\x3d]")
-# NUL 前的 C 标识符，长度 > 10 才能命中混淆导出名
-_SYMBOL_RE = re.compile(rb"(?<=\x00)[A-Za-z_][A-Za-z0-9_]{10}\x00")
+CACHE_SCHEMA = 2
+# REX.W，REX.R 可选：覆盖 rax-r15 的 RIP-relative LEA。
+_LEA_RE = re.compile(rb"[\x48\x4c]\x8d[\x05\x0d\x15\x1d\x25\x2d\x35\x3d]")
+# 只将完整 C 字符串与真实 PE 导出表比对，不假定混淆名长度。
+_SYMBOL_RE = re.compile(rb"(?:\A|(?<=\x00))[A-Za-z_][A-Za-z0-9_]*\x00")
 _CANONICAL_RE = re.compile(r"il2cpp_\w+")
 
 
@@ -64,7 +66,7 @@ def canonical_names(path: str = "") -> List[str]:
     if path:
         if not os.path.isfile(path):
             raise Il2cppExportsError(f"找不到 il2cpp 基准名字表: {path}")
-        with open(path, "r", encoding="utf-8") as handle:
+        with open(path, "r", encoding="utf-8-sig") as handle:
             names = [line.strip() for line in handle]
         names = [name for name in names if _CANONICAL_RE.fullmatch(name)]
         if not names:
@@ -96,12 +98,18 @@ def _pe_exports(path: str) -> Dict[str, int]:
     import pefile
 
     pe = pefile.PE(path, fast_load=True)
-    pe.parse_data_directories(directories=[0])
-    directory = getattr(pe, "DIRECTORY_ENTRY_EXPORT", None)
-    if directory is None:
-        return {}
-    return {entry.name.decode(): entry.address
-            for entry in directory.symbols if entry.name}
+    try:
+        pe.parse_data_directories(directories=[0])
+        directory = getattr(pe, "DIRECTORY_ENTRY_EXPORT", None)
+        if directory is None:
+            return {}
+        return {entry.name.decode("ascii"): entry.address
+                for entry in directory.symbols if entry.name and entry.address
+                and not getattr(entry, "forwarder", None)}
+    finally:
+        close = getattr(pe, "close", None)
+        if close:
+            close()
 
 
 def _locate_strings(unityplayer_path: str, export_names: Dict[str, int]) -> Dict[int, str]:
@@ -112,11 +120,16 @@ def _locate_strings(unityplayer_path: str, export_names: Dict[str, int]) -> Dict
     with open(unityplayer_path, "rb") as handle:
         data = handle.read()
     found: Dict[int, str] = {}
-    for match in _SYMBOL_RE.finditer(data):
-        name = match.group().rstrip(b"\x00").decode()
-        if name in export_names:
-            found[unityplayer.get_rva_from_offset(match.start())] = name
-    return found
+    try:
+        for match in _SYMBOL_RE.finditer(data):
+            name = match.group()[:-1].decode("ascii")
+            if name in export_names:
+                found[unityplayer.get_rva_from_offset(match.start())] = name
+        return found
+    finally:
+        close = getattr(unityplayer, "close", None)
+        if close:
+            close()
 
 
 def _ordered_exports(unityplayer_path: str, strings: Dict[int, str]) -> List[str]:
@@ -124,18 +137,25 @@ def _ordered_exports(unityplayer_path: str, strings: Dict[int, str]) -> List[str
     import pefile
 
     unityplayer = pefile.PE(unityplayer_path, fast_load=True)
-    section = next((item for item in unityplayer.sections
-                    if item.Name.rstrip(b"\x00") == b".text"), None)
-    if section is None:
-        raise Il2cppExportsError("UnityPlayer.dll 缺少 .text 段")
-    code = section.get_data()
-    ordered: List[str] = []
-    for match in _LEA_RE.finditer(code):
-        target = (section.VirtualAddress + match.start() + 7
-                  + struct.unpack_from("<i", code, match.start() + 3)[0])
-        if target in strings:
-            ordered.append(strings[target])
-    return ordered
+    try:
+        section = next((item for item in unityplayer.sections
+                        if item.Name.rstrip(b"\x00") == b".text"), None)
+        if section is None:
+            raise Il2cppExportsError("UnityPlayer.dll 缺少 .text 段")
+        code = section.get_data()
+        ordered: List[str] = []
+        for match in _LEA_RE.finditer(code):
+            if match.start() + 7 > len(code):
+                continue
+            target = (section.VirtualAddress + match.start() + 7
+                      + struct.unpack_from("<i", code, match.start() + 3)[0])
+            if target in strings:
+                ordered.append(strings[target])
+        return ordered
+    finally:
+        close = getattr(unityplayer, "close", None)
+        if close:
+            close()
 
 
 def scan(game_dir: str, *, names_path: str = "") -> Dict[str, Any]:
@@ -152,64 +172,104 @@ def scan(game_dir: str, *, names_path: str = "") -> Dict[str, Any]:
     if not exports:
         raise Il2cppExportsError(f"{GAMEASSEMBLY} 没有导出表，可能已被加壳")
 
-    strings = _locate_strings(unityplayer, exports)
-    ordered = _ordered_exports(unityplayer, strings)
-    sha256 = gameassembly_sha256(game_dir)
-
-    ok = len(ordered) == len(canonical)
-    mapping: Dict[str, str] = {}
-    if ok:
-        mapping = dict(zip(canonical, ordered))
-
+    if len(set(canonical)) != len(canonical):
+        raise Il2cppExportsError("il2cpp 基准名字表包含重复项")
+    standard = all(name in exports for name in canonical)
+    strings = {} if standard else _locate_strings(unityplayer, exports)
+    ordered = list(canonical) if standard else _ordered_exports(unityplayer, strings)
+    # 游戏的注册顺序仍以基准表为前提；不排序、不截断、不去重凑数量。
+    ok = len(ordered) == len(canonical) and len(set(ordered)) == len(ordered)
+    mapping = dict(zip(canonical, ordered)) if ok else {}
+    identity = _cache_identity(game_dir, canonical)
+    reason = ""
+    if not ok:
+        reason = (
+            f"导出映射解析未完成：PE 导出 {len(exports)} 个，"
+            f"匹配名字字符串 {len(strings)} 处，引用 {len(ordered)} 个"
+            f"（唯一 {len(set(ordered))}），已读取基准表 {len(canonical)} 项；"
+            "请检查两 DLL 是否来自同一游戏安装及解析器兼容性；"
+            "仅凭引用数量不能判定基准表缺失或接口布局变化。"
+            f"目录={game_dir}；GameAssembly SHA256={identity['sha256']}；"
+            f"UnityPlayer SHA256={identity['unityplayer_sha256']}；解析器={CACHE_SCHEMA}"
+        )
     return {
+        **identity,
         "ok": ok,
         "mapping": mapping,
+        "strategy": "standard" if standard else "ordered-lea",
         "ordered": len(ordered),
+        "unique_references": len(set(ordered)),
+        "string_count": len(strings),
         "canonical": len(canonical),
         "export_count": len(exports),
-        "sha256": sha256,
         "game_dir": game_dir,
-        "reason": "" if ok else (
-            f"接口布局已变化：解析到 {len(ordered)} 个导出引用，"
-            f"基准表有 {len(canonical)} 个（游戏更新后需要新的 {CANONICAL_FILE}）"
-        ),
+        "reason": reason,
+    }
+
+
+def _file_sha256(path: str) -> str:
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for chunk in iter(lambda: handle.read(1 << 20), b""):
+            digest.update(chunk)
+    return digest.hexdigest().upper()
+
+
+def _cache_identity(game_dir: str, canonical: List[str]) -> Dict[str, Any]:
+    return {
+        "schema": CACHE_SCHEMA,
+        "sha256": gameassembly_sha256(game_dir),
+        "unityplayer_sha256": _file_sha256(os.path.join(game_dir, UNITYPLAYER)),
+        "canonical_sha256": hashlib.sha256("\n".join(canonical).encode("utf-8")).hexdigest(),
     }
 
 
 def load_cache(game_dir: str, *, names_path: str = "") -> Optional[Dict[str, Any]]:
     """按当前 GameAssembly.dll 的 sha256 读取缓存，版本不符返回 None。"""
     try:
-        sha256 = gameassembly_sha256(game_dir)
-    except Il2cppExportsError:
-        return None
-    path = cache_path(sha256)
-    if not os.path.isfile(path):
-        return None
-    try:
-        with open(path, "r", encoding="utf-8") as handle:
+        canonical = canonical_names(names_path)
+        identity = _cache_identity(game_dir, canonical)
+        with open(cache_path(identity["sha256"]), "r", encoding="utf-8") as handle:
             payload = json.load(handle)
-    except (OSError, ValueError):
-        return None
-    if payload.get("sha256") != sha256 or not payload.get("mapping"):
-        return None
-    try:
-        if len(payload["mapping"]) != len(canonical_names(names_path)):
+        if not isinstance(payload, dict) or payload.get("ok") is not True:
             return None
-    except Il2cppExportsError:
+        if any(payload.get(key) != value for key, value in identity.items()):
+            return None
+        mapping = payload.get("mapping")
+        if not isinstance(mapping, dict) or set(mapping) != set(canonical):
+            return None
+        values = list(mapping.values())
+        if not all(isinstance(value, str) and value for value in values):
+            return None
+        if len(set(values)) != len(canonical) or len(set(canonical)) != len(canonical):
+            return None
+        exports = _pe_exports(os.path.join(game_dir, GAMEASSEMBLY))
+        if not all(value in exports for value in values):
+            return None
+    except (OSError, ValueError, Il2cppExportsError):
         return None
+    payload["game_dir"] = os.path.abspath(game_dir)
     payload["cached"] = True
     return payload
 
 
 def save_cache(result: Dict[str, Any]) -> str:
     """把对齐成功的扫描结果写入缓存，返回缓存路径。"""
+    if result.get("ok") is not True or not result.get("mapping"):
+        raise Il2cppExportsError("不缓存失败的导出映射")
     path = cache_path(result["sha256"])
     payload = dict(result)
     payload.pop("cached", None)
-    temporary = path + ".tmp"
-    with open(temporary, "w", encoding="utf-8") as handle:
-        json.dump(payload, handle, ensure_ascii=False, indent=2)
-    os.replace(temporary, path)
+    temporary = ""
+    try:
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=os.path.dirname(path),
+                                         prefix="exports-", suffix=".tmp", delete=False) as handle:
+            temporary = handle.name
+            json.dump(payload, handle, ensure_ascii=False, indent=2)
+        os.replace(temporary, path)
+    finally:
+        if temporary and os.path.exists(temporary):
+            os.unlink(temporary)
     return path
 
 

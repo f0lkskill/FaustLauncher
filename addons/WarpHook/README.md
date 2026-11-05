@@ -38,7 +38,21 @@ Warphook/
 └── il2cpp-api-names.txt     il2cpp 导出名的期望表
 ```
 
-## 故障排查（0.9.39）
+## 调试模式（0.9.50）
+
+在启动器的 WarpHook 插件设置中开启「调试模式」，无需为切换日志开关重启游戏。
+默认关闭：保留连接、实际状态变化、换曲和错误；不再周期输出健康状态、无命中扫描、音库阶段和锁计数。
+开启后，代理插件的注入结果（PID、DLL 路径）、周期宿主状态及 native tail、回合命中和音频阶段进入详细日志。
+插件可使用 `warp.log.debug(message, prefix=...)`，昂贵的诊断读取应先检查 `warp.log.is_debug_enabled()`。
+同一 BGM 自动错误按内容合并，手动恢复等操作始终反馈。
+
+## 导出解析（0.9.51）
+
+出现「引用 0 个，基准表 234 项」表示表已读取，失败在 DLL 名字/指令解析链路。解析器现在兼容不同长度混淆名及高寄存器 LEA，标准导出按名字直接映射；错误包含各阶段计数及两 DLL 摘要，避免误导用户反复放置基准表。
+
+缓存绑定 GameAssembly、UnityPlayer、基准表有序内容和解析器版本，旧缓存自动失效。宿主失败短暂退避后重试，重复错误节流。混淆映射仍依赖注册顺序与基准表一致，不能仅凭数量相等证明任意重排安全。本轮用临时合成文件离线验证，没有读取本机游戏；远端故障机器需更新后反馈新诊断。
+
+## 故障排查
 
 - **只有一个日志：`addons/WarpHook/warp.log`。** 宿主 DLL 与 Python 侧写同一个文件，凭行内
   标签区分：`[host]` 是启动器/宿主侧流程（`waiting_game` 持续等待进程、
@@ -196,6 +210,33 @@ audio.pause(host, True)
   保持这首用**换曲锁**：`game.bgm_lock_install()` 装钩子，`game.bgm_lock(False)`
   锁死，`game.bgm_lock(True)` 放行（放曲前必须先解锁）。别再每回合重放。
   详见 `BattleBGMExtend` 移植版。
+
+## 原生退出排查（协议 v14 candidate）
+
+原生命令 worker 曾在启动时调用一次 `il2cpp_thread_attach`，随后在事件等待中
+一直保持注册，且没有绑定 `il2cpp_thread_detach`。Unity 退出期间可能等待外来
+注册线程，而宿主停止信号直到 `DLL_PROCESS_DETACH` 才到达，存在退出顺序环。
+这项源码证据不能代替现场线程栈，不能仅据此认定某次游戏卡死已被确诊。
+
+v14 改为每条 worker 命令执行前 attach、命令成功或 AV 恢复后 detach，先释放
+注册再发布 ack；空闲 worker 不注册。缺少 attach/detach 导出或 attach 失败时
+命令明确失败。`thread_detach` 的混淆导出名追加在映射尾部独立 64 字节槽中，
+原先 24 项导出表以及事件、对象槽等所有偏移保持不变。
+
+`DllMain` 退出仍只置标志、发事件，不等待线程、不调用 IL2CPP、不运行 MinHook
+卸钩。进程退出时由操作系统回收固定模块与映射。在途命令若已卡在 IL2CPP 内部，
+本修复无法强制中断，也不保证解决所有游戏关闭问题。
+
+独立回归（不加载游戏，不注入，不覆盖生产 DLL）：
+
+```bash
+bash addons/WarpHook/tools/test_worker_lifecycle.sh
+python addons/WarpHook/tools/test_protocol_layout.py
+```
+
+原生桩测试使用实际 worker、Win32 事件与 VEH，覆盖空闲不 attach、成功命令、
+AV 恢复后 detach、缺失 detach、attach 失败与停止资源回收。协议测试静态比对
+C/Python 偏移。它们不验证真实 GameAssembly 的 shutdown/GC 行为。
 
 ## 编译
 

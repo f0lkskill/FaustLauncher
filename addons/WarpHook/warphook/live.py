@@ -25,7 +25,7 @@ import threading
 import time
 
 from . import audio, fields, objects
-from .base import log
+from .base import log, debug_log
 from .host import Host, _owner_of_caller, command_quiet
 from .service import Service
 
@@ -568,7 +568,7 @@ class Live:
         if hits > (previous if previous is not None else 0) or (
                 previous is not None and hits < previous and hits > 0):
             self._round_pending = True
-            log(f'回合命中 owner={self.owner} hits={previous}->{hits} '
+            debug_log(f'回合命中 owner={self.owner} hits={previous}->{hits} '
                 f'callbacks={len(self._round_cbs)}', prefix=f'[{self.owner}]')
         if (not self._round_pending or self._stop.is_set()
                 or time.monotonic() < self._round_retry_at):
@@ -581,7 +581,7 @@ class Live:
                 self._round_retry_at = time.monotonic() + self._round_backoff
                 self._round_backoff = min(4.0, self._round_backoff * 2.0)
         if battle is None:
-            log('回合已命中但战斗快照不可用（保留待重试，未调用业务回调）',
+            debug_log('回合已命中但战斗快照不可用（保留待重试，未调用业务回调）',
                 prefix=f'[{self.owner}]')
             return False
         if self._stop.is_set():

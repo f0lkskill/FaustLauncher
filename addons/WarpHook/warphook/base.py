@@ -136,6 +136,22 @@ def _start_block():
         pass
 
 
+def is_debug_enabled():
+    """读取插件设置，默认关闭；设置失效不影响业务线程。"""
+    try:
+        from . import env
+        manager = env.ADDON_MANAGER
+        info = manager.get_addon_info(env.ADDON_NAME or 'WarpHook') if manager else None
+        return (info or {}).get('settings', {}).get('调试模式', False) is True
+    except Exception:
+        return False
+
+
+def debug_log(message, prefix="[WarpHook]", tag="debug"):
+    if is_debug_enabled():
+        log(message, prefix=prefix, tag=tag)
+
+
 def log(message, prefix="[WarpHook]", tag="host"):
     """即时输出并保存到统一日志 ``warp.log``（时间、PID、线程、类型、插件前缀）。
 
@@ -555,6 +571,50 @@ def shm_open(name, size, struct_cls, magic_field=None, magic_value=None,
 
 
 _export_cache = None
+_export_cache_identity = None
+_export_retry_at = 0.0
+_export_refresh_generation = 0
+_export_lock = threading.Lock()
+_export_log_lock = threading.Lock()
+_export_log_times = {}
+_EXPORT_RETRY_SECONDS = 3.0
+_EXPORT_LOG_SECONDS = 30.0
+
+
+def _exports_identity():
+    """只读取配置和 stat，不探测或扫描其他游戏目录。"""
+    from functions.base.settings_manager import get_settings_manager
+
+    configured = str(get_settings_manager().get_setting("game_path") or "")
+    directory = os.path.abspath(configured) if configured else ""
+    table = names_table()
+    table = os.path.abspath(table) if table else ""
+    identity = [os.path.normcase(directory), os.path.normcase(table)]
+    paths = [os.path.join(directory, filename) if directory else ""
+             for filename in ("GameAssembly.dll", "UnityPlayer.dll")]
+    for path in (*paths, table):
+        try:
+            stat = os.stat(path) if path else None
+        except OSError:
+            stat = None
+        identity.append(None if stat is None else (
+            stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns))
+    return directory, tuple(identity)
+
+
+def _exports_log(message, kind="resolve"):
+    """同一身份的重复失败/缺项只定期提示，避免轮询刷屏。"""
+    now = time.monotonic()
+    key = (_export_cache_identity, kind)
+    with _export_log_lock:
+        previous = _export_log_times.get(key)
+        if previous is not None and now - previous < _EXPORT_LOG_SECONDS:
+            return
+        for old in list(_export_log_times):
+            if old[0] != key[0]:
+                del _export_log_times[old]
+        _export_log_times[key] = now
+    log(message, "[WarpHook.il2cpp]")
 
 
 def _addon_root():
@@ -589,8 +649,9 @@ def resolve_exports(refresh=False):
 
     当前版本的 GameAssembly.dll 把 ``il2cpp_*`` 导出改名成了随机串，DLL 里按
     标准名 GetProcAddress 会全部落空。启动器的
-    :mod:`functions.base.il2cpp_exports` 能算出这份映射（按 GameAssembly 的
-    sha256 缓存，同一版本只扫一次），这里直接复用并进程内缓存。
+    :mod:`functions.base.il2cpp_exports` 能算出并持久化这份映射。这里按配置路径、
+    两个 DLL 及基准表路径/stat 身份复用成功映射；失败短暂退避后自动重试，
+    路径或文件变化会立即使进程缓存失效。
 
     Args:
         refresh: 忽略缓存重新计算。
@@ -598,23 +659,55 @@ def resolve_exports(refresh=False):
     Returns:
         映射字典；算不出来时是空字典（DLL 会退回按标准名取，老版本游戏仍可用）。
     """
-    global _export_cache
-    if _export_cache is not None and not refresh:
-        return dict(_export_cache)
-    try:
-        from functions.base import il2cpp_exports as ix
+    global _export_cache, _export_cache_identity, _export_retry_at, _export_refresh_generation
+    generation = _export_refresh_generation
+    with _export_lock:
+        try:
+            directory, identity = _exports_identity()
+        except Exception as exc:  # 配置暂不可读时不能沿用旧游戏的映射
+            _export_cache = None
+            _export_cache_identity = None
+            _export_retry_at = 0.0
+            _exports_log(f"读取 il2cpp 游戏路径失败：{exc}")
+            return {}
+        if identity != _export_cache_identity:
+            _export_cache = None
+            _export_cache_identity = identity
+            _export_retry_at = 0.0
+        # 等待同一轮解析的并发 refresh 共享结果；随后显式 refresh 仍会重算。
+        reuse = not refresh or generation != _export_refresh_generation
+        if reuse:
+            if _export_cache is not None:
+                return dict(_export_cache)
+            if time.monotonic() < _export_retry_at:
+                return {}
+        _export_cache = None
+        try:
+            from functions.base import il2cpp_exports as ix
 
-        result = ix.resolve(refresh=refresh, names_path=names_table())
-        if result.get("ok"):
-            _export_cache = dict(result.get("mapping") or {})
-        else:
-            _export_cache = {}
-            log(f"il2cpp 导出映射不可用：{result.get('reason') or '未知原因'}",
-                "[WarpHook.il2cpp]")
-    except Exception as exc:  # noqa: BLE001 - 映射失败只影响弹窗，不影响其他功能
-        _export_cache = {}
-        log(f"读取 il2cpp 导出映射失败：{exc}", "[WarpHook.il2cpp]")
-    return dict(_export_cache)
+            if not directory:
+                raise ValueError("设置里没有游戏路径")
+            result = ix.resolve(directory, refresh=refresh, names_path=names_table())
+            # 扫描期间更新/切换文件时，旧结果不可绑定到新身份。
+            if _exports_identity()[1] != identity:
+                _export_cache_identity = None
+                _export_retry_at = 0.0
+                _exports_log("il2cpp 解析期间游戏路径、DLL 或基准表已变化，将在下次调用重试")
+                return {}
+            mapping = dict(result.get("mapping") or {})
+            if result.get("ok") and mapping:
+                _export_cache = mapping
+                _export_retry_at = 0.0
+            else:
+                _export_retry_at = time.monotonic() + _EXPORT_RETRY_SECONDS
+                _exports_log(f"il2cpp 导出映射不可用：{result.get('reason') or '映射为空'}")
+        except Exception as exc:  # noqa: BLE001 - 映射失败不影响其他功能
+            _export_retry_at = time.monotonic() + _EXPORT_RETRY_SECONDS
+            _exports_log(f"读取 il2cpp 导出映射失败：{exc}")
+        finally:
+            if refresh:
+                _export_refresh_generation += 1
+        return dict(_export_cache or {})
 
 
 def export_mapped(names, block, offset, count=None, name_max=64):
@@ -644,12 +737,12 @@ def ensure_exports(block, names, offset, name_max=64):
         return 0
     aliases = resolve_exports()
     if not aliases:
-        log("il2cpp 导出映射为空，依赖 il2cpp 的功能可能不可用", "[WarpHook.il2cpp]")
-        return 0
+        return 0  # 解析层已按身份节流报告原因，轮询不再重复输出
     written = block.write_table(
         offset, [aliases.get(name, '') for name in names], name_max)
     if written < len(names):
-        log(f"导出名只填了 {written}/{len(names)} 项", "[WarpHook.il2cpp]")
+        _exports_log(f"导出名只填了 {written}/{len(names)} 项",
+                     kind=("partial", tuple(names)))
     return written
 
 def _tick32():

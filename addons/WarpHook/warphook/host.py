@@ -49,7 +49,8 @@ from .base import (
 )
 
 HOST_MAGIC = 0x54534857           # "WHST"
-HOST_VERSION = 13                  # v13：文案槽 128→512 字节。128 字节按 UTF-8 硬切会
+HOST_VERSION = 14                  # v14：尾部追加 thread_detach 导出名，旧偏移不变。
+                                   # v13：文案槽 128→512 字节。128 字节按 UTF-8 硬切会
                                    # 切在汉字中间，还会把 <color=…> 这类富文本标签切
                                    # 成半截 —— 游戏用 TMP 渲染，半个标签会把后面整段
                                    # 吞掉，表现为「弹窗出来了但一个字都没有」；
@@ -246,7 +247,8 @@ HOST_REWRITE_OFFSET = HOST_CMD_READ_OFFSET + HOST_READ_SIZE
 HOST_CMD_BUF_COUNT = 4
 HOST_CMD_BUF_SIZE = 64
 HOST_CMD_BUF_OFFSET = HOST_REWRITE_OFFSET + HOST_REWRITE_COUNT * HOST_REWRITE_SIZE
-HOST_MAP_BYTES = HOST_CMD_BUF_OFFSET + HOST_CMD_BUF_COUNT * HOST_CMD_BUF_SIZE
+HOST_THREAD_EXPORT_OFFSET = HOST_CMD_BUF_OFFSET + HOST_CMD_BUF_COUNT * HOST_CMD_BUF_SIZE
+HOST_MAP_BYTES = HOST_THREAD_EXPORT_OFFSET + HOST_NAME_MAX
 
 # ---- 多作者分段（v0.9.2）------------------------------------------------
 # 成就观测跑在独立子进程，它有自己的一份 Host；NoGacha 等插件在启动器主进程
@@ -1101,6 +1103,7 @@ class Host:
         # 导出名表：顺序错了会拿到别人的函数指针，所以统一走 ensure_exports，
         # 它内部负责把标准名映射成混淆名（这里必须传标准名，别再自己映射一遍）
         ensure_exports(block, HOST_EXPORT_ORDER, HOST_EXPORTS_OFFSET, HOST_NAME_MAX)
+        ensure_exports(block, ["il2cpp_thread_detach"], HOST_THREAD_EXPORT_OFFSET, HOST_NAME_MAX)
 
     def hook(self, klass, method, argc=0, block=False, actions=None,
              probe=None, guard=None, event=None, reads=None, dedupe=False,

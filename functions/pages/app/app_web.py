@@ -3543,7 +3543,7 @@ def _idle_count(pid):
 
     光看 ``IsHungAppWindow`` 会把「加载场景 / 编译着色器」也算成卡死 —— 那时候
     窗口同样不回消息, 但 CPU 是满的。真卡死正好相反: 消息停了, CPU 也不动。
-    靠这一条把两者分开, 才敢检测到就杀。
+    这只是诊断信号，不能据此证明死锁或存档已完成。
     """
 
     try:
@@ -3575,20 +3575,14 @@ def _monitor_game_process(window_ref):
             pass
 
     def _check_hang():
-        """游戏卡死就立刻结束进程, 不采现场也不写报告。
-
-        只认「窗口不回消息 + CPU 时间一格没涨」这一种: 加载场景、编译着色器时
-        窗口同样不回消息, 但 CPU 是满的, 不会被误杀。反过来真卡死的进程消息停
-        了、CPU 也停了, 两轮轮询（约 4 秒）足够确认, 直接结束让用户重开。
-        """
+        """只报告持续无响应；窗口消失或低 CPU 都不能证明可安全强杀。"""
         from functions.base import hang_probe
         for pid in _game_process_pids():
             try:
                 if hang_probe.find_hung_windows(pid):
-                    if _idle_count(pid) >= 1 and pid not in _HANG_KILLED:
+                    if _idle_count(pid) >= 15 and pid not in _HANG_KILLED:
                         _HANG_KILLED.add(pid)
-                        if hang_probe.terminate(pid):
-                            print(f"[Hang] 游戏已卡死, 结束进程 {pid}")
+                        print(f"[Hang] 游戏持续无响应 PID={pid}；保留进程供诊断")
                     break
                 _HANG_SEEN.pop(pid, None)
                 _IDLE_SEEN.pop(pid, None)
@@ -3602,12 +3596,8 @@ def _monitor_game_process(window_ref):
                 if pid not in _WINDOW_SEEN:
                     continue
                 _EXIT_SEEN[pid] = _EXIT_SEEN.get(pid, 0) + 1
-                if _EXIT_SEEN[pid] >= 3:
-                    # 存档早已写完（Player.log 里 Quit Local Save / Save 都完成）,
-                    # 进程却退不掉: 直接结束, 别让人去任务管理器强杀。
-                    if hang_probe.terminate(pid):
-                        print(f"[Hang] 游戏卡在退出阶段, 结束进程 {pid}")
-                    break
+                if _EXIT_SEEN[pid] == 15:
+                    print(f"[Hang] 游戏窗口关闭后进程仍在 PID={pid}；等待正常退出，保留现场")
             except Exception:
                 continue
 
