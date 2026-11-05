@@ -53,6 +53,14 @@ int warp_bind_exports(void)
     g_ic.string_new                 = (fn_string_new)find_export(ga, 5);
     g_ic.runtime_invoke             = (fn_runtime_invoke)find_export(ga, 6);
     g_ic.thread_attach              = (fn_thread_attach)find_export(ga, 7);
+    /* Optional appended slot: keep every existing protocol offset unchanged. */
+    {
+        const char *name = g_hdr ? (const char *)g_hdr + WARP_THREAD_EXPORT_OFFSET : NULL;
+        g_ic.thread_detach = name && name[0] ?
+            (fn_thread_detach)GetProcAddress(ga, name) : NULL;
+        if (!g_ic.thread_detach)
+            g_ic.thread_detach = (fn_thread_detach)GetProcAddress(ga, "il2cpp_thread_detach");
+    }
     g_ic.object_new                 = (fn_object_new)find_export(ga, 8);
     g_ic.class_get_type             = (fn_class_get_type)find_export(ga, 9);
     g_ic.type_get_object            = (fn_type_get_object)find_export(ga, 10);

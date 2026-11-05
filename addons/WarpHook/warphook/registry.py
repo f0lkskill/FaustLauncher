@@ -12,6 +12,8 @@ from .base import (
     has_gameassembly,
     inject_dll,
     log,
+    debug_log,
+    is_debug_enabled,
     names_table,
     resolve_exports,
     shm_open,
@@ -270,6 +272,8 @@ _NAMESPACES = {
     },
     'log': {
         'write': log,
+        'debug': debug_log,
+        'is_debug_enabled': is_debug_enabled,
     },
 }
 

@@ -54,7 +54,8 @@ _SLOT_KEYS = ("a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l")
 
 
 def _enabled():
-    return os.environ.get("WARP_DIAG", "1") != "0"
+    from .base import is_debug_enabled
+    return is_debug_enabled() and os.environ.get("WARP_DIAG", "1") != "0"
 
 
 def _log():

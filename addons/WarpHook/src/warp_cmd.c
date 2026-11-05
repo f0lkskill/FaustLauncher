@@ -1009,13 +1009,8 @@ static LONG WINAPI work_veh(EXCEPTION_POINTERS *ep)
 static DWORD WINAPI work_main(LPVOID arg)
 {
     (void)arg;
-    /* 旧插件哲学：worker 线程先 attach 再碰 il2cpp，一次就够。 */
-    if (g_ic.thread_attach) {
-        void *dom = g_domain ? g_domain :
-                    (g_ic.domain_get ? g_ic.domain_get() : NULL);
-        if (dom)
-            g_ic.thread_attach(dom);
-    }
+    /* Idle native workers must not remain registered with IL2CPP: runtime
+     * shutdown may join them before DLL_PROCESS_DETACH can signal g_stop. */
     for (;;) {
         DWORD w = WaitForSingleObject(s_work_ev, 1000);
         if (s_work_quit)
@@ -1026,13 +1021,24 @@ static DWORD WINAPI work_main(LPVOID arg)
             WARP_WORK job;
             volatile int jseq;          /* longjmp 后寄存器变量不可靠 */
             int rc = WARP_CMD_RES_FAIL;
+            void *volatile attached = NULL; /* must survive VEH longjmp */
 
             EnterCriticalSection(&s_work_cs);
             job = s_work;
             LeaveCriticalSection(&s_work_cs);
             jseq = job.seq;
 
-            if (setjmp(s_work_jmp) == 0) {
+            /* Refuse unsafe fallback when detach is unavailable. Registration
+             * and deregistration themselves must not be longjmp-interrupted. */
+            if (g_ic.thread_attach && g_ic.thread_detach) {
+                void *dom = g_domain ? g_domain :
+                            (g_ic.domain_get ? g_ic.domain_get() : NULL);
+                if (dom)
+                    attached = g_ic.thread_attach(dom);
+            }
+            if (!attached) {
+                warp_log("worker: thread attach/detach unavailable", 0);
+            } else if (setjmp(s_work_jmp) == 0) {
                 /* armed 必须在 setjmp 正常返回之后再置位：否则 AV 落在
                    setjmp 前的窗口里，VEH 会 longjmp 进未初始化的 jmp_buf。 */
                 s_work_armed = 1;
@@ -1078,6 +1084,10 @@ static DWORD WINAPI work_main(LPVOID arg)
                 rc = WARP_CMD_RES_FAIL;
             }
             s_work_armed = 0;
+            if (attached && g_ic.thread_detach) {
+                g_ic.thread_detach((void *)attached);
+                attached = NULL;
+            }
             {
                 char trace[96];
                 snprintf(trace, sizeof(trace), "worker done seq=%d type=%d rc=%d",

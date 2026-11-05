@@ -19,6 +19,7 @@ typedef struct {
     fn_string_new                 string_new;
     fn_runtime_invoke             runtime_invoke;
     fn_thread_attach              thread_attach;
+    fn_thread_detach              thread_detach;
     fn_object_new                 object_new;
     fn_class_get_type             class_get_type;
     fn_type_get_object            type_get_object;

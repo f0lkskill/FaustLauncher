@@ -63,7 +63,7 @@ def invalidate_bank_cache():
         _BANK_SESSION = None
 
 from . import objects
-from .base import log as _log
+from .base import debug_log as _log, log as _error_log
 from .host import HF_SOFT_LOCK
 
 BGM_PREFIX = 'event:/BGM/Battle/'
@@ -221,7 +221,7 @@ def _ensure_bank_once(host, bank, timeout=5.0):
             try:
                 host.release(slot)
             except Exception as exc:
-                _log(f'音库临时槽 {slot} 释放失败：{exc}')
+                _error_log(f'音库临时槽 {slot} 释放失败：{exc}')
 
 
 @_audio_transaction

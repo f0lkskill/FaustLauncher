@@ -57,7 +57,8 @@
 /* 数值转字符串（构建戳用）：warp_log("proto v" WARP_STR(WARP_VERSION)) */
 #define WARP_STR_(x)      #x
 #define WARP_STR(x)       WARP_STR_(x)
-#define WARP_VERSION      13                /* v13：文案槽 128→512 字节。128 字节按 UTF-8
+#define WARP_VERSION      14                /* v14：尾部追加 thread_detach 导出名，旧偏移不变。
+                                             * v13：文案槽 128→512 字节。UTF-8
                                              * 硬切会切在汉字中间，还会把 <color=…>
                                              * 这类富文本标签切成半截 —— 游戏用 TMP
                                              * 渲染，半个标签会把后面整段吞掉，表现
@@ -258,7 +259,9 @@
 #define WARP_CMD_BUF_COUNT 4
 #define WARP_CMD_BUF_SIZE  64
 #define WARP_CMD_BUF_OFFSET (WARP_REWRITE_OFFSET + WARP_REWRITE_COUNT * WARP_REWRITE_SIZE)
-#define WARP_MAP_BYTES    (WARP_CMD_BUF_OFFSET + WARP_CMD_BUF_COUNT * WARP_CMD_BUF_SIZE)
+/* v14: append only; all v13 offsets remain valid for the production DLL. */
+#define WARP_THREAD_EXPORT_OFFSET (WARP_CMD_BUF_OFFSET + WARP_CMD_BUF_COUNT * WARP_CMD_BUF_SIZE)
+#define WARP_MAP_BYTES    (WARP_THREAD_EXPORT_OFFSET + WARP_NAME_MAX)
 
 /* 一条钩子的改写规则：rewrites[钩子下标] */
 typedef struct _WARP_REWRITE {
@@ -449,6 +452,7 @@ typedef void *(*fn_class_get_method_from_name)(void *klass, const char *name, in
 typedef void *(*fn_string_new)(const char *utf8);
 typedef void *(*fn_runtime_invoke)(void *method, void *obj, void **params, void **exc);
 typedef void *(*fn_thread_attach)(void *domain);
+typedef void (*fn_thread_detach)(void *thread);
 typedef void *(*fn_object_new)(void *klass);
 typedef void *(*fn_class_get_type)(void *klass);
 typedef void *(*fn_type_get_object)(void *type);
