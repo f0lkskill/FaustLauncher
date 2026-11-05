@@ -427,7 +427,9 @@ body.no-hw .hero {
 /* ---------- 主区域 ---------- */
 #main {
   flex: 1; overflow-y: auto; overflow-x: hidden; padding: 28px 30px 40px;
-  scrollbar-width: thin;
+  /* 不要写 scrollbar-width/scrollbar-color: Chromium 只要见到这两个标准属性,
+     就会改用平台原生滚动条, 把下面 ::-webkit-scrollbar 的定制整套丢掉。
+     (旧版这里写过 scrollbar-width: thin, 于是右侧出现又细又带上下箭头的系统滚动条) */
 }
 
 .page { display: none; animation: pageIn .28s ease; position: relative; width: var(--page-w, 1080px); max-width: 100%; margin: 0 auto; }
@@ -1951,7 +1953,7 @@ body.path-locked #app *:focus { outline: none; }
 #term-body {
   flex: 1; overflow-y: auto; padding: 10px 14px;
   font-family: var(--mono); font-size: 12px; line-height: 1.6;
-  scrollbar-width: thin;
+  /* 同上: 不能写 scrollbar-width/scrollbar-color, 否则退回原生滚动条 */
 }
 .term-line { white-space: pre-wrap; word-break: break-all; }
 .term-line.info { color: #c7d0e0; }
