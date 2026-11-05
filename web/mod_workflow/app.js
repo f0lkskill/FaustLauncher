@@ -4,6 +4,8 @@
   var $ = function (id) { return document.getElementById(id); };
 
   var ui = {
+    mark: $("wf-mark"),
+    icon: $("wf-icon"),
     version: $("wf-version"),
     list: $("wf-list"),
     count: $("wf-count"),
@@ -87,6 +89,12 @@
       return;
     }
     state = next;
+
+    if (next.icon && ui.icon && !ui.icon.dataset.ready) {
+      ui.icon.src = next.icon;
+      ui.icon.dataset.ready = "1";
+      if (ui.mark) ui.mark.classList.add("has-icon");
+    }
 
     ui.version.textContent = "Mod 打包工作流 · v" + (next.version || "?");
     var game = next.game || {};

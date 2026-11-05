@@ -336,6 +336,14 @@ def delete_package(name) -> dict:
 # 任务状态
 # ---------------------------------------------------------------------------
 
+def _job_age_seconds(started_at: str, default: float = 999.0) -> float:
+    try:
+        started = datetime.fromisoformat(str(started_at))
+        return max(0.0, (datetime.now() - started).total_seconds())
+    except (TypeError, ValueError):
+        return default
+
+
 def read_job(name) -> dict:
     pkg = package_dir(name)
     data = _read_json(pkg / JOB_NAME)
@@ -344,8 +352,16 @@ def read_job(name) -> dict:
         pid = int(data.get("worker_pid") or 0)
     except (TypeError, ValueError):
         pid = 0
-    if status == "running" and pid and not pid_alive(pid):
-        status = "interrupted"
+    if status == "running":
+        if pid:
+            if not pid_alive(pid):
+                status = "interrupted"
+        else:
+            # start_package 只写 running/worker_pid=0，真实 pid 由 worker 自己写。
+            # worker 启动失败或还没起来时，超时后允许重新开始。
+            started_at = str(data.get("started_at") or "")
+            if _job_age_seconds(started_at) > 30:
+                status = "interrupted"
     return {
         "status": status,
         "worker_pid": pid,
@@ -457,8 +473,11 @@ def start_package(name) -> dict:
         )
         return {"ok": False, "error": "无法启动打包进程: %s" % exc}
 
-    write_job(name, worker_pid=proc.pid)
-    return {"ok": True, "pid": proc.pid}
+    # 注意: 启动器 venv 的 python.exe 是转发器, Popen 的 pid 不等于 worker
+    # 里 os.getpid() 到的真实 Python。这里不能把 proc.pid 写进 job, 否则
+    # worker 会把自己当成"另一个正在运行的 worker"而退出。真实 pid 由
+    # worker.run_worker 自己写入。
+    return {"ok": True}
 
 
 def open_path(path) -> dict:

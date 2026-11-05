@@ -9,10 +9,28 @@ from pathlib import Path
 import core
 
 try:
-    from functions.base.window_chrome import WindowChromeBridge
+    from functions.base.window_chrome import WindowChromeBridge # type: ignore
 except Exception:  # pragma: no cover - 启动器模块缺失时仍允许打开页面
     class WindowChromeBridge:  # type: ignore
         pass
+
+
+def _icon_data_uri() -> str:
+    """和 Mod 加载器使用同一份 Yisang 图标。"""
+    try:
+        import base64
+        from functions.base.window_chrome import icon_data_uri, titlebar_icon_path
+        return icon_data_uri(titlebar_icon_path("yisang"))
+    except Exception:
+        pass
+    try:
+        import base64
+        path = core.PROJECT_ROOT / "resources" / "mod_loader" / "_internal" / "assets" / "icon.png"
+        if path.is_file():
+            return "data:image/png;base64," + base64.b64encode(path.read_bytes()).decode("ascii")
+    except Exception:
+        pass
+    return ""
 
 
 class OverviewApi(WindowChromeBridge):
@@ -36,9 +54,11 @@ class OverviewApi(WindowChromeBridge):
 
     def get_state(self):
         try:
-            return core.overview_state()
+            state = core.overview_state()
+            state["icon"] = _icon_data_uri()
+            return state
         except Exception as exc:
-            return {"ok": False, "error": str(exc), "packages": [], "game": {}, "threads": 5}
+            return {"ok": False, "error": str(exc), "packages": [], "game": {}, "threads": 5, "icon": ""}
 
     def refresh(self):
         return self.get_state()
@@ -173,8 +193,8 @@ def run_overview(debug: bool = False) -> int:
         return 1
 
     api = OverviewApi()
-    win_w, win_h = child_window_size(1000, 660)
-    min_w, min_h = child_window_size(780, 520)
+    win_w, win_h = child_window_size(720, 640)
+    min_w, min_h = child_window_size(600, 500)
     kwargs = dict(
         title="YisangMirrorFlow",
         url=html,
@@ -195,12 +215,12 @@ def run_overview(debug: bool = False) -> int:
         kwargs["y"] = y
 
     try:
-        window = webview.create_window(**kwargs)
+        window = webview.create_window(**kwargs) # type: ignore
         api.attach(window)
-        apply_window_chrome(window, title="YisangMirrorFlow", kind="launcher",
+        apply_window_chrome(window, title="YisangMirrorFlow", kind="yisang",
                             show_when_ready=True, fallback_ms=1500,
                             resizable=True)
-        webview.start(debug=debug, icon=window_icon_path("launcher"))
+        webview.start(debug=debug, icon=window_icon_path("yisang"))
         return 0
     except Exception as exc:
         print("[workflow] 启动总览页失败: %s" % exc)
