@@ -2,6 +2,7 @@
 
 每个包就是 ``tools/workflow/mods/<包名>`` 下的一个文件夹：
   · 用户把 .zip / .bank / .carra2 / .rebank 放进该文件夹；
+  · 解包时把 .zip 内第一个顶层目录的内容解压到包根目录；
   · 打包时把它作为 mod_loader 的 --work-dir；
   · .workflow_job.json 记录 worker 进程与结果，供总览页/子窗口轮询。
 """
@@ -15,11 +16,12 @@ import shutil
 import subprocess
 import sys
 import time
+import zipfile
 from datetime import datetime
 from pathlib import Path
 
 WORKFLOW_NAME = "YisangMirrorFlow"
-VERSION = "0.0.1"
+VERSION = "0.0.3"
 
 WORKFLOW_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = WORKFLOW_DIR.parent.parent
@@ -330,6 +332,121 @@ def delete_package(name) -> dict:
         return {"ok": True}
     except OSError as exc:
         return {"ok": False, "error": str(exc)}
+
+
+# ---------------------------------------------------------------------------
+# 解包
+# ---------------------------------------------------------------------------
+
+def _zip_top_level_dir(zf: zipfile.ZipFile) -> str:
+    """返回 zip 内第一个顶层目录；没有目录时返回空字符串（按根目录处理）。"""
+    skipped = set()
+    for info in zf.infolist():
+        name = str(info.filename or "").replace("\\", "/").lstrip("/")
+        if not name:
+            continue
+        parts = [p for p in name.split("/") if p not in ("", ".")]
+        if not parts:
+            continue
+        top = parts[0]
+        if top in skipped:
+            continue
+        is_dir = info.is_dir() or len(parts) > 1
+        if not is_dir:
+            continue
+        if top == "__MACOSX" or top.startswith("."):
+            skipped.add(top)
+            continue
+        return top
+    return ""
+
+
+def _zip_member_rel(filename, prefix: str) -> str:
+    text = str(filename or "").replace("\\", "/").lstrip("/")
+    if prefix:
+        if not text.startswith(prefix):
+            return ""
+        text = text[len(prefix):]
+    return text
+
+
+def _unpack_one_zip(pkg: Path, zip_path: Path) -> dict:
+    extracted = 0
+    failed = 0
+    with zipfile.ZipFile(zip_path, "r") as zf:
+        top = _zip_top_level_dir(zf)
+        prefix = (top + "/") if top else ""
+        for info in zf.infolist():
+            rel = _zip_member_rel(info.filename, prefix)
+            if not rel:
+                continue
+            parts = [p for p in rel.split("/") if p not in ("", ".")]
+            if not parts or any(p == ".." for p in parts):
+                continue
+            target = pkg.joinpath(*parts)
+            try:
+                if info.is_dir() or rel.endswith("/"):
+                    target.mkdir(parents=True, exist_ok=True)
+                    continue
+                target.parent.mkdir(parents=True, exist_ok=True)
+                with zf.open(info, "r") as src, open(target, "wb") as dst:
+                    shutil.copyfileobj(src, dst, length=1024 * 1024)
+                extracted += 1
+            except (OSError, RuntimeError, NotImplementedError, KeyError, ValueError,
+                    zipfile.BadZipFile):
+                failed += 1
+    return {
+        "zip": zip_path.name,
+        "dir": top or "(根目录)",
+        "files": extracted,
+        "failed": failed,
+    }
+
+
+def unpack_zips(name) -> dict:
+    """把包内全部 .zip 的第一个顶层目录内容解压到包根目录，重复文件覆盖。"""
+    pkg = package_dir(name)
+    if not pkg.is_dir():
+        return {"ok": False, "error": "包不存在", "unpacked": 0, "errors": []}
+    job = read_job(name)
+    if job["status"] == "running":
+        return {"ok": False, "error": "正在打包，暂时不能解包", "unpacked": 0, "errors": []}
+
+    zips = sorted(
+        [p for p in pkg.iterdir() if p.is_file() and not p.name.startswith(".")
+         and p.suffix.lower() == ".zip"],
+        key=lambda p: p.name.lower(),
+    )
+    if not zips:
+        return {"ok": False, "error": "包内没有 .zip 文件", "unpacked": 0, "errors": []}
+
+    unpacked = 0
+    extracted_files = 0
+    errors = []
+    details = []
+    for zip_path in zips:
+        try:
+            detail = _unpack_one_zip(pkg, zip_path)
+        except (OSError, zipfile.BadZipFile, RuntimeError, NotImplementedError) as exc:
+            errors.append("%s (%s)" % (zip_path.name, exc))
+            continue
+        extracted_files += int(detail.get("files") or 0)
+        if int(detail.get("files") or 0) > 0:
+            unpacked += 1
+            details.append(detail)
+        else:
+            errors.append("%s (没有可解压的内容)" % zip_path.name)
+        if int(detail.get("failed") or 0) > 0:
+            errors.append("%s (有 %d 个文件解压失败)" % (zip_path.name, detail["failed"]))
+
+    return {
+        "ok": True,
+        "zip_count": len(zips),
+        "unpacked": unpacked,
+        "extracted_files": extracted_files,
+        "errors": errors,
+        "details": details,
+    }
 
 
 # ---------------------------------------------------------------------------

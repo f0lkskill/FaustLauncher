@@ -15,7 +15,7 @@
 | `diag/` | 线上排障用的一次性诊断脚本（网络/云端/缓存） |
 | `run/` | 免记命令的启动快捷方式（`.bat`，双击即用） |
 | `doc/` | 面向二次开发的文档 |
-| `workflow/` | YisangMirrorFlow：把 `.zip` / `.bank` 批量打包成 `.carra2` / `.rebank` 的独立工作流 |
+| `workflow/` | YisangMirrorFlow：把 `.zip` / `.bank` 批量打包成 `.carra2` / `.rebank`，并支持解包 zip 的独立工作流 |
 | `preview/` | 界面预览图与预览页（本地产物，不入库） |
 
 ## build/
@@ -67,7 +67,7 @@
 |---|---|
 | `main.py` | 入口：`python tools/workflow/main.py` 打开总览；`--worker --package-dir <目录>` 是内部子进程入口 |
 | `core.py` | 包/文件管理、游戏路径、`.workflow_job.json` 状态、启动 worker |
-| `overview_api.py` | 总览页的 pywebview API（新建包 / 添加文件 / 开始打包 / 选择游戏目录） |
+| `overview_api.py` | 总览页的 pywebview API（新建包 / 添加文件 / 解包 zip / 开始打包 / 选择游戏目录） |
 | `worker.py` | 启动 `mod_loader --package-only`，并复用 `web/mod_loader` 页面显示打包进度 |
 | `mods/` | 用户数据：每个包一个文件夹，不入库 |
 | `settings.json` | 本工具的设置（覆盖游戏路径、线程数），不入库 |
@@ -76,6 +76,11 @@
 - `.zip` → `.carra2`（lunartime 压缩）
 - `.bank` → `.rebank`（需要游戏目录里的原版 bank 做对照）
 - `.carra2` / `.rebank` 原样保留；不启动游戏、不修改游戏目录、不备份原版文件
+
+解包规则：
+- 点“解包”会处理包根目录下的全部 `.zip`
+- 每个 zip 取第一个顶层目录，把里面的内容解压到包根目录；没有顶层目录时按 zip 根目录解压
+- 同名文件直接覆盖；原 `.zip` 保留
 
 运行环境：用启动器自带的 `venv\Scripts\python.exe`（pywebview）；打包阶段会自动切到
 `resources\mod_loader\_internal\venv\Bins\python.exe`（UnityPy / FMOD）。
