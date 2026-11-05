@@ -447,7 +447,7 @@ class DownloadCenterPage:
                 icon_label.pack(side=tk.LEFT, padx=(0, 12))
             except Exception as e:
                 print(f"加载图标失败: {e}")
-        elif icon_path:
+        elif addon.get('icon_url'):
             ph_img = ImageTk.PhotoImage(Image.new('RGBA', (64, 64), (0, 0, 0, 0)))
             placeholder = tk.Label(header_frame, image=ph_img, bg=card_bg)
             placeholder.image = ph_img  # type: ignore
@@ -564,7 +564,7 @@ class DownloadCenterPage:
                 icon_label.pack(side=tk.LEFT, padx=(0, 12))
             except Exception as e:
                 print(f"加载图标失败: {e}")
-        elif icon_path:
+        elif mod.get('icon_url'):
             ph_img = ImageTk.PhotoImage(Image.new('RGBA', (64, 64), (0, 0, 0, 0)))
             placeholder = tk.Label(header_frame, image=ph_img, bg=card_bg)
             placeholder.image = ph_img  # type: ignore
@@ -653,8 +653,9 @@ class DownloadCenterPage:
         download_button.pack(side=tk.RIGHT, padx=5)
 
     def _icon_cache_path(self, icon_url:str, item_name:str) -> str:
-        from functions.base.common.icon_cache import icon_cache_path
-        return icon_cache_path(icon_url, item_name, self.icon_cache_dir)
+        # 返回真正存在的缓存文件: 同一个 item 的 url 会变, 只按 url 算路径会找不到
+        from functions.base.common.icon_cache import find_cached_icon
+        return find_cached_icon(icon_url, item_name, self.icon_cache_dir)
 
     def _prune_icon_cache_when_ready(self):
         with self._icon_lock:
@@ -737,7 +738,6 @@ class DownloadCenterPage:
             icon_fetch.shrink_file(icon_path)
             return icon_path
 
-        icon_path = self._icon_cache_path(icon_url, item_name)
         if icon_cache.icon_failed_recently(icon_url):
             return None
 
@@ -763,7 +763,8 @@ class DownloadCenterPage:
                 icon_cache.note_icon_failure(icon_url)
                 return None
 
-        if icon_fetch.save_image(data, icon_path):
+        icon_path = icon_cache.save_icon(data, icon_url, item_name, self.icon_cache_dir)
+        if icon_path:
             icon_cache.note_icon_success(icon_url)
             return icon_path
         icon_cache.note_icon_failure(icon_url)
