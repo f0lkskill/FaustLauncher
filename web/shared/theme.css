@@ -92,15 +92,32 @@ body {
   background-attachment: fixed;
 }
 
-/* ---------- 滚动条 (与主界面同款) ---------- */
-::-webkit-scrollbar { width: 8px; height: 8px; }
+/* ---------- 滚动条 (与主界面同款) ----------
+   与 style.css 保持一致: 12px 槽位 + 3px 透明边框 + background-clip, 实际显示 6px 圆头胶囊;
+   隐藏两端按钮; 颜色跟随 --tint-rgb (浅色皮肤下自动转为深灰半透明)。
+   不要在这里再写 scrollbar-color —— Chromium 一旦收到该标准属性就会忽略
+   下面 ::-webkit-scrollbar 的全部定制, 滚动条会退回系统默认样式。 */
+::-webkit-scrollbar { width: 12px; height: 12px; }
 ::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-button { display: none; width: 0; height: 0; }
 ::-webkit-scrollbar-thumb {
-  background: rgba(var(--tint-rgb), 0.14);
-  border-radius: 4px;
+  background: rgba(var(--tint-rgb), 0.22);
+  border: 3px solid transparent;
+  background-clip: content-box;
+  border-radius: 99px;
+  min-height: 40px;
 }
-::-webkit-scrollbar-thumb:hover { background: rgba(var(--tint-rgb), 0.24); }
-* { scrollbar-width: thin; scrollbar-color: rgba(var(--tint-rgb), 0.2) transparent; }
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(var(--tint-rgb), 0.38);
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:active {
+  background: rgba(var(--tint-rgb), 0.6);
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-corner { background: transparent; }
 
 /* ============================================================
    通用组件 (fl- = FaustLauncher)
