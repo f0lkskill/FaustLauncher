@@ -947,6 +947,10 @@ class AppApi:
         self._window_drag_origin = None
         self._window_drag_hwnd = 0
         self._user_sync_started = False
+        # 下载抽屉的取消: 任务名 -> 正在跑的 HeadlessDownloadGUI 列表
+        self._dl_lock = threading.Lock()
+        self._dl_guis = {}
+        self._dl_cancelled = set()
         self._start_user_sync()
         self._bind_skin_events()
 
@@ -2903,9 +2907,16 @@ if %errorlevel% equ 0 (
         except Exception:
             pass
         gui = HeadlessDownloadGUI('addons', auto_start=False, task=name)
-        ok = download_and_extract_mod(
-            gui, 'addons', [{'url': url, 'name': name, 'temp_filename': f"{name}.7z"}])
-        log(f'插件 {name} ' + ('下载并解压完成' if ok else '下载失败'))
+        self._dl_register(gui)
+        try:
+            ok = download_and_extract_mod(
+                gui, 'addons', [{'url': url, 'name': name, 'temp_filename': f"{name}.7z"}])
+        finally:
+            self._dl_release(gui)
+        if not ok and self._dl_was_cancelled(name):
+            log(f'插件 {name} 已取消下载')
+        else:
+            log(f'插件 {name} ' + ('下载并解压完成' if ok else '下载失败'))
         return bool(ok)
 
     def install_required_addon(self, name):
@@ -2930,6 +2941,60 @@ if %errorlevel% equ 0 (
             return False
         return bool(self._install_addon_sync(want, url, pages))
 
+    # ---- 下载抽屉: 任务取消 ----
+    def _dl_register(self, gui):
+        """登记一个正在下载的无头 GUI, 供 :meth:`cancel_download` 中途叫停。"""
+        name = str(getattr(gui, 'task', '') or '')
+        if not name:
+            return
+        with self._dl_lock:
+            self._dl_guis.setdefault(name, []).append(gui)
+            cancelled = name in self._dl_cancelled
+        if cancelled:
+            gui.is_downloading = False
+
+    def _dl_release(self, gui):
+        name = str(getattr(gui, 'task', '') or '')
+        if not name:
+            return
+        with self._dl_lock:
+            lst = self._dl_guis.get(name)
+            if not lst:
+                return
+            try:
+                lst.remove(gui)
+            except ValueError:
+                pass
+            if not lst:
+                self._dl_guis.pop(name, None)
+
+    def _dl_was_cancelled(self, name):
+        with self._dl_lock:
+            return str(name or '') in self._dl_cancelled
+
+    def _dl_clear_cancel(self, name):
+        with self._dl_lock:
+            self._dl_cancelled.discard(str(name or ''))
+
+    def cancel_download(self, name):
+        """取消下载抽屉里的一个任务 (前端行上的 X 按钮)。
+
+        下载线程在下一个数据块处停下 —— 走 ``fast_download`` 的 cancel 回调
+        (``gui.is_downloading``)。返回 False 表示该任务已经结束或不存在。
+        """
+        name = str(name or '')
+        with self._dl_lock:
+            guis = list(self._dl_guis.get(name, ()))
+            if not guis:
+                return False
+            self._dl_cancelled.add(name)
+        for gui in guis:
+            try:
+                gui.is_downloading = False
+            except Exception:
+                pass
+        return True
+
     def _fail_download_task(self, task, text):
         """把下载抽屉里的一行标记为失败。
 
@@ -2953,12 +3018,19 @@ if %errorlevel% equ 0 (
                     except Exception:
                         pass
                     self._notify_res_changed('addon')
+                elif self._dl_was_cancelled(name):
+                    print(f"插件 {name} 已取消下载")
                 else:
                     print(f"插件 {name} 下载失败")
                     self._fail_download_task(name, f"❌ {name} 下载失败")
             except Exception as e:
-                print(f"下载插件 {name} 失败: {e}")
-                self._fail_download_task(name, f"❌ 下载失败: {e}")
+                if self._dl_was_cancelled(name):
+                    print(f"插件 {name} 已取消下载")
+                else:
+                    print(f"下载插件 {name} 失败: {e}")
+                    self._fail_download_task(name, f"❌ 下载失败: {e}")
+            finally:
+                self._dl_clear_cancel(name)
         threading.Thread(target=_run, daemon=True).start()
         return True
 
@@ -2979,16 +3051,27 @@ if %errorlevel% equ 0 (
                 except Exception:
                     pass
                 gui = HeadlessDownloadGUI(target, auto_start=False, task=name)
-                ok = download_and_extract_mod(gui, target, download_files)
+                self._dl_register(gui)
+                try:
+                    ok = download_and_extract_mod(gui, target, download_files)
+                finally:
+                    self._dl_release(gui)
                 if ok:
                     print(f"Mod {name} 下载并解压完成")
                     self._notify_res_changed('mod')
+                elif self._dl_was_cancelled(name):
+                    print(f"Mod {name} 已取消下载")
                 else:
                     print(f"Mod {name} 下载失败")
                     self._fail_download_task(name, f"❌ {name} 下载失败")
             except Exception as e:
-                print(f"下载 Mod {name} 失败: {e}")
-                self._fail_download_task(name, f"❌ 下载失败: {e}")
+                if self._dl_was_cancelled(name):
+                    print(f"Mod {name} 已取消下载")
+                else:
+                    print(f"下载 Mod {name} 失败: {e}")
+                    self._fail_download_task(name, f"❌ 下载失败: {e}")
+            finally:
+                self._dl_clear_cancel(name)
         threading.Thread(target=_run, daemon=True).start()
         return True
 
