@@ -896,8 +896,17 @@ body.modal-open .res-card {
 }
 .res-set-row input:focus { border-color: var(--accent); }
 /* 分页: 固定尺寸的方形页码按钮 —— 位数不同也不会让按钮变形 */
-.res-pagination { display: flex; justify-content: center; align-items: center; gap: 6px; margin-top: 16px; padding-bottom: 6px; flex-wrap: wrap; }
+.res-pagination { position: relative; display: flex; justify-content: center; align-items: center; gap: 6px; margin-top: 16px; padding-bottom: 6px; flex-wrap: wrap; }
+/* 当前页的蓝色高亮块: 独立元素, 翻页时平滑滑到新位置 */
+.res-pagination .pg-thumb {
+  position: absolute; left: 0; top: 0; box-sizing: border-box; border-radius: 8px;
+  background: rgba(var(--accent-rgb), .16); border: 1px solid rgba(var(--accent-rgb), .45);
+  pointer-events: none;
+  transition: transform .28s cubic-bezier(.22,.61,.36,1), width .28s cubic-bezier(.22,.61,.36,1),
+              height .22s ease, opacity .2s ease;
+}
 .res-pagination button {
+  position: relative; z-index: 1;
   flex: 0 0 auto; width: 30px; height: 30px; padding: 0;
   display: inline-flex; align-items: center; justify-content: center;
   font-family: var(--font); font-size: 12.5px; line-height: 1;
@@ -907,10 +916,7 @@ body.modal-open .res-card {
   transition: color .16s ease, background-color .16s ease, border-color .16s ease;
 }
 .res-pagination button:hover { color: var(--text); background: rgba(var(--tint-rgb), .08); }
-.res-pagination button.active {
-  color: var(--text); font-weight: 600;
-  background: rgba(var(--accent-rgb), .16); border-color: rgba(var(--accent-rgb), .45);
-}
+.res-pagination button.active { color: var(--text); font-weight: 600; background: transparent; border-color: transparent; }
 .res-pagination button:disabled { opacity: .3; cursor: default; background: transparent; }
 .res-pagination .pg-gap { flex: 0 0 auto; width: 16px; text-align: center; color: var(--text-3); font-size: 12.5px; user-select: none; }
 /* 箭头用 CSS 画 (仓库没有箭头图标), 与数字按钮同尺寸 */
