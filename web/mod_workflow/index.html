@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>YisangMirrorFlow</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wf-app">
+
+  <header class="wf-head">
+    <div class="wf-brand">
+      <div class="wf-mark">Y</div>
+      <div class="wf-brand-text">
+        <h1>YisangMirrorFlow</h1>
+        <p id="wf-version">Mod 打包工作流</p>
+      </div>
+    </div>
+    <div class="wf-head-actions">
+      <button class="wf-btn" id="wf-open-mods">打开包目录</button>
+      <button class="wf-btn primary" id="wf-new">新建包</button>
+      <button class="wf-btn ghost" id="wf-refresh" title="刷新">刷新</button>
+    </div>
+  </header>
+
+  <section class="wf-config">
+    <div class="wf-field">
+      <label for="wf-game-path">游戏目录</label>
+      <input id="wf-game-path" type="text" readonly placeholder="尚未设置，.bank 需要对照原版 bank">
+      <button class="wf-btn" id="wf-pick-game">选择目录</button>
+      <span class="wf-state" id="wf-sound-state"></span>
+    </div>
+    <div class="wf-field small">
+      <label for="wf-threads">线程</label>
+      <input id="wf-threads" type="number" min="1" max="10" step="1" value="5">
+    </div>
+  </section>
+
+  <main class="wf-main">
+    <div class="wf-list-head">
+      <span>打包队列</span>
+      <span class="wf-badge" id="wf-count">0</span>
+    </div>
+    <div class="wf-list" id="wf-list"></div>
+  </main>
+
+  <footer class="wf-foot">
+    <span id="wf-foot-text">提示：把 .zip 与 .bank 放进包内，点“开始打包”。</span>
+    <span class="wf-foot-hint">zip → carra2 · bank → rebank</span>
+  </footer>
+
+</div>
+
+<div class="wf-modal" id="wf-modal" hidden>
+  <div class="wf-dialog">
+    <h2>新建包</h2>
+    <p>包名会作为 mods 下的文件夹名。</p>
+    <input id="wf-new-name" type="text" maxlength="60" placeholder="例如：镜像人格-音效">
+    <div class="wf-dialog-actions">
+      <button class="wf-btn ghost" id="wf-new-cancel">取消</button>
+      <button class="wf-btn primary" id="wf-new-confirm">创建</button>
+    </div>
+  </div>
+</div>
+
+<div class="wf-toast" id="wf-toast" hidden></div>
+
+<script src="app.js"></script>
+</body>
+</html>

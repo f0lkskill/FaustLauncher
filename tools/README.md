@@ -5,7 +5,7 @@
 > `tools/` 整体被 `.gitignore` 当成"本地脚手架目录"忽略（`**/tools/` + `/tools/*`）。
 > 下面这些**手写工具要入库**，所以在 `.gitignore` 末尾逐项放行了
 > `tools/README.md` / `tools/dev/` / `tools/diag/` / `tools/run/` / `tools/doc/` /
-> `tools/build/` / `tools/build_temp/updater.vbs`；
+> `tools/build/` / `tools/workflow/` / `tools/build_temp/updater.vbs`；
 
 | 目录 | 放什么 |
 |---|---|
@@ -15,6 +15,7 @@
 | `diag/` | 线上排障用的一次性诊断脚本（网络/云端/缓存） |
 | `run/` | 免记命令的启动快捷方式（`.bat`，双击即用） |
 | `doc/` | 面向二次开发的文档 |
+| `workflow/` | YisangMirrorFlow：把 `.zip` / `.bank` 批量打包成 `.carra2` / `.rebank` 的独立工作流 |
 | `preview/` | 界面预览图与预览页（本地产物，不入库） |
 
 ## build/
@@ -58,6 +59,27 @@
 | `webnote_diag.py` | `python tools/diag/webnote_diag.py` | 云端访问自检：逐个源打印解析 / 连接 / 握手 / 响应状态与耗时 / 缓存命中情况。用户反馈"浏览器能开、启动器云端全失败"时用它定位卡在哪一环 |
 | `enkephalin_probe.py` | `python tools/diag/enkephalin_probe.py` | 脑啡肽内存读取自检：找进程 / `OpenProcess` 权限 / `GameAssembly.dll` 基址与大小 / 逐级指针 / 最终值，逐步打印。**不依赖启动器**，游戏跑着就能单独测。`--watch` 连续读、`--raw` 只出数字、`--json` 机器可读；退出码 0 成功 / 1 游戏没开 / 2 权限被拒 / 3 找不到模块 / 4 指针链断 |
 
+## workflow/ — YisangMirrorFlow
+
+独立的小工具，不复用启动器主界面：总览页管理多个"包"，每个包点开始后单独开一个打包窗口，可并行跑。
+
+| 文件 | 说明 |
+|---|---|
+| `main.py` | 入口：`python tools/workflow/main.py` 打开总览；`--worker --package-dir <目录>` 是内部子进程入口 |
+| `core.py` | 包/文件管理、游戏路径、`.workflow_job.json` 状态、启动 worker |
+| `overview_api.py` | 总览页的 pywebview API（新建包 / 添加文件 / 开始打包 / 选择游戏目录） |
+| `worker.py` | 启动 `mod_loader --package-only`，并复用 `web/mod_loader` 页面显示打包进度 |
+| `mods/` | 用户数据：每个包一个文件夹，不入库 |
+| `settings.json` | 本工具的设置（覆盖游戏路径、线程数），不入库 |
+
+打包规则：
+- `.zip` → `.carra2`（lunartime 压缩）
+- `.bank` → `.rebank`（需要游戏目录里的原版 bank 做对照）
+- `.carra2` / `.rebank` 原样保留；不启动游戏、不修改游戏目录、不备份原版文件
+
+运行环境：用启动器自带的 `venv\Scripts\python.exe`（pywebview）；打包阶段会自动切到
+`resources\mod_loader\_internal\venv\Bins\python.exe`（UnityPy / FMOD）。
+
 ## run/
 
 | 快捷方式 | 等价命令 | 说明 |
@@ -66,6 +88,7 @@
 | `upload_assets.bat` | `pack` + `upload` 两步 | **素材改动后的一键发布**：先查关键素材在不在 → `pack`（覆盖 `faust-assets.zip`）→ `upload`（覆盖 Release `tag=assets` 的资产）。可选参数传版本号（默认今天日期）。任何一步失败就中止，不会拿旧 zip 去传。改完素材、想让别人 `fetch` 到新版就跑它 |
 | `debug.bat` | `python main.py --debug` | 调试模式启动启动器（`--debug` 不重定向 stdout，控制台能直接看到输出） |
 | `web_tool.bat` | `python main.py --extension-tools-window` | 只拉起"扩展工具"窗口 |
+| `mod_workflow.bat` | `python tools/workflow/main.py` | 打开 YisangMirrorFlow 总览页（打包 `.zip` / `.bank`） |
 | `update_hook.bat` | `python -m functions.hook.main update` | 手动重建并上传偏移索引（约 1~2 分钟满核）请先挂起游戏之后再运行 |
 
 这几个 `.bat` 都先 `cd /d "%~dp0..\.."` 回到仓库根再执行，所以**双击、从任意目录调用都能用**；
