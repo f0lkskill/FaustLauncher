@@ -262,45 +262,108 @@ def play(host, name, bank=None, stop_current=True, timeout=2.0,
                     'reason': f'不在战斗场景（scene={scene}）'}
 
     slot = SLOT_SCRATCH
+    session = _bank_session()
+    previous = getattr(host, '_bgm_submitted', None)
+    previous_path = previous[1] if previous and session and previous[0] == session else None
     if bank:
         # 和旧版一样：预载失败必须保留原曲，不在未知音库上撞运气。
         ok, why = ensure_bank(host, str(bank), timeout=timeout)
         if not ok:
             return {'ok': False, 'name': short, 'path': path,
                     'reason': f'音库预载未通过（{bank}）：{why}',
-                    'stage': 'bank', 'bank': str(bank)}
+                    'stage': 'bank', 'bank': str(bank), 'verified': False,
+                    'original_retained': True, 'rollback_ok': True}
+    def score(target, stage):
+        if target != 'event:/BGM/Battle/Battle_Cp9_Boss_10':
+            return True, ''
+        bridge = getattr(host, 'audio_score', None)
+        if not callable(bridge):
+            return False, 'WarpHook 缺少参数桥，必须更新候选 DLL 和 host'
+        try:
+            result = bridge(target, stage=stage, timeout=timeout)
+            _log(f'参数初始化 path={target} Ryoshu=1 stage={stage} result={result!r}；未验证出声')
+            return _ok(result), str(result)
+        except Exception as exc:
+            return False, str(exc)
+
+    def start(target):
+        made = host.make_str(short_name(target), slot=slot, timeout=timeout)
+        if not _ok(made):
+            return False, f'曲名创建失败：{made}'
+        result = host.call('BattleSoundGenerator::StartAddBGM',
+                           args=(('slot', slot), STOP_MODE_IMMEDIATE, 0),
+                           sig='S,FMOD.Studio.STOP_MODE,B', ret='void', timeout=timeout)
+        if not _ok(result):
+            return False, f'附加曲调用失败：{result}'
+        return score(target, 'current')
+
+    def failure(why, stage, retained=False):
+        return {'ok': False, 'name': short, 'path': path, 'reason': why,
+                'stage': stage, 'verified': False, 'original_retained': retained,
+                'rollback_ok': retained, 'restored_path': previous_path if retained else None}
+
+    # 临时事件的参数设置必须成功，才允许停止原曲。旧 DLL 不识别 CMD10 则失败。
+    ready, why = score(path, 'preflight')
+    if not ready:
+        return failure(f'参数预检未通过：{why}', 'parameter-preflight', True)
+    changed = False
     try:
         made = host.make_str(short, slot=slot, timeout=timeout)
         if not _ok(made):
-            return {'ok': False, 'name': short, 'path': path,
-                    'reason': f'曲名创建失败：{made}', 'stage': 'string'}
+            return failure(f'曲名创建失败：{made}', 'string', True)
         if stop_current:
-            stop_started = time.perf_counter()
+            # 一旦提交停止，超时也可能已执行；后续错误必须走恢复。
+            changed = True
             stopped = host.call('BattleSoundGenerator::StopBGM', args=(0, 0),
                                 sig='B,B', ret='void', timeout=timeout)
-            _log(f'换曲阶段 stage=stop elapsed_ms={(time.perf_counter() - stop_started) * 1000:.1f}')
             if not _ok(stopped):
-                return {'ok': False, 'name': short, 'path': path,
-                        'reason': f'停止原曲失败：{stopped}', 'stage': 'stop'}
-        start_started = time.perf_counter()
-        result = host.call('BattleSoundGenerator::StartAddBGM',
-                           args=(('slot', slot), STOP_MODE_IMMEDIATE, 0),
-                           sig='S,FMOD.Studio.STOP_MODE,B', ret='void',
-                           timeout=timeout)
-        _log(f'换曲阶段 stage=start elapsed_ms={(time.perf_counter() - start_started) * 1000:.1f}')
+                raise RuntimeError(f'停止原曲失败：{stopped}')
+        changed = True
+        ok, why = start(path)
+        if not ok:
+            raise RuntimeError(why)
+        host._bgm_submitted = (session, path)
+        return {'ok': True, 'name': short, 'path': path, 'reason': '',
+                'stage': 'submitted', 'verified': False,
+                'parameters': {'Ryoshu': 1.0} if path == 'event:/BGM/Battle/Battle_Cp9_Boss_10' else {}}
+    except Exception as exc:
+        if not changed:
+            return failure(str(exc), 'start', True)
+        recovered = False
+        restored = None
+        recovery_reason = ''
+        try:
+            stopped = host.call('BattleSoundGenerator::StopAddedBGM',
+                                args=(STOP_MODE_IMMEDIATE, 0),
+                                sig='FMOD.Studio.STOP_MODE,B', ret='void', timeout=timeout)
+            if not _ok(stopped):
+                raise RuntimeError(f'清理失败曲目失败：{stopped}')
+            if previous_path:
+                ready, recovery_reason = score(previous_path, 'preflight')
+                if ready:
+                    recovered, recovery_reason = start(previous_path)
+                    if recovered:
+                        restored = previous_path
+                    else:
+                        cleaned = host.call('BattleSoundGenerator::StopAddedBGM',
+                                            args=(STOP_MODE_IMMEDIATE, 0),
+                                            sig='FMOD.Studio.STOP_MODE,B', ret='void', timeout=timeout)
+                        if not _ok(cleaned):
+                            raise RuntimeError(f'清理回滚曲目失败：{cleaned}')
+            if not recovered:
+                recovery_reason = _restore_default(host, timeout)
+                recovered = recovery_reason == '已接回默认曲'
+        except Exception as recovery_exc:
+            recovery_reason = str(recovery_exc)
+        host._bgm_submitted = (session, restored) if restored else None
+        result = failure(f'{exc}；恢复结果：{recovery_reason}', 'rollback')
+        result.update(rollback_ok=recovered, restored_path=restored)
+        return result
     finally:
-        host.release(slot)
-
-    if not _ok(result):
-        return {'ok': False, 'name': short, 'path': path, 'reason': f'附加曲调用失败：{result}',
-                'stage': 'start'}
-    # **不放 is_playing 复查** —— 第 7 次崩溃（0.9.26）的根因就是它：
-    # 回合结束间隙游戏正在重建 FMOD 实例，IsBattleBgmPlaying 直调撞进
-    # 竞态窗口内部 AV，VEH 接住线程但 il2cpp 状态已污染，游戏随后崩。
-    # 旧版另用 FMOD event 验证实际播放；当前桥接不支持该安全预检。
-    # 不把命令成功等同于实际出声，也不额外添加危险自动查询。
-    return {'ok': True, 'name': short, 'path': path, 'reason': '',
-            'stage': 'submitted', 'verified': False}
+        try:
+            host.release(slot)
+        except Exception as exc:
+            _error_log(f'曲名临时槽释放失败：{exc}')
 
 
 def _restore_default(host, timeout=2.0):
@@ -314,7 +377,7 @@ def _restore_default(host, timeout=2.0):
     """
     result = host.call('BattleSoundGenerator::StartBGM', args=(-1, 0),
                        sig='I,I', ret='void', timeout=timeout)
-    if isinstance(result, str) and result != '已执行':
+    if not _ok(result):
         return f'回退默认曲失败：{result}'
     return '已接回默认曲'
 
@@ -367,8 +430,9 @@ def stop(host, restore=True, timeout=2.0):
         return {'ok': False, 'reason': f'停止附加曲失败：{added}'}
     result = host.call('BattleSoundGenerator::StopBGM', args=(0, 0),
                        sig='B,B', ret='void', timeout=timeout)
-    if isinstance(result, str) and result != '已执行':
+    if not _ok(result):
         return {'ok': False, 'reason': result}
+    host._bgm_submitted = None
     if restore:
         reason = _restore_default(host, timeout)
         return {'ok': reason == '已接回默认曲', 'reason': reason}

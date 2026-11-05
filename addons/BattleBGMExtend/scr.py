@@ -425,12 +425,17 @@ def _apply_locked(battle):
                 _active = rule
                 locked = True
                 _last_error = ''
-                _say(f"换曲调用已提交：「{rule['name'] or rule['id']}」→ {rule['bgm']}"
+                parameters = result.get('parameters') or {}
+                score = '，Ryoshu=1 (Battle_1_1)' if parameters.get('Ryoshu') == 1.0 else ''
+                _say(f"换曲调用已提交：「{rule['name'] or rule['id']}」→ {result.get('path') or rule['bgm']}{score}"
                      f"（音库 {rule.get('bank') or '未指定'}，优先级 {rule['priority']}，"
                      f"换曲锁开关{'已写入' if locked else '写入失败'}；未验证实际拦截/出声）")
                 _log_lock_status()
             except Exception as exc:
                 _last_error = str(exc)
+                # 失败后清除已提交规则，确保下一回合真实重试而非被 active 去重。
+                # 音频层可能已保留/恢复原曲，但失败不能继续当成规则生效。
+                _active = None
                 _lock(True)
                 # 错误不可受「播报切换」开关屏蔽。
                 _log_error(f"换曲失败（规则 {rule['id']}，曲目 {rule['bgm']}，"
@@ -562,8 +567,6 @@ def _restore():
     with _state_lock:
         _revision += 1
         _pending, _pending_rule = False, None
-        _active, _prev = None, {}
-        _transitions = set()
         if not _lock(True):
             _log('手动恢复原曲失败：无法解锁，未提交停止附加曲调用')
             return
@@ -571,6 +574,8 @@ def _restore():
         if not isinstance(result, dict) or not result.get('ok'):
             _log(f'手动恢复原曲失败：{result}')
         else:
+            _active, _prev = None, {}
+            _transitions = set()
             _log('手动操作：已解锁并提交恢复原曲调用')
 
 
