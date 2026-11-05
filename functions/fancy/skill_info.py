@@ -163,7 +163,7 @@ def handle_skill_structure(skill_content:dict) -> dict: # type: ignore
                         {"coindescs":
                           [{"desc": "<i><color=#7C5738>无效果的硬币</color></i>"}]})
                 else:
-                    for coindesc in coin['coindescs']:
+                    for coindesc in coin.get('coindescs', []):
                         coindesc:dict
                         if coindesc.get('desc'):
                             coindesc['desc'] = handle_base_info(coindesc['desc'])
