@@ -164,7 +164,6 @@ function renderAchPagination(pagination, totalItems, totalPages) {
   renderPager(pagination, {
     page: achPage,
     totalPages: totalPages,
-    info: totalItems > ACH_PAGE_SIZE ? ('共 ' + totalItems + ' 项') : '',
     onChange: function (p) { achPage = p; renderAchList(); }
   });
 }
