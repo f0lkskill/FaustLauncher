@@ -7,7 +7,7 @@ mod 包本身保留在磁盘上（否则用户连自己装过什么都不知道�
 
 扫描范围覆盖启动器环境里的**所有单文件型 mod**：
 1. 启动器 `mods\\<名>\\mod_info.json` 里 `file_names` 登记的单文件 mod（源）；
-2. `%APPDATA%\\LimbusCompanyMods`（含 `_orphan`）里已投放的包（启动器把源复制过去
+2. `%APPDATA%\\LimbusCompanyMods`里已投放的包（启动器把源复制过去
    并加 `{mod名}_` 前缀，重复的按目标资源去重）。
 文件夹型 mod（靠 `extra_files` 覆盖汉化、或自带 Installer.bat）不产生 bundle/bank
 改写，不在扫描范围内。
@@ -25,9 +25,7 @@ mod 包本身保留在磁盘上（否则用户连自己装过什么都不知道�
   Assets\\Sound\\FMODBuilds\\Desktop`）。mods 目录里如果留着 `<base_bank>.bank.orig`
   就覆盖还原；没有备份就只能删掉 bank，交给 Steam 的完整性验证重新下发。
 
-`_orphan` 子目录（被移出生效集合的 mod）同样会被扫到。
-
-除了「全部强卸载」，本模块也把**单个 mod** 的两层卸载动作包装成可复用函数：
+除「全部强卸载」，本模块也把**单个 mod** 的两层卸载动作包装成可复用函数：
 
 - `uninstall_resource(kind, target)` / `uninstall_package_file(path)`:
   还原一条 / 一个包（`.carra2` / `.rebank` / `.bank`）留下的资源残留；
@@ -48,7 +46,6 @@ CARRA_EXT = ".carra2"
 REBANK_EXT = ".rebank"
 BANK_EXT = ".bank"
 MOD_SUFFIXES = (CARRA_EXT, REBANK_EXT, BANK_EXT)
-ORPHAN_DIR = "_orphan"
 MANIFEST_NAME = "launcher_manifest.json"
 BANK_ORIG_SUFFIX = ".bank.orig"
 REBANK_MANIFEST = "rebank.json"
@@ -178,11 +175,11 @@ def _launcher_mod_files(mod_name: str = None):
 
 
 def _iter_mod_files(mod_name: str = None):
-    """遍历生效目录与 _orphan 目录下的 carra2 / rebank 包。
+    """遍历生效目录下的 carra2 / rebank 包。
 
     已投放的包会带 `{mod名}_` 前缀，传入 `mod_name` 时只保留该 mod 的包。
     """
-    roots = (mods_dir(), os.path.join(mods_dir(), ORPHAN_DIR))
+    roots = (mods_dir(),)
     prefix = (mod_name + "_") if mod_name else None
     seen = set()
     for root in roots:
@@ -248,7 +245,7 @@ def scan(mod_name: str = None):
 
     两个来源都会扫，按 `(kind, target)` 去重:
     - `launcher`: 启动器 `mods\\<名>\\` 里单文件型 mod 登记的包
-    - `appdata`: `%APPDATA%\\LimbusCompanyMods`（含 `_orphan`）里已投放的包
+    - `appdata`: `%APPDATA%\\LimbusCompanyMods`里已投放的包
 
     传入 `mod_name` 时只扫描这一个 mod（启动器目录同名 + APPDATA `{mod名}_`
     前缀的包），供单 mod 强卸载使用。

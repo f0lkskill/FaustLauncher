@@ -18,7 +18,7 @@
      `<名>.rebank.src` 记录源 `bank` 的 MD5（见 `STAMP_SUFFIX`），用于判断
      「源 bank 没变就跳过重建差分」；
    - 目录里的 `launcher_manifest.json` 记录「上一轮投放了哪些文件」，
-     下一轮据此找出不再被任何 Mod 引用的陈旧文件并移入 `_orphan/`。
+     下一轮据此找出不再被任何 Mod 引用的陈旧文件并直接删除。
 
 本模块的关键约束：**所有清理动作都必须按 `{Mod名}_` 前缀严格匹配**，否则会
 误删别的 Mod 的包。:func:`_target_belongs_to` 就是这条规则的唯一实现。
@@ -65,8 +65,8 @@ def _decode_output(data):
 
 # 投放目录里的清单文件名：记录上一轮投放了哪些包，用于清理陈旧文件
 MANIFEST_NAME = "launcher_manifest.json"
-# 陈旧包（已无 Mod 引用）的隔离目录，放在投放目录下，方便用户手动找回
-ORPHAN_DIR_NAME = "_orphan"
+# 旧版「隔离备份」目录名：机制已移除，仅用于清理历史残留
+_ORPHAN_DIR_NAME = "_orphan"
 # 差分包版本标记的后缀：`<xxx>.rebank.src`，内容为源 bank 的 MD5
 STAMP_SUFFIX = ".src"
 
@@ -221,11 +221,13 @@ def _target_belongs_to(target_name: str, prefix: str) -> bool:
     return stem == prefix
 
 
-def _move_orphans(target_dir: str, stale_names: List[str]) -> None:
-    """把不再被任何 Mod 引用的陈旧包移到 `_orphan` 目录。
+def _remove_stale_packages(target_dir: str, stale_names: List[str]) -> None:
+    """把不再被任何 Mod 引用的陈旧包直接删除。
 
-    不直接删除是刻意的：用户可能只是暂时禁用了 Mod，直接删包等于毁掉资源；
-    移到 `_orphan` 后既能保证游戏不再读到它，又允许用户手动拖回上一级恢复。
+    旧版会把它们移到 `_orphan/` 目录作「隔离备份」，该机制已整体移除：
+    禁用中的 Mod 本来就会走 :meth:`unload_mod` 删包，再把残留挪个地方存着
+    只是攒垃圾；真需要找回源文件应该去 `mods\\<Mod名>\\` 里找。
+    旧版本遗留的 `_orphan` 目录（连同里面的包）会在本轮一并清掉。
 
     以下文件会被跳过（它们不是 Mod 投放的包）：
     - `*.orig` / `*.disabled`：备份与手动禁用的文件；
@@ -234,27 +236,29 @@ def _move_orphans(target_dir: str, stale_names: List[str]) -> None:
 
     Args:
         target_dir: 投放目录。
-        stale_names: 需要移走的文件名列表（来自旧清单与本轮投放结果的差集）。
+        stale_names: 需要删除的文件名列表（来自旧清单与本轮投放结果的差集）。
     """
-    moved = []
-    orphan_dir = None  # 懒创建：没有要移动的文件时不留空目录
+    removed = []
     for name in stale_names:
         path = os.path.join(target_dir, name)
         if not os.path.isfile(path):
             continue
         if name.lower().endswith((".orig", ".disabled")) or name in (MANIFEST_NAME, "log.txt"):
             continue
-        if orphan_dir is None:
-            orphan_dir = os.path.join(target_dir, ORPHAN_DIR_NAME)
-            os.makedirs(orphan_dir, exist_ok=True)
         try:
-            shutil.move(path, os.path.join(orphan_dir, name))
-            moved.append(name)
+            os.remove(path)
+            removed.append(name)
         except OSError as e:
-            print(f"移动残留文件 {name} 失败: {e}", flush=True)
-    if moved:
-        print(f"已把 {len(moved)} 个不再使用的附属文件移到 {ORPHAN_DIR_NAME}\\ "
-              f"(需要可拖回上一级): {', '.join(moved)}", flush=True)
+            print(f"删除残留文件 {name} 失败: {e}", flush=True)
+    if removed:
+        print(f"已删除 {len(removed)} 个不再使用的附属文件: {', '.join(removed)}", flush=True)
+    legacy_orphan = os.path.join(target_dir, _ORPHAN_DIR_NAME)
+    if os.path.isdir(legacy_orphan):
+        try:
+            shutil.rmtree(legacy_orphan)
+            print(f"已清理旧版本遗留的 {_ORPHAN_DIR_NAME} 备份目录", flush=True)
+        except OSError as e:
+            print(f"清理 {_ORPHAN_DIR_NAME} 目录失败: {e}", flush=True)
 
 
 def _run_mod_bat(mod_path, bat_name, mod_name, timeout=None):
@@ -411,8 +415,8 @@ class ModManager:
              记录源 MD5（源没变则跳过重建，见 `STAMP_SUFFIX`）；
            - 复制该 Mod 的语言文件（:meth:`load_language`）；
            - 若为禁用状态，调用 :meth:`unload_mod` 清掉它投放的包；
-        3. 用「旧清单 - 本轮包名 - 仍存在的 Mod 前缀」求出陈旧包，移入
-           `_orphan/`（见 :func:`_move_orphans`），最后写回新清单。
+        3. 用「旧清单 - 本轮包名 - 仍存在的 Mod 前缀」求出陈旧包并直接删除
+           （见 :func:`_remove_stale_packages`，顺带清理旧版遗留的 `_orphan/`），最后写回新清单。
 
         单个 Mod 出错只打日志并继续处理下一个，保证一个坏 Mod 不会让整个
         启动流程失败。
@@ -430,7 +434,7 @@ class ModManager:
         if not all_mod_paths:
             print("mods 目录下没有可处理的 mod, 跳过本轮残留清理")
             return loaded_mods
-        # 仍然存在的 Mod 前缀：它们的旧包不应被当成「陈旧包」移走
+        # 仍然存在的 Mod 前缀：它们的旧包不应被当成「陈旧包」误删
         alive_prefixes = {os.path.basename(p) + '_' for p in all_mod_paths}
 
         for mod_path in all_mod_paths:
@@ -513,7 +517,7 @@ class ModManager:
                      and not any(n.startswith(p) for p in alive_prefixes)]
             
             if stale:
-                _move_orphans(target_root, stale)
+                _remove_stale_packages(target_root, stale)
             _write_manifest(target_root, {"package": new_pkg_names,
                                           "manual": old_manifest.get("manual") or []})
         except Exception as e:
