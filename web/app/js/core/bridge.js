@@ -66,6 +66,13 @@ window.__onEvent = function (event, data) {
     }
     // 汉化包/资源/气泡等主流程下载: 仅更新右侧详情进度条
     if (pipeline.running) updatePipeDownloadProgress(data);
+  } else if (event === 'failed') {
+    // 后端明确判定这一行下载失败（终态）：标红并保留，等用户点 X 或重试
+    if (data && data.task) {
+      addLog('⟳ ' + String(data.text || ''));
+      failDownloadTask(data.task, String(data.text || '').slice(0, 80));
+    }
+    return;
   } else if (event === 'status') {
     if (data && typeof data === 'object' && data.task) {
       addLog('⟳ ' + String(data.text || ''));
@@ -75,12 +82,8 @@ window.__onEvent = function (event, data) {
         if (txtEl) txtEl.textContent = String(data.text);
         setPipeDetailIconByTask(data.task);
       }
-      // 只有后端明确"下载失败"这种终态才标红; 中途的阶段文本(原链接失败/
-      // 解析直链)不算失败 —— 旧逻辑在这里把任务标红后 8 秒删掉, 看上去就像
-      // 抽屉自己断掉了任务。
-      if (/^❌/.test(String(data.text || '').trim())) {
-        failDownloadTask(data.task, String(data.text || '').slice(0, 80));
-      }
+      // 失败由后端单独的 'failed' 事件通知（上面分支），这里只看状态文本，
+      // 不再靠文本里有没有某个符号去猜 —— 中途的阶段文本也可能带"失败"。
       return;
     }
     // 对象形式 {text, icon}: 启动子步骤进度 → 更新流水线详情 (图标+文本)
