@@ -226,7 +226,7 @@ web/app_skins/*/profile.*
 !tools/doc/*.md
 !tools/build/
 !tools/build/*
-!tools/workflow/*
+!tools/workflow/
 # 版本资源是构建中间产物（每次打包按当前 version_info 重新生成），不入库
 /tools/build/version_info.txt
 
