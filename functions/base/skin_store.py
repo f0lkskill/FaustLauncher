@@ -603,9 +603,10 @@ def theme_icon_uri(skin_id: str, icon_url: str) -> str:
             data = icon_fetch.download_image(url, timeout=12.0)
             if data:
                 icon_cache.note_icon_success(url)
-                path = icon_cache.icon_cache_path(url, skin_id, ICON_CACHE_DIR)
-                icon_fetch.save_image(data, path, max_edge=ICON_MAX_EDGE)
-                uri = icon_fetch.data_uri(path)
+                path = icon_cache.save_icon(
+                    data, url, skin_id, ICON_CACHE_DIR, max_edge=ICON_MAX_EDGE)
+                if path:
+                    uri = icon_fetch.data_uri(path)
             else:
                 icon_cache.note_icon_failure(url)
     except Exception as exc:  # noqa: BLE001 - 封面图拿不到就用占位图, 不影响列表
