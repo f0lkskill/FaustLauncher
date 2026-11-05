@@ -148,22 +148,20 @@ def handle_skill_structure(skill_content:dict) -> dict: # type: ignore
                 level['coinlist'] = [{"coindescs": [{"desc": "<i><color=#7C5738>无效果的硬币</color></i>"}]}]
                 continue
 
+            coins:list
+            coins = level['coinlist']
+            count_check = True
+            # 游戏会截断过多的硬币！比如 Furioso-Replica。
+            if coins.count({})>=8:
+                count_check = False
+
             for coin in level['coinlist']:
-
                 coin:dict
-                coins:list
-                coins = level['coinlist']
-                # 游戏会截断过多的硬币！比如 Furioso-Replica。
-                if coins.count({})>=8:
-                    continue
-
-                if not coin:
+                if not coin and count_check:
                     # 插入滚木硬币
                     coin.update(
                         {"coindescs":
-                          [{"desc": "<i><color=#7C5738>无效果的硬币</color></i>"}]
-                        }
-                    )
+                          [{"desc": "<i><color=#7C5738>无效果的硬币</color></i>"}]})
                 else:
                     for coindesc in coin['coindescs']:
                         coindesc:dict
