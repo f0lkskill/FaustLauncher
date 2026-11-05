@@ -1996,15 +1996,45 @@ body.path-locked #app *:focus { outline: none; }
 @keyframes toastOut { to { opacity: 0; transform: translateX(30px); } }
 @keyframes toastTopOut { to { opacity: 0; transform: translateY(-16px); } }
 
-/* 滚动条美化 (暗色, 页面/终端统一) */
-::-webkit-scrollbar { width: 8px; height: 8px; }
+/* 滚动条美化 (暗色, 页面/终端统一)
+   设计要点:
+   · 12px 槽位 + 3px 透明边框 + background-clip: content-box, 视觉上只有 6px 宽的圆头胶囊,
+     悬停时不会让内容区跳动;
+   · 去掉滚动条两端的方向按钮 (旧版在 Windows 上会画出上下箭头方块, 非常突兀);
+   · 常态中性灰蓝半透明 -> 悬停变亮 -> 拖动时用主题强调色, 与皮肤色彩保持一致。
+   注意: background 简写会重置 background-clip, 所以每个状态都要重复声明。 */
+::-webkit-scrollbar { width: 12px; height: 12px; }
 ::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-button { display: none; width: 0; height: 0; }
 ::-webkit-scrollbar-thumb {
-  background: rgba(122, 132, 152, .35);
-  border: 1px solid rgba(0, 0, 0, .3);
-  border-radius: 6px;
+  background: rgba(140, 155, 178, .28);
+  border: 3px solid transparent;
+  background-clip: content-box;
+  border-radius: 99px;
+  min-height: 40px;
 }
-::-webkit-scrollbar-thumb:hover { background: rgba(122, 132, 152, .6); }
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(160, 176, 200, .5);
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:active {
+  background: rgba(var(--accent-rgb), .65);
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-corner { background: transparent; }
+
+/* 皮肤 CSS 里对 #main/#nav/.skin-list/... 写过 scrollbar-color (标准属性)。
+   对 Chromium 来说, 只要 scrollbar-color 不是 auto, 上面这一整套 ::-webkit-scrollbar
+   定制就会被**整体忽略**, 滚动条退回 Windows 原生样式 —— 也就是带上下箭头方块、
+   又宽又难看的系统滚动条。这里用更高优先级把它重置回 auto, 统一走上面的样式;
+   不修改任何皮肤文件, 只是让启动器本体的滚动条规则说了算。 */
+html body #main,
+html body #nav,
+html body .skin-list,
+html body .res-list,
+html body #term-body { scrollbar-color: auto !important; }
 
 /* ---------- 关于页 (滚动切换 + 贡献者) ---------- */
 #page-about.active {
