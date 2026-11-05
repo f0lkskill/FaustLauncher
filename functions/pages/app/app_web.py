@@ -845,6 +845,29 @@ def _get_project_icon_uri():
                 pass
     return ""
 
+
+def _default_project_icon_uri():
+    """默认皮肤卡片用的**项目原始**图标（独立路线, 不受当前生效皮肤覆盖）。
+
+    皮肤可以在 ``assets/web/icon/icon.png`` 替换启动器图标, 那是「当前生效
+    皮肤」的语义; 而皮肤列表里的「默认皮肤」表示"不加载任何皮肤、使用原始
+    外观与资源", 所以这里只读项目自己的资源, 不经过 :func:`_web_asset_file`
+    的皮肤优先查找 —— 否则当前生效的其他皮肤会把默认皮肤的图标顶掉。
+    """
+    from functions.base.common.path_utils import get_web_root
+    for cand in (
+        get_web_root("app", "assets", "icon", "icon.png"),
+        os.path.join(_PROJECT_ROOT, "assets", "images", "icon", "icon.png"),
+        os.path.join(_PROJECT_ROOT, "_internal", "assets", "images", "icon", "icon.png"),
+    ):
+        if cand and os.path.isfile(cand):
+            try:
+                with open(cand, "rb") as f:
+                    return "data:image/png;base64," + base64.b64encode(f.read()).decode("ascii")
+            except Exception:
+                pass
+    return ""
+
 def _goodbye_to_console():
     try:
         from functions.base.terminal_banner import get_banner_with_random_style
@@ -1271,7 +1294,7 @@ class AppApi:
             "unlock": {"type": "free", "description": "默认皮肤永久可用"},
             "unlocked": True,
             "installed": True,
-            "profile_uri": _get_project_icon_uri(),
+            "profile_uri": _default_project_icon_uri(),
             "background_count": _skin_bg_count(""),
         }]
 
