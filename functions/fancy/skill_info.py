@@ -149,7 +149,13 @@ def handle_skill_structure(skill_content:dict) -> dict: # type: ignore
                 continue
 
             for coin in level['coinlist']:
+
                 coin:dict
+                coins:list
+                coins = level['coinlist']
+                # 游戏会截断过多的硬币！比如 Furioso-Replica。
+                if coins.count({})>=8:
+                    continue
 
                 if not coin:
                     # 插入滚木硬币
