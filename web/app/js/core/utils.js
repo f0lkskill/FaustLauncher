@@ -318,3 +318,77 @@ function shortPath(p) {
   document.addEventListener('mousedown', hide, true);
   window.addEventListener('blur', hide);
 })();
+// ---------------- 分页器（页数多时折叠中间页码） ----------------
+/* 页码按钮一多就会把整行撑爆: 首页/末页 + 当前页前后各一个, 中间折成 …;
+   超过 12 页再补一个「跳至第 N 页」输入框。
+   opts: { page, totalPages, onChange(page), info? } —— info 为空时显示「第 x / y 页」 */
+function renderPager(container, opts) {
+  if (!container) return;
+  const o = opts || {};
+  const total = Math.max(1, Math.floor(o.totalPages || 1));
+  const page = Math.min(Math.max(1, Math.floor(o.page || 1)), total);
+  const onChange = typeof o.onChange === 'function' ? o.onChange : function () {};
+  container.innerHTML = '';
+
+  function btn(text, cls, disabled, onClick) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = text;
+    if (cls) b.className = cls;
+    if (disabled) b.disabled = true;
+    if (onClick) b.onclick = onClick;
+    container.appendChild(b);
+    return b;
+  }
+  function gap() {
+    const s = document.createElement('span');
+    s.className = 'pg-gap';
+    s.textContent = '…';
+    container.appendChild(s);
+  }
+
+  btn('←', 'pg-arrow', page <= 1, function () { if (page > 1) onChange(page - 1); });
+
+  let start, end;
+  if (total <= 7) { start = 1; end = total; }
+  else if (page <= 4) { start = 1; end = 5; }
+  else if (page >= total - 3) { start = total - 4; end = total; }
+  else { start = page - 1; end = page + 1; }
+
+  if (start > 1) {
+    btn('1', '', false, function () { onChange(1); });
+    if (start > 2) gap();
+  }
+  for (let i = Math.max(start, 1); i <= Math.min(end, total); i++) {
+    const b = btn(String(i), '', false, function (n) { return function () { onChange(n); }; }(i));
+    if (i === page) b.classList.add('active');
+  }
+  if (end < total) {
+    if (end < total - 1) gap();
+    btn(String(total), '', false, function () { onChange(total); });
+  }
+
+  btn('→', 'pg-arrow', page >= total, function () { if (page < total) onChange(page + 1); });
+
+  if (total > 1) {
+    const info = document.createElement('span');
+    info.className = 'res-page-info';
+    info.textContent = o.info ? String(o.info) : ('第 ' + page + ' / ' + total + ' 页');
+    container.appendChild(info);
+  }
+
+  if (total > 12) {
+    const jump = document.createElement('input');
+    jump.type = 'number';
+    jump.className = 'pg-jump';
+    jump.min = '1';
+    jump.max = String(total);
+    jump.value = String(page);
+    jump.title = '跳转到指定页';
+    jump.onchange = function () {
+      const n = Math.min(Math.max(1, parseInt(jump.value, 10) || 1), total);
+      if (n !== page) onChange(n); else jump.value = String(page);
+    };
+    container.appendChild(jump);
+  }
+}

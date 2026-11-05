@@ -376,25 +376,12 @@ function renderResList() {
 }
 
 function renderResPagination(pagination, totalItems, totalPages) {
-  if (!pagination) return;
-  pagination.innerHTML = '';
-  const prev = document.createElement('button');
-  prev.textContent = '←';
-  prev.disabled = resPage <= 1;
-  prev.onclick = () => { if (resPage > 1) { resPage--; renderResList(); } };
-  pagination.appendChild(prev);
-  for (let i = 1; i <= totalPages; i++) {
-    const b = document.createElement('button');
-    b.textContent = i;
-    if (i === resPage) b.classList.add('active');
-    b.onclick = () => { resPage = i; renderResList(); };
-    pagination.appendChild(b);
-  }
-  const next = document.createElement('button');
-  next.textContent = '→';
-  next.disabled = resPage >= totalPages;
-  next.onclick = () => { if (resPage < totalPages) { resPage++; renderResList(); } };
-  pagination.appendChild(next);
+  renderPager(pagination, {
+    page: resPage,
+    totalPages: totalPages,
+    info: totalItems > RES_PAGE_SIZE ? ('共 ' + totalItems + ' 项') : '',
+    onChange: function (p) { resPage = p; renderResList(); }
+  });
 }
 
 // 作者链接渲染 (可点击超链接)
