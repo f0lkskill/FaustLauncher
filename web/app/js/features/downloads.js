@@ -105,9 +105,20 @@ function failDownloadTask(name, text) {
   if (!t) return;
   t.status = 'error';
   t.error = text;
-  setTimeout(() => removeDownloadTask(name, true), 8000);
+  // 失败的行不再自动消失: 留在抽屉里等用户点 X (或重新下载), 免得一闪而过看不清原因
   renderDownloadDrawer();
   updateFabVisibility();
+}
+
+// 取消下载: 前端先把行撤掉, 再通知后端让下载线程在下一个数据块处停下
+function cancelDownload(name) {
+  const t = downloadTasks.find(x => x.name === name);
+  if (!t) return;
+  if (api && typeof api.cancel_download === 'function') {
+    api.cancel_download(name).catch(() => {});
+  }
+  removeDownloadTask(name, true);
+  toastTop('已取消下载：' + name, 'info');
 }
 
 function removeDownloadTask(name, animate) {
@@ -171,6 +182,8 @@ function renderDownloadDrawer() {
     const iconAttrs = needResolve
       ? ' data-icon-url="' + esc(t.icon) + '" data-icon-name="' + esc(t.name) + '" data-icon-task="' + esc(t.name) + '"'
       : '';
+    // 皮肤包由后端 prepare_skin 下载, 没有可叫停的下载线程, 不显示 X
+    const canCancel = t.kind !== 'skin';
     row.innerHTML =
       '<img class="dl-icon" src="' + esc(iconSrc) + '"' + iconAttrs +
         ' onerror="this.src=\'' + PROJECT_ICON + '\'">' +
@@ -179,7 +192,11 @@ function renderDownloadDrawer() {
           '<span class="dl-kind">' + (t.kind === 'addon' ? '插件' : t.kind === 'skin' ? '皮肤' : 'Mod') + '</span></div>' +
         '<div class="dl-track"><div class="dl-fill" style="width:' + pct + '%"></div></div>' +
         '<div class="dl-meta">' + info + '</div>' +
-      '</div>';
+      '</div>' +
+      (canCancel
+        ? '<button class="dl-cancel" type="button" title="取消下载" aria-label="取消下载">' +
+            '<svg class="ico" data-icon="close.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg></button>'
+        : '');
     list.appendChild(row);
   });
   hydrateIcons(list);   // 统一入口: 加载中转圈 + 完成后淡入
@@ -493,3 +510,12 @@ function openDcModal(kind, item) {
     }
   }
 }
+
+// 抽屉行上的 X: 行是动态重建的, 用事件委托绑定一次即可
+document.addEventListener('click', (e) => {
+  const btn = e.target && e.target.closest ? e.target.closest('.dl-cancel') : null;
+  if (!btn) return;
+  const row = btn.closest('.dl-task');
+  if (!row || !row.dataset.name) return;
+  cancelDownload(row.dataset.name);
+});

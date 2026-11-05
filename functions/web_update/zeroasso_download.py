@@ -79,8 +79,10 @@ def _status_reporter(gui, label=''):
         print(f"[Download] {prefix}{text}")
     return _status
 
-RAW_LINK_ATTEMPTS = 2
-RAW_LINK_RETRY_WAIT = 3.0
+# 原链接只试一次: 失败立刻改走直链解析, 不再"等几秒再重试"。
+# 蓝奏/第三方解析链本来就慢, 再压在原链接上重试只会让用户干等。
+RAW_LINK_ATTEMPTS = 1
+RAW_LINK_RETRY_WAIT = 0.0
 
 def _close_quietly(resp):
     try:
@@ -90,6 +92,11 @@ def _close_quietly(resp):
         pass
 
 def open_download_source(url, gui=None, label='', **kwargs):
+    """打开下载流: 先试原始链接, 失败**立刻**改走直链解析(不重试原链接)。
+
+    返回 ``(response, source_url)``; 两条路都拿不到文件时抛
+    ``requests.exceptions.RequestException``, 由调用方统一记为失败。
+    """
     if not url:
         raise ValueError('下载链接为空')
 
@@ -98,33 +105,26 @@ def open_download_source(url, gui=None, label='', **kwargs):
     status = _status_reporter(gui, label)
 
     resp = None
-    for attempt in range(1, RAW_LINK_ATTEMPTS + 1):
-        try:
-            resp = fast_download.session().get(url, **kwargs)
-            if resp.status_code < 400 and LooksLikeFileResponse(resp):
-                if attempt > 1:
-                    status(f'原链接第 {attempt} 次尝试成功')
-                return resp, url
-            status(f'原链接未返回文件(HTTP {resp.status_code})')
-        except requests.exceptions.RequestException as e:
-            status(f'原链接下载失败({type(e).__name__})')
-            resp = None
-        if attempt < RAW_LINK_ATTEMPTS:
-            _close_quietly(resp)
-            status(f'原链接失败，{RAW_LINK_RETRY_WAIT:.0f} 秒后重试（{attempt}/{RAW_LINK_ATTEMPTS}）')
-            time.sleep(RAW_LINK_RETRY_WAIT)
+    try:
+        resp = fast_download.session().get(url, **kwargs)
+        if resp.status_code < 400 and LooksLikeFileResponse(resp):
+            return resp, url
+        status(f'原链接未返回文件(HTTP {resp.status_code})')
+    except requests.exceptions.RequestException as e:
+        status(f'原链接下载失败({type(e).__name__})')
+        resp = None
+    _close_quietly(resp)
 
-    status('原链接连续失败，尝试自动解析蓝奏云直链...')
+    status('原链接失败，立刻解析直链...')
     resolved = resolve_download_url(url, gui=gui, label=label)
     if resolved and resolved != url:
         try:
             return _open_stream(resolved, url, **kwargs), url
         except requests.exceptions.RequestException as e:
-            status(f'直链下载失败({type(e).__name__})，改用原链接')
+            status(f'直链下载失败({type(e).__name__})')
 
-    if resp is None:
-        resp = fast_download.session().get(url, **kwargs)
-    return resp, url
+    raise requests.exceptions.ConnectionError(
+        '原链接与直链均无法下载: %s' % (label or url))
 
 def resolve_download_url(url, gui=None, label=''):
     if not url:

@@ -1791,6 +1791,18 @@ body.modal-open .res-card {
 .dl-task.done .dl-fill { background: var(--success); }
 .dl-task.error .dl-fill { background: var(--danger); }
 .dl-meta { font-size: 11px; color: var(--text-3); }
+/* 行内取消: 无边框、透明底, 只在悬停时微微亮起 */
+.dl-cancel {
+  flex-shrink: 0; align-self: center;
+  width: 26px; height: 26px; padding: 0; margin-left: 2px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 0; background: transparent; color: var(--text-3);
+  border-radius: 8px; cursor: pointer;
+  transition: background .18s ease, color .18s ease;
+}
+.dl-cancel .ico { width: 15px; height: 15px; }
+.dl-cancel:hover { background: rgba(var(--tint-rgb), .1); color: var(--text); }
+.dl-cancel:active { background: rgba(var(--tint-rgb), .16); }
 
 /* ---------- 3D 鼠标聚焦倾斜过渡 ---------- */
 .card, .link-card, .dc-card {
