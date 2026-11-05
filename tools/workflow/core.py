@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import glob
 import json
 import os
 import re
@@ -21,7 +22,7 @@ from datetime import datetime
 from pathlib import Path
 
 WORKFLOW_NAME = "YisangMirrorFlow"
-VERSION = "0.0.3"
+VERSION = "0.0.4"
 
 WORKFLOW_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = WORKFLOW_DIR.parent.parent
@@ -130,16 +131,45 @@ def config_game_path() -> str:
     return normalize_game_path(value)
 
 
+# 游戏根目录之下的已知子目录链（大小写不敏感）。
+# 用户经常把音效目录（原版 bank 所在处）整段填进“游戏路径”，
+# 只要尾部能对上这条链的一段，就一路回退到游戏根目录。
+_GAME_SUBPATH = ("LimbusCompany_Data", "StreamingAssets", "Assets",
+                 "Sound", "FMODBuilds", "Desktop")
+
+
+def _trim_game_subpath(text: str) -> str:
+    parts = [p for p in text.split(os.sep) if p]
+    if not parts:
+        return text
+    drop = 0
+    for k in range(len(_GAME_SUBPATH), 1, -1):
+        tail = [p.lower() for p in parts[-k:]]
+        if len(tail) == k and tail == [c.lower() for c in _GAME_SUBPATH[-k:]]:
+            drop = k
+            break
+    if drop == 0 and parts[-1].lower() == _GAME_SUBPATH[0].lower():
+        drop = 1  # 只填到 LimbusCompany_Data 也回退一级
+    trimmed = text
+    for _ in range(drop):
+        parent = os.path.dirname(trimmed)
+        if not parent or parent == trimmed:
+            break
+        trimmed = parent
+    return trimmed
+
+
 def normalize_game_path(value) -> str:
-    text = str(value or "").strip().strip('"')
+    text = str(value or "").strip().strip('"').strip("'")
     if not text:
         return ""
     text = os.path.expandvars(os.path.expanduser(text))
+    text = text.replace("/", os.sep)
     if not os.path.isabs(text):
         text = os.path.abspath(text)
     if os.path.isfile(text) or text.lower().endswith(".exe"):
         text = os.path.dirname(text)
-    return os.path.normpath(text)
+    return _trim_game_subpath(os.path.normpath(text))
 
 
 def resolve_game_path() -> str:
@@ -159,20 +189,54 @@ def sound_dir_for(game_path: str) -> str:
     )
 
 
+def _has_original_banks(path: str) -> bool:
+    """目录里确实有原版 FMOD bank 才算数（空的 Desktop 不算就绪）。"""
+    if not path or not os.path.isdir(path):
+        return False
+    return bool(glob.glob(os.path.join(path, "*.bank")))
+
+
+def find_sound_dir(game_path: str) -> str:
+    """从游戏路径推导原版 bank 所在目录；找不到时返回空字符串。
+
+    game_path 允许是游戏根目录，也可以是布局中间的任何一级
+    （LimbusCompany_Data、…、Sound、FMODBuilds、Desktop 本身）。
+    """
+    if not game_path:
+        return ""
+    parts = [p for p in os.path.normpath(game_path).split(os.sep) if p]
+    chain = _GAME_SUBPATH
+    for m in range(min(len(chain), len(parts)), -1, -1):
+        if m and [p.lower() for p in parts[-m:]] != [c.lower() for c in chain[:m]]:
+            continue
+        cand = game_path if m == len(chain) else os.path.join(game_path, *chain[m:])
+        if _has_original_banks(cand):
+            return cand
+    # 常见变体：bank 直接放 FMODBuilds、或根目录多套了一层
+    for pattern in (
+        "LimbusCompany_Data/StreamingAssets/Assets/Sound/FMODBuilds",
+        "*/Sound/FMODBuilds/Desktop",
+        "*/StreamingAssets/Assets/Sound/FMODBuilds/Desktop",
+    ):
+        for cand in glob.glob(os.path.join(game_path, pattern)):
+            cand = os.path.normpath(cand)
+            if _has_original_banks(cand):
+                return cand
+    return ""
+
+
 def resolve_sound_dir() -> str:
-    game_path = resolve_game_path()
-    sound_dir = sound_dir_for(game_path)
-    return sound_dir if os.path.isdir(sound_dir) else ""
+    return find_sound_dir(resolve_game_path())
 
 
 def game_info() -> dict:
     path = resolve_game_path()
-    sound = sound_dir_for(path)
+    sound = find_sound_dir(path)
     return {
         "path": path,
         "path_exists": bool(path and os.path.isdir(path)),
-        "sound_dir": sound,
-        "sound_exists": bool(sound and os.path.isdir(sound)),
+        "sound_dir": sound or sound_dir_for(path),
+        "sound_exists": bool(sound),
         "source": "workflow" if load_settings().get("game_path") else "launcher",
     }
 
@@ -553,7 +617,10 @@ def start_package(name) -> dict:
     if counts[".bank"]:
         sound_dir = resolve_sound_dir()
         if not sound_dir:
-            return {"ok": False, "error": "包含 .bank，请先在总览页设置正确的游戏目录"}
+            current = resolve_game_path() or "未设置"
+            return {"ok": False, "error": "包里有 .bank，但在 \"%s\" 下找不到原版 FMOD bank；"
+                                          "请设置游戏根目录（也可直接填 …\\Sound\\FMODBuilds\\Desktop）"
+                     % current}
 
     ensure_dirs()
     write_job(
