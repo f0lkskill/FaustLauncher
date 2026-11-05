@@ -39,6 +39,16 @@ body {
   padding: 12px 14px 10px;
 }
 
+/* 打包工作流复用本页时只保留 头部 / 进度条 / 日志 / 底栏,
+   阶段与线程面板由 JS 加 hidden 隐藏, 这里同步把 grid 行数收掉。 */
+.ml-app.ml-package {
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+}
+.ml-app.ml-package .ml-steps,
+.ml-app.ml-package .ml-panel-threads {
+  display: none;
+}
+
 /* ---------------- 头部 ---------------- */
 .ml-head { display: flex; align-items: center; gap: 12px; }
 
@@ -196,7 +206,8 @@ body {
 /* 日志行: 时间戳 / 级别标签 / 正文 三段, 时间戳按级别着色 (时间轴着色) */
 .ml-line {
   display: flex; gap: 6px; align-items: baseline;
-  white-space: pre-wrap; word-break: break-all;
+  white-space: pre-wrap; overflow-wrap: anywhere; word-break: normal;
+  max-width: 100%;
 }
 .ml-line.is-new { animation: ml-fade-in .3s ease both; }
 .ml-line .ml-ts {

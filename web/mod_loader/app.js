@@ -17,6 +17,7 @@
   var $ = function (id) { return document.getElementById(id); };
 
   var ui = {
+    app: document.querySelector(".ml-app"),
     icon: $("ml-icon"),
     logo: document.querySelector(".ml-logo"),
     title: $("ml-title"),
@@ -27,6 +28,7 @@
     stageLabel: $("ml-stage-label"),
     pct: $("ml-pct"),
     steps: $("ml-steps"),
+    threadPanel: document.querySelector(".ml-panel-threads"),
     threadCount: $("ml-thread-count"),
     threads: $("ml-threads"),
     logCount: $("ml-log-count"),
@@ -53,7 +55,17 @@
   // ============================================================
   // 文案
   // ============================================================
+  function isPackageMode(state) {
+    return state.mode === "package";
+  }
+
   function headline(state) {
+    if (isPackageMode(state)) {
+      if (state.title) return state.title;
+      if (state.error) return "打包失败";
+      if (state.done) return "打包完成";
+      return "正在打包模组";
+    }
     if (state.error) return "加载失败";
     if (state.kind === "launch") return "游戏已启动";
     if (state.kind === "restore") return "正在恢复原版文件";
@@ -61,6 +73,11 @@
   }
 
   function chipInfo(state) {
+    if (isPackageMode(state)) {
+      if (state.error) return { text: "失败", cls: "err", bar: "err" };
+      if (state.done) return { text: "完成", cls: "ok", bar: "ok" };
+      return { text: "打包中", cls: "running", bar: "run" };
+    }
     if (state.error) return { text: "出错", cls: "err", bar: "err" };
     if (state.kind === "launch") return { text: "已启动", cls: "ok", bar: "ok" };
     if (state.kind === "restore") return { text: "恢复中", cls: "running", bar: "run" };
@@ -69,6 +86,11 @@
   }
 
   function hintInfo(state) {
+    if (isPackageMode(state)) {
+      if (state.error) return state.error;
+      if (state.done) return "打包完成后可关闭窗口";
+      return "仅处理 zip → carra2 / bank → rebank，不修改游戏目录";
+    }
     if (state.error) return state.error;
     if (state.kind === "launch") return "游戏退出后会自动恢复原版文件";
     if (state.kind === "restore") return "恢复完成后窗口会自动关闭";
@@ -81,10 +103,20 @@
   function renderHeader(state) {
     var chip = chipInfo(state);
 
-    if (cache.kind !== state.kind || cache.errorText !== state.error) {
+    var pack = isPackageMode(state);
+    if (pack !== cache.packageMode) {
+      cache.packageMode = pack;
+      if (ui.app) ui.app.classList.toggle("ml-package", pack);
+      if (ui.steps) ui.steps.hidden = pack;
+      if (ui.threadPanel) ui.threadPanel.hidden = pack;
+    }
+
+    if (cache.kind !== state.kind || cache.errorText !== state.error ||
+        cache.headline !== (state.title || "")) {
       cache.kind = state.kind;
       cache.errorText = state.error;
-      ui.title.textContent = headline(state);
+      cache.headline = state.title || "";
+      ui.title.textContent = state.title || headline(state);
       ui.chip.textContent = chip.text;
       ui.chip.className = "ml-chip " + chip.cls;
       ui.bar.className = "ml-bar " + chip.bar;
@@ -101,7 +133,8 @@
       ui.pct.textContent = pct.toFixed(0) + "%";
     }
 
-    var label = state.stage_no > 0 ? ("阶段 " + state.stage_no + " / 6") : "准备中";
+    var stageTotal = state.stage_total || 6;
+    var label = state.stage_no > 0 ? ("阶段 " + state.stage_no + " / " + stageTotal) : "准备中";
     if (ui.stageLabel.textContent !== label) ui.stageLabel.textContent = label;
 
     if (state.icon && !cache.iconShown) {
@@ -219,16 +252,18 @@
     return 0;
   }
 
-  // 日志格式: "2026-10-15 14:04:17,615 [INFO] xxx" (无时间戳的行原样显示)
-  var TS_RE = /^(\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}[,.]\d{3})\s*(?:\[([A-Za-z]+)\])?\s*([\s\S]*)$/;
+  // 日志格式: "2026-10-15 14:04:17,615 [INFO] xxx"
+  // 日期 + 毫秒太长会把每行撑到换行, 页面只保留 时:分:秒。
+  var TS_RE = /^(?:\d{4}[-\/]\d{2}[-\/]\d{2}[ T])?(\d{2}:\d{2}:\d{2})(?:[,.]\d{1,6})?\s*(?:\[([A-Za-z]+)\])?\s*([\s\S]*)$/;
+  var ANSI_RE = /\x1b\[[0-9;]*[A-Za-z]/g;
 
   function makeLogLine(item, animate) {
     var line = document.createElement("div");
     line.className = "ml-line " + (item.level || "info") + (animate ? " is-new" : "");
 
-    var text = item.text || "";
+    var text = (item.text || "").replace(ANSI_RE, "");
     var m = TS_RE.exec(text);
-    var ts = m ? m[1].replace("T", " ").replace(".", ",") : "";
+    var ts = m ? m[1] : "";
     var lv = m ? (m[2] || "") : "";
     var msg = m ? (m[3] || "") : text;
 
@@ -287,9 +322,13 @@
 
     cache.logs = lines;
     if (stick) {
-      box.scrollTop = box.scrollHeight;
-      // 首帧/内容不足一屏时, 布局尚未稳定, 下一帧再贴一次底
-      requestAnimationFrame(function () { box.scrollTop = box.scrollHeight; });
+      var pin = function () { box.scrollTop = box.scrollHeight; };
+      pin();
+      // 字体/行高/滚动条尺寸要等一帧甚至几十毫秒才稳定, 多贴几次底,
+      // 否则新追加的长日志会把视口停在中间。
+      requestAnimationFrame(pin);
+      requestAnimationFrame(function () { requestAnimationFrame(pin); });
+      setTimeout(pin, 80);
     }
   }
 
@@ -311,8 +350,10 @@
   function apply(state) {
     if (!state) return;
     renderHeader(state);
-    renderStages(state.stages);
-    renderThreads(state.threads);
+    if (!isPackageMode(state)) {
+      renderStages(state.stages);
+      renderThreads(state.threads);
+    }
     renderLogs(state.log);
     renderFooter(state);
   }

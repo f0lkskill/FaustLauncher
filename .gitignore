@@ -227,6 +227,12 @@ web/app_skins/*/profile.*
 !tools/build/
 !tools/build/*
 !tools/workflow/
+!tools/workflow/*
+# YisangMirrorFlow 的运行数据：包、设置、错误日志、缓存都不入库
+/tools/workflow/mods/
+/tools/workflow/settings.json
+/tools/workflow/last_error.log
+/tools/workflow/__pycache__/
 # 版本资源是构建中间产物（每次打包按当前 version_info 重新生成），不入库
 /tools/build/version_info.txt
 
