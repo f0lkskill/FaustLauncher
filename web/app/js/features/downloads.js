@@ -348,7 +348,6 @@ function renderDCPagination(pagination, totalItems, totalPages) {
   renderPager(pagination, {
     page: dcPage,
     totalPages: totalPages,
-    info: totalItems > RES_PAGE_SIZE ? ('共 ' + totalItems + ' 项') : '',
     onChange: function (p) { dcPage = p; renderDCList(); }
   });
 }

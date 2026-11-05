@@ -895,24 +895,31 @@ body.modal-open .res-card {
   border-radius: 6px; padding: 6px 9px; outline: none; width: 55%; min-width: 120px;
 }
 .res-set-row input:focus { border-color: var(--accent); }
-/* 分页 */
-.res-pagination { display: flex; justify-content: center; align-items: center; gap: 6px; margin-top: 16px; flex-wrap: wrap; padding-bottom: 6px; }
+/* 分页: 固定尺寸的方形页码按钮 —— 位数不同也不会让按钮变形 */
+.res-pagination { display: flex; justify-content: center; align-items: center; gap: 6px; margin-top: 16px; padding-bottom: 6px; flex-wrap: wrap; }
 .res-pagination button {
-  font-family: var(--font); font-size: 12.5px; cursor: pointer; color: var(--text-2);
-  background: var(--card-2); border: 1px solid var(--border-2);
-  border-radius: 6px; padding: 6px 12px; transition: transform .18s ease, border-color .18s ease, color .18s ease, background-color .18s ease, background .18s ease, box-shadow .18s ease, opacity .18s ease;
+  flex: 0 0 auto; width: 30px; height: 30px; padding: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-family: var(--font); font-size: 12.5px; line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-2); background: transparent;
+  border: 1px solid transparent; border-radius: 8px; cursor: pointer;
+  transition: color .16s ease, background-color .16s ease, border-color .16s ease;
 }
-.res-pagination button:hover { color: var(--text); border-color: var(--accent); }
-.res-pagination button.active { border-color: var(--accent); color: var(--text); font-weight: 600; background: rgba(var(--accent-rgb),.12); }
-.res-pagination button:disabled { opacity: .4; cursor: default; }
-.res-pagination .res-page-info { font-size: 12px; color: var(--text-3); padding: 0 8px; }
-.res-pagination .pg-gap { color: var(--text-3); padding: 0 2px; user-select: none; letter-spacing: 1px; }
-.res-pagination .pg-jump {
-  width: 60px; padding: 5px 8px; font-family: var(--font); font-size: 12.5px;
-  color: var(--text); background: var(--card-2); border: 1px solid var(--border-2);
-  border-radius: 6px; text-align: center;
+.res-pagination button:hover { color: var(--text); background: rgba(var(--tint-rgb), .08); }
+.res-pagination button.active {
+  color: var(--text); font-weight: 600;
+  background: rgba(var(--accent-rgb), .16); border-color: rgba(var(--accent-rgb), .45);
 }
-.res-pagination .pg-jump:focus { outline: none; border-color: var(--accent); }
+.res-pagination button:disabled { opacity: .3; cursor: default; background: transparent; }
+.res-pagination .pg-gap { flex: 0 0 auto; width: 16px; text-align: center; color: var(--text-3); font-size: 12.5px; user-select: none; }
+/* 箭头用 CSS 画 (仓库没有箭头图标), 与数字按钮同尺寸 */
+.res-pagination button.pg-arrow::before {
+  content: ''; width: 6px; height: 6px; margin-left: 2px;
+  border-left: 1.6px solid currentColor; border-bottom: 1.6px solid currentColor;
+  transform: rotate(45deg); border-radius: 1px;
+}
+.res-pagination button.pg-arrow.next::before { transform: rotate(-135deg); margin: 0 2px 0 0; }
 
 /* ---------------- 成就页 ----------------
    排列完全沿用 res-* (左分区 + 搜索 + 卡片列表 + 分页), 这里只补三样成就特有的东西:
@@ -1047,7 +1054,6 @@ body.modal-open .res-card {
   border: 1px solid rgba(46, 160, 67, 0.45); font-weight: 600;
   cursor: default; pointer-events: none;
 }
-.dc-pagination { display: flex; align-items: center; gap: 10px; justify-content: center; margin: 16px 0; }
 .dc-page-info { font-size: 12.5px; color: var(--text-3); }
 
 /* hidden 属性优先: 某些元素 class 设了 display:flex/grid 会覆盖 hidden 默认样式 */

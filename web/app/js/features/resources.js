@@ -379,7 +379,6 @@ function renderResPagination(pagination, totalItems, totalPages) {
   renderPager(pagination, {
     page: resPage,
     totalPages: totalPages,
-    info: totalItems > RES_PAGE_SIZE ? ('共 ' + totalItems + ' 项') : '',
     onChange: function (p) { resPage = p; renderResList(); }
   });
 }
