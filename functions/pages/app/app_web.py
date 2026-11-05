@@ -2998,11 +2998,11 @@ if %errorlevel% equ 0 (
     def _fail_download_task(self, task, text):
         """把下载抽屉里的一行标记为失败。
 
-        前端 ``__onEvent('status')`` 的约定是「文本里出现失败/错误就把
-        对应任务标红」（`web/app/js/core/bridge.js`）。后端如果只 `print`
-        而不推这一条，抽屉里那一行就会永远停在「等待中...」。
+        用独立的 ``failed`` 事件告诉前端这是终态失败，而不是靠文本里有没有
+        某个符号去猜 —— 阶段文本（"原链接失败，解析直链..."）也带"失败"二字，
+        按文本判断会把还在继续的任务误标红。
         """
-        self._push_event('status', {'task': str(task or ''), 'text': str(text or '')})
+        self._push_event('failed', {'task': str(task or ''), 'text': str(text or '')})
 
     def download_addon(self, name, url):
         def _run():
@@ -3096,14 +3096,15 @@ if %errorlevel% equ 0 (
             # 老缓存是原图，顺手瘦身一次；之后固定走小图
             icon_fetch.shrink_file(icon_path)
         else:
-            icon_path = icon_cache.icon_cache_path(icon_url, item_name, cache_dir)
             if icon_cache.icon_failed_recently(icon_url):
                 return ''
             data = icon_fetch.download_image(icon_url, timeout=15)
             if not (data and icon_cache.looks_like_image(data)):
                 data = self._icon_via_lanzou(icon_url)
             if data and icon_cache.looks_like_image(data):
-                if not icon_fetch.save_image(data, icon_path):
+                # 同一个 item 只保留一份缓存: url 变了也不会再多存一个文件
+                icon_path = icon_cache.save_icon(data, icon_url, item_name, cache_dir)
+                if not icon_path:
                     icon_cache.note_icon_failure(icon_url)
                     return ''
                 icon_cache.note_icon_success(icon_url)
