@@ -1699,6 +1699,26 @@ class Host:
         return self._command(CMD_STATIC, text=name, timeout=timeout,
                              out_slot=int(out_slot))
 
+    def audio_score(self, path, stage='preflight', timeout=2.0):
+        """固定 Cp9 Boss10 的 Ryoshu=1；旧 DLL 返回未知命令，不得继续停曲。"""
+        if path != 'event:/BGM/Battle/Battle_Cp9_Boss_10':
+            return '不支持的参数曲目'
+        if stage not in ('preflight', 'current'):
+            return '不支持的参数阶段'
+        mapping = resolve_exports()
+        keys = ('il2cpp_field_get_type', 'il2cpp_field_get_flags',
+                'il2cpp_class_from_type', 'il2cpp_class_value_size',
+                'il2cpp_method_get_flags')
+        names = [mapping.get(key, '') for key in keys]
+        if any(not isinstance(name, str) or not name or
+               any(not (c.isascii() and (c.isalnum() or c == '_')) for c in name)
+               for name in names):
+            return '音频参数桥缺少元数据导出映射'
+        payload = '|'.join((f'{stage}:{path}', *names))
+        if len(payload.encode('ascii')) >= HOST_CMD_TEXT_LEN:
+            return '音频参数桥导出映射超长'
+        return self._command(10, text=payload, timeout=timeout)
+
     def channel_busy(self):
         """命令通道里还有没跑完的请求吗。
 

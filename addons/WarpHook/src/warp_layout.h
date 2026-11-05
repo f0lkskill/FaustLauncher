@@ -122,6 +122,8 @@
 #define WARP_CMD_LIST     8     /* 诊断：列某类同名方法的全部重载签名，纯元数据不 invoke */
 #define WARP_CMD_STATIC   9     /* 读静态字段：cmd_text = "类名::字段名"，值落对象槽（引用类） */
 
+#define WARP_CMD_AUDIO_SCORE 10 /* fixed Cp9 Boss10 Ryoshu=1 preflight/current */
+
 #define WARP_CMD_CODE(t)    ((t) & 0xFF)
 #define WARP_CMD_ARGC(t)    (((t) >> 8) & 0xF)
 #define WARP_CMD_RETKIND(t) (((t) >> 12) & 0xF)

@@ -1,3 +1,10 @@
+## 0.9.52 — BattleBGMExtend hotfix2 音频参数桥
+
+- 特殊曲 Battle_Cp9_Boss_10 先预检临时 EventInstance，再对实际事件设置 Ryoshu=1；不以 PLAYING 或提交成功冒充出声验证。
+- CMD10 携带五个已解析的 IL2CPP 元数据混淆导出名；严格验证静态值类型字段大小及方法 byref/bool/实例签名，协议布局不变。
+- 预检失败不停止原曲，实际切换失败清理后尝试同会话已提交上一首或默认曲；恢复失败如实报告。
+- 本地正式版本；离线验证通过，未游戏注入/听音验证，不修复旧 worker 的 GC 显式注册风险。详见 docs/warphook-bgm-hotfix2-release.md。
+
 ## 0.9.51 — 导出解析兼容性与缓存恢复
 
 - 修正混淆名字仅匹配恰好 11 字符的问题，按完整 C 字符串与真实 PE 导出表匹配；支持 REX 高寄存器 RIP-relative LEA、正负位移及截断指令保护。

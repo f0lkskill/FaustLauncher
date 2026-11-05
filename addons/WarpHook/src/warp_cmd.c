@@ -760,6 +760,8 @@ int warp_cmd_static(const char *text_src, int out_slot)
     return WARP_CMD_RES_OK;
 }
 
+#include "warp_audio_score.inc"
+
 /* v7 代读：Python 把一条读链写进 MAP 尾部的 cmd_read 段，这里在游戏主线程上
  * 按槽取对象、执行链，结果写 vars[6]（值）与 vars[7]（遍历链的活跃数）。
  *
@@ -1070,6 +1072,9 @@ static DWORD WINAPI work_main(LPVOID arg)
                     if (rc == 0 && g_hdr)
                         g_hdr->fired++;
                     break;
+                case WARP_CMD_AUDIO_SCORE:
+                    rc = warp_cmd_audio_score(job.text);
+                    break;
                 case WARP_CMD_READ:
                     /* 查询不是"动作"，不计 fired */
                     rc = warp_cmd_read(WARP_CMD_SLOT(job.type));
@@ -1228,6 +1233,7 @@ void warp_pump_commands(void)
     case WARP_CMD_STR:
     case WARP_CMD_LIST:
     case WARP_CMD_STATIC:
+    case WARP_CMD_AUDIO_SCORE:
     case WARP_CMD_READ:
         /* v0.9.23：要进 il2cpp runtime/元数据的命令全部投递 worker 隔离舱，
          * 主线程泵不再亲自执行（六次崩溃都在这条路径上）。先标 BUSY，结果
