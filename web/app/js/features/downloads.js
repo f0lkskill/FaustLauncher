@@ -345,25 +345,12 @@ function renderDCList() {
 }
 
 function renderDCPagination(pagination, totalItems, totalPages) {
-  if (!pagination) return;
-  pagination.innerHTML = '';
-  const prev = document.createElement('button');
-  prev.textContent = '←';
-  prev.disabled = dcPage <= 1;
-  prev.onclick = () => { if (dcPage > 1) { dcPage--; renderDCList(); } };
-  pagination.appendChild(prev);
-  for (let i = 1; i <= totalPages; i++) {
-    const b = document.createElement('button');
-    b.textContent = i;
-    if (i === dcPage) b.classList.add('active');
-    b.onclick = () => { dcPage = i; renderDCList(); };
-    pagination.appendChild(b);
-  }
-  const next = document.createElement('button');
-  next.textContent = '→';
-  next.disabled = dcPage >= totalPages;
-  next.onclick = () => { if (dcPage < totalPages) { dcPage++; renderDCList(); } };
-  pagination.appendChild(next);
+  renderPager(pagination, {
+    page: dcPage,
+    totalPages: totalPages,
+    info: totalItems > RES_PAGE_SIZE ? ('共 ' + totalItems + ' 项') : '',
+    onChange: function (p) { dcPage = p; renderDCList(); }
+  });
 }
 
 // 卡片标记"已安装"

@@ -161,25 +161,12 @@ function renderAchList() {
 }
 
 function renderAchPagination(pagination, totalItems, totalPages) {
-  if (!pagination) return;
-  pagination.innerHTML = '';
-  const prev = document.createElement('button');
-  prev.textContent = '←';
-  prev.disabled = achPage <= 1;
-  prev.onclick = () => { if (achPage > 1) { achPage--; renderAchList(); } };
-  pagination.appendChild(prev);
-  for (let i = 1; i <= totalPages; i++) {
-    const b = document.createElement('button');
-    b.textContent = i;
-    if (i === achPage) b.classList.add('active');
-    b.onclick = () => { achPage = i; renderAchList(); };
-    pagination.appendChild(b);
-  }
-  const next = document.createElement('button');
-  next.textContent = '→';
-  next.disabled = achPage >= totalPages;
-  next.onclick = () => { if (achPage < totalPages) { achPage++; renderAchList(); } };
-  pagination.appendChild(next);
+  renderPager(pagination, {
+    page: achPage,
+    totalPages: totalPages,
+    info: totalItems > ACH_PAGE_SIZE ? ('共 ' + totalItems + ' 项') : '',
+    onChange: function (p) { achPage = p; renderAchList(); }
+  });
 }
 
 // 卡片: 与资源卡片同构 (左侧图标块 + 标题/状态徽章/稀有度 + 描述)
