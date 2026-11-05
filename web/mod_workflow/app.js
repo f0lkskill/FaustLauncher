@@ -23,6 +23,7 @@
   var lastListKey = "";
   var busy = false;
   var startBusy = {};
+  var unpackBusy = {};
   var toastTimer = null;
 
   function invoke(name) {
@@ -78,7 +79,8 @@
         p.files.map(function (f) { return f.name + ":" + f.size; }).join("|"),
         p.job && p.job.status,
         p.job && p.job.message,
-        startBusy[p.name] ? 1 : 0
+        startBusy[p.name] ? 1 : 0,
+        unpackBusy[p.name] ? 1 : 0
       ];
     }));
   }
@@ -220,6 +222,38 @@
       });
     });
     actions.appendChild(start);
+
+    var unpack = el("button", "wf-btn", "解包");
+    unpack.title = "解压包内全部 zip，重复文件覆盖";
+    unpack.disabled = running || !!unpackBusy[pkg.name] || !(counts[".zip"] > 0);
+    unpack.addEventListener("click", function () {
+      if (!confirm("将解压包内全部 zip，重复文件会覆盖，继续？")) return;
+      unpackBusy[pkg.name] = true;
+      unpack.disabled = true;
+      invoke("unpack_zips", pkg.name).then(function (result) {
+        delete unpackBusy[pkg.name];
+        if (!result.ok) {
+          toast(errorText(result), true);
+          refresh();
+          return;
+        }
+        var msg = "解包完成: " + result.unpacked + "/" + result.zip_count + " 个 zip";
+        if (result.extracted_files) msg += "，共 " + result.extracted_files + " 个文件";
+        if (result.errors && result.errors.length) {
+          msg += "；" + result.errors.join("；");
+          toast(msg, true);
+        } else {
+          toast(msg);
+        }
+        if (result.state) applyState(result.state);
+        else refresh();
+      }).catch(function (err) {
+        delete unpackBusy[pkg.name];
+        toast(String(err), true);
+        refresh();
+      });
+    });
+    actions.appendChild(unpack);
 
     var add = el("button", "wf-btn", "添加文件");
     add.disabled = running;

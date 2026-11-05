@@ -101,6 +101,14 @@ class OverviewApi(WindowChromeBridge):
         except Exception as exc:
             return {"ok": False, "error": str(exc)}
 
+    def unpack_zips(self, name):
+        try:
+            result = core.unpack_zips(name)
+            result["state"] = self.get_state()
+            return result
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
+
     def delete_package(self, name):
         try:
             result = core.delete_package(name)
