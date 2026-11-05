@@ -33,21 +33,26 @@ body {
 }
 
 /* ---------------- 头部 ---------------- */
-.wf-head { display: flex; align-items: center; gap: 16px; }
+.wf-head { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; row-gap: 10px; }
 
 .wf-brand { display: flex; align-items: center; gap: 12px; min-width: 0; flex: 1 1 auto; }
 .wf-mark {
   width: 42px; height: 42px; flex: 0 0 auto; border-radius: 13px;
+  position: relative; overflow: hidden;
   display: flex; align-items: center; justify-content: center;
   font-size: 20px; font-weight: 700; color: #fff;
   background: linear-gradient(145deg, var(--accent, #2586f5), var(--accent-2, #1e80f0));
   box-shadow: 0 8px 24px rgba(var(--accent-rgb, 55, 148, 255), .28);
 }
+.wf-mark img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: none; }
+.wf-mark.has-icon img { display: block; }
+.wf-mark.has-icon span { display: none; }
+.wf-mark.has-icon { background: rgba(var(--tint-rgb, 255, 255, 255), .05); box-shadow: none; }
 .wf-brand-text { min-width: 0; }
-.wf-brand-text h1 { font-size: 18px; font-weight: 650; letter-spacing: .4px; }
+.wf-brand-text h1 { font-size: 18px; font-weight: 650; letter-spacing: .4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .wf-brand-text p { margin-top: 3px; font-size: 11.5px; color: var(--text-3, #7a8496); }
 
-.wf-head-actions { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
+.wf-head-actions { display: flex; align-items: center; gap: 8px; flex: 0 1 auto; flex-wrap: wrap; justify-content: flex-end; }
 
 /* ---------------- 按钮 / 输入 ---------------- */
 .wf-btn {
@@ -92,7 +97,7 @@ input[readonly] { color: var(--text-2, #b0b7c3); }
   background: rgba(var(--panel-rgb, 37, 37, 38), .5);
   border: 1px solid rgba(var(--tint-rgb, 255, 255, 255), .07);
 }
-.wf-field { display: flex; align-items: center; gap: 9px; flex: 1 1 520px; min-width: 0; }
+.wf-field { display: flex; align-items: center; gap: 9px; flex: 1 1 420px; min-width: 0; flex-wrap: wrap; }
 .wf-field.small { flex: 0 0 auto; }
 .wf-field label { flex: 0 0 auto; font-size: 12px; color: var(--text-3, #7a8496); }
 .wf-field input[type="text"] { flex: 1 1 auto; }
@@ -168,7 +173,7 @@ input[readonly] { color: var(--text-2, #b0b7c3); }
   background: rgba(var(--tint-rgb, 255, 255, 255), .055);
   border: 1px solid rgba(var(--tint-rgb, 255, 255, 255), .07);
 }
-.wf-file-name { max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wf-file-name { max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .wf-file-size { color: var(--text-3, #7a8496); font-variant-numeric: tabular-nums; }
 .wf-file-x {
   width: 17px; height: 17px; border: none; border-radius: 5px; cursor: pointer;
@@ -177,12 +182,13 @@ input[readonly] { color: var(--text-2, #b0b7c3); }
 .wf-file-x:hover { background: rgba(239, 68, 68, .18); color: var(--danger, #ef4444); }
 .wf-files-empty { font-size: 11.5px; color: var(--text-3, #7a8496); }
 
-.wf-card-actions { display: flex; align-items: center; gap: 7px; margin-top: 10px; }
+.wf-card-actions { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; row-gap: 7px; margin-top: 10px; }
 .wf-card-actions .wf-spacer { flex: 1 1 auto; }
 
 /* ---------------- 底栏 ---------------- */
 .wf-foot {
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  flex-wrap: wrap; row-gap: 4px;
   font-size: 11.5px; color: var(--text-3, #7a8496);
 }
 .wf-foot-hint { flex: 0 0 auto; font-variant-numeric: tabular-nums; }

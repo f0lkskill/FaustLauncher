@@ -128,7 +128,7 @@ class PackageWorkerApi:
                 from functions.base.window_chrome import fade_out_window
                 fade_out_window(window, then_close=True)
             else:
-                window.destroy()
+                window.destroy() # type: ignore
         except Exception:
             pass
         return True
