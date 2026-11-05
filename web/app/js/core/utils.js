@@ -327,6 +327,16 @@ function renderPager(container, opts) {
   const total = Math.max(1, Math.floor(o.totalPages || 1));
   const page = Math.min(Math.max(1, Math.floor(o.page || 1)), total);
   const onChange = typeof o.onChange === 'function' ? o.onChange : function () {};
+
+  // 翻页时高亮块要从旧位置平滑滑到新位置: 先记住旧块相对容器的位置
+  let prevThumb = null;
+  (function () {
+    const t = container.querySelector('.pg-thumb');
+    if (!t) return;
+    const cr = container.getBoundingClientRect();
+    const tr = t.getBoundingClientRect();
+    if (tr.width > 0) prevThumb = { x: tr.left - cr.left, y: tr.top - cr.top, w: tr.width, h: tr.height };
+  })();
   container.innerHTML = '';
 
   function btn(text, disabled, onClick, extraClass) {
@@ -373,4 +383,36 @@ function renderPager(container, opts) {
   }
 
   arrow('next', page >= total, function () { if (page < total) onChange(page + 1); });
+
+  const activeBtn = container.querySelector('button.active');
+  if (activeBtn) {
+    const thumb = document.createElement('span');
+    thumb.className = 'pg-thumb';
+    thumb.setAttribute('aria-hidden', 'true');
+    container.insertBefore(thumb, container.firstChild);
+
+    function place(btn, withTransition) {
+      const cr = container.getBoundingClientRect();
+      const r = btn.getBoundingClientRect();
+      // 容器不可见时(rect 全 0)别乱放, 等下次渲染再定位
+      if (!cr.width || !r.width) return;
+      thumb.style.transition = withTransition ? '' : 'none';
+      thumb.style.width = r.width + 'px';
+      thumb.style.height = r.height + 'px';
+      thumb.style.transform = 'translate(' + (r.left - cr.left) + 'px,' + (r.top - cr.top) + 'px)';
+    }
+
+    if (prevThumb) {
+      // 先把块放回上一次的位置(无动画), 下一帧再挪到新位置(有动画)
+      thumb.style.transition = 'none';
+      thumb.style.width = prevThumb.w + 'px';
+      thumb.style.height = prevThumb.h + 'px';
+      thumb.style.transform = 'translate(' + prevThumb.x + 'px,' + prevThumb.y + 'px)';
+      void thumb.offsetWidth;
+      requestAnimationFrame(function () { place(activeBtn, true); });
+    } else {
+      place(activeBtn, false);
+      requestAnimationFrame(function () { thumb.style.transition = ''; });
+    }
+  }
 }
