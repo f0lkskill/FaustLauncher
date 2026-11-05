@@ -409,7 +409,7 @@
         "name": "界面模式",
         "type": "combobox",
         "options": [
-            "旧版界面 (经典)",
+            "旧版界面(经典)",
             "新版 Web 界面"
         ],
         "default": 1,
