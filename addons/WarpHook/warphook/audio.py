@@ -278,7 +278,7 @@ def play(host, name, bank=None, stop_current=True, timeout=2.0,
             return True, ''
         bridge = getattr(host, 'audio_score', None)
         if not callable(bridge):
-            return False, 'WarpHook 缺少参数桥，必须更新候选 DLL 和 host'
+            return False, '当前 Host 对象缺少 audio_score 参数桥，请重新加载 WarpHook 或重启启动器；尚未向 DLL 提交参数命令'
         try:
             result = bridge(target, stage=stage, timeout=timeout)
             _log(f'参数初始化 path={target} Ryoshu=1 stage={stage} result={result!r}；未验证出声')
