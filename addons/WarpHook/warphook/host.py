@@ -717,6 +717,12 @@ class Host:
             inst._inited = False
             if holder is not None:
                 setattr(holder, "_warphook_host", inst)
+        elif type(inst) is not cls:
+            # AddonManager 跨模块重载保存实例；必须升级类的方法表，不能只
+            # 返回旧类对象，否则新 audio.py 看不到新增的 audio_score 等能力。
+            # 两代 Host 均为无 __slots__ 的 Python 类；保留实例、锁、映射和
+            # owner 状态，避免创建第二个宿主并覆盖仍在使用的共享内存。
+            inst.__class__ = cls
         _HOST_SINGLETON = inst
         return inst
 
