@@ -402,9 +402,13 @@ class Service:
         old = reg.get(self.addon_name)
         if old is not None and old is not self:
             try:
-                old.stop()
-            except Exception:  # noqa: BLE001
-                pass
+                if old.stop() is False:
+                    raise RuntimeError(f'previous service for {self.addon_name} is still running')
+            except Exception as exc:  # noqa: BLE001
+                log(f'[{self.name}] 无法替换旧服务，保留旧实例: {exc}')
+                self._closed = True
+                self._replace_failed = True
+                return
         reg[self.addon_name] = self
         if env.ADDON_MANAGER is not None:
             if self._menu:
@@ -710,17 +714,20 @@ class Service:
             pass
         # 共享 Host 不能随一个 Service 一起关闭；其他插件仍在读写它。
         thread = getattr(self, "_thread", None)
-        if (thread is not None and thread.is_alive()
-                and thread is not threading.current_thread()):
-            thread.join(timeout=5.0)
+        if thread is not None and thread.is_alive():
+            if thread is not threading.current_thread():
+                thread.join(timeout=5.0)
         if thread is not None and thread.is_alive():
             self.log('停止服务超时：保留线程引用及映射，不执行不安全释放')
             return False
         self._thread = None
         try:
-            gacha.stop(self.addon_name)
+            if gacha.stop(self.addon_name) is False:
+                self.log('停止抽卡 watcher 未完成：保留服务登记和共享映射')
+                return False
         except Exception:  # noqa: BLE001
-            pass
+            self.log(f'停止抽卡 watcher 异常\n{traceback.format_exc()}')
+            return False
         self._closed = True
         registry = _service_registry()
         if registry.get(self.addon_name) is self:
@@ -799,7 +806,7 @@ class Service:
     @classmethod
     def stop_all(cls):
         ok = True
-        for service in list(cls._services.values()):
+        for service in list(_service_registry().values()):
             try:
                 if service.stop() is False:
                     ok = False

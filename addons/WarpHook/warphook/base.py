@@ -124,16 +124,18 @@ _LOG_LOCK = threading.Lock()
 _LOG_FAILURE_REPORTED = False
 
 
-def _start_block():
-    """在当前进程的日志开头写一行块标记。"""
+def _start_block(logger):
+    """Write one process marker, including when the package is reloaded."""
     import time
     from . import env as _env
+    pid = os.getpid()
+    marked = getattr(logger, '_warphook_marked_pid', None)
+    if marked == pid:
+        return
     stamp = time.strftime('%Y-%m-%d %H:%M:%S')
-    try:
-        _LOGGER.info("""==== WarpHook %s pid=%d 启动于 %s ——— 本进程日志从空文件开始，重跑启动器即覆写 ====""",
-                     getattr(_env, 'WARP_HOOK_VERSION', '?'), os.getpid(), stamp)
-    except Exception:  # noqa: BLE001
-        pass
+    logger.info("==== WarpHook %s pid=%d 启动于 %s ====",
+                getattr(_env, 'WARP_HOOK_VERSION', '?'), pid, stamp)
+    logger._warphook_marked_pid = pid
 
 
 def is_debug_enabled():
@@ -190,7 +192,7 @@ def log(message, prefix="[WarpHook]", tag="host"):
                             datefmt='%Y-%m-%d %H:%M:%S'))
                         logger.addHandler(handler)
                     _LOGGER = logger
-            _start_block()
+            _start_block(_LOGGER)
         _LOGGER.info("[%s] %s", tag, line)
     except Exception as exc:  # 日志设施失效不能终止插件，但要明确报告一次
         if not _LOG_FAILURE_REPORTED:
@@ -455,19 +457,28 @@ class SharedMap:
         return raw.split(b'\0', 1)[0].decode('utf-8', 'replace')
 
     def close(self):
-        """解除映射并关句柄；之后这个对象不可再用。"""
-        try:
-            if self._view:
-                _kernel32.UnmapViewOfFile(self._view)
-            if self._handle:
-                _kernel32.CloseHandle(self._handle)
-        finally:
+        """解除映射并关句柄；失败时保留尚未关闭的句柄供重试。"""
+        if self._view:
+            if not _kernel32.UnmapViewOfFile(self._view):
+                error = ctypes.get_last_error()
+                raise OSError(error, f"UnmapViewOfFile failed for {self.name}")
             self._view = None
+        if self._handle:
+            if not _kernel32.CloseHandle(self._handle):
+                error = ctypes.get_last_error()
+                raise OSError(error, f"CloseHandle failed for {self.name}")
             self._handle = None
 
 
-# 同名共享内存只建一次，避免多个插件重复映射同一块
-_maps = {}
+# 跨模块代次保存句柄，确保新代卸载可关闭旧代映射。
+_maps = getattr(env.ADDON_MANAGER, '_warphook_maps', None) if env.ADDON_MANAGER is not None else None
+if _maps is None:
+    _maps = {}
+    if env.ADDON_MANAGER is not None:
+        try:
+            setattr(env.ADDON_MANAGER, '_warphook_maps', _maps)
+        except Exception:  # noqa: BLE001
+            pass
 
 # 同一块映射的问题每个进程只提示一次：宿主不在 / 旧进程没退时，插件的重试
 # 循环每秒来一次，刷屏会把真正有用的日志顶掉。
@@ -524,8 +535,10 @@ def shm_open(name, size, struct_cls, magic_field=None, magic_value=None,
         :class:`SharedMap` 或 ``None``（建不起来时）。
     """
     cached = _maps.get(name)
-    if cached is not None:
+    if cached is not None and cached._view and cached._handle:
         return cached
+    if cached is not None:
+        _maps.pop(name, None)
 
     handle = _kernel32.OpenFileMappingW(FILE_MAP_ALL_ACCESS, False, name)
     if not handle:

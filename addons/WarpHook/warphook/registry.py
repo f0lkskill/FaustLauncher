@@ -3,6 +3,8 @@
 插件通过 ``env.ADDON_ARG['Namespaces'].space('warp')`` 取到这里导出的全部东西。
 """
 
+import traceback
+
 from . import env, fields, objects
 from . import audio
 from .base import (
@@ -321,26 +323,35 @@ def register():
 def on_unload():
     """插件卸载：停掉所有插件的后台流程、门面实例与抽卡循环，关掉共享内存映射。"""
     safe_to_unmap = True
-    try:
-        safe_to_unmap = live.close_all() is not False
-    except Exception:  # noqa: BLE001
-        safe_to_unmap = False
-    try:
-        gacha.stop_all()
-    except Exception:  # noqa: BLE001
-        safe_to_unmap = False
-    try:
-        safe_to_unmap = (Service.stop_all() is not False) and safe_to_unmap
-    except Exception:  # noqa: BLE001
-        safe_to_unmap = False
+    for label, cleanup in (
+            ('live', live.close_all), ('gacha', gacha.stop_all),
+            ('service', Service.stop_all)):
+        try:
+            if cleanup() is False:
+                safe_to_unmap = False
+                log(f'卸载清理未完成: {label} 返回失败；共享映射将保留')
+        except Exception:  # noqa: BLE001
+            safe_to_unmap = False
+            log(f'卸载清理异常: {label}\n{traceback.format_exc()}')
     if not safe_to_unmap:
-        from .base import log
         log('卸载尚有在途线程：保留共享映射，避免释放后访问；请完整退出启动器后更新')
         return False
+    manager = env.ADDON_MANAGER
+    host = getattr(manager, '_warphook_host', None) if manager is not None else None
+    if host is not None:
+        try:
+            host.close()
+        except Exception:  # noqa: BLE001
+            log(f'关闭共享 Host 失败\n{traceback.format_exc()}')
+            return False
     from .base import _maps
-    for block in list(_maps.values()):
+    close_ok = True
+    for name, block in list(_maps.items()):
         try:
             block.close()
-        except Exception:
-            pass
-    _maps.clear()
+            if not block._view and not block._handle:
+                _maps.pop(name, None)
+        except Exception:  # noqa: BLE001
+            log(f'关闭共享映射失败 name={name}；保留映射供重试\n{traceback.format_exc()}')
+            close_ok = False
+    return close_ok and not _maps
