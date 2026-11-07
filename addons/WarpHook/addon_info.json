@@ -1,10 +1,10 @@
 {
   "name": "WarpHook",
-  "desc": "WarpHook 0.9.54：修复插件热重载时跨模块代次的后台线程与共享内存生命周期管理；Host 检测并重开已关闭的映射，停止未完成时保留映射避免悬空访问，改善重载日志分段。\n\n（请不要试着重装本插件，依赖库由启动器自行维护）这是其他插件使用的底层运行库，不会自行注入或修改游戏。它集中提供游戏进程注入、il2cpp 混淆导出解析、共享内存协议与游戏内 UI 能力。\n\n命名空间：warp.il2cpp（导出解析）、warp.inject（游戏进程注入）、warp.shm（共享内存）、warp.log（统一日志）。依赖此插件的插件在清单中声明 \"requires\": [\"WarpHook\"]。", 
+  "desc": "（请不要试着重装本插件，依赖库由启动器自行维护）这是其他插件使用的底层运行库，不会自行注入或修改游戏。它集中提供游戏进程注入、il2cpp 混淆导出解析、共享内存协议与游戏内 UI 能力。\n\n命名空间：warp.il2cpp（导出解析）、warp.inject（游戏进程注入）、warp.shm（共享内存）、warp.log（统一日志）。依赖此插件的插件在清单中声明 \"requires\": [\"WarpHook\"]。",
   "authors": {
     "FolkSkill": "https://space.bilibili.com/599331034"
   },
-  "version": "0.9.54",
+  "version": "0.9.55",
   "permanent": true,
   "provides": [
     "warp"
