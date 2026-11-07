@@ -24,7 +24,7 @@
 import threading
 import time
 
-from . import audio, fields, objects
+from . import audio, env, fields, objects
 from .base import log, debug_log
 from .host import Host, _owner_of_caller, command_quiet
 from .service import Service
@@ -33,6 +33,20 @@ from .service import Service
 SCENES = objects.SCENES
 
 _LIVES = {}
+
+
+def _live_registry():
+    manager = env.ADDON_MANAGER
+    if manager is None:
+        return _LIVES
+    registry = getattr(manager, '_warphook_lives', None)
+    if registry is None:
+        registry = {}
+        try:
+            setattr(manager, '_warphook_lives', registry)
+        except Exception:  # noqa: BLE001
+            return _LIVES
+    return registry
 
 
 def _now():
@@ -106,6 +120,7 @@ class Live:
         self._thread = None
         self._lock = threading.RLock()
         self._auto = bool(auto)
+        self._closed = False
 
         self._round_cbs = []
         self._scene_cbs = []
@@ -132,10 +147,12 @@ class Live:
 
     def start(self, menu=()):
         """开始等游戏 / 注入 / 跟踪场景。调一次就行，重复调无副作用。"""
-        self._stop.clear()   # close() 过的实例可复活（防御：_LIVES 除名是主修）
+        if self._closed:
+            return self
+        self._stop.clear()
         if self._service is not None:
             return self
-        self._service = Service(
+        service = Service(
             addon_name=self.owner,
             name=self.owner,
             host=self.host(),
@@ -143,6 +160,9 @@ class Live:
             auto=(lambda: self._auto) if self._auto else None,
             menu=tuple(menu),
         )
+        if getattr(service, '_replace_failed', False):
+            return self
+        self._service = service
         self._service.start()
         self.host().bind_owner(self.owner)
         self._thread = threading.Thread(
@@ -158,12 +178,13 @@ class Live:
         那是进程级 AV，没有 traceback，整个启动器直接消失。
         """
         self._stop.set()
+        self._closed = True
         # Host 是所有插件共享的，单个 Live 卸载不能 close() 全局宿主。
         # 映射只在 registry.on_unload 确认线程退出后统一释放。
         thread = self._thread
-        if (thread is not None and thread.is_alive()
-                and thread is not threading.current_thread()):
-            thread.join(timeout=5.0)
+        if thread is not None and thread.is_alive():
+            if thread is not threading.current_thread():
+                thread.join(timeout=5.0)
         if thread is not None and thread.is_alive():
             log('停止监听超时：保留线程引用及共享映射，避免在途访问失效',
                 prefix=f'[{self.owner}]')
@@ -183,6 +204,10 @@ class Live:
         # set 状态，``_pump`` 起来第一轮就退出 —— 不补装钩子、不读命中、
         # 所有回调全哑，而注入/同步调用（battle/scene）照常工作，
         # 日志只留下「等待游戏加载」一条，看起来像装死。
+        registry = _live_registry()
+        self._closed = True
+        if registry.get(self.owner) is self:
+            registry.pop(self.owner, None)
         if _LIVES.get(self.owner) is self:
             _LIVES.pop(self.owner, None)
         return True
@@ -654,23 +679,27 @@ class Live:
 def live(owner=None, host=None):
     """按插件名取（或建）一个 ``Live``。"""
     key = owner or _owner_of_caller() or 'plugin'
-    inst = _LIVES.get(key)
-    if inst is None:
+    registry = _live_registry()
+    inst = registry.get(key)
+    if inst is None or getattr(inst, '_closed', False):
         inst = Live(key, host=host)
-        _LIVES[key] = inst
+        registry[key] = inst
+    _LIVES[key] = inst
     return inst
 
 
 def close_all():
     """停掉所有门面实例（插件卸载时由 WarpHook 调）。"""
     ok = True
-    for inst in list(_LIVES.values()):
+    registry = _live_registry()
+    for owner, inst in list(registry.items()):
         try:
             if inst.close() is False:
                 ok = False
+                log(f'[{owner}] 监听清理未完成；共享映射将保留')
         except Exception:  # noqa: BLE001
             import traceback
-            log(f'关闭实时监听失败\n{traceback.format_exc()}')
+            log(f'[{owner}] 关闭实时监听失败\n{traceback.format_exc()}')
             ok = False
     return ok
 

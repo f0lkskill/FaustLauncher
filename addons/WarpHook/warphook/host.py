@@ -917,7 +917,10 @@ class Host:
         if getattr(self, "_closed", False):
             return None
         if self._block is not None:
-            return self._block
+            if self._block._view and self._block._handle:
+                return self._block
+            self.log('发现已关闭的共享映射缓存，重新打开')
+            self._block = None
 
         def _init(cfg):
             cfg.magic = HOST_MAGIC

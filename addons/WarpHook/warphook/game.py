@@ -12,6 +12,22 @@ import traceback
 from .base import log
 from .host import (ACT_POPUP, HF_BLOCK, Host, _owner_of_caller, _tick32,
                    host_alive)
+from . import env
+
+
+def _watcher_registry():
+    manager = env.ADDON_MANAGER
+    if manager is None:
+        return None
+    registry = getattr(manager, '_warphook_watchers', None)
+    if registry is None:
+        registry = {}
+        try:
+            setattr(manager, '_warphook_watchers', registry)
+        except Exception:  # noqa: BLE001
+            return None
+    return registry
+
 
 # ========== 语义层：把「类名 + argc + 参数槽」包成看得懂的调用 ==========
 
@@ -55,9 +71,13 @@ class GachaWatcher:
         """停这个循环，并等它真的退出（卸载紧接着就要解除共享内存映射）。"""
         self.stop_event.set()
         thread = self.thread
-        if (thread is not None and thread.is_alive()
-                and thread is not threading.current_thread()):
-            thread.join(timeout=2.0)
+        if thread is not None and thread.is_alive():
+            if thread is not threading.current_thread():
+                thread.join(timeout=5.0)
+        stopped = thread is None or not thread.is_alive()
+        if not stopped:
+            log(f'[{self.owner}] 停止抽卡 watcher 超时，线程仍在运行: {thread.name}')
+        return stopped
 
     @property
     def running(self):
@@ -87,26 +107,40 @@ class Gacha:
     """
 
     def __init__(self):
-        # owner -> GachaWatcher：同一个插件重复 on_buy 就自动换掉旧的，
-        # 插件卸载时由 WarpHook.on_unload() 统一 stop_all()，插件自己不用记。
         self._watchers = {}
+
+    def _registry(self):
+        registry = _watcher_registry()
+        return registry if registry is not None else self._watchers
 
     def stop(self, owner=None):
         """停掉某个插件（默认当前调用者）的抽卡循环。一般不用手动调。"""
         owner = owner or _owner_of_caller() or 'gacha'
-        watcher = self._watchers.pop(owner, None)
+        registry = self._registry()
+        watcher = registry.get(owner)
+        stopped = watcher is None
         if watcher is not None:
-            watcher.stop()
-        return watcher is not None
+            stopped = watcher.stop()
+            if stopped:
+                registry.pop(owner, None)
+                self._watchers.pop(owner, None)
+        return stopped
 
     def stop_all(self):
-        """停掉全部抽卡循环（插件卸载时由 WarpHook 自己调）。"""
-        for watcher in list(self._watchers.values()):
+        """停止所有代次的 watcher，未退出者保留以阻止映射释放。"""
+        ok = True
+        registry = self._registry()
+        for owner, watcher in list(registry.items()):
             try:
-                watcher.stop()
+                if watcher.stop():
+                    registry.pop(owner, None)
+                    self._watchers.pop(owner, None)
+                else:
+                    ok = False
             except Exception:  # noqa: BLE001
-                pass
-        self._watchers.clear()
+                log(f'停止 watcher 失败 owner={owner}\n{traceback.format_exc()}')
+                ok = False
+        return ok
 
     def hooks(self, allow_paid=True, native_popup=False):
         """两条钩子：一条把 GachaType 读进 vars[0]，一条把下单拦下来。
@@ -183,6 +217,19 @@ class Gacha:
         except Exception as exc:  # noqa: BLE001
             log(f"抽卡钩子没能写进共享内存：{exc}")
 
+        registry = self._registry()
+        old = registry.get(owner)
+        if old is not None:
+            try:
+                if not old.stop():
+                    log(f'[{owner}] 旧抽卡 watcher 尚未退出，拒绝启动重复 watcher')
+                    return old
+            except Exception:  # noqa: BLE001
+                log(f'[{owner}] 停止旧抽卡 watcher 失败\n{traceback.format_exc()}')
+                return old
+            registry.pop(owner, None)
+            self._watchers.pop(owner, None)
+
         stop = threading.Event()
         step = max(0.05, float(interval))
 
@@ -228,10 +275,8 @@ class Gacha:
         thread = threading.Thread(target=_pump, daemon=True, name=f'{owner}-gacha')
         thread.start()
         watcher = GachaWatcher(host, stop, thread, owner)
-        old = self._watchers.pop(owner, None)
-        if old is not None:
-            old.stop()                    # 同一插件重复登记：旧的自己退场
         self._watchers[owner] = watcher
+        registry[owner] = watcher
         return watcher
 
     def watch_native(self, host=None, allow_paid=True):
