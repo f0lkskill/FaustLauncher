@@ -3087,30 +3087,46 @@ if %errorlevel% equ 0 (
         所以前端拿到的 base64 从 1.4 MB 级别降到几十 KB。
         """
         if not icon_url:
+            # 没有图标下载链接
             return ''
+        
         from functions.base.common import icon_cache, icon_fetch
+
+        # 将存放的缓存图标的位置
         cache_dir = os.path.join(_PROJECT_ROOT, 'cache', 'icons')
         os.makedirs(cache_dir, exist_ok=True)
+
+        # 根据缓存找图片（如果有就会返回真实地址）
         icon_path = icon_cache.find_cached_icon(icon_url, item_name, cache_dir)
+
         if icon_path and os.path.exists(icon_path):
             # 老缓存是原图，顺手瘦身一次；之后固定走小图
             icon_fetch.shrink_file(icon_path)
         else:
             if icon_cache.icon_failed_recently(icon_url):
+                # 这个链接并不成功。
                 return ''
+
+            # 核心下载
             data = icon_fetch.download_image(icon_url, timeout=15)
+            
             if not (data and icon_cache.looks_like_image(data)):
+                # 下载失败，兜底。
                 data = self._icon_via_lanzou(icon_url)
+
             if data and icon_cache.looks_like_image(data):
                 # 同一个 item 只保留一份缓存: url 变了也不会再多存一个文件
                 icon_path = icon_cache.save_icon(data, icon_url, item_name, cache_dir)
                 if not icon_path:
+                    # 保存失败，可能是图标在缓存已有完全相同的内容
                     icon_cache.note_icon_failure(icon_url)
                     return ''
                 icon_cache.note_icon_success(icon_url)
+                # 成功！
             else:
                 icon_cache.note_icon_failure(icon_url)
                 return ''
+        # 这里供前端直接读用。
         return icon_fetch.data_uri(icon_path)
 
     def _icon_via_lanzou(self, icon_url):

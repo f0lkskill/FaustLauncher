@@ -64,7 +64,7 @@ def _http() -> requests.Session:
     with _session_lock:
         if _session is None:
             sess = requests.Session()
-            adapter = requests.adapters.HTTPAdapter(
+            adapter = requests.adapters.HTTPAdapter( # type: ignore
                 pool_connections=16, pool_maxsize=32, max_retries=0)
             sess.mount("http://", adapter)
             sess.mount("https://", adapter)
@@ -203,7 +203,7 @@ def shrink_image(data: bytes, max_edge: int = MAX_EDGE) -> bytes:
         width, height = image.size
         if max(width, height) <= max_edge and len(data) <= 96 * 1024:
             return data
-        image.thumbnail((max_edge, max_edge), Image.LANCZOS)
+        image.thumbnail((max_edge, max_edge), Image.LANCZOS) # type: ignore
         buffer = io.BytesIO()
         if image.mode in ("RGBA", "LA", "P"):
             image.convert("RGBA").save(buffer, "PNG", optimize=True)

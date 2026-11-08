@@ -204,6 +204,14 @@ def _find_same_content(cache_dir, digest, exclude=""):
     return ""
 
 def icon_failed_recently(icon_url):
+    """_失败兜底策略，这个url没有接受到的缓存_
+
+    Args:
+        icon_url (_type_): _description_
+
+    Returns:
+        _type_: _成功？_
+    """
     if not icon_url:
         return False
     with _failed_lock:
