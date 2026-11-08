@@ -102,13 +102,24 @@ function syncResActions() {
   if (m) m.hidden = kind !== 'mod';
 }
 
+// 依赖库由启动器维护，不允许用户手动重装（例如 WarpHook）。
+// permanent 是 addon_info.json 的权威标记；provides 用于兼容只声明命名空间、
+// 但没有 permanent 的旧依赖库。
+function isDependencyAddon(item) {
+  if (!item) return false;
+  if (item.permanent === true) return true;
+  const provides = item.provides;
+  if (Array.isArray(provides)) return provides.some(v => String(v || '').trim());
+  return !!(provides && String(provides).trim());
+}
+
 function bindResReinstallButtons() {
   const addonBtn = $('#btn-reinstall-addon');
   const modBtn = $('#btn-reinstall-mod');
   if (addonBtn) addonBtn.onclick = () => {
-    const dirs = resAddons.filter(x => x.reinstall_available).map(x => x.dir || x.name);
+    const dirs = resAddons.filter(x => x.reinstall_available && !isDependencyAddon(x)).map(x => x.dir || x.name);
     if (dirs.length) confirmReinstall('addon', dirs, '插件');
-    else toast('缓存中没有可精确匹配的插件', 'warn');
+    else toast('没有可重装的插件（依赖库由启动器维护）', 'warn');
   };
   if (modBtn) modBtn.onclick = () => {
     const dirs = resMods.filter(x => x.reinstall_available).map(x => x.dir || x.name);
@@ -307,6 +318,15 @@ function showForceUninstallDone(r, scopeName) {
 }
 
 function confirmReinstall(kind, dirs, label) {
+  if (kind === 'addon') {
+    const dependencyDirs = new Set(resAddons.filter(isDependencyAddon).map(x => x.dir || x.name));
+    const filtered = dirs.filter(d => !dependencyDirs.has(d));
+    if (filtered.length !== dirs.length) {
+      toast('依赖库由启动器维护，已跳过手动重装', 'warn', 3000);
+      dirs = filtered;
+    }
+    if (!dirs.length) return;
+  }
   // 详情窗口只传入一个资源，不需要重复弹确认层；仍走同一套
   // prepare_reinstall -> startDownloadItem 流程，确保下载抽屉和进度一致。
   if (dirs.length === 1) {
@@ -638,6 +658,7 @@ function openResModal(kind, item) {
   const enabled = !!item.enabled;
   const author = item.author || '';
   const ver = item.version || '';
+  const canReinstall = !!item.reinstall_available && !(isAddon && isDependencyAddon(item));
   const panel = document.createElement('div');
   panel.id = 'res-modal';
   panel.className = 'panel-overlay';
@@ -663,7 +684,7 @@ function openResModal(kind, item) {
       (isAddon && (item.requires || []).length ? '<div class="res-dep-list" id="res-dep-list"></div>' : '') +
       '<div class="res-detail-ops">' +
          '<button class="btn btn-ghost" id="res-open-dir">打开目录</button>' +
-         (item.reinstall_available ? '<button class="btn btn-primary" id="res-reinstall">重装</button>' : '') +
+         (canReinstall ? '<button class="btn btn-primary" id="res-reinstall">重装</button>' : '') +
          (isAddon ? '' : '<button class="btn btn-danger" id="res-force-uninstall">卸载资源</button>') +
          '<button class="btn btn-danger" id="res-delete">删除</button>' +
       '</div>' +
@@ -679,7 +700,7 @@ function openResModal(kind, item) {
     const r = await api.open_mod_item_dir(kind, dir).catch(e => ({ error: String(e) }));
     if (r && r.error) toast(r.error, 'error');
   };
-  if (item.reinstall_available) {
+  if (canReinstall) {
     $('#res-reinstall').onclick = () => {
       closePanel(panel);
       confirmReinstall(kind, [dir], isAddon ? '插件' : 'Mod');
