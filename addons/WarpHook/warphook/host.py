@@ -1575,6 +1575,22 @@ class Host:
         addr = block.address + HOST_OBJECTS_OFFSET + slot * HOST_OBJECT_SIZE
         return int(ctypes.c_uint64.from_address(addr).value)
 
+    def put_slot(self, slot, ptr):
+        """把裸指针直接写进对象槽（调试用，不挂 GC 句柄）。
+
+        对象必须由游戏自己持有，否则下一次 GC 就可能把它收走。只用于
+        「已经有一个有效模型指针，想临时塞进槽里调方法」这种场合。
+        """
+        slot = int(slot)
+        if slot < 0 or slot >= HOST_OBJECT_COUNT:
+            raise ValueError(f"对象槽 {slot} 超出 0..{HOST_OBJECT_COUNT - 1}")
+        block = self.block()
+        if block is None:
+            return False
+        addr = block.address + HOST_OBJECTS_OFFSET + slot * HOST_OBJECT_SIZE
+        ctypes.c_uint64.from_address(addr).value = int(ptr) & 0xFFFFFFFFFFFFFFFF
+        return True
+
     @_command_transaction
     def read(self, slot, chain, kind="int", timeout=2.0, default=None,
              detail=False):

@@ -942,3 +942,68 @@ BattleSoundGenerator.StartAddBGM(短名, 1, 0)    // 播附加曲，STOP_MODE=1 
   战斗 BGM bank 里，不需要额外加载。
 - **没有音量/淡入淡出控制**。要淡入得自己调 `SetParameterByName`，那属于
   「接管音频」，超出这层的范围。
+
+## 19. 敌人生成 / 移除（v0.9.57）
+
+### 19.1 为什么不直接调 CreateEnemyInStage
+
+`BattleObjectManager.CreateEnemyInStage(GenerationData)` 会在内部创建
+`BattleUnitView`、加载 Unity 资源。WarpHook 的 `CMD_CALL` 全部投递 worker
+隔离舱，worker 线程碰 Unity 会直接把游戏崩掉（真机已复现）。所以生成/移除
+一律只走**游戏自己的队列**：
+
+```
+生成  EnqueueCreateUnit(GenerationData)
+移除  EnqueueRemoveUnitInstanceID(faction, instanceID, waveIndex)
+```
+
+真正的模型 / View / 生命周期由主线程在 wave 或回合时机处理。`immediate=True`
+仍保留 `CreateEnemyInStage`，只用于诊断，不要在生产插件里开。
+
+### 19.2 GenerationData 布局（64 字节）
+
+| 偏移 | 字段 |
+| --- | --- |
+| 0x00 | id（EnemyStaticData / AbnormalityStaticData 编号） |
+| 0x04 | level |
+| 0x08 | syncLevel |
+| 0x0C | waveIndex |
+| 0x10 | firstTurnSpeed |
+| 0x14 | faction（ENEMY=1） |
+| 0x18 | position（MAIN=1 / SUB=2） |
+| 0x1C | startPoint（Nullable<Vector3>，全 0 = null） |
+| 0x30 | onCreatedUnit（Action，null） |
+| 0x38 | isValid（置 1） |
+
+正好一块命令缓冲 64 字节。`Host.write_buf(0, data)` 填好后用
+`call(..., args=(('buf', 0),), via='invoke')` 传给 `EnqueueCreateUnit`。
+
+### 19.3 移除用 GetModelList 找目标
+
+`clear_enemies` 不按 identity 猜阵营，而是调
+`BattleObjectManager.GetModelList(UNIT_FACTION, includeAssistance)` 拿
+`List<BattleUnitModel>`，按 `_instanceID`（0x60）逐个入队移除。这样只删
+指定阵营，玩家单位不会被误伤。List 和生成结果都临时占用对象槽 27
+（`SLOT_SCRATCH`），同步命令结束即归还。
+
+### 19.4 接口
+
+| 位置 | 签名 | 说明 |
+| --- | --- | --- |
+| `game` | `create_enemy(id, level=-1, sync_level=-1, wave_index=0, first_turn_speed=0, position='main', immediate=False)` | 入队生成，下一回合出现 |
+| `game` | `remove_enemy(instance_id, faction='enemy', wave_index=0)` | 单个入队移除 |
+| `game` | `remove_enemies(instance_ids, faction='enemy', wave_index=0)` | 批量入队移除 |
+| `game` | `clear_enemies(keep=(), faction='enemy', wave_index=0, include_assistance=False)` | 按阵营清空，保留 `keep` |
+| `Host` | `write_buf(index, data)` / `put_slot(slot, ptr)` | 值类型缓冲 / 调试写槽 |
+
+### 19.5 边界
+
+- **只保证模型 + View**。`EnqueueCreateUnit` 不保证行动槽、pattern、AI 技能
+  完整。嫉妒罪种这类 `BattleUnitModel_Abnormality` 尤其明显：`_sinActionList=0`、
+  `_attackSkillList=0`、`PatternScript._patternList=0`，手动 `InitData` /
+  `InitActionSlots` 也补不回来。完整初始化仍要依赖游戏自己的 wave 生成流程。
+- **移除是延迟的**。`EnqueueRemoveUnitInstanceID` 只入队，下一回合或生成时机
+  才真正移除。
+- **不要用 `immediate=True`**。它在 worker 线程创建 View，会崩 Unity。
+- **场景切换前清理自制单位**。空壳单位可能留下不完整的 View / DOTween，
+  重进关卡清场景时有概率崩溃。

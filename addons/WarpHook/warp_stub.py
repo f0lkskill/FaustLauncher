@@ -516,9 +516,37 @@ class Game(Protocol):
 
     def create_enemy(self, enemy_id: int, level: int = -1, sync_level: int = -1,
                      wave_index: int = 0, first_turn_speed: int = 0,
-                     position: str = "main", timeout: float = 3.0) -> dict:
-        """用游戏原生 ``CreateEnemyInStage`` 立即生成一个敌人。
+                     position: str = "main", immediate: bool = False,
+                     timeout: float = 3.0) -> dict:
+        """把敌人/异想体放进游戏原生生成队列（默认），由主线程创建。
 
-        ``enemy_id`` 是 ``EnemyStaticData`` 的编号；UI / 行动槽由游戏自己
-        构造。需要先有一次回合开始把 BattleObjectManager 落进对象槽。
+        ``enemy_id`` 是 ``EnemyStaticData`` / ``AbnormalityStaticData`` 的编号；
+        UI 由游戏自己构造。返回 ``{'ok','mode','queued','enemy_id','position'}``。
+        ``immediate=True`` 直接 ``CreateEnemyInStage``，会在 worker 线程创建
+        View 并崩 Unity，仅诊断用。需要先有一次回合开始把 BattleObjectManager
+        落进对象槽。
+
+        注意：这条路径只保证模型 + View；行动槽 / pattern / AI 技能不一定
+        完整（嫉妒罪种这类 Abnormality 尤其明显），完整初始化仍要依赖游戏
+        自己的 wave 生成流程。
+        """
+
+    def remove_enemy(self, instance_id: int, faction: str = "enemy",
+                     wave_index: int = 0, timeout: float = 3.0) -> dict:
+        """把一个单位放进游戏原生的移除队列（下一回合/生成时机生效）。
+
+        ``instance_id`` 就是 ``Unit.id``；只改队列、不销毁 View，worker 安全。
+        """
+
+    def remove_enemies(self, instance_ids, faction: str = "enemy",
+                       wave_index: int = 0, timeout: float = 3.0) -> dict:
+        """批量单位放进移除队列。返回 ``{'ok','queued','failed','faction'}``。"""
+
+    def clear_enemies(self, keep=(), faction: str = "enemy",
+                      wave_index: int = 0, include_assistance: bool = False,
+                      timeout: float = 3.0) -> dict:
+        """清空指定阵营，保留 ``keep`` 里的 InstanceID / ``Unit``。
+
+        先用 ``GetModelList`` 拿阵营列表，再逐个 ``EnqueueRemoveUnitInstanceID``；
+        不会直接销毁 View。返回 ``{'ok','queued','kept','failed','faction'}``。
         """

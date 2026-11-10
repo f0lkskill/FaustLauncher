@@ -136,8 +136,11 @@ _NAMESPACES = {
         # ---- 阵营（v15）：判定层把单位当成敌方/友方 ----
         'set_unit_faction': live.set_unit_faction,
         'clear_unit_faction': live.clear_unit_faction,
-        # ---- 生成敌人：走游戏原生 CreateEnemyInStage ----
+        # ---- 生成 / 移除敌人：只改游戏原生队列，不碰 Unity View ----
         'create_enemy': live.create_enemy,
+        'remove_enemy': live.remove_enemy,
+        'remove_enemies': live.remove_enemies,
+        'clear_enemies': live.clear_enemies,
         'on_round_start': live.on_round_start,
         'on_scene_changed': live.on_scene_changed,
         'on_battle_start': live.on_battle_start,

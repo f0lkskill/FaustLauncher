@@ -60,8 +60,10 @@ _GENERATION_DATA_SIZE = 64
 _FACTION_ENEMY = 1
 #: ``UNIT_POSITION`` 名字 → 数值（ERROR=0 / MAIN=1 / SUB=2 / ASSISTANCE=3）。
 _UNIT_POSITIONS = {'error': 0, 'main': 1, 'sub': 2, 'assistance': 3}
-#: 创建结果落的对象槽（24..29 已被音频 / 管理器 / 场景占用）。
-_SLOT_SPAWN = 30
+#: 同步命令临时占用的对象槽（27 是项目预留的 scratch，调用后归还）。
+_SLOT_TEMP = objects.SLOT_SCRATCH
+_SLOT_SPAWN = _SLOT_TEMP
+_SLOT_LIST = _SLOT_TEMP
 
 
 def _pack_generation_data(enemy_id, level=-1, sync_level=-1, wave_index=0,
@@ -81,6 +83,114 @@ def _pack_generation_data(enemy_id, level=-1, sync_level=-1, wave_index=0,
                      int(first_turn_speed), int(faction), int(position))
     data[0x38] = 1
     return bytes(data)
+
+
+def _create_enemy_on(host, enemy_id, level=-1, sync_level=-1, wave_index=0,
+                     first_turn_speed=0, position='main', immediate=False,
+                     timeout=3.0):
+    """``create_enemy`` 的宿主侧实现（Live 和调试脚本共用）。
+
+    默认走 ``EnqueueCreateUnit``：只把 GenerationData 放进生成队列，真正的
+    模型 / 视图由游戏主线程在下一个生成时机创建，worker 线程不碰 Unity API。
+    ``immediate=True`` 直接调 ``CreateEnemyInStage``，它会在 worker 线程里
+    创建 BattleUnitView —— 实测会让 Unity 崩溃，只保留作确认手段。
+    """
+    if objects.access(host).manager() is None:
+        return {'ok': False,
+                'reason': '还没拿到 BattleObjectManager，等一次回合开始后再试'}
+    pos = _UNIT_POSITIONS.get(str(position).strip().lower())
+    if pos is None:
+        return {'ok': False, 'reason': f'未知站位：{position}'}
+    data = _pack_generation_data(enemy_id, level=level,
+                                 sync_level=sync_level,
+                                 wave_index=wave_index,
+                                 first_turn_speed=first_turn_speed,
+                                 faction=_FACTION_ENEMY, position=pos)
+    if not host.write_buf(0, data):
+        return {'ok': False, 'reason': '命令缓冲不可用'}
+    if not immediate:
+        result = host.call('BattleObjectManager::EnqueueCreateUnit',
+                           slot=objects.SLOT_MANAGER,
+                           args=(('buf', 0),), ret='void', via='invoke',
+                           timeout=timeout)
+        if result != '已执行':
+            return {'ok': False, 'reason': result}
+        queued = host.call('BattleObjectManager::GetWaitingCreateUnitCount',
+                           slot=objects.SLOT_MANAGER, ret='int32',
+                           timeout=timeout)
+        if isinstance(queued, str):
+            queued = None
+        return {'ok': True, 'mode': 'enqueue', 'queued': queued,
+                'enemy_id': int(enemy_id), 'position': pos}
+    result = host.call('BattleObjectManager::CreateEnemyInStage',
+                       slot=objects.SLOT_MANAGER,
+                       args=(('buf', 0),), ret='ref',
+                       out_slot=_SLOT_SPAWN, via='invoke',
+                       timeout=timeout)
+    if isinstance(result, str):
+        return {'ok': False, 'reason': result}
+    if not host.object_ptr(_SLOT_SPAWN):
+        return {'ok': False, 'reason': '游戏没有返回敌人模型'}
+    instance_id = host.read(_SLOT_SPAWN, [{'off': 0x60, 'deref': False}],
+                            kind='int', default=None, timeout=timeout)
+    return {'ok': True, 'mode': 'immediate', 'slot': _SLOT_SPAWN,
+            'instance_id': instance_id, 'enemy_id': int(enemy_id),
+            'position': pos}
+
+
+def _model_list_ids(host, faction=1, include_assistance=False,
+                    slot=_SLOT_LIST, timeout=3.0):
+    """调 ``BattleObjectManager.GetModelList`` 取指定阵营的 InstanceID。"""
+    host.put_slot(slot, 0)
+    result = host.call('BattleObjectManager::GetModelList',
+                       slot=objects.SLOT_MANAGER,
+                       args=(int(faction), bool(include_assistance)),
+                       ret='ref', out_slot=slot, via='invoke',
+                       timeout=timeout)
+    if isinstance(result, str):
+        return None
+    count = host.read(slot, [], kind='count', default=0, timeout=timeout)
+    ids = []
+    for i in range(count or 0):
+        iid = host.read(slot, [{'list': i}, {'off': 0x60, 'deref': False}],
+                        kind='int', default=None, timeout=timeout)
+        if iid is not None:
+            ids.append(int(iid))
+    host.release(slot)
+    return ids
+
+
+def _remove_unit_on(host, instance_id, faction=1, wave_index=0, timeout=3.0):
+    """把一个单位放进游戏原生的移除队列（不销毁 View，worker 安全）。"""
+    args = (int(faction), int(instance_id), int(wave_index))
+    result = host.call('BattleObjectManager::EnqueueRemoveUnitInstanceID',
+                       slot=objects.SLOT_MANAGER, args=args,
+                       ret='void', via='direct', timeout=timeout)
+    if result != '已执行':
+        result = host.call('BattleObjectManager::EnqueueRemoveUnitInstanceID',
+                           slot=objects.SLOT_MANAGER, args=args,
+                           ret='void', via='invoke', timeout=timeout)
+    return result == '已执行'
+
+
+def _clear_enemies_on(host, keep=(), faction=1, wave_index=0,
+                      include_assistance=False, timeout=3.0):
+    """按阵营取列表，把不在 ``keep`` 里的单位全部入队移除。"""
+    ids = _model_list_ids(host, faction, include_assistance, timeout=timeout)
+    if ids is None:
+        return {'ok': False, 'reason': '拿不到敌人列表'}
+    keep_set = {int(getattr(item, 'id', item)) for item in (keep or ())}
+    queued, kept, failed = [], [], []
+    for iid in ids:
+        if iid in keep_set:
+            kept.append(iid)
+            continue
+        if _remove_unit_on(host, iid, faction, wave_index, timeout):
+            queued.append(iid)
+        else:
+            failed.append(iid)
+    return {'ok': not failed, 'queued': queued, 'kept': kept,
+            'failed': failed, 'faction': int(faction)}
 
 
 class Battle:
@@ -601,45 +711,82 @@ class Live:
     # ---------- 生成敌人 ----------
 
     def create_enemy(self, enemy_id, level=-1, sync_level=-1, wave_index=0,
-                     first_turn_speed=0, position='main', timeout=3.0):
-        """用游戏原生 ``CreateEnemyInStage`` 立即生成一个敌人。
+                     first_turn_speed=0, position='main', immediate=False,
+                     timeout=3.0):
+        """把一个敌人放进游戏原生的生成队列（默认），等主线程创建。
 
         ``enemy_id`` 是 ``EnemyStaticData`` 的编号（罪种 / 普通敌人都走这一条）；
         ``position`` 认 ``main`` / ``sub`` / ``assistance``。
 
-        这条路和改 ``get__faction`` 不同：单位由游戏的创建流程生成，
-        ``BattleUnitView`` 也会实时构造，所以 UI 正常。需要先有一次回合开始
-        把 ``BattleObjectManager`` 落进对象槽。返回
-        ``{'ok', 'slot', 'instance_id', 'enemy_id', 'position'}``。
+        默认只入队（``EnqueueCreateUnit``），模型和 ``BattleUnitView`` 由游戏
+        主线程在下一个生成时机构造，所以 UI 正常、也不会在 worker 线程碰
+        Unity。``immediate=True`` 直接 ``CreateEnemyInStage`` —— 它会在
+        worker 线程创建 View，实测崩游戏，只在诊断时用。
+
+        需要先有一次回合开始把 ``BattleObjectManager`` 落进对象槽。返回
+        ``{'ok', 'mode', 'queued'|'instance_id', 'enemy_id', 'position'}``。
+        """
+        return _create_enemy_on(self.host(), enemy_id, level=level,
+                                sync_level=sync_level, wave_index=wave_index,
+                                first_turn_speed=first_turn_speed,
+                                position=position, immediate=immediate,
+                                timeout=timeout)
+
+    def remove_enemy(self, instance_id, faction='enemy', wave_index=0,
+                     timeout=3.0):
+        """把一个单位放进游戏原生的移除队列（下一回合/生成时机生效）。
+
+        ``instance_id`` 就是 ``Unit.id``。走 ``EnqueueRemoveUnitInstanceID``，
+        只改队列、不销毁 View，所以 worker 线程安全。
         """
         host = self.host()
         if objects.access(host).manager() is None:
             return {'ok': False,
                     'reason': '还没拿到 BattleObjectManager，等一次回合开始后再试'}
-        pos = _UNIT_POSITIONS.get(str(position).strip().lower())
-        if pos is None:
-            return {'ok': False, 'reason': f'未知站位：{position}'}
-        data = _pack_generation_data(enemy_id, level=level,
-                                     sync_level=sync_level,
-                                     wave_index=wave_index,
-                                     first_turn_speed=first_turn_speed,
-                                     faction=_FACTION_ENEMY, position=pos)
-        if not host.write_buf(0, data):
-            return {'ok': False, 'reason': '命令缓冲不可用'}
-        result = host.call('BattleObjectManager::CreateEnemyInStage',
-                           slot=objects.SLOT_MANAGER,
-                           args=(('buf', 0),), ret='ref',
-                           out_slot=_SLOT_SPAWN, via='invoke',
-                           timeout=timeout)
-        if isinstance(result, str):
-            return {'ok': False, 'reason': result}
-        if not host.object_ptr(_SLOT_SPAWN):
-            return {'ok': False, 'reason': '游戏没有返回敌人模型'}
-        instance_id = host.read(_SLOT_SPAWN, [{'off': 0x60, 'deref': False}],
-                                kind='int', default=None, timeout=timeout)
-        return {'ok': True, 'slot': _SLOT_SPAWN,
-                'instance_id': instance_id, 'enemy_id': int(enemy_id),
-                'position': pos}
+        value = self.FACTIONS.get(str(faction).strip().lower())
+        if value is None:
+            return {'ok': False, 'reason': f'未知阵营：{faction}'}
+        ok = _remove_unit_on(host, instance_id, value, wave_index, timeout)
+        return {'ok': ok, 'instance_id': int(instance_id), 'faction': value,
+                'queued': 1 if ok else 0}
+
+    def remove_enemies(self, instance_ids, faction='enemy', wave_index=0,
+                       timeout=3.0):
+        """批量把单位放进移除队列。返回 ``queued`` / ``failed`` 两个 id 表。"""
+        host = self.host()
+        if objects.access(host).manager() is None:
+            return {'ok': False,
+                    'reason': '还没拿到 BattleObjectManager，等一次回合开始后再试'}
+        value = self.FACTIONS.get(str(faction).strip().lower())
+        if value is None:
+            return {'ok': False, 'reason': f'未知阵营：{faction}'}
+        queued, failed = [], []
+        for iid in instance_ids:
+            if _remove_unit_on(host, iid, value, wave_index, timeout):
+                queued.append(int(iid))
+            else:
+                failed.append(int(iid))
+        return {'ok': not failed, 'queued': queued, 'failed': failed,
+                'faction': value}
+
+    def clear_enemies(self, keep=(), faction='enemy', wave_index=0,
+                      include_assistance=False, timeout=3.0):
+        """清空指定阵营，保留 ``keep`` 里的 InstanceID。
+
+        先用 ``GetModelList`` 拿当前阵营列表，再逐个入队移除；不会直接
+        销毁 View。``keep`` 可以放 ``Unit`` 或 int。
+        """
+        host = self.host()
+        if objects.access(host).manager() is None:
+            return {'ok': False,
+                    'reason': '还没拿到 BattleObjectManager，等一次回合开始后再试'}
+        value = self.FACTIONS.get(str(faction).strip().lower())
+        if value is None:
+            return {'ok': False, 'reason': f'未知阵营：{faction}'}
+        return _clear_enemies_on(host, keep=keep, faction=value,
+                                 wave_index=wave_index,
+                                 include_assistance=include_assistance,
+                                 timeout=timeout)
 
     def log(self, message):
         """带插件名的日志。"""
@@ -924,15 +1071,39 @@ def clear_unit_faction(push=True):
 
 
 def create_enemy(enemy_id, level=-1, sync_level=-1, wave_index=0,
-                 first_turn_speed=0, position='main', timeout=3.0):
-    """立即生成一个敌人：``game.create_enemy(10101)``。
+                 first_turn_speed=0, position='main', immediate=False,
+                 timeout=3.0):
+    """把一个敌人放进生成队列：``game.create_enemy(1110)``。
 
-    走游戏原生 ``BattleObjectManager.CreateEnemyInStage``，UI 实时构造。
+    默认走 ``EnqueueCreateUnit``，由游戏主线程创建；``immediate=True``
+    直接 ``CreateEnemyInStage``（worker 线程会崩 Unity，仅诊断用）。
     """
     return live().create_enemy(enemy_id, level=level, sync_level=sync_level,
                                wave_index=wave_index,
                                first_turn_speed=first_turn_speed,
-                               position=position, timeout=timeout)
+                               position=position, immediate=immediate,
+                               timeout=timeout)
+
+
+def remove_enemy(instance_id, faction='enemy', wave_index=0, timeout=3.0):
+    """把一个单位放进移除队列：``game.remove_enemy(15)``。"""
+    return live().remove_enemy(instance_id, faction=faction,
+                               wave_index=wave_index, timeout=timeout)
+
+
+def remove_enemies(instance_ids, faction='enemy', wave_index=0, timeout=3.0):
+    """批量移除：``game.remove_enemies([15, 16])``。"""
+    return live().remove_enemies(instance_ids, faction=faction,
+                                 wave_index=wave_index, timeout=timeout)
+
+
+def clear_enemies(keep=(), faction='enemy', wave_index=0,
+                  include_assistance=False, timeout=3.0):
+    """清空阵营但保留 ``keep``：``game.clear_enemies(keep=[17, 18])``。"""
+    return live().clear_enemies(keep=keep, faction=faction,
+                                wave_index=wave_index,
+                                include_assistance=include_assistance,
+                                timeout=timeout)
 
 
 def bgm(name, bank=None, stop_current=True, wait=True, wait_timeout=120.0,

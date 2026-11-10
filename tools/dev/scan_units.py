@@ -19,10 +19,27 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'addons/WarpHook'))
 
-from warphook import live  # noqa: E402
+from warphook import live, objects  # noqa: E402
 
 KEYS = ('index', 'id', 'identity', 'position', 'hp', 'max_hp', 'sp',
         'speed', 'alive', 'panic', 'break', 'buffs')
+
+
+def _attach_host():
+    """连启动器已经建好的宿主，不自己注入、不重写钩子表。"""
+    from warphook.base import shm_open
+    from warphook.host import (Host, HostHeader, HOST_MAP_BYTES,
+                               HOST_MAP_DEFAULT, HOST_MAGIC)
+    block = shm_open(HOST_MAP_DEFAULT, HOST_MAP_BYTES, HostHeader,
+                     magic_field='magic', magic_value=HOST_MAGIC)
+    if block is None:
+        return None
+    host = Host(addon_name='scan_units', hooks=[], texts=[])
+    host._block = block
+    if not host.object_ptr(objects.SLOT_MANAGER):
+        host.call('BattleObjectManager::get_Instance', slot=None, ret='ref',
+                  out_slot=objects.SLOT_MANAGER, via='invoke', timeout=5.0)
+    return host
 
 
 def _row(unit):
@@ -46,23 +63,42 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--all', action='store_true', help='打印字段表里的全部字段')
     parser.add_argument('--json', action='store_true', help='输出 JSON')
+    parser.add_argument('--attach', action='store_true',
+                        help='连启动器已挂钩的宿主，不自己注入')
     parser.add_argument('--wait', type=float, default=8.0, help='最多等多久把单位读出来')
     args = parser.parse_args()
 
-    game = live.live('scan_units')
-    # 回合钩子把 BattleObjectManager 落进对象槽，units() 才读得到。
-    game.on_round_start(lambda battle: None)
-    deadline = time.time() + max(0.0, args.wait)
-    units = []
-    while time.time() < deadline:
-        try:
-            units = game.units()
-        except Exception as error:  # noqa: BLE001
-            print(f'读单位失败：{error}')
-            units = []
-        if units:
-            break
-        time.sleep(0.5)
+    if args.attach:
+        host = _attach_host()
+        if host is None:
+            print('打不开宿主共享内存（启动器挂钩了吗？）')
+            return 2
+        deadline = time.time() + max(0.0, args.wait)
+        units = []
+        while time.time() < deadline:
+            try:
+                units = objects.units(host, slot=objects.SLOT_MANAGER)
+            except Exception as error:  # noqa: BLE001
+                print(f'读单位失败：{error}')
+                units = []
+            if units:
+                break
+            time.sleep(0.5)
+    else:
+        game = live.live('scan_units')
+        # 回合钩子把 BattleObjectManager 落进对象槽，units() 才读得到。
+        game.on_round_start(lambda battle: None)
+        deadline = time.time() + max(0.0, args.wait)
+        units = []
+        while time.time() < deadline:
+            try:
+                units = game.units()
+            except Exception as error:  # noqa: BLE001
+                print(f'读单位失败：{error}')
+                units = []
+            if units:
+                break
+            time.sleep(0.5)
 
     if not units:
         print('没读到单位（在战斗里吗？宿主连上了吗？）')

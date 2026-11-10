@@ -1,3 +1,11 @@
+## 0.9.57 — 敌人生成 / 移除封装
+
+- 新增 `game.create_enemy(id, ...)`：默认走 `EnqueueCreateUnit`，只入队，下一回合由游戏主线程创建；`immediate=True` 直接 `CreateEnemyInStage` 会在 worker 线程建 View 并崩 Unity，仅诊断用。
+- 新增 `game.remove_enemy(id)` / `remove_enemies(ids)` / `clear_enemies(keep=...)`：走 `EnqueueRemoveUnitInstanceID`，只改队列，worker 安全；`clear_enemies` 用 `GetModelList` 按阵营取表后逐个入队。
+- 新增 `Host.write_buf`（值类型参数缓冲）与 `Host.put_slot`（调试用裸指针写槽）。
+- 注意：`EnqueueCreateUnit` 只保证模型 + View；行动槽 / pattern / AI 技能不保证完整，嫉妒罪种这类 `BattleUnitModel_Abnormality` 仍需依赖游戏自身的 wave 生成流程。
+- 新增调试脚本：`tools/dev/try_create_enemy.py`、`try_remove_units.py`、`scan_units.py`、`scan_actions.py`、`scan_pattern.py`。
+
 ## 0.9.56 — 阵营改写（判定层）
 
 - 钩子协议 v15：`+284` 的 `pad` 改为 `ret_const`，拦截时写回该常量（默认 0，旧语义不变）；

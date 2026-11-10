@@ -211,6 +211,25 @@ audio.pause(host, True)
   锁死，`game.bgm_lock(True)` 放行（放曲前必须先解锁）。别再每回合重放。
   详见 `BattleBGMExtend` 移植版。
 
+## 生成 / 移除敌人
+
+```python
+game = _W.game
+
+game.create_enemy(1111)                  # 入队，下一回合由游戏主线程创建
+game.remove_enemy(15)                    # 单个入队移除
+game.remove_enemies([15, 16])            # 批量
+game.clear_enemies(keep=[17, 18])        # 清空敌方，保留 17/18
+```
+
+- 默认只走游戏原生队列（`EnqueueCreateUnit` / `EnqueueRemoveUnitInstanceID`），
+  不碰 Unity View，worker 安全；操作在下一回合或生成时机生效。
+- `immediate=True` 会直接 `CreateEnemyInStage`，在 worker 线程建 View，
+  **会崩游戏**，只用于诊断。
+- 生成出来的是“模型 + View”，行动槽 / pattern / AI 技能不保证完整；
+  嫉妒罪种这类 Abnormality 需要游戏自己的 wave 流程初始化。
+- 场景切换前先把自制单位清掉，避免空壳对象留到清场景阶段。
+
 ## 原生退出排查（协议 v14 candidate）
 
 原生命令 worker 曾在启动时调用一次 `il2cpp_thread_attach`，随后在事件等待中
