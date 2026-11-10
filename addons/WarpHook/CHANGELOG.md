@@ -1,3 +1,7 @@
+## 0.9.60 — 敌人生成观察钩子就绪后重推
+
+- `watch_enemy_spawn` / `hook_enemy_spawn` 现在调用 `Live.start()`：插件在游戏启动前加载时，Service 会在宿主就绪后重新 `_push` 钩子表，修复“插件已载入但事件永远为空”的问题。
+
 ## 0.9.59 — 敌人生成观察 / 改写钩子
 
 - 新增 `game.watch_enemy_spawn()`：只读观察 `BattleObjectManager.CreateEnemyUnit` 与 `CreateEnemyInStage`；事件 31/32 分别带 id/level/syncLevel 和 GenerationData.id/level/syncLevel/faction。

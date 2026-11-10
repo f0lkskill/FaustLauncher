@@ -824,6 +824,7 @@ class Live:
                                                         'CreateEnemyInStage')]
         self._extra_hooks.extend(hooks)
         self._hooks_on = True
+        self.start()
         if push:
             self._push()
         return {'ok': True,
@@ -844,6 +845,7 @@ class Live:
                                                         'CreateEnemyInStage')]
         self._extra_hooks.extend(hooks)
         self._hooks_on = True
+        self.start()
         if push:
             self._push()
         return {'ok': True, 'enemy_id': int(enemy_id),
