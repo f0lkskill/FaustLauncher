@@ -1,3 +1,7 @@
+## 0.9.61 — 改写槽在宿主就绪后补写
+
+- `hook_enemy_spawn` 记录 `_spawn_enemy_id`，`_push` 时重新 `put_slot(31, id)`；修复插件在游戏启动前加载时槽 31 写入失败、`CreateEnemyUnit` 改写不生效的问题。
+
 ## 0.9.60 — 敌人生成观察钩子就绪后重推
 
 - `watch_enemy_spawn` / `hook_enemy_spawn` 现在调用 `Live.start()`：插件在游戏启动前加载时，Service 会在宿主就绪后重新 `_push` 钩子表，修复“插件已载入但事件永远为空”的问题。

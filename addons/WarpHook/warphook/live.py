@@ -355,6 +355,7 @@ class Live:
         self._scene_backoff = 0.5
         self._hooks_on = False
         self._pushed_ok = False
+        self._spawn_enemy_id = None
 
     # ---------- 连接 ----------
 
@@ -818,6 +819,7 @@ class Live:
         命中后把参数写进事件（unit: id/level/syncLevel；stage:
         GenerationData.id/level/syncLevel/faction），用 ``host.events()`` 读。
         """
+        self._spawn_enemy_id = None
         hooks = _enemy_spawn_hooks()
         self._extra_hooks = [h for h in self._extra_hooks
                              if h.get('method') not in ('CreateEnemyUnit',
@@ -838,6 +840,7 @@ class Live:
         :meth:`watch_enemy_spawn` 看事件再决定。
         """
         host = self.host()
+        self._spawn_enemy_id = int(enemy_id)
         host.put_slot(_SLOT_ENEMY_ID, int(enemy_id))
         hooks = _enemy_spawn_hooks(int(enemy_id))
         self._extra_hooks = [h for h in self._extra_hooks
@@ -860,6 +863,7 @@ class Live:
                                            'CreateEnemyInStage')]
         removed = len(self._extra_hooks) - len(kept)
         self._extra_hooks = kept
+        self._spawn_enemy_id = None
         self.host().put_slot(_SLOT_ENEMY_ID, 0)
         if push:
             self._push()
@@ -993,6 +997,8 @@ class Live:
 
     def _push(self):
         host = self.host()
+        if getattr(self, '_spawn_enemy_id', None) is not None:
+            host.put_slot(_SLOT_ENEMY_ID, self._spawn_enemy_id)
         hooks = self._live_hooks() if self._hooks_on else []
         def push_owned():
             host.configure(hooks=hooks, texts=[])
