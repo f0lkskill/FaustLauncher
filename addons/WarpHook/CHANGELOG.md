@@ -1,3 +1,11 @@
+## 0.9.59 — 敌人生成观察 / 改写钩子
+
+- 新增 `game.watch_enemy_spawn()`：只读观察 `BattleObjectManager.CreateEnemyUnit` 与 `CreateEnemyInStage`；事件 31/32 分别带 id/level/syncLevel 和 GenerationData.id/level/syncLevel/faction。
+- 新增 `game.hook_enemy_spawn(enemy_id)`：观察并改写 `CreateEnemyUnit` 第 1 个参数（id），常量放在对象槽 31。
+- 新增 `game.clear_enemy_spawn()`。
+- 测试插件 `addons/EnemySpawnProbe` 打印命中事件，用来确认 Abnormality 走哪个入口。
+- 说明：嫉妒罪种若走 `CreateEnemyInStage`，`hook_enemy_spawn` 的 int 改写不会生效，需要改 `GenerationData`；先用观察事件确认。
+
 ## 0.9.58 — 主线程调用与敌人完整初始化
 
 - 协议 v16：新增 `WARP_CMD_CALL_MAIN`（11），由主线程命令泵直接执行 CALL；`Host.call(..., main=True)` 使用它。`CreateEnemyInStage` / `ForceCreateUnitsInQueue` 这类创建 Unity View 的调用不再投递 worker。

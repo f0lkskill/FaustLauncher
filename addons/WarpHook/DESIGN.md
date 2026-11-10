@@ -1059,3 +1059,40 @@ game.create_enemy(1110, level=47, sync_level=4)   # 默认 main=True
 - `main=False` 是旧的 worker 队列路径，只保证模型 + View，不保证
   `PickSkills`；仅用于排查。
 - 协议升到 v16，旧 `warp_host.dll` 会被版本协商拒绝，必须重编译。
+
+## 21. 敌人生成观察 / 改写（v0.9.59）
+
+### 21.1 为什么不再自己造
+
+自己 `EnqueueCreateUnit` 出来的 Abnormality 只保证模型 + View：`_skillList`
+能补齐，但 part 的 `SinActionModel.currentSin` 依赖 `BattleActionModelManager`
+的 `SetSinQueue/ReadyBattle` 和 wave 流程，手动 `PickSkills/OnAddUnit` 要么空转，
+要么卡死主线程。所以改成**拦截游戏自己的生成入口，改它的参数**。
+
+### 21.2 观察
+
+两个入口都只读观察：
+
+| 入口 | argc | 事件 | reads |
+| --- | --- | --- | --- |
+| `BattleObjectManager.CreateEnemyUnit` | 9 | 31 | a=id / b=level / c=syncLevel |
+| `BattleObjectManager.CreateEnemyInStage` | 1 | 32 | a=GenerationData.id / b=level / c=syncLevel / d=faction |
+
+`CreateEnemyInStage` 的参数是 struct，`reads` 用
+`{'arg':1,'off':[0x0],'deref':[False],'kind':'int'}` 读 `GenerationData`
+字段（id 0x0 / level 0x4 / syncLevel 0x8 / faction 0x14）。
+
+### 21.3 改写
+
+`Hook` 的 `rewrite=(1, slot)` 把 `CreateEnemyUnit` 的第 1 个参数换成对象槽
+里的值。槽 31 放目标 id（`Host.put_slot(31, enemy_id)`），thunk 里
+`a1` 变成该整数，原函数按新 id 创建。
+
+槽 31 是 battle_snark 的保留位；观察/改写期间临时占用，不与其他插件并行
+使用。Abnormality（嫉妒罪种）如果走 `CreateEnemyInStage`，这里的 int 改写
+不生效，需要改 `GenerationData`（后续扩展）。
+
+### 21.4 测试插件
+
+`addons/EnemySpawnProbe`：加载后调用 `watch_enemy_spawn()`，轮询
+`host.events()` 打印 31/32 事件，用来确认当前关卡里嫉妒罪种走哪个入口。

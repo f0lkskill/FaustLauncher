@@ -530,6 +530,24 @@ class Game(Protocol):
         关卡正常敌人的等级（例如 ``level=47, sync_level=4``）。
         """
 
+    def watch_enemy_spawn(self, push: bool = True) -> dict:
+        """只读观察 ``CreateEnemyUnit`` / ``CreateEnemyInStage``。
+
+        事件号为 31/32，用 ``host.events()`` 读；unit 事件 a/b/c =
+        id/level/syncLevel，stage 事件 a/b/c/d =
+        GenerationData.id/level/syncLevel/faction。
+        """
+
+    def hook_enemy_spawn(self, enemy_id: int, push: bool = True) -> dict:
+        """观察并改写普通敌人生成 id（``CreateEnemyUnit`` 的第 1 个参数）。
+
+        Abnormality 若走 ``CreateEnemyInStage``，这个改写不会生效，先用
+        ``watch_enemy_spawn`` 看事件再决定。
+        """
+
+    def clear_enemy_spawn(self, push: bool = True) -> dict:
+        """撤掉敌人生成观察/改写钩子。"""
+
     def remove_enemy(self, instance_id: int, faction: str = "enemy",
                      wave_index: int = 0, timeout: float = 3.0) -> dict:
         """把一个单位放进游戏原生的移除队列（下一回合/生成时机生效）。

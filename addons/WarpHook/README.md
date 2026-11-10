@@ -234,6 +234,22 @@ game.clear_enemies(keep=[17, 18])                # 清空敌方，保留 17/18
 - 移除仍走 `EnqueueRemoveUnitInstanceID`，只改队列，下一回合或生成时机生效。
 - 场景切换前先把自制单位清掉，避免不完整的 View / DOTween 留到清场景阶段。
 
+### 观察 / 改写敌人生成
+
+```python
+game.watch_enemy_spawn()       # 只读观察，事件号 31/32
+game.hook_enemy_spawn(100101)  # 改写 CreateEnemyUnit 的 id
+game.clear_enemy_spawn()
+```
+
+`watch_enemy_spawn` 用 `host.events()` 读：
+
+- `id=31`（CreateEnemyUnit）：`a=id / b=level / c=syncLevel`
+- `id=32`（CreateEnemyInStage）：`a=GenerationData.id / b=level / c=syncLevel / d=faction`
+
+`hook_enemy_spawn` 只改普通敌人入口；Abnormality（嫉妒罪种）如果走
+`CreateEnemyInStage`，先观察事件再决定，不要直接假设 int 改写生效。
+
 ## 原生退出排查（协议 v14 candidate）
 
 原生命令 worker 曾在启动时调用一次 `il2cpp_thread_attach`，随后在事件等待中

@@ -64,6 +64,11 @@ _UNIT_POSITIONS = {'error': 0, 'main': 1, 'sub': 2, 'assistance': 3}
 _SLOT_TEMP = objects.SLOT_SCRATCH
 _SLOT_SPAWN = _SLOT_TEMP
 _SLOT_LIST = _SLOT_TEMP
+#: 敌人生成改写的常量槽（31 是 battle_snark 保留位；观察/改写期间占用）。
+_SLOT_ENEMY_ID = 31
+#: 敌人生成观察事件号（与回合钩子的 30 区分开）。
+_SPAWN_EVENT_UNIT = 31
+_SPAWN_EVENT_STAGE = 32
 
 
 def _pack_generation_data(enemy_id, level=-1, sync_level=-1, wave_index=0,
@@ -178,6 +183,38 @@ def _create_enemy_on(host, enemy_id, level=-1, sync_level=-1, wave_index=0,
     return {'ok': True, 'mode': 'immediate', 'slot': _SLOT_SPAWN,
             'instance_id': instance_id, 'enemy_id': int(enemy_id),
             'position': pos}
+
+
+def _enemy_spawn_hooks(enemy_id=None):
+    """观察游戏自己的敌人生成入口；给了 ``enemy_id`` 就顺手改写。"""
+    unit = {
+        'klass': 'BattleObjectManager',
+        'method': 'CreateEnemyUnit',
+        'argc': 9,
+        'actions': 0,
+        'event': _SPAWN_EVENT_UNIT,
+        'reads': [
+            {'arg': 1, 'kind': 'int', 'out': 0},
+            {'arg': 2, 'kind': 'int', 'out': 1},
+            {'arg': 3, 'kind': 'int', 'out': 2},
+        ],
+    }
+    if enemy_id is not None:
+        unit['rewrite'] = (1, _SLOT_ENEMY_ID)
+    stage = {
+        'klass': 'BattleObjectManager',
+        'method': 'CreateEnemyInStage',
+        'argc': 1,
+        'actions': 0,
+        'event': _SPAWN_EVENT_STAGE,
+        'reads': [
+            {'arg': 1, 'off': [0x0], 'deref': [False], 'kind': 'int', 'out': 0},
+            {'arg': 1, 'off': [0x4], 'deref': [False], 'kind': 'int', 'out': 1},
+            {'arg': 1, 'off': [0x8], 'deref': [False], 'kind': 'int', 'out': 2},
+            {'arg': 1, 'off': [0x14], 'deref': [False], 'kind': 'int', 'out': 3},
+        ],
+    }
+    return [unit, stage]
 
 
 def _model_list_ids(host, faction=1, include_assistance=False,
@@ -775,6 +812,57 @@ class Live:
                                 position=position, immediate=immediate,
                                 main=main, timeout=timeout)
 
+    def watch_enemy_spawn(self, push=True):
+        """只读观察游戏的 ``CreateEnemyUnit`` / ``CreateEnemyInStage``。
+
+        命中后把参数写进事件（unit: id/level/syncLevel；stage:
+        GenerationData.id/level/syncLevel/faction），用 ``host.events()`` 读。
+        """
+        hooks = _enemy_spawn_hooks()
+        self._extra_hooks = [h for h in self._extra_hooks
+                             if h.get('method') not in ('CreateEnemyUnit',
+                                                        'CreateEnemyInStage')]
+        self._extra_hooks.extend(hooks)
+        self._hooks_on = True
+        if push:
+            self._push()
+        return {'ok': True,
+                'events': {'CreateEnemyUnit': _SPAWN_EVENT_UNIT,
+                           'CreateEnemyInStage': _SPAWN_EVENT_STAGE}}
+
+    def hook_enemy_spawn(self, enemy_id, push=True):
+        """观察并改写 ``CreateEnemyUnit`` 的第 1 个参数（id）。
+
+        只改普通敌人入口；Abnormality 若走 ``CreateEnemyInStage``，先用
+        :meth:`watch_enemy_spawn` 看事件再决定。
+        """
+        host = self.host()
+        host.put_slot(_SLOT_ENEMY_ID, int(enemy_id))
+        hooks = _enemy_spawn_hooks(int(enemy_id))
+        self._extra_hooks = [h for h in self._extra_hooks
+                             if h.get('method') not in ('CreateEnemyUnit',
+                                                        'CreateEnemyInStage')]
+        self._extra_hooks.extend(hooks)
+        self._hooks_on = True
+        if push:
+            self._push()
+        return {'ok': True, 'enemy_id': int(enemy_id),
+                'slot': _SLOT_ENEMY_ID,
+                'events': {'CreateEnemyUnit': _SPAWN_EVENT_UNIT,
+                           'CreateEnemyInStage': _SPAWN_EVENT_STAGE}}
+
+    def clear_enemy_spawn(self, push=True):
+        """撤掉 :meth:`watch_enemy_spawn` / :meth:`hook_enemy_spawn`。"""
+        kept = [h for h in self._extra_hooks
+                if h.get('method') not in ('CreateEnemyUnit',
+                                           'CreateEnemyInStage')]
+        removed = len(self._extra_hooks) - len(kept)
+        self._extra_hooks = kept
+        self.host().put_slot(_SLOT_ENEMY_ID, 0)
+        if push:
+            self._push()
+        return {'ok': True, 'removed': removed}
+
     def remove_enemy(self, instance_id, faction='enemy', wave_index=0,
                      timeout=3.0):
         """把一个单位放进游戏原生的移除队列（下一回合/生成时机生效）。
@@ -1127,6 +1215,21 @@ def create_enemy(enemy_id, level=-1, sync_level=-1, wave_index=0,
                                first_turn_speed=first_turn_speed,
                                position=position, immediate=immediate,
                                main=main, timeout=timeout)
+
+
+def watch_enemy_spawn(push=True):
+    """只读观察敌人生成入口；事件用 ``host.events()`` 读。"""
+    return live().watch_enemy_spawn(push=push)
+
+
+def hook_enemy_spawn(enemy_id, push=True):
+    """观察并改写普通敌人生成 id：``game.hook_enemy_spawn(100101)``。"""
+    return live().hook_enemy_spawn(enemy_id, push=push)
+
+
+def clear_enemy_spawn(push=True):
+    """撤掉敌人生成观察/改写钩子。"""
+    return live().clear_enemy_spawn(push=push)
 
 
 def remove_enemy(instance_id, faction='enemy', wave_index=0, timeout=3.0):

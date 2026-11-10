@@ -138,6 +138,9 @@ _NAMESPACES = {
         'clear_unit_faction': live.clear_unit_faction,
         # ---- 生成 / 移除敌人：只改游戏原生队列，不碰 Unity View ----
         'create_enemy': live.create_enemy,
+        'watch_enemy_spawn': live.watch_enemy_spawn,
+        'hook_enemy_spawn': live.hook_enemy_spawn,
+        'clear_enemy_spawn': live.clear_enemy_spawn,
         'remove_enemy': live.remove_enemy,
         'remove_enemies': live.remove_enemies,
         'clear_enemies': live.clear_enemies,
