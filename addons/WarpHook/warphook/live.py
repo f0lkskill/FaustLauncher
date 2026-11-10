@@ -87,13 +87,16 @@ def _pack_generation_data(enemy_id, level=-1, sync_level=-1, wave_index=0,
 
 def _create_enemy_on(host, enemy_id, level=-1, sync_level=-1, wave_index=0,
                      first_turn_speed=0, position='main', immediate=False,
-                     timeout=3.0):
+                     main=True, timeout=3.0):
     """``create_enemy`` 的宿主侧实现（Live 和调试脚本共用）。
 
-    默认走 ``EnqueueCreateUnit``：只把 GenerationData 放进生成队列，真正的
-    模型 / 视图由游戏主线程在下一个生成时机创建，worker 线程不碰 Unity API。
-    ``immediate=True`` 直接调 ``CreateEnemyInStage``，它会在 worker 线程里
-    创建 BattleUnitView —— 实测会让 Unity 崩溃，只保留作确认手段。
+    ``main=True``（默认）走 ``CMD_CALL_MAIN``，由游戏主线程命令泵执行：
+    默认 ``EnqueueCreateUnit`` + ``ForceCreateUnitsInQueue(ON_START_WAVE)``，
+    让游戏按正常 wave 流程创建并跑 ``PickSkills``；``immediate=True`` 则
+    主线程直接 ``CreateEnemyInStage`` 并补一次 ``PickSkills``。
+
+    ``main=False`` 保留旧的 worker 队列路径：只入队，等下一回合，不能保证
+    ``PickSkills`` 会执行（Abnormality 会变成不出招的空壳）。
     """
     if objects.access(host).manager() is None:
         return {'ok': False,
@@ -108,6 +111,45 @@ def _create_enemy_on(host, enemy_id, level=-1, sync_level=-1, wave_index=0,
                                  faction=_FACTION_ENEMY, position=pos)
     if not host.write_buf(0, data):
         return {'ok': False, 'reason': '命令缓冲不可用'}
+    if main:
+        if immediate:
+            result = host.call('BattleObjectManager::CreateEnemyInStage',
+                               slot=objects.SLOT_MANAGER,
+                               args=(('buf', 0),), ret='ref',
+                               out_slot=_SLOT_SPAWN, via='invoke',
+                               main=True, timeout=timeout)
+            if isinstance(result, str):
+                return {'ok': False, 'reason': result}
+            if not host.object_ptr(_SLOT_SPAWN):
+                return {'ok': False, 'reason': '游戏没有返回敌人模型'}
+            instance_id = host.read(
+                _SLOT_SPAWN, [{'off': 0x60, 'deref': False}],
+                kind='int', default=None, timeout=timeout)
+            pick = host.call('BattleUnitModel_Abnormality::PickSkills',
+                             slot=_SLOT_SPAWN, ret='void', via='invoke',
+                             main=True, timeout=timeout)
+            return {'ok': True, 'mode': 'main-immediate',
+                    'slot': _SLOT_SPAWN, 'instance_id': instance_id,
+                    'enemy_id': int(enemy_id), 'position': pos,
+                    'pick': pick}
+        result = host.call('BattleObjectManager::EnqueueCreateUnit',
+                           slot=objects.SLOT_MANAGER,
+                           args=(('buf', 0),), ret='void', via='invoke',
+                           main=True, timeout=timeout)
+        if result != '已执行':
+            return {'ok': False, 'reason': result}
+        result = host.call('BattleObjectManager::ForceCreateUnitsInQueue',
+                           slot=objects.SLOT_MANAGER, args=(0,), ret='void',
+                           via='direct', main=True, timeout=timeout)
+        if result != '已执行':
+            return {'ok': False, 'reason': result}
+        queued = host.call('BattleObjectManager::GetWaitingCreateUnitCount',
+                           slot=objects.SLOT_MANAGER, ret='int32',
+                           via='direct', main=True, timeout=timeout)
+        if isinstance(queued, str):
+            queued = None
+        return {'ok': True, 'mode': 'main-wave', 'queued': queued,
+                'enemy_id': int(enemy_id), 'position': pos}
     if not immediate:
         result = host.call('BattleObjectManager::EnqueueCreateUnit',
                            slot=objects.SLOT_MANAGER,
@@ -712,16 +754,17 @@ class Live:
 
     def create_enemy(self, enemy_id, level=-1, sync_level=-1, wave_index=0,
                      first_turn_speed=0, position='main', immediate=False,
-                     timeout=3.0):
-        """把一个敌人放进游戏原生的生成队列（默认），等主线程创建。
+                     main=True, timeout=3.0):
+        """在游戏主线程构造一个敌人（默认走正常 wave 流程）。
 
-        ``enemy_id`` 是 ``EnemyStaticData`` 的编号（罪种 / 普通敌人都走这一条）；
+        ``enemy_id`` 是 ``EnemyStaticData`` / ``AbnormalityStaticData`` 编号；
         ``position`` 认 ``main`` / ``sub`` / ``assistance``。
 
-        默认只入队（``EnqueueCreateUnit``），模型和 ``BattleUnitView`` 由游戏
-        主线程在下一个生成时机构造，所以 UI 正常、也不会在 worker 线程碰
-        Unity。``immediate=True`` 直接 ``CreateEnemyInStage`` —— 它会在
-        worker 线程创建 View，实测崩游戏，只在诊断时用。
+        默认 ``main=True``：由主线程命令泵执行
+        ``EnqueueCreateUnit`` + ``ForceCreateUnitsInQueue(ON_START_WAVE)``，
+        创建的同时跑 ``PickSkills``（Abnormality 也能出招）。``immediate=True``
+        则主线程直接 ``CreateEnemyInStage`` 并补一次 ``PickSkills``。
+        ``main=False`` 是旧的 worker 队列路径，只入队、不保证 PickSkills。
 
         需要先有一次回合开始把 ``BattleObjectManager`` 落进对象槽。返回
         ``{'ok', 'mode', 'queued'|'instance_id', 'enemy_id', 'position'}``。
@@ -730,7 +773,7 @@ class Live:
                                 sync_level=sync_level, wave_index=wave_index,
                                 first_turn_speed=first_turn_speed,
                                 position=position, immediate=immediate,
-                                timeout=timeout)
+                                main=main, timeout=timeout)
 
     def remove_enemy(self, instance_id, faction='enemy', wave_index=0,
                      timeout=3.0):
@@ -1072,17 +1115,18 @@ def clear_unit_faction(push=True):
 
 def create_enemy(enemy_id, level=-1, sync_level=-1, wave_index=0,
                  first_turn_speed=0, position='main', immediate=False,
-                 timeout=3.0):
-    """把一个敌人放进生成队列：``game.create_enemy(1110)``。
+                 main=True, timeout=3.0):
+    """在游戏主线程构造一个敌人：``game.create_enemy(1110, level=47, sync_level=4)``。
 
-    默认走 ``EnqueueCreateUnit``，由游戏主线程创建；``immediate=True``
-    直接 ``CreateEnemyInStage``（worker 线程会崩 Unity，仅诊断用）。
+    默认 ``main=True`` 走正常 wave 流程（``EnqueueCreateUnit`` +
+    ``ForceCreateUnitsInQueue(ON_START_WAVE)``），会跑 ``PickSkills``；
+    ``immediate=True`` 直接 ``CreateEnemyInStage`` 并补 ``PickSkills``。
     """
     return live().create_enemy(enemy_id, level=level, sync_level=sync_level,
                                wave_index=wave_index,
                                first_turn_speed=first_turn_speed,
                                position=position, immediate=immediate,
-                               timeout=timeout)
+                               main=main, timeout=timeout)
 
 
 def remove_enemy(instance_id, faction='enemy', wave_index=0, timeout=3.0):

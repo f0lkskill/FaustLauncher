@@ -1,3 +1,10 @@
+## 0.9.58 — 主线程调用与敌人完整初始化
+
+- 协议 v16：新增 `WARP_CMD_CALL_MAIN`（11），由主线程命令泵直接执行 CALL；`Host.call(..., main=True)` 使用它。`CreateEnemyInStage` / `ForceCreateUnitsInQueue` 这类创建 Unity View 的调用不再投递 worker。
+- `game.create_enemy(...)` 默认 `main=True`：`EnqueueCreateUnit` + `ForceCreateUnitsInQueue(ON_START_WAVE)`，创建时跑 `PickSkills`；嫉妒罪种等 Abnormality 需要把 `level/syncLevel` 设成当前关卡正常敌人的等级（例如 47/4）。
+- `create_enemy(..., immediate=True)` 主线程直接 `CreateEnemyInStage` 并补一次 `PickSkills`；`main=False` 回退旧 worker 队列路径。
+- 需重编译 `warp_host.dll`（v16）。调试脚本 `try_create_enemy.py` 增加 `--worker`，`--immediate` 改为主线程安全。
+
 ## 0.9.57 — 敌人生成 / 移除封装
 
 - 新增 `game.create_enemy(id, ...)`：默认走 `EnqueueCreateUnit`，只入队，下一回合由游戏主线程创建；`immediate=True` 直接 `CreateEnemyInStage` 会在 worker 线程建 View 并崩 Unity，仅诊断用。

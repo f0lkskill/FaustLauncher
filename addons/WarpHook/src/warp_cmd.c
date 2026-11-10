@@ -1228,6 +1228,14 @@ void warp_pump_commands(void)
     case WARP_CMD_KILL:
         rc = warp_kill_game();
         break;
+    case WARP_CMD_CALL_MAIN:
+        /* 主线程直接执行：CreateEnemyInStage / ForceCreateUnitsInQueue 这类
+         * 会创建 Unity View 的调用必须留在游戏主线程。异常经 &exc 返回，
+         * 不会像 worker 舱那样被 VEH 吞掉。 */
+        rc = warp_cmd_call(WARP_CMD_ARGC(type), WARP_CMD_SLOT(type),
+                           WARP_CMD_RETKIND(type), (int)g_hdr->vars[7],
+                           g_hdr->cmd_text);
+        break;
     case WARP_CMD_MAKE:
     case WARP_CMD_CALL:
     case WARP_CMD_STR:

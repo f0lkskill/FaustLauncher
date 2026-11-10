@@ -49,7 +49,8 @@ from .base import (
 )
 
 HOST_MAGIC = 0x54534857           # "WHST"
-HOST_VERSION = 15                  # v15：hook+284 pad→ret_const，flags 加 GUARD_NEG。
+HOST_VERSION = 16                  # v16：新增主线程 CALL_MAIN（11）。
+                                   # v15：hook+284 pad→ret_const，flags 加 GUARD_NEG。
                                    # v14：尾部追加 thread_detach 导出名，旧偏移不变。
                                    # v13：文案槽 128→512 字节。128 字节按 UTF-8 硬切会
                                    # 切在汉字中间，还会把 <color=…> 这类富文本标签切
@@ -106,6 +107,7 @@ CMD_RELEASE = 6   # 解掉槽上 GC 句柄并清槽
 CMD_READ = 7      # 代读：按 HOST_CMD_READ_OFFSET 处那条链读对象槽，结果 vars[6]/[7]
 CMD_LIST = 8      # 诊断：列某类同名方法的全部重载签名（纯元数据，不 invoke）
 CMD_STATIC = 9    # 读静态字段："类名::字段名" → 值落对象槽（引用类型）
+CMD_CALL_MAIN = 11  # 主线程直接执行 CALL（CreateEnemyInStage 等 Unity 调用）
 
 # CALL 的返回值形状（retkind 打进 cmd_type 12-15 位）
 CMD_RET_INT32 = 0   # box 返回，真值在 +0x10，位模式写回 vars[6]
@@ -1966,7 +1968,7 @@ class Host:
 
     @_command_transaction
     def call(self, method, slot=None, args=(), ret="int32", out_slot=-1,
-             timeout=2.0, unsafe=False, sig=None, via="direct"):
+             timeout=2.0, unsafe=False, sig=None, via="direct", main=False):
         """调一个方法：``host.call("Foo::get_value", slot=24, ret="int32")``。
 
         不再按方法名维护历史白名单。调用方必须提供正确的对象、参数类型和
@@ -1990,6 +1992,9 @@ class Host:
                 `L`=long `D`=double `V`=void，`O`/`?` 表示不校验；
                 末尾 `&` 表示 byref。例：`sig="S,B,B"`、
                 `sig="S,FMOD.Studio.EventInstance&"`。
+            main: True 时走 ``CMD_CALL_MAIN``，由游戏主线程命令泵直接执行。
+                创建 Unity View 的方法（``CreateEnemyInStage`` /
+                ``ForceCreateUnitsInQueue``）必须用它；普通读/音频仍走 worker。
 
         Returns:
             ret 为 int32/float 时返回数值（失败返回结果字符串）；
@@ -2019,7 +2024,8 @@ class Host:
         if str(via).lower() == "invoke":
             text = f"{text}~i"
         this_slot = -1 if slot is None else int(slot)
-        result = self._command(CMD_CALL, text, timeout, args=packed,
+        command = CMD_CALL_MAIN if main else CMD_CALL
+        result = self._command(command, text, timeout, args=packed,
                                retkind=retkind, slot=this_slot, out_slot=out_slot)
         if result != "已执行":
             return result

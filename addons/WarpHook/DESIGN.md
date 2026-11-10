@@ -1007,3 +1007,55 @@ BattleSoundGenerator.StartAddBGM(短名, 1, 0)    // 播附加曲，STOP_MODE=1 
 - **不要用 `immediate=True`**。它在 worker 线程创建 View，会崩 Unity。
 - **场景切换前清理自制单位**。空壳单位可能留下不完整的 View / DOTween，
   重进关卡清场景时有概率崩溃。
+
+## 20. 主线程调用通道（v0.9.58）
+
+### 20.1 为什么需要
+
+`CMD_CALL` 全部投递 worker 隔离舱，普通读/音频没问题；但
+`BattleObjectManager.CreateEnemyInStage` / `ForceCreateUnitsInQueue` 会在
+内部创建 `BattleUnitView`、加载 Unity 资源，worker 线程直接调用会崩 Unity。
+所以新增一条**主线程直接执行**的 CALL：
+
+```
+WARP_CMD_CALL_MAIN = 11
+```
+
+`warp_pump_commands` 收到它时不再 `work_submit`，而是直接调
+`warp_cmd_call(...)`；Python 侧 `Host.call(..., main=True)` 发送这个命令码。
+
+### 20.2 敌人生成走正常 wave 流程
+
+```python
+game.create_enemy(1110, level=47, sync_level=4)   # 默认 main=True
+```
+
+内部顺序（全部在主线程命令泵里）：
+
+1. `EnqueueCreateUnit(GenerationData)`
+2. `ForceCreateUnitsInQueue(ON_START_WAVE=0)`
+3. `GetWaitingCreateUnitCount()` 确认队列已消费
+
+这样 `CreateAllUnitinQueue(ON_START_WAVE)` 会走正常 wave 创建路径，
+`OnAddUnit` / `PickSkills` 都执行，Abnormality 的 part 才会拿到
+`currentSin/currentBattleAction`。
+
+`immediate=True` 则主线程直接 `CreateEnemyInStage`，再补一次
+`BattleUnitModel_Abnormality::PickSkills`；用于不想经过队列、需要立刻拿模型
+句柄的场合。
+
+### 20.3 level / syncLevel 必须给对
+
+嫉妒罪种的技能列表来自 `AbnormalityStaticData.attributeList`（3 个
+`UnitAttribute`），`AddSkillList` 会根据 `level/syncLevel` 过滤。传
+`-1/-1` 时 `_skillList` 会缺技能（例如 `1040701,1040702,1040704`，缺
+`1040703`），part 就不出招。正确值从当前关卡正常敌人读
+`UnitDataModel._level` / `_syncLevel`（ObscuredInt 0xD0/0xE0）得到。
+
+### 20.4 边界
+
+- 主线程 AV **不会**被 worker 舱的 VEH 接住；`main=True` 只用于明确的
+  Unity 调用，普通读链/音频仍走 worker。
+- `main=False` 是旧的 worker 队列路径，只保证模型 + View，不保证
+  `PickSkills`；仅用于排查。
+- 协议升到 v16，旧 `warp_host.dll` 会被版本协商拒绝，必须重编译。

@@ -216,19 +216,23 @@ audio.pause(host, True)
 ```python
 game = _W.game
 
-game.create_enemy(1111)                  # 入队，下一回合由游戏主线程创建
-game.remove_enemy(15)                    # 单个入队移除
-game.remove_enemies([15, 16])            # 批量
-game.clear_enemies(keep=[17, 18])        # 清空敌方，保留 17/18
+game.create_enemy(1110, level=47, sync_level=4)  # 主线程 wave 流程，创建即 PickSkills
+game.create_enemy(1110, immediate=True)          # 主线程直接 CreateEnemyInStage + PickSkills
+game.create_enemy(1110, main=False)              # 旧 worker 队列（不保证 PickSkills）
+game.remove_enemy(15)                            # 单个入队移除
+game.remove_enemies([15, 16])                    # 批量
+game.clear_enemies(keep=[17, 18])                # 清空敌方，保留 17/18
 ```
 
-- 默认只走游戏原生队列（`EnqueueCreateUnit` / `EnqueueRemoveUnitInstanceID`），
-  不碰 Unity View，worker 安全；操作在下一回合或生成时机生效。
-- `immediate=True` 会直接 `CreateEnemyInStage`，在 worker 线程建 View，
-  **会崩游戏**，只用于诊断。
-- 生成出来的是“模型 + View”，行动槽 / pattern / AI 技能不保证完整；
-  嫉妒罪种这类 Abnormality 需要游戏自己的 wave 流程初始化。
-- 场景切换前先把自制单位清掉，避免空壳对象留到清场景阶段。
+- v0.9.58 起 `create_enemy` 默认 `main=True`：主线程 `EnqueueCreateUnit` +
+  `ForceCreateUnitsInQueue(ON_START_WAVE)`，创建时跑 `PickSkills`，Abnormality
+  也能出招；需要重编译 `warp_host.dll`（协议 v16）。
+- `level` / `sync_level` 必须使用当前关卡正常敌人的等级（例如 47/4），传
+  `-1/-1` 会让 Abnormality 的技能列表缺项，变成不出招的空壳。
+- `immediate=True` 主线程直接 `CreateEnemyInStage` 并补 `PickSkills`；
+  `main=False` 只入队、等下一回合，不保证 `PickSkills`。
+- 移除仍走 `EnqueueRemoveUnitInstanceID`，只改队列，下一回合或生成时机生效。
+- 场景切换前先把自制单位清掉，避免不完整的 View / DOTween 留到清场景阶段。
 
 ## 原生退出排查（协议 v14 candidate）
 

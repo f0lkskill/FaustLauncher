@@ -46,7 +46,9 @@ def main():
     parser.add_argument('--speed', type=int, default=0, help='firstTurnSpeed')
     parser.add_argument('--position', default='main', choices=('main', 'sub', 'assistance'))
     parser.add_argument('--immediate', action='store_true',
-                        help='直接 CreateEnemyInStage（worker 线程会崩 Unity，仅诊断）')
+                        help='主线程直接 CreateEnemyInStage 并补 PickSkills')
+    parser.add_argument('--worker', action='store_true',
+                        help='回退到旧 worker 队列路径（不保证 PickSkills）')
     parser.add_argument('--attach', action='store_true',
                         help='连启动器已挂钩的宿主，不自己注入')
     parser.add_argument('--wait', type=float, default=8.0, help='最多等多久进战斗')
@@ -61,7 +63,8 @@ def main():
         create = lambda: live._create_enemy_on(
             host, args.id, level=args.level, sync_level=args.sync_level,
             wave_index=args.wave, first_turn_speed=args.speed,
-            position=args.position, immediate=args.immediate)
+            position=args.position, immediate=args.immediate,
+            main=not args.worker)
     else:
         game = live.live('create_enemy_tool')
         # 回合钩子把 BattleObjectManager 落进对象槽，create_enemy 才拿得到。
@@ -70,7 +73,8 @@ def main():
         create = lambda: game.create_enemy(
             args.id, level=args.level, sync_level=args.sync_level,
             wave_index=args.wave, first_turn_speed=args.speed,
-            position=args.position, immediate=args.immediate)
+            position=args.position, immediate=args.immediate,
+            main=not args.worker)
 
     deadline = time.time() + max(0.0, args.wait)
     units = []

@@ -57,7 +57,10 @@
 /* 数值转字符串（构建戳用）：warp_log("proto v" WARP_STR(WARP_VERSION)) */
 #define WARP_STR_(x)      #x
 #define WARP_STR(x)       WARP_STR_(x)
-#define WARP_VERSION      15                /* v15：hook+284 由 pad 改为 ret_const（阻塞时写回的常量），
+#define WARP_VERSION      16                /* v16：新增主线程 CALL_MAIN 命令（11），让
+                                             * CreateEnemyInStage / ForceCreateUnitsInQueue
+                                             * 在游戏主线程执行；结构尺寸不变。
+                                             * v15：hook+284 由 pad 改为 ret_const（阻塞时写回的常量），
                                              * flags 新增 GUARD_NEG 反向参数门。结构尺寸不变。
                                              * v14：尾部追加 thread_detach 导出名，旧偏移不变。
                                              * v13：文案槽 128→512 字节。UTF-8
@@ -125,6 +128,7 @@
 #define WARP_CMD_STATIC   9     /* 读静态字段：cmd_text = "类名::字段名"，值落对象槽（引用类） */
 
 #define WARP_CMD_AUDIO_SCORE 10 /* fixed Cp9 Boss10 Ryoshu=1 preflight/current */
+#define WARP_CMD_CALL_MAIN 11   /* 主线程直接执行 CALL（CreateEnemyInStage / ForceCreateUnitsInQueue） */
 
 #define WARP_CMD_CODE(t)    ((t) & 0xFF)
 #define WARP_CMD_ARGC(t)    (((t) >> 8) & 0xF)
