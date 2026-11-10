@@ -250,6 +250,16 @@ game.clear_enemy_spawn()
 `hook_enemy_spawn` 只改普通敌人入口；Abnormality（嫉妒罪种）如果走
 `CreateEnemyInStage`，先观察事件再决定，不要直接假设 int 改写生效。
 
+### 替换 Abnormality part
+
+```python
+game.replace_abnormality_part(100101)  # 默认改嫉妒罪种 1110..1115
+```
+
+直接改 `AbnormalityStaticData.abnormalityPartList`，下一次游戏正常生成
+嫉妒罪种时使用目标 part 的静态数据（技能 / 人格内容）。只改静态数据，
+当前场上已生成的敌人不变，需要重进场景。协议 v17，需重编译 DLL。
+
 ## 原生退出排查（协议 v14 candidate）
 
 原生命令 worker 曾在启动时调用一次 `il2cpp_thread_attach`，随后在事件等待中

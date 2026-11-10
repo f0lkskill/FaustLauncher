@@ -856,6 +856,52 @@ class Live:
                 'events': {'CreateEnemyUnit': _SPAWN_EVENT_UNIT,
                            'CreateEnemyInStage': _SPAWN_EVENT_STAGE}}
 
+    def replace_abnormality_part(self, target_part_id, source_ids=None,
+                                 timeout=3.0):
+        """把所有目标 Abnormality 的 part id 换成 ``target_part_id``。
+
+        直接改 ``AbnormalityStaticData.abnormalityPartList`` 的 List 元素；
+        下一次由游戏正常生成敌人时，part 会使用目标 part 的静态数据
+        （技能/人格内容）。``source_ids`` 默认嫉妒罪种 1110..1115。
+        """
+        host = self.host()
+        ids = (list(range(1110, 1116)) if source_ids is None
+               else [int(x) for x in source_ids])
+        result = host.call('StaticDataManager::get_Instance', slot=None,
+                           ret='ref', out_slot=30, via='invoke',
+                           timeout=timeout)
+        if isinstance(result, str):
+            return {'ok': False, 'reason': result}
+        result = host.call('StaticDataManager::get_AbnormalityUnitList',
+                           slot=30, ret='ref', out_slot=31, via='invoke',
+                           timeout=timeout)
+        if isinstance(result, str):
+            return {'ok': False, 'reason': result}
+        changed, failed = [], []
+        for sid in ids:
+            result = host.call('AbnormalityStaticDataList::GetData',
+                               slot=31, args=(sid,), ret='ref',
+                               out_slot=30, via='invoke', timeout=timeout)
+            if isinstance(result, str) or not host.object_ptr(30):
+                failed.append(sid)
+                continue
+            result = host.call(
+                'AbnormalityStaticData::get_AbnormalityPartIdList',
+                slot=30, ret='ref', out_slot=29, via='invoke',
+                timeout=timeout)
+            if isinstance(result, str) or not host.object_ptr(29):
+                failed.append(sid)
+                continue
+            wrote = host.write_list_int(29, 0, int(target_part_id),
+                                        timeout=timeout)
+            if wrote == '已执行':
+                changed.append(sid)
+            else:
+                failed.append(sid)
+        return {'ok': bool(changed) and not failed,
+                'target_part_id': int(target_part_id),
+                'changed': changed, 'failed': failed}
+
     def clear_enemy_spawn(self, push=True):
         """撤掉 :meth:`watch_enemy_spawn` / :meth:`hook_enemy_spawn`。"""
         kept = [h for h in self._extra_hooks
@@ -1233,6 +1279,13 @@ def watch_enemy_spawn(push=True):
 def hook_enemy_spawn(enemy_id, push=True):
     """观察并改写普通敌人生成 id：``game.hook_enemy_spawn(100101)``。"""
     return live().hook_enemy_spawn(enemy_id, push=push)
+
+
+def replace_abnormality_part(target_part_id, source_ids=None, timeout=3.0):
+    """把目标 Abnormality 的 part 静态数据换成 ``target_part_id``。"""
+    return live().replace_abnormality_part(target_part_id,
+                                           source_ids=source_ids,
+                                           timeout=timeout)
 
 
 def clear_enemy_spawn(push=True):

@@ -548,6 +548,15 @@ class Game(Protocol):
     def clear_enemy_spawn(self, push: bool = True) -> dict:
         """撤掉敌人生成观察/改写钩子。"""
 
+    def replace_abnormality_part(self, target_part_id: int, source_ids=None,
+                                 timeout: float = 3.0) -> dict:
+        """把目标 Abnormality 的 part 静态数据换成 ``target_part_id``。
+
+        直接改 ``AbnormalityStaticData.abnormalityPartList`` 的 List 元素，
+        下一次游戏正常生成敌人时生效。``source_ids`` 默认嫉妒罪种
+        1110..1115。
+        """
+
     def remove_enemy(self, instance_id: int, faction: str = "enemy",
                      wave_index: int = 0, timeout: float = 3.0) -> dict:
         """把一个单位放进游戏原生的移除队列（下一回合/生成时机生效）。

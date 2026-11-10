@@ -156,6 +156,7 @@ int warp_cmd_call(int argc, int slot, int retkind, int out_slot, const char *arg
 int warp_cmd_str(int slot, const char *text);
 int warp_cmd_static(const char *text, int out_slot);
 int warp_cmd_release(int slot);
+int warp_cmd_write_list(int slot, int index, int value);
 int warp_kill_game(void);
 void __stdcall hk_warp_pump(void *self, void *mi);
 void warp_work_start(void);

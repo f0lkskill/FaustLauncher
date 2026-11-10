@@ -1,3 +1,10 @@
+## 0.9.62 — Abnormality part 静态数据替换
+
+- 协议 v17：新增 `WARP_CMD_WRITE_LIST`（12），`Host.write_list_int(slot, index, value)` 直接写 `List<int>` 元素。
+- 新增 `game.replace_abnormality_part(target_part_id, source_ids=None)`：改 `AbnormalityStaticData.abnormalityPartList`，让游戏下次正常生成嫉妒罪种时使用目标 part 的静态数据（技能/人格内容）。
+- 测试插件 `EnemySpawnProbe` 改为后台等宿主就绪后调用 `replace_abnormality_part(100101)`，并提示重进场景。
+- 需重编译 `warp_host.dll`（v17）。
+
 ## 0.9.61 — 改写槽在宿主就绪后补写
 
 - `hook_enemy_spawn` 记录 `_spawn_enemy_id`，`_push` 时重新 `put_slot(31, id)`；修复插件在游戏启动前加载时槽 31 写入失败、`CreateEnemyUnit` 改写不生效的问题。

@@ -49,7 +49,8 @@ from .base import (
 )
 
 HOST_MAGIC = 0x54534857           # "WHST"
-HOST_VERSION = 16                  # v16：新增主线程 CALL_MAIN（11）。
+HOST_VERSION = 17                  # v17：新增 WRITE_LIST（12），写 List<int> 元素。
+                                   # v16：新增主线程 CALL_MAIN（11）。
                                    # v15：hook+284 pad→ret_const，flags 加 GUARD_NEG。
                                    # v14：尾部追加 thread_detach 导出名，旧偏移不变。
                                    # v13：文案槽 128→512 字节。128 字节按 UTF-8 硬切会
@@ -108,6 +109,7 @@ CMD_READ = 7      # 代读：按 HOST_CMD_READ_OFFSET 处那条链读对象槽�
 CMD_LIST = 8      # 诊断：列某类同名方法的全部重载签名（纯元数据，不 invoke）
 CMD_STATIC = 9    # 读静态字段："类名::字段名" → 值落对象槽（引用类型）
 CMD_CALL_MAIN = 11  # 主线程直接执行 CALL（CreateEnemyInStage 等 Unity 调用）
+CMD_WRITE_LIST = 12  # 写 List<int> 元素（vars[0]=index, vars[1]=value）
 
 # CALL 的返回值形状（retkind 打进 cmd_type 12-15 位）
 CMD_RET_INT32 = 0   # box 返回，真值在 +0x10，位模式写回 vars[6]
@@ -1941,6 +1943,18 @@ class Host:
         if raw:
             ctypes.memmove(base, raw, len(raw))
         return True
+
+    def write_list_int(self, slot, index, value, timeout=2.0):
+        """写 List<int> 第 ``index`` 个元素（静态数据/普通 List）。
+
+        ``slot`` 里放 List 对象；DLL 按 ``List._items + 0x20 + index*4``
+        直接写 int。纯内存操作，worker 线程安全。
+        """
+        slot = int(slot)
+        if slot < 0 or slot >= HOST_OBJECT_COUNT:
+            raise ValueError(f"对象槽 {slot} 超出 0..{HOST_OBJECT_COUNT - 1}")
+        return self._command(CMD_WRITE_LIST, "", timeout,
+                             args=(int(index), int(value)), slot=slot)
 
     def make(self, klass, args=(), slot=24, timeout=2.0):
         """构造一个对象放进对象槽（挂 GC 强句柄）。

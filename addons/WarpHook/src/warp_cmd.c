@@ -796,6 +796,24 @@ int warp_cmd_read(int slot)
     return ok ? WARP_CMD_RES_OK : WARP_CMD_RES_FAIL;
 }
 
+/* 写 List<int> 的第 index 个元素：List._items(0x10) -> Array 数据(0x20) +
+ * index*4。只用于静态数据/普通 List，不做 Unity 调用，worker 线程安全。 */
+int warp_cmd_write_list(int slot, int index, int value)
+{
+    void *list = warp_slot_get(slot);
+    void *items;
+    int size;
+
+    if (!list || index < 0)
+        return WARP_CMD_RES_FAIL;
+    items = *(void **)((char *)list + 0x10);
+    size = *(int *)((char *)list + 0x18);
+    if (!items || index >= size)
+        return WARP_CMD_RES_FAIL;
+    *(int *)((char *)items + 0x20 + (size_t)index * 4) = value;
+    return WARP_CMD_RES_OK;
+}
+
 int warp_kill_game(void)
 {
     HANDLE proc = GetCurrentProcess();
@@ -1079,6 +1097,13 @@ static DWORD WINAPI work_main(LPVOID arg)
                     /* 查询不是"动作"，不计 fired */
                     rc = warp_cmd_read(WARP_CMD_SLOT(job.type));
                     break;
+                case WARP_CMD_WRITE_LIST:
+                    rc = warp_cmd_write_list(WARP_CMD_SLOT(job.type),
+                                             (int)g_hdr->vars[0],
+                                             (int)g_hdr->vars[1]);
+                    if (rc == 0 && g_hdr)
+                        g_hdr->fired++;
+                    break;
                 default:
                     rc = WARP_CMD_RES_UNKNOWN;
                     break;
@@ -1243,6 +1268,7 @@ void warp_pump_commands(void)
     case WARP_CMD_STATIC:
     case WARP_CMD_AUDIO_SCORE:
     case WARP_CMD_READ:
+    case WARP_CMD_WRITE_LIST:
         /* v0.9.23：要进 il2cpp runtime/元数据的命令全部投递 worker 隔离舱，
          * 主线程泵不再亲自执行（六次崩溃都在这条路径上）。先标 BUSY，结果
          * 与 ack 由 worker 写回；worker 没起来就记 FAIL，绝不回退主线程执行。

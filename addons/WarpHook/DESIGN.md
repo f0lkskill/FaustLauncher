@@ -1096,3 +1096,49 @@ game.create_enemy(1110, level=47, sync_level=4)   # 默认 main=True
 
 `addons/EnemySpawnProbe`：加载后调用 `watch_enemy_spawn()`，轮询
 `host.events()` 打印 31/32 事件，用来确认当前关卡里嫉妒罪种走哪个入口。
+
+## 22. Abnormality part 替换（v0.9.62）
+
+### 22.1 为什么不改生成 id
+
+`10109` 是人格 id，`100101` 是 `AbnormalityPartStaticData` id，都不是敌人
+本体 id。直接改 `CreateEnemyUnit` 的 id 会让 `EnemyStaticDataList.GetData`
+返回 null，`CreateEnemyUnit` 抛 NRE，UI 崩坏（真机已复现）。
+
+正确做法是保留正常生成 id，只替换 part 的静态数据。
+
+### 22.2 写 List<int>
+
+`List<int>` 布局：`_items` 对象指针在 0x10，Array 数据从 0x20 开始，
+第 i 个元素地址 = `_items + 0x20 + i*4`。新增命令：
+
+```
+WARP_CMD_WRITE_LIST = 12
+vars[0] = index, vars[1] = value, cmd_type[16..23] = List 对象槽
+```
+
+Python 侧 `Host.write_list_int(slot, index, value)`。纯内存写，worker 安全。
+
+### 22.3 replace_abnormality_part
+
+```python
+game.replace_abnormality_part(100101, source_ids=range(1110, 1116))
+```
+
+内部：
+
+1. `StaticDataManager.get_AbnormalityUnitList()`
+2. 对每个 source id `AbnormalityStaticDataList.GetData(id)`
+3. `get_AbnormalityPartIdList()` 拿 `List<int>` 对象槽
+4. `write_list_int(list, 0, target_part_id)`
+
+下一次游戏正常生成嫉妒罪种时，`CreateEnemyUnit` 会按新的 part id 创建
+part，技能 / 行动槽 / `PickSkills` 全部走游戏自己的完整流程。
+
+### 22.4 边界
+
+- 只改静态数据；当前场上已经生成的敌人不会变，必须重进场景。
+- `target_part_id` 必须存在于 `AbnormalityPartStaticDataList`，否则 part
+  创建可能失败。
+- `source_ids` 默认嫉妒罪种 1110..1115；其他关卡/敌人需要显式传。
+- 协议升到 v17，旧 `warp_host.dll` 会被版本协商拒绝，必须重编译。
