@@ -254,11 +254,21 @@ opencode.json
 !functions/pages/tools/
 !functions/pages/tools/*.py
 # WarpHook 是独立维护的底层依赖库，单独放在 warphook 分支（见该分支 README）。
-# 主分支不跟踪插件目录，这里只对 WarpHook 开白名单。
-!addons/WarpHook/
-!addons/WarpHook/**
+# 主分支不跟踪插件目录（`addons/*` 见文件开头的忽略块），这里只对 WarpHook 开白名单。
+#
+# ⚠ .gitignore 只对「尚未进入索引」的文件生效：一旦某次提交用 `git add -f` 把别的
+#   插件塞进 index，忽略规则对它完全失效，之后每次 push 都会继续带上它。
+#   历史上已经踩过两次：1d2ee03 带入 BattleBGMExtend / NoGacha，26e02db 再次带入，
+#   所以这里再补一条兜底规则（任意层级都挡住），并把违规检查做成脚本 + CI：
+#     python tools/dev/check_addons_tracked.py      # 查有没有被误跟踪的插件
+#     git rm -r --cached addons/<插件名>            # 移出索引，本地文件保留
+addons/*
+addons/**
+!/addons/WarpHook/
+!/addons/WarpHook/**
+# 任意层级的 __pycache__ 都不入库（tools/__pycache__ 里的 gen_thunks.pyc 曾被跟踪过）。
+addons/WarpHook/**/__pycache__/
 addons/WarpHook/__pycache__/
-addons/WarpHook/warphook/__pycache__/
 addons/WarpHook/_icon_preview.png
 
 # 运行期产物：整个 addon 只写一个 warp.log（DLL 与 Python 共用，

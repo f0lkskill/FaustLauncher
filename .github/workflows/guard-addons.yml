@@ -1,0 +1,26 @@
+name: Guard addons
+
+# 兜底检查：addons/ 下只允许 WarpHook 入库。
+# .gitignore 管不住「已经被 git add -f 塞进索引」的文件（历史上踩过两次），
+# 所以每次推送/PR 都跑一遍 tools/dev/check_addons_tracked.py。
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Reject tracked plugins other than WarpHook
+        run: python tools/dev/check_addons_tracked.py
