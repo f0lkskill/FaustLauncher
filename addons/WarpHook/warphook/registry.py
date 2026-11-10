@@ -133,6 +133,11 @@ _NAMESPACES = {
         'count': live.count,
         'unit': live.unit,
         'player': live.player,
+        # ---- 阵营（v15）：判定层把单位当成敌方/友方 ----
+        'set_unit_faction': live.set_unit_faction,
+        'clear_unit_faction': live.clear_unit_faction,
+        # ---- 生成敌人：走游戏原生 CreateEnemyInStage ----
+        'create_enemy': live.create_enemy,
         'on_round_start': live.on_round_start,
         'on_scene_changed': live.on_scene_changed,
         'on_battle_start': live.on_battle_start,

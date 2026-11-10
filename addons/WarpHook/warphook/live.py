@@ -21,6 +21,7 @@
 - 把命中的瞬间翻译成回调参数（``Battle`` / ``Unit`` / ``Buff``）
 """
 
+import struct
 import threading
 import time
 
@@ -51,6 +52,35 @@ def _live_registry():
 
 def _now():
     return time.time()
+
+
+#: ``GenerationData`` 的 IL2CPP 布局大小（正好一块命令缓冲）。
+_GENERATION_DATA_SIZE = 64
+#: ``UNIT_FACTION.ENEMY``。
+_FACTION_ENEMY = 1
+#: ``UNIT_POSITION`` 名字 → 数值（ERROR=0 / MAIN=1 / SUB=2 / ASSISTANCE=3）。
+_UNIT_POSITIONS = {'error': 0, 'main': 1, 'sub': 2, 'assistance': 3}
+#: 创建结果落的对象槽（24..29 已被音频 / 管理器 / 场景占用）。
+_SLOT_SPAWN = 30
+
+
+def _pack_generation_data(enemy_id, level=-1, sync_level=-1, wave_index=0,
+                          first_turn_speed=0, faction=_FACTION_ENEMY,
+                          position=1):
+    """把 ``Battle.GenerationData`` 打成 64 字节。
+
+    字段偏移（dump.cs:915468）：id 0x00 / level 0x04 / syncLevel 0x08 /
+    waveIndex 0x0C / firstTurnSpeed 0x10 / faction 0x14 / position 0x18 /
+    startPoint(Nullable<Vector3>) 0x1C / onCreatedUnit 0x30 / isValid 0x38。
+    ``startPoint`` 与 ``onCreatedUnit`` 留空（全 0 = null），让游戏的创建
+    流程按站位自己摆位。
+    """
+    data = bytearray(_GENERATION_DATA_SIZE)
+    struct.pack_into('<7i', data, 0, int(enemy_id), int(level),
+                     int(sync_level), int(wave_index),
+                     int(first_turn_speed), int(faction), int(position))
+    data[0x38] = 1
+    return bytes(data)
 
 
 class Battle:
@@ -488,6 +518,129 @@ class Live:
         self.host().release(audio.SLOT_BATTLE_BGM)
         return {'ok': True, 'removed': removed}
 
+    # ---------- 阵营 ----------
+
+    #: :meth:`set_unit_faction` 认的阵营名 → UNIT_FACTION 数值。
+    FACTIONS = {'player': 0, 'ally': 0, 'friendly': 0,
+                'enemy': 1, 'opponent': 1}
+    #: 阵营钩子的探针槽（vars 0..7 共享，6/7 被命令通道占着）。
+    _FACTION_PROBE_SLOT = 2
+
+    def set_unit_faction(self, unit=None, faction='enemy', push=True):
+        """在判定层把某个单位当成另一阵营（默认把我方改成敌方）。
+
+        ``unit`` 可以是单位对象、实例编号，或 ``None``（场上第二个单位）。
+
+        只改 ``get__faction`` 的返回值，不动任何字段：
+
+        * ``IsAlly`` / ``IsOpponent``、可攻击目标列表、伤害结算都按新阵营走，
+          于是我方的技能能把那个单位当成敌人选中；
+        * 单位自己的行动逻辑不变 —— 它仍由玩家操作，不会像真敌人那样自己出手。
+
+        一次只改一个单位（一条钩子只认一个 InstanceID），重复调用会覆盖。
+        撤销用 :meth:`clear_unit_faction`。
+        """
+        host = self.host()
+        target = None
+        if isinstance(unit, objects.Unit):
+            target = unit
+        elif unit is None:
+            units = self.units()
+            target = units[1] if len(units) > 1 else None
+        elif isinstance(unit, int):
+            battle = self.battle()
+            if battle is not None:
+                target = battle.by_id(unit)
+                if target is None and 0 <= unit < len(battle.units):
+                    target = battle.units[unit]
+        if target is None:
+            return {'ok': False, 'reason': '没找到要改阵营的单位'}
+        value = self.FACTIONS.get(str(faction).strip().lower())
+        if value is None:
+            return {'ok': False, 'reason': f'未知阵营：{faction}'}
+        try:
+            iid = int(target.id)
+        except (TypeError, ValueError):
+            return {'ok': False, 'reason': '读不到单位 InstanceID'}
+        # 友方实现返回 0、敌方实现返回 1：要把它当成谁，就拦谁的实现。
+        klass = ('BattleUnitModel_Ally' if value == 1
+                 else 'BattleUnitModel_Opponent')
+        slot = self._FACTION_PROBE_SLOT
+        entry = {
+            'klass': klass,
+            'method': 'get__faction',
+            'argc': 0,
+            'block': True,
+            'ret_const': value,
+            'probe_class': 'BattleUnitModel',
+            'probe_method': 'get_InstanceID',
+            'probe_index': -1,      # 探针读 self
+            'probe_slot': slot,
+            'guard_var': slot,
+            'guard_value': iid,
+            'guard_neg': True,      # 只有目标实例才继续拦
+        }
+        self._extra_hooks = [h for h in self._extra_hooks
+                             if h.get('method') != 'get__faction']
+        self._extra_hooks.append(entry)
+        if push:
+            self._hooks_on = True
+            self._push()
+        return {'ok': True, 'instance_id': iid, 'faction': value,
+                'klass': klass}
+
+    def clear_unit_faction(self, push=True):
+        """撤掉 :meth:`set_unit_faction` 装的阵营钩子。"""
+        kept = [h for h in self._extra_hooks if h.get('method') != 'get__faction']
+        removed = len(self._extra_hooks) - len(kept)
+        self._extra_hooks = kept
+        if push:
+            self._push()
+        return {'ok': True, 'removed': removed}
+
+    # ---------- 生成敌人 ----------
+
+    def create_enemy(self, enemy_id, level=-1, sync_level=-1, wave_index=0,
+                     first_turn_speed=0, position='main', timeout=3.0):
+        """用游戏原生 ``CreateEnemyInStage`` 立即生成一个敌人。
+
+        ``enemy_id`` 是 ``EnemyStaticData`` 的编号（罪种 / 普通敌人都走这一条）；
+        ``position`` 认 ``main`` / ``sub`` / ``assistance``。
+
+        这条路和改 ``get__faction`` 不同：单位由游戏的创建流程生成，
+        ``BattleUnitView`` 也会实时构造，所以 UI 正常。需要先有一次回合开始
+        把 ``BattleObjectManager`` 落进对象槽。返回
+        ``{'ok', 'slot', 'instance_id', 'enemy_id', 'position'}``。
+        """
+        host = self.host()
+        if objects.access(host).manager() is None:
+            return {'ok': False,
+                    'reason': '还没拿到 BattleObjectManager，等一次回合开始后再试'}
+        pos = _UNIT_POSITIONS.get(str(position).strip().lower())
+        if pos is None:
+            return {'ok': False, 'reason': f'未知站位：{position}'}
+        data = _pack_generation_data(enemy_id, level=level,
+                                     sync_level=sync_level,
+                                     wave_index=wave_index,
+                                     first_turn_speed=first_turn_speed,
+                                     faction=_FACTION_ENEMY, position=pos)
+        if not host.write_buf(0, data):
+            return {'ok': False, 'reason': '命令缓冲不可用'}
+        result = host.call('BattleObjectManager::CreateEnemyInStage',
+                           slot=objects.SLOT_MANAGER,
+                           args=(('buf', 0),), ret='ref',
+                           out_slot=_SLOT_SPAWN, via='invoke',
+                           timeout=timeout)
+        if isinstance(result, str):
+            return {'ok': False, 'reason': result}
+        if not host.object_ptr(_SLOT_SPAWN):
+            return {'ok': False, 'reason': '游戏没有返回敌人模型'}
+        instance_id = host.read(_SLOT_SPAWN, [{'off': 0x60, 'deref': False}],
+                                kind='int', default=None, timeout=timeout)
+        return {'ok': True, 'slot': _SLOT_SPAWN,
+                'instance_id': instance_id, 'enemy_id': int(enemy_id),
+                'position': pos}
+
     def log(self, message):
         """带插件名的日志。"""
         log(message, prefix=f'[{self.owner}]')
@@ -754,6 +907,32 @@ def unit(id=None, identity=None, index=None):
 def player():
     """我方第一个单位。"""
     return live().player()
+
+
+def set_unit_faction(unit=None, faction='enemy', push=True):
+    """把某个单位在判定层当成另一阵营（默认敌方）。
+
+    ``game.set_unit_faction(u)`` / ``game.set_unit_faction(2)`` /
+    ``game.set_unit_faction(None)``（场上第二个单位）。
+    """
+    return live().set_unit_faction(unit, faction=faction, push=push)
+
+
+def clear_unit_faction(push=True):
+    """撤掉 ``game.set_unit_faction`` 装的阵营钩子。"""
+    return live().clear_unit_faction(push=push)
+
+
+def create_enemy(enemy_id, level=-1, sync_level=-1, wave_index=0,
+                 first_turn_speed=0, position='main', timeout=3.0):
+    """立即生成一个敌人：``game.create_enemy(10101)``。
+
+    走游戏原生 ``BattleObjectManager.CreateEnemyInStage``，UI 实时构造。
+    """
+    return live().create_enemy(enemy_id, level=level, sync_level=sync_level,
+                               wave_index=wave_index,
+                               first_turn_speed=first_turn_speed,
+                               position=position, timeout=timeout)
 
 
 def bgm(name, bank=None, stop_current=True, wait=True, wait_timeout=120.0,

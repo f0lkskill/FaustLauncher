@@ -57,7 +57,9 @@
 /* 数值转字符串（构建戳用）：warp_log("proto v" WARP_STR(WARP_VERSION)) */
 #define WARP_STR_(x)      #x
 #define WARP_STR(x)       WARP_STR_(x)
-#define WARP_VERSION      14                /* v14：尾部追加 thread_detach 导出名，旧偏移不变。
+#define WARP_VERSION      15                /* v15：hook+284 由 pad 改为 ret_const（阻塞时写回的常量），
+                                             * flags 新增 GUARD_NEG 反向参数门。结构尺寸不变。
+                                             * v14：尾部追加 thread_detach 导出名，旧偏移不变。
                                              * v13：文案槽 128→512 字节。UTF-8
                                              * 硬切会切在汉字中间，还会把 <color=…>
                                              * 这类富文本标签切成半截 —— 游戏用 TMP
@@ -332,6 +334,10 @@ typedef struct _WARP_REWRITE {
 /* 软锁：启动器断开（standalone）时把这个钩子的参数门改写成「放行」。
  * 用于换曲锁这类「挡住游戏自身行为」的锁 —— 驱动它的进程没了，锁不该留下。 */
 #define WARP_HF_SOFT_LOCK 0x08
+/* 参数门反向（v15）：默认「命中值等于 guard_value 就放行」，置这一位后变成
+ * 「等于才继续拦」。配合 self 探针（probe_index=-1）做「只对某一个实例生效」：
+ * 读 InstanceID 当门，非目标全部放行，目标才被拦下改写返回值。 */
+#define WARP_HF_GUARD_NEG 0x10
 #define WARP_HF_FIRED   0x0100 /* 运行时标记：已经触发过 */
 
 typedef struct _WARP_HEADER {
@@ -392,7 +398,7 @@ typedef struct _WARP_HOOK {
     int  when;                     /* 272 WARP_WHEN_*：事件在原函数前(0)还是后(1)发 */
     int  ret_kind;                 /* 276 WARP_RET_*：原函数返回值类型（0=不关心） */
     int  ret_slot;                 /* 280 返回值直出的事件格（<0 不直出；与读链别写同一格） */
-    int  pad;                      /* 284 对齐保留 */
+    int  ret_const;                /* 284 v15：BLOCK 时写回 RAX 的常量（默认 0 = 旧行为） */
 } WARP_HOOK;                       /* 288 */
 
 /* 一条读取链：从某个参数出发，按偏移跳 nsteps 次，把落点当成一个值读出来。

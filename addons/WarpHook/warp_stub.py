@@ -503,3 +503,22 @@ class Game(Protocol):
 
     def access(self, host=None, slot=None) -> Access:
         """场景对象访问器（0.9.9 起）。"""
+
+    def set_unit_faction(self, unit=None, faction: str = "enemy", push: bool = True) -> dict:
+        """在判定层把某个单位当成敌方（0.9.56 起）。
+
+        ``unit`` 可为 ``Unit`` / 战斗编号 / ``None``（场上第二个单位）；
+        只影响 IsOpponent、可攻击目标列表，单位自身的行动逻辑不变。
+        """
+
+    def clear_unit_faction(self, push: bool = True) -> dict:
+        """撤掉 ``set_unit_faction`` 装的钩子。"""
+
+    def create_enemy(self, enemy_id: int, level: int = -1, sync_level: int = -1,
+                     wave_index: int = 0, first_turn_speed: int = 0,
+                     position: str = "main", timeout: float = 3.0) -> dict:
+        """用游戏原生 ``CreateEnemyInStage`` 立即生成一个敌人。
+
+        ``enemy_id`` 是 ``EnemyStaticData`` 的编号；UI / 行动槽由游戏自己
+        构造。需要先有一次回合开始把 BattleObjectManager 落进对象槽。
+        """

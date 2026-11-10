@@ -77,8 +77,12 @@ int warp_slot_row_next(int slot, int row)
             if (!h_)                                                    \
                 continue;                                               \
             act_ = warp_on_event(r_, self, N, WARP_EVT6 EVT);           \
-            if (act_ & 0x1)                                             \
+            if (act_ & 0x1) {                                           \
                 blocked_ = 1;                                           \
+                /* v15：拦截时写回配置的常量（默认 0 = 旧行为）。链上     \
+                 * 多个订阅者按顺序覆盖，最后说话的那个说了算。 */        \
+                ret_ = (unsigned long long)(long long)h_->ret_const;     \
+            }                                                           \
             if (act_ & 0x2)                                             \
                 fire_[nfire_++] = (unsigned char)r_;                    \
             if (h_->ret_kind == WARP_RET_FLOAT)                         \
@@ -107,7 +111,8 @@ int warp_slot_row_next(int slot, int row)
         for (r_ = 0; r_ < nfire_; r_++)                                 \
             warp_fire((int)fire_[r_]);                                  \
         /* 离开前无条件写回：int/bool/指针在 RAX（movq 保住 64 位指针）， \
-         * float 在 XMM0。BLOCK 路径没调 original，写 0 = 「拦截未成功」。 */ \
+         * float 在 XMM0。BLOCK 路径没调 original，写回的是钩子配的          \
+         * ret_const（默认 0）；VOID 方法的写回没人读，无害。 */          \
         if (want_float_) {                                              \
             __asm__ volatile("movd %0, %%xmm0" :: "r"(ret_) : "xmm0");  \
         } else {                                                        \

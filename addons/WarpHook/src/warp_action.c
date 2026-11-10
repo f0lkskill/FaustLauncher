@@ -910,11 +910,15 @@ int warp_on_event(int hook_index, void *self, int argc,
     g_hdr->last_event = hook_index;
     h->hits = hits;
 
-    /* 探针：先把参数对象的属性读进 vars[]，供下面的参数门使用 */
-    if (h->probe_class[0] && h->probe_method[0] && argc > h->probe_index &&
+    /* 探针：先把参数对象的属性读进 vars[]，供下面的参数门使用。
+     * probe_index < 0 表示 read self：给 get_Faction / get_InstanceID 这类
+     * 「读单位自身」的钩子用（v15）。 */
+    if (h->probe_class[0] && h->probe_method[0] &&
+        (h->probe_index < 0 || argc > h->probe_index) &&
         h->probe_slot >= 0 && h->probe_slot < WARP_VAR_COUNT) {
         void *obj = NULL;
         switch (h->probe_index) {
+        case -1: obj = self; break;
         case 0: obj = a1; break;
         case 1: obj = a2; break;
         case 2: obj = a3; break;
@@ -925,7 +929,9 @@ int warp_on_event(int hook_index, void *self, int argc,
     }
 
     /* 参数门：命中的值等于 guard_value 就彻底放行（不拦、不弹、不计数动作）。
-     * guard_var >= 0 时比较 vars[] 里的探针结果，否则比较第 guard_index 个参数。 */
+     * guard_var >= 0 时比较 vars[] 里的探针结果，否则比较第 guard_index 个参数。
+     * WARP_HF_GUARD_NEG 反转判定：只有等于才继续（其余全部放行），
+     * 配合 self 探针就是「只对某个实例生效」。 */
     {
         int has_value = 0;
         int watch = 0;
@@ -942,8 +948,13 @@ int warp_on_event(int hook_index, void *self, int argc,
             }
             has_value = 1;
         }
-        if (has_value && watch == h->guard_value)
-            return 0;
+        if (has_value) {
+            int match = (watch == h->guard_value);
+            if (h->flags & WARP_HF_GUARD_NEG)
+                match = !match;
+            if (match)
+                return 0;
+        }
     }
 
     if (h->flags & WARP_HF_BLOCK) {

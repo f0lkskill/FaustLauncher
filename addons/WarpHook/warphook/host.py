@@ -49,7 +49,8 @@ from .base import (
 )
 
 HOST_MAGIC = 0x54534857           # "WHST"
-HOST_VERSION = 14                  # v14：尾部追加 thread_detach 导出名，旧偏移不变。
+HOST_VERSION = 15                  # v15：hook+284 pad→ret_const，flags 加 GUARD_NEG。
+                                   # v14：尾部追加 thread_detach 导出名，旧偏移不变。
                                    # v13：文案槽 128→512 字节。128 字节按 UTF-8 硬切会
                                    # 切在汉字中间，还会把 <color=…> 这类富文本标签切
                                    # 成半截 —— 游戏用 TMP 渲染，半个标签会把后面整段
@@ -306,6 +307,9 @@ HF_DEDUPE = 0x04     # 读链的值没变就不投递事件（配了 reads 才�
 # 启动器断开后自动解锁：宿主转入 standalone 时把这个钩子的参数门改写成
 # 「放行」。给换曲锁这类挡住游戏自身行为的钩子用；拦截类不要加。
 HF_SOFT_LOCK = 0x08
+# v15：参数门反向 —— 默认「命中值 == guard_value 就放行」，置位后变成
+# 「相等才继续拦」。配合 probe 读 self（probe_index=-1）就只对某个实例生效。
+HF_GUARD_NEG = 0x10
 
 # 兼容曾导入此名称的插件；Host.call 不再按方法名阻断调用。
 SAFE_CALLS = frozenset()
@@ -424,7 +428,8 @@ class HostHook(ctypes.Structure):
         ("when", ctypes.c_int32),        # HOST_WHEN_PRE / HOST_WHEN_POST
         ("ret_kind", ctypes.c_int32),    # HOST_RET_*：thunk 按什么形状取返回值
         ("ret_slot", ctypes.c_int32),    # 返回值直出的事件格（-1 不用）
-        ("pad", ctypes.c_int32),
+        # v15：BLOCK 时写回 RAX 的常量（默认 0，沿用旧语义「拦成 0」）。
+        ("ret_const", ctypes.c_int32),
     ]
 
 
@@ -1014,6 +1019,8 @@ class Host:
                 guard_slot, guard_value = list(hook['guard'])[:2]
                 hook['guard_var'] = int(guard_slot)
                 hook['guard_value'] = int(guard_value)
+            if hook.get('guard_neg'):
+                hook['flags'] = int(hook.get('flags', 0)) | int(HF_GUARD_NEG)
             # 声明式 dict 也能写 cache=(arg, 槽)，与 Host.hook(cache=...) 同一套
             # 语义（arg 0=self / 1..3=第几个参数）。原来 dict 路径只认
             # cache_arg/cache_slot 两个平铺键，传 cache= 元组会被静默丢掉 ——
@@ -1044,7 +1051,7 @@ class Host:
                                   ("cache_arg", -1), ("cache_slot", -1),
                                   ("when", HOST_WHEN_PRE),
                                   ("ret_kind", HOST_RET_VOID),
-                                  ("ret_slot", -1)):
+                                  ("ret_slot", -1), ("ret_const", 0)):
                 value = hook.get(name, default)
                 if name == "ret_kind" and isinstance(value, str):
                     # dict 配置路径与 hook() 关键字路径同一套叫法：
@@ -1117,7 +1124,7 @@ class Host:
     def hook(self, klass, method, argc=0, block=False, actions=None,
              probe=None, guard=None, event=None, reads=None, dedupe=False,
              cache=None, rewrite=None, when=None, ret_kind=None, ret_slot=None,
-             **extra):
+             ret_const=None, guard_neg=False, **extra):
         """登记一条钩子 —— 用法就是一次普通调用，不是填表格。
 
         ``klass`` / ``method`` 是要挂的方法（``argc`` 按「不含 this」数），
@@ -1193,6 +1200,11 @@ class Host:
                 item.setdefault("when", HOST_WHEN_POST)
         if ret_slot is not None:
             item["ret_slot"] = int(ret_slot)
+        if ret_const is not None:
+            # v15：BLOCK 时写回 RAX 的常量。只对返回 int/bool 的钩子有意义。
+            item["ret_const"] = int(ret_const)
+        if guard_neg:
+            item["flags"] = int(item.get("flags", 0)) | int(HF_GUARD_NEG)
         if reads:
             item["reads"] = list(reads)
         item.update(extra)
@@ -1887,6 +1899,29 @@ class Host:
             return False
         base = block.address + HOST_CMD_BUF_OFFSET + index * HOST_CMD_BUF_SIZE
         ctypes.memset(base, 0, HOST_CMD_BUF_SIZE)
+        return True
+
+    def write_buf(self, index=0, data=b""):
+        """把字节写进命令缓冲第 ``index`` 块（值类型入参用）。
+
+        ``host.call(..., args=(('buf', index),), via='invoke')`` 时，DLL 会把
+        这块缓冲的地址当作 struct 参数的存储。先 ``write_buf`` 填好字段，
+        再 ``call`` 即可传 ``GenerationData`` / ``Nullable<Vector3>`` 这类
+        值类型；超出单块（``HOST_CMD_BUF_SIZE``）的写入直接拒绝。
+        """
+        block = self.block()
+        if block is None:
+            return False
+        index = int(index)
+        if not 0 <= index < HOST_CMD_BUF_COUNT:
+            return False
+        raw = bytes(data)
+        if len(raw) > HOST_CMD_BUF_SIZE:
+            return False
+        base = block.address + HOST_CMD_BUF_OFFSET + index * HOST_CMD_BUF_SIZE
+        ctypes.memset(base, 0, HOST_CMD_BUF_SIZE)
+        if raw:
+            ctypes.memmove(base, raw, len(raw))
         return True
 
     def make(self, klass, args=(), slot=24, timeout=2.0):

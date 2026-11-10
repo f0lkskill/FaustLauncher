@@ -1,3 +1,12 @@
+## 0.9.56 — 阵营改写（判定层）
+
+- 钩子协议 v15：`+284` 的 `pad` 改为 `ret_const`，拦截时写回该常量（默认 0，旧语义不变）；
+  `flags` 新增 `HF_GUARD_NEG`（0x10）反向参数门；`probe_index=-1` 可读 `self`。
+- 新增 `game.set_unit_faction(unit, 'enemy')` / `game.clear_unit_faction()`：
+  拦 `BattleUnitModel_Ally.get__faction` 返回 ENEMY，只对目标 InstanceID 生效。
+  IsOpponent、可攻击目标列表随之把它当敌人；单位自身行动逻辑不变。
+- 需重编译 `warp_host.dll`（v15）；`tools/dev/try_faction.py` 是实机验证脚本。
+
 ## 0.9.55 — 更新插件图标
 
 - 更换 WarpHook 插件图标；功能无变化。

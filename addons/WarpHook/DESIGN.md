@@ -214,7 +214,7 @@ WARP_HOOK   288B×32 klass[48] method[48] argc event_id every chance actions fla
                    probe_class[48] probe_method[48] probe_index probe_slot guard_var
                    text_base read_base read_count cache_arg cache_slot
                    hits blocked（运行时计数）
-                   when ret_kind ret_slot pad
+                   when ret_kind ret_slot ret_const（v15，旧版这里是 pad）
 文案池      128B×256 随机挑一句弹出去（按插件分段，段尾空串当界标）
 导出表      64B×15   标准名按固定顺序映射成混淆名（v3 起 + gchandle_new/free）
 事件 ctrl   16B      head / tail / dropped / pad（环形队列游标）
@@ -238,11 +238,15 @@ buff 关注   8B×32    fnv1a64(名字) 列表，0 哨兵 —— buff_mask 读�
 钩子表 → 行为的三段式表达力：
 
 1. **探针**（`probe_*`）：调参数对象的 0 参 getter，把整数写进 `vars[]`。
+   `probe_index = -1` 表示读 `self`（v15），给 `get_Faction` 这类读自身状态的方法用。
 2. **参数门**（`guard_var` / `guard_value`）：命中就彻底放行，既不拦也不弹。
    NoGacha 用它实现「放行付费单抽」——探针读 `GachaPayment.GachaType` 到 `vars[0]`，
    `guard_var=0, guard_value=1` 时直接 `return 0`。
+   置 `WARP_HF_GUARD_NEG`（v15）反转判定：**相等才继续**，其余放行——配合读
+   `self` 的探针，「只对某个实例生效」就成了一句话。
 3. **动作**（`actions`）：`ACT_POPUP` 弹原版窗、`ACT_KILL` 结束进程；`flags=HF_BLOCK`
-   让原方法不执行。`every` / `chance` / `delay_ms` / `dedupe_ms` / `HF_ONCE` 决定何时触发。
+   让原方法不执行，返回 `ret_const`（v15，默认 0）。`every` / `chance` / `delay_ms` /
+   `dedupe_ms` / `HF_ONCE` 决定何时触发。
 
 读取链（`reads=`）是第 1 条的通用版：探针只能「调一个 0 参 getter 拿 int」，
 读取链能「从任意参数出发，按偏移跳最多 8 跳（v7 起；v6 是 4 跳），落点按
