@@ -1142,3 +1142,49 @@ part，技能 / 行动槽 / `PickSkills` 全部走游戏自己的完整流程。
   创建可能失败。
 - `source_ids` 默认嫉妒罪种 1110..1115；其他关卡/敌人需要显式传。
 - 协议升到 v17，旧 `warp_host.dll` 会被版本协商拒绝，必须重编译。
+
+## 23. Abnormality 人格覆盖（v0.9.65）
+
+### 23.1 part 表里没有正常人 personality 的 part
+
+扫描 `AbnormalityPartStaticDataList` 的 1535 个 part：`104101`、`104001`、
+`100101` 的 `attributeList` 都是空的，`10415` / `1041501` / `1001` 在
+part 表里根本不存在。嫉妒罪种 111001 的 `attributeList` 是
+`1040701/02/03`，所以 part 只是“本体 id*100+1”的部件数据，不是人格表。
+
+正常人 personality 没有额外 part，不能靠替换 part 来模仿某个人格。
+
+### 23.2 overridePersonalityId
+
+`AbnormalityStaticData` 继承 `IncontrollableUnitStaticData`，本体上有：
+
+```
+overridePersonalityId // 0x1B0
+```
+
+1110 当前是 0（靠 part 111001 的技能）。把它写成目标人格 id（如 10415）
+后，`UnitDataModel_Abnormality` 在正常创建时可从
+`PersonalityStaticDataList` 按该人格加载技能/内容，不需要 part 替换。
+
+### 23.3 WRITE_INT
+
+协议 v18 新增：
+
+```
+WARP_CMD_WRITE_INT = 13
+vars[0] = offset, vars[1] = value, cmd_type[16..23] = 对象槽
+```
+
+Python `Host.write_int(slot, offset, value)`，纯内存写，worker 安全（不碰
+Unity 调用）。
+
+### 23.4 接口与边界
+
+```python
+game.set_abnormality_personality(10415)  # 默认 1110..1115
+```
+
+- 只改静态数据；当前场上已生成的敌人不变，必须重进场景。
+- 若目标人格不存在（`PersonalityStaticDataList.GetData` 返回 null），
+  游戏创建时可能回退/报错，先用 `watch`/日志确认 id。
+- 协议升到 v18，旧 DLL 会被版本协商拒绝，必须重编译。

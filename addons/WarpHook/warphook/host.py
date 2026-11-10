@@ -49,7 +49,8 @@ from .base import (
 )
 
 HOST_MAGIC = 0x54534857           # "WHST"
-HOST_VERSION = 17                  # v17：新增 WRITE_LIST（12），写 List<int> 元素。
+HOST_VERSION = 18                  # v18：新增 WRITE_INT（13），写对象字段 int。
+                                   # v17：新增 WRITE_LIST（12），写 List<int> 元素。
                                    # v16：新增主线程 CALL_MAIN（11）。
                                    # v15：hook+284 pad→ret_const，flags 加 GUARD_NEG。
                                    # v14：尾部追加 thread_detach 导出名，旧偏移不变。
@@ -110,6 +111,7 @@ CMD_LIST = 8      # 诊断：列某类同名方法的全部重载签名（纯元
 CMD_STATIC = 9    # 读静态字段："类名::字段名" → 值落对象槽（引用类型）
 CMD_CALL_MAIN = 11  # 主线程直接执行 CALL（CreateEnemyInStage 等 Unity 调用）
 CMD_WRITE_LIST = 12  # 写 List<int> 元素（vars[0]=index, vars[1]=value）
+CMD_WRITE_INT = 13   # 写对象字段 int（vars[0]=offset, vars[1]=value）
 
 # CALL 的返回值形状（retkind 打进 cmd_type 12-15 位）
 CMD_RET_INT32 = 0   # box 返回，真值在 +0x10，位模式写回 vars[6]
@@ -1955,6 +1957,18 @@ class Host:
             raise ValueError(f"对象槽 {slot} 超出 0..{HOST_OBJECT_COUNT - 1}")
         return self._command(CMD_WRITE_LIST, "", timeout,
                              args=(int(index), int(value)), slot=slot)
+
+    def write_int(self, slot, offset, value, timeout=2.0):
+        """写对象槽里对象的 int 字段：``*(int*)(obj + offset) = value``。
+
+        用于静态数据里的普通 int 字段（例如
+        ``AbnormalityStaticData.overridePersonalityId`` 0x1B0）。
+        """
+        slot = int(slot)
+        if slot < 0 or slot >= HOST_OBJECT_COUNT:
+            raise ValueError(f"对象槽 {slot} 超出 0..{HOST_OBJECT_COUNT - 1}")
+        return self._command(CMD_WRITE_INT, "", timeout,
+                             args=(int(offset), int(value)), slot=slot)
 
     def make(self, klass, args=(), slot=24, timeout=2.0):
         """构造一个对象放进对象槽（挂 GC 强句柄）。

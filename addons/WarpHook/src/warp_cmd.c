@@ -814,6 +814,17 @@ int warp_cmd_write_list(int slot, int index, int value)
     return WARP_CMD_RES_OK;
 }
 
+/* 写对象字段 int：obj + off。用于静态数据里的普通 int 字段，worker 安全。 */
+int warp_cmd_write_int(int slot, int off, int value)
+{
+    void *obj = warp_slot_get(slot);
+
+    if (!obj || off < 0)
+        return WARP_CMD_RES_FAIL;
+    *(int *)((char *)obj + off) = value;
+    return WARP_CMD_RES_OK;
+}
+
 int warp_kill_game(void)
 {
     HANDLE proc = GetCurrentProcess();
@@ -1104,6 +1115,13 @@ static DWORD WINAPI work_main(LPVOID arg)
                     if (rc == 0 && g_hdr)
                         g_hdr->fired++;
                     break;
+                case WARP_CMD_WRITE_INT:
+                    rc = warp_cmd_write_int(WARP_CMD_SLOT(job.type),
+                                            (int)g_hdr->vars[0],
+                                            (int)g_hdr->vars[1]);
+                    if (rc == 0 && g_hdr)
+                        g_hdr->fired++;
+                    break;
                 default:
                     rc = WARP_CMD_RES_UNKNOWN;
                     break;
@@ -1269,6 +1287,7 @@ void warp_pump_commands(void)
     case WARP_CMD_AUDIO_SCORE:
     case WARP_CMD_READ:
     case WARP_CMD_WRITE_LIST:
+    case WARP_CMD_WRITE_INT:
         /* v0.9.23：要进 il2cpp runtime/元数据的命令全部投递 worker 隔离舱，
          * 主线程泵不再亲自执行（六次崩溃都在这条路径上）。先标 BUSY，结果
          * 与 ack 由 worker 写回；worker 没起来就记 FAIL，绝不回退主线程执行。

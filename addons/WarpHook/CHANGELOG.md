@@ -1,3 +1,11 @@
+## 0.9.65 — Abnormality 人格覆盖
+
+- 协议 v18：新增 `WARP_CMD_WRITE_INT`（13），`Host.write_int(slot, offset, value)` 写对象 int 字段。
+- 新增 `game.set_abnormality_personality(personality_id, source_ids=None)`：写 `AbnormalityStaticData.overridePersonalityId`（0x1B0），让嫉妒罪种按指定人格加载技能/内容。
+- part 表里没有正常人 personality 的 part；这条路线改的是本体字段，不依赖 part。
+- 测试插件改为调用 `set_abnormality_personality(10415)`，重进场景生效。
+- 需重编译 `warp_host.dll`（v18）。
+
 ## 0.9.64 — 观察 Abnormality part 静态数据入口
 
 - `watch_enemy_spawn` 新增 `AbnormalityPartStaticDataList.GetData` 观察：事件 33，`a=part id`。用来确认嫉妒罪种的 part 是否走 `GetData`，为下一步按 id 改写做准备。

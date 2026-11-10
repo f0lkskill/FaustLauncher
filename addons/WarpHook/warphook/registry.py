@@ -143,6 +143,7 @@ _NAMESPACES = {
         'hook_enemy_spawn': live.hook_enemy_spawn,
         'clear_enemy_spawn': live.clear_enemy_spawn,
         'replace_abnormality_part': live.replace_abnormality_part,
+        'set_abnormality_personality': live.set_abnormality_personality,
         'remove_enemy': live.remove_enemy,
         'remove_enemies': live.remove_enemies,
         'clear_enemies': live.clear_enemies,

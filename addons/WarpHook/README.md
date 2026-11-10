@@ -261,6 +261,16 @@ game.replace_abnormality_part(100101)  # 默认改嫉妒罪种 1110..1115
 嫉妒罪种时使用目标 part 的静态数据（技能 / 人格内容）。只改静态数据，
 当前场上已生成的敌人不变，需要重进场景。协议 v17，需重编译 DLL。
 
+### Abnormality 人格覆盖
+
+```python
+game.set_abnormality_personality(10415)  # 默认改嫉妒罪种 1110..1115
+```
+
+直接写 `AbnormalityStaticData.overridePersonalityId`（0x1B0），让游戏下次
+正常生成嫉妒罪种时按目标人格加载技能/内容。不需要 part 替换；重进场景生效。
+协议 v18，需重编译 DLL。
+
 ## 原生退出排查（协议 v14 candidate）
 
 原生命令 worker 曾在启动时调用一次 `il2cpp_thread_attach`，随后在事件等待中

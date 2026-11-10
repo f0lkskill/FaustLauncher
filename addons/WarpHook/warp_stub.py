@@ -560,6 +560,15 @@ class Game(Protocol):
         1110..1115。
         """
 
+    def set_abnormality_personality(self, personality_id: int,
+                                    source_ids=None,
+                                    timeout: float = 3.0) -> dict:
+        """把目标 Abnormality 的 ``overridePersonalityId`` 设成人格 id。
+
+        直接写 ``AbnormalityStaticData.overridePersonalityId``（0x1B0），
+        下一次游戏正常生成敌人时按这个人格加载技能/内容。
+        """
+
     def remove_enemy(self, instance_id: int, faction: str = "enemy",
                      wave_index: int = 0, timeout: float = 3.0) -> dict:
         """把一个单位放进游戏原生的移除队列（下一回合/生成时机生效）。

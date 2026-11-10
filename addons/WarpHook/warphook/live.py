@@ -869,11 +869,61 @@ class Live:
 
     def replace_abnormality_part(self, target_part_id, source_ids=None,
                                  timeout=3.0):
-        """把所有目标 Abnormality 的 part id 换成 ``target_part_id``。
+        """用目标 part 的静态内容覆盖目标 Abnormality 的 part。
 
-        直接改 ``AbnormalityStaticData.abnormalityPartList`` 的 List 元素；
-        下一次由游戏正常生成敌人时，part 会使用目标 part 的静态数据
-        （技能/人格内容）。``source_ids`` 默认嫉妒罪种 1110..1115。
+        嫉妒罪种的本体 id 1110..1115 对应 part id 111001..111501；
+        ``AbnormalityStaticData.abnormalityPartList`` 是空的，不能直接改
+        列表。这里改为对每个 source part 调
+        ``UnitStaticData.OverwriteData(target_part, 0, False)``：保留 part
+        id，覆盖技能/属性等内容。下一次游戏正常生成敌人时生效。
+        """
+        host = self.host()
+        ids = (list(range(1110, 1116)) if source_ids is None
+               else [int(x) for x in source_ids])
+        result = host.call('StaticDataManager::get_Instance', slot=None,
+                           ret='ref', out_slot=30, via='invoke',
+                           timeout=timeout)
+        if isinstance(result, str):
+            return {'ok': False, 'reason': result}
+        result = host.call('StaticDataManager::get_AbnormalityPartList',
+                           slot=30, ret='ref', out_slot=31, via='invoke',
+                           timeout=timeout)
+        if isinstance(result, str):
+            return {'ok': False, 'reason': result}
+        result = host.call('AbnormalityPartStaticDataList::GetData',
+                           slot=31, args=(int(target_part_id),),
+                           ret='ref', out_slot=30, via='invoke',
+                           timeout=timeout)
+        if isinstance(result, str) or not host.object_ptr(30):
+            return {'ok': False, 'reason': '目标 part 不存在'}
+        changed, failed = [], []
+        for sid in ids:
+            part_id = int(sid) * 100 + 1
+            result = host.call('AbnormalityPartStaticDataList::GetData',
+                               slot=31, args=(part_id,), ret='ref',
+                               out_slot=29, via='invoke', timeout=timeout)
+            if isinstance(result, str) or not host.object_ptr(29):
+                failed.append(part_id)
+                continue
+            result = host.call('UnitStaticData::OverwriteData',
+                               slot=29,
+                               args=(('slot', 30), 0, False),
+                               ret='void', via='invoke', timeout=timeout)
+            if result == '已执行':
+                changed.append(part_id)
+            else:
+                failed.append(part_id)
+        return {'ok': bool(changed) and not failed,
+                'target_part_id': int(target_part_id),
+                'changed': changed, 'failed': failed}
+
+    def set_abnormality_personality(self, personality_id, source_ids=None,
+                                    timeout=3.0):
+        """把目标 Abnormality 的 ``overridePersonalityId`` 设成人格 id。
+
+        直接写 ``AbnormalityStaticData.overridePersonalityId``（0x1B0），下一次
+        游戏正常生成敌人时，``UnitDataModel_Abnormality`` 会按这个人格加载
+        技能/内容。``source_ids`` 默认嫉妒罪种 1110..1115。
         """
         host = self.host()
         ids = (list(range(1110, 1116)) if source_ids is None
@@ -896,21 +946,14 @@ class Live:
             if isinstance(result, str) or not host.object_ptr(30):
                 failed.append(sid)
                 continue
-            result = host.call(
-                'AbnormalityStaticData::get_AbnormalityPartIdList',
-                slot=30, ret='ref', out_slot=29, via='invoke',
-                timeout=timeout)
-            if isinstance(result, str) or not host.object_ptr(29):
-                failed.append(sid)
-                continue
-            wrote = host.write_list_int(29, 0, int(target_part_id),
-                                        timeout=timeout)
+            wrote = host.write_int(30, 0x1B0, int(personality_id),
+                                   timeout=timeout)
             if wrote == '已执行':
                 changed.append(sid)
             else:
                 failed.append(sid)
         return {'ok': bool(changed) and not failed,
-                'target_part_id': int(target_part_id),
+                'personality_id': int(personality_id),
                 'changed': changed, 'failed': failed}
 
     def clear_enemy_spawn(self, push=True):
@@ -1302,6 +1345,13 @@ def replace_abnormality_part(target_part_id, source_ids=None, timeout=3.0):
     return live().replace_abnormality_part(target_part_id,
                                            source_ids=source_ids,
                                            timeout=timeout)
+
+
+def set_abnormality_personality(personality_id, source_ids=None, timeout=3.0):
+    """把目标 Abnormality 的 overridePersonalityId 设成人格 id。"""
+    return live().set_abnormality_personality(personality_id,
+                                              source_ids=source_ids,
+                                              timeout=timeout)
 
 
 def clear_enemy_spawn(push=True):
