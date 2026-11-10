@@ -504,6 +504,9 @@ class Game(Protocol):
     def access(self, host=None, slot=None) -> Access:
         """场景对象访问器（0.9.9 起）。"""
 
+    def wait_ready(self, wait_timeout: float = 120.0) -> bool:
+        """等游戏/宿主就绪；返回是否就绪（v0.9.63 起）。"""
+
     def set_unit_faction(self, unit=None, faction: str = "enemy", push: bool = True) -> dict:
         """在判定层把某个单位当成敌方（0.9.56 起）。
 

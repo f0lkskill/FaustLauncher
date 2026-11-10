@@ -124,6 +124,7 @@ _NAMESPACES = {
         'Battle': live.Battle,
         'live': live.live,
         'start': live.start,
+        'wait_ready': live.wait_ready,
         'status': live.status,
         'describe': live.describe,
         'popup': live.popup,

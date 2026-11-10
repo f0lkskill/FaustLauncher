@@ -1,3 +1,7 @@
+## 0.9.63 — game.wait_ready 门面
+
+- 补上模块级 `game.wait_ready(wait_timeout=120)`，插件不需要再写 `game.live().wait_ready`。
+
 ## 0.9.62 — Abnormality part 静态数据替换
 
 - 协议 v17：新增 `WARP_CMD_WRITE_LIST`（12），`Host.write_list_int(slot, index, value)` 直接写 `List<int>` 元素。

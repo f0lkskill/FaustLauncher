@@ -1196,6 +1196,11 @@ def start(menu=()):
     return live().start(menu=menu)
 
 
+def wait_ready(wait_timeout=120.0):
+    """等游戏/宿主就绪；返回是否就绪。"""
+    return live().wait_ready(wait_timeout=wait_timeout)
+
+
 def status():
     """宿主状态字典。"""
     return live().status()
