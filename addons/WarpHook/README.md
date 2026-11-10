@@ -246,6 +246,7 @@ game.clear_enemy_spawn()
 
 - `id=31`（CreateEnemyUnit）：`a=id / b=level / c=syncLevel`
 - `id=32`（CreateEnemyInStage）：`a=GenerationData.id / b=level / c=syncLevel / d=faction`
+- `id=33`（AbnormalityPartStaticDataList.GetData）：`a=part id`
 
 `hook_enemy_spawn` 只改普通敌人入口；Abnormality（嫉妒罪种）如果走
 `CreateEnemyInStage`，先观察事件再决定，不要直接假设 int 改写生效。

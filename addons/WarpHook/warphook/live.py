@@ -69,6 +69,7 @@ _SLOT_ENEMY_ID = 31
 #: 敌人生成观察事件号（与回合钩子的 30 区分开）。
 _SPAWN_EVENT_UNIT = 31
 _SPAWN_EVENT_STAGE = 32
+_SPAWN_EVENT_PART = 33
 
 
 def _pack_generation_data(enemy_id, level=-1, sync_level=-1, wave_index=0,
@@ -214,7 +215,15 @@ def _enemy_spawn_hooks(enemy_id=None):
             {'arg': 1, 'off': [0x14], 'deref': [False], 'kind': 'int', 'out': 3},
         ],
     }
-    return [unit, stage]
+    part = {
+        'klass': 'AbnormalityPartStaticDataList',
+        'method': 'GetData',
+        'argc': 1,
+        'actions': 0,
+        'event': _SPAWN_EVENT_PART,
+        'reads': [{'arg': 1, 'kind': 'int', 'out': 0}],
+    }
+    return [unit, stage, part]
 
 
 def _model_list_ids(host, faction=1, include_assistance=False,
@@ -831,7 +840,8 @@ class Live:
             self._push()
         return {'ok': True,
                 'events': {'CreateEnemyUnit': _SPAWN_EVENT_UNIT,
-                           'CreateEnemyInStage': _SPAWN_EVENT_STAGE}}
+                           'CreateEnemyInStage': _SPAWN_EVENT_STAGE,
+                           'AbnormalityPartGetData': _SPAWN_EVENT_PART}}
 
     def hook_enemy_spawn(self, enemy_id, push=True):
         """观察并改写 ``CreateEnemyUnit`` 的第 1 个参数（id）。
@@ -854,7 +864,8 @@ class Live:
         return {'ok': True, 'enemy_id': int(enemy_id),
                 'slot': _SLOT_ENEMY_ID,
                 'events': {'CreateEnemyUnit': _SPAWN_EVENT_UNIT,
-                           'CreateEnemyInStage': _SPAWN_EVENT_STAGE}}
+                           'CreateEnemyInStage': _SPAWN_EVENT_STAGE,
+                           'AbnormalityPartGetData': _SPAWN_EVENT_PART}}
 
     def replace_abnormality_part(self, target_part_id, source_ids=None,
                                  timeout=3.0):

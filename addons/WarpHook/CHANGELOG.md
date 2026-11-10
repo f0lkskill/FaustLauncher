@@ -1,3 +1,7 @@
+## 0.9.64 — 观察 Abnormality part 静态数据入口
+
+- `watch_enemy_spawn` 新增 `AbnormalityPartStaticDataList.GetData` 观察：事件 33，`a=part id`。用来确认嫉妒罪种的 part 是否走 `GetData`，为下一步按 id 改写做准备。
+
 ## 0.9.63 — game.wait_ready 门面
 
 - 补上模块级 `game.wait_ready(wait_timeout=120)`，插件不需要再写 `game.live().wait_ready`。
