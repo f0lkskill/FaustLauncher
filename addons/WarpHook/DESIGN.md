@@ -1195,3 +1195,16 @@ override 后 Abnormality 需要玩家式槽逻辑才能选玩家技能/行动；
 `IsSinSlotLogicSameAsPlayer=false` 会让敌人站着不出招（只保留空壳 View）。
 正确做法是保留原逻辑，把 `GetMaxActionSlotNum` 限制为 1：既能继续出招，
 又不会每回合结束加空槽、导致 `currentSelectSin` 为空。
+
+### 23.6 场景门控
+
+`SCENE_STATE` 枚举：
+
+```
+Login=0  Battle=1  Main=2  Story=3  Dungeon=4  MirrorDungeon=5
+RailwayDungeon=6  StoryMirrorDungeon=7  ProjectGS=8  Rpg=9
+```
+
+等待/登录是 `0`，主界面是 `2`（不是 0）。`set_abnormality_personality`
+在 `None/0/2` 时直接返回，不碰静态数据，避免等待界面里必然超时/命令通道忙。
+真正需要写入时应在战斗、剧情或地牢场景（`1/3/4/5/6/7/8/9`）。

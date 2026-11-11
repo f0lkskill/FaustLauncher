@@ -1,3 +1,8 @@
+## 0.9.68 — 场景门控
+
+- `set_abnormality_personality` 在场景 `0`（Login/等待）或 `2`（Main/主界面）直接跳过，避免静态数据命令必然超时/命令通道忙。
+- 返回值/日志补充 `scene`，便于确认当前在哪个界面。
+
 ## 0.9.67 — 限制 Abnormality 最大行动槽
 
 - `set_abnormality_personality` 不再强制 `IsSinSlotLogicSameAsPlayer=False`：那会把玩家式技能/行动逻辑一起关掉，敌人站着不出招。

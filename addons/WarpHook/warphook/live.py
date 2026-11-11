@@ -926,6 +926,16 @@ class Live:
         技能/内容。``source_ids`` 默认嫉妒罪种 1110..1115。
         """
         host = self.host()
+        scene = self.scene()
+        scene_value = scene.get('value') if isinstance(scene, dict) else None
+        # Login=0 / Main=2：游戏还没进关卡或停在主界面，静态数据命令会失败。
+        if scene_value in (None, 0, 2):
+            self.log(
+                f'set_abnormality_personality 跳过：场景={scene_value}'
+                f'（等待/登录/主界面）')
+            return {'ok': False,
+                    'reason': f'当前场景 {scene_value} 不处理',
+                    'scene': scene_value}
         ids = (list(range(1110, 1116)) if source_ids is None
                else [int(x) for x in source_ids])
         result = host.call('StaticDataManager::get_Instance', slot=None,
@@ -965,11 +975,12 @@ class Live:
         pushed = bool(self._push()) if push else False
         self.log(
             f'set_abnormality_personality({personality_id}) '
-            f'changed={changed} failed={failed} '
+            f'scene={scene_value} changed={changed} failed={failed} '
             f'hook={hook["klass"]}::{hook["method"]} ret_const=1 '
             f'pushed={pushed}')
         return {'ok': bool(changed) and not failed,
                 'personality_id': int(personality_id),
+                'scene': scene_value,
                 'changed': changed, 'failed': failed,
                 'hook': {'klass': hook['klass'], 'method': hook['method'],
                          'ret_const': 1, 'block': True},
