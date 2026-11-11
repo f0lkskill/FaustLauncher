@@ -580,6 +580,32 @@ class Game(Protocol):
         置空。``waveList`` 等引用仍与源关卡共享。
         """
 
+    def stage_add(self, source_id: int, new_id: int, enemy_ids=None,
+                  level: int = -1, sync_level: int = 1, count: int = -1,
+                  stage_level: int = -1, recommended_level: int = -1,
+                  strip_story: bool = True, clear_scripts: bool = True,
+                  timeout: float = 3.0) -> dict:
+        """克隆源关卡并以新 id 追加到关卡表，不替换源关卡。"""
+
+    def chapter_add_top(self, source_node_id: int = 910803,
+                        new_node_id: int = 910804,
+                        stage_id: int = 990001,
+                        timeout: float = 3.0) -> dict:
+        """在章节 UI 表顶部新增 ``STAGE_NODE`` 条目。"""
+
+    def custom_stage_server_guard(self, custom_stage_id: int,
+                                  source_stage_id: int, push: bool = True,
+                                  timeout: float = 3.0) -> dict:
+        """把自定义关卡入口/退出的服务器包 stageid 改成素材 id。"""
+
+    def stage_bind(self, source_id: int, slot: int = 30,
+                   timeout: float = 3.0) -> dict:
+        """把槽内 ``StageStaticData`` 绑定回关卡表同 id 元素。"""
+
+    def stage_use(self, source_id: int, strip_story: bool = True,
+                  timeout: float = 3.0) -> dict:
+        """克隆并绑定源关卡，供现有章节/关卡 UI 点击进入。"""
+
     def stage_strip_story(self, slot: int = 30,
                           timeout: float = 3.0) -> dict:
         """清空槽内 ``StageStaticData`` 的剧情/事件脚本字段。"""

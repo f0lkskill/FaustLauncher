@@ -59,6 +59,20 @@ int warp_slot_row_next(int slot, int row)
         }                                                               \
     } while (0)
 
+/* 按整数参数值做条件改写：argN_old != 0 且参数当前值相等时改成 argN_new。
+ * 目前只给 6 参构造用（HttpEnterStageBattleCommand..ctor 的 sub/node/stage）。 */
+#define WARP_ARG_REWRITE(a, v)                                          \
+    do {                                                                \
+        int ar_;                                                        \
+        for (ar_ = warp_slot_row_first(slot_n_); ar_ >= 0;              \
+             ar_ = warp_slot_row_next(slot_n_, ar_)) {                  \
+            WARP_HOOK *h_ = warp_hook_at(ar_);                          \
+            if (h_ && h_->arg##a##_old &&                              \
+                (int)(intptr_t)(v) == h_->arg##a##_old)                \
+                v = (void *)(intptr_t)h_->arg##a##_new;                 \
+        }                                                               \
+    } while (0)
+
 #define WARP_THUNK_DEF(N, n, DECL, EVT, CALL, RW)                           \
     static void __fastcall warp_thunk##N##_##n DECL                     \
     {                                                                   \
@@ -107,6 +121,16 @@ int warp_slot_row_next(int slot, int row)
                 if (h_)                                                 \
                     warp_on_event_post(r_, h_, self, N, WARP_EVT6 EVT, (int)ret_); \
             }                                                           \
+            for (r_ = warp_slot_row_first(n); r_ >= 0;                  \
+                 r_ = warp_slot_row_next(n, r_)) {                      \
+                WARP_HOOK *h_ = warp_hook_at(r_);                       \
+                if (h_ && self && h_->write_self_off >= 0 &&            \
+                    (h_->guard_self_off < 0 ||                          \
+                     *(int *)((char *)self + h_->guard_self_off) ==     \
+                     h_->guard_self_value))                             \
+                    *(int *)((char *)self + h_->write_self_off) =       \
+                        h_->write_self_value;                           \
+            }                                                           \
         }                                                               \
         for (r_ = 0; r_ < nfire_; r_++)                                 \
             warp_fire((int)fire_[r_]);                                  \
@@ -142,7 +166,8 @@ int warp_slot_row_next(int slot, int row)
     WARP_RW(1, a1); WARP_RW(2, a2); WARP_RW(3, a3); WARP_RW(4, a4); WARP_RW(5, a5);)
 #define WARP_THUNK_6(n) WARP_THUNK_DEF(6, n, (void *self, void *a1, void *a2, void *a3, void *a4, void *a5, void *a6, void *mi), \
     (a1, a2, a3, a4, a5, a6), (self, a1, a2, a3, a4, a5, a6, mi), \
-    WARP_RW(1, a1); WARP_RW(2, a2); WARP_RW(3, a3); WARP_RW(4, a4); WARP_RW(5, a5); WARP_RW(6, a6);)
+    WARP_RW(1, a1); WARP_RW(2, a2); WARP_RW(3, a3); WARP_RW(4, a4); WARP_RW(5, a5); WARP_RW(6, a6); \
+    WARP_ARG_REWRITE(2, a2); WARP_ARG_REWRITE(3, a3); WARP_ARG_REWRITE(4, a4);)
 #define WARP_THUNK_7(n) WARP_THUNK_DEF(7, n, (void *self, void *a1, void *a2, void *a3, void *a4, void *a5, void *a6, void *a7, void *mi), \
     (a1, a2, a3, a4, a5, a6), (self, a1, a2, a3, a4, a5, a6, a7, mi), \
     WARP_RW(1, a1); WARP_RW(2, a2); WARP_RW(3, a3); WARP_RW(4, a4); WARP_RW(5, a5); WARP_RW(6, a6); WARP_RW(7, a7);)

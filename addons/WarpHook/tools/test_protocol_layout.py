@@ -25,10 +25,10 @@ for name, expr in re.findall(r'^#define\s+(WARP_\w+)\s+([^\n]+)', c_source, re.M
             pass
 for suffix in ('VERSION', 'EXPORT_COUNT', 'EXPORTS_OFFSET', 'EV_CTRL_OFFSET', 'EVENTS_OFFSET', 'READ_OFFSET', 'OBJECTS_OFFSET', 'CMD_BUF_OFFSET', 'THREAD_EXPORT_OFFSET', 'MAP_BYTES'):
     assert values['HOST_' + suffix] == c_values['WARP_' + suffix], suffix
-assert values['HOST_VERSION'] == 18
+assert values['HOST_VERSION'] == 22
 assert values['HOST_EXPORT_COUNT'] == 24
-assert values['HOST_THREAD_EXPORT_OFFSET'] == 304912
-assert values['HOST_MAP_BYTES'] == 304976
+assert values['HOST_THREAD_EXPORT_OFFSET'] == 310032
+assert values['HOST_MAP_BYTES'] == 310096
 assert values['HOST_EXPORT_ORDER'][7] == 'il2cpp_thread_attach'
 assert 'il2cpp_thread_detach' not in values['HOST_EXPORT_ORDER']
-print('PASS C/Python protocol v18: layout unchanged, WRITE_INT added')
+print('PASS C/Python protocol v22: hook self-field + arg rewrite added')

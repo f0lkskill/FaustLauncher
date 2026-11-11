@@ -273,16 +273,68 @@ game.set_abnormality_personality(10415)  # 默认改嫉妒罪种 1110..1115
 **不要**强制 `IsSinSlotLogicSameAsPlayer=False`，否则敌人会站着不出招。
 重进场景生效。协议 v18，需重编译 DLL。
 
-### 克隆主线关卡
+### 克隆 / 绑定章节大关卡
 
 ```python
-game.stage_clone(911410)      # 克隆到对象槽 30，并清空剧情/事件脚本
-game.stage_strip_story(30)    # 再清一次
+game.stage_clone(10554)       # 克隆到对象槽 30，并清空剧情/事件脚本
+game.stage_bind(10554)        # 把槽 30 写回关卡表同 id 元素
+game.stage_use(10554)         # 克隆 + 绑定一步完成
 ```
 
+`stage_use` 之后，点游戏里原有的章节大关卡 UI 就能走原来的编队/战斗
+流程。当前已确认 `SUBCHAPTER_TYPE.STAGE_NODE=3` 是直接进单场景的章节
+大关卡：
+
+- `9106 / 910603 -> stage 10554`
+- `9108 / 910803 -> stage 10557`
+
+节点解析走 `PartStaticDataList.GetStageInfoForUI(nodeId)`；UI 点击时
+`SubchapterUIDataInPart.nodeId` 是这里的 `910603/910803`，不是 stage id。
+
 `tools/dev/scan_stages.py --scan` 会扫描主线关卡表，找可直接进战斗、
-无剧情/脚本的关卡；`--clone 911410` 实机克隆。目前是浅拷贝，
-`waveList` 等引用仍与源关卡共享。
+无剧情/脚本的关卡；`--clone 10554` 实机克隆。目前是浅拷贝，
+`waveList` 等引用仍与源关卡共享。绑定和元素读取需要协议 v19 的
+`warp_host.dll`，替换后重开游戏。
+
+> `StageStaticDataList.GetStage(id)` 在当前版本会返回字段错位的对象；
+> 插件已改为 `GetList()` + List 元素直读，再用 `list_item` 取元素槽。
+
+### 新增关卡 / 章节顶栏入口
+
+```python
+game.stage_add(10557, 990001, enemy_ids=[1100], level=45,
+               sync_level=1, count=1)
+game.chapter_add_top(source_node_id=910803, new_node_id=910804,
+                     stage_id=990001)
+```
+
+- `stage_add` 克隆素材关卡、换新 id、改 wave，并把新 `StageStaticData`
+  **追加**到关卡表，不替换源关卡。
+- `chapter_add_top` 克隆 Walpu3 的 `SubchapterUIDataInPart` 和
+  `StageNodeInfo`，插到 `SubchapterUIList` 顶部；原 Walpu3 入口保留。
+- 双击新顶栏条目应进入新 stage；`unitSyncLevel` 会影响人格同步/技能内容，
+  测试默认用 `1`。
+- 一键脚本：
+
+```bash
+python tools/dev/make_custom_stage.py
+python tools/dev/make_custom_stage.py --source 10557 --new-id 990001 \
+  --enemy 1100 --level 45 --sync 1 --count 1
+```
+
+自定义关卡入口/退出会带 `stageid=990001` 去请求服务器；API 会自动安装：
+
+```python
+game.custom_stage_server_guard(990001, 10557)
+```
+
+只 hook `ReqPacket_EnterStageBattle` / `ReqPacket_ExitStageBattle` 构造函数，
+POST 时若 `stageid(0x1C)==990001` 就改成 `10557`；其他关卡和其他服务器请求
+不匹配、不受影响。需要协议 v21 的 `warp_host.dll`。
+
+协议 v20 新增 `Host.list_insert` / `Host.list_append`，需要重新加载 DLL。
+当前克隆仍是浅拷贝，`waveList` / `stageScriptList` 与素材共享；深拷贝和
+退出服务器旁路是后续项。
 
 ## 原生退出排查（协议 v14 candidate）
 

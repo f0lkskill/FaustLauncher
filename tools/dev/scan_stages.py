@@ -3,8 +3,9 @@
 前提：游戏在跑、WarpHook 已注入。静态数据在进过主界面/关卡后才会加载。
 
     python tools/dev/scan_stages.py --scan
-    python tools/dev/scan_stages.py --clone 911410
-    python tools/dev/scan_stages.py --clone 911410 --keep-story
+    python tools/dev/scan_stages.py --clone 10554
+    python tools/dev/scan_stages.py --use 10554
+    python tools/dev/scan_stages.py --clone 10554 --keep-story
 """
 
 import argparse
@@ -62,16 +63,16 @@ def _scan(host, limit=500):
         print('取 storyBattleStageList 失败：', result)
         return 2
     result = host.call('StageStaticDataList::GetList', slot=31,
-                       ret='ref', out_slot=29, via='invoke', timeout=3.0)
-    if isinstance(result, str) or not host.object_ptr(29):
+                       ret='ref', out_slot=27, via='invoke', timeout=3.0)
+    if isinstance(result, str) or not host.object_ptr(27):
         print('取 StageStaticDataList.GetList 失败：', result)
         return 2
 
-    count = host.read(29, [], kind='count', default=0, timeout=3.0) or 0
+    count = host.read(27, [], kind='count', default=0, timeout=3.0) or 0
     print(f'storyBattleStageList: {count} 个关卡（最多扫描 {limit}）')
     candidates = []
     for i in range(min(count, int(limit))):
-        row = _read_stage_row(host, 29, i)
+        row = _read_stage_row(host, 27, i)
         if (row['stage_type'] == 0 and not row['story']
                 and not row['stage_scripts'] and not row['event_script']
                 and not row['abnormality_events'] and row['waves']):
@@ -109,10 +110,24 @@ def _clone(host, source_id, keep_story=False):
     return 0
 
 
+def _use(host, source_id, keep_story=False):
+    result = live._stage_clone_on(host, source_id, strip_story=not keep_story,
+                                  timeout=5.0)
+    print('克隆结果：', result)
+    if not result.get('ok'):
+        return 2
+    bind = host.set_list_item(result['list_slot'], result['index'],
+                              result['slot'], timeout=5.0)
+    print('绑定结果：', bind)
+    return 0 if bind in ('已执行', '成功') else 2
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--scan', action='store_true', help='扫描纯战斗关卡')
     parser.add_argument('--clone', type=int, default=None, help='克隆指定关卡 id')
+    parser.add_argument('--use', type=int, default=None,
+                        help='克隆并绑定指定关卡 id')
     parser.add_argument('--keep-story', action='store_true',
                         help='克隆时保留剧情/事件脚本')
     parser.add_argument('--limit', type=int, default=500, help='扫描上限')
@@ -122,6 +137,8 @@ def main():
     if host is None:
         print('打不开宿主共享内存（启动器挂钩了吗？）')
         return 2
+    if args.use is not None:
+        return _use(host, args.use, keep_story=args.keep_story)
     if args.clone is not None:
         return _clone(host, args.clone, keep_story=args.keep_story)
     return _scan(host, limit=args.limit)

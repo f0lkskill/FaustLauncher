@@ -49,7 +49,7 @@ from .base import (
 )
 
 HOST_MAGIC = 0x54534857           # "WHST"
-HOST_VERSION = 18                  # v18：新增 WRITE_INT（13），写对象字段 int。
+HOST_VERSION = 22                  # v18：新增 WRITE_INT（13），写对象字段 int。
                                    # v17：新增 WRITE_LIST（12），写 List<int> 元素。
                                    # v16：新增主线程 CALL_MAIN（11）。
                                    # v15：hook+284 pad→ret_const，flags 加 GUARD_NEG。
@@ -111,7 +111,10 @@ CMD_LIST = 8      # 诊断：列某类同名方法的全部重载签名（纯元
 CMD_STATIC = 9    # 读静态字段："类名::字段名" → 值落对象槽（引用类型）
 CMD_CALL_MAIN = 11  # 主线程直接执行 CALL（CreateEnemyInStage 等 Unity 调用）
 CMD_WRITE_LIST = 12  # 写 List<int> 元素（vars[0]=index, vars[1]=value）
-CMD_WRITE_INT = 13   # 写对象字段 int（vars[0]=offset, vars[1]=value）
+CMD_WRITE_INT = 13
+CMD_LIST_ITEM = 14   # load List<T> element pointer into out slot
+CMD_SET_ITEM = 15    # store source slot pointer into List<T> element
+CMD_LIST_INSERT = 16 # insert source slot pointer into List<T> at index   # 写对象字段 int（vars[0]=offset, vars[1]=value）
 
 # CALL 的返回值形状（retkind 打进 cmd_type 12-15 位）
 CMD_RET_INT32 = 0   # box 返回，真值在 +0x10，位模式写回 vars[6]
@@ -218,7 +221,7 @@ HOST_READ_MAX = 128
 HOST_READ_SIZE = 80
 
 
-HOST_HOOK_SIZE = 288
+HOST_HOOK_SIZE = 328
 HOST_TEXTS_OFFSET = HOST_HOOK_OFFSET + HOST_MAX_HOOKS * HOST_HOOK_SIZE
 HOST_TEXT_SIZE = HOST_TEXT_LEN
 HOST_EXPORTS_OFFSET = HOST_TEXTS_OFFSET + HOST_MAX_TEXTS * HOST_TEXT_SIZE
@@ -436,6 +439,17 @@ class HostHook(ctypes.Structure):
         ("ret_slot", ctypes.c_int32),    # 返回值直出的事件格（-1 不用）
         # v15：BLOCK 时写回 RAX 的常量（默认 0，沿用旧语义「拦成 0」）。
         ("ret_const", ctypes.c_int32),
+        # v21：POST 阶段按 self 字段条件写入另一个 self 字段。
+        ("guard_self_off", ctypes.c_int32),
+        ("guard_self_value", ctypes.c_int32),
+        ("write_self_off", ctypes.c_int32),
+        ("write_self_value", ctypes.c_int32),
+        ("arg2_old", ctypes.c_int32),
+        ("arg2_new", ctypes.c_int32),
+        ("arg3_old", ctypes.c_int32),
+        ("arg3_new", ctypes.c_int32),
+        ("arg4_old", ctypes.c_int32),
+        ("arg4_new", ctypes.c_int32),
     ]
 
 
@@ -1057,7 +1071,14 @@ class Host:
                                   ("cache_arg", -1), ("cache_slot", -1),
                                   ("when", HOST_WHEN_PRE),
                                   ("ret_kind", HOST_RET_VOID),
-                                  ("ret_slot", -1), ("ret_const", 0)):
+                                  ("ret_slot", -1), ("ret_const", 0),
+                                  ("guard_self_off", -1),
+                                  ("guard_self_value", 0),
+                                  ("write_self_off", -1),
+                                  ("write_self_value", 0),
+                                  ("arg2_old", 0), ("arg2_new", 0),
+                                  ("arg3_old", 0), ("arg3_new", 0),
+                                  ("arg4_old", 0), ("arg4_new", 0)):
                 value = hook.get(name, default)
                 if name == "ret_kind" and isinstance(value, str):
                     # dict 配置路径与 hook() 关键字路径同一套叫法：
@@ -1129,8 +1150,10 @@ class Host:
 
     def hook(self, klass, method, argc=0, block=False, actions=None,
              probe=None, guard=None, event=None, reads=None, dedupe=False,
-             cache=None, rewrite=None, when=None, ret_kind=None, ret_slot=None,
-             ret_const=None, guard_neg=False, **extra):
+                 cache=None, rewrite=None, when=None, ret_kind=None,
+                 ret_slot=None, ret_const=None, guard_neg=False,
+                 field_guard=None, field_write=None,
+                 arg_rewrites=None, **extra):
         """登记一条钩子 —— 用法就是一次普通调用，不是填表格。
 
         ``klass`` / ``method`` 是要挂的方法（``argc`` 按「不含 this」数），
@@ -1207,8 +1230,24 @@ class Host:
         if ret_slot is not None:
             item["ret_slot"] = int(ret_slot)
         if ret_const is not None:
-            # v15：BLOCK 时写回 RAX 的常量。只对返回 int/bool 的钩子有意义。
+            # v15：BLOCK 时写回 RAX 的常量（默认 0，沿用旧语义「拦成 0」）。
             item["ret_const"] = int(ret_const)
+        if field_guard is not None:
+            g_off, g_value = (list(field_guard) + [0, 0])[:2]
+            item["guard_self_off"] = int(g_off)
+            item["guard_self_value"] = int(g_value)
+        if field_write is not None:
+            w_off, w_value = (list(field_write) + [0, 0])[:2]
+            item["write_self_off"] = int(w_off)
+            item["write_self_value"] = int(w_value)
+        if arg_rewrites:
+            for arg_rw in arg_rewrites:
+                idx, old, new = list(arg_rw)[:3]
+                idx = int(idx)
+                if idx not in (2, 3, 4):
+                    continue
+                item[f"arg{idx}_old"] = int(old)
+                item[f"arg{idx}_new"] = int(new)
         if guard_neg:
             item["flags"] = int(item.get("flags", 0)) | int(HF_GUARD_NEG)
         if reads:
@@ -1969,6 +2008,54 @@ class Host:
             raise ValueError(f"对象槽 {slot} 超出 0..{HOST_OBJECT_COUNT - 1}")
         return self._command(CMD_WRITE_INT, "", timeout,
                              args=(int(offset), int(value)), slot=slot)
+
+    def list_item(self, slot, index, out_slot, timeout=2.0):
+        """把 ``List<T>`` 的 ``index`` 个元素指针读进 ``out_slot``（不新建 GC 句柄）。
+
+        适用于 ``List<StageStaticData>`` 这类引用元素；列表本身持有对象，
+        后续可以对该槽调用 ``MemberwiseClone`` 或作为 ``set_list_item`` 源。
+        """
+        slot = int(slot)
+        out_slot = int(out_slot)
+        if slot < 0 or slot >= HOST_OBJECT_COUNT:
+            raise ValueError(f"对象槽 {slot} 超出 0..{HOST_OBJECT_COUNT - 1}")
+        if out_slot < 0 or out_slot >= HOST_OBJECT_COUNT:
+            raise ValueError(f"对象槽 {out_slot} 超出 0..{HOST_OBJECT_COUNT - 1}")
+        return self._command(CMD_LIST_ITEM, "", timeout,
+                             args=(int(index),), slot=slot,
+                             out_slot=out_slot)
+
+    def set_list_item(self, list_slot, index, value_slot, timeout=2.0):
+        """把 ``value_slot`` 的对象指针写进 ``List<T>`` 的 ``index`` 个元素。"""
+        list_slot = int(list_slot)
+        value_slot = int(value_slot)
+        if list_slot < 0 or list_slot >= HOST_OBJECT_COUNT:
+            raise ValueError(f"对象槽 {list_slot} 超出 0..{HOST_OBJECT_COUNT - 1}")
+        if value_slot < 0 or value_slot >= HOST_OBJECT_COUNT:
+            raise ValueError(f"对象槽 {value_slot} 超出 0..{HOST_OBJECT_COUNT - 1}")
+        return self._command(CMD_SET_ITEM, "", timeout,
+                             args=(int(index), value_slot), slot=list_slot)
+
+    def list_insert(self, list_slot, index, value_slot, timeout=2.0):
+        """把 ``value_slot`` 的引用插入 ``List<T>`` 的 ``index`` 位置。
+
+        要求列表的底层数组还有空余容量；不会自行扩容。返回 ``已执行`` 表示成功。
+        """
+        list_slot = int(list_slot)
+        value_slot = int(value_slot)
+        if list_slot < 0 or list_slot >= HOST_OBJECT_COUNT:
+            raise ValueError(f"对象槽 {list_slot} 超出 0..{HOST_OBJECT_COUNT - 1}")
+        if value_slot < 0 or value_slot >= HOST_OBJECT_COUNT:
+            raise ValueError(f"对象槽 {value_slot} 超出 0..{HOST_OBJECT_COUNT - 1}")
+        return self._command(CMD_LIST_INSERT, "", timeout,
+                             args=(int(index), value_slot), slot=list_slot)
+
+    def list_append(self, list_slot, value_slot, timeout=2.0):
+        """把 ``value_slot`` 的引用追加到 ``List<T>`` 末尾。"""
+        list_slot = int(list_slot)
+        size = self.read(list_slot, [], kind='count', default=0,
+                         timeout=timeout) or 0
+        return self.list_insert(list_slot, size, value_slot, timeout=timeout)
 
     def make(self, klass, args=(), slot=24, timeout=2.0):
         """构造一个对象放进对象槽（挂 GC 强句柄）。

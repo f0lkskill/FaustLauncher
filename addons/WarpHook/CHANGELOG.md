@@ -1,3 +1,44 @@
+## 0.9.74 — 关卡深拷贝与 UI 配置复制
+
+- `stage_add` 默认 `deep=True`：复制 `StageStaticData`、`waveList`、每个 `Wave`、四类敌人列表、每个 `EnemyData`、脚本列表和 `story`，不再共享 Walpu3 引用。
+- 用 `MemberwiseClone` + `System.Array::Clone` 复制 List 对象和底层数组；修改自定义敌人不会影响源关卡。
+- 新 UI 的 `uiConfig` 单独克隆，节点隐藏/不可见标志清零，减少 unknown/不可点问题。
+- 新增 `tools/dev/link_new_stage.py`、`replace_walpu_stage.py`、`promote_walpu_stage.py` 等调试路线。
+- 协议 v22：hook 支持 self 字段条件改写和 `arg2/3/4` 整数参数改写，用于入口 `HttpEnterStageBattleCommand` 的 stage/node/sub。
+- 仍需重启加载 v22 DLL；章节详情数据复制尚未完成。
+
+## 0.9.73 — 自定义章节置顶与完整服务器字段旁路
+
+- `chapter_add_top` 把新 `SubChapterData` 同时插到 `subchapters` 顶部，章节面板不再排到最底部。
+- 新 `SubChapterData.stageNodeList` 指向复用的未引用节点列表，点击章节节点现在能解析到节点。
+- `custom_stage_server_guard` 支持 `stageid/nodeid/subchapterid` 三组字段，并同时 hook `ReqPacket_*` 与 `Http*Command..ctor`；只改写自定义值。
+- `make_custom_stage.py` 默认传入 `node=10001`/`subchapter=9910 -> 9108`。
+
+## 0.9.72 — 自定义关卡服务器包旁路
+
+- 协议 v21：`WARP_HOOK` 增加 `guard_self_off/value` 与 `write_self_off/value`，POST 阶段可按 self 字段条件改写另一个字段；Python 对应 `Host.hook(field_guard=..., field_write=...)`。
+- 新增 `game.custom_stage_server_guard(custom_stage_id, source_stage_id)`：只拦截 `ReqPacket_EnterStageBattle` / `ReqPacket_ExitStageBattle` 构造函数，若 `stageid==自定义 id` 就改成素材 id；普通关卡和其他服务器通信不受影响。
+- `tools/dev/make_custom_stage.py` 自动安装该 guard。
+- 需要重新启动游戏加载协议 v21 的 `warp_host.dll`。
+
+## 0.9.71 — 新增关卡与章节顶栏入口
+
+- 协议 v20：新增 `WARP_CMD_LIST_INSERT`（16），对应 `Host.list_insert` / `Host.list_append`；可在底层数组有空余容量时插入/追加引用元素。
+- 新增 `game.stage_add(source_id, new_id, enemy_ids=..., level=..., sync_level=..., count=...)`：克隆源关卡、换成新 id、改 wave 敌人并追加到关卡表，不替换源关卡。
+- 新增 `game.chapter_add_top(source_node_id=910803, new_node_id=910804, stage_id=990001)`：克隆章节 `STAGE_NODE` UI 条目和 `StageNodeInfo`，插到章节 UI 列表顶部；原 Walpu3 条目保留。
+- 新增 `tools/dev/make_custom_stage.py`：用 Walpu3 素材生成 `990001 / 910804`，默认敌人 `1100` 嫉妒罪种、等级 45、`unitSyncLevel=1`。
+- 注意：`MemberwiseClone` 是浅拷贝，`waveList`/`stageScriptList` 仍与素材共享；需要完全隔离时下一步做深拷贝。
+- 退出自定义关卡时，`ExitStoryBattleCommand.Request` 会把 `990001` 发给服务器并失败；后续在退出请求上做按 stage id 的设备端旁路。
+
+## 0.9.70 — 章节大关卡绑定
+
+- 协议 v19：新增 `WARP_CMD_LIST_ITEM`（14，把 `List<T>` 元素指针读进对象槽）和 `WARP_CMD_SET_ITEM`（15，把对象槽指针写回 `List<T>` 元素），对应 `Host.list_item` / `Host.set_list_item`。
+- 修复 `stage_clone`：`StageStaticDataList.GetStage` 在当前版本返回错位对象，改为 `GetList()` + 直接读 List 元素，再用 `list_item` 取元素槽。
+- 新增 `game.stage_bind(source_id, slot=30)`：把克隆的 `StageStaticData` 写回关卡表同 id 元素。
+- 新增 `game.stage_use(source_id, strip_story=True)`：克隆并立即绑定，点现有章节大关卡 UI 即可走原有编队/战斗流程。
+- 已确认 `SUBCHAPTER_TYPE.STAGE_NODE=3` 是直接进单场景的章节大关卡：`9106/910603 → stage 10554`、`9108/910803 → stage 10557`。
+- 注意：需要重新启动游戏加载协议 v19 的 `warp_host.dll`。
+
 ## 0.9.69 — 主线关卡克隆
 
 - 新增 `game.stage_clone(source_id, strip_story=True)`：在 `StageStaticDataList` 里找关卡，`System.Object.MemberwiseClone` 到对象槽 30；可清空 `story` / `eventScriptName`。

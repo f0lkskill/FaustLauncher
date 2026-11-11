@@ -1209,36 +1209,171 @@ RailwayDungeon=6  StoryMirrorDungeon=7  ProjectGS=8  Rpg=9
 在 `None/0/2` 时直接返回，不碰静态数据，避免等待界面里必然超时/命令通道忙。
 真正需要写入时应在战斗、剧情或地牢场景（`1/3/4/5/6/7/8/9`）。
 
-## 24. 主线关卡克隆（v0.9.69）
+## 24. 关卡克隆与章节大关卡绑定（v0.9.70）
 
 ### 24.1 找到的结构
 
 - 关卡表：`StaticDataManager.get_storyBattleStageList()` /
   `get_dungeonBattleStageList()` / `get_abBattleStageList()`；
-  `StageStaticDataList.GetStage(id)` 按 id 取 `StageStaticData`。
+  `StageStaticDataList.list` 0x10 才是可读的 `List<StageStaticData>`。
+- **不要用 `StageStaticDataList.GetStage(id)`**：当前游戏版本返回字段
+  错位对象（所有 id 都读到同一个错误指针 541758960）。
 - 关卡字段：`id` 0x10、`_stageType` 0x20、`story` 0x60、
   `abnormalityEventList` 0x90、`stageScriptList` 0x98、
   `eventScriptName` 0xA0、`waveList` 0xB0。
 - `Wave.unitList` 是 `List<EnemyData>`；`EnemyData` 字段
   `unitID` / `unitLevel` / `unitCount` / `unitSyncLevel`。
 
-### 24.2 克隆与去剧情
+### 24.2 元素指针与克隆
 
-`System.Object.MemberwiseClone` 对源 `StageStaticData` 做浅拷贝，结果落
-对象槽 30。`strip_story=True` 时把 `story`(0x60) 与
-`eventScriptName`(0xA0) 的 8 字节指针清零，保留 `waveList` 等战斗数据。
+协议 v19 新增两条 worker 命令：
 
-### 24.3 候选关卡
+```
+WARP_CMD_LIST_ITEM = 14   # List<T> 元素指针 -> 对象槽
+WARP_CMD_SET_ITEM  = 15   # 对象槽指针 -> List<T> 元素
+```
 
-`Player.log` 里已有的 `Enter Stage Id Local Set : 911410` /
-`911401` 是可直接进战斗的候选。`tools/dev/scan_stages.py --scan` 会扫描
-`storyBattleStageList`，筛 `stage_type==0`、无 story/脚本/异常事件且有
-wave 的关卡；`--clone 911410` 直接克隆并打印结果。
+`Host.list_item` / `Host.set_list_item` 对应实现；元素大小按 8 字节，
+数组数据在 `+0x20`。流程是 `GetList()` → 遍历 List 找 id →
+`list_item` 取源元素槽 → `MemberwiseClone` 到槽 30 → `set_list_item`
+写回同 id 元素。`strip_story=True` 时把 `story`(0x60) 与
+`eventScriptName`(0xA0) 的 8 字节指针清零。
 
-### 24.4 边界
+### 24.3 章节大关卡类型
+
+`PartStaticDataList.list` 0x10 → `PartStaticData` →
+`subchapterUIList` 0x28 → `SubchapterUIDataInPart`：
+
+- `SUBCHAPTER_TYPE.MAIN=0`：普通章节大关（12 条，100..110、9128）。
+- `SUBCHAPTER_TYPE.SUB=1`：小节地图（9103..9127 等）。
+- `SUBCHAPTER_TYPE.STAGE_NODE=3`：**直接进单场景的章节大关卡**，当前
+  只有两条：
+  - `subchapterId=9106, nodeId=910603` → `StageNodeInfo.stageId=10554`
+  - `subchapterId=9108, nodeId=910803` → `StageNodeInfo.stageId=10557`
+- 这里的 `nodeId` 是 UI 节点 id，不是 stage id。解析用
+  `PartStaticDataList.GetStageInfoForUI(nodeId)`，返回的
+  `StageNodeInfo.stageId` 才是关卡表 id；`nodeId` 字段在 0x10、
+  `stageId` 在 0x1C、`_stageNodeType` 在 0x78。
+
+### 24.4 点 UI 进编队/战斗
+
+`game.stage_use(10554)` 把克隆写回 stage 10554 后，点现有
+`STAGE_NODE` 章节大关卡 UI（9106/910603）即可走游戏原有的
+`ChapterSelectionUIPanel` → 编队 → `EnterStage` 流程，不需要自己调
+`EnterStageWithoutPartData`。
+
+后续做“新 UI 条目”时，复用同一条链：克隆
+`SubchapterUIDataInPart` + `SubChapterData` + `StageNodeInfo`，把 UI 的
+`relatedData.nodeId` 指向新的 `StageNodeInfo.nodeId`，再让
+`StageNodeInfo.stageId` 指向克隆的 `StageStaticData`；不要另写按钮，
+否则会绕过编队/关卡校验。
+
+### 24.5 边界
 
 - 目前是浅拷贝：`waveList` / `stageScriptList` 与源关卡共享引用；
   后续改敌人的 Wave/EnemyData 需要深拷贝或替换列表。
-- 还没有实现“进入克隆关卡”的主线程入口；下一步接
-  `EnterStageWithoutPartData` / `StartStage` 或 hook 关卡列表进入事件。
 - 等待/主界面（场景 0/2）不做静态数据写入；进入关卡场景后再操作。
+- 协议 v19 的 DLL 替换后必须重开游戏，旧进程仍映射 v18。
+
+## 25. 新增关卡与章节顶栏入口（v0.9.71）
+
+### 25.1 LIST_INSERT
+
+协议 v20 新增：
+
+```
+WARP_CMD_LIST_INSERT = 16
+vars[0] = index, vars[1] = source_slot, cmd_type[16..23] = list_slot
+```
+
+C 侧直接操作 `List<T>`：`_items` 0x10、`_size` 0x18、`_version` 0x1C；
+底层数组元素数据从 `+0x20` 开始，引用元素 8 字节。仅在
+`_size < capacity`（数组长度在 `+0x18`）时插入，不自行分配新数组。
+
+### 25.2 stage_add
+
+`game.stage_add(source_id, new_id, enemy_ids=[...], level=45,
+sync_level=1, count=1)`：
+
+1. `MemberwiseClone` 素材 `StageStaticData` 到槽 30。
+2. 写 `id`(0x10)、可选 `stageLevel`(0x14)/`recommendedLevel`(0x58)。
+3. 遍历 `waveList` → `Wave.unitList` → `EnemyData`，写
+   `unitID`(0x10)/`unitLevel`(0x14)/`unitCount`(0x18)/
+   `unitSyncLevel`(0x1C)。
+4. 清 `story`(0x60)、`eventScriptName`(0xA0)；
+   `stageScriptList`(0x98)/`abnormalityEventList`(0x90) 的 List count
+   置 0。
+5. 用 `Host.list_append` 追加到关卡表，**不替换**源元素。
+
+Abnormality 关卡的 wave 里要放 **AbnormalityStaticData id**（如嫉妒罪种
+`1100`），不能放普通 EnemyUnit id（如 `90106/90107`），否则会生成
+没有 pattern/action 的敌人壳。
+
+### 25.3 chapter_add_top
+
+`game.chapter_add_top(source_node_id=910803, new_node_id=910804,
+stage_id=990001)`：
+
+1. 扫 `PartStaticDataList.list` → `PartStaticData.subchapterUIList`，
+   找 `_type==3` 且 `nodeId==source_node_id` 的 UI 数据。
+2. `MemberwiseClone` `SubchapterUIDataInPart`，克隆 `relatedData`
+   (`0x30`) 并把两边 `nodeId` 都改成新节点。
+3. 扫所有 `SubChapterData.stageNodeList`(0x58) 找源节点，
+   `MemberwiseClone` `StageNodeInfo`，写新 `nodeId`(0x10)/
+   `stageId`(0x1C)/`_stageNodeType=0`(0x78)。
+4. `list_insert(..., 0, ...)` 把节点和 UI 条目都插到列表顶部；原
+   Walpu3 条目不动。
+
+### 25.4 退出服务器失败
+
+普通战斗退出走：
+
+```
+ExitStoryBattleCommand.Request(StageNormalReqResultFormat, callback)
+  → HttpExitStageBattleCommand
+  → ReqPacket_ExitStageBattle(stageid=...)
+  → Server.PostWebRequest
+```
+
+`StageNormalReqResultFormat.stageid` 在 0x1C；自定义 id 服务器不认识，
+所以退出报连接失败。可按以下顺序处理：
+
+1. 最稳：退出请求只把 `stageid`（必要时同 chapter/subchapter/node）
+   重写成素材关卡的合法 id，例如 `990001 -> 10557`，让服务器照常回包。
+2. 只想 ban 掉这次请求：hook `ExitStoryBattleCommand.Request`，按
+   当前自定义 stage id 设 guard，block 掉请求；必须同时处理 callback
+   （否则战斗结果界面会等不到回调）。
+3. 不建议直接 hook 全局 `Server.PostWebRequest`，那会把其他正常请求
+   一起挡掉。
+
+## 26. 自定义关卡服务器包旁路（v0.9.72）
+
+协议 v21 给 `WARP_HOOK` 末尾增加：
+
+```
+guard_self_off   /* 288 按 self 字段值做条件 */
+guard_self_value /* 292 */
+write_self_off   /* 296 条件成立时写 self 字段 */
+write_self_value /* 300 */
+```
+
+thunk 在 original 返回后检查 `*(int*)(self+guard_self_off)`，相等才写
+`*(int*)(self+write_self_off)`。Python 用：
+
+```python
+host.hook('ReqPacket_EnterStageBattle', '.ctor', argc=6, when=1,
+          field_guard=(0x1C, 990001), field_write=(0x1C, 10557))
+host.hook('ReqPacket_ExitStageBattle', '.ctor', argc=1, when=1,
+          field_guard=(0x1C, 990001), field_write=(0x1C, 10557))
+```
+
+`ReqPacket_EnterStageBattle.stageid` / `ReqPacket_ExitStageBattle.stageid`
+都在 0x1C。只改自定义 id，普通关卡不匹配，其他服务器通信不受影响。
+若服务器还校验 node/subchapter，需要再给这两个字段加同条件写；当前先按
+stage id 验证。
+
+入口/退出的完整门面：
+
+```python
+game.custom_stage_server_guard(990001, 10557)
+```

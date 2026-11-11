@@ -825,6 +825,76 @@ int warp_cmd_write_int(int slot, int off, int value)
     return WARP_CMD_RES_OK;
 }
 
+/* Read a reference element from List<T> (element size 8) into an object
+ * slot without creating a new GC handle; the list keeps the object alive. */
+int warp_cmd_list_item(int slot, int index, int out_slot)
+{
+    void *list = warp_slot_get(slot);
+    void *items, *value;
+    int size;
+
+    if (!list || index < 0)
+        return WARP_CMD_RES_FAIL;
+    if (out_slot < 0 || out_slot >= WARP_OBJECT_COUNT)
+        return WARP_CMD_RES_BAD_SLOT;
+    items = *(void **)((char *)list + 0x10);
+    size = *(int *)((char *)list + 0x18);
+    if (!items || index >= size)
+        return WARP_CMD_RES_FAIL;
+    value = *(void **)((char *)items + 0x20 + (size_t)index * 8);
+    if (!value)
+        return WARP_CMD_RES_FAIL;
+    warp_slot_put(out_slot, value, 0);
+    return WARP_CMD_RES_OK;
+}
+
+/* Replace a reference element in List<T>. The source slot must already be
+ * rooted (MemberwiseClone/CALL ret='ref' does that); the list then points at
+ * the replacement object. */
+int warp_cmd_set_item(int list_slot, int index, int value_slot)
+{
+    void *list = warp_slot_get(list_slot);
+    void *items, *value;
+    int size;
+
+    if (!list || index < 0)
+        return WARP_CMD_RES_FAIL;
+    items = *(void **)((char *)list + 0x10);
+    size = *(int *)((char *)list + 0x18);
+    value = warp_slot_get(value_slot);
+    if (!items || !value || index >= size)
+        return WARP_CMD_RES_FAIL;
+    *(void **)((char *)items + 0x20 + (size_t)index * 8) = value;
+    return WARP_CMD_RES_OK;
+}
+
+/* Insert a reference element into List<T> at index. The backing array must
+ * already have spare capacity; insertion never reallocates it. */
+int warp_cmd_list_insert(int list_slot, int index, int value_slot)
+{
+    void *list = warp_slot_get(list_slot);
+    void *items, *value;
+    int size, capacity;
+
+    if (!list || index < 0)
+        return WARP_CMD_RES_FAIL;
+    items = *(void **)((char *)list + 0x10);
+    size = *(int *)((char *)list + 0x18);
+    value = warp_slot_get(value_slot);
+    if (!items || !value || index > size)
+        return WARP_CMD_RES_FAIL;
+    capacity = *(int *)((char *)items + 0x18);
+    if (size >= capacity)
+        return WARP_CMD_RES_FAIL;
+    memmove((char *)items + 0x20 + (size_t)(index + 1) * 8,
+            (char *)items + 0x20 + (size_t)index * 8,
+            (size_t)(size - index) * 8);
+    *(void **)((char *)items + 0x20 + (size_t)index * 8) = value;
+    *(int *)((char *)list + 0x18) = size + 1;
+    *(int *)((char *)list + 0x1C) += 1;
+    return WARP_CMD_RES_OK;
+}
+
 int warp_kill_game(void)
 {
     HANDLE proc = GetCurrentProcess();
@@ -1122,6 +1192,27 @@ static DWORD WINAPI work_main(LPVOID arg)
                     if (rc == 0 && g_hdr)
                         g_hdr->fired++;
                     break;
+                case WARP_CMD_LIST_ITEM:
+                    rc = warp_cmd_list_item(WARP_CMD_SLOT(job.type),
+                                            (int)g_hdr->vars[0],
+                                            (int)job.out_slot);
+                    if (rc == 0 && g_hdr)
+                        g_hdr->fired++;
+                    break;
+                case WARP_CMD_SET_ITEM:
+                    rc = warp_cmd_set_item(WARP_CMD_SLOT(job.type),
+                                           (int)g_hdr->vars[0],
+                                           (int)g_hdr->vars[1]);
+                    if (rc == 0 && g_hdr)
+                        g_hdr->fired++;
+                    break;
+                case WARP_CMD_LIST_INSERT:
+                    rc = warp_cmd_list_insert(WARP_CMD_SLOT(job.type),
+                                              (int)g_hdr->vars[0],
+                                              (int)g_hdr->vars[1]);
+                    if (rc == 0 && g_hdr)
+                        g_hdr->fired++;
+                    break;
                 default:
                     rc = WARP_CMD_RES_UNKNOWN;
                     break;
@@ -1288,6 +1379,9 @@ void warp_pump_commands(void)
     case WARP_CMD_READ:
     case WARP_CMD_WRITE_LIST:
     case WARP_CMD_WRITE_INT:
+    case WARP_CMD_LIST_ITEM:
+    case WARP_CMD_SET_ITEM:
+    case WARP_CMD_LIST_INSERT:
         /* v0.9.23：要进 il2cpp runtime/元数据的命令全部投递 worker 隔离舱，
          * 主线程泵不再亲自执行（六次崩溃都在这条路径上）。先标 BUSY，结果
          * 与 ack 由 worker 写回；worker 没起来就记 FAIL，绝不回退主线程执行。

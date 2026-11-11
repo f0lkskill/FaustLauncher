@@ -57,7 +57,7 @@
 /* 数值转字符串（构建戳用）：warp_log("proto v" WARP_STR(WARP_VERSION)) */
 #define WARP_STR_(x)      #x
 #define WARP_STR(x)       WARP_STR_(x)
-#define WARP_VERSION      18                /* v18：新增 WRITE_INT（13），写对象字段 int。
+#define WARP_VERSION      22                /* v20：新增 WRITE_INT（13），写对象字段 int。
                                              * v17：新增 WRITE_LIST（12），写 List<int> 元素。
                                              * v16：新增主线程 CALL_MAIN 命令（11），让
                                              * CreateEnemyInStage / ForceCreateUnitsInQueue
@@ -134,6 +134,10 @@
 #define WARP_CMD_WRITE_LIST 12  /* 写 List<int> 第 N 个元素：vars[0]=index, vars[1]=value */
 #define WARP_CMD_WRITE_INT  13  /* 写对象字段 int：vars[0]=offset, vars[1]=value */
 
+#define WARP_CMD_LIST_ITEM  14  /* load List<T> element pointer into object slot */
+#define WARP_CMD_SET_ITEM   15  /* store object slot pointer into List<T> element */
+#define WARP_CMD_LIST_INSERT 16 /* insert object slot pointer into List<T> */
+
 #define WARP_CMD_CODE(t)    ((t) & 0xFF)
 #define WARP_CMD_ARGC(t)    (((t) >> 8) & 0xF)
 #define WARP_CMD_RETKIND(t) (((t) >> 12) & 0xF)
@@ -167,7 +171,7 @@
 
 #define WARP_HEADER_SIZE  432   /* 160 状态头 + 命令槽 4*4 + 256 字节文本 */
 #define WARP_HOOK_OFFSET  WARP_HEADER_SIZE
-#define WARP_HOOK_SIZE    288
+#define WARP_HOOK_SIZE    328
 #define WARP_TEXTS_OFFSET (WARP_HOOK_OFFSET + WARP_MAX_HOOKS * WARP_HOOK_SIZE)
 #define WARP_TEXT_SIZE    WARP_TEXT_LEN
 #define WARP_EXPORTS_OFFSET (WARP_TEXTS_OFFSET + WARP_MAX_TEXTS * WARP_TEXT_SIZE)
@@ -407,7 +411,17 @@ typedef struct _WARP_HOOK {
     int  ret_kind;                 /* 276 WARP_RET_*：原函数返回值类型（0=不关心） */
     int  ret_slot;                 /* 280 返回值直出的事件格（<0 不直出；与读链别写同一格） */
     int  ret_const;                /* 284 v15：BLOCK 时写回 RAX 的常量（默认 0 = 旧行为） */
-} WARP_HOOK;                       /* 288 */
+    int  guard_self_off;           /* 288 self field offset, <0 off */
+    int  guard_self_value;         /* 292 guard value */
+    int  write_self_off;           /* 296 field offset to write, <0 off */
+    int  write_self_value;         /* 300 value to write */
+    int  arg2_old;                 /* 304 */
+    int  arg2_new;                 /* 308 */
+    int  arg3_old;                 /* 312 */
+    int  arg3_new;                 /* 316 */
+    int  arg4_old;                 /* 320 */
+    int  arg4_new;                 /* 324 */
+} WARP_HOOK;                       /* 328 */
 
 /* 一条读取链：从某个参数出发，按偏移跳 nsteps 次，把落点当成一个值读出来。
  *
