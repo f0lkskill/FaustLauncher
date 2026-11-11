@@ -1,3 +1,10 @@
+## 0.9.75 — 修正 warp_stub 协议存根
+
+- 给所有只有 docstring 的 Protocol 方法补上 `...`，修复 Pylance 的 `reportReturnType` 和 `Game.access` 被推断成 None 的问题。
+- 补齐 `stage_add` 的 `replace/deep`、`chapter_add_top` 的 `new_subchapter_id`、`custom_stage_server_guard` 的 node/sub 参数。
+- 扩充 `Access.manager/units/get_obj/count/scene/close` 和新增关卡接口的中文文档。
+- `pyright addons/WarpHook/warp_stub.py`：0 errors。
+
 ## 0.9.74 — 关卡深拷贝与 UI 配置复制
 
 - `stage_add` 默认 `deep=True`：复制 `StageStaticData`、`waveList`、每个 `Wave`、四类敌人列表、每个 `EnemyData`、脚本列表和 `story`，不再共享 Walpu3 引用。

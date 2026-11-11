@@ -141,6 +141,7 @@ class Host(Protocol):
         **kwargs: Any,
     ) -> None:
         """改配置（只在内存里改，``push()`` 之后才生效）。"""
+        ...
 
     def push(self, enabled: bool = True) -> str:
         """把当前配置写进共享内存，返回一句人能看懂的结果，例如 ``'已生效'``。"""
@@ -239,6 +240,7 @@ class Service(Protocol):
         ``auto()`` 决定游戏启动时要不要自动注入；``menu`` 是要挂到托盘上的项；
         ``host`` 可以是共享宿主 ``Host``，也可以是自带 DLL 的 ``Runtime``；
         ``shared=False`` 时按 ``runtime`` 自己的 ``hooked`` 判断是否已注入。"""
+        ...
 
     def host(self) -> Host:
         """本插件的宿主（惰性创建）。"""
@@ -419,9 +421,11 @@ class Buff(Protocol):
 
     def has(self, key) -> bool:
         """按英文 ID 或中文名判断是不是这个 buff。"""
+        ...
 
     def raw(self) -> dict:
         """``{'index','key','name','icon','type_id','stack','turn','max_stack','max_turn'}``。"""
+        ...
 
 
 class Unit(Protocol):
@@ -460,40 +464,69 @@ class Unit(Protocol):
 
     def buff(self, key, default=None) -> Buff | None:
         """按序号（``0``）、英文 ID（``"Breath"``）或中文名（``"呼吸法"``）找一个 buff。"""
+        ...
 
     def has_buff(self, key) -> bool:
         """身上有没有某个 buff。"""
+        ...
 
     def get_pro(self, key: str, default=None):
         """通用取值：``"origin_id"`` / ``"_hp"`` / ``"CharacterState._maxHp"``。"""
+        ...
 
     def props(self, timeout: float = 1.0) -> dict:
         """全部字段（62 个，摸底用，慢）。"""
+        ...
 
     def read(self, *chain, kind: str = "int", default=None, timeout: float = 2.0):
         """底层：从这个对象出发自己拼读链。"""
+        ...
 
 
 class Access(Protocol):
     """``warp.game.access(host)``：场景访问器。"""
 
     def manager(self, timeout: float = 3.0, force: bool = False) -> int | None:
-        """保证 BattleObjectManager 已进对象槽，返回它的指针。"""
+        """返回已缓存的 ``BattleObjectManager`` 指针。
+
+        默认只读回合钩子缓存的 manager；没有缓存时返回 ``None``。只有明确
+        知道当前是战斗场景时才传 ``force=True`` 触发一次静态 ``get_Instance``，
+        ``force`` 在错误场景里可能让 worker 走 il2cpp 异常路径。
+        """
+        ...
 
     def units(self, limit: int | None = None) -> list[Unit]:
-        """场上全部单位。"""
+        """按战斗内字典顺序返回全部单位。
 
-    def get_obj(self, id: int | None = None, index: int | None = None) -> Unit | None:
-        """按战斗内编号或序号取一个单位。"""
+        ``limit`` 只截断数量，不改变 index；每个属性访问仍是一次 DLL
+        代读往返，循环里不要反复读。
+        """
+        ...
+
+    def get_obj(self, id: int | None = None,
+                index: int | None = None) -> Unit | None:
+        """按战斗内编号 ``id`` 或字典序号 ``index`` 取单位。
+
+        两者都给时优先 ``index``；找不到返回 ``None``。``id`` 是
+        ``BattleUnit_M_instanceID``，不是人格/敌人静态 id。
+        """
+        ...
 
     def count(self) -> int:
-        """场上单位数。"""
+        """当前战斗对象字典里的单位数量。"""
+        ...
 
     def scene(self) -> dict:
-        """``{'scene','time_scale','scene_entries'}``。"""
+        """读取场景信息。
+
+        返回 ``{'scene','time_scale','scene_entries'}``；``scene`` 是
+        ``SCENE_STATE`` 枚举值，等待/主界面时不保证有战斗单位。
+        """
+        ...
 
     def close(self) -> None:
-        """关掉跨进程读句柄（用完记得调）。"""
+        """关闭跨进程读句柄；``units``/``get_obj`` 内部会按需重建。"""
+        ...
 
 
 class Game(Protocol):
@@ -503,9 +536,11 @@ class Game(Protocol):
 
     def access(self, host=None, slot=None) -> Access:
         """场景对象访问器（0.9.9 起）。"""
+        ...
 
     def wait_ready(self, wait_timeout: float = 120.0) -> bool:
         """等游戏/宿主就绪；返回是否就绪（v0.9.63 起）。"""
+        ...
 
     def set_unit_faction(self, unit=None, faction: str = "enemy", push: bool = True) -> dict:
         """在判定层把某个单位当成敌方（0.9.56 起）。
@@ -513,9 +548,11 @@ class Game(Protocol):
         ``unit`` 可为 ``Unit`` / 战斗编号 / ``None``（场上第二个单位）；
         只影响 IsOpponent、可攻击目标列表，单位自身的行动逻辑不变。
         """
+        ...
 
     def clear_unit_faction(self, push: bool = True) -> dict:
         """撤掉 ``set_unit_faction`` 装的钩子。"""
+        ...
 
     def create_enemy(self, enemy_id: int, level: int = -1, sync_level: int = -1,
                      wave_index: int = 0, first_turn_speed: int = 0,
@@ -532,6 +569,7 @@ class Game(Protocol):
         ``level`` / ``sync_level`` 不要留 -1：Abnormality 会缺技能。用当前
         关卡正常敌人的等级（例如 ``level=47, sync_level=4``）。
         """
+        ...
 
     def watch_enemy_spawn(self, push: bool = True) -> dict:
         """只读观察 ``CreateEnemyUnit`` / ``CreateEnemyInStage``。
@@ -540,6 +578,7 @@ class Game(Protocol):
         id/level/syncLevel，stage 事件 a/b/c/d =
         GenerationData.id/level/syncLevel/faction。
         """
+        ...
 
     def hook_enemy_spawn(self, enemy_id: int, push: bool = True) -> dict:
         """观察并改写普通敌人生成 id（``CreateEnemyUnit`` 的第 1 个参数）。
@@ -547,9 +586,11 @@ class Game(Protocol):
         Abnormality 若走 ``CreateEnemyInStage``，这个改写不会生效，先用
         ``watch_enemy_spawn`` 看事件再决定。
         """
+        ...
 
     def clear_enemy_spawn(self, push: bool = True) -> dict:
         """撤掉敌人生成观察/改写钩子。"""
+        ...
 
     def replace_abnormality_part(self, target_part_id: int, source_ids=None,
                                  timeout: float = 3.0) -> dict:
@@ -559,6 +600,7 @@ class Game(Protocol):
         下一次游戏正常生成敌人时生效。``source_ids`` 默认嫉妒罪种
         1110..1115。
         """
+        ...
 
     def set_abnormality_personality(self, personality_id: int,
                                     source_ids=None, push: bool = True,
@@ -571,6 +613,7 @@ class Game(Protocol):
         （BLOCK + ret_const=0），禁止 override 后每回合加槽。
         返回 ``changed/failed/hook/pushed`` 调试信息。
         """
+        ...
 
     def stage_clone(self, source_id: int, strip_story: bool = True,
                     timeout: float = 3.0) -> dict:
@@ -579,41 +622,73 @@ class Game(Protocol):
         浅拷贝；``strip_story=True`` 时把 ``story`` / ``eventScriptName``
         置空。``waveList`` 等引用仍与源关卡共享。
         """
+        ...
 
     def stage_add(self, source_id: int, new_id: int, enemy_ids=None,
                   level: int = -1, sync_level: int = 1, count: int = -1,
                   stage_level: int = -1, recommended_level: int = -1,
                   strip_story: bool = True, clear_scripts: bool = True,
+                  replace: bool = False, deep: bool = True,
                   timeout: float = 3.0) -> dict:
-        """克隆源关卡并以新 id 追加到关卡表，不替换源关卡。"""
+        """克隆源关卡并用新 id 追加/替换到关卡表。
+
+        ``deep=True`` 时复制 ``waveList``、每个 ``Wave``、四类敌人列表、
+        每个 ``EnemyData``、脚本列表和 ``story``，不会污染源关卡。
+        ``replace=True`` 会替换已经存在的 ``new_id`` 元素而不是追加；
+        ``enemy_ids`` 可传单个 id 或列表，``sync_level`` 会影响技能强度。
+        返回 ``ok/slot/list_slot/list_index/added|replaced/wave``。
+        """
+        ...
 
     def chapter_add_top(self, source_node_id: int = 910803,
                         new_node_id: int = 910804,
                         stage_id: int = 990001,
+                        new_subchapter_id: int = 9910,
                         timeout: float = 3.0) -> dict:
-        """在章节 UI 表顶部新增 ``STAGE_NODE`` 条目。"""
+        """在章节 UI 表新增一个 ``STAGE_NODE`` 条目。
+
+        从 ``source_node_id`` 复制 ``SubchapterUIDataInPart``、relatedData、
+        uiConfig 和 Walpu3 的 ``StageNodeInfo``；使用临时 subchapter id
+        绕过 UI 去重。返回 ``node_id/target_subchapter_id`` 等实际值。
+        """
+        ...
 
     def custom_stage_server_guard(self, custom_stage_id: int,
-                                  source_stage_id: int, push: bool = True,
+                                  source_stage_id: int,
+                                  custom_node_id: int | None = None,
+                                  source_node_id: int | None = None,
+                                  custom_subchapter_id: int | None = None,
+                                  source_subchapter_id: int | None = None,
+                                  push: bool = True,
                                   timeout: float = 3.0) -> dict:
-        """把自定义关卡入口/退出的服务器包 stageid 改成素材 id。"""
+        """把自定义入口/退出的服务器字段改写成素材值。
+
+        覆盖 ``ReqPacket_EnterStageBattle`` / ``ReqPacket_ExitStageBattle``
+        构造和 ``HttpEnter/ExitStageBattleCommand`` 参数；只在字段/参数等于
+        自定义值时才改，其他关卡不受影响。
+        """
+        ...
 
     def stage_bind(self, source_id: int, slot: int = 30,
                    timeout: float = 3.0) -> dict:
         """把槽内 ``StageStaticData`` 绑定回关卡表同 id 元素。"""
+        ...
 
     def stage_use(self, source_id: int, strip_story: bool = True,
                   timeout: float = 3.0) -> dict:
         """克隆并绑定源关卡，供现有章节/关卡 UI 点击进入。"""
+        ...
 
     def stage_strip_story(self, slot: int = 30,
                           timeout: float = 3.0) -> dict:
         """清空槽内 ``StageStaticData`` 的剧情/事件脚本字段。"""
+        ...
 
     def clear_abnormality_personality(self, source_ids=None,
                                       push: bool = True,
                                       timeout: float = 3.0) -> dict:
         """恢复 ``overridePersonalityId=0`` 并撤掉强制槽逻辑钩子。"""
+        ...
 
     def remove_enemy(self, instance_id: int, faction: str = "enemy",
                      wave_index: int = 0, timeout: float = 3.0) -> dict:
@@ -621,10 +696,12 @@ class Game(Protocol):
 
         ``instance_id`` 就是 ``Unit.id``；只改队列、不销毁 View，worker 安全。
         """
+        ...
 
     def remove_enemies(self, instance_ids, faction: str = "enemy",
                        wave_index: int = 0, timeout: float = 3.0) -> dict:
         """批量单位放进移除队列。返回 ``{'ok','queued','failed','faction'}``。"""
+        ...
 
     def clear_enemies(self, keep=(), faction: str = "enemy",
                       wave_index: int = 0, include_assistance: bool = False,
@@ -634,3 +711,4 @@ class Game(Protocol):
         先用 ``GetModelList`` 拿阵营列表，再逐个 ``EnqueueRemoveUnitInstanceID``；
         不会直接销毁 View。返回 ``{'ok','queued','kept','failed','faction'}``。
         """
+        ...
