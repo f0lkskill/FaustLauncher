@@ -1,3 +1,9 @@
+## 0.9.76 — 补 game.live 存根
+
+- `warp_stub.Game` 新增 `live(owner=None, host=None)`，修复 Pylance 的 `Game.live` 未知属性。
+- 返回类型暂用 `Any`，避免继续展开 `Live` 全部实时接口导致存根循环依赖。
+- `pyright addons/WarpHook/warp_stub.py`：0 errors。
+
 ## 0.9.75 — 修正 warp_stub 协议存根
 
 - 给所有只有 docstring 的 Protocol 方法补上 `...`，修复 Pylance 的 `reportReturnType` 和 `Game.access` 被推断成 None 的问题。

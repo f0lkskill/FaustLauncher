@@ -534,6 +534,15 @@ class Game(Protocol):
 
     gacha: Gacha
 
+    def live(self, owner=None, host=None) -> Any:
+        """返回当前插件的 ``Live`` 门面。
+
+        ``owner`` 用于隔离不同插件的回调/钩子归属，``host`` 可复用已有
+        Host；不传时会按调用者自动创建。返回对象提供 ``host()``、回合/
+        场景回调、敌人队列等实时接口，具体成员见 ``warphook.live.Live``。
+        """
+        ...
+
     def access(self, host=None, slot=None) -> Access:
         """场景对象访问器（0.9.9 起）。"""
         ...
