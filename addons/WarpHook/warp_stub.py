@@ -28,7 +28,8 @@
 
 from __future__ import annotations
 
-from typing import Any, Callable, Dict, List, Optional, Protocol, Sequence, Tuple, Type
+from typing import (Any, Callable, Dict, Iterator, List, Optional, Protocol,
+                    Sequence, Tuple, Type)
 
 
 class GachaBill(Protocol):
@@ -178,6 +179,56 @@ class Host(Protocol):
     def hits(self, method: Optional[str] = None, blocked: bool = False,
              owner: Optional[str] = None) -> int:
         """本插件钩子被调用的次数；``blocked=True`` 只数「真的拦下来」的次数。"""
+        ...
+
+    def events(self, limit: Optional[int] = None) -> List[Dict[str, Any]]:
+        """读取最近钩子事件。
+
+        每条事件包含 ``id/a/b/c/d/...``；``limit`` 只截取最近 N 条。
+        事件由钩子配置的 ``event=`` 产生，不会自动清空游戏状态。
+        """
+        ...
+
+    def call(
+        self,
+        method: str,
+        slot: Optional[int] = None,
+        args: Sequence[Any] = (),
+        ret: str = "int32",
+        out_slot: int = -1,
+        *,
+        via: str = "direct",
+        main: bool = False,
+        timeout: float = 2.0,
+        **kwargs: Any,
+    ) -> Any:
+        """调用 il2cpp 方法；``slot`` 是 this 对象槽，``('slot', n)`` 可传对象参数。
+
+        ``ret='ref'`` 时返回 out_slot；``main=True`` 投递到游戏主线程。
+        普通调用在 worker 线程执行，避免卡 Unity UI。
+        """
+        ...
+
+    def read(
+        self,
+        slot: int,
+        chain: Sequence[Dict[str, Any]],
+        kind: str = "int",
+        timeout: float = 2.0,
+        default: Any = None,
+        detail: bool = False,
+    ) -> Any:
+        """从对象槽出发按链读一个值；跨进程安全，走 DLL 代读。"""
+        ...
+
+    def write_int(self, slot: int, offset: int, value: int,
+                  timeout: float = 2.0) -> str:
+        """写对象 int 字段。"""
+        ...
+
+    def write_list_int(self, slot: int, index: int, value: int,
+                       timeout: float = 2.0) -> str:
+        """写 ``List<int>`` 元素。"""
         ...
 
     def beat(self) -> bool:
@@ -529,15 +580,81 @@ class Access(Protocol):
         ...
 
 
+class Live(Protocol):
+    """``game.live()`` 返回的插件侧实时门面。"""
+
+    owner: str
+    """当前插件/调用者名字，用于隔离回调和钩子归属。"""
+
+    def host(self) -> "Host":
+        """返回当前 Live 使用的 ``Host`` 通信通道。"""
+        ...
+
+    def start(self, *args, **kwargs) -> "Live":
+        """启动后台回合/场景观察线程，返回自身。"""
+        ...
+
+    def close(self) -> None:
+        """停止后台线程并释放回调。"""
+        ...
+
+    def battle(self, timeout: float = 3.0) -> "Battle | None":
+        """返回当前战斗快照；未开战为 ``None``。"""
+        ...
+
+
+class Battle(Protocol):
+    """``game.battle()`` / ``game.on_round_start(...)`` 传入的战斗快照。
+
+    ``units`` 是实时 ``Unit`` 列表；属性读取仍会走 DLL 代读。遍历可以直接
+    写 ``for unit in battle.units``，``battle`` 本身也支持迭代和 ``len``。
+    """
+
+    scene: int
+    """当前 ``SCENE_STATE`` 枚举值。"""
+
+    scene_name: str
+    """场景枚举对应的可读名称。"""
+
+    units: List[Unit]
+    """战场全部单位（玩家、敌人、支援按游戏顺序）。"""
+
+    count: int
+    """``len(units)``。"""
+
+    alive: List[Unit]
+    """当前未死亡的单位。"""
+
+    def by_identity(self, identity: int) -> Unit | None:
+        """按人格/角色 ID（如浮士德 ``10115``）找单位。"""
+        ...
+
+    def ally(self, identity: int) -> Unit | None:
+        """``by_identity`` 的别名。"""
+        ...
+
+    def by_id(self, instance_id: int) -> Unit | None:
+        """按战斗内实例编号（``1``/``2``…）找单位。"""
+        ...
+
+    def __len__(self) -> int:
+        """返回单位数量。"""
+        ...
+
+    def __iter__(self) -> Iterator[Unit]:
+        """遍历 ``units``。"""
+        ...
+
+
 class Game(Protocol):
     """``warp.game``：游戏概念层。"""
 
     gacha: Gacha
-    Live: Any
-    Battle: Any
+    Live: Type[Live]
+    Battle: Type[Battle]
     GACHA_TYPE_NAMES: Dict[int, str]
 
-    def live(self, owner=None, host=None) -> Any:
+    def live(self, owner=None, host=None) -> Live:
         """返回当前插件的 ``Live`` 门面。
 
         ``owner`` 用于隔离不同插件的回调/钩子归属，``host`` 可复用已有
@@ -647,8 +764,8 @@ class Game(Protocol):
         """返回当前场景信息；等价于 ``live().scene()``。"""
         ...
 
-    def battle(self, *args, **kwargs) -> Any:
-        """返回当前战斗访问器/快照；未开战为 ``None``。"""
+    def battle(self, timeout: float = 3.0) -> Battle | None:
+        """返回当前战斗快照；未开战或 manager 未就绪时返回 ``None``。"""
         ...
 
     def units(self, limit: int | None = None) -> List[Unit]:

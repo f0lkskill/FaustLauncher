@@ -1,3 +1,9 @@
+## 0.9.80 — 补 Host.events/call 存根
+
+- `Host` 新增 `events(limit=None)`、`call(...)`、完整的 `read(slot, chain, ...)`、`write_int/write_list_int`。
+- 修复 `_game.live().host().events()` 的 Pylance 未知属性。
+- `pyright addons/WarpHook/warp_stub.py`：0 errors。
+
 ## 0.9.77 — 补全 Game 实时/BGM/注入存根
 
 - `warp_stub.Game` 补齐 `battle/units/count/unit/player/scene/start/status/describe/popup/close`。
@@ -1175,3 +1181,4 @@ P6 对象构造落地：命令通道从「弹窗 / 杀进程」两条硬编码�
 
 WarpHook 最初是三个插件（NoGacha / AutoBoom / Yesod 监督器）共用的依赖库，
 之前的演进（命名空间收编、多插件身份隔离、命令通道、文案池扩容）都在 git 历史里。
+
