@@ -144,6 +144,8 @@ _NAMESPACES = {
         'clear_enemy_spawn': live.clear_enemy_spawn,
         'replace_abnormality_part': live.replace_abnormality_part,
         'set_abnormality_personality': live.set_abnormality_personality,
+        'stage_clone': live.stage_clone,
+        'stage_strip_story': live.stage_strip_story,
         'clear_abnormality_personality': live.clear_abnormality_personality,
         'remove_enemy': live.remove_enemy,
         'remove_enemies': live.remove_enemies,

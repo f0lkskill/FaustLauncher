@@ -66,6 +66,8 @@ _SLOT_SPAWN = _SLOT_TEMP
 _SLOT_LIST = _SLOT_TEMP
 #: 敌人生成改写的常量槽（31 是 battle_snark 保留位；观察/改写期间占用）。
 _SLOT_ENEMY_ID = 31
+#: 克隆出来的 StageStaticData 临时槽。
+_SLOT_STAGE = 30
 #: 敌人生成观察事件号（与回合钩子的 30 区分开）。
 _SPAWN_EVENT_UNIT = 31
 _SPAWN_EVENT_STAGE = 32
@@ -224,6 +226,56 @@ def _enemy_spawn_hooks(enemy_id=None):
         'reads': [{'arg': 1, 'kind': 'int', 'out': 0}],
     }
     return [unit, stage, part]
+
+
+_STAGE_LIST_GETTERS = ('get_storyBattleStageList',
+                       'get_dungeonBattleStageList',
+                       'get_abBattleStageList')
+
+
+def _find_stage_on(host, stage_id, timeout=3.0):
+    """在几个 StageStaticDataList 里按 id 找 StageStaticData。"""
+    result = host.call('StaticDataManager::get_Instance', slot=None,
+                       ret='ref', out_slot=30, via='invoke', timeout=timeout)
+    if isinstance(result, str):
+        return None
+    for getter in _STAGE_LIST_GETTERS:
+        result = host.call('StaticDataManager::' + getter, slot=30,
+                           ret='ref', out_slot=31, via='invoke',
+                           timeout=timeout)
+        if isinstance(result, str):
+            continue
+        result = host.call('StageStaticDataList::GetStage', slot=31,
+                           args=(int(stage_id),), ret='ref', out_slot=29,
+                           via='invoke', timeout=timeout)
+        if not isinstance(result, str) and host.object_ptr(29):
+            return 29
+    return None
+
+
+def _stage_clone_on(host, source_id, strip_story=True, slot=_SLOT_STAGE,
+                    timeout=3.0):
+    """克隆一个 StageStaticData，并去掉剧情/事件脚本字段。"""
+    source_slot = _find_stage_on(host, source_id, timeout)
+    if source_slot is None:
+        return {'ok': False, 'reason': f'找不到关卡 {source_id}',
+                'source_id': int(source_id)}
+    result = host.call('System.Object::MemberwiseClone', slot=source_slot,
+                       ret='ref', out_slot=slot, via='invoke',
+                       timeout=timeout)
+    if isinstance(result, str) or not host.object_ptr(slot):
+        return {'ok': False, 'reason': result or '克隆失败',
+                'source_id': int(source_id)}
+    cleared = []
+    if strip_story:
+        for name, off in (('story', 0x60), ('eventScriptName', 0xA0)):
+            host.write_int(slot, off, 0, timeout=timeout)
+            host.write_int(slot, off + 4, 0, timeout=timeout)
+            cleared.append(name)
+    stage_id = host.read(slot, [{'off': 0x10, 'deref': False}],
+                         kind='int', default=None, timeout=timeout)
+    return {'ok': True, 'source_id': int(source_id), 'slot': slot,
+            'stage_id': stage_id, 'cleared': cleared}
 
 
 def _model_list_ids(host, faction=1, include_assistance=False,
@@ -986,6 +1038,30 @@ class Live:
                          'ret_const': 1, 'block': True},
                 'pushed': pushed}
 
+    def stage_clone(self, source_id, strip_story=True, timeout=3.0):
+        """克隆一个可直接进战斗的 StageStaticData，并清掉剧情/事件脚本。
+
+        克隆落在对象槽 30，后续可以用 :meth:`stage_strip_story` 再清一次。
+        只做浅拷贝；`waveList`/`stageScriptList` 仍与源关卡共享引用。
+        """
+        host = self.host()
+        result = _stage_clone_on(host, source_id, strip_story=strip_story,
+                                 timeout=timeout)
+        self.log(f'stage_clone({source_id}) -> {result}')
+        return result
+
+    def stage_strip_story(self, slot=_SLOT_STAGE, timeout=3.0):
+        """把槽里的 StageStaticData 的 story / eventScriptName 置空。"""
+        host = self.host()
+        if not host.object_ptr(slot):
+            return {'ok': False, 'reason': f'对象槽 {slot} 是空的'}
+        cleared = []
+        for name, off in (('story', 0x60), ('eventScriptName', 0xA0)):
+            host.write_int(slot, off, 0, timeout=timeout)
+            host.write_int(slot, off + 4, 0, timeout=timeout)
+            cleared.append(name)
+        return {'ok': True, 'slot': slot, 'cleared': cleared}
+
     def clear_abnormality_personality(self, source_ids=None, push=True,
                                       timeout=3.0):
         """恢复 ``overridePersonalityId=0``，并撤掉强制槽逻辑的钩子。"""
@@ -1428,6 +1504,17 @@ def set_abnormality_personality(personality_id, source_ids=None, push=True,
     return live().set_abnormality_personality(personality_id,
                                               source_ids=source_ids,
                                               push=push, timeout=timeout)
+
+
+def stage_clone(source_id, strip_story=True, timeout=3.0):
+    """克隆一个可直接进战斗的 StageStaticData（对象槽 30）。"""
+    return live().stage_clone(source_id, strip_story=strip_story,
+                              timeout=timeout)
+
+
+def stage_strip_story(slot=30, timeout=3.0):
+    """清空槽内 StageStaticData 的剧情/事件脚本字段。"""
+    return live().stage_strip_story(slot=slot, timeout=timeout)
 
 
 def clear_abnormality_personality(source_ids=None, push=True, timeout=3.0):

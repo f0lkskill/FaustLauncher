@@ -1,3 +1,10 @@
+## 0.9.69 — 主线关卡克隆
+
+- 新增 `game.stage_clone(source_id, strip_story=True)`：在 `StageStaticDataList` 里找关卡，`System.Object.MemberwiseClone` 到对象槽 30；可清空 `story` / `eventScriptName`。
+- 新增 `game.stage_strip_story(slot=30)`。
+- 新增 `tools/dev/scan_stages.py`：扫描主线关卡表找纯战斗关卡，支持 `--clone 911410`。
+- 注意：目前是浅拷贝，`waveList` / `stageScriptList` 仍与源关卡共享引用；下一步再做 Wave/EnemyData 改写。
+
 ## 0.9.68 — 场景门控
 
 - `set_abnormality_personality` 在场景 `0`（Login/等待）或 `2`（Main/主界面）直接跳过，避免静态数据命令必然超时/命令通道忙。

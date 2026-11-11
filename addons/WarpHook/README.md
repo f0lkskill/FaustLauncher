@@ -273,6 +273,17 @@ game.set_abnormality_personality(10415)  # 默认改嫉妒罪种 1110..1115
 **不要**强制 `IsSinSlotLogicSameAsPlayer=False`，否则敌人会站着不出招。
 重进场景生效。协议 v18，需重编译 DLL。
 
+### 克隆主线关卡
+
+```python
+game.stage_clone(911410)      # 克隆到对象槽 30，并清空剧情/事件脚本
+game.stage_strip_story(30)    # 再清一次
+```
+
+`tools/dev/scan_stages.py --scan` 会扫描主线关卡表，找可直接进战斗、
+无剧情/脚本的关卡；`--clone 911410` 实机克隆。目前是浅拷贝，
+`waveList` 等引用仍与源关卡共享。
+
 ## 原生退出排查（协议 v14 candidate）
 
 原生命令 worker 曾在启动时调用一次 `il2cpp_thread_attach`，随后在事件等待中

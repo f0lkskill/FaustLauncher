@@ -572,6 +572,18 @@ class Game(Protocol):
         返回 ``changed/failed/hook/pushed`` 调试信息。
         """
 
+    def stage_clone(self, source_id: int, strip_story: bool = True,
+                    timeout: float = 3.0) -> dict:
+        """克隆一个可直接进战斗的 ``StageStaticData``（对象槽 30）。
+
+        浅拷贝；``strip_story=True`` 时把 ``story`` / ``eventScriptName``
+        置空。``waveList`` 等引用仍与源关卡共享。
+        """
+
+    def stage_strip_story(self, slot: int = 30,
+                          timeout: float = 3.0) -> dict:
+        """清空槽内 ``StageStaticData`` 的剧情/事件脚本字段。"""
+
     def clear_abnormality_personality(self, source_ids=None,
                                       push: bool = True,
                                       timeout: float = 3.0) -> dict:

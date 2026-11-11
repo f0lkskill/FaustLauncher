@@ -1208,3 +1208,37 @@ RailwayDungeon=6  StoryMirrorDungeon=7  ProjectGS=8  Rpg=9
 等待/登录是 `0`，主界面是 `2`（不是 0）。`set_abnormality_personality`
 在 `None/0/2` 时直接返回，不碰静态数据，避免等待界面里必然超时/命令通道忙。
 真正需要写入时应在战斗、剧情或地牢场景（`1/3/4/5/6/7/8/9`）。
+
+## 24. 主线关卡克隆（v0.9.69）
+
+### 24.1 找到的结构
+
+- 关卡表：`StaticDataManager.get_storyBattleStageList()` /
+  `get_dungeonBattleStageList()` / `get_abBattleStageList()`；
+  `StageStaticDataList.GetStage(id)` 按 id 取 `StageStaticData`。
+- 关卡字段：`id` 0x10、`_stageType` 0x20、`story` 0x60、
+  `abnormalityEventList` 0x90、`stageScriptList` 0x98、
+  `eventScriptName` 0xA0、`waveList` 0xB0。
+- `Wave.unitList` 是 `List<EnemyData>`；`EnemyData` 字段
+  `unitID` / `unitLevel` / `unitCount` / `unitSyncLevel`。
+
+### 24.2 克隆与去剧情
+
+`System.Object.MemberwiseClone` 对源 `StageStaticData` 做浅拷贝，结果落
+对象槽 30。`strip_story=True` 时把 `story`(0x60) 与
+`eventScriptName`(0xA0) 的 8 字节指针清零，保留 `waveList` 等战斗数据。
+
+### 24.3 候选关卡
+
+`Player.log` 里已有的 `Enter Stage Id Local Set : 911410` /
+`911401` 是可直接进战斗的候选。`tools/dev/scan_stages.py --scan` 会扫描
+`storyBattleStageList`，筛 `stage_type==0`、无 story/脚本/异常事件且有
+wave 的关卡；`--clone 911410` 直接克隆并打印结果。
+
+### 24.4 边界
+
+- 目前是浅拷贝：`waveList` / `stageScriptList` 与源关卡共享引用；
+  后续改敌人的 Wave/EnemyData 需要深拷贝或替换列表。
+- 还没有实现“进入克隆关卡”的主线程入口；下一步接
+  `EnterStageWithoutPartData` / `StartStage` 或 hook 关卡列表进入事件。
+- 等待/主界面（场景 0/2）不做静态数据写入；进入关卡场景后再操作。
