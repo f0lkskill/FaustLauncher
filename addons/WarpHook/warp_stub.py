@@ -533,6 +533,9 @@ class Game(Protocol):
     """``warp.game``：游戏概念层。"""
 
     gacha: Gacha
+    Live: Any
+    Battle: Any
+    GACHA_TYPE_NAMES: Dict[int, str]
 
     def live(self, owner=None, host=None) -> Any:
         """返回当前插件的 ``Live`` 门面。
@@ -622,6 +625,111 @@ class Game(Protocol):
         （BLOCK + ret_const=0），禁止 override 后每回合加槽。
         返回 ``changed/failed/hook/pushed`` 调试信息。
         """
+        ...
+
+    def start(self, *args, **kwargs) -> Any:
+        """启动 Live 后台线程（回合/场景观察等）；返回 Live 或状态。"""
+        ...
+
+    def status(self, *args, **kwargs) -> Any:
+        """读取 Live/宿主运行状态。"""
+        ...
+
+    def describe(self, *args, **kwargs) -> Any:
+        """返回当前场景与战斗的可读摘要。"""
+        ...
+
+    def popup(self, *args, **kwargs) -> Any:
+        """调用游戏原生弹窗。"""
+        ...
+
+    def scene(self, *args, **kwargs) -> Any:
+        """返回当前场景信息；等价于 ``live().scene()``。"""
+        ...
+
+    def battle(self, *args, **kwargs) -> Any:
+        """返回当前战斗访问器/快照；未开战为 ``None``。"""
+        ...
+
+    def units(self, limit: int | None = None) -> List[Unit]:
+        """返回当前战场单位列表。"""
+        ...
+
+    def count(self) -> int:
+        """返回当前战场单位数量。"""
+        ...
+
+    def unit(self, *args, **kwargs) -> Unit | None:
+        """按编号/序号取当前战场单位。"""
+        ...
+
+    def player(self, *args, **kwargs) -> Any:
+        """返回玩家侧队伍/单位信息。"""
+        ...
+
+    def on_round_start(self, callback, *args, **kwargs) -> Any:
+        """注册回合开始回调；返回可取消句柄。"""
+        ...
+
+    def on_scene_changed(self, callback, *args, **kwargs) -> Any:
+        """注册场景切换回调。"""
+        ...
+
+    def on_battle_start(self, callback, *args, **kwargs) -> Any:
+        """注册战斗开始回调。"""
+        ...
+
+    def on_battle_end(self, callback, *args, **kwargs) -> Any:
+        """注册战斗结束回调。"""
+        ...
+
+    def close(self) -> None:
+        """关闭当前 Live 后台线程/回调。"""
+        ...
+
+    SCENES: Dict[str, int]
+    """``SCENE_STATE`` 名字到枚举值的映射。"""
+
+    def bgm(self, name, bank=None, stop_current=True, wait=True,
+            *args, **kwargs) -> Any:
+        """播放 BGM；``name`` 可带 bank 或使用 ``bank=``。"""
+        ...
+
+    def bgm_stop(self, restore=True, timeout: float = 2.0) -> Any:
+        """停止当前 BGM，必要时恢复游戏默认曲。"""
+        ...
+
+    def bgm_playing(self, timeout: float = 2.0) -> Any:
+        """查询当前是否有 BGM 在播放。"""
+        ...
+
+    def bgm_index(self, timeout: float = 2.0) -> Any:
+        """查询当前 BGM 索引。"""
+        ...
+
+    def bgm_hook(self, name, method: str = "StartAddBGM",
+                 push: bool = True) -> Any:
+        """监听游戏自己的 BGM 起播，并替换成 ``name``。"""
+        ...
+
+    def bgm_unhook(self, push: bool = True) -> Any:
+        """撤掉 ``bgm_hook``。"""
+        ...
+
+    def bgm_lock_install(self) -> Any:
+        """安装 BGM 守卫钩子，避免回合切换把 BGM 抢回去。"""
+        ...
+
+    def bgm_lock(self, allow) -> Any:
+        """``allow=True`` 允许游戏换 BGM，``False`` 锁住当前 BGM。"""
+        ...
+
+    def bgm_lock_status(self) -> Any:
+        """返回 BGM 守卫安装/锁定状态。"""
+        ...
+
+    def inject(self, *args, **kwargs) -> Any:
+        """启动/注入游戏进程（由 Live 封装）。"""
         ...
 
     def stage_clone(self, source_id: int, strip_story: bool = True,

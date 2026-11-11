@@ -1,3 +1,11 @@
+## 0.9.77 — 补全 Game 实时/BGM/注入存根
+
+- `warp_stub.Game` 补齐 `battle/units/count/unit/player/scene/start/status/describe/popup/close`。
+- 补齐 `on_round_start/on_scene_changed/on_battle_start/on_battle_end` 和 `SCENES`。
+- 补齐 `bgm/bgm_stop/bgm_playing/bgm_index/bgm_hook/bgm_unhook/bgm_lock_install/bgm_lock/bgm_lock_status`。
+- 补齐 `inject` 以及 `Live/Battle/GACHA_TYPE_NAMES` 类属性。
+- `pyright addons/WarpHook/warp_stub.py`：0 errors。
+
 ## 0.9.76 — 补 game.live 存根
 
 - `warp_stub.Game` 新增 `live(owner=None, host=None)`，修复 Pylance 的 `Game.live` 未知属性。
