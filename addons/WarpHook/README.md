@@ -268,8 +268,10 @@ game.set_abnormality_personality(10415)  # 默认改嫉妒罪种 1110..1115
 ```
 
 直接写 `AbnormalityStaticData.overridePersonalityId`（0x1B0），让游戏下次
-正常生成嫉妒罪种时按目标人格加载技能/内容。不需要 part 替换；重进场景生效。
-协议 v18，需重编译 DLL。
+正常生成嫉妒罪种时按目标人格加载技能/内容。同时 hook
+`BattleUnitModel_Abnormality.GetMaxActionSlotNum` 返回 1，阻止每回合加空槽；
+**不要**强制 `IsSinSlotLogicSameAsPlayer=False`，否则敌人会站着不出招。
+重进场景生效。协议 v18，需重编译 DLL。
 
 ## 原生退出排查（协议 v14 candidate）
 

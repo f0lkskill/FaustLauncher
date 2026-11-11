@@ -1188,3 +1188,10 @@ game.set_abnormality_personality(10415)  # 默认 1110..1115
 - 若目标人格不存在（`PersonalityStaticDataList.GetData` 返回 null），
   游戏创建时可能回退/报错，先用 `watch`/日志确认 id。
 - 协议升到 v18，旧 DLL 会被版本协商拒绝，必须重编译。
+
+### 23.5 槽逻辑：不要强制 false
+
+override 后 Abnormality 需要玩家式槽逻辑才能选玩家技能/行动；强制
+`IsSinSlotLogicSameAsPlayer=false` 会让敌人站着不出招（只保留空壳 View）。
+正确做法是保留原逻辑，把 `GetMaxActionSlotNum` 限制为 1：既能继续出招，
+又不会每回合结束加空槽、导致 `currentSelectSin` 为空。

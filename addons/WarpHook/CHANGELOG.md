@@ -1,3 +1,16 @@
+## 0.9.67 — 限制 Abnormality 最大行动槽
+
+- `set_abnormality_personality` 不再强制 `IsSinSlotLogicSameAsPlayer=False`：那会把玩家式技能/行动逻辑一起关掉，敌人站着不出招。
+- 改为 hook `BattleUnitModel_Abnormality.GetMaxActionSlotNum` 返回 1，保留行动逻辑并阻止每回合加空槽。
+- 返回/日志仍带 `changed / failed / hook / pushed`。
+
+## 0.9.66 — 强制 Abnormality 槽逻辑 + 调试信息
+
+- `set_abnormality_personality` 现在同时装 `BattleUnitModel_Abnormality.IsSinSlotLogicSameAsPlayer` 钩子（BLOCK + `ret_const=0`），禁止 override 后每回合加槽导致空槽 `UseSin` 崩溃。
+- 返回值/日志补充 `changed / failed / hook / pushed` 调试信息。
+- 新增 `clear_abnormality_personality`：恢复 `overridePersonalityId=0` 并撤掉强制槽逻辑钩子。
+- 测试插件恢复调用 `set_abnormality_personality(10415)`。
+
 ## 0.9.65 — Abnormality 人格覆盖
 
 - 协议 v18：新增 `WARP_CMD_WRITE_INT`（13），`Host.write_int(slot, offset, value)` 写对象 int 字段。

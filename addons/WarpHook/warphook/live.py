@@ -918,7 +918,7 @@ class Live:
                 'changed': changed, 'failed': failed}
 
     def set_abnormality_personality(self, personality_id, source_ids=None,
-                                    timeout=3.0):
+                                    push=True, timeout=3.0):
         """把目标 Abnormality 的 ``overridePersonalityId`` 设成人格 id。
 
         直接写 ``AbnormalityStaticData.overridePersonalityId``（0x1B0），下一次
@@ -952,9 +952,73 @@ class Live:
                 changed.append(sid)
             else:
                 failed.append(sid)
+        hook = {'klass': 'BattleUnitModel_Abnormality',
+                'method': 'GetMaxActionSlotNum',
+                'argc': 0, 'actions': 0, 'block': True, 'ret_const': 1}
+        self._extra_hooks = [
+            h for h in self._extra_hooks
+            if not (h.get('klass') == hook['klass']
+                    and h.get('method') == hook['method'])
+        ]
+        self._extra_hooks.append(hook)
+        self._hooks_on = True
+        pushed = bool(self._push()) if push else False
+        self.log(
+            f'set_abnormality_personality({personality_id}) '
+            f'changed={changed} failed={failed} '
+            f'hook={hook["klass"]}::{hook["method"]} ret_const=1 '
+            f'pushed={pushed}')
         return {'ok': bool(changed) and not failed,
                 'personality_id': int(personality_id),
-                'changed': changed, 'failed': failed}
+                'changed': changed, 'failed': failed,
+                'hook': {'klass': hook['klass'], 'method': hook['method'],
+                         'ret_const': 1, 'block': True},
+                'pushed': pushed}
+
+    def clear_abnormality_personality(self, source_ids=None, push=True,
+                                      timeout=3.0):
+        """恢复 ``overridePersonalityId=0``，并撤掉强制槽逻辑的钩子。"""
+        host = self.host()
+        ids = (list(range(1110, 1116)) if source_ids is None
+               else [int(x) for x in source_ids])
+        result = host.call('StaticDataManager::get_Instance', slot=None,
+                           ret='ref', out_slot=30, via='invoke',
+                           timeout=timeout)
+        if isinstance(result, str):
+            self.log(f'clear_abnormality_personality 取 StaticDataManager 失败：{result}')
+            return {'ok': False, 'reason': result}
+        result = host.call('StaticDataManager::get_AbnormalityUnitList',
+                           slot=30, ret='ref', out_slot=31, via='invoke',
+                           timeout=timeout)
+        if isinstance(result, str):
+            self.log(f'clear_abnormality_personality 取 AbnormalityUnitList 失败：{result}')
+            return {'ok': False, 'reason': result}
+        restored, failed = [], []
+        for sid in ids:
+            result = host.call('AbnormalityStaticDataList::GetData',
+                               slot=31, args=(sid,), ret='ref',
+                               out_slot=30, via='invoke', timeout=timeout)
+            if isinstance(result, str) or not host.object_ptr(30):
+                failed.append(sid)
+                continue
+            wrote = host.write_int(30, 0x1B0, 0, timeout=timeout)
+            if wrote == '已执行':
+                restored.append(sid)
+            else:
+                failed.append(sid)
+        klass = 'BattleUnitModel_Abnormality'
+        method = 'GetMaxActionSlotNum'
+        kept = [h for h in self._extra_hooks
+                if not (h.get('klass') == klass and h.get('method') == method)]
+        removed = len(self._extra_hooks) - len(kept)
+        self._extra_hooks = kept
+        pushed = bool(self._push()) if push else False
+        self.log(
+            f'clear_abnormality_personality restored={restored} '
+            f'failed={failed} removed_hook={removed} pushed={pushed}')
+        return {'ok': bool(restored) and not failed,
+                'restored': restored, 'failed': failed,
+                'removed': removed, 'pushed': pushed}
 
     def clear_enemy_spawn(self, push=True):
         """撤掉 :meth:`watch_enemy_spawn` / :meth:`hook_enemy_spawn`。"""
@@ -1347,11 +1411,18 @@ def replace_abnormality_part(target_part_id, source_ids=None, timeout=3.0):
                                            timeout=timeout)
 
 
-def set_abnormality_personality(personality_id, source_ids=None, timeout=3.0):
+def set_abnormality_personality(personality_id, source_ids=None, push=True,
+                                timeout=3.0):
     """把目标 Abnormality 的 overridePersonalityId 设成人格 id。"""
     return live().set_abnormality_personality(personality_id,
                                               source_ids=source_ids,
-                                              timeout=timeout)
+                                              push=push, timeout=timeout)
+
+
+def clear_abnormality_personality(source_ids=None, push=True, timeout=3.0):
+    """恢复 overridePersonalityId=0 并撤掉强制槽逻辑钩子。"""
+    return live().clear_abnormality_personality(source_ids=source_ids,
+                                                push=push, timeout=timeout)
 
 
 def clear_enemy_spawn(push=True):

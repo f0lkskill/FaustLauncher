@@ -561,13 +561,21 @@ class Game(Protocol):
         """
 
     def set_abnormality_personality(self, personality_id: int,
-                                    source_ids=None,
+                                    source_ids=None, push: bool = True,
                                     timeout: float = 3.0) -> dict:
         """把目标 Abnormality 的 ``overridePersonalityId`` 设成人格 id。
 
         直接写 ``AbnormalityStaticData.overridePersonalityId``（0x1B0），
-        下一次游戏正常生成敌人时按这个人格加载技能/内容。
+        下一次游戏正常生成敌人时按这个人格加载技能/内容。同时装
+        ``BattleUnitModel_Abnormality.IsSinSlotLogicSameAsPlayer`` 钩子
+        （BLOCK + ret_const=0），禁止 override 后每回合加槽。
+        返回 ``changed/failed/hook/pushed`` 调试信息。
         """
+
+    def clear_abnormality_personality(self, source_ids=None,
+                                      push: bool = True,
+                                      timeout: float = 3.0) -> dict:
+        """恢复 ``overridePersonalityId=0`` 并撤掉强制槽逻辑钩子。"""
 
     def remove_enemy(self, instance_id: int, faction: str = "enemy",
                      wave_index: int = 0, timeout: float = 3.0) -> dict:
