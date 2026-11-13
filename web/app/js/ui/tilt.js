@@ -1,27 +1,74 @@
 /* ==============================================================================
- * js/ui/tilt.js — 3D 聚焦已舍弃, 保留同名空实现兼容旧调用
+ * js/ui/tilt.js — 主页 3D 鼠标聚焦倾斜(其它页面不再跟随)
  * ------------------------------------------------------------------------------
  * 职责:
- *   · applyTiltBase / applyTiltFrame / applyTilt  —— 不再跟随鼠标倾斜
- *   · addCardTilt                                —— 空实现, 卡片不再 3D 跟随
- *   · resetTilt                                  —— 清掉历史内联倾斜
- *   · watchModalPanels                           —— 监听 .panel-overlay 维护 modal-open
+ *   · applyTiltBase / applyTiltFrame / applyTilt  —— 仅主页常驻倾角并跟随鼠标
+ *   · addCardTilt                                —— 空实现(资源卡片不再 3D 跟随)
+ *   · resetTilt                                  —— 清掉所有内联倾斜(打开模态/切页时用)
+ *   · watchModalPanels                           —— 监听 .panel-overlay, 打开时压平倾斜
+ * 本文件提供:
+ *  函数: applyTiltBase / applyTiltFrame / applyTilt / addCardTilt / resetTilt / watchModalPanels
+ *  状态/常量: TILT_SEL / TILT_ALL_SEL / tiltRAF / tiltMX / tiltMY
+ * 依赖: 无
+ * 加载顺序: 10/22    (拆分自原 app.js 行 3242-3287 + 913-928)
  * ============================================================================== */
 'use strict';
 
-// 清掉历史内联倾斜: 旧版本可能在元素 style 上留下 perspective/rotate。
-const TILT_ALL_SEL = '.card, .link-card, .dc-card, .hero, .chip, .dc-tab, .res-card';
+// ---------------- 3D 鼠标聚焦倾斜 (只在主页启用) ----------------
+const TILT_SEL = '.card, .link-card, .dc-card, .hero, .chip, .dc-tab';
+// resetTilt 还要清掉旧版可能留在资源卡片上的内联 transform
+const TILT_ALL_SEL = TILT_SEL + ', .res-card';
+let tiltRAF = null;
+let tiltMX = 0;
+let tiltMY = 0;
 
+// 一键清掉所有内联倾斜: 打开模态面板 / 切换页面时调用。
+// 这些 transform 是 JS 写进 style 的内联样式, 不主动清就会一直留在元素上,
+// 面板盖上去后指针不再悬停卡片, 倾斜却还挂着, 看起来就是"东西歪了"。
 function resetTilt() {
   document.querySelectorAll(TILT_ALL_SEL).forEach(el => {
     if (el.style.transform) el.style.transform = '';
   });
 }
-function applyTiltBase() { resetTilt(); }
-function applyTiltFrame() {}
+function applyTiltBase() {
+  document.querySelectorAll(TILT_SEL).forEach(el => {
+    // 主页控件保留基准倾角; 其他页面控件还原无变形
+    el.style.transform = el.closest('#page-home')
+      ? 'perspective(900px) rotateX(2deg) rotateY(-1deg)'
+      : '';
+  });
+}
+function applyTiltFrame() {
+  tiltRAF = null;
+  const mx = tiltMX;
+  const my = tiltMY;
+  document.querySelectorAll(TILT_SEL).forEach(el => {
+    const r = el.getBoundingClientRect();
+    if (!r.width) return;
+    if (!el.closest('#page-home')) {
+      if (el.style.transform) el.style.transform = '';
+      return;
+    }
+    const hovered = el.matches(':hover');
+    const x = Math.max(-1, Math.min(1, (mx - (r.left + r.width / 2)) / (r.width / 2)));
+    const y = Math.max(-1, Math.min(1, (my - (r.top + r.height / 2)) / (r.height / 2)));
+    const s = hovered ? ' scale(1.02)' : '';
+    el.style.transform = 'perspective(900px) rotateY(' + (x * 3.5).toFixed(2) + 'deg) rotateX(' +
+      (-y * 3.5 + 2).toFixed(2) + 'deg)' + s;
+  });
+}
 function applyTilt() {
   applyTiltBase();
   watchModalPanels();
+  document.addEventListener('mousemove', (e) => {
+    tiltMX = e.clientX;
+    tiltMY = e.clientY;
+    // tilt 是轻量 transform (卡片无 blur), 保持满帧跟随
+    if (!tiltRAF) tiltRAF = requestAnimationFrame(applyTiltFrame);
+  });
+  document.addEventListener('mouseleave', () => {
+    applyTiltBase();
+  });
 }
 
 // ---------------- 模态面板: 打开即压平倾斜 ----------------

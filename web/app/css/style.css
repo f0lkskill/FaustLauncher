@@ -2548,27 +2548,39 @@ body.no-hw .ver-card { animation: verCardInLite .38s cubic-bezier(.22, .9, .24, 
    颜色全部走主题变量, 因此跟随皮肤 (含浅色浮士德皮肤) 自动适配。
    ============================================================ */
 /* 两张卡片之间只留 gap 的间距: .card 自带的 margin-bottom 会叠加成双倍空隙 */
-.user-page { display: flex; flex-direction: column; gap: 12px; }
+.user-page { display: flex; flex-direction: column; gap: 10px; }
 .user-page .card { margin-bottom: 0; }
 
+/* 用户页固定在一屏内: 成就列表伸缩, 分页始终可见, 不把 #main 撑出滚动条 */
+#page-user { height: 100%; min-height: 0; }
+#page-user.active { display: flex; flex-direction: column; }
+#page-user .user-page { flex: 1; min-height: 0; }
+#page-user .user-card { flex: 0 0 auto; }
+#page-user .user-achievement { flex: 1; min-height: 0; display: flex; }
+#page-user .user-achievement > .card {
+  flex: 1; min-height: 0; width: 100%;
+  display: flex; flex-direction: column;
+}
+#page-user #ach-list { flex: 1; height: auto; min-height: 0; }
+
 /* ---------- 身份卡 (紧凑布局, 给下方成就留空间) ---------- */
-.user-card { position: relative; overflow: hidden; padding: 14px 18px 12px; }
+.user-card { position: relative; overflow: hidden; padding: 10px 14px 8px; }
 .user-card::after {
   content: ''; position: absolute; inset: 0; z-index: 0; pointer-events: none;
   background: radial-gradient(520px 200px at 88% -30%, rgba(var(--accent-rgb), .18), transparent 70%);
 }
 .user-card-head {
   position: relative; z-index: 1; display: flex; align-items: center;
-  justify-content: flex-start; flex-wrap: wrap; gap: 12px;
+  justify-content: flex-start; flex-wrap: wrap; gap: 10px;
 }
-.user-identity { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.user-identity { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .user-head-main { min-width: 0; flex: 0 1 auto; }
 .user-card-head h2 {
-  font-size: 22px; font-weight: 800; letter-spacing: .2px;
+  font-size: 20px; font-weight: 800; letter-spacing: .2px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .user-avatar {
-  width: 48px; height: 48px; flex-shrink: 0; border-radius: 50%;
+  width: 40px; height: 40px; flex-shrink: 0; border-radius: 50%;
   display: flex; align-items: center; justify-content: center;
   font-size: 24px; color: var(--accent);
   background: rgba(var(--accent-rgb), .12);
@@ -2582,7 +2594,7 @@ body.no-hw .ver-card { animation: verCardInLite .38s cubic-bezier(.22, .9, .24, 
 }
 .user-avatar img[hidden] { display: none !important; }
 .user-avatar-initial {
-  font-size: 20px; font-weight: 800; line-height: 1;
+  font-size: 18px; font-weight: 800; line-height: 1;
   color: var(--accent); text-transform: uppercase;
 }
 .user-avatar-initial[hidden] { display: none !important; }
@@ -2591,37 +2603,53 @@ body.no-hw .ver-card { animation: verCardInLite .38s cubic-bezier(.22, .9, .24, 
 /* ---------- 用户 ID / 游玩时长: 与头像同行靠右 ---------- */
 .user-meta-row {
   position: relative; z-index: 1; display: flex; align-items: center;
-  gap: 10px; flex-wrap: wrap; margin-top: 0; margin-left: auto;
+  gap: 8px; flex-wrap: wrap; margin-top: 0; margin-left: auto;
   justify-content: flex-end;
 }
-.user-meta-item { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
+.user-meta-item { display: inline-flex; align-items: center; gap: 5px; min-width: 0; }
 .user-meta-id { flex: 0 1 auto; }
 .user-meta-playtime { flex-shrink: 0; }
-.user-meta-sep { width: 1px; height: 13px; background: var(--border); flex-shrink: 0; }
-.user-label { font-size: 12px; color: var(--text-3); flex-shrink: 0; }
+.user-meta-sep { width: 1px; height: 12px; background: var(--border); flex-shrink: 0; }
+.user-label { font-size: 11.5px; color: var(--text-3); flex-shrink: 0; }
 .user-meta-item code {
-  font-family: var(--font); font-size: 13px; letter-spacing: 0;
+  font-family: var(--font); font-size: 12.5px; letter-spacing: 0;
   color: var(--text); user-select: text; word-break: break-all;
 }
 .user-meta-item code.user-id-masked { color: var(--text-2); }
 .user-meta-item .btn-icon {
-  width: 24px; height: 24px; padding: 3px; border-radius: 6px;
+  width: 22px; height: 22px; padding: 2px; border-radius: 6px;
 }
-.user-meta-item .btn-icon .ico { width: 14px; height: 14px; }
+.user-meta-item .btn-icon .ico { width: 13px; height: 13px; }
 .user-id-toggle { flex-shrink: 0; }   /* 图标按钮: 尺寸沿用 .btn-icon */
-.user-actions { position: relative; z-index: 1; display: flex; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
+.user-actions { position: relative; z-index: 1; display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
 
 /* 账户面板的按钮行: 五颗按钮**强制挤在一行并整体居中**。
    做法是同时收紧四样东西 —— 不换行、按钮内边距、字号、图标尺寸与间距；
    窗口真的窄到放不下时(@media)才退回换行，免得文字被压烂。 */
 #page-user .user-actions {
-  flex-wrap: nowrap; gap: 6px; justify-content: center;
+  flex-wrap: nowrap; gap: 4px; justify-content: center;
 }
 #page-user .user-actions .btn {
-  padding: 6px 8px; font-size: 12px; white-space: nowrap; flex: 0 0 auto;
+  padding: 5px 7px; font-size: 11.5px; white-space: nowrap; flex: 0 0 auto;
 }
-#page-user .user-actions .btn .ico { width: 13px; height: 13px; margin-right: 1px; }
+#page-user .user-actions .btn .ico { width: 12px; height: 12px; margin-right: 1px; }
 @media (max-width: 620px) { #page-user .user-actions { flex-wrap: wrap; } }
+
+/* 用户页里的成就区再压一档: 工具栏、卡片图标和分页都收紧 */
+#page-user .user-achievement > .card { padding: 4px 6px 8px; }
+#page-user .res-toolbar { padding: 4px 6px; gap: 8px; }
+#page-user .res-tabs { gap: 6px; }
+#page-user .res-tab { padding: 5px 11px; font-size: 12px; }
+#page-user .res-toolbar .btn { padding: 6px 10px; font-size: 12px; }
+#page-user .res-search { padding: 5px 10px 5px 30px; font-size: 12px; }
+#page-user #ach-list { padding: 6px; gap: 5px; }
+#page-user .res-card { padding: 7px 12px; gap: 10px; }
+#page-user .ach-card .ach-icon { width: 50px; height: 50px; border-radius: 13px; }
+#page-user .ach-card .ach-icon svg { width: 26px; height: 26px; }
+#page-user .ach-card .ach-icon .ach-art { border-radius: 11px; }
+#page-user .res-title { font-size: 14px; }
+#page-user .res-pagination { margin-top: 6px; padding-bottom: 0; }
+#page-user .res-pagination button { width: 26px; height: 26px; font-size: 12px; }
 
 /* ---------- 操作冷却提示 ---------- */
 .user-limit-note {
@@ -2735,9 +2763,9 @@ body.no-hw .ver-card { animation: verCardInLite .38s cubic-bezier(.22, .9, .24, 
 }
 
 @media (max-width: 760px) {
-  .user-card { padding: 12px 14px 10px; }
-  .user-card-head h2 { font-size: 19px; }
-  .user-avatar { width: 42px; height: 42px; font-size: 20px; border-radius: 50%; }
+  .user-card { padding: 8px 12px 6px; }
+  .user-card-head h2 { font-size: 18px; }
+  .user-avatar { width: 38px; height: 38px; font-size: 20px; border-radius: 50%; }
   .user-meta-row { width: 100%; margin-left: 0; justify-content: flex-end; }
   .user-modal-card { width: auto; }
 }
