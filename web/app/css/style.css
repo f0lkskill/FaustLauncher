@@ -2638,6 +2638,8 @@ body.user-page-active #main { padding-top: 14px; padding-bottom: 18px; }
 #page-user .res-search { padding: 6px 11px 6px 31px; font-size: 12.5px; }
 #page-user #ach-list {
   display: flex; flex-direction: column; height: auto;
+  /* 容器固定为 5 张卡的高度: 某页只有 1 条时也不会缩成一截 */
+  min-height: calc(5 * 79px + 4 * 8px + 12px);
   padding: 6px; gap: 8px;
 }
 #page-user #ach-list .res-card { flex: 0 0 79px; height: 79px; }
