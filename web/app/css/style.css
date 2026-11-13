@@ -2651,11 +2651,6 @@ body.user-page-active #main { padding-top: 14px; padding-bottom: 18px; }
 }
 #page-user #ach-list::-webkit-scrollbar { display: none; }
 #page-user #ach-list .res-card { flex: 0 0 79px; height: 79px; }
-/* 渐入只做透明度变化, 不做位移动画, 避免出现"自上而下扫过去"的感觉 */
-#page-user #ach-list .res-card,
-#page-user #ach-list .res-card.disabled {
-  animation: fadeIn .26s ease backwards;
-}
 #page-user .res-card { padding: 6px 12px; gap: 10px; }
 #page-user .ach-card .ach-icon { width: 52px; height: 52px; border-radius: 12px; }
 #page-user .ach-card .ach-icon svg { width: 27px; height: 27px; }
