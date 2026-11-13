@@ -42,7 +42,6 @@
     var title = document.createElement("span");
     title.className = "tb-title";
     title.textContent = CFG.title || (document.title || "");
-    title.title = title.textContent;
 
     drag.appendChild(icon);
     drag.appendChild(title);
@@ -55,14 +54,12 @@
     min.id = "fl-tb-min";
     min.type = "button";
     min.innerHTML = "&#x2212;";
-    min.title = "最小化";
 
     var close = document.createElement("button");
     close.className = "tb-btn tb-close";
     close.id = "fl-tb-close";
     close.type = "button";
     close.innerHTML = "&#x2715;";
-    close.title = "关闭";
 
     actions.appendChild(min);
 
@@ -74,7 +71,6 @@
       max.id = "fl-tb-max";
       max.type = "button";
       max.innerHTML = "&#x25A1;";
-      max.title = "最大化";
       actions.appendChild(max);
     }
     actions.appendChild(close);
@@ -110,7 +106,6 @@
     var b = q("fl-tb-max");
     if (!b) return;
     b.innerHTML = on ? "&#x2750;" : "&#x25A1;";
-    b.title = on ? "向下还原" : "最大化";
   }
 
   function toggleMax() {

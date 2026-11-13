@@ -194,7 +194,7 @@ function renderDownloadDrawer() {
         '<div class="dl-meta">' + info + '</div>' +
       '</div>' +
       (canCancel
-        ? '<button class="dl-cancel" type="button" title="取消下载" aria-label="取消下载">' +
+        ? '<button class="dl-cancel" type="button" aria-label="取消下载">' +
             '<svg class="ico" data-icon="close.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg></button>'
         : '');
     list.appendChild(row);

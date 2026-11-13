@@ -214,7 +214,6 @@
         var name = document.createElement("span");
         name.className = "ml-thread-name";
         name.textContent = t.name;
-        name.title = t.name;
         var noteEl = document.createElement("span");
         noteEl.className = "ml-thread-note";
         noteEl.textContent = note;

@@ -470,7 +470,7 @@ function buildResCard(item) {
           esc(((item.kind || resKind) + '|' + (item.dir || item.name))) + '" alt="" onerror="this.src=\'' + PROJECT_ICON + '\'">' +
         // 右下角"已禁用"角标 (白色圆圈蒙版 + 禁用图标): 显隐交给 CSS 的
         // .res-card.disabled 控制, 就地切换时不必再动 DOM
-        '<span class="res-off-badge" title="已禁用">' + iconSvg('reduceOne') + '</span>' +
+        '<span class="res-off-badge">' + iconSvg('reduceOne') + '</span>' +
       '</span>' +
       '<div class="res-info">' +
         '<div class="res-title-row">' +
@@ -491,7 +491,7 @@ function buildResCard(item) {
       '</button>' +
       (item.permanent
         ? '<button class="res-toggle-btn on" type="button" disabled' +
-            ' aria-pressed="true" title="依赖库：其它插件靠它运行，不能关闭"' +
+            ' aria-pressed="true"' +
             '>' + resToggleIcon(true) + '</button>'
         : '<button class="res-toggle-btn' + (enabled ? ' on' : '') + '" type="button"' +
             ' aria-pressed="' + (enabled ? 'true' : 'false') + '"' +
@@ -636,7 +636,6 @@ function fillDepList(panel, item) {
         const lack = !info.installed;
         state.className = 'res-dep-state ' + (lack ? 'missing' : 'ok');
         state.textContent = lack ? '未安装' : '已安装';
-        if (info.source === 'local') state.title = '云端没有条目，信息来自本地插件目录';
       }
     };
     if (!api) { fill(null); return; }

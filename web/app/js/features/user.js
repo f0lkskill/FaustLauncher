@@ -134,19 +134,9 @@ function renderRestrictions(r) {
   const loginLeft = formatLeft(r.login_left);
 
   const renameBtn = $('#user-name-open');
-  if (renameBtn) {
-    renameBtn.disabled = !!renameLeft;
-    renameBtn.title = renameLeft
-      ? '用户名 1 小时内只能修改一次，请 ' + renameLeft + '后再试'
-      : '';
-  }
+  if (renameBtn) renameBtn.disabled = !!renameLeft;
   const loginBtn = $('#user-login-open');
-  if (loginBtn) {
-    loginBtn.disabled = !!loginLeft;
-    loginBtn.title = loginLeft
-      ? '登录 12 小时内只能进行一次，请 ' + loginLeft + '后再试'
-      : '';
-  }
+  if (loginBtn) loginBtn.disabled = !!loginLeft;
 
   const note = $('#user-limit-note');
   if (!note) return;
@@ -195,7 +185,6 @@ function renderUserId() {
   //   打码中 -> 睁眼 (点击显示); 明文 -> 划掉的眼睛 (点击隐藏)
   if (btn) {
     const file = userIdVisible ? 'preview-close-one.svg' : 'eye.svg';
-    btn.title = userIdVisible ? '隐藏用户 ID' : '显示用户 ID';
     if (btn.dataset.iconState !== file) {
       btn.dataset.iconState = file;
       // 占位由 icons.js 的自动水合补全, 无需手动调用
@@ -214,12 +203,9 @@ function renderPlaytime() {
   if (p && p.ok && p.seconds > 0) {
     el.textContent = p.text || (Math.round((p.hours || 0) * 10) / 10 + ' 小时');
     el.classList.remove('is-empty');
-    // 面板只给小时；更细的写法（X 天 X 小时）放 hover 提示
-    el.title = p.detail ? ('本机 Steam 记录：' + p.detail) : '本机 Steam 记录';
   } else {
     el.textContent = '读不到';
     el.classList.add('is-empty');
-    el.title = (p && p.error) || '未安装 / 未登录 Steam';
   }
 }
 

@@ -101,16 +101,12 @@
     ui.version.textContent = "Mod 打包工作流 · v" + (next.version || "?");
     var game = next.game || {};
     ui.gamePath.value = game.path || "";
-    ui.gamePath.title = game.path || "";
     if (game.path && game.sound_exists) {
       ui.soundState.textContent = "音效目录已就绪";
       ui.soundState.className = "wf-state ok";
-      ui.soundState.title = game.sound_dir || "";
     } else if (game.path) {
       ui.soundState.textContent = "未找到原版音效目录";
       ui.soundState.className = "wf-state err";
-      ui.soundState.title = "已尝试: " + (game.sound_dir || "(无)") +
-        "\n也可以直接粘贴 …\\Sound\\FMODBuilds\\Desktop";
     } else {
       ui.soundState.textContent = "未设置游戏目录";
       ui.soundState.className = "wf-state";
@@ -186,7 +182,6 @@
         chip.appendChild(el("span", "wf-file-size", fmtSize(file.size)));
         if (!running) {
           var remove = el("button", "wf-file-x", "×");
-          remove.title = "从包中移除";
           remove.addEventListener("click", function (event) {
             event.stopPropagation();
             if (!confirm("从包中移除 " + file.name + " ？")) return;
@@ -227,7 +222,6 @@
     actions.appendChild(start);
 
     var unpack = el("button", "wf-btn", "解包");
-    unpack.title = "解压包内全部 zip，重复文件覆盖";
     unpack.disabled = running || !!unpackBusy[pkg.name] || !(counts[".zip"] > 0);
     unpack.addEventListener("click", function () {
       if (!confirm("将解压包内全部 zip，重复文件会覆盖，继续？")) return;

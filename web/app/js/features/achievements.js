@@ -192,14 +192,12 @@ function buildAchCard(item) {
               (done ? '已完成' : '未完成') + '</span>' +
           '</span>' +
           (item.plugin
-            ? '<span class="ach-plugin-badge" title="来自插件' +
-                (item.addon ? '：' + esc(item.addon) : '') +
-                '；完成记录只存在本地，不参与云端同步">插件</span>'
+            ? '<span class="ach-plugin-badge">插件</span>'
             : '') +
           (rarity ? '<span class="ach-rarity ach-rarity-' + esc(item.rarity || '') + '">' +
                     esc(rarity) + '</span>' : '') +
         '</div>' +
-        '<div class="res-desc" title="' + esc(item.description || '') + '">' +
+        '<div class="res-desc">' +
           esc(item.description || '（无描述）') + '</div>' +
       '</div>' +
     '</div>';
@@ -307,9 +305,6 @@ function syncAchFilterButton() {
   const btn = $('#ach-filter');
   if (!btn) return;
   btn.classList.toggle('active', !!achRarity);
-  btn.title = achRarity
-    ? ('稀有度筛选：' + (ACH_RARITY_ZH[achRarity] || achRarity) + '（点击更换）')
-    : '按稀有度筛选';
 }
 
 function openAchFilterMenu() {
