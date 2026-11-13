@@ -1008,8 +1008,9 @@ body.modal-open .res-card {
 /* 资源模态详情 (插件/Mod 统一) */
 .res-detail-head { display: flex; gap: 14px; align-items: center; margin: 18px 20px 12px; }
 .res-detail-icon {
-  width: 72px; height: 72px; border-radius: 12px; object-fit: cover; flex-shrink: 0;
-  background: rgba(var(--tint-rgb), .04); border: 1px solid var(--border);
+  width: 72px; height: 72px; object-fit: contain; flex-shrink: 0;
+  /* 不再给图标垫底色/描边/圆角蒙版: 透明 PNG 的空白像素会直接透出面板 */
+  background: transparent; border: none; border-radius: 0;
   filter: drop-shadow(0 6px 16px rgba(0,0,0,.45));
 }
 .res-detail-main { flex: 1; min-width: 0; }
