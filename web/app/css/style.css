@@ -2558,6 +2558,15 @@ body.no-hw .ver-card { animation: verCardInLite .38s cubic-bezier(.22, .9, .24, 
 
 /* 用户页使用自然高度: 成就卡片固定行高, 分页紧跟在列表下方, 不再依赖拉伸 */
 body.user-page-active #main { padding-top: 14px; padding-bottom: 18px; }
+/* 用户页动画期间保持毛玻璃, 避免 body.animating 摘掉 blur 造成整页忽明忽暗 */
+body.user-page-active.animating .card {
+  backdrop-filter: blur(calc(var(--glass-factor) * 22px)) !important;
+  -webkit-backdrop-filter: blur(calc(var(--glass-factor) * 22px)) !important;
+}
+body.user-page-active.animating .res-card {
+  backdrop-filter: blur(calc(var(--glass-factor) * 26px)) saturate(140%) !important;
+  -webkit-backdrop-filter: blur(calc(var(--glass-factor) * 26px)) saturate(140%) !important;
+}
 #page-user { min-height: 0; }
 #page-user .user-achievement { display: block; }
 
