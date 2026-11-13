@@ -150,8 +150,10 @@ function renderAchList() {
     else empty = '还没有成就数据';
     list.innerHTML = '<div class="res-empty">' + esc(empty) + '</div>';
   } else {
-    pageItems.forEach(item => {
+    pageItems.forEach((item, i) => {
       const card = buildAchCard(item);
+      // 与下载中心一致: 逐张轻微错开, 形成自上而下的渐入
+      card.style.animationDelay = (i * 0.05) + 's';
       list.appendChild(card);
     });
   }

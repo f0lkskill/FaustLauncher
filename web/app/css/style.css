@@ -2404,9 +2404,8 @@ body.no-hw .ver-card { animation: verCardInLite .38s cubic-bezier(.22, .9, .24, 
 /* ── 头部: 图标 + 状态眉标 + 版本跨度 ── */
 .ver-head { display: flex; align-items: flex-start; gap: 14px; padding: 24px 26px 18px; }
 .ver-mark {
-  width: 36px; height: 36px; flex-shrink: 0; border-radius: 10px; object-fit: contain;
-  background: rgba(var(--tint-rgb), .04);
-  box-shadow: 0 0 0 1px rgba(var(--tint-rgb), .06), 0 6px 18px rgba(0, 0, 0, .45);
+  width: 36px; height: 36px; flex-shrink: 0; object-fit: contain;
+  background: transparent; border-radius: 0; box-shadow: none;
 }
 .ver-head-main { flex: 1; min-width: 0; padding-top: 1px; }
 .ver-eyebrow {
