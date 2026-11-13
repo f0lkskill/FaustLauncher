@@ -2566,7 +2566,7 @@ body.user-page-active #main { padding-top: 14px; padding-bottom: 18px; }
 #page-user #ach-list {
   flex: 1; height: auto; min-height: 0;
   /* 固定 5 个槽位: 有 5 条时正好铺满, 只有 1 条时也只占 1/5, 不会一张卡撑满整页 */
-  display: grid; grid-template-rows: repeat(5, minmax(74px, 1fr));
+  display: grid; grid-template-rows: repeat(5, minmax(68px, 1fr));
 }
 
 /* ---------- 身份卡 (保持紧凑, 但不把控件压得过小) ---------- */
@@ -2649,12 +2649,12 @@ body.user-page-active #main { padding-top: 14px; padding-bottom: 18px; }
 #page-user .res-toolbar .btn { padding: 7px 12px; font-size: 12.5px; }
 #page-user .res-search { padding: 6px 11px 6px 31px; font-size: 12.5px; }
 #page-user #ach-list { padding: 6px; gap: 5px; }
-#page-user .res-card { padding: 9px 14px; gap: 12px; }
-#page-user .ach-card .ach-icon { width: 56px; height: 56px; border-radius: 14px; }
-#page-user .ach-card .ach-icon svg { width: 29px; height: 29px; }
-#page-user .ach-card .ach-icon .ach-art { border-radius: 12px; }
+#page-user .res-card { padding: 8px 13px; gap: 12px; }
+#page-user .ach-card .ach-icon { width: 54px; height: 54px; border-radius: 13px; }
+#page-user .ach-card .ach-icon svg { width: 28px; height: 28px; }
+#page-user .ach-card .ach-icon .ach-art { border-radius: 11px; }
 #page-user .res-title { font-size: 14.5px; }
-#page-user .res-pagination { margin-top: 8px; padding-bottom: 0; }
+#page-user .res-pagination { margin-top: 6px; padding-bottom: 0; flex-shrink: 0; }
 #page-user .res-pagination button { width: 28px; height: 28px; font-size: 12px; }
 
 /* ---------- 操作冷却提示 ---------- */
