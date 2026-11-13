@@ -2552,22 +2552,10 @@ body.no-hw .ver-card { animation: verCardInLite .38s cubic-bezier(.22, .9, .24, 
 .user-page { display: flex; flex-direction: column; gap: 10px; }
 .user-page .card { margin-bottom: 0; }
 
-/* 用户页固定在一屏内: 成就列表伸缩, 分页始终可见, 不把 #main 撑出滚动条 */
+/* 用户页使用自然高度: 成就卡片固定行高, 分页紧跟在列表下方, 不再依赖拉伸 */
 body.user-page-active #main { padding-top: 14px; padding-bottom: 18px; }
-#page-user { height: 100%; min-height: 0; }
-#page-user.active { display: flex; flex-direction: column; }
-#page-user .user-page { flex: 1; min-height: 0; }
-#page-user .user-card { flex: 0 0 auto; }
-#page-user .user-achievement { flex: 1; min-height: 0; display: flex; }
-#page-user .user-achievement > .card {
-  flex: 1; min-height: 0; width: 100%;
-  display: flex; flex-direction: column;
-}
-#page-user #ach-list {
-  flex: 1; height: auto; min-height: 0;
-  /* 固定 5 个槽位: 有 5 条时正好铺满, 只有 1 条时也只占 1/5, 不会一张卡撑满整页 */
-  display: grid; grid-template-rows: repeat(5, minmax(58px, 1fr));
-}
+#page-user { min-height: 0; }
+#page-user .user-achievement { display: block; }
 
 /* ---------- 身份卡 (保持紧凑, 但不把控件压得过小) ---------- */
 .user-card { position: relative; overflow: hidden; padding: 12px 16px 10px; }
@@ -2648,17 +2636,17 @@ body.user-page-active #main { padding-top: 14px; padding-bottom: 18px; }
 #page-user .res-tab { padding: 6px 12px; font-size: 12.5px; }
 #page-user .res-toolbar .btn { padding: 7px 12px; font-size: 12.5px; }
 #page-user .res-search { padding: 6px 11px 6px 31px; font-size: 12.5px; }
-#page-user #ach-list { padding: 6px 6px 42px; gap: 8px; }
+#page-user #ach-list {
+  display: flex; flex-direction: column; height: auto;
+  padding: 6px; gap: 8px;
+}
+#page-user #ach-list .res-card { flex: 0 0 79px; height: 79px; }
 #page-user .res-card { padding: 6px 12px; gap: 10px; }
 #page-user .ach-card .ach-icon { width: 52px; height: 52px; border-radius: 12px; }
 #page-user .ach-card .ach-icon svg { width: 27px; height: 27px; }
 #page-user .ach-card .ach-icon .ach-art { border-radius: 10px; }
 #page-user .res-title { font-size: 14px; }
-/* 分页器固定在成就卡片底部, 不参与列表高度计算, 任何窗口高度都不会被顶出卡片 */
-#page-user .res-pagination {
-  position: absolute; left: 8px; right: 8px; bottom: 8px; z-index: 2;
-  margin: 0; padding: 0; flex-shrink: 0;
-}
+#page-user .res-pagination { margin-top: 6px; padding-bottom: 0; }
 #page-user .res-pagination button { width: 28px; height: 28px; font-size: 12px; }
 
 /* ---------- 操作冷却提示 ---------- */
