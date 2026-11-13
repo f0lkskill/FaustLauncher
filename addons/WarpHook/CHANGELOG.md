@@ -1,3 +1,10 @@
+## 0.9.81 — 延后首次装钩与启动期重装
+
+- `warp_ready` 在程序集稳定后额外等待 `WARP_INSTALL_DELAY_MS=3000ms`，总稳定窗从 1.5s 提高到 4.5s，避开 Addressables/CG/首场景异步加载。
+- `warp_thread` 在 `boot_at + WARP_HOOK_REINSTALL_GRACE_MS=8000ms` 内不改装钩子，避免启动资源回调期间 MinHook 卸载/重装造成竞态。
+- `warp_retry_hooks` 同样延迟到启动 8s 后再执行。
+- 协议仍为 v22，需重启加载新 DLL。
+
 ## 0.9.80 — 补 Host.events/call 存根
 
 - `Host` 新增 `events(limit=None)`、`call(...)`、完整的 `read(slot, chain, ...)`、`write_int/write_list_int`。

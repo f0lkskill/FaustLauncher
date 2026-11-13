@@ -51,7 +51,9 @@ int warp_wait_ready(void)
             warp_log("assemblies ready, settling", (int)count);
             return 0;
         }
-        if (GetTickCount64() - first_ok < WARP_SETTLE_MS)
+        /* 程序集稳定后再等一段，避开 Addressables/CG/首场景的异步加载。 */
+        if (GetTickCount64() - first_ok <
+            (WARP_SETTLE_MS + WARP_INSTALL_DELAY_MS))
             return 0;
     }
 

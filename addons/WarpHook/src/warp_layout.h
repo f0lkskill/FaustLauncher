@@ -110,6 +110,9 @@
 #define WARP_GA_TIMEOUT_MS 180000
 #define WARP_MIN_ASSEMBLIES 8
 #define WARP_SETTLE_MS    1500
+#define WARP_INSTALL_DELAY_MS 3000
+#define WARP_HOOK_REINSTALL_GRACE_MS 8000
+#define WARP_HOOK_RETRY_GRACE_MS 8000
 #define WARP_HB_STALE_MS  10000
 #define WARP_VAR_COUNT    8      /* 钩子之间共享的整数槽个数（WARP_HEADER.vars） */
 #define WARP_CMD_SIG_MAX  96   /* 类型签名串上限 */
@@ -506,4 +509,3 @@ typedef void *(*fn_class_get_field_from_name)(void *klass, const char *name);
 /* IL2CPP export takes FieldInfo + output only, NOT a declaring class.
  * The old three-argument prototype shifted field/output and caused AV. */
 typedef void (*fn_field_static_get_value)(void *field, void *value);
-

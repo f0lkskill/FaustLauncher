@@ -56,6 +56,14 @@ DWORD WINAPI warp_thread(LPVOID param)
             unsigned int sig = warp_hook_signature();
             ULONGLONG now2 = GetTickCount64();
 
+            /* 启动后的资源加载窗口内不改表：Addressables/CG 回调正在跑，
+             * MinHook 卸载/重装会和资源加载抢方法指针。 */
+            if (g_hdr->boot_at &&
+                now2 - g_hdr->boot_at < WARP_HOOK_REINSTALL_GRACE_MS) {
+                g_sig_pending = 0;
+                continue;
+            }
+
             if (sig == g_hook_sig) {
                 g_sig_pending = 0;
             } else if (!g_sig_pending) {
@@ -71,7 +79,9 @@ DWORD WINAPI warp_thread(LPVOID param)
                一辈子装不上，插件表现成「逻辑不执行也不报错」。 */
             {
                 static ULONGLONG last_retry;
-                if (now2 - last_retry > 2000) {
+                if (now2 - last_retry > 2000 &&
+                    (!g_hdr->boot_at ||
+                     now2 - g_hdr->boot_at >= WARP_HOOK_RETRY_GRACE_MS)) {
                     last_retry = now2;
                     warp_retry_hooks();
                 }
