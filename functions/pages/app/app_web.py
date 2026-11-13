@@ -467,7 +467,7 @@ def _file_uri(path, max_side=1600, quality=82):
 def _bg_blur_setting():
     try:
         from functions.base.settings_manager import get_settings_manager
-        return float(get_settings_manager().get_setting("bg_gaussian_blur") or 0.0)
+        return float(get_settings_manager().get_setting("bg_gaussian_blur_factor") or 0.0)
     except Exception:
         return 0.0
 

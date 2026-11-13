@@ -299,7 +299,7 @@ class FaustLauncherUI:
                 
                 image = image.resize((new_width, new_height), Image.Resampling.LANCZOS)
                 
-                gaussian_level: int = self.core.settings_manager.get_setting('bg_gaussian_blur') # type: ignore
+                gaussian_level: int = self.core.settings_manager.get_setting('bg_gaussian_blur_factor') # type: ignore
                 blurred_image = image.filter(ImageFilter.GaussianBlur(radius=gaussian_level))
                 
                 bg_image = ImageTk.PhotoImage(blurred_image)

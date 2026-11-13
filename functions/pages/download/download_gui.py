@@ -6,7 +6,7 @@ from functions.base.settings_manager import get_settings_manager
 from functions.base.color_scheme import C, ThemeColors
 
 BG_COLOR: str = get_settings_manager().get_setting("bg_color") # type: ignore
-BG_GAUSSIAN_BLUR: int = (get_settings_manager().get_setting("bg_gaussian_blur") or 0) + 5
+bg_gaussian_blur_factor: int = (get_settings_manager().get_setting("bg_gaussian_blur_factor") or 0) + 5
 
 def _parse_rgb(hex_color: str):
     h = hex_color.lstrip('#')
@@ -96,7 +96,7 @@ class DownloadGUI:
                 left = (nw - W) // 2
                 top = (nh - H) // 2
                 img = img.crop((left, top, left + W, top + H))
-                img = img.filter(ImageFilter.GaussianBlur(radius=BG_GAUSSIAN_BLUR))
+                img = img.filter(ImageFilter.GaussianBlur(radius=bg_gaussian_blur_factor))
                 img = ImageEnhance.Brightness(img).enhance(0.65)
                 final = Image.new('RGB', (W, H), _parse_rgb(TRANSPARENT))
                 mask = self._pil_rounded_rect_mask((W, H), R)

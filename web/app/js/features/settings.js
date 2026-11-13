@@ -437,9 +437,9 @@ function applySettingSideEffect(key, v) {
     if (currentPage === 'tools' && BOOT.tools) renderTools(BOOT.tools);
   }
   else if (key === 'frame_limit') { BOOT.settings_schema[key].value = v; applyFrameLimit(); }
-  else if (key === 'bg_gaussian_blur') refreshBackgrounds();
+  else if (key === 'bg_gaussian_blur_factor') refreshBackgrounds();
   else if (key === 'glass_factor') { BOOT.settings_schema[key].value = v; applyGlassFactor(); }
-  else if (key === 'control_opacity') { BOOT.settings_schema[key].value = v; applyControlOpacity(); }
+  else if (key === 'control_opacity_factor') { BOOT.settings_schema[key].value = v; applyControlOpacity(); }
   else if (key === 'char_enabled') { BOOT.settings_schema[key].value = v; applyCharacterSetting(); }
   else if (key === 'game_path') updatePathChip();
   else if (s && s.type === 'color') applyTheme(v);
@@ -681,9 +681,9 @@ function buildControl(key, s) {
       const v = type === 'integer' ? parseInt(range.value, 10) : parseFloat(range.value);
       markChanged(key, v);
       if (api) api.set_setting(key, v).catch(err => toast(String(err), 'error'));
-      if (key === 'bg_gaussian_blur') refreshBackgrounds();   // 模糊度立即生效
+      if (key === 'bg_gaussian_blur_factor') refreshBackgrounds();   // 模糊度立即生效
       if (key === 'glass_factor') { if (BOOT && BOOT.settings_schema) BOOT.settings_schema[key].value = v; applyGlassFactor(); }  // 毛玻璃系数即时生效
-      if (key === 'control_opacity') { if (BOOT && BOOT.settings_schema) BOOT.settings_schema[key].value = v; applyControlOpacity(); }  // 控件透明度即时生效
+      if (key === 'control_opacity_factor') { if (BOOT && BOOT.settings_schema) BOOT.settings_schema[key].value = v; applyControlOpacity(); }  // 控件透明度即时生效
     };
     wrap.appendChild(rw);
     return wrap;

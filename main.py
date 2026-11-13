@@ -23,8 +23,6 @@ except OSError as e:
 
 if __name__ == "__main__" and "--addon-host" in sys.argv:
     # 独立插件宿主走这里，不走 launch_app：宿主要抢在启动器那一大串 import
-    # 之前拿到单实例锁，否则「启动器已退出、宿主还在导入模块」的那段空窗里，
-    # 两边都会以为自己是唯一的钩子表写方。
     from functions.extension.addon.addon_host import run_host
 
     run_host()

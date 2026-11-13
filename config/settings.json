@@ -183,7 +183,7 @@
         "name": "启用Mod功能",
         "type": "boolean",
         "default": true,
-        "value": false,
+        "value": true,
         "description": "是否在启动的时候加载视觉效果 Mod。",
         "page": "Mod"
     },
@@ -246,11 +246,11 @@
         "description": "是否播放界面控件的点击音效。",
         "page": "其它"
     },
-    "bg_gaussian_blur": {
+    "bg_gaussian_blur_factor": {
         "name": "背景模糊",
         "type": "float",
-        "default": 1.0,
-        "value": 1.0,
+        "default": 3.0,
+        "value": 3.0,
         "description": "主界面背景模糊效果的强度\n越大的值意味着模糊效果越强。",
         "min": 0.0,
         "max": 10.0,
@@ -307,7 +307,7 @@
         "step": 0.1,
         "page": "其它"
     },
-    "control_opacity": {
+    "control_opacity_factor": {
         "name": "控件透明度",
         "type": "float",
         "default": 0.9,
@@ -420,8 +420,8 @@
     "version_info": {
         "name": "版本信息",
         "type": "UNABLE_TO_EDIT",
-        "default": "V0.9.5-release.fix.1",
-        "value": "V0.9.5-release.fix.1",
+        "default": "V0.9.6-release",
+        "value": "V0.9.6-release",
         "description": "当前应用程序的版本信息"
     },
     "mems": {
@@ -432,8 +432,8 @@
             "version_notify_flag": false
         },
         "value": {
-            "tray_hint": true,
-            "version_notify_flag": true
+            "tray_hint": false,
+            "version_notify_flag": false
         },
         "description": "程序运行时的缓存数据\n不建议修改"
     }
