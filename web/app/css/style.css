@@ -2566,8 +2566,7 @@ body.user-page-active #main { padding-top: 14px; padding-bottom: 18px; }
 #page-user #ach-list {
   flex: 1; height: auto; min-height: 0;
   /* 固定 5 个槽位: 有 5 条时正好铺满, 只有 1 条时也只占 1/5, 不会一张卡撑满整页 */
-  display: grid; grid-template-rows: repeat(5, minmax(58px, 78px));
-  align-content: center;
+  display: grid; grid-template-rows: repeat(5, minmax(58px, 1fr));
 }
 
 /* ---------- 身份卡 (保持紧凑, 但不把控件压得过小) ---------- */
@@ -2650,10 +2649,10 @@ body.user-page-active #main { padding-top: 14px; padding-bottom: 18px; }
 #page-user .res-toolbar .btn { padding: 7px 12px; font-size: 12.5px; }
 #page-user .res-search { padding: 6px 11px 6px 31px; font-size: 12.5px; }
 #page-user #ach-list { padding: 6px 6px 42px; gap: 8px; }
-#page-user .res-card { padding: 5px 11px; gap: 10px; }
-#page-user .ach-card .ach-icon { width: 46px; height: 46px; border-radius: 11px; }
-#page-user .ach-card .ach-icon svg { width: 24px; height: 24px; }
-#page-user .ach-card .ach-icon .ach-art { border-radius: 9px; }
+#page-user .res-card { padding: 6px 12px; gap: 10px; }
+#page-user .ach-card .ach-icon { width: 52px; height: 52px; border-radius: 12px; }
+#page-user .ach-card .ach-icon svg { width: 27px; height: 27px; }
+#page-user .ach-card .ach-icon .ach-art { border-radius: 10px; }
 #page-user .res-title { font-size: 14px; }
 /* 分页器固定在成就卡片底部, 不参与列表高度计算, 任何窗口高度都不会被顶出卡片 */
 #page-user .res-pagination {
