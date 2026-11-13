@@ -7,6 +7,9 @@ let userPageReady = false;
 let userPageData = null;
 let userIdVisible = false;   // 用户 ID 默认打码, 点"显示"才明文
 let userLimitTimer = null;   // 冷却到期后的自动刷新定时器
+let userAvatarUrl = '';      // 当前展示的头像 URL (完整 URL, 带 ?v=)
+const userAvatarCache = new Map();      // 完整 URL -> data-uri
+const userAvatarInflight = new Map();   // URL -> 正在请求的 Promise
 
 function userNameFallback() {
   try {
@@ -19,6 +22,7 @@ function userNameFallback() {
 
 function userDataValues(data) {
   const user = (data && data.user) || {};
+  const profile = (data && data.profile) || {};
   const get = (key, fallback) => {
     const item = user[key];
     return item && item.value !== undefined ? item.value : fallback;
@@ -27,7 +31,66 @@ function userDataValues(data) {
     id: String(get('user_id', '')),
     skins: Array.isArray(get('unlocked_skins', [])) ? get('unlocked_skins', []) : [],
     name: String((data && data.user_name) || userNameFallback()),
+    avatar: String((data && data.avatar) || profile.avatar || '').trim(),
   };
+}
+
+// ---------------- 用户头像 (按完整 URL 缓存, 与资源图标同一套 data-uri 思路) ----------------
+// 服务端生成的头像 URL 带 ?v= 版本号: URL 不变就直接命中缓存, 不重复下载;
+// 重新生成/上传后 URL 变化, 自然会换新的缓存键。
+function userAvatarInitial() {
+  const name = String(($('#user-page-name') || {}).textContent || '').trim();
+  return (name ? Array.from(name)[0] : '?').toUpperCase();
+}
+
+function setUserAvatarFallback() {
+  const img = $('#user-avatar-img');
+  const initial = $('#user-avatar-initial');
+  userAvatarUrl = '';
+  if (img) {
+    img.hidden = true;
+    img.removeAttribute('src');
+    img.dataset.avatarUrl = '';
+  }
+  if (initial) {
+    initial.textContent = userAvatarInitial();
+    initial.hidden = false;
+  }
+}
+
+function setUserAvatarSrc(url, src) {
+  const img = $('#user-avatar-img');
+  const initial = $('#user-avatar-initial');
+  if (!img) return;
+  img.src = src;
+  img.dataset.avatarUrl = url;
+  img.hidden = false;
+  if (initial) initial.hidden = true;
+}
+
+async function renderUserAvatar(url) {
+  if (!url) { setUserAvatarFallback(); return; }
+  userAvatarUrl = url;
+  const hit = userAvatarCache.get(url);
+  if (hit) { setUserAvatarSrc(url, hit); return; }
+
+  let task = userAvatarInflight.get(url);
+  if (!task) {
+    task = (async () => {
+      if (api && typeof api.get_user_avatar === 'function') {
+        return await api.get_user_avatar(url).catch(() => '');
+      }
+      return url;
+    })();
+    userAvatarInflight.set(url, task);
+    task.finally(() => userAvatarInflight.delete(url));
+  }
+  const src = await task;
+  if (userAvatarUrl !== url) return;      // 期间切换了账号/头像, 丢弃旧结果
+  // 后端取图失败时退回直接 URL (浏览器自身仍会按 URL 缓存); 再失败由 img.onerror 兜底
+  if (!src) { setUserAvatarSrc(url, url); return; }
+  if (src !== url) userAvatarCache.set(url, src);
+  setUserAvatarSrc(url, src);
 }
 
 async function loadUserPage() {
@@ -176,21 +239,10 @@ function openSitePage(field, label) {
 function renderUserPage() {
   const values = userDataValues(userPageData);
   const name = $('#user-page-name');
-  const count = $('#user-skin-count');
   if (name) name.textContent = values.name;
   renderUserId();
   renderPlaytime();
-  if (count) count.textContent = values.skins.length + ' 个';
-  const list = $('#user-skin-list');
-  if (!list) return;
-  if (!values.skins.length) {
-    list.innerHTML = '<div class="user-empty">暂未解锁皮肤</div>';
-    return;
-  }
-  const names = new Map((skinList || []).map(s => [s.id, s.name]));
-  list.innerHTML = values.skins.map(sid =>
-    '<div class="user-skin-item"><span class="user-skin-dot"></span><span>' + esc(names.get(sid) || sid) + '</span><code>' + esc(sid) + '</code></div>'
-  ).join('');
+  renderUserAvatar(values.avatar);
 }
 
 // ---------------- 名称编辑 (二级模态) ----------------
@@ -262,6 +314,8 @@ function enterUserPage() {
   // 每次进入都刷新: 昵称可能在设置页改过, 解锁列表也可能刚变化
   userPageReady = true;
   loadUserPage();
+  // 成就已并入用户页: 进入用户页时一并刷新本地完成记录
+  if (typeof enterAchievementPage === 'function') enterAchievementPage();
 }
 
 async function syncUserFromPage() {
@@ -280,6 +334,7 @@ async function syncUserFromPage() {
     // 所以别再手动拼一遍，直接复用 loadUserPage（顺带拿到刚上报后的游玩时长与冷却状态）。
     await loadUserPage();
     if (typeof loadSkins === 'function') await loadSkins();
+    if (typeof enterAchievementPage === 'function') enterAchievementPage();
     toast('用户信息已同步', 'success');
     // 本地已并集成功、但写回服务端失败: 皮肤会一直留在本地, 下次同步再补传
     if (result.push_error) toast('云端写入未完成：' + result.push_error, 'warn', 6000);
@@ -361,10 +416,17 @@ async function doUserLogin(id, closeLoginModal) {
   }
   await loadUserPage();
   if (typeof loadSkins === 'function') await loadSkins();
+  if (typeof enterAchievementPage === 'function') enterAchievementPage();
   toast('已切换账号', 'success');
 }
 
 function bindUserEvents() {
+  const avatarImg = $('#user-avatar-img');
+  if (avatarImg) {
+    avatarImg.addEventListener('error', () => {
+      if (avatarImg.dataset.avatarUrl === userAvatarUrl) setUserAvatarFallback();
+    });
+  }
   on('#user-copy-id', 'click', async () => {
     const values = userDataValues(userPageData);
     if (!values.id) return;

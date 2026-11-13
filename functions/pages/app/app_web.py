@@ -657,6 +657,11 @@ def _skin_profile_uris(entries, cloud):
 _RES_ICON_CACHE = {}
 _RES_ICON_CACHE_LOCK = threading.Lock()
 
+#: 用户头像 data-uri 缓存：完整头像 URL（含 ?v=）-> data-uri。
+#: URL 不变不重复下载；服务端重新生成头像后 ?v= 变化，自然换新缓存键。
+_AVATAR_URI_CACHE = {}
+_AVATAR_URI_LOCK = threading.Lock()
+
 #: 云端资源名 -> 条目 的索引缓存：{kind: ((列表id, 长度), {名字: 条目})}
 _CLOUD_RES_INDEX = {}
 _CLOUD_RES_INDEX_LOCK = threading.Lock()
@@ -1149,6 +1154,27 @@ class AppApi:
     def get_user_info(self):
         from functions.base.user_system import get_user_info
         return get_user_info(self.core.settings_manager)
+
+    def get_user_avatar(self, url):
+        """按完整 URL 取用户头像，返回 data-uri（URL 级内存缓存，同资源图标）。"""
+        key = str(url or "").strip()
+        if not key:
+            return ""
+        with _AVATAR_URI_LOCK:
+            cached = _AVATAR_URI_CACHE.get(key)
+        if cached is not None:
+            return cached
+        from functions.base import user_api
+        got = user_api.fetch_avatar(key)
+        if not got:
+            return ""
+        raw, mime = got
+        uri = "data:" + mime + ";base64," + base64.b64encode(raw).decode("ascii")
+        with _AVATAR_URI_LOCK:
+            if len(_AVATAR_URI_CACHE) > 32:
+                _AVATAR_URI_CACHE.clear()
+            _AVATAR_URI_CACHE[key] = uri
+        return uri
 
     def sync_user(self):
         from functions.base.user_system import sync_user
@@ -2939,7 +2965,14 @@ if %errorlevel% equ 0 (
         if not url:
             print(f'云端没有插件 {want} 的下载地址，跳过自动安装')
             return False
-        return bool(self._install_addon_sync(want, url, pages))
+        ok = bool(self._install_addon_sync(want, url, pages))
+        if ok:
+            # 必需插件自动补齐不经过下载抽屉，成功后同样记一次下载。
+            try:
+                self._get_web_trigger().add_download_number_addon(want)
+            except Exception as exc:
+                print(f'必需插件 {want} 下载次数上报失败: {exc}')
+        return ok
 
     # ---- 下载抽屉: 任务取消 ----
     def _dl_register(self, gui):

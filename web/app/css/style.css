@@ -977,8 +977,8 @@ body.modal-open .res-card {
 }
 
 /* 账户面板: 当前游玩时长（读本机 Steam 记录）—— 纯文本展示，不加框 */
-.user-playtime { font-size: 13px; font-weight: 600; color: #8fd0ff; }
-.user-playtime.is-empty { color: var(--text-dim, #8b95a3); font-weight: 400; }
+.user-playtime { font-size: 13px; font-weight: 500; color: var(--text); }
+.user-playtime.is-empty { color: var(--text-3); font-weight: 400; }
 
 /* 稀有度筛选: 图标按钮 + 贴着它展开的小菜单 (点别处/Esc 关闭) */
 .ach-filter-wrap { position: relative; display: inline-flex; }
@@ -2548,48 +2548,68 @@ body.no-hw .ver-card { animation: verCardInLite .38s cubic-bezier(.22, .9, .24, 
    颜色全部走主题变量, 因此跟随皮肤 (含浅色浮士德皮肤) 自动适配。
    ============================================================ */
 /* 两张卡片之间只留 gap 的间距: .card 自带的 margin-bottom 会叠加成双倍空隙 */
-.user-page { display: flex; flex-direction: column; gap: 16px; }
+.user-page { display: flex; flex-direction: column; gap: 12px; }
 .user-page .card { margin-bottom: 0; }
 
-/* ---------- 身份卡 ---------- */
-.user-card { position: relative; overflow: hidden; padding: 22px 24px; }
+/* ---------- 身份卡 (紧凑布局, 给下方成就留空间) ---------- */
+.user-card { position: relative; overflow: hidden; padding: 14px 18px 12px; }
 .user-card::after {
   content: ''; position: absolute; inset: 0; z-index: 0; pointer-events: none;
   background: radial-gradient(520px 200px at 88% -30%, rgba(var(--accent-rgb), .18), transparent 70%);
 }
-.user-card-head { position: relative; z-index: 1; display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
-.user-head-main { min-width: 0; }
-/* 名字 + 已登录标识同一行 (窄窗口换行) */
-.user-name-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-.user-card-head h2 { font-size: 26px; font-weight: 800; letter-spacing: .4px; }
-.user-login-chip { flex-shrink: 0; padding: 4px 11px; }
-.user-subtitle { font-size: 12.5px; color: var(--text-3); margin-top: 8px; }
+.user-card-head {
+  position: relative; z-index: 1; display: flex; align-items: center;
+  justify-content: flex-start; flex-wrap: wrap; gap: 12px;
+}
+.user-identity { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.user-head-main { min-width: 0; flex: 0 1 auto; }
+.user-card-head h2 {
+  font-size: 22px; font-weight: 800; letter-spacing: .2px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
 .user-avatar {
-  width: 54px; height: 54px; flex-shrink: 0; border-radius: 16px;
+  width: 48px; height: 48px; flex-shrink: 0; border-radius: 50%;
   display: flex; align-items: center; justify-content: center;
   font-size: 24px; color: var(--accent);
   background: rgba(var(--accent-rgb), .12);
   border: 1px solid rgba(var(--accent-rgb), .28);
   box-shadow: inset 0 1px 0 rgba(var(--tint-rgb), .08);
+  overflow: hidden;
 }
+.user-avatar img {
+  width: 100%; height: 100%; object-fit: cover; display: block;
+  border-radius: inherit;
+}
+.user-avatar img[hidden] { display: none !important; }
+.user-avatar-initial {
+  font-size: 20px; font-weight: 800; line-height: 1;
+  color: var(--accent); text-transform: uppercase;
+}
+.user-avatar-initial[hidden] { display: none !important; }
+.user-achievement { display: block; }
 
-/* ---------- 用户 ID ---------- */
-.user-id-row {
-  position: relative; z-index: 1; display: flex; align-items: center; gap: 10px;
-  margin-top: 14px; padding: 12px 14px;
-  background: var(--card-2); border: 1px solid var(--border); border-radius: 12px;
-  flex-wrap: wrap;
+/* ---------- 用户 ID / 游玩时长: 与头像同行靠右 ---------- */
+.user-meta-row {
+  position: relative; z-index: 1; display: flex; align-items: center;
+  gap: 10px; flex-wrap: wrap; margin-top: 0; margin-left: auto;
+  justify-content: flex-end;
 }
-.user-label { font-size: 12.5px; color: var(--text-3); flex-shrink: 0; }
-.user-id-row code {
-  flex: 1; min-width: 140px;
-  font-family: var(--mono); font-size: 13.5px; letter-spacing: .5px;
+.user-meta-item { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
+.user-meta-id { flex: 0 1 auto; }
+.user-meta-playtime { flex-shrink: 0; }
+.user-meta-sep { width: 1px; height: 13px; background: var(--border); flex-shrink: 0; }
+.user-label { font-size: 12px; color: var(--text-3); flex-shrink: 0; }
+.user-meta-item code {
+  font-family: var(--font); font-size: 13px; letter-spacing: 0;
   color: var(--text); user-select: text; word-break: break-all;
 }
-/* 默认打码: 点号拉开一点, 视觉上更像"被隐藏的凭据" */
-.user-id-row code.user-id-masked { color: var(--text-3); letter-spacing: 1.5px; }
+.user-meta-item code.user-id-masked { color: var(--text-2); }
+.user-meta-item .btn-icon {
+  width: 24px; height: 24px; padding: 3px; border-radius: 6px;
+}
+.user-meta-item .btn-icon .ico { width: 14px; height: 14px; }
 .user-id-toggle { flex-shrink: 0; }   /* 图标按钮: 尺寸沿用 .btn-icon */
-.user-actions { position: relative; z-index: 1; display: flex; gap: 10px; flex-wrap: wrap; margin-top: 14px; }
+.user-actions { position: relative; z-index: 1; display: flex; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
 
 /* 账户面板的按钮行: 五颗按钮**强制挤在一行并整体居中**。
    做法是同时收紧四样东西 —— 不换行、按钮内边距、字号、图标尺寸与间距；
@@ -2598,7 +2618,7 @@ body.no-hw .ver-card { animation: verCardInLite .38s cubic-bezier(.22, .9, .24, 
   flex-wrap: nowrap; gap: 6px; justify-content: center;
 }
 #page-user .user-actions .btn {
-  padding: 7px 9px; font-size: 12.5px; white-space: nowrap; flex: 0 0 auto;
+  padding: 6px 8px; font-size: 12px; white-space: nowrap; flex: 0 0 auto;
 }
 #page-user .user-actions .btn .ico { width: 13px; height: 13px; margin-right: 1px; }
 @media (max-width: 620px) { #page-user .user-actions { flex-wrap: wrap; } }
@@ -2606,11 +2626,11 @@ body.no-hw .ver-card { animation: verCardInLite .38s cubic-bezier(.22, .9, .24, 
 /* ---------- 操作冷却提示 ---------- */
 .user-limit-note {
   position: relative; z-index: 1;
-  display: flex; flex-direction: column; gap: 6px; margin-top: 12px;
+  display: flex; flex-direction: column; gap: 5px; margin-top: 8px;
 }
 .user-limit-item {
-  font-size: 12px; line-height: 1.6; color: var(--warn);
-  padding: 7px 11px; border-radius: 9px;
+  font-size: 12px; line-height: 1.55; color: var(--warn);
+  padding: 6px 10px; border-radius: 8px;
   background: rgba(245, 158, 11, .11);
   border: 1px solid rgba(245, 158, 11, .30);
 }
@@ -2715,9 +2735,10 @@ body.no-hw .ver-card { animation: verCardInLite .38s cubic-bezier(.22, .9, .24, 
 }
 
 @media (max-width: 760px) {
-  .user-card { padding: 18px; }
-  .user-card-head h2 { font-size: 21px; }
-  .user-avatar { width: 44px; height: 44px; font-size: 20px; border-radius: 13px; }
+  .user-card { padding: 12px 14px 10px; }
+  .user-card-head h2 { font-size: 19px; }
+  .user-avatar { width: 42px; height: 42px; font-size: 20px; border-radius: 50%; }
+  .user-meta-row { width: 100%; margin-left: 0; justify-content: flex-end; }
   .user-modal-card { width: auto; }
 }
 

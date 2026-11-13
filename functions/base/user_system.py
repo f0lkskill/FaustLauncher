@@ -624,6 +624,13 @@ def get_user_info(settings_manager=None) -> dict:
     except Exception:  # noqa: BLE001
         base = ""
     token = str(profile.get("profile_token") or "").strip()
+    avatar = str(profile.get("avatar") or "").strip()
+    if avatar.startswith("//"):
+        avatar = "https:" + avatar
+    elif avatar.startswith("/"):
+        avatar = base + avatar
+    elif avatar and not avatar.startswith(("http://", "https://")):
+        avatar = (base + "/" + avatar.lstrip("/")) if base else avatar
 
     play: dict = {}
     try:
@@ -637,6 +644,7 @@ def get_user_info(settings_manager=None) -> dict:
             "restrictions": get_restrictions(),
             "logged_in": user_api.has_session(),
             "profile": profile,
+            "avatar": avatar,
             "profile_url": f"{base}/user/{token}" if base and token else "",
             "leaderboard_url": f"{base}/leaderboard" if base else "",
             "playtime": {"ok": bool(play.get("ok")), "seconds": seconds,

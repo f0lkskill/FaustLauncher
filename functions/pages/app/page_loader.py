@@ -1010,6 +1010,19 @@ def download_and_launch(obj=None, need_run_game=False, manual=False):
                     try:
                         ok = download_and_extract_mod(gui, target, download_files)
                         print(f"{label} {name} 更新完成" if ok else f"{label} {name} 更新失败")
+                        if ok:
+                            # 自动更新不经过前端下载抽屉，这里补记下载次数；
+                            # 后台执行，避免上报接口拖慢后续资源更新。
+                            def _report_auto_download(kind=kind, name=name):
+                                try:
+                                    if kind == 'addon':
+                                        wt.add_download_number_addon(name)
+                                    else:
+                                        wt.add_download_number_mod(name)
+                                except Exception as exc:
+                                    print(f"[PluginSync] 下载次数上报失败 {kind}:{name}: {exc}")
+                            from threading import Thread
+                            Thread(target=_report_auto_download, daemon=True).start()
                     except Exception as e:
                         print(f"更新 {label} {name} 失败: {e}")
                 try:

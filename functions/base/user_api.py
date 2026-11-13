@@ -197,6 +197,44 @@ def _request(method: str, path: str, payload: dict | None = None,
     print(f"[UserAPI] {label} -> {status} 失败: {msg} ({cost:.2f}s)")
     return {"ok": False, "data": data, "error": msg, "status": status, "offline": False}
 
+def fetch_avatar(url: str):
+    """下载服务端头像，返回 ``(bytes, content_type)``；失败返回 ``None``。
+
+    只允许当前 API 主机的 ``/static/avatars/``，避免把用户资料里的任意 URL
+    变成启动器的 SSRF 入口。前端拿到的是 data-uri，和资源图标缓存方式一致。
+    """
+    target = str(url or "").strip()
+    if not target:
+        return None
+    base = api_base()
+    if target.startswith("//"):
+        target = "https:" + target
+    elif target.startswith("/"):
+        target = base + target
+    try:
+        parts = urlsplit(target)
+        base_parts = urlsplit(base)
+    except Exception:
+        return None
+    if (parts.scheme not in ("http", "https")
+            or parts.netloc.lower() != base_parts.netloc.lower()
+            or not parts.path.startswith("/static/avatars/")):
+        return None
+    try:
+        resp = _get_session().get(target, timeout=(CONNECT_TIMEOUT, READ_TIMEOUT))
+    except Exception as exc:
+        print(f"[UserAPI] 头像下载失败: {type(exc).__name__}")
+        return None
+    if int(getattr(resp, "status_code", 0) or 0) != 200:
+        return None
+    ctype = str(resp.headers.get("Content-Type") or "").split(";", 1)[0].strip().lower()
+    if not ctype.startswith("image/"):
+        return None
+    data = resp.content or b""
+    if not data or len(data) > 2 * 1024 * 1024:
+        return None
+    return data, ctype
+
 def register(uid: str, user_name: str | None = None, skins=None) -> dict:
     payload: dict = {"id": str(uid or "").strip()}
     if user_name:

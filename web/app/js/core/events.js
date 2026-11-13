@@ -53,11 +53,8 @@ function switchPage(name) {
     // 玻璃窗: 首次进入才拉取皮肤列表 (之后保持, 切换都在页内完成)
     enterSkinsPage();
   }
-  if (name === 'achievement') {
-    // 成就: 每次进入都刷新一次**本地**记录 (完成状态可能刚在游戏里变化)
-    enterAchievementPage();
-  }
   if (name === 'user') {
+    // 用户页: 用户资料 + 下方成就一起刷新
     enterUserPage();
   }
   if (name === 'about') {

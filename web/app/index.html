@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>FaustLauncher 浮士德启动器</title>
-<link rel="stylesheet" href="css/style.css?v=182">
+<link rel="stylesheet" href="css/style.css?v=185">
 </head>
 <body>
 <div id="titlebar">
@@ -42,7 +42,6 @@
       <button class="nav-item" data-page="tools"><span class="nav-ico"><svg class="ico" data-icon="tool.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg></span><span>实用工具</span></button>
       <button class="nav-item" data-page="features"><span class="nav-ico"><svg class="ico" data-icon="bookmark.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg></span><span>快捷方式</span></button>
       <button class="nav-item" data-page="skins"><span class="nav-ico"><svg class="ico" data-icon="pic.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg></span><span>玻璃窗</span></button>
-      <button class="nav-item" data-page="achievement"><span class="nav-ico"><svg class="ico" data-icon="check-one.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg></span><span>成就</span></button>
       <button class="nav-item" data-page="user"><span class="nav-ico"><svg class="ico" data-icon="protect.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg></span><span>用户</span></button>
       <button class="nav-item" data-page="settings"><span class="nav-ico"><svg class="ico" data-icon="setting-two.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg></span><span>设置</span></button>
       <button class="nav-item" data-page="about"><span class="nav-ico"><svg class="ico" data-icon="code.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg></span><span>关于</span></button>
@@ -212,63 +211,35 @@
       </div>
     </section>
 
-    <!-- ==================== 成就 ==================== -->
-    <!-- 排列与下载中心/资源管理一致: 左分区 + 搜索 + 右侧操作 + 卡片列表 + 分页。
-         分区 = 已完成 / 未完成; 右侧只保留一个"云端同步刷新"(云端后续接入)。
-         完成状态来自本地用户文件里的成就 id 列表 (与皮肤同一份)。 -->
-    <section class="page" id="page-achievement">
-      <div class="card">
-        <div class="res-toolbar">
-          <div class="res-tabs">
-            <button class="res-tab active" data-ach="all">全部<span class="res-tab-count" id="ach-count-all"></span></button>
-            <button class="res-tab" data-ach="done">已完成<span class="res-tab-count" id="ach-count-done"></span></button>
-            <button class="res-tab" data-ach="todo">未完成<span class="res-tab-count" id="ach-count-todo"></span></button>
-          </div>
-          <div class="res-search-wrap">
-            <svg class="ico res-search-ico" data-icon="search.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg>
-            <input class="res-search" id="ach-search" type="text" placeholder="搜索成就...">
-          </div>
-          <div class="res-actions">
-            <!-- 稀有度筛选: 点开一个小菜单按稀有度分类 (与分区/搜索叠加生效) -->
-            <div class="ach-filter-wrap" id="ach-filter-wrap">
-              <button class="btn btn-ghost btn-icon ach-filter-btn" id="ach-filter" title="按稀有度筛选"><svg class="ico" data-icon="hamburger-button.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg></button>
-              <div class="ach-filter-menu" id="ach-filter-menu" hidden></div>
-            </div>
-            <button class="btn btn-ghost btn-icon" id="ach-cloud-sync" title="云端同步刷新"><svg class="ico" data-icon="refresh.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg></button>
-          </div>
-        </div>
-        <div id="ach-list" class="res-list"></div>
-        <div id="ach-pagination" class="res-pagination"></div>
-        <div class="frame-spinner"><span></span></div>
-      </div>
-    </section>
-
     <!-- ==================== 用户 ==================== -->
     <section class="page" id="page-user">
       <div class="user-page">
         <div class="user-card card">
           <div class="user-card-head">
-            <div class="user-head-main">
-              <div class="user-name-row">
+            <div class="user-identity">
+              <div class="user-avatar" aria-hidden="true">
+                <img id="user-avatar-img" alt="" hidden>
+                <span id="user-avatar-initial" class="user-avatar-initial" hidden>P</span>
+              </div>
+              <div class="user-head-main">
                 <h2 id="user-page-name">Player</h2>
-                <!-- 已登录标识: 沿用主页状态芯片的样式 (圆点 + 胶囊) -->
-                <span class="chip ok user-login-chip" id="user-login-chip"><span class="dot"></span><span>已登录</span></span>
               </div>
             </div>
-            <div class="user-avatar" aria-hidden="true"><svg class="ico" data-icon="protect.svg" viewBox="0 0 48 48" fill="none"></svg></div>
-          </div>
 
-          <div class="user-id-row">
-            <span class="user-label">用户 ID</span>
-            <code id="user-page-id" class="user-id-masked">读取中...</code>
-            <button class="btn btn-ghost btn-icon user-id-toggle" id="user-id-toggle" data-icon-state="eye.svg" title="显示用户 ID"><svg class="ico" data-icon="eye.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg></button>
-            <button class="btn btn-ghost btn-icon" id="user-copy-id" title="复制用户 ID"><svg class="ico" data-icon="save-one.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg></button>
-          </div>
-
-          <!-- 当前游玩时长: 读本机 Steam 记录（就是上报给排行榜的那个值） -->
-          <div class="user-id-row">
-            <span class="user-label">游玩时长</span>
-            <code id="user-playtime" class="user-playtime">读取中...</code>
+            <!-- 用户 ID / 游玩时长与头像同行, 整体靠右 -->
+            <div class="user-meta-row">
+              <div class="user-meta-item user-meta-id">
+                <span class="user-label">用户 ID</span>
+                <code id="user-page-id" class="user-id-masked">读取中...</code>
+                <button class="btn btn-ghost btn-icon user-id-toggle" id="user-id-toggle" data-icon-state="eye.svg" title="显示用户 ID"><svg class="ico" data-icon="eye.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg></button>
+                <button class="btn btn-ghost btn-icon" id="user-copy-id" title="复制用户 ID"><svg class="ico" data-icon="save-one.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg></button>
+              </div>
+              <span class="user-meta-sep" aria-hidden="true"></span>
+              <div class="user-meta-item user-meta-playtime">
+                <span class="user-label">游玩时长</span>
+                <code id="user-playtime" class="user-playtime">读取中...</code>
+              </div>
+            </div>
           </div>
 
           <div class="user-actions">
@@ -283,10 +254,33 @@
           <!-- 操作冷却提示 (改名 1 小时 / 登录 12 小时, 由 renderRestrictions 填充) -->
           <div class="user-limit-note" id="user-limit-note" hidden></div>
         </div>
-        <div class="card user-skins-card">
-          <div class="card-head"><h3>已解锁皮肤</h3><span id="user-skin-count" class="user-skin-count"></span></div>
-          <div id="user-skin-list" class="user-skin-list"></div>
-        </div>
+        <!-- 成就已并入用户页，不再单独占一个导航页面 -->
+        <section id="page-achievement" class="user-achievement">
+          <div class="card">
+            <div class="res-toolbar">
+              <div class="res-tabs">
+                <button class="res-tab active" data-ach="all">全部<span class="res-tab-count" id="ach-count-all"></span></button>
+                <button class="res-tab" data-ach="done">已完成<span class="res-tab-count" id="ach-count-done"></span></button>
+                <button class="res-tab" data-ach="todo">未完成<span class="res-tab-count" id="ach-count-todo"></span></button>
+              </div>
+              <div class="res-search-wrap">
+                <svg class="ico res-search-ico" data-icon="search.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg>
+                <input class="res-search" id="ach-search" type="text" placeholder="搜索成就...">
+              </div>
+              <div class="res-actions">
+                <!-- 稀有度筛选: 点开一个小菜单按稀有度分类 (与分区/搜索叠加生效) -->
+                <div class="ach-filter-wrap" id="ach-filter-wrap">
+                  <button class="btn btn-ghost btn-icon ach-filter-btn" id="ach-filter" title="按稀有度筛选"><svg class="ico" data-icon="hamburger-button.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg></button>
+                  <div class="ach-filter-menu" id="ach-filter-menu" hidden></div>
+                </div>
+                <button class="btn btn-ghost btn-icon" id="ach-cloud-sync" title="云端同步刷新"><svg class="ico" data-icon="refresh.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg></button>
+              </div>
+            </div>
+            <div id="ach-list" class="res-list"></div>
+            <div id="ach-pagination" class="res-pagination"></div>
+            <div class="frame-spinner"><span></span></div>
+          </div>
+        </section>
       </div>
     </section>
 
@@ -357,7 +351,7 @@
 <script src="js/ui/sound.js?v=171"></script>
 <script src="js/ui/frame_loading.js?v=171"></script>
 <script src="js/ui/terminal.js?v=171"></script>
-<script src="js/ui/tilt.js?v=171"></script>
+<script src="js/ui/tilt.js?v=172"></script>
 <script src="js/ui/background.js?v=171"></script>
 <script src="js/ui/character.js?v=180"></script>
 <script src="js/ui/carousel.js?v=171"></script>
@@ -372,9 +366,9 @@
 <script src="js/features/about.js?v=171"></script>
 <!-- 玻璃窗 (皮肤系统) -->
 <script src="js/features/skins.js?v=179"></script>
-<script src="js/features/user.js?v=171"></script>
+<script src="js/features/user.js?v=173"></script>
 <!-- 成就页 (本地完成记录, 云端后续接入) -->
-<script src="js/features/achievements.js?v=173"></script>
+<script src="js/features/achievements.js?v=174"></script>
 <!-- 入口: 启动流程 + 对外插件 API (必须最后) -->
 <script src="js/app.js?v=180"></script>
 <script>

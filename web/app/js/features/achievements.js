@@ -1,10 +1,10 @@
 /* ==============================================================================
- * js/features/achievements.js — 成就页
+ * js/features/achievements.js — 用户页内的成就区
  * ------------------------------------------------------------------------------
  * 职责:
  *   · 列出全部成就与**本地**完成状态 (后端 get_achievements: 只读本地用户文件)
  *   · 分区: 已完成 / 未完成 (左) + 搜索 + 分页, 卡片排列沿用下载中心/资源管理的 res-* 样式
- *   · 刷新时机: 切入本页时 / 窗口重新聚焦且停在本页时 / 点右上角"云端同步刷新"。
+ *   · 刷新时机: 切入用户页时 / 窗口重新聚焦且停在用户页时 / 点右上角"云端同步刷新"。
  *     现阶段这几种刷新**都是本地刷新**; 云端同步那一步等接口就位后再挂上去。
  * 本文件提供:
  *  状态: achTab / achPage / achItems
@@ -235,9 +235,9 @@ function enterAchievementPage() {
   });
 }
 
-// 窗口重新聚焦: **只在本页时才刷新** (其它页面不该为它发请求)
+// 窗口重新聚焦: **只在用户页时才刷新** (其它页面不该为它发请求)
 function syncAchievementsOnFocus() {
-  if (typeof currentPage === 'undefined' || currentPage !== 'achievement') return;
+  if (typeof currentPage === 'undefined' || currentPage !== 'user') return;
   const now = Date.now();
   if (now - _lastAchFocusSync < ACH_FOCUS_GAP) return;
   _lastAchFocusSync = now;
