@@ -308,6 +308,11 @@ body.no-hw .hero {
 .skin-wrap {
   display: flex; gap: 16px; align-items: stretch;
   height: calc(100vh - var(--titlebar-h) - 68px);
+  transition: height .28s cubic-bezier(.4, 0, .2, 1);
+}
+/* 终端展开时, 玻璃窗整体收缩到终端上方的可见区域, 不再被终端盖住 */
+body.term-open .skin-wrap {
+  height: calc(100vh - var(--titlebar-h) - 68px - var(--term-h) + 36px);
 }
 .skin-side {
   width: 220px; flex-shrink: 0; display: flex; flex-direction: column;

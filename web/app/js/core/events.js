@@ -210,8 +210,9 @@ function bindEvents() {
   on('.term-head', 'click', () => {
     if (!term) return;
     const wasOpen = term.classList.contains('open');
-    term.classList.toggle('open');
-    if (!wasOpen && term.classList.contains('open')) retractCharIfBottom();
+    const open = term.classList.toggle('open');
+    document.body.classList.toggle('term-open', open);
+    if (!wasOpen && open) retractCharIfBottom();
   });
   on('#btn-copy-term', 'click', e => {
     stopClick(e);   // 阻止冒泡(别开合终端) 并补一次点击音效
