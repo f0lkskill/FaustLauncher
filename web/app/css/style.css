@@ -2638,14 +2638,15 @@ body.user-page-active #main { padding-top: 14px; padding-bottom: 18px; }
 #page-user .res-search { padding: 6px 11px 6px 31px; font-size: 12.5px; }
 #page-user #ach-list {
   display: flex; flex-direction: column; height: auto;
+  overflow-y: auto;
+  /* 动画期间的 16px 位移不显示滚动条, 滚轮仍可正常滚动 */
+  scrollbar-width: none;
   /* 容器固定为 5 张卡的高度: 某页只有 1 条时也不会缩成一截 */
   min-height: calc(5 * 79px + 4 * 8px + 12px);
   padding: 6px; gap: 8px;
 }
+#page-user #ach-list::-webkit-scrollbar { display: none; }
 #page-user #ach-list .res-card { flex: 0 0 79px; height: 79px; }
-/* 成就卡片只淡入, 不做 translateY 入场, 避免动画位移把列表撑出瞬时滚动条 */
-#page-user #ach-list .res-card,
-#page-user #ach-list .res-card.disabled { animation: fadeIn .22s ease backwards; }
 #page-user .res-card { padding: 6px 12px; gap: 10px; }
 #page-user .ach-card .ach-icon { width: 52px; height: 52px; border-radius: 12px; }
 #page-user .ach-card .ach-icon svg { width: 27px; height: 27px; }
