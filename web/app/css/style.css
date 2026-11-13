@@ -2649,13 +2649,17 @@ body.user-page-active #main { padding-top: 14px; padding-bottom: 18px; }
 #page-user .res-tab { padding: 6px 12px; font-size: 12.5px; }
 #page-user .res-toolbar .btn { padding: 7px 12px; font-size: 12.5px; }
 #page-user .res-search { padding: 6px 11px 6px 31px; font-size: 12.5px; }
-#page-user #ach-list { padding: 6px; gap: 8px; }
+#page-user #ach-list { padding: 6px 6px 42px; gap: 8px; }
 #page-user .res-card { padding: 5px 11px; gap: 10px; }
 #page-user .ach-card .ach-icon { width: 46px; height: 46px; border-radius: 11px; }
 #page-user .ach-card .ach-icon svg { width: 24px; height: 24px; }
 #page-user .ach-card .ach-icon .ach-art { border-radius: 9px; }
 #page-user .res-title { font-size: 14px; }
-#page-user .res-pagination { margin-top: 6px; padding-bottom: 0; flex-shrink: 0; }
+/* 分页器固定在成就卡片底部, 不参与列表高度计算, 任何窗口高度都不会被顶出卡片 */
+#page-user .res-pagination {
+  position: absolute; left: 8px; right: 8px; bottom: 8px; z-index: 2;
+  margin: 0; padding: 0; flex-shrink: 0;
+}
 #page-user .res-pagination button { width: 28px; height: 28px; font-size: 12px; }
 
 /* ---------- 操作冷却提示 ---------- */
