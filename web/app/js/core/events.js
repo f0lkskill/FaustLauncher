@@ -17,6 +17,7 @@ let resInited = false;   // 资源管理页首次进入标记 (默认插件模�
 
 function switchPage(name) {
   currentPage = name;
+  document.body.classList.toggle('user-page-active', name === 'user');
   // addLog('[页面] 切换到 ' + name);
   $$('.page').forEach(p => p.classList.remove('active'));
   const target = document.getElementById('page-' + name);
