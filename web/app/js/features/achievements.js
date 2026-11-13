@@ -150,9 +150,8 @@ function renderAchList() {
     else empty = '还没有成就数据';
     list.innerHTML = '<div class="res-empty">' + esc(empty) + '</div>';
   } else {
-    pageItems.forEach((item, i) => {
+    pageItems.forEach(item => {
       const card = buildAchCard(item);
-      card.style.animationDelay = (i * 0.05) + 's';
       list.appendChild(card);
     });
   }
