@@ -4,12 +4,13 @@
   "authors": {
     "FolkSkill": "https://space.bilibili.com/599331034"
   },
-  "version": "0.9.81",
+  "version": "0.9.82",
   "permanent": true,
   "provides": [
     "warp"
   ],
   "settings": {
-    "调试模式": false
+    "调试模式": false,
+    "注入延时(秒)": 3
   }
 }

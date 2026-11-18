@@ -549,26 +549,29 @@ function renderSettingsFields(settings, opts) {
   const keys = settings ? Object.keys(settings) : [];
   // 依赖库: 启用项还在, 只是不可交互 —— 它自己不产生行为,
   // 被关掉只会让依赖它的插件静默失效, 所以开关锁死在"已启用"。
+  let html = '<div class="res-settings">';
   if (permanent) {
-    return '<div class="res-settings">' +
+    html +=
       '<label class="res-set-row res-set-locked">' +
         '<span class="res-set-name">启用</span>' +
         '<span class="switch"><input type="checkbox" checked disabled><span class="slider"></span></span>' +
-      '</label>' +
-      
-    '</div>';
+      '</label>';
   }
-  if (!keys.length) return '<div class="res-empty">暂无配置项</div>';
-  let html = '<div class="res-settings">';
+  if (!keys.length && !permanent) return '<div class="res-empty">暂无配置项</div>';
   keys.forEach(k => {
+    // permanent 插件的 enable 固定显示在上方，不重复渲染可编辑项。
+    if (permanent && k === 'enable') return;
     const v = settings[k];
     const label = SETTING_LABELS[k] || k;
     if (typeof v === 'boolean') {
       html += '<label class="res-set-row"><span class="res-set-name">' + esc(label) + '</span>' +
         '<span class="switch"><input type="checkbox" data-set="' + esc(k) + '"' + (v ? ' checked' : '') + '><span class="slider"></span></span></label>';
     } else if (typeof v === 'number') {
+      const numberAttrs = k === '注入延时(秒)'
+        ? ' min="0" max="300" step="0.1"'
+        : ' step="any"';
       html += '<label class="res-set-row"><span class="res-set-name">' + esc(label) + '</span>' +
-        '<input type="number" step="any" data-set="' + esc(k) + '" value="' + esc(v) + '"></label>';
+        '<input type="number"' + numberAttrs + ' data-set="' + esc(k) + '" value="' + esc(v) + '"></label>';
     } else {
       html += '<label class="res-set-row"><span class="res-set-name">' + esc(label) + '</span>' +
         '<input type="text" data-set="' + esc(k) + '" value="' + esc(v) + '"></label>';

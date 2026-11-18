@@ -1,3 +1,11 @@
+## 0.9.82 — 可配置注入延时
+
+- WarpHook 在 `GameAssembly.dll` 就绪后默认等待 3 秒再注入 `warp_host.dll`，避开启动期模块尚未稳定的阶段。
+- 新增设置「注入延时(秒)」，支持 `0..300` 秒；`0` 表示立即注入，非法值回退到默认 3 秒。
+- `Service`、`Runtime` 和 `Host.inject_now()` 共用同一延时时长，等待可被停止事件取消。
+- 永久插件设置弹窗继续锁定「启用」，同时显示「调试模式」和其他可调设置。
+- `warp.inject.inject()` 仍是立即注入的底层原语；本次不修改 C 协议或 `warp_host.dll`。
+
 ## 0.9.81 — 延后首次装钩与启动期重装
 
 - `warp_ready` 在程序集稳定后额外等待 `WARP_INSTALL_DELAY_MS=3000ms`，总稳定窗从 1.5s 提高到 4.5s，避开 Addressables/CG/首场景异步加载。

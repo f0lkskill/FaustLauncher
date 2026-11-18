@@ -20,6 +20,7 @@ from .base import (
     inject_dll,
     log,
     debug_log,
+    wait_for_injection_delay,
     wait_for_game,
     wait_for_gameassembly,
     GAME_PROCESS,
@@ -315,6 +316,12 @@ class Runtime:
             self.log("注入中止：等待 GameAssembly.dll 超时")
             return False
 
+        if not wait_for_injection_delay(
+                stop_event,
+                on_wait=lambda seconds: self.log(f"注入延时 {seconds:g} 秒")):
+            self.log("注入中止：延时等待已取消")
+            return False
+
         with _INJECT_LOCK:
             # 抢到锁之后再确认一次：可能刚被别的插件注入过
             if host_alive(self.block()):
@@ -544,6 +551,12 @@ class Service:
                             self.log(f'PID={found} 配置同步失败，暂不注入，稍后重试')
                             stop.wait(2.0)
                             continue
+                        self._phase = 'waiting_inject_delay'
+                        if not wait_for_injection_delay(
+                                stop,
+                                on_wait=lambda seconds: self.log(
+                                    f'注入延时 {seconds:g} 秒')):
+                            break
                         self._phase = 'injecting'
                         with _INJECT_LOCK:
                             if self._already_running(host, pid=found):

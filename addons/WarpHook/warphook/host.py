@@ -40,6 +40,7 @@ from .base import (
     shm_open,
     wait_for_game,
     wait_for_gameassembly,
+    wait_for_injection_delay,
     _tick32,
     GAME_PROCESS,
     GAME_DLL_NAME,
@@ -1354,6 +1355,12 @@ class Host:
 
         if not wait_for_gameassembly(pid, stop_event=stop):
             self.log("注入中止：等待 GameAssembly.dll 超时")
+            return False
+
+        if not wait_for_injection_delay(
+                stop,
+                on_wait=lambda seconds: self.log(f"注入延时 {seconds:g} 秒")):
+            self.log("注入中止：延时等待已取消")
             return False
 
         self.push()

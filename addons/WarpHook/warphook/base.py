@@ -5,6 +5,7 @@
 """
 
 import ctypes
+import math
 import os
 import sys
 import threading
@@ -22,6 +23,10 @@ GAME_DLL_NAME = "GameAssembly.dll"
 WAIT_GAME_TIMEOUT = 300.0
 WAIT_DLL_TIMEOUT = 120.0
 POLL_INTERVAL = 0.5
+
+INJECT_DELAY_SETTING = "注入延时(秒)"
+DEFAULT_INJECT_DELAY_SECONDS = 3.0
+MAX_INJECT_DELAY_SECONDS = 300.0
 
 # ========== Win32 基础 ==========
 
@@ -147,6 +152,41 @@ def is_debug_enabled():
         return (info or {}).get('settings', {}).get('调试模式', False) is True
     except Exception:
         return False
+
+
+def injection_delay_seconds():
+    """读取实际 DLL 注入前的等待秒数；缺失或非法时回到默认 3 秒。"""
+    try:
+        from . import env
+        manager = env.ADDON_MANAGER
+        info = manager.get_addon_info(env.ADDON_NAME or 'WarpHook') if manager else None
+        raw = (info or {}).get('settings', {}).get(INJECT_DELAY_SETTING)
+        if raw is None or isinstance(raw, bool):
+            return DEFAULT_INJECT_DELAY_SECONDS
+        value = float(raw)
+        if not math.isfinite(value) or not 0.0 <= value <= MAX_INJECT_DELAY_SECONDS:
+            return DEFAULT_INJECT_DELAY_SECONDS
+        return value
+    except (TypeError, ValueError, OverflowError):
+        return DEFAULT_INJECT_DELAY_SECONDS
+    except Exception:
+        return DEFAULT_INJECT_DELAY_SECONDS
+
+
+def wait_for_injection_delay(stop_event=None, on_wait=None):
+    """等待注入延时；返回 ``False`` 表示等待期间被停止事件取消。"""
+    delay = injection_delay_seconds()
+    if delay <= 0.0:
+        return True
+    if on_wait is not None:
+        try:
+            on_wait(delay)
+        except Exception:  # noqa: BLE001 - 日志回调不能阻止注入流程
+            pass
+    if stop_event is not None:
+        return not stop_event.wait(delay)
+    time.sleep(delay)
+    return True
 
 
 def debug_log(message, prefix="[WarpHook]", tag="debug"):

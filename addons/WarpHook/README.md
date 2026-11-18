@@ -46,6 +46,13 @@ Warphook/
 插件可使用 `warp.log.debug(message, prefix=...)`，昂贵的诊断读取应先检查 `warp.log.is_debug_enabled()`。
 同一 BGM 自动错误按内容合并，手动恢复等操作始终反馈。
 
+## 注入延时（0.9.82）
+
+WarpHook 默认在目标进程加载 `GameAssembly.dll` 后等待 3 秒，再调用
+`LoadLibraryW` 注入 `warp_host.dll`。可在启动器的 WarpHook 设置中把
+「注入延时(秒)」调整为 `0..300` 秒；`0` 表示不等待。该设置只控制实际 DLL
+注入时机，`warp.inject.inject()` 底层原语仍然立即执行。
+
 ## 导出解析（0.9.51）
 
 出现「引用 0 个，基准表 234 项」表示表已读取，失败在 DLL 名字/指令解析链路。解析器现在兼容不同长度混淆名及高寄存器 LEA，标准导出按名字直接映射；错误包含各阶段计数及两 DLL 摘要，避免误导用户反复放置基准表。
@@ -357,6 +364,7 @@ v14 改为每条 worker 命令执行前 attach、命令成功或 AV 恢复后 de
 ```bash
 bash addons/WarpHook/tools/test_worker_lifecycle.sh
 python addons/WarpHook/tools/test_protocol_layout.py
+python addons/WarpHook/tools/test_injection_delay.py
 ```
 
 原生桩测试使用实际 worker、Win32 事件与 VEH，覆盖空闲不 attach、成功命令、

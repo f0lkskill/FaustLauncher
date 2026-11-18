@@ -264,7 +264,7 @@ class Host(Protocol):
         ...
 
     def inject_now(self, wait: bool = False, stop_event: Any = None) -> bool:
-        """立刻注入当前游戏（``wait=True`` 就在后台等它起来）。"""
+        """等待 GameAssembly 后，按 WarpHook 全局注入延时注入当前游戏。"""
         ...
 
     def close(self) -> None:
@@ -310,7 +310,7 @@ class Service(Protocol):
         ...
 
     def inject_now(self, wait: bool = False) -> bool:
-        """立刻注入当前游戏。"""
+        """提交后台注入请求；实际注入前会应用 WarpHook 全局延时。"""
         ...
 
     def on_hit(

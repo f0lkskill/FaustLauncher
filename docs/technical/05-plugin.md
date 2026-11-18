@@ -221,6 +221,9 @@ service.start()
 | `Service.stop_all()` | 类方法，停掉全部 |
 
 `on_hit` 的 `once=True` 表示同一个方法只回调一次（自爆插件用）。
+实际调用 `warp_host.dll` 注入前，WarpHook 会读取自己的「注入延时(秒)」设置，
+默认等待 3 秒，`0` 表示立即注入。等待发生在等待 `GameAssembly.dll` 之后、
+注入锁之前，因此不会阻塞其他插件的探测，也可被服务停止事件取消。
 
 ## `Runtime` —— 自带 DLL 的老式骨架
 
