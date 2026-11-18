@@ -30,18 +30,20 @@
  *
  * 共享内存布局（Python 侧 warphook/host.py 必须一致）
  *   0      WARP_HEADER       432 字节（状态头 + 命令槽 + 弹窗文本）
- *   432    WARP_HOOK[128]  128 × 288 = 36864
- *   37296  texts[256]      256 × 512 = 131072
- *   168368 exports[24]      24 × 64  = 1536
- *   169904 ev_ctrl            16 字节（head/tail/dropped/pad）
- *   169920 events[2048]   2048 × 60  = 122880
- *   292800 reads[128]      128 × 80  = 10240
- *   303040 objects[32]      32 × 8   = 256
- *   303296 buff_watch[32]   32 × 8   = 256
- *   303552 cmd_read           80 字节（一条读链副本）
- *   303632 rewrite[128]    128 × 8   = 1024
- *   304656 cmd_buf[4]        4 × 64  = 256
- *   304912 (结束)
+ *   0      WARP_HEADER       432 字节
+ *   432    WARP_HOOK[128]  128 × 328 = 41984
+ *   42416  texts[384]      384 × 512 = 196608
+ *   239024 exports[24]      24 × 64  = 1536
+ *   240560 ev_ctrl            16 字节（head/tail/dropped/pad）
+ *   240576 events[2048]   2048 × 60  = 122880
+ *   363456 reads[128]      128 × 80  = 10240
+ *   373696 objects[32]      32 × 8   = 256
+ *   373952 buff_watch[32]   32 × 8   = 256
+ *   374208 cmd_read           80 字节（一条读链副本）
+ *   374288 rewrite[128]    128 × 8   = 1024
+ *   375312 cmd_buf[4]        4 × 64  = 256
+ *   375568 thread_export     64 字节
+ *   375632 (结束)
  *
  * 钩子段之后的每个偏移都由 WARP_MAX_HOOKS 推导，改槽数时这张表和 Python
  * 侧的 HOST_* 常量必须一起变（两边都从常量算，改完用 tools/gen_thunks.py
@@ -57,7 +59,10 @@
 /* 数值转字符串（构建戳用）：warp_log("proto v" WARP_STR(WARP_VERSION)) */
 #define WARP_STR_(x)      #x
 #define WARP_STR(x)       WARP_STR_(x)
-#define WARP_VERSION      22                /* v20：新增 WRITE_INT（13），写对象字段 int。
+#define WARP_VERSION      23                /* v23：文案池 256→384 槽，主/辅段各 192 槽。
+                                             * v22：钩子支持 self 字段条件改写和 arg2/3/4
+                                             * 整数参数改写。
+                                             * v20：新增 WRITE_INT（13），写对象字段 int。
                                              * v17：新增 WRITE_LIST（12），写 List<int> 元素。
                                              * v16：新增主线程 CALL_MAIN 命令（11），让
                                              * CreateEnemyInStage / ForceCreateUnitsInQueue
@@ -95,7 +100,7 @@
                                             * 真机上 NoGacha 的钩子整条消失） */
 
 #define WARP_MAX_HOOKS    128
-#define WARP_MAX_TEXTS    256
+#define WARP_MAX_TEXTS    384
 #define WARP_TEXT_LEN     512
 #define WARP_KLASS_LEN    48
 #define WARP_METHOD_LEN   48

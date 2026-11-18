@@ -50,7 +50,10 @@ from .base import (
 )
 
 HOST_MAGIC = 0x54534857           # "WHST"
-HOST_VERSION = 22                  # v18：新增 WRITE_INT（13），写对象字段 int。
+HOST_VERSION = 23                  # v23：文案池 256→384 槽，主/辅段各 192 槽。
+                                   # v22：钩子支持 self 字段条件改写和 arg2/3/4
+                                   # 整数参数改写。
+                                   # v18：新增 WRITE_INT（13），写对象字段 int。
                                    # v17：新增 WRITE_LIST（12），写 List<int> 元素。
                                    # v16：新增主线程 CALL_MAIN（11）。
                                    # v15：hook+284 pad→ret_const，flags 加 GUARD_NEG。
@@ -73,7 +76,7 @@ HOST_DLL_NAME = "warp_host.dll"
 LOG_FILE_NAME = "warp.log"
 
 HOST_MAX_HOOKS = 128
-HOST_MAX_TEXTS = 256
+HOST_MAX_TEXTS = 384
 HOST_TEXT_LEN = 512
 HOST_KLASS_LEN = 48
 HOST_METHOD_LEN = 48
@@ -217,8 +220,6 @@ HOST_WHEN_PRE = 0
 HOST_WHEN_POST = 1
 #: 全进程共用的读取链条数。
 HOST_READ_MAX = 128
-#: 全进程共用的读取链条数。
-HOST_READ_MAX = 128
 HOST_READ_SIZE = 80
 
 
@@ -270,7 +271,7 @@ HOST_MAP_BYTES = HOST_THREAD_EXPORT_OFFSET + HOST_NAME_MAX
 HOST_PRIMARY_MARKS = ('成就', 'achievement')   # owner 名含这些 → 主段作者
 HOST_HOOKS_PRIMARY = 27    # 钩子槽：主段 0..26 / 辅段 27..127（成就 25 条 + 余量）
 HOST_READS_PRIMARY = 96    # 读链条目：主段 0..95 / 辅段 96..127
-HOST_TEXTS_PRIMARY = 192   # 文案段：主段 0..191 / 辅段 192..255
+HOST_TEXTS_PRIMARY = 192   # 文案段：主段 0..191 / 辅段 192..383
 
 
 def _is_primary_owner(owner):
@@ -844,7 +845,7 @@ class Host:
 
         v0.9.2 起按 owner 分段：主段作者（成就观测，名字含「成就」/
         achievement）占钩子槽 0..26、读链 0..95、文案 0..191；其余作者
-        合占钩子槽 27..127、读链 96..127、文案 192..255。成就观测在子进程
+        合占钩子槽 27..127、读链 96..127、文案 192..383。成就观测在子进程
         有一份独立的 Host，两边各自 push 同一块共享内存——只有分段各写各的，
         才不会互相把对方清掉（v0.9.1 真机事故：NoGacha 后 push，成就 25 条
         全被清掉，C 只装上 NoGacha 的 2 条）。

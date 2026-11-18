@@ -9,6 +9,7 @@ import os
 import sys
 import threading
 import time
+import traceback
 
 from . import env
 from .base import (
@@ -741,6 +742,25 @@ class Service:
         except Exception:  # noqa: BLE001
             self.log(f'停止抽卡 watcher 异常\n{traceback.format_exc()}')
             return False
+
+        # 共享宿主里保留着本插件的钩子与文案。只停 Python 线程并不会让 DLL
+        # 卸载这些钩子，后续同类操作仍会命中已卸载插件的回调逻辑。
+        host = self._host
+        if (self.shared and host is not None
+                and not getattr(host, '_closed', False)):
+            try:
+                message = host._act(
+                    self.addon_name,
+                    lambda: (host.configure(hooks=[], texts=[]),
+                             host.push(False))[1],
+                )
+            except Exception:  # noqa: BLE001
+                self.log(f'清除共享宿主配置异常\n{traceback.format_exc()}')
+                return False
+            if message == "共享内存不可用":
+                self.log('清除共享宿主配置失败：共享内存不可用；保留服务登记')
+                return False
+
         self._closed = True
         registry = _service_registry()
         if registry.get(self.addon_name) is self:
