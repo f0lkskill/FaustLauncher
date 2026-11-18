@@ -134,7 +134,7 @@ def _create_enemy_on(host, enemy_id, level=-1, sync_level=-1, wave_index=0,
             if not host.object_ptr(_SLOT_SPAWN):
                 return {'ok': False, 'reason': '游戏没有返回敌人模型'}
             instance_id = host.read(
-                _SLOT_SPAWN, [{'off': 0x60, 'deref': False}],
+                _SLOT_SPAWN, [{'off': 0x68, 'deref': False}],
                 kind='int', default=None, timeout=timeout)
             pick = host.call('BattleUnitModel_Abnormality::PickSkills',
                              slot=_SLOT_SPAWN, ret='void', via='invoke',
@@ -184,7 +184,7 @@ def _create_enemy_on(host, enemy_id, level=-1, sync_level=-1, wave_index=0,
         return {'ok': False, 'reason': result}
     if not host.object_ptr(_SLOT_SPAWN):
         return {'ok': False, 'reason': '游戏没有返回敌人模型'}
-    instance_id = host.read(_SLOT_SPAWN, [{'off': 0x60, 'deref': False}],
+    instance_id = host.read(_SLOT_SPAWN, [{'off': 0x68, 'deref': False}],
                             kind='int', default=None, timeout=timeout)
     return {'ok': True, 'mode': 'immediate', 'slot': _SLOT_SPAWN,
             'instance_id': instance_id, 'enemy_id': int(enemy_id),
@@ -873,7 +873,7 @@ def _model_list_ids(host, faction=1, include_assistance=False,
     count = host.read(slot, [], kind='count', default=0, timeout=timeout)
     ids = []
     for i in range(count or 0):
-        iid = host.read(slot, [{'list': i}, {'off': 0x60, 'deref': False}],
+        iid = host.read(slot, [{'list': i}, {'off': 0x68, 'deref': False}],
                         kind='int', default=None, timeout=timeout)
         if iid is not None:
             ids.append(int(iid))
@@ -1147,16 +1147,11 @@ class Live:
         except Exception:  # noqa: BLE001
             return None
         try:
+            if objects.ensure_manager(host, timeout=timeout) is None:
+                return None
             live_count = objects.count(host, objects.SLOT_MANAGER)
         except Exception:  # noqa: BLE001
-            live_count = 0
-        if live_count <= 0:
-            # 单例还没拿到：试一次静态调用，成功就继续
-            try:
-                acc.manager(timeout=timeout)
-                live_count = objects.count(host, objects.SLOT_MANAGER)
-            except Exception:  # noqa: BLE001
-                return None
+            return None
         if live_count <= 0:
             return None
         try:
@@ -1928,8 +1923,8 @@ class Live:
     def on_round_start(self, handler):
         """每回合开始时调 ``handler(battle)``。
 
-        用的是 ``BattleObjectManager.OnRoundStart_Model`` —— 一回合一次，
-        频率低，随便你在这里做什么。回调跑在独立线程上，``time.sleep`` 安全。
+        新版入口是 ``StageController.StartRound``，POST 阶段命中，一回合
+        一次。回调跑在独立线程上，``time.sleep`` 安全。
         """
         self._round_cbs.append(handler)
         self._ensure_hooks()
@@ -1964,10 +1959,9 @@ class Live:
     def _live_hooks(self):
         """门面钩子表：回合钩子 + 换曲锁钩子，**永远一体**。
 
-        回合钩子带 ``event``（→ actions|EVENT）：事件动作才会把 self
-        （BattleObjectManager 实例）落进 SLOT_MANAGER，``battle()`` 就有现成
-        指针可用。裸 ``actions=0`` 只数命中不落槽，``battle()`` 只好去调
-        ``get_Instance`` —— 那是泛型共享方法，直调必 AV（0.9.25 定案）。
+        回合钩子只负责 POST 命中计数；BattleObjectManager 由
+        ``SingletonBehaviorCollector`` 的静态访问器惰性落槽。这样不再依赖
+        旧回合方法把实例写进 cache，也避开泛型共享 ``get_Instance``。
 
         锁钩子（audio.guard_hook_defs）不再等 bgm_lock_install 惰性追加：
         钩子表按 owner 分段、configure 全量重写，任何一次「只含回合钩子」
@@ -1975,12 +1969,12 @@ class Live:
         push 都是完整集，辅段 5 格 = 回合 1 + 锁 4（仍与其他辅助插件共享）。
         """
         hooks = [{
-            'klass': 'BattleObjectManager',
-            'method': 'OnRoundStart_Model',
-            'argc': 1,
+            'klass': 'StageController',
+            'method': 'StartRound',
+            'argc': 0,
             'actions': 0,
-            'event': 30,
-            'cache': (0, objects.SLOT_MANAGER),
+            'event': 34,
+            'when': 1,
         }]
         hooks.extend(self._extra_hooks)
         known = {(h.get('klass'), h.get('method')) for h in hooks}
@@ -2020,7 +2014,7 @@ class Live:
         """
         if not self._round_cbs or self._stop.is_set():
             return False
-        hits = self.host().hits(method='OnRoundStart_Model', owner=self.owner)
+        hits = self.host().hits(method='StartRound', owner=self.owner)
         previous = self._last_round
         self._last_round = hits
         if hits > (previous if previous is not None else 0) or (

@@ -538,11 +538,10 @@ class Access(Protocol):
     """``warp.game.access(host)``：场景访问器。"""
 
     def manager(self, timeout: float = 3.0, force: bool = False) -> int | None:
-        """返回已缓存的 ``BattleObjectManager`` 指针。
+        """返回 ``BattleObjectManager`` 指针。
 
-        默认只读回合钩子缓存的 manager；没有缓存时返回 ``None``。只有明确
-        知道当前是战斗场景时才传 ``force=True`` 触发一次静态 ``get_Instance``，
-        ``force`` 在错误场景里可能让 worker 走 il2cpp 异常路径。
+        对象槽为空时经 ``SingletonBehaviorCollector`` 的静态访问器获取。
+        ``force=True`` 会忽略缓存并重新获取。
         """
         ...
 

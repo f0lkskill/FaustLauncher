@@ -701,7 +701,7 @@ int32 / float / ref）、STR、RELEASE（句柄分配与解放全程核对）、
 
     from warphook import objects
 
-    bom = objects.bind_manager(host)          # 装钩子抓单例（等一回合）
+    bom = objects.bind_manager(host)          # 静态访问器抓单例
     for u in objects.units(host, bom):        # 全场单位
         print(u.instance_id(), u.hp(), "/", u.max_hp(),
               "理智", u.mp(), "速度", u.speed())
@@ -749,14 +749,14 @@ int32 / float / ref）、STR、RELEASE（句柄分配与解放全程核对）、
 `u.scan()` 打出来对一眼**，症状是 `None`（读不到）或者数很离谱。
 
 `BattleUnitModel` 继承 `CombatUnitModel`，dump 给的是**绝对偏移**，所以
-基类字段（`_instanceID@0x60` 这些）直接能用，不用管继承链。
+基类字段（`_instanceID@0x68` 这些）直接能用，不用管继承链。
 
 ### 16.2 一键扫描
 
 ```python
 from warphook import objects
 
-bom = objects.bind_manager(host, timeout=180)   # 等一回合
+bom = objects.bind_manager(host, timeout=3)     # 静态访问器抓单例
 u = objects.Unit(host, bom, 0)
 u.scan()           # BattleUnitModel + CharacterState 全部 63 个字段
 objects.scan_class(host, objects.SLOT_SCENE, "GlobalGameManager")   # 场景全字段
@@ -817,7 +817,7 @@ u.has_buff("Breath")
 ```python
 from warphook import game
 
-acc = game.access(host)            # 自动保证 manager 已进对象槽（走 get_Instance，不装钩子）
+acc = game.access(host)            # 自动保证 manager 已进对象槽（走静态访问器）
 u = acc.get_obj(id=1)              # 按战斗内编号找；也可以 acc.units()[0]
 
 u.id            # 1                 战斗内编号
@@ -982,7 +982,7 @@ BattleSoundGenerator.StartAddBGM(短名, 1, 0)    // 播附加曲，STOP_MODE=1 
 
 `clear_enemies` 不按 identity 猜阵营，而是调
 `BattleObjectManager.GetModelList(UNIT_FACTION, includeAssistance)` 拿
-`List<BattleUnitModel>`，按 `_instanceID`（0x60）逐个入队移除。这样只删
+`List<BattleUnitModel>`，按 `_instanceID`（0x68）逐个入队移除。这样只删
 指定阵营，玩家单位不会被误伤。List 和生成结果都临时占用对象槽 27
 （`SLOT_SCRATCH`），同步命令结束即归还。
 

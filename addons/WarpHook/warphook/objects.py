@@ -6,7 +6,7 @@
 
     from warphook import objects
 
-    # 1) 抓单例：装一条钩子把 BattleObjectManager 存进对象槽 28
+    # 1) 抓单例：经静态访问器把 BattleObjectManager 存进对象槽 28
     bom = objects.bind_manager(host, timeout=120)
 
     # 2) 全场单位，一次拿齐
@@ -219,7 +219,8 @@ class Access:
     """场景访问器：``acc.units()`` / ``acc.get_obj(id=1)`` / ``acc.count()``。
 
     用 ``acc = objects.access(host)`` 拿一个；它自动保证 manager 已进对象槽
-    （空就调一次静态 ``BattleObjectManager::get_Instance``，不需要钩子）。
+    （空就调一次 ``SingletonBehaviorCollector::get_BattleObjectManager``，
+    不需要钩子）。
 
     ``reader()`` 是懒加载的跨进程读句柄，只给 buff 名字这类「命令通道读不了
     的 64 位/文本」用；同一台机器上插件进程有权限直接读游戏内存。
@@ -237,14 +238,15 @@ class Access:
     def manager(self, timeout=3.0, force=False):
         """对象槽里的 manager 指针（没有就 ``None``）。
 
-        槽由回合钩子的 cache 落槽填充（事件动作），这里**绝不**兜底调
-        ``get_Instance``：它是 ``SingletonBehavior<T>`` 的泛型共享方法，
-        直调必 AV（0.9.25 定案），一次就把 worker 的 il2cpp 路径全污染。
+        槽为空时通过 ``SingletonBehaviorCollector`` 的静态访问器惰性获取。
+        不要直调 ``SingletonBehavior<T>`` 的泛型共享 ``get_Instance``：
+        那会走错共享方法并产生访问冲突。
         """
         ptr = self.host.object_ptr(self.slot)
         if ptr and not force:
             return ptr
-        return None
+        ensure_manager(self.host, slot=self.slot, timeout=timeout, force=force)
+        return self.host.object_ptr(self.slot) or None
 
     def count(self):
         return count(self.host, self.slot)
@@ -373,7 +375,7 @@ class Unit:
     def read(self, *chain, kind="int", default=None, timeout=2.0):
         """从**这个单位对象**（BattleUnit）出发读，链自己拼。
 
-        ``u.read({"off": 0x10, "deref": True}, {"off": 0x60, "deref": False})``
+        ``u.read({"off": 0x10, "deref": True}, {"off": 0x68, "deref": False})``
         """
         return self.host.read(self.slot, self._prefix + list(chain), kind=kind,
                               default=default, timeout=timeout)
@@ -682,15 +684,36 @@ def snapshot(host, slot=SLOT_MANAGER, limit=None):
     return [u.state() for u in units(host, slot=slot, limit=limit)]
 
 
-def bind_manager(host, klass="BattleObjectManager", method="OnRoundStart_Model",
-                 argc=1, slot=SLOT_MANAGER, timeout=180.0, extra_hooks=()):
+def ensure_manager(host, slot=SLOT_MANAGER, timeout=3.0, force=False):
+    """确保对象槽里是 BattleObjectManager，返回槽号；失败返回 ``None``。"""
+    if host.object_ptr(slot) and not force:
+        return int(slot)
+    result = host.call(
+        "SingletonBehaviorCollector::get_BattleObjectManager",
+        slot=None, ret="ref", out_slot=slot, via="invoke", timeout=timeout,
+    )
+    if isinstance(result, str):
+        return None
+    return int(slot) if host.object_ptr(slot) else None
+
+
+def bind_manager(host, klass=None, method=None, argc=1, slot=SLOT_MANAGER,
+                 timeout=180.0, extra_hooks=()):
     """装一条钩子，把 BattleObjectManager 单例抓进对象槽，返回槽号。
 
-    回合级方法（OnRoundStart_Model）只在回合开始触发，所以**得先打一回合**
-    才会有值；返回前一直等到槽里有指针或者超时（超时返回 None）。
+    默认直接用新版静态访问器获取单例；显式传入 ``klass`` / ``method`` 时，
+    保留旧式钩子路径，返回前一直等到槽里有指针或者超时（超时返回 None）。
 
     已有钩子把 manager 缓存好的话不用调这个，直接 ``objects.units(host, 那个槽)``。
     """
+    if klass is None and method is None:
+        if ensure_manager(host, slot=slot, timeout=min(float(timeout), 3.0)) is None:
+            return None
+        if extra_hooks:
+            _push_hooks(host, list(extra_hooks))
+        return int(slot)
+    if not klass or not method:
+        return None
     hooks = list(extra_hooks)
     # 只要 cache，不要事件：抓单例不需要往事件环里塞东西，塞了反而会跟
     # 真正关心命中的插件抢环位（事件环是单 tail，多消费者会互吃）。

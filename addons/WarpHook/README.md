@@ -151,7 +151,7 @@ u.props()                                 # 62 个字段的字典（摸底用，
 底层一直开着 —— 门面只是便利，不是遮罩：
 
 ```python
-u.read({"off": 0x10, "deref": True}, {"off": 0x60, "deref": False})
+u.read({"off": 0x10, "deref": True}, {"off": 0x68, "deref": False})
 host.read(slot, [{"off": 0x90, "deref": True}], kind="dict_count")
 from warphook import fields
 fields.read_chain("BattleUnit", "_model", "_state", "_hp")
@@ -173,12 +173,8 @@ host.read(slot, [{'off': 0x90, 'deref': True}, {'dict': 'iter'}],
 
 ```python
 host.configure(hooks=[{
-    'klass': 'BattleObjectManager', 'method': 'OnRoundStart_Model', 'argc': 1,
-    'cache': (0, 28), 'flags': 0x04,                     # HF_DEDUPE
-    'reads': [{'arg': 0, 'kind': 'dict_count', 'off': [0x90], 'out': 0},
-              {'arg': 0, 'kind': 'int', 'off': [0x90, {'dict': 'iter'},
-                                                {'off': 0x10}, {'off': 0x60}],
-               'out': 1}],
+    'klass': 'StageController', 'method': 'StartRound', 'argc': 0,
+    'event': 34, 'actions': 0, 'when': 1, 'flags': 0x04,  # POST + dedupe
 }])
 host.push()
 ```

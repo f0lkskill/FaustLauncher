@@ -1,3 +1,10 @@
+## 0.9.84 - 适配新版回合入口与战斗字段
+
+- 回合钩子从失效的 `BattleObjectManager.OnRoundStart_Model` 切换到新版游戏实际入口 `StageController.StartRound`，在 POST 阶段派发，恢复 `on_round_start` 与 BattleBGMExtend 的换曲锁触发。
+- BattleObjectManager 改由 `SingletonBehaviorCollector::get_BattleObjectManager` 静态惰性获取，避免调用泛型共享单例方法导致访问冲突。
+- 按 GameAssembly SHA256 `1ECCA01A...361CE1` 的 metadata v39 dump 更新 BattleUnitModel 字段偏移；实例 ID 移至 `0x68`，`_state` 移至 `0x160`。
+- 新增 `tools/test_battle_hooks.py`，锁定新回合入口、POST 时机、静态单例获取和关键字段偏移。
+
 ## 0.9.83 — 卸载清理与文案池扩容
 
 - `Service.stop()` 在停止后台线程和抽卡 watcher 后，清空当前插件在共享宿主中的钩子与文案，并提交停用；清理失败时保留服务登记，避免映射仍被使用时误报卸载完成。
