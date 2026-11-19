@@ -1,5 +1,6 @@
 from functions.webFunc import Note
 from functions.base.web_config import get_webnote
+from functions.base.common.cloud_tags import normalize_tags_style
 from json import loads, dumps
 
 class WebTrigger:
@@ -9,6 +10,7 @@ class WebTrigger:
         self.mod_info = Note("mod_info", get_webnote('mod_info')[0])
 
     def _get_note_info(self, note:Note, allow_refresh=False):
+        # 获取并载入笔记信息
         note.fetch_note_info(allow_refresh)
         if not note.note_content.strip():
             return {}
@@ -39,6 +41,23 @@ class WebTrigger:
     
     def fetch_all_mod_info(self, allow_refresh=False) -> list[dict]:
         return self._fetch_all(self.get_mod_info, allow_refresh)
+
+    def _fetch_catalog(self, get_catalog, allow_refresh=False) -> dict:
+        """读取目录头部和分页列表，保留 ``tags_style`` 等协议字段。"""
+        data = get_catalog(allow_refresh=allow_refresh)
+        if not isinstance(data, list) or not data:
+            return {'pages': [], 'header': {}}
+        header = dict(data[0]) if isinstance(data[0], dict) else {}
+        if 'tags_style' in header:
+            header['tags_style'] = normalize_tags_style(header.get('tags_style'))
+        pages = [page for page in data[1:] if isinstance(page, list)]
+        return {'pages': pages, 'header': header}
+
+    def fetch_addon_catalog(self, allow_refresh=False) -> dict:
+        return self._fetch_catalog(self.get_note_info_addon, allow_refresh)
+
+    def fetch_mod_catalog(self, allow_refresh=False) -> dict:
+        return self._fetch_catalog(self.get_note_info_mod, allow_refresh)
     
     def add_download_number_addon(self, addon_name: str):
         self._report_download(addon_name, "addon")
@@ -89,6 +108,7 @@ class WebTrigger:
     def sort_mod_info_by_download_number(self):
         try:
             pages = self.get_note_info_mod()
+            old_header = dict(pages[0]) if pages and isinstance(pages[0], dict) else {}
             mods: list[dict] = []
             for page in pages[1:]:
                 for m in page:
@@ -106,7 +126,11 @@ class WebTrigger:
                 page_count += 1
                 new_pages.append(mods[i * 5:(i + 1) * 5])
 
-            new_pages.insert(0, {'total_page': page_count, 'total_mods': len(mods)})
+            old_header['total_page'] = page_count
+            old_header['total_mods'] = len(mods)
+            if 'tags_style' in old_header:
+                old_header['tags_style'] = normalize_tags_style(old_header.get('tags_style'))
+            new_pages.insert(0, old_header)
 
             self.mod_info.update_note_content(dumps(new_pages, indent=4, ensure_ascii=False))
             print("Mod信息按下载次数排序完成")

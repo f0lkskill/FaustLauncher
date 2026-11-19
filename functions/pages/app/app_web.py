@@ -7,6 +7,7 @@ import threading
 import time
 from io import BytesIO
 from functions.base.common.json_io import read_json, write_json
+from functions.base.common.cloud_tags import normalize_tags, normalize_tags_style
 
 if getattr(sys, "frozen", False):
     _PROJECT_ROOT = os.path.dirname(os.path.abspath(sys.executable))
@@ -2050,6 +2051,7 @@ class AppApi:
         except Exception:
             pass
         addons = []
+        addon_tags_style = self._get_catalog_tags_style('addon')
         try:
             base = os.path.abspath('addons')
             if os.path.isdir(base):
@@ -2071,6 +2073,9 @@ class AppApi:
                     # 依赖是否已安装：目标目录下有 addon_info.json 才算装了
                     missing = [r for r in requires
                                if not os.path.isfile(os.path.join(base, r, 'addon_info.json'))]
+                    cloud_item = self._cached_resource(kind='addon', name=local_name)
+                    cloud_tags = normalize_tags((cloud_item or {}).get('tags'))
+                    local_tags = normalize_tags(info.get('tags'))
                     addons.append({
                         'kind': 'addon',
                         'dir': name,
@@ -2087,11 +2092,13 @@ class AppApi:
                         'provides': [str(x) for x in (info.get('provides') or [])],
                         'has_icon': _res_icon_exists('addons', name),
                         'settings': info.get('settings', {}),
-                        'reinstall_available': self._cached_resource(kind='addon', name=local_name) is not None,
+                        'tags': cloud_tags or local_tags,
+                        'reinstall_available': cloud_item is not None,
                     })
         except Exception as e:
             print(f"读取插件失败: {e}")
         dir_mods = []
+        mod_tags_style = self._get_catalog_tags_style('mod')
         try:
             base = os.path.abspath('mods')
             if os.path.isdir(base):
@@ -2104,6 +2111,9 @@ class AppApi:
                     except Exception:
                         info = {}
                     local_name = str(info.get('name') or name)
+                    cloud_item = self._cached_resource(kind='mod', name=local_name)
+                    cloud_tags = normalize_tags((cloud_item or {}).get('tags'))
+                    local_tags = normalize_tags(info.get('tags'))
                     dir_mods.append({
                         'kind': 'mod',
                         'dir': name,
@@ -2117,7 +2127,8 @@ class AppApi:
                         'enabled': bool(info.get('settings', {}).get('enable', False)),
                         'has_icon': _res_icon_exists('mods', name),
                         'settings': info.get('settings', {}),
-                        'reinstall_available': self._cached_resource(kind='mod', name=local_name) is not None,
+                        'tags': cloud_tags or local_tags,
+                        'reinstall_available': cloud_item is not None,
                     })
         except Exception as e:
             print(f"读取目录 Mod 失败: {e}")
@@ -2128,6 +2139,8 @@ class AppApi:
             'dir_mods': dir_mods,
             'single_files': [],
             'single_dir': '',
+            'addon_tags_style': addon_tags_style,
+            'mod_tags_style': mod_tags_style,
         }
 
     def get_res_icons(self, pairs):
@@ -2728,6 +2741,17 @@ if %errorlevel% equ 0 (
         print(f'初始化云端 {kind} 资源完成。')
         return data
 
+    def _get_catalog_tags_style(self, kind):
+        try:
+            wt = self._get_web_trigger()
+            catalog = (wt.fetch_addon_catalog() if kind == 'addon'
+                       else wt.fetch_mod_catalog())
+            header = catalog.get('header') if isinstance(catalog, dict) else {}
+            return normalize_tags_style((header or {}).get('tags_style'))
+        except Exception as e:
+            print(f'读取云端 {kind} 标签样式失败: {e}')
+            return {}
+
     def get_addon_dep(self, name):
         """取一个依赖插件的基本信息（图标 / 简介 / 版本 / 作者）。
 
@@ -2836,15 +2860,23 @@ if %errorlevel% equ 0 (
 
     def get_addon_list(self):
         try:
-            return {'pages': self._get_cached_list('addon'), 'error': None}
+            return {
+                'pages': self._get_cached_list('addon'),
+                'tags_style': self._get_catalog_tags_style('addon'),
+                'error': None,
+            }
         except Exception as e:
-            return {'pages': [], 'error': str(e)}
+            return {'pages': [], 'tags_style': {}, 'error': str(e)}
 
     def get_mod_list(self):
         try:
-            return {'pages': self._get_cached_list('mod'), 'error': None}
+            return {
+                'pages': self._get_cached_list('mod'),
+                'tags_style': self._get_catalog_tags_style('mod'),
+                'error': None,
+            }
         except Exception as e:
-            return {'pages': [], 'error': str(e)}
+            return {'pages': [], 'tags_style': {}, 'error': str(e)}
 
     def increase_download_count(self, kind, name):
         try:
