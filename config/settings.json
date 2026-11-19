@@ -81,7 +81,7 @@
         "name": "用户名",
         "type": "string",
         "default": "Player",
-        "value": "folkskill",
+        "value": "Player",
         "description": "你的用户名，将显示在边狱公司的个人车票上。",
         "page": "美化"
     },
@@ -310,12 +310,12 @@
     "control_opacity_factor": {
         "name": "控件透明度",
         "type": "float",
-        "default": 0.9,
-        "value": 0.9,
+        "default": 0.95,
+        "value": 0.95,
         "description": "统一控制UI控件的透明度。",
         "min": 0.0,
         "max": 1.0,
-        "step": 0.02,
+        "step": 0.01,
         "page": "其它"
     },
     "char_enabled": {
@@ -432,8 +432,8 @@
             "version_notify_flag": false
         },
         "value": {
-            "tray_hint": false,
-            "version_notify_flag": false
+            "tray_hint": true,
+            "version_notify_flag": true
         },
         "description": "程序运行时的缓存数据\n不建议修改"
     }
