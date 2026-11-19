@@ -434,7 +434,8 @@ def write_note(key, value, update_url=None):
 
 class Note:
 
-    def __init__(self, id_name=None, address="", pwd="", read_only=False):
+    def __init__(self, id_name: str | None = None, address: str = "",
+                 pwd: str = "", read_only: bool = False):
         self.note_id = id_name if id_name else address
         self._requested = str(address or "")
         self.note_name = self._requested
