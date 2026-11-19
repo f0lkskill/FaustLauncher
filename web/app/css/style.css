@@ -90,6 +90,7 @@
   --radius: 14px;
   --sidebar-w: 228px;
   --term-h: 250px;
+  --term-handle-h: 36px;
   --font: "Microsoft YaHei UI", "PingFang SC", "Segoe UI", system-ui, sans-serif;
   --mono: "Cascadia Code", "Consolas", monospace;
 }
@@ -1981,7 +1982,7 @@ body.path-locked #app *:focus { outline: none; }
   backdrop-filter: blur(calc(var(--glass-factor) * 26px)) saturate(140%);
   -webkit-backdrop-filter: blur(calc(var(--glass-factor) * 26px)) saturate(140%);
   border-top: 1px solid var(--border);
-  transform: translateY(calc(100% - 36px));
+  transform: translateY(calc(100% - var(--term-handle-h)));
   transition: transform .28s cubic-bezier(.4,0,.2,1);
   /* 最顶层: 高于角色小人(60)/关键控件(65), 仅低于 toast(99), 展开时不被任何控件遮挡 */
   z-index: 80; display: flex; flex-direction: column;
@@ -2651,6 +2652,43 @@ body.no-hw .ver-card { animation: verCardInLite .38s cubic-bezier(.22, .9, .24, 
   flex: 1; min-height: 0; overflow-y: auto; padding-bottom: 26px;
 }
 
+/* 收件箱页面: 复用公告卡片结构, 在主区可见高度内居中。
+   常态下终端只露出标题把手, 所以不能按 #main 的内容盒居中, 否则卡片会视觉偏低。 */
+body.inbox-page-active #main {
+  padding-top: 0;
+  padding-bottom: 0;
+  overflow: hidden;
+}
+#page-inbox.active {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: calc(100vh - var(--titlebar-h) - var(--term-handle-h));
+  min-height: 0;
+  transition: height .28s cubic-bezier(.4, 0, .2, 1);
+}
+body.term-open #page-inbox.active {
+  /* 展开时可见区延伸到抽屉顶部, 仍保持主区整体居中。 */
+  height: calc(100vh - var(--titlebar-h) - var(--term-h));
+}
+.inbox-notice-root {
+  display: flex; align-items: center; justify-content: center;
+  width: 100%; height: 100%; min-height: 0; padding: 12px 0;
+}
+#page-inbox .notice-card-page {
+  width: 800px; height: min(580px, 100%);
+  max-width: 100%; max-height: 100%; min-height: min(440px, 100%);
+  background: linear-gradient(
+    180deg,
+    rgba(var(--panel-rgb), var(--panel-alpha)) 0%,
+    rgba(var(--panel-rgb-2), var(--panel-alpha)) 100%
+  );
+}
+.notice-card-state { align-items: center; justify-content: center; padding: 32px; }
+.notice-page-state {
+  color: var(--text-3); font-size: 13px; line-height: 1.7; text-align: center;
+}
+
 @keyframes noticeOverlayIn {
   from { opacity: 0; }
   to { opacity: 1; }
@@ -2665,6 +2703,9 @@ body.no-hw .ver-card { animation: verCardInLite .38s cubic-bezier(.22, .9, .24, 
 @media (max-width: 680px) {
   .notice-overlay { padding: 14px; }
   .notice-card { height: min(620px, 92vh); max-height: 92vh; min-height: min(440px, 92vh); }
+  #page-inbox .notice-card-page {
+    height: min(580px, 100%); max-height: 100%; min-height: min(440px, 100%);
+  }
   .notice-body { flex-direction: column; }
   .notice-side {
     width: 100%; max-height: 156px; overflow-y: auto;

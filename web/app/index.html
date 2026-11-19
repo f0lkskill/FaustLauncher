@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>FaustLauncher 浮士德启动器</title>
-<link rel="stylesheet" href="css/style.css?v=208">
+<link rel="stylesheet" href="css/style.css?v=215">
 </head>
 <body>
 <div id="titlebar">
@@ -42,6 +42,7 @@
       <button class="nav-item" data-page="tools"><span class="nav-ico"><svg class="ico" data-icon="tool.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg></span><span>实用工具</span></button>
       <button class="nav-item" data-page="features"><span class="nav-ico"><svg class="ico" data-icon="bookmark.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg></span><span>快捷方式</span></button>
       <button class="nav-item" data-page="skins"><span class="nav-ico"><svg class="ico" data-icon="pic.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg></span><span>玻璃窗</span></button>
+      <button class="nav-item" data-page="inbox"><span class="nav-ico"><svg class="ico" data-icon="file-addition-one.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg></span><span>收件箱</span></button>
       <button class="nav-item" data-page="user"><span class="nav-ico"><svg class="ico" data-icon="protect.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg></span><span>用户</span></button>
       <button class="nav-item" data-page="settings"><span class="nav-ico"><svg class="ico" data-icon="setting-two.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg></span><span>设置</span></button>
       <button class="nav-item" data-page="about"><span class="nav-ico"><svg class="ico" data-icon="code.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg></span><span>关于</span></button>
@@ -211,6 +212,12 @@
       </div>
     </section>
 
+    <!-- ==================== 收件箱 ==================== -->
+    <section class="page" id="page-inbox">
+      <!-- 由 notice_modal.js 注入与公告弹窗相同的公告视图, 页面版本不生成关闭按钮 -->
+      <div class="inbox-notice-root" id="inbox-notice-root"></div>
+    </section>
+
     <!-- ==================== 用户 ==================== -->
     <section class="page" id="page-user">
       <div class="user-page">
@@ -345,7 +352,7 @@
 <!-- 图标仓库: 内联 SVG (assets/icon/*.svg), 取代此前的 emoji 图标 -->
 <script src="js/core/icons.js?v=171"></script>
 <script src="js/core/bridge.js?v=179"></script>
-<script src="js/core/events.js?v=182"></script>
+<script src="js/core/events.js?v=184"></script>
 <!-- ui: 通用界面件(外观/反馈/装饰) -->
 <script src="js/ui/theme.js?v=171"></script>
 <script src="js/ui/sound.js?v=171"></script>
@@ -356,7 +363,7 @@
 <script src="js/ui/character.js?v=180"></script>
 <script src="js/ui/carousel.js?v=171"></script>
 <script src="js/ui/version_modal.js?v=172"></script>
-<script src="js/ui/notice_modal.js?v=1"></script>
+<script src="js/ui/notice_modal.js?v=2"></script>
 <!-- features: 业务功能(流水线/资源/下载/工具/主页/设置/关于) -->
 <script src="js/features/pipeline.js?v=171"></script>
 <script src="js/features/resources.js?v=177"></script>
@@ -371,7 +378,7 @@
 <!-- 成就页 (本地完成记录, 云端后续接入) -->
 <script src="js/features/achievements.js?v=178"></script>
 <!-- 入口: 启动流程 + 对外插件 API (必须最后) -->
-<script src="js/app.js?v=181"></script>
+<script src="js/app.js?v=182"></script>
 <script>
 /* 独立兜底: 完全不依赖 app.js。无论 app.js 是否崩溃, 只要内容加载完成或超时,
    就移除主页两张卡片的 loading 圆圈。 */

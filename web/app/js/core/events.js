@@ -2,7 +2,7 @@
  * js/core/events.js — 应用外壳: 页面切换 + 全局事件绑定
  * ------------------------------------------------------------------------------
  * 职责:
- *   · switchPage: 侧栏导航与各页面懒初始化(资源管理/下载中心/设置/关于)
+ *   · switchPage: 侧栏导航与各页面懒初始化(资源管理/下载中心/收件箱/设置/关于)
  *   · bindEvents: 窗口标题栏、启动/汉化按钮、资源管理页、下载中心、设置页、终端、下载抽屉等全部（绑定集中一处便于排查）
  * 本文件提供:
  *  函数: switchPage / bindEvents
@@ -18,6 +18,7 @@ let resInited = false;   // 资源管理页首次进入标记 (默认插件模�
 function switchPage(name) {
   currentPage = name;
   document.body.classList.toggle('user-page-active', name === 'user');
+  document.body.classList.toggle('inbox-page-active', name === 'inbox');
   // addLog('[页面] 切换到 ' + name);
   $$('.page').forEach(p => p.classList.remove('active'));
   const target = document.getElementById('page-' + name);
@@ -53,6 +54,10 @@ function switchPage(name) {
   if (name === 'skins') {
     // 玻璃窗: 首次进入才拉取皮肤列表 (之后保持, 切换都在页内完成)
     enterSkinsPage();
+  }
+  if (name === 'inbox') {
+    // 收件箱复用启动公告的数据、选择状态与 Markdown 渲染。
+    enterInboxPage();
   }
   if (name === 'user') {
     // 用户页: 用户资料 + 下方成就一起刷新

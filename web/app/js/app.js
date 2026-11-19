@@ -33,7 +33,7 @@
  *     character.js      角色小人(探头摇摆)与问候语气泡
  *     carousel.js       3D 卡片轮播(快捷方式/工具)与丝滑拖拽
  *     version_modal.js  版本更新二级模态窗口
- *     notice_modal.js   启动公告阅读窗口(版本/路径弹窗之后展示)
+ *     notice_modal.js   启动公告阅读窗口与收件箱页面(共用公告渲染)
  *
  *   js/features/      业务层 — 页面级功能
  *     pipeline.js       启动/汉化更新流水线

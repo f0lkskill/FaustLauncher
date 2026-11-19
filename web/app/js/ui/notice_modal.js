@@ -1,13 +1,13 @@
 /* ==============================================================================
- * js/ui/notice_modal.js — 应用内公告阅读窗口
+ * js/ui/notice_modal.js — 应用内公告阅读窗口与收件箱
  * ------------------------------------------------------------------------------
  * 职责:
  *   · 加载云端公告与本地已读状态, 仅在启动检查结束后延迟展示
- *   · 以紧凑的左侧标题列表 + 右侧 Markdown 正文呈现公告
+ *   · 以同一套左侧标题列表 + 右侧 Markdown 正文渲染公告模态与收件箱页面
  *   · 公告实际展示后立即持久化已读 ID, 未读项显示红点
  * 本文件提供:
  *  函数: loadNotices / openNoticeModal / closeNoticeModal / closeNoticeModalForPriority /
- *        maybeShowNoticeModal
+ *        maybeShowNoticeModal / enterInboxPage
  *  全局入口: window.__onStartupChecksDone
  * 依赖: 依赖 bootstrap/state/utils/tools, 并让位于 version_modal/settings 的高优先级窗口
  * 加载顺序: 15/23 (紧跟 version_modal)
@@ -47,8 +47,32 @@ function noticeUnreadItems() {
 }
 
 // ---------------- 公告列表与正文 ----------------
-function noticeRenderList() {
-  const list = document.getElementById('notice-list');
+// 模态与收件箱共用同一视图结构; 根节点通过 data-notice-view 标识, 避免两处
+// 同时存在时互相抢固定 ID。页面不传关闭按钮, 因而两种载体只保留必要的差异。
+function noticeViewHtml(isPage) {
+  return '<section class="notice-card' + (isPage ? ' notice-card-page' : '') + '"' +
+    ' data-notice-view role="' + (isPage ? 'region' : 'dialog') + '"' +
+    (isPage ? ' aria-label="收件箱"' : ' aria-modal="true" aria-label="公告"') + '>' +
+    '<div class="notice-body">' +
+      '<aside class="notice-side">' +
+        '<div class="notice-list" data-notice-list></div>' +
+      '</aside>' +
+      '<div class="notice-main">' +
+        '<div class="notice-meta">' +
+          '<div class="notice-title-wrap">' +
+            '<h2 class="notice-title" data-notice-title></h2>' +
+            '<time class="notice-timeline" data-notice-timeline hidden></time>' +
+          '</div>' +
+          (isPage ? '' : panelCloseBtn('notice-close', 'notice-x')) +
+        '</div>' +
+        '<div class="md-content notice-md" data-notice-content></div>' +
+      '</div>' +
+    '</div>' +
+  '</section>';
+}
+
+function noticeRenderList(view) {
+  const list = view && view.querySelector('[data-notice-list]');
   if (!list) return;
   list.innerHTML = '';
   noticeItems.forEach(item => {
@@ -73,20 +97,21 @@ function noticeRenderList() {
   });
 }
 
-function noticeRenderSelection() {
+function noticeRenderSelection(view) {
+  if (!view) return;
   const item = noticeFindItem(noticeSelectedId);
   if (!item) return;
 
-  const title = document.getElementById('notice-title');
+  const title = view.querySelector('[data-notice-title]');
   if (title) title.textContent = item.title;
 
-  const timeline = document.getElementById('notice-timeline');
+  const timeline = view.querySelector('[data-notice-timeline]');
   if (timeline) {
     timeline.textContent = item.timeline;
     timeline.hidden = !item.timeline;
   }
 
-  const content = document.getElementById('notice-content');
+  const content = view.querySelector('[data-notice-content]');
   if (content) {
     content.innerHTML = item.html ||
       (item.content
@@ -95,17 +120,25 @@ function noticeRenderSelection() {
   }
 }
 
+function noticeRenderView(view) {
+  noticeRenderList(view);
+  noticeRenderSelection(view);
+}
+
+function noticeRenderAllViews() {
+  document.querySelectorAll('[data-notice-view]').forEach(noticeRenderView);
+}
+
 function noticeSelect(noticeId) {
   const item = noticeFindItem(noticeId);
   if (!item) return;
   noticeSelectedId = item.id;
-  noticeRenderList();
-  noticeRenderSelection();
+  noticeRenderAllViews();
 
   if (!item.is_read) {
     // 已展示即视为读过; 先更新界面, 磁盘写入失败也不会打断当前阅读。
     item.is_read = true;
-    noticeRenderList();
+    document.querySelectorAll('[data-notice-view]').forEach(noticeRenderList);
     if (api && typeof api.mark_notice_read === 'function') {
       api.mark_notice_read(item.id).catch(e => {
         console.warn('公告已读状态保存失败:', e);
@@ -157,6 +190,44 @@ function loadNotices() {
   return noticeLoadPromise;
 }
 
+// ---------------- 收件箱页面 ----------------
+function noticeRenderInboxState(root, message) {
+  if (!root) return;
+  root.innerHTML =
+    '<section class="notice-card notice-card-page notice-card-state" role="region" aria-label="收件箱">' +
+      '<div class="notice-page-state">' + esc(message) + '</div>' +
+    '</section>';
+}
+
+function noticeRenderInbox(markRead) {
+  const root = document.getElementById('inbox-notice-root');
+  if (!root) return false;
+
+  if (!noticeLoaded) {
+    noticeRenderInboxState(root, '正在加载收件箱...');
+    return false;
+  }
+  if (!noticeItems.length) {
+    noticeSelectedId = '';
+    noticeRenderInboxState(root, '收件箱目前没有信息。');
+    return true;
+  }
+
+  if (!noticeFindItem(noticeSelectedId)) noticeSelectedId = noticeItems[0].id;
+  root.innerHTML = noticeViewHtml(true);
+  const view = root.querySelector('[data-notice-view]');
+  noticeRenderView(view);
+  if (markRead) noticeSelect(noticeSelectedId);
+  return true;
+}
+
+function enterInboxPage() {
+  if (noticeRenderInbox(true)) return;
+  loadNotices().then(() => {
+    if (currentPage === 'inbox') noticeRenderInbox(true);
+  });
+}
+
 // ---------------- 公告模态窗口 ----------------
 function noticePriorityBlocked() {
   return !!noticeModalEl ||
@@ -184,35 +255,18 @@ function openNoticeModal() {
   const panel = document.createElement('div');
   panel.id = 'notice-modal';
   panel.className = 'notice-overlay';
-  panel.innerHTML =
-  '<section class="notice-card" role="dialog" aria-modal="true">' +
-    '<div class="notice-body">' +
-      '<aside class="notice-side">' +
-        '<div class="notice-list" id="notice-list"></div>' +
-      '</aside>' +
-      '<main class="notice-main">' +
-        '<div class="notice-meta">' +
-          '<div class="notice-title-wrap">' +
-            '<h2 class="notice-title" id="notice-title"></h2>' +
-            '<time class="notice-timeline" id="notice-timeline" hidden></time>' +
-          '</div>' +
-          panelCloseBtn('notice-close', 'notice-x') +
-        '</div>' +
-        '<div class="md-content notice-md" id="notice-content"></div>' +
-      '</main>' +
-    '</div>' +
-  '</section>';
+  panel.innerHTML = noticeViewHtml(false);
   document.body.appendChild(panel);
   noticeModalEl = panel;
   document.body.classList.add('modal-open');
 
-  const closeBtn = document.getElementById('notice-close');
+  const closeBtn = panel.querySelector('#notice-close');
   if (closeBtn) closeBtn.onclick = closeNoticeModal;
   panel.addEventListener('click', (e) => {
     if (e.target === panel) closeNoticeModal();
   });
 
-  noticeRenderList();
+  noticeRenderView(panel);
   noticeSelect(item.id);
   return true;
 }
