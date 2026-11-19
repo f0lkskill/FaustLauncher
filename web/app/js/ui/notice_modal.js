@@ -65,7 +65,6 @@ function noticeRenderList() {
     if (!item.is_read) {
       const dot = document.createElement('span');
       dot.className = 'notice-unread-dot';
-      dot.setAttribute('aria-label', '未读');
       button.appendChild(dot);
     }
 
@@ -186,22 +185,23 @@ function openNoticeModal() {
   panel.id = 'notice-modal';
   panel.className = 'notice-overlay';
   panel.innerHTML =
-    '<section class="notice-card" role="dialog" aria-modal="true" aria-label="公告">' +
-        panelCloseBtn('notice-close', 'notice-x', 'aria-label="关闭公告"') +
-      '</header>' +
-      '<div class="notice-body">' +
-        '<aside class="notice-side">' +
-          '<div class="notice-list" id="notice-list"></div>' +
-        '</aside>' +
-        '<main class="notice-main">' +
-          '<div class="notice-meta">' +
+  '<section class="notice-card" role="dialog" aria-modal="true">' +
+    '<div class="notice-body">' +
+      '<aside class="notice-side">' +
+        '<div class="notice-list" id="notice-list"></div>' +
+      '</aside>' +
+      '<main class="notice-main">' +
+        '<div class="notice-meta">' +
+          '<div class="notice-title-wrap">' +
             '<h2 class="notice-title" id="notice-title"></h2>' +
             '<time class="notice-timeline" id="notice-timeline" hidden></time>' +
           '</div>' +
-          '<div class="md-content notice-md" id="notice-content"></div>' +
-        '</main>' +
-      '</div>' +
-    '</section>';
+          panelCloseBtn('notice-close', 'notice-x') +
+        '</div>' +
+        '<div class="md-content notice-md" id="notice-content"></div>' +
+      '</main>' +
+    '</div>' +
+  '</section>';
   document.body.appendChild(panel);
   noticeModalEl = panel;
   document.body.classList.add('modal-open');
