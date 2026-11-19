@@ -400,7 +400,6 @@ function renderPager(container, opts) {
   }
   function arrow(dir, disabled, onClick) {
     const b = btn('', disabled, onClick, 'pg-arrow ' + dir);
-    b.setAttribute('aria-label', dir === 'prev' ? '上一页' : '下一页');
     return b;
   }
   function gap() {
