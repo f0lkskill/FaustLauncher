@@ -7,6 +7,7 @@ import threading
 import time
 from urllib.parse import quote, urlsplit
 
+from functions.base.common import get_launcher_user_dir
 from functions.base.common.json_io import read_json, try_read_json, write_json
 
 DEFAULT_API_BASE = "https://folkskill.pythonanywhere.com"
@@ -25,10 +26,8 @@ _session = None
 _session_base = ""
 
 def user_data_dir() -> str:
-    roaming = os.getenv("APPDATA")
-    if not roaming:
-        roaming = os.path.join(os.path.expanduser("~"), "AppData", "Roaming")
-    return os.path.join(roaming, "FaustLauncher", "user")
+    """返回启动器用户数据目录，与设置、登录态和头像缓存共用。"""
+    return get_launcher_user_dir()
 
 def session_file() -> str:
     return os.path.join(user_data_dir(), _SESSION_FILE)
