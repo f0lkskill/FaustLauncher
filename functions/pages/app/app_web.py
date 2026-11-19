@@ -946,6 +946,8 @@ class AppApi:
         self._window_drag_lock = threading.Lock()
         self._window_drag_origin = None
         self._window_drag_hwnd = 0
+        self._notice_lock = threading.Lock()
+        self._notice_manager = None
         self._user_sync_started = False
         # 下载抽屉的取消: 任务名 -> 正在跑的 HeadlessDownloadGUI 列表
         self._dl_lock = threading.Lock()
@@ -3351,6 +3353,51 @@ if %errorlevel% equ 0 (
             print(f"[Update] 读取版本信息失败: {e}")
             return {'error': str(e), 'has_update': False, 'can_update': False, 'forced': False}
 
+    def _get_notice_manager(self):
+        """获取公告管理器实例。"""
+        with self._notice_lock:
+            if self._notice_manager is None:
+                from functions.pages.notice.notice import AppNoticeManager
+                self._notice_manager = AppNoticeManager()
+            return self._notice_manager
+
+    def get_notices(self, allow_refresh=False):
+        """返回云端公告和本地已读状态。"""
+        try:
+            manager = self._get_notice_manager()
+            if allow_refresh:
+                manager.load_data(allow_refresh=True)
+            notices = manager.get_notices()
+            return {
+                'ok': True,
+                'notices': notices,
+                'unread_count': sum(
+                    1 for item in notices if not item.get('is_read')),
+                'error': manager.last_load_error or None,
+            }
+        except Exception as e:
+            print(f"[Notice] 读取公告失败: {e}")
+            return {
+                'ok': False,
+                'notices': [],
+                'unread_count': 0,
+                'error': str(e),
+            }
+
+    def mark_notice_read(self, notice_id):
+        """持久化一个已展示公告的已读状态。"""
+        try:
+            manager = self._get_notice_manager()
+            ok = manager.mark_read(notice_id)
+            return {
+                'ok': ok,
+                'id': str(notice_id or '').strip(),
+                'error': None if ok else '公告不存在或已读状态写入失败',
+            }
+        except Exception as e:
+            print(f"[Notice] 写入公告已读状态失败: {e}")
+            return {'ok': False, 'id': str(notice_id or ''), 'error': str(e)}
+
     def start_version_update(self):
         try:
             from functions.pages.notice.version_notify import (
@@ -4177,6 +4224,11 @@ def run_web_ui(debug: bool = False):
             _evaluate_js("window.__onPathSynced()")
         except Exception as e:
             print(f"设置检查失败: {e}")
+        finally:
+            try:
+                _evaluate_js("window.__onStartupChecksDone()")
+            except Exception:
+                pass
 
     threading.Thread(target=_delayed_check, daemon=True).start()
 

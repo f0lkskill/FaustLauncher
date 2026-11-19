@@ -33,6 +33,7 @@
  *     character.js      角色小人(探头摇摆)与问候语气泡
  *     carousel.js       3D 卡片轮播(快捷方式/工具)与丝滑拖拽
  *     version_modal.js  版本更新二级模态窗口
+ *     notice_modal.js   启动公告阅读窗口(版本/路径弹窗之后展示)
  *
  *   js/features/      业务层 — 页面级功能
  *     pipeline.js       启动/汉化更新流水线
@@ -81,6 +82,9 @@ function startupPrepare() {
 function startupLoadFirstScreen() {
   loadHomeExtras().catch(e => console.error('主页加载失败:', e));
   loadRecommend().catch(e => console.error('推荐加载失败:', e));
+  if (typeof loadNotices === 'function') {
+    loadNotices().catch(e => console.error('公告加载失败:', e));
+  }
 }
 
 // ③ 一次性 UI 绑定: 出错只记录日志, 不阻断后面的数据渲染
@@ -239,6 +243,10 @@ window.Faust = {
   openDcModal,
   openVersionModal,
   closeVersionModal,
+  loadNotices,
+  openNoticeModal,
+  closeNoticeModal,
+  maybeShowNoticeModal,
   get currentPage() { return currentPage; },
   get BOOT() { return BOOT; },
   get PROJECT_ICON() { return PROJECT_ICON; },

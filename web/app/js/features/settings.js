@@ -134,6 +134,9 @@ function closePathModal() {
   pcDeferred = null;
   pcLock(false);
   if (el) closePanel(el);
+  setTimeout(() => {
+    if (typeof maybeShowNoticeModal === 'function') maybeShowNoticeModal();
+  }, 210);
 }
 
 function pcHint(text, kind) {
@@ -223,6 +226,7 @@ function pcStateKey(d) {
 
 // 构建/就地替换模态 (替换时不做关闭动画, 避免遮罩闪一下)
 function pcMount(eyebrow, title, bodyHtml, footMode, hint, hintKind) {
+  if (typeof closeNoticeModalForPriority === 'function') closeNoticeModalForPriority();
   if (pcModalEl) { const old = pcModalEl; pcModalEl = null; old.remove(); }
   const panel = document.createElement('div');
   panel.id = 'pc-modal';

@@ -26,6 +26,9 @@ function closeVersionModal() {
   const el = verModalEl;
   verModalEl = null;
   closePanel(el);
+  setTimeout(() => {
+    if (typeof maybeShowNoticeModal === 'function') maybeShowNoticeModal();
+  }, 210);
 }
 
 // 版本跨度: 旧 → 新 (等宽数字, 信息本身就是设计)
@@ -141,6 +144,7 @@ function updateVersionModalProgress(d) {
 
 function openVersionModal(d) {
   d = d || {};
+  if (typeof closeNoticeModalForPriority === 'function') closeNoticeModalForPriority();
   const forced = !!(d.forced && d.has_update && d.can_update);
   if (verModalEl) {
     // 已在展示: 强制更新窗口优先 (替换信息窗口), 其余情况不重复弹出
@@ -174,7 +178,7 @@ function openVersionModal(d) {
           ? '<a class="ver-submeta-link" href="' + esc(d.url) + '" target="_blank" rel="noreferrer">' + esc(verLinkHost(d.url)) + ' ↗</a>'
           : '') +
       '</div>' +
-      '<div class="ver-doc"><div class="ver-doc-inner">' +
+      '<div class="ver-doc"><div class="md-content ver-doc-inner">' +
         (d.html || '<p class="ver-empty">这次更新没有留下说明。</p>') +
       '</div></div>' +
       '<div class="ver-progress" id="ver-progress" hidden>' +

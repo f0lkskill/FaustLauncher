@@ -59,7 +59,7 @@ def _render_markdown_html(description):
     if not text.strip():
         return ""
     try:
-        from functions.pages.notice.version_update_window import md_to_html
+        from functions.base.common.markdown_render import md_to_html
         return md_to_html(text)
     except Exception as e:
         print(f"[Update] Markdown 渲染失败: {e}")
