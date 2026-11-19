@@ -2128,7 +2128,10 @@
 </tr>
 </tbody>
 </table>
-<p><code>on_hit</code> 的 <code>once=True</code> 表示同一个方法只回调一次（自爆插件用）。</p>
+<p><code>on_hit</code> 的 <code>once=True</code> 表示同一个方法只回调一次（自爆插件用）。
+实际调用 <code>warp_host.dll</code> 注入前，WarpHook 会读取自己的「注入延时(秒)」设置，
+默认等待 3 秒，<code>0</code> 表示立即注入。等待发生在等待 <code>GameAssembly.dll</code> 之后、
+注入锁之前，因此不会阻塞其他插件的探测，也可被服务停止事件取消。</p>
 <h2 id="runtime-dll"><code>Runtime</code> —— 自带 DLL 的老式骨架<a class="headerlink" href="#runtime-dll" title="Permanent link">&para;</a></h2>
 <p>v0.4 时代的写法，插件自己带一个 DLL、自己一块共享内存。现在的插件基本不用，
 但 <code>COMMON_FIELDS</code> 这个常量还在用：</p>
