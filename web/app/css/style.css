@@ -717,15 +717,20 @@ body.modal-open .res-card {
 .res-title-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .res-title { font-size: 15px; font-weight: 600; color: var(--text); }
 .res-ver-inline { font-size: 11px; color: var(--text-3); background: var(--card-2); padding: 1px 8px; border-radius: 6px; }
-.res-author { font-size: 11.5px; color: var(--text-3); font-weight: 400; }
-/* 启用/禁用标识 (与标题留出间距) */
-.res-state-badge {
-  font-size: 10.5px; padding: 1px 8px; border-radius: 999px; font-weight: 600;
-  margin-left: 8px; vertical-align: 1px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+/* 资源状态与云端 tags 共用同一套扁平胶囊样式，tags 仅覆盖颜色。 */
+.res-state-badge,
+.res-tag-badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 1px 8px; border-radius: 999px;
+  font-size: 10.5px; font-weight: 600; vertical-align: 1px;
 }
+.res-state-badge { margin-left: 8px; }
+.res-tag-badge {
+  color: var(--tag-color, var(--info));
+  background: var(--tag-bg, rgba(var(--info-rgb), 0.13));
+  border: 1px solid var(--tag-border, rgba(var(--info-rgb), 0.35));
+}
+.res-author { font-size: 11.5px; color: var(--text-3); font-weight: 400; }
 .res-state-badge.on { color: var(--success); background: rgba(46, 160, 67, 0.15); border: 1px solid rgba(46, 160, 67, 0.35); }
 .res-state-badge.off { color: var(--text-3); background: rgba(var(--tint-rgb), 0.05); border: 1px solid var(--border);}
 .res-state-badge.installed { color: var(--info); background: rgba(var(--info-rgb), 0.13); border: 1px solid rgba(var(--info-rgb), 0.35); }

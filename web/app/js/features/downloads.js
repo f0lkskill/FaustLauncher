@@ -7,7 +7,7 @@
  *   · 云端插件/Mod 列表(资源管理式布局): 搜索、分页、安装、详情模态
  * 本文件提供:
  *  函数: applyDownloadedStyle / markItemDownloaded / addDownloadTask / updateDownloadTask / failDownloadTask / removeDownloadTask / updateFabVisibility / maybeCloseDrawer / toggleDrawer / renderDownloadDrawer / startDownloadItem / updateDownloadCountDisplay / initDownloadCenter / loadDCDisplay / renderDCList / renderDCPagination / markCardInstalled / markCardIsNew / buildDCCard / dcAuthorLinks / openDcModal
- *  状态/常量: downloadedSeen / _currentRec / downloadTasks / dcKind / dcPage / dcSearch / dcAddonItems / dcModItems
+ *  状态/常量: downloadedSeen / _currentRec / downloadTasks / dcKind / dcPage / dcSearch / dcAddonItems / dcModItems / dcAddonTagsStyle / dcModTagsStyle
  * 依赖: 依赖 bootstrap/state/utils/ui.tilt
  * 加载顺序: 17/22    (拆分自原 app.js 行 1105-1518)
  * ============================================================================== */
@@ -286,6 +286,12 @@ let dcPage = 1;
 let dcSearch = '';             // 下载中心搜索词
 let dcAddonItems = [];
 let dcModItems = [];
+let dcAddonTagsStyle = {};
+let dcModTagsStyle = {};
+
+function dcTagsStyle(kind) {
+  return kind === 'addon' ? dcAddonTagsStyle : dcModTagsStyle;
+}
 
 // ---- 云端列表: 状态与初始化(首次进入才拉取) ----
 function initDownloadCenter() {
@@ -312,6 +318,8 @@ function loadDCDisplay() {
     hideFrameLoading(cardEl);
     dcAddonItems = (addonRes.pages || []).flat().filter(Boolean);
     dcModItems = (modRes.pages || []).flat().filter(Boolean);
+    dcAddonTagsStyle = normalizeTagsStyle(addonRes.tags_style);
+    dcModTagsStyle = normalizeTagsStyle(modRes.tags_style);
     dcPage = 1;
     renderDCList();
   }).catch(e => {
@@ -388,6 +396,7 @@ function buildDCCard(item, kind) {
       '<div class="res-info">' +
         '<div class="res-title-row">' +
           '<span class="res-title">' + esc(item.name || '未知') + (disabled ? ' (暂不可用)' : '') + '</span>' +
+          tagsBadgesHtml(item.tags, dcTagsStyle(kind)) +
           (item.version ? '<span class="res-ver-inline">v' + esc(item.version) + '</span>' : '') +
         '</div>' +
         '<div class="res-desc">' + esc(item.desc || '无描述') + '</div>' +
@@ -458,6 +467,7 @@ function openDcModal(kind, item) {
             '<button class="panel-close" id="dc-modal-close"><svg class="ico" data-icon="close.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg></button>' +
           '</div>' +
           '<div class="res-detail-sub">' +
+            tagsBadgesHtml(item.tags, dcTagsStyle(kind)) +
             (item.version ? '<span class="res-ver-inline">v' + esc(item.version) + '</span>' : '') +
             (authorLinksHtml(dcAuthorLinks(item.authors)) || '') +
           '</div>' +

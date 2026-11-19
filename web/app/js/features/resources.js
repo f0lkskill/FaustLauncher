@@ -10,7 +10,7 @@
  *  函数: normalizeResKind / syncResTabs / syncResActions / bindResReinstallButtons / refreshMods / renderResFromCache / resNeedsFetch /
  *        setResLoading / enterResourcePage / confirmReinstall / renderResList / renderResPagination /
  *        authorLinksHtml / buildResCard / renderSettingsFields / collectSettingsFields / openResModal
- *  状态/常量: resKind / resPage / RES_PAGE_SIZE / resSearch / resAddons / resMods / resRefreshing / resRefreshedAt / RES_REFRESH_GAP / SETTING_LABELS /
+ *  状态/常量: resKind / resPage / RES_PAGE_SIZE / resSearch / resAddons / resMods / resAddonTagsStyle / resModTagsStyle / resRefreshing / resRefreshedAt / RES_REFRESH_GAP / SETTING_LABELS /
  *            resIconCache / resIconInflight
  *  函数(图标): resIconKey / resIconFor / hydrateResIcons —— 图标按当前页按需向后端要, 不随列表一起传
  * 依赖: bootstrap($/api) / state / utils; 卡片的 3D 跟随效果由 ui/tilt.js 的 addCardTilt 提供
@@ -25,6 +25,12 @@ const RES_PAGE_SIZE = 5;        // 每页最多 5 个
 let resSearch = '';             // 资源管理搜索词
 let resAddons = [];             // 插件列表
 let resMods = [];               // Mod 列表
+let resAddonTagsStyle = {};     // 云端插件目录 tags_style
+let resModTagsStyle = {};       // 云端 Mod 目录 tags_style
+
+function resTagsStyle(kind) {
+  return (kind || resKind) === 'addon' ? resAddonTagsStyle : resModTagsStyle;
+}
 
 // ---- 图标按需加载 ----
 // 后端 get_mods_data 只回 has_icon, 不再把图标 base64 塞进列表: 48 个资源的
@@ -145,6 +151,8 @@ async function refreshMods(keepPage) {
       const d = await api.get_mods_data();
       resAddons = d.addons || [];
       resMods = d.dir_mods || [];
+      resAddonTagsStyle = normalizeTagsStyle(d.addon_tags_style);
+      resModTagsStyle = normalizeTagsStyle(d.mod_tags_style);
       if (!keepPage) resPage = 1;
       renderResFromCache();
     } catch (e) {
@@ -479,6 +487,7 @@ function buildResCard(item) {
               (item.permanent ? '依赖库' : (enabled ? '已启用' : '已禁用')) +
             '</span>' +
           '</span>' +
+          tagsBadgesHtml(item.tags, resTagsStyle(item.kind || resKind)) +
           (ver ? '<span class="res-ver-inline">v' + esc(ver) + '</span>' : '') +
         '</div>' +
         '<div class="res-desc">' + esc(desc) + '</div>' +
@@ -675,6 +684,7 @@ function openResModal(kind, item) {
             '<button class="panel-close" id="res-modal-close"><svg class="ico" data-icon="close.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg></button>' +
           '</div>' +
           '<div class="res-detail-sub">' +
+            tagsBadgesHtml(item.tags, resTagsStyle(kind)) +
             (ver ? '<span class="res-ver-inline">v' + esc(ver) + '</span>' : '') +
             (authorLinksHtml(item.author_links) || '') +
           '</div>' +

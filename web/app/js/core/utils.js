@@ -6,7 +6,7 @@
  *   · 远程图标统一走后端 get_icon(带磁盘缓存)批量补水 hydrateIcons
  *   · 字节/速率格式化, 以及路径显示缩写 shortPath
  * 本文件提供:
- *  函数: esc / toast / toastTop / withTimeout / hydrateIcons / fmtBytes / fmtSpeed / shortPath
+ *  函数: esc / normalizeTags / normalizeTagsStyle / tagsBadgesHtml / toast / toastTop / withTimeout / hydrateIcons / fmtBytes / fmtSpeed / shortPath
  * 依赖: 依赖 bootstrap.js(api)
  * 加载顺序: 3/22    (拆分自原 app.js 行 242-313 + 1972-1988)
  * ============================================================================== */
@@ -17,6 +17,55 @@ function esc(s) {
   return String(s == null ? '' : s)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+const TAG_COLOR_RE = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
+
+function normalizeTags(tags) {
+  let values = tags;
+  if (typeof values === 'string') values = values.split(/[,，\n\r]+/);
+  if (!Array.isArray(values)) return [];
+  const seen = new Set();
+  const result = [];
+  values.forEach(raw => {
+    if (typeof raw !== 'string') return;
+    const tag = raw.trim();
+    if (!tag || tag.length > 32 || seen.has(tag) || result.length >= 8) return;
+    seen.add(tag);
+    result.push(tag);
+  });
+  return result;
+}
+
+function normalizeTagsStyle(styles) {
+  if (!styles || typeof styles !== 'object' || Array.isArray(styles)) return {};
+  const result = {};
+  Object.entries(styles).forEach(([rawTag, rawColor]) => {
+    if (Object.keys(result).length >= 64) return;
+    const tags = normalizeTags([rawTag]);
+    const color = String(rawColor == null ? '' : rawColor).trim();
+    if (tags.length && TAG_COLOR_RE.test(color)) result[tags[0]] = color;
+  });
+  return result;
+}
+
+function _tagHexRgba(color, alpha) {
+  let hex = color.slice(1);
+  if (hex.length === 3) hex = hex.split('').map(c => c + c).join('');
+  const n = parseInt(hex, 16);
+  return 'rgba(' + ((n >> 16) & 255) + ',' + ((n >> 8) & 255) + ',' + (n & 255) + ',' + alpha + ')';
+}
+
+function tagsBadgesHtml(tags, styles) {
+  const styleMap = normalizeTagsStyle(styles);
+  return normalizeTags(tags).map(tag => {
+    const color = styleMap[tag] || '';
+    const inline = color
+      ? ' style="--tag-color:' + color + ';--tag-bg:' + _tagHexRgba(color, 0.14) +
+        ';--tag-border:' + _tagHexRgba(color, 0.55) + '"'
+      : '';
+    return '<span class="res-tag-badge"' + inline + '>' + esc(tag) + '</span>';
+  }).join('');
 }
 
 // icon: 可选, icons.js 里的图标名 (为兼容原有调用, 放在末尾)
