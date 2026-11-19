@@ -35,9 +35,11 @@ function userDataValues(data) {
   };
 }
 
-// ---------------- 用户头像 (按完整 URL 缓存, 与资源图标同一套 data-uri 思路) ----------------
-// 服务端生成的头像 URL 带 ?v= 版本号: URL 不变就直接命中缓存, 不重复下载;
-// 重新生成/上传后 URL 变化, 自然会换新的缓存键。
+// ---------------- 用户头像 (AppData 持久缓存 + 远端条件更新) ----------------
+// 进入用户页先读 user_data_dir()/avatar_cache 下的本地图；随后后台用
+// ETag/Last-Modified 检查远端。断网或 304 时继续显示本地图，新图下载后原子落盘。
+const USER_AVATAR_REFRESH_TIMEOUT_MS = 15000;
+
 function userAvatarInitial() {
   const name = String(($('#user-page-name') || {}).textContent || '').trim();
   return (name ? Array.from(name)[0] : '?').toUpperCase();
@@ -68,29 +70,50 @@ function setUserAvatarSrc(url, src) {
   if (initial) initial.hidden = true;
 }
 
-async function renderUserAvatar(url) {
-  if (!url) { setUserAvatarFallback(); return; }
-  userAvatarUrl = url;
-  const hit = userAvatarCache.get(url);
-  if (hit) { setUserAvatarSrc(url, hit); return; }
+function applyFetchedUserAvatar(url, src) {
+  if (!src || userAvatarUrl !== url) return false;
+  userAvatarCache.set(url, src);
+  setUserAvatarSrc(url, src);
+  return true;
+}
 
-  let task = userAvatarInflight.get(url);
+async function renderUserAvatar(url) {
+  const clean = String(url || '').trim();
+  if (!clean) { setUserAvatarFallback(); return; }
+  userAvatarUrl = clean;
+  const hit = userAvatarCache.get(clean);
+  if (hit) {
+    setUserAvatarSrc(clean, hit);
+  } else {
+    setUserAvatarFallback();
+    userAvatarUrl = clean;   // 清占位时保留当前 URL，异步结果仍可安全回填
+  }
+  if (!api) {
+    if (!hit) setUserAvatarSrc(clean, clean);
+    return;
+  }
+
+  let task = userAvatarInflight.get(clean);
   if (!task) {
     task = (async () => {
-      if (api && typeof api.get_user_avatar === 'function') {
-        return await api.get_user_avatar(url).catch(() => '');
+      let src = '';
+      if (typeof api.get_user_avatar === 'function') {
+        src = await api.get_user_avatar(clean).catch(() => '') || '';
       }
-      return url;
+      applyFetchedUserAvatar(clean, src);
+      if (typeof api.refresh_user_avatar !== 'function') return src;
+
+      const refresh = api.refresh_user_avatar(clean).catch(() => '');
+      const latest = await (typeof withTimeout === 'function'
+        ? withTimeout(refresh, USER_AVATAR_REFRESH_TIMEOUT_MS, '')
+        : refresh);
+      applyFetchedUserAvatar(clean, latest || '');
+      return latest || src || '';
     })();
-    userAvatarInflight.set(url, task);
-    task.finally(() => userAvatarInflight.delete(url));
+    userAvatarInflight.set(clean, task);
+    task.finally(() => userAvatarInflight.delete(clean)).catch(() => {});
   }
-  const src = await task;
-  if (userAvatarUrl !== url) return;      // 期间切换了账号/头像, 丢弃旧结果
-  // 后端取图失败时退回直接 URL (浏览器自身仍会按 URL 缓存); 再失败由 img.onerror 兜底
-  if (!src) { setUserAvatarSrc(url, url); return; }
-  if (src !== url) userAvatarCache.set(url, src);
-  setUserAvatarSrc(url, src);
+  await task;
 }
 
 async function loadUserPage() {

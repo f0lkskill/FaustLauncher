@@ -1,12 +1,13 @@
 
 from __future__ import annotations
 
+import hashlib
 import os
 import threading
 import time
 from urllib.parse import quote, urlsplit
 
-from functions.base.common.json_io import read_json, write_json
+from functions.base.common.json_io import read_json, try_read_json, write_json
 
 DEFAULT_API_BASE = "https://folkskill.pythonanywhere.com"
 
@@ -14,8 +15,12 @@ CONNECT_TIMEOUT = 10
 READ_TIMEOUT = 20
 _SESSION_FILE = "session.json"
 _LOGIN_COOKIES = ("login_user", "login_sig")
+_AVATAR_CACHE_DIR_NAME = "avatar_cache"
+_AVATAR_MANIFEST_NAME = "manifest.json"
+_AVATAR_MAX_BYTES = 2 * 1024 * 1024
 
 _lock = threading.RLock()
+_avatar_lock = threading.RLock()
 _session = None
 _session_base = ""
 
@@ -197,12 +202,28 @@ def _request(method: str, path: str, payload: dict | None = None,
     print(f"[UserAPI] {label} -> {status} 失败: {msg} ({cost:.2f}s)")
     return {"ok": False, "data": data, "error": msg, "status": status, "offline": False}
 
-def fetch_avatar(url: str):
-    """下载服务端头像，返回 ``(bytes, content_type)``；失败返回 ``None``。
+def avatar_cache_dir() -> str:
+    """头像缓存目录，与用户设置、登录态统一放在 ``%APPDATA%/FaustLauncher/user``。"""
+    return os.path.join(user_data_dir(), _AVATAR_CACHE_DIR_NAME)
 
-    只允许当前 API 主机的 ``/static/avatars/``，避免把用户资料里的任意 URL
-    变成启动器的 SSRF 入口。前端拿到的是 data-uri，和资源图标缓存方式一致。
-    """
+
+def avatar_manifest_file() -> str:
+    return os.path.join(avatar_cache_dir(), _AVATAR_MANIFEST_NAME)
+
+
+def _avatar_cache_key(url: str) -> str:
+    """按稳定的头像路径取缓存键；``?v=`` 变化时复用同一份本地图像。"""
+    try:
+        parts = urlsplit(str(url or "").strip())
+    except Exception:
+        parts = None
+    stable = (f"{parts.scheme.lower()}://{parts.netloc.lower()}{parts.path}"
+              if parts is not None else str(url or ""))
+    return hashlib.sha1(stable.encode("utf-8")).hexdigest()
+
+
+def _resolve_avatar_url(url: str):
+    """校验头像 URL，只允许当前 API 主机的 ``/static/avatars/``。"""
     target = str(url or "").strip()
     if not target:
         return None
@@ -220,20 +241,174 @@ def fetch_avatar(url: str):
             or parts.netloc.lower() != base_parts.netloc.lower()
             or not parts.path.startswith("/static/avatars/")):
         return None
+    return target
+
+
+def _avatar_manifest() -> dict:
+    data = try_read_json(avatar_manifest_file(), {})
+    return data if isinstance(data, dict) else {}
+
+
+def _avatar_entry(url: str):
+    target = _resolve_avatar_url(url)
+    if target is None:
+        return None, None
+    return target, _avatar_manifest().get(_avatar_cache_key(target))
+
+
+def _image_mime(data: bytes, content_type: str = "") -> str:
+    mime = str(content_type or "").split(";", 1)[0].strip().lower()
+    if mime.startswith("image/"):
+        return mime
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+    if data.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
+    if data.startswith((b"GIF87a", b"GIF89a")):
+        return "image/gif"
+    if data.startswith(b"RIFF") and data[8:12] == b"WEBP":
+        return "image/webp"
+    return ""
+
+
+def load_avatar_local(url: str):
+    """读取本地头像，返回 ``(bytes, content_type)``；无有效缓存时返回 ``None``。"""
+    target, entry = _avatar_entry(url)
+    if target is None or not isinstance(entry, dict):
+        return None
+    stored_url = str(entry.get("url") or "").strip()
+    if stored_url and _avatar_cache_key(stored_url) != _avatar_cache_key(target):
+        return None
+    path = os.path.join(avatar_cache_dir(), _avatar_cache_key(target) + ".bin")
     try:
-        resp = _get_session().get(target, timeout=(CONNECT_TIMEOUT, READ_TIMEOUT))
+        with open(path, "rb") as fh:
+            data = fh.read(_AVATAR_MAX_BYTES + 1)
+    except OSError:
+        return None
+    if not data or len(data) > _AVATAR_MAX_BYTES:
+        return None
+    try:
+        size = int(entry.get("size") or 0)
+    except (TypeError, ValueError):
+        size = 0
+    if size and size != len(data):
+        return None
+    digest = str(entry.get("sha256") or "").strip().lower()
+    if digest and digest != hashlib.sha256(data).hexdigest():
+        return None
+    mime = _image_mime(data, str(entry.get("mime") or ""))
+    return (data, mime) if mime else None
+
+
+def save_avatar_local(url: str, data: bytes, content_type: str,
+                      etag: str = "", last_modified: str = "") -> bool:
+    """原子写入头像图像和更新元数据，下一次启动可直接离线读取。"""
+    target = _resolve_avatar_url(url)
+    if target is None or not data or len(data) > _AVATAR_MAX_BYTES:
+        return False
+    mime = _image_mime(data, content_type)
+    if not mime:
+        return False
+    path = os.path.join(avatar_cache_dir(), _avatar_cache_key(target) + ".bin")
+    entry = {
+        "url": target,
+        "mime": mime,
+        "size": len(data),
+        "sha256": hashlib.sha256(data).hexdigest(),
+        "saved_at": time.time(),
+    }
+    if etag:
+        entry["etag"] = str(etag)
+    if last_modified:
+        entry["last_modified"] = str(last_modified)
+    try:
+        with _avatar_lock:
+            os.makedirs(avatar_cache_dir(), exist_ok=True)
+            tmp = path + ".tmp"
+            with open(tmp, "wb") as fh:
+                fh.write(data)
+                fh.flush()
+                os.fsync(fh.fileno())
+            os.replace(tmp, path)
+            manifest = _avatar_manifest()
+            manifest[_avatar_cache_key(target)] = entry
+            write_json(avatar_manifest_file(), manifest, indent=2, fsync=True)
+        return True
+    except OSError as exc:
+        print(f"[UserAPI] 头像缓存写入失败: {type(exc).__name__}: {exc}")
+        return False
+
+
+def _avatar_response(url: str, etag: str = "", last_modified: str = ""):
+    target = _resolve_avatar_url(url)
+    if target is None:
+        return None
+    headers = {"Accept": "image/*,*/*;q=0.8"}
+    if etag:
+        headers["If-None-Match"] = str(etag)
+    if last_modified:
+        headers["If-Modified-Since"] = str(last_modified)
+    try:
+        resp = _get_session().get(
+            target, headers=headers, timeout=(CONNECT_TIMEOUT, READ_TIMEOUT))
     except Exception as exc:
         print(f"[UserAPI] 头像下载失败: {type(exc).__name__}")
         return None
-    if int(getattr(resp, "status_code", 0) or 0) != 200:
-        return None
-    ctype = str(resp.headers.get("Content-Type") or "").split(";", 1)[0].strip().lower()
-    if not ctype.startswith("image/"):
+    status = int(getattr(resp, "status_code", 0) or 0)
+    if status == 304:
+        return {"not_modified": True}
+    if status != 200:
         return None
     data = resp.content or b""
-    if not data or len(data) > 2 * 1024 * 1024:
+    if not data or len(data) > _AVATAR_MAX_BYTES:
         return None
-    return data, ctype
+    ctype = _image_mime(data, str(resp.headers.get("Content-Type") or ""))
+    if not ctype:
+        return None
+    return {
+        "data": data,
+        "mime": ctype,
+        "etag": str(resp.headers.get("ETag") or "").strip(),
+        "last_modified": str(resp.headers.get("Last-Modified") or "").strip(),
+    }
+
+
+def fetch_avatar(url: str):
+    """本地缓存优先；没有缓存才下载并落盘，失败返回 ``None``。"""
+    target = _resolve_avatar_url(url)
+    if target is None:
+        return None
+    local = load_avatar_local(target)
+    if local is not None:
+        return local
+    got = _avatar_response(target)
+    if not got or got.get("not_modified"):
+        return None
+    save_avatar_local(target, got["data"], got["mime"],
+                      got.get("etag", ""), got.get("last_modified", ""))
+    return got["data"], got["mime"]
+
+
+def check_avatar_update(url: str):
+    """检查远端头像更新，并始终返回当前可用的本地图像。
+
+    有本地缓存时携带 ETag/Last-Modified 做条件请求；304、断网或服务端异常
+    都保留本地图。发现新图时先原子落盘，再返回新图。
+    """
+    target, entry = _avatar_entry(url)
+    if target is None:
+        return None
+    etag = str((entry or {}).get("etag") or "").strip() \
+        if isinstance(entry, dict) else ""
+    modified = str((entry or {}).get("last_modified") or "").strip() \
+        if isinstance(entry, dict) else ""
+    got = _avatar_response(target, etag, modified)
+    if got and not got.get("not_modified"):
+        if save_avatar_local(target, got["data"], got["mime"],
+                             got.get("etag", ""), got.get("last_modified", "")):
+            print("[UserAPI] 头像已更新并写入本地缓存")
+            return got["data"], got["mime"]
+    return load_avatar_local(target)
 
 def register(uid: str, user_name: str | None = None, skins=None) -> dict:
     payload: dict = {"id": str(uid or "").strip()}

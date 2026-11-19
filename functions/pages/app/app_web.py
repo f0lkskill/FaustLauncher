@@ -657,11 +657,6 @@ def _skin_profile_uris(entries, cloud):
 _RES_ICON_CACHE = {}
 _RES_ICON_CACHE_LOCK = threading.Lock()
 
-#: 用户头像 data-uri 缓存：完整头像 URL（含 ?v=）-> data-uri。
-#: URL 不变不重复下载；服务端重新生成头像后 ?v= 变化，自然换新缓存键。
-_AVATAR_URI_CACHE = {}
-_AVATAR_URI_LOCK = threading.Lock()
-
 #: 云端资源名 -> 条目 的索引缓存：{kind: ((列表id, 长度), {名字: 条目})}
 _CLOUD_RES_INDEX = {}
 _CLOUD_RES_INDEX_LOCK = threading.Lock()
@@ -1155,26 +1150,22 @@ class AppApi:
         from functions.base.user_system import get_user_info
         return get_user_info(self.core.settings_manager)
 
-    def get_user_avatar(self, url):
-        """按完整 URL 取用户头像，返回 data-uri（URL 级内存缓存，同资源图标）。"""
-        key = str(url or "").strip()
-        if not key:
-            return ""
-        with _AVATAR_URI_LOCK:
-            cached = _AVATAR_URI_CACHE.get(key)
-        if cached is not None:
-            return cached
-        from functions.base import user_api
-        got = user_api.fetch_avatar(key)
+    @staticmethod
+    def _avatar_data_uri(got):
         if not got:
             return ""
         raw, mime = got
-        uri = "data:" + mime + ";base64," + base64.b64encode(raw).decode("ascii")
-        with _AVATAR_URI_LOCK:
-            if len(_AVATAR_URI_CACHE) > 32:
-                _AVATAR_URI_CACHE.clear()
-            _AVATAR_URI_CACHE[key] = uri
-        return uri
+        return "data:" + mime + ";base64," + base64.b64encode(raw).decode("ascii")
+
+    def get_user_avatar(self, url):
+        """只读取 AppData 里的本地头像；首次无缓存时立即返回空串。"""
+        from functions.base import user_api
+        return self._avatar_data_uri(user_api.load_avatar_local(str(url or "").strip()))
+
+    def refresh_user_avatar(self, url):
+        """后台条件检查远端更新并落盘，返回更新后或保留的本地 data-uri。"""
+        from functions.base import user_api
+        return self._avatar_data_uri(user_api.check_avatar_update(str(url or "").strip()))
 
     def sync_user(self):
         from functions.base.user_system import sync_user
