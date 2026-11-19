@@ -1,4 +1,5 @@
 Option Explicit
+On Error Resume Next
 Dim fso, WshShell
 Dim scriptName, currentDir, up1Dir, up2Dir, up3Dir
 Dim exePath, exeDir
@@ -37,11 +38,6 @@ exePath = fso.BuildPath(exeDir, "FaustLauncher.exe")
 If (Not fso.FileExists(exePath)) Or _
    (Not fso.FolderExists(fso.BuildPath(up3Dir, "_internal")) And _
     Not fso.FolderExists(fso.BuildPath(up3Dir, "web"))) Then
-    MsgBox "FaustLauncher 更新器不能直接运行。" & vbCrLf & vbCrLf & _
-           "请双击 FaustLauncher.exe 启动启动器, 在界面里检查更新。" & vbCrLf & vbCrLf & _
-           "更新器只由启动器自动调用: 它必须位于 " & _
-           "安装目录\cache\new_version\FaustLauncher\ 下才能正确工作。", _
-           16, "FaustLauncher"
     Set fso = Nothing
     Set WshShell = Nothing
     WScript.Quit 1
@@ -55,13 +51,11 @@ WScript.Sleep 5000
 ' ========== 1) 顶层文件: 覆盖复制 (排除 VBS 自己) ==========
 For Each file In fso.GetFolder(currentDir).Files
     If LCase(file.Name) <> LCase(scriptName) Then
-        On Error Resume Next
         Err.Clear
         fso.CopyFile file.Path, fso.BuildPath(up3Dir, file.Name), True
         If Err.Number = 0 Then
             fso.DeleteFile file.Path, True
         End If
-        On Error GoTo 0
     End If
 Next
 
@@ -85,61 +79,37 @@ internalOld = fso.BuildPath(up3Dir, "_internal.old")
 If fso.FolderExists(internalSrc) Then
 
     ' ---- 2.1 新内容先落到 _internal.new ----
-    On Error Resume Next
     Err.Clear
     If fso.FolderExists(internalNew) Then fso.DeleteFolder internalNew, True
     Err.Clear
     fso.CopyFolder internalSrc, internalNew, True
     errNo = Err.Number
-    On Error GoTo 0
     If errNo <> 0 Then
-        On Error Resume Next
         fso.DeleteFolder internalNew, True
-        On Error GoTo 0
-        MsgBox "FaustLauncher 更新失败：无法准备新版本的 _internal。" & vbCrLf & vbCrLf & _
-               "常见原因：安装盘剩余空间不足（替换过程需要约 65MB 暂存空间），" & _
-               "或安装目录里的文件仍被占用。" & vbCrLf & vbCrLf & _
-               "当前版本未受影响，仍可正常使用。请关闭 FaustLauncher 后重试。", _
-               48, "FaustLauncher 更新失败"
         Set fso = Nothing
         Set WshShell = Nothing
         WScript.Quit 1
     End If
 
     ' ---- 2.2 旧目录挪开 (瞬时改名) ----
-    On Error Resume Next
     Err.Clear
     If fso.FolderExists(internalOld) Then fso.DeleteFolder internalOld, True
     Err.Clear
     fso.MoveFolder internalDst, internalOld
     errNo = Err.Number
-    On Error GoTo 0
     If errNo <> 0 Then
-        On Error Resume Next
         fso.DeleteFolder internalNew, True
-        On Error GoTo 0
-        MsgBox "FaustLauncher 更新失败：旧的 _internal 无法替换（文件被占用）。" & vbCrLf & vbCrLf & _
-               "请关闭 FaustLauncher、资源管理器里的安装目录窗口后重试。" & vbCrLf & vbCrLf & _
-               "当前版本未受影响，仍可正常使用。", _
-               48, "FaustLauncher 更新失败"
         Set fso = Nothing
         Set WshShell = Nothing
         WScript.Quit 1
     End If
 
     ' ---- 2.3 新目录就位 ----
-    On Error Resume Next
     Err.Clear
     fso.MoveFolder internalNew, internalDst
     errNo = Err.Number
-    On Error GoTo 0
     If errNo <> 0 Then
-        On Error Resume Next
         fso.MoveFolder internalOld, internalDst      ' 回滚, 保证启动器还能用
-        On Error GoTo 0
-        MsgBox "FaustLauncher 更新失败：_internal 替换未完成，已恢复为原版本。" & vbCrLf & vbCrLf & _
-               "当前版本未受影响，仍可正常使用。请关闭 FaustLauncher 后重试。", _
-               48, "FaustLauncher 更新失败"
         Set fso = Nothing
         Set WshShell = Nothing
         WScript.Quit 1
@@ -152,7 +122,6 @@ If fso.FolderExists(internalSrc) Then
     skinsNew = fso.BuildPath(internalDst, "web\app_skins")
     skinsOld = fso.BuildPath(internalOld, "web\app_skins")
     If fso.FolderExists(skinsOld) Then
-        On Error Resume Next
         For Each sk In fso.GetFolder(skinsOld).SubFolders
             If Not fso.FolderExists(fso.BuildPath(skinsNew, sk.Name)) Then
                 Err.Clear
@@ -160,15 +129,12 @@ If fso.FolderExists(internalSrc) Then
                 fso.CopyFolder sk.Path, fso.BuildPath(skinsNew, sk.Name), True
             End If
         Next
-        On Error GoTo 0
     End If
 
     ' ---- 2.5 清理: 旧目录 + 源目录 ----
     ' 删除失败(仍被占用)不影响使用, 下次更新会再清一次
-    On Error Resume Next
     fso.DeleteFolder internalOld, True
     fso.DeleteFolder internalSrc, True
-    On Error GoTo 0
 End If
 
 ' ========== 3) 其余子文件夹: 合并覆盖 (保留用户数据) ==========
@@ -176,20 +142,16 @@ End If
 ' 这些只做合并覆盖, 绝不整体删除。
 For Each fd In fso.GetFolder(currentDir).SubFolders
     If LCase(fd.Name) <> "_internal" Then
-        On Error Resume Next
         Err.Clear
         fso.CopyFolder fd.Path, fso.BuildPath(up3Dir, fd.Name), True
         If Err.Number = 0 Then
             fso.DeleteFolder fd.Path, True
         End If
-        On Error GoTo 0
     End If
 Next
 
 ' 删除空目录
-On Error Resume Next
 fso.DeleteFolder currentDir, True
-On Error GoTo 0
 
 ' ========== 复制结果自检 ==========
 ' 上面的复制用了 On Error Resume Next: 某一项失败时只是保留源目录, 既不报错也不提示,
@@ -207,14 +169,6 @@ If Not fso.FileExists(exePath) Then
 End If
 
 If missing <> "" Then
-    MsgBox "FaustLauncher 更新未完成：" & vbCrLf & vbCrLf & _
-           "以下关键文件没有复制到安装目录：" & vbCrLf & missing & vbCrLf & _
-           "常见原因：安装目录里的文件正被占用（启动器/游戏/资源管理器没关干净）、" & _
-           "磁盘空间不足，或更新包本身不完整。" & vbCrLf & vbCrLf & _
-           "请关闭 FaustLauncher 后重试；若仍失败，请到发布页重新下载完整安装包，" & _
-           "解压到一个新目录后直接运行。" & vbCrLf & vbCrLf & _
-           "（为避免启动后只看到错误提示，本次不再自动启动）", _
-           48, "FaustLauncher 更新未完成"
     Set fso = Nothing
     Set WshShell = Nothing
     WScript.Quit 1
