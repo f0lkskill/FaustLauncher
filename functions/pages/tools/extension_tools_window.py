@@ -187,7 +187,7 @@ class ExtensionToolsApi(WindowChromeBridge):
             max_mb = 66
         return {'ok': True, 'info': info, 'max_size_mb': max_mb, 'error': ''}
 
-    def publish_mod(self, folder):
+    def publish_mod(self, folder, tags=None, tags_style=None):
         logs = []
 
         def _log(s):
@@ -199,7 +199,10 @@ class ExtensionToolsApi(WindowChromeBridge):
 
         info, err = load_mod_info(folder)
         try:
-            ok, msg = _publish_mod_full(folder, log=_log, progress=_progress)
+            ok, msg = _publish_mod_full(
+                folder, log=_log, progress=_progress,
+                tags=tags, tags_style=tags_style,
+            )
             _progress(100, '完成')
             return {
                 'ok': ok,
@@ -221,7 +224,7 @@ class ExtensionToolsApi(WindowChromeBridge):
             max_mb = 66
         return {'ok': True, 'info': info, 'max_size_mb': max_mb, 'error': ''}
 
-    def publish_addon(self, folder):
+    def publish_addon(self, folder, tags=None, tags_style=None):
         logs = []
 
         def _log(s):
@@ -233,7 +236,10 @@ class ExtensionToolsApi(WindowChromeBridge):
 
         info, err = load_addon_info(folder)
         try:
-            ok, msg = _publish_addon_full(folder, log=_log, progress=_progress)
+            ok, msg = _publish_addon_full(
+                folder, log=_log, progress=_progress,
+                tags=tags, tags_style=tags_style,
+            )
             _progress(100, '完成')
             return {
                 'ok': ok,

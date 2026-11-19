@@ -480,6 +480,14 @@
                 <button class="btn btn-sm" id="pub-from-mods">从 mods/ 选择</button>
             </div>
         </div>
+        <div class="field">
+            <div class="field-label">标签 (可选, 逗号分隔)</div>
+            <input type="text" id="pub-tags" maxlength="260" placeholder="例如: 推荐, 画面">
+        </div>
+        <div class="field">
+            <div class="field-label">标签颜色 (可选, JSON 对象)</div>
+            <input type="text" id="pub-tags-style" maxlength="2048" placeholder='例如: {"推荐":"#ffffff","画面":"#66ccff"}'>
+        </div>
         <div class="preview" id="pub-preview">尚未选择 Mod 文件夹</div>
         <div class="action-row">
             <button class="btn btn-primary" id="pub-upload">🚀 上传到云端</button>
@@ -502,6 +510,14 @@
                 <select id="addon-pub-addons"></select>
                 <button class="btn btn-sm" id="addon-pub-from-addons">从 addons/ 选择</button>
             </div>
+        </div>
+        <div class="field">
+            <div class="field-label">标签 (可选, 逗号分隔)</div>
+            <input type="text" id="addon-pub-tags" maxlength="260" placeholder="例如: 推荐, 工具">
+        </div>
+        <div class="field">
+            <div class="field-label">标签颜色 (可选, JSON 对象)</div>
+            <input type="text" id="addon-pub-tags-style" maxlength="2048" placeholder='例如: {"推荐":"#ffffff","工具":"#66ccff"}'>
         </div>
         <div class="preview" id="addon-pub-preview">尚未选择插件文件夹</div>
         <div class="action-row">
@@ -591,6 +607,35 @@
 
     function errText(e) {
         return (e && (e.message || e)) || e;
+    }
+
+    function parseTagList(value) {
+        const source = Array.isArray(value) ? value : String(value || "").split(/[,，\n\r]+/);
+        const result = [];
+        const seen = new Set();
+        source.forEach((raw) => {
+            if (typeof raw !== "string") return;
+            const tag = raw.trim();
+            if (!tag || tag.length > 32 || seen.has(tag) || result.length >= 8) return;
+            seen.add(tag);
+            result.push(tag);
+        });
+        return result;
+    }
+
+    function parseTagsStyleInput(inputId) {
+        const text = $(inputId).value.trim();
+        if (!text) return null;
+        let parsed;
+        try {
+            parsed = JSON.parse(text);
+        } catch (e) {
+            throw new Error("标签颜色必须是合法 JSON 对象");
+        }
+        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+            throw new Error("标签颜色必须是 JSON 对象");
+        }
+        return parsed;
     }
 
     /* ── 模式切换 ── */
@@ -771,7 +816,7 @@
     });
 
     /* ── 模式3: 发布 Mod ── */
-    async function loadPublishPreview(path) {
+    async function loadPublishPreview(path, syncTags = true) {
         try {
             const r = await api.preview_mod(path);
             if (!r.ok) {
@@ -780,11 +825,18 @@
                 return false;
             }
             const i = r.info;
+            if (syncTags) {
+                $("pub-tags").value = parseTagList(i.tags).join(", ");
+                const style = i.tags_style;
+                $("pub-tags-style").value = style && typeof style === "object"
+                    ? JSON.stringify(style) : "";
+            }
             const lines = [
                 "名称: " + (i.name || ""),
                 "版本: " + ((i.version || "").trim() || "0.0.1"),
                 "作者: " + JSON.stringify(i.authors || {}),
                 "描述: " + ((i.desc || "").trim() || "(空)"),
+                "标签: " + (parseTagList($("pub-tags").value).join(", ") || "(无)"),
                 "载入文件: " + ((i.file_names || []).join(", ") || "(空)"),
                 "",
                 "上传后: 图标 → 蓝奏云 FaustLauncher.icons, 压缩包 → FaustLauncher.Mods,",
@@ -815,7 +867,16 @@
     $("pub-upload").addEventListener("click", async () => {
         const folder = $("pub-folder").value.trim();
         if (!folder) { setMsg("请先选择 Mod 文件夹", true); return; }
-        if (!(await loadPublishPreview(folder))) return;
+        let tags;
+        let tagsStyle;
+        try {
+            tags = parseTagList($("pub-tags").value);
+            tagsStyle = parseTagsStyleInput("pub-tags-style");
+        } catch (e) {
+            setMsg(errText(e), true);
+            return;
+        }
+        if (!(await loadPublishPreview(folder, false))) return;
         const btn = $("pub-upload");
         const progress = $("pub-progress");
         const fill = $("pub-progress-fill");
@@ -828,7 +889,7 @@
         fill.style.width = "0%";
         ptext.textContent = "准备中...";
         try {
-            const r = await api.publish_mod(folder);
+            const r = await api.publish_mod(folder, tags, tagsStyle);
             const logEl = $("pub-log");
             logEl.textContent = r.log || "";
             logEl.className = "log " + (r.ok ? "ok" : "err");
@@ -863,7 +924,7 @@
     };
 
     /* ── 模式4: 发布插件（与 Mod 同一套流程，只是蓝奏云目标目录/数据库不同）── */
-    async function loadAddonPreview(path) {
+    async function loadAddonPreview(path, syncTags = true) {
         try {
             const r = await api.preview_addon(path);
             if (!r.ok) {
@@ -872,11 +933,18 @@
                 return false;
             }
             const i = r.info;
+            if (syncTags) {
+                $("addon-pub-tags").value = parseTagList(i.tags).join(", ");
+                const style = i.tags_style;
+                $("addon-pub-tags-style").value = style && typeof style === "object"
+                    ? JSON.stringify(style) : "";
+            }
             const lines = [
                 "名称: " + (i.name || ""),
                 "版本: " + ((i.version || "").trim() || "0.0.1"),
                 "作者: " + JSON.stringify(i.authors || {}),
                 "描述: " + ((i.desc || "").trim() || "(空)"),
+                "标签: " + (parseTagList($("addon-pub-tags").value).join(", ") || "(无)"),
                 "",
                 "上传后: 图标 → 蓝奏云 FaustLauncher.icons, 压缩包 → FaustLauncher.Addons,",
                 "       dowload_url/icon_url = 直链解析链接, download_count 沿用云端旧值,",
@@ -915,7 +983,16 @@
     $("addon-pub-upload").addEventListener("click", async () => {
         const folder = $("addon-pub-folder").value.trim();
         if (!folder) { setMsg("请先选择插件文件夹", true); return; }
-        if (!(await loadAddonPreview(folder))) return;
+        let tags;
+        let tagsStyle;
+        try {
+            tags = parseTagList($("addon-pub-tags").value);
+            tagsStyle = parseTagsStyleInput("addon-pub-tags-style");
+        } catch (e) {
+            setMsg(errText(e), true);
+            return;
+        }
+        if (!(await loadAddonPreview(folder, false))) return;
         const btn = $("addon-pub-upload");
         const progress = $("addon-pub-progress");
         const fill = $("addon-pub-progress-fill");
@@ -928,7 +1005,7 @@
         fill.style.width = "0%";
         ptext.textContent = "准备中...";
         try {
-            const r = await api.publish_addon(folder);
+            const r = await api.publish_addon(folder, tags, tagsStyle);
             const logEl = $("addon-pub-log");
             logEl.textContent = r.log || "";
             logEl.className = "log " + (r.ok ? "ok" : "err");

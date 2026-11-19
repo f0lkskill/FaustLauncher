@@ -12,6 +12,11 @@ from PIL import Image, ImageDraw, ImageFont
 
 from functions.base.web_config import get_webnote, get_lanzou_config
 from functions.base.common.json_io import read_json, write_json
+from functions.base.common.cloud_tags import (
+    merge_tags_style,
+    normalize_tags,
+    normalize_tags_style,
+)
 
 MODS_DIR = 'mods'
 ADDONS_DIR = 'addons'
@@ -398,7 +403,8 @@ def upload_mod_to_lanzou(mod_folder, log=None, progress=None):
 def upload_addon_to_lanzou(addon_folder, log=None, progress=None):
     return upload_extension_to_lanzou('addon', addon_folder, log=log, progress=progress)
 
-def publish_extension(kind, folder, address=None, log=None, progress=None):
+def publish_extension(kind, folder, address=None, log=None, progress=None,
+                      tags=None, tags_style=None):
     meta = INFO_KINDS.get(kind)
     if not meta:
         return False, f'未知的扩展类型: {kind}'
@@ -419,19 +425,26 @@ def publish_extension(kind, folder, address=None, log=None, progress=None):
         log(f'下载链接: {urls.get("dowload_url") or "(无, 沿用旧值)"}')
     if progress:
         progress(100, f'更新云端{label}信息...')
-    ok, msg = upload_extension_info(kind, folder, address=address, log=log, urls=urls,
-                                    keep_old_urls=True)
+    ok, msg = upload_extension_info(
+        kind, folder, address=address, log=log, urls=urls,
+        keep_old_urls=True, tags=tags, tags_style=tags_style,
+    )
     if upload_err:
         return False, f'上传失败: {upload_err} | 但{label}信息已更新到云端: {msg}'
     return ok, msg
 
-def publish_mod(mod_folder, address=None, log=None, progress=None):
-    return publish_extension('mod', mod_folder, address=address, log=log, progress=progress)
+def publish_mod(mod_folder, address=None, log=None, progress=None,
+                tags=None, tags_style=None):
+    return publish_extension('mod', mod_folder, address=address, log=log, progress=progress,
+                             tags=tags, tags_style=tags_style)
 
-def publish_addon(addon_folder, address=None, log=None, progress=None):
-    return publish_extension('addon', addon_folder, address=address, log=log, progress=progress)
+def publish_addon(addon_folder, address=None, log=None, progress=None,
+                  tags=None, tags_style=None):
+    return publish_extension('addon', addon_folder, address=address, log=log,
+                             progress=progress, tags=tags, tags_style=tags_style)
 
-def upload_extension_info(kind, folder, address=None, log=None, urls=None, keep_old_urls=True):
+def upload_extension_info(kind, folder, address=None, log=None, urls=None,
+                          keep_old_urls=True, tags=None, tags_style=None):
     meta = INFO_KINDS.get(kind)
     if not meta:
         return False, f'未知的扩展类型: {kind}'
@@ -487,6 +500,10 @@ def upload_extension_info(kind, folder, address=None, log=None, urls=None, keep_
             'disabled': False,
             'is_new': True
         }
+        item_tags = normalize_tags(info.get('tags') if tags is None else tags)
+        if item_tags:
+            item['tags'] = item_tags
+            log(f'{label} {name} 标签: {", ".join(item_tags)}\n')
         # 依赖声明：只有本地确实写了 requires 才带上这个键，这样启动器下载插件时
         # 才知道要先把依赖装上；没有依赖的插件，云端条目里也不会多出一个空数组。
         requires = info.get('requires')
@@ -505,6 +522,20 @@ def upload_extension_info(kind, folder, address=None, log=None, urls=None, keep_
         provides = [str(x).strip() for x in (provides or []) if str(x).strip()]
         if provides:
             item['provides'] = provides
+
+        style_source = tags_style if tags_style is not None else info.get('tags_style')
+        if isinstance(style_source, str) and style_source.strip():
+            try:
+                style_source = json.loads(style_source)
+            except Exception as e:
+                return False, f'tags_style 不是合法 JSON: {e}'
+        if style_source is not None:
+            incoming_style = normalize_tags_style(style_source)
+            header['tags_style'] = merge_tags_style(header.get('tags_style'), incoming_style)
+            if incoming_style:
+                log(f'{label} 标签样式: {json.dumps(incoming_style, ensure_ascii=False)}\n')
+        elif 'tags_style' in header:
+            header['tags_style'] = normalize_tags_style(header.get('tags_style'))
 
         items = [item]
         for page in data[1:]:
@@ -529,10 +560,14 @@ def upload_extension_info(kind, folder, address=None, log=None, urls=None, keep_
     except Exception as e:
         return False, f'发布失败: {e}'
 
-def upload_mod_info(mod_folder, address=None, log=None, urls=None, keep_old_urls=True):
+def upload_mod_info(mod_folder, address=None, log=None, urls=None, keep_old_urls=True,
+                    tags=None, tags_style=None):
     return upload_extension_info('mod', mod_folder, address=address, log=log, urls=urls,
-                                 keep_old_urls=keep_old_urls)
+                                 keep_old_urls=keep_old_urls, tags=tags,
+                                 tags_style=tags_style)
 
-def upload_addon_info(addon_folder, address=None, log=None, urls=None, keep_old_urls=True):
+def upload_addon_info(addon_folder, address=None, log=None, urls=None, keep_old_urls=True,
+                      tags=None, tags_style=None):
     return upload_extension_info('addon', addon_folder, address=address, log=log, urls=urls,
-                                 keep_old_urls=keep_old_urls)
+                                 keep_old_urls=keep_old_urls, tags=tags,
+                                 tags_style=tags_style)
