@@ -1,3 +1,13 @@
+## 0.9.85 - 静态字段写入、字段链加载与动态列表扩容
+
+- 协议升至 v24，新增 `WARP_CMD_STATIC_SET`（18）、`WARP_CMD_LOAD_FIELD`（19）、`WARP_CMD_STATIC_SET_INT`（20）与 `WARP_CMD_STATIC_SET_REF`（21）；必须完整退出游戏后加载新版 `warp_host.dll`。
+- `Host.static_set()` 支持按 `类名::字段名` 写入静态 `bool`，会沿基类查找字段声明类，并在写入前调用 `il2cpp_runtime_class_init`，避免访问未完成初始化的静态存储。
+- `Host.static_set_int()` 新增 `WARP_CMD_STATIC_SET_INT`（20），复用基类字段查找与类初始化流程，写 4 字节静态 `int32`；`LimtoEntranceDials::UnlockCode` 必须走此接口。
+- `Host.static_set_ref()` 新增 `WARP_CMD_STATIC_SET_REF`（21），把一个对象槽里的引用写入静态字段，用于把运行时创建的单例组件挂回静态缓存。
+- `Host.load_field()` 支持沿最多 16 个对象引用字段读取最终对象，结果写入插件对象槽并挂强 GC 句柄；静态数据管理器、包装对象和底层 `List` 可以用一条命令解析。
+- `Host.list_append()` 改用 `WARP_CMD_LIST_APPEND`（17）：容量不足时分配同类型托管数组并复制旧元素，同时校验元素类型可赋值；修复旧实现把 `List` 版本号误写成 `next_capacity` 的问题。
+- 修正列表追加在确认底层数组非空前读取容量的问题，坏列表只会让本次命令失败，不会在 worker 中访问空指针。
+
 ## 0.9.84 - 适配新版回合入口与战斗字段
 
 - 回合钩子从失效的 `BattleObjectManager.OnRoundStart_Model` 切换到新版游戏实际入口 `StageController.StartRound`，在 POST 阶段派发，恢复 `on_round_start` 与 BattleBGMExtend 的换曲锁触发。
@@ -1211,4 +1221,5 @@ P6 对象构造落地：命令通道从「弹窗 / 杀进程」两条硬编码�
 
 WarpHook 最初是三个插件（NoGacha / AutoBoom / Yesod 监督器）共用的依赖库，
 之前的演进（命名空间收编、多插件身份隔离、命令通道、文案池扩容）都在 git 历史里。
+
 

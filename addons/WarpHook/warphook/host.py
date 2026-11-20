@@ -50,7 +50,8 @@ from .base import (
 )
 
 HOST_MAGIC = 0x54534857           # "WHST"
-HOST_VERSION = 23                  # v23：文案池 256→384 槽，主/辅段各 192 槽。
+HOST_VERSION = 24                  # v24：新增静态 bool 写入与字段引用链命令。
+                                   # v23：文案池 256→384 槽，主/辅段各 192 槽。
                                    # v22：钩子支持 self 字段条件改写和 arg2/3/4
                                    # 整数参数改写。
                                    # v18：新增 WRITE_INT（13），写对象字段 int。
@@ -118,7 +119,12 @@ CMD_WRITE_LIST = 12  # 写 List<int> 元素（vars[0]=index, vars[1]=value）
 CMD_WRITE_INT = 13
 CMD_LIST_ITEM = 14   # load List<T> element pointer into out slot
 CMD_SET_ITEM = 15    # store source slot pointer into List<T> element
-CMD_LIST_INSERT = 16 # insert source slot pointer into List<T> at index   # 写对象字段 int（vars[0]=offset, vars[1]=value）
+CMD_LIST_INSERT = 16 # insert source slot pointer into List<T> at index
+CMD_LIST_APPEND = 17 # append reference element, growing List<T> when needed
+CMD_STATIC_SET = 18
+CMD_STATIC_SET_INT = 20
+CMD_STATIC_SET_REF = 21  # 写静态 bool 字段：vars[0]=0/1
+CMD_LOAD_FIELD = 19  # 沿逗号分隔的对象字段偏移链加载引用到 out_slot
 
 # CALL 的返回值形状（retkind 打进 cmd_type 12-15 位）
 CMD_RET_INT32 = 0   # box 返回，真值在 +0x10，位模式写回 vars[6]
@@ -1789,6 +1795,143 @@ class Host:
         return self._command(CMD_STATIC, text=name, timeout=timeout,
                              out_slot=int(out_slot))
 
+    @_command_transaction
+    def static_set(self, name, value, timeout=2.0):
+        """写一个类的静态 ``bool`` 字段。
+
+        字段可以声明在基类。DLL 会沿基类找到声明类，先调用
+        ``il2cpp_runtime_class_init`` 完成该类初始化，再用
+        ``il2cpp_field_static_set_value`` 写入一字节布尔值。``value`` 按真值
+        折算，非零都写 ``true``。
+
+        Args:
+            name: ``"类名::字段名"``，如
+                ``"LimtoEntranceDials::RequireUnlock"``。
+            value: 要写入的布尔状态。
+            timeout: 等宿主执行的秒数。
+
+        Returns:
+            成功返回 ``"已执行"``；失败返回宿主的错误文本。
+        """
+        text_name = str(name)
+        if "::" not in text_name or "|" in text_name:
+            return "字段名格式错误"
+        mapping = resolve_exports()
+        keys = ("il2cpp_runtime_class_init",
+                "il2cpp_field_static_set_value")
+        names = [mapping.get(key, "") for key in keys]
+        if any(not isinstance(export, str) or not export or
+               any(not (c.isascii() and (c.isalnum() or c == "_"))
+                   for c in export)
+               for export in names):
+            return "静态字段写入缺少 il2cpp 导出映射"
+        payload = "|".join((text_name, *names))
+        if len(payload.encode("utf-8")) >= HOST_CMD_TEXT_LEN:
+            return "静态字段写入参数超长"
+        return self._command(CMD_STATIC_SET, payload, timeout,
+                             args=(1 if value else 0,))
+
+    @_command_transaction
+    def static_set_int(self, name, value, timeout=2.0):
+        """写一个静态 ``int32`` 字段。
+
+        ``name`` 形如 ``"LimtoEntranceDials::UnlockCode"``；DLL 会沿基类
+        找到声明类并调用 ``il2cpp_runtime_class_init``，再用
+        ``il2cpp_field_static_set_value`` 写入 4 字节整数。
+        """
+        text_name = str(name)
+        if "::" not in text_name or "|" in text_name:
+            return "字段名格式错误"
+        mapping = resolve_exports()
+        keys = ("il2cpp_runtime_class_init",
+                "il2cpp_field_static_set_value")
+        names = [mapping.get(key, "") for key in keys]
+        if any(not isinstance(export, str) or not export or
+               any(not (c.isascii() and (c.isalnum() or c == "_"))
+                   for c in export)
+               for export in names):
+            return "静态字段写入缺少 il2cpp 导出映射"
+        payload = "|".join((text_name, *names))
+        if len(payload.encode("utf-8")) >= HOST_CMD_TEXT_LEN:
+            return "静态字段写入命令文本超长"
+        return self._command(CMD_STATIC_SET_INT, payload, timeout,
+                             args=(int(value),))
+
+    @_command_transaction
+    def static_set_ref(self, name, value_slot, timeout=2.0):
+        """把一个对象槽里的引用写入静态字段。
+
+        ``name`` 形如 ``"Limtochess.LimtoEntryScreen::_instance"``；
+        用于把已创建的组件挂回静态单例。
+        """
+        text_name = str(name)
+        value_slot = int(value_slot)
+        if "::" not in text_name or "|" in text_name:
+            return "字段名格式错误"
+        if not 0 <= value_slot < HOST_OBJECT_COUNT:
+            return "来源对象槽越界"
+        mapping = resolve_exports()
+        keys = ("il2cpp_runtime_class_init",
+                "il2cpp_field_static_set_value")
+        names = [mapping.get(key, "") for key in keys]
+        if any(not isinstance(export, str) or not export or
+               any(not (c.isascii() and (c.isalnum() or c == "_"))
+                   for c in export)
+               for export in names):
+            return "静态引用写入缺少 il2cpp 导出映射"
+        payload = "|".join((text_name, *names))
+        if len(payload.encode("utf-8")) >= HOST_CMD_TEXT_LEN:
+            return "静态字段写入命令文本超长"
+        return self._command(CMD_STATIC_SET_REF, payload, timeout,
+                             args=(value_slot,))
+
+    @_command_transaction
+    def load_field(self, slot, offsets, out_slot, timeout=2.0):
+        """沿对象字段引用链读取最终对象，并写入 ``out_slot``。
+
+        每个偏移都读取一个对象引用字段，例如
+        ``load_field(manager, (0x4A0, 0x10, 0x10), 12)`` 等价于
+        ``manager = *(void **)((char *)manager + 0x4A0)``，再连续走两次
+        ``+0x10``。链最多 16 跳，最终对象会挂强 GC 句柄。
+
+        Args:
+            slot: 起点对象槽。
+            offsets: 偏移序列；元素可写成整数、``0x10`` 字符串或
+                逗号分隔的十六进制字符串。
+            out_slot: 最终引用写入的对象槽。
+            timeout: 等宿主执行的秒数。
+
+        Returns:
+            成功返回 ``"已执行"``；失败返回宿主的错误文本。
+        """
+        slot = int(slot)
+        out_slot = int(out_slot)
+        if not 0 <= slot < HOST_OBJECT_COUNT:
+            return "对象槽越界"
+        if not 0 <= out_slot < HOST_OBJECT_COUNT:
+            return "对象槽越界"
+
+        if isinstance(offsets, str):
+            raw_offsets = [part.strip() for part in offsets.split(",")]
+        else:
+            raw_offsets = list(offsets)
+        if not raw_offsets or len(raw_offsets) > 16:
+            return "字段链长度必须在 1..16"
+        normalized = []
+        for offset in raw_offsets:
+            try:
+                number = int(offset, 0) if isinstance(offset, str) else int(offset)
+            except (TypeError, ValueError):
+                return "字段链偏移格式错误"
+            if not 0 <= number <= 0x7FFFFFFF:
+                return "字段链偏移越界"
+            normalized.append(f"0x{number:X}")
+        payload = ",".join(normalized)
+        if len(payload) >= HOST_CMD_TEXT_LEN:
+            return "字段链参数超长"
+        return self._command(CMD_LOAD_FIELD, payload, timeout,
+                             slot=slot, out_slot=out_slot)
+
     def audio_score(self, path, stage='preflight', timeout=2.0):
         """固定 Cp9 Boss10 的 Ryoshu=1；旧 DLL 返回未知命令，不得继续停曲。"""
         if path != 'event:/BGM/Battle/Battle_Cp9_Boss_10':
@@ -2059,11 +2202,46 @@ class Host:
                              args=(int(index), value_slot), slot=list_slot)
 
     def list_append(self, list_slot, value_slot, timeout=2.0):
-        """把 ``value_slot`` 的引用追加到 ``List<T>`` 末尾。"""
+        """把 ``value_slot`` 的引用追加到引用类型 ``List<T>`` 末尾。
+
+        与 :meth:`list_insert` 不同，这个接口会在容量不足时分配同类型的
+        托管数组并复制旧元素。它依赖五个 il2cpp 导出，导出名随命令文本
+        传给宿主，因此不需要扩充固定协议偏移：
+
+        * ``il2cpp_class_get_element_class``
+        * ``il2cpp_array_new_specific``
+        * ``il2cpp_gc_wbarrier_set_field``
+        * ``il2cpp_object_get_class``
+        * ``il2cpp_class_is_assignable_from``
+
+        追加前会校验对象可赋给列表元素类型。仅支持元素步长为 8 字节的
+        引用类型列表，``List<int>`` 等值类型容器不能使用此接口。
+        """
         list_slot = int(list_slot)
-        size = self.read(list_slot, [], kind='count', default=0,
-                         timeout=timeout) or 0
-        return self.list_insert(list_slot, size, value_slot, timeout=timeout)
+        value_slot = int(value_slot)
+        if list_slot < 0 or list_slot >= HOST_OBJECT_COUNT:
+            raise ValueError(f"对象槽 {list_slot} 超出 0..{HOST_OBJECT_COUNT - 1}")
+        if value_slot < 0 or value_slot >= HOST_OBJECT_COUNT:
+            raise ValueError(f"对象槽 {value_slot} 超出 0..{HOST_OBJECT_COUNT - 1}")
+        mapping = resolve_exports()
+        keys = (
+            "il2cpp_class_get_element_class",
+            "il2cpp_array_new_specific",
+            "il2cpp_gc_wbarrier_set_field",
+            "il2cpp_object_get_class",
+            "il2cpp_class_is_assignable_from",
+        )
+        names = [mapping.get(key, "") for key in keys]
+        if any(not isinstance(name, str) or not name or
+               any(not (c.isascii() and (c.isalnum() or c == "_"))
+                   for c in name)
+               for name in names):
+            return "列表扩容缺少 il2cpp 导出映射"
+        text = "|".join(names)
+        if len(text.encode("ascii")) >= HOST_CMD_TEXT_LEN:
+            return "列表扩容导出映射超长"
+        return self._command(CMD_LIST_APPEND, text, timeout,
+                             args=(value_slot,), slot=list_slot)
 
     def make(self, klass, args=(), slot=24, timeout=2.0):
         """构造一个对象放进对象槽（挂 GC 强句柄）。

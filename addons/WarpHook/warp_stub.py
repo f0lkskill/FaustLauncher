@@ -231,6 +231,65 @@ class Host(Protocol):
         """写 ``List<int>`` 元素。"""
         ...
 
+    def static_get(self, name: str, out_slot: int,
+                   timeout: float = 2.0) -> str:
+        """读取静态引用字段，把值放进 ``out_slot``。
+
+        ``name`` 的格式为 ``"类名::字段名"``；字段可以声明在基类。
+        """
+        ...
+
+    def static_set(self, name: str, value: bool,
+                   timeout: float = 2.0) -> str:
+        """写入静态 ``bool`` 字段。
+
+        ``name`` 的格式为 ``"类名::字段名"``；宿主会先初始化字段声明类。
+        """
+        ...
+
+    def static_set_int(self, name: str, value: int,
+                       timeout: float = 2.0) -> str:
+        """写入静态 ``int32`` 字段。
+
+        ``name`` 形如 ``"LimtoEntranceDials::UnlockCode"``；DLL 会找声明类、
+        初始化后写 4 字节整数。不要拿 ``static_set`` 代替，它只写 bool。
+        """
+        ...
+
+    def static_set_ref(self, name: str, value_slot: int,
+                       timeout: float = 2.0) -> str:
+        """把一个对象槽里的引用写入静态字段。"""
+        ...
+
+    def load_field(self, slot: int, offsets: Sequence[Any], out_slot: int,
+                   timeout: float = 2.0) -> str:
+        """沿对象引用字段链读取最终对象并写入 ``out_slot``。
+
+        ``offsets`` 是 1..16 个整数或十六进制字符串偏移，每一步都读取对象
+        引用字段。最终对象会挂强 GC 句柄。
+        """
+        ...
+
+    def list_item(self, slot: int, index: int, out_slot: int,
+                  timeout: float = 2.0) -> str:
+        """读取 ``List<T>`` 的引用元素并放进 ``out_slot``。"""
+        ...
+
+    def set_list_item(self, list_slot: int, index: int, value_slot: int,
+                      timeout: float = 2.0) -> str:
+        """把 ``value_slot`` 的对象引用写到 ``List<T>`` 指定下标。"""
+        ...
+
+    def list_insert(self, list_slot: int, index: int, value_slot: int,
+                    timeout: float = 2.0) -> str:
+        """在 ``List<T>`` 指定下标插入引用；要求底层数组已有空容量。"""
+        ...
+
+    def list_append(self, list_slot: int, value_slot: int,
+                    timeout: float = 2.0) -> str:
+        """把引用追加到 ``List<T>``；容量不足时自动分配同类型托管数组。"""
+        ...
+
     def beat(self) -> bool:
         """写一次心跳。"""
         ...

@@ -59,7 +59,8 @@
 /* 数值转字符串（构建戳用）：warp_log("proto v" WARP_STR(WARP_VERSION)) */
 #define WARP_STR_(x)      #x
 #define WARP_STR(x)       WARP_STR_(x)
-#define WARP_VERSION      23                /* v23：文案池 256→384 槽，主/辅段各 192 槽。
+#define WARP_VERSION      24                /* v24：新增静态 bool 写入与字段引用链命令。
+                                             * v23：文案池 256→384 槽，主/辅段各 192 槽。
                                              * v22：钩子支持 self 字段条件改写和 arg2/3/4
                                              * 整数参数改写。
                                              * v20：新增 WRITE_INT（13），写对象字段 int。
@@ -145,6 +146,12 @@
 #define WARP_CMD_LIST_ITEM  14  /* load List<T> element pointer into object slot */
 #define WARP_CMD_SET_ITEM   15  /* store object slot pointer into List<T> element */
 #define WARP_CMD_LIST_INSERT 16 /* insert object slot pointer into List<T> */
+#define WARP_CMD_LIST_APPEND 17 /* append reference element; grow backing array if full */
+#define WARP_CMD_STATIC_SET 18  /* 写静态 bool 字段：vars[0]=0/1 */
+#define WARP_CMD_LOAD_FIELD 19  /* 沿逗号分隔的对象字段偏移链加载引用到 out_slot */
+
+#define WARP_CMD_STATIC_SET_INT 20 /* write static int32 field, vars[0]=value */
+#define WARP_CMD_STATIC_SET_REF 21 /* write static reference from object slot */
 
 #define WARP_CMD_CODE(t)    ((t) & 0xFF)
 #define WARP_CMD_ARGC(t)    (((t) >> 8) & 0xF)
@@ -496,6 +503,11 @@ typedef void *(*fn_class_get_type)(void *klass);
 typedef void *(*fn_type_get_object)(void *type);
 typedef void *(*fn_array_new)(void *klass, size_t length);
 typedef void *(*fn_class_get_parent)(void *klass);
+typedef void *(*fn_element_class)(void *array_klass);
+typedef void *(*fn_array_new_specific)(void *array_klass, size_t length);
+typedef void (*fn_gc_wbarrier_set_field)(void *obj, void **field, void *value);
+typedef void *(*fn_object_get_class)(void *obj);
+typedef int (*fn_class_is_assignable_from)(void *klass, void *other);
 /* Pointer-sized exports: widening only the storage still truncates RAX at
  * this function-call boundary before the handle reaches that storage. */
 typedef uintptr_t (*fn_gchandle_new)(void *obj, unsigned int strong);
@@ -514,3 +526,6 @@ typedef void *(*fn_class_get_field_from_name)(void *klass, const char *name);
 /* IL2CPP export takes FieldInfo + output only, NOT a declaring class.
  * The old three-argument prototype shifted field/output and caused AV. */
 typedef void (*fn_field_static_get_value)(void *field, void *value);
+/* v24：静态字段写前先显式初始化声明类，避免直接访问未完成类初始化的存储。 */
+typedef void (*fn_runtime_class_init)(void *klass);
+typedef void (*fn_field_static_set_value)(void *field, void *value);

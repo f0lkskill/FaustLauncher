@@ -31,7 +31,7 @@ Warphook/
 │   ├── warp_popup.c         原版弹窗、杀进程
 │   ├── warp_action.c        挑台词、执行动作、参数探针
 │   ├── warp_hook.c          thunk 表、装配 / 卸载钩子
-│   ├── warp_cmd.c           命令泵（主动 popup / kill_game）
+│   ├── warp_cmd.c           命令泵（弹窗、il2cpp 读写、列表操作）
 │   └── warp_host.c          控制线程与 DllMain
 ├── warp_stub.py             类型桩（给插件的 IDE / pyright 用，无运行时逻辑）
 ├── DESIGN.md                设计文档、协议表、命名空间契约、代码结构
@@ -50,7 +50,33 @@ Warphook/
 
 `Service.stop()` 会在后台线程和抽卡 watcher 停止后，清除本插件登记在共享宿主里的钩子与文案，再提交停用。卸载失败时会保留服务登记，避免在共享映射仍被使用时提前释放资源。共享文案池已扩展到 384 槽，主段和辅段各 192 槽。
 
-本版协议为 v23，需要退出游戏进程并加载新版 `warp_host.dll`。
+本版协议为 v24，需要退出游戏进程并加载新版 `warp_host.dll`。
+
+## 静态字段、字段链与动态列表（0.9.85）
+
+v24 提供五条底层能力，便于在游戏更新后按 metadata 的新偏移直接操作静态数据：
+
+```python
+host.static_set("LimtoEntranceDials::RequireUnlock", False)
+host.static_set_int("LimtoEntranceDials::UnlockCode", 110)
+host.static_set_ref("Limtochess.LimtoEntryScreen::_instance", component_slot)
+host.load_field(manager_slot, (0x4A0, 0x10, 0x10), 12)
+host.list_append(list_slot, value_slot)
+```
+
+- `static_set()` 只写静态 `bool`。它沿基类找到真正声明字段的类，先初始化该类，
+  再调用 `il2cpp_field_static_set_value`；不要拿它写整数、枚举或引用字段。
+- `static_set_int()` 写静态 `int32` 字段（独立命令 20），同样沿基类查找声明类并
+  初始化，然后写 4 字节整数；`UnlockCode` 这类字段必须用它。
+- `static_set_ref()` 写静态引用字段（独立命令 21），来源是插件对象槽里的对象；
+  用于给运行时创建的组件补静态单例缓存。
+- `load_field()` 的每一跳都读取对象引用字段，最多 16 跳。最终对象会挂强 GC
+  句柄并写进目标对象槽；静态单例的包装层和 `List` 都可以这样连续展开。
+- `list_append()` 用于引用类型 `List<T>`。容量不足时会分配同类型托管数组、
+  复制旧元素并递增 `List` 版本号；`List<int>` 等值类型列表必须使用专用写入接口。
+
+这些命令都在 worker 隔离舱执行，不占游戏主线程。新 DLL 与 Python 端协议必须
+同为 v24；游戏进程正在运行时替换磁盘 DLL 不会影响已经映射的旧版本。
 
 ## 注入延时（0.9.82）
 
@@ -379,7 +405,7 @@ C/Python 偏移。它们不验证真实 GameAssembly 的 shutdown/GC 行为。
 
 ```bash
 MH=/path/to/minhook
-gcc -shared -O2 -Wall -s -static-libgcc -o warp_host.dll \
+gcc -shared -O2 -Wall -s -static-libgcc -o addons/WarpHook/warp_host.dll \
   src/warp_*.c \
   "$MH/src/hook.c" "$MH/src/buffer.c" "$MH/src/trampoline.c" "$MH/src/hde/hde64.c" \
   -I src -I "$MH/include" -I "$MH/src/hde"
@@ -396,3 +422,4 @@ gcc -shared -O2 -Wall -s -static-libgcc -o warp_host.dll \
   发布时打 `warphook/vX.Y.Z` 标签（不要和启动器本体的版本混在一起）。
 - 改动写进本目录的 `CHANGELOG.md`；提交信息用 `feat(warphook): ...` 这种 scope，
   这样 `git log --grep warphook` 就能把它的历史单独筛出来。
+

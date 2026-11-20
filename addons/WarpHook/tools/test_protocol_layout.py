@@ -10,7 +10,8 @@ values = {}
 for node in ast.parse(py_source).body:
     if isinstance(node, ast.Assign) and len(node.targets) == 1:
         target = node.targets[0]
-        if isinstance(target, ast.Name) and target.id.startswith('HOST_'):
+        if (isinstance(target, ast.Name) and
+                target.id.startswith(('HOST_', 'CMD_'))):
             try:
                 values[target.id] = eval(compile(ast.Expression(node.value), '', 'eval'), {'__builtins__': {}}, values)
             except (NameError, TypeError, AttributeError):
@@ -25,12 +26,22 @@ for name, expr in re.findall(r'^#define\s+(WARP_\w+)\s+([^\n]+)', c_source, re.M
             pass
 for suffix in ('VERSION', 'EXPORT_COUNT', 'EXPORTS_OFFSET', 'EV_CTRL_OFFSET', 'EVENTS_OFFSET', 'READ_OFFSET', 'OBJECTS_OFFSET', 'CMD_BUF_OFFSET', 'THREAD_EXPORT_OFFSET', 'MAP_BYTES'):
     assert values['HOST_' + suffix] == c_values['WARP_' + suffix], suffix
-assert values['HOST_VERSION'] == 23
+assert values['HOST_VERSION'] == 24
 assert values['HOST_MAX_TEXTS'] == 384
 assert values['HOST_TEXTS_PRIMARY'] == 192
 assert values['HOST_EXPORT_COUNT'] == 24
 assert values['HOST_THREAD_EXPORT_OFFSET'] == 375568
 assert values['HOST_MAP_BYTES'] == 375632
+assert re.search(r'^CMD_LIST_APPEND = 17\b', py_source, re.M)
+assert re.search(r'^CMD_STATIC_SET = 18\b', py_source, re.M)
+assert re.search(r'^CMD_LOAD_FIELD = 19\b', py_source, re.M)
+assert re.search(r'^CMD_STATIC_SET_INT = 20\b', py_source, re.M)
+assert re.search(r'^CMD_STATIC_SET_REF = 21\b', py_source, re.M)
+assert c_values['WARP_CMD_LIST_APPEND'] == values['CMD_LIST_APPEND']
+assert c_values['WARP_CMD_STATIC_SET'] == values['CMD_STATIC_SET']
+assert c_values['WARP_CMD_LOAD_FIELD'] == values['CMD_LOAD_FIELD']
+assert c_values['WARP_CMD_STATIC_SET_INT'] == values['CMD_STATIC_SET_INT']
+assert c_values['WARP_CMD_STATIC_SET_REF'] == values['CMD_STATIC_SET_REF']
 assert values['HOST_EXPORT_ORDER'][7] == 'il2cpp_thread_attach'
 assert 'il2cpp_thread_detach' not in values['HOST_EXPORT_ORDER']
-print('PASS C/Python protocol v23: text pool expanded to 384 slots')
+print('PASS C/Python protocol v24: static bool/int write and field-chain load')

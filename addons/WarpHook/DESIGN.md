@@ -1377,3 +1377,77 @@ stage id 验证。
 ```python
 game.custom_stage_server_guard(990001, 10557)
 ```
+
+## 27. 静态改写、字段链与动态扩容（v0.9.85）
+
+游戏更新后，静态数据的入口对象和内部列表层级会变化。为了让插件只依赖当前
+metadata 的偏移，而不必为每个字段增加一条固定协议命令，v24 追加了四条 worker
+命令。它们在 `WARP_CMD_LIST_INSERT` 之后继续编号，共享映射原有布局不变。
+
+### 27.1 STATIC_SET（18）
+
+```text
+cmd_text = "类名::字段名|class_init导出名|field_set导出名"
+vars[0]  = 0 / 1
+```
+
+`warp_cmd_static_set` 沿最多 32 层基类查找字段，并记住声明该字段的类。写入前先
+调用 `il2cpp_runtime_class_init(holder)`，再以单字节 `bool` 调用
+`il2cpp_field_static_set_value`。当前仅承诺静态 `bool`；整数宽度、枚举底层类型
+和引用字段需要各自专用的类型信息，不能把一字节写接口当成万能写入器。
+
+导出名随命令文本传递，不扩充固定的 24 项导出表。Python 侧从当前混淆映射动态
+解析 `il2cpp_runtime_class_init` 和 `il2cpp_field_static_set_value`。
+
+### 27.2 LOAD_FIELD（19）
+
+```text
+cmd_text = "0x4A0,0x10,0x10"
+cmd_type[16..23] = 起点对象槽
+vars[7] = 输出对象槽
+```
+
+每一跳都把当前对象指定偏移处的 8 字节值当作下一跳对象。链最长 16 跳，只支持
+引用字段；最终对象用强 GC 句柄写进输出槽。偏移解析使用 `strtoul`，坏地址仍由
+worker 的异常隔离舱接住，但调用方仍应先确认起点对象有效。
+
+### 27.3 LIST_APPEND（17）
+
+```text
+vars[0] = value 对象槽
+cmd_type[16..23] = List 对象槽
+cmd_text = 五个 il2cpp 导出名，以 | 分隔
+```
+
+元素类型从托管数组的类取得，待追加对象先经过
+`il2cpp_class_is_assignable_from` 校验。容量足够时直接写尾部；容量不足时用
+`il2cpp_array_new_specific` 按两倍容量分配，复制旧引用，再通过
+`il2cpp_gc_wbarrier_set_field` 写回 `List._items`。成功后同时更新 `_size` 和
+`_version`，让枚举器和依赖版本号的托管代码看见变化。
+
+该接口只支持 8 字节引用元素。`List<int>`、结构体或其他值类型列表的元素步长
+不是 8，必须走专用命令。新数组在复制期间挂强 GC 句柄；底层数组必须非空且容量
+不小于 size，否则命令直接失败。
+
+### 27.4 STATIC_SET_INT（20）
+
+```text
+cmd_text = "类名::字段名|class_init导出名|field_set导出名"
+vars[0]  = int32 value
+```
+
+与 `STATIC_SET` 使用相同的基类字段查找和类初始化流程，但写入 4 字节
+`int32`。`LimtoEntranceDials::UnlockCode` 这类整数静态字段必须走此接口；不要
+用 `static_set` 的 1 字节写接口代替，否则会破坏相邻静态字段。
+
+### 27.5 STATIC_SET_REF（21）
+
+```text
+cmd_text = "类名::字段名|class_init导出名|field_set导出名"
+vars[0]  = 来源对象槽
+```
+
+与 `STATIC_SET_INT` 共享字段查找和类初始化流程，但写入一个 8 字节对象引用。
+来源对象必须已在对象槽中；命令会拒绝空槽。它用于把运行时创建的组件挂回
+`LimtoEntryScreen::_instance` 这类静态缓存，不复制对象，也不创建 GC 句柄。
+

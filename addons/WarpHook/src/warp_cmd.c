@@ -8,6 +8,7 @@
  */
 #include <stdio.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
 #include <setjmp.h>
 
@@ -760,6 +761,233 @@ int warp_cmd_static(const char *text_src, int out_slot)
     return WARP_CMD_RES_OK;
 }
 
+/* 写静态 bool 字段。text = "类名::字段名|class_init导出|field_set导出"。
+ *
+ * 静态字段可能声明在基类，因此字段与 holder 的查找规则和 static_get 完全
+ * 一致。写入前调用 il2cpp_runtime_class_init(holder)，避免命中尚未完成类
+ * 初始化的静态存储；value 只取 vars[0] 的真假，按一字节 bool 传给运行时。 */
+int warp_cmd_static_set(const char *text_src, int value)
+{
+    char text[WARP_CMD_TEXT_LEN];
+    char *sep;
+    char *class_init_name;
+    char *field_set_name;
+    char *next;
+    const char *field_name;
+    HMODULE ga;
+    fn_runtime_class_init runtime_class_init;
+    fn_field_static_set_value field_static_set_value;
+    void *klass;
+    void *cur;
+    void *field = NULL;
+    void *holder = NULL;
+    unsigned char raw_value;
+    int depth;
+
+    if (!text_src || strlen(text_src) >= sizeof(text))
+        return WARP_CMD_RES_FAIL;
+    if (!g_ic.class_get_field_from_name || !g_ic.class_get_parent)
+        return WARP_CMD_RES_FAIL;
+    lstrcpynA(text, text_src, (int)sizeof(text));
+
+    class_init_name = strchr(text, '|');
+    if (!class_init_name || !class_init_name[1])
+        return WARP_CMD_RES_FAIL;
+    *class_init_name++ = '\0';
+    field_set_name = strchr(class_init_name, '|');
+    if (!field_set_name || !field_set_name[1])
+        return WARP_CMD_RES_FAIL;
+    *field_set_name++ = '\0';
+    next = strchr(field_set_name, '|');
+    if (next)
+        return WARP_CMD_RES_FAIL;
+
+    sep = strstr(text, "::");
+    if (!sep || sep == text || !sep[2])
+        return WARP_CMD_RES_FAIL;
+    *sep = '\0';
+    field_name = sep + 2;
+
+    ga = GetModuleHandleW(L"GameAssembly.dll");
+    if (!ga)
+        return WARP_CMD_RES_FAIL;
+    runtime_class_init =
+        (fn_runtime_class_init)GetProcAddress(ga, class_init_name);
+    field_static_set_value =
+        (fn_field_static_set_value)GetProcAddress(ga, field_set_name);
+    if (!runtime_class_init || !field_static_set_value)
+        return WARP_CMD_RES_FAIL;
+
+    klass = warp_find_class(g_domain, text);
+    if (!klass)
+        return WARP_CMD_RES_NO_CLASS;
+    for (cur = klass, depth = 0; cur && depth < 32;
+         cur = g_ic.class_get_parent(cur), depth++) {
+        field = g_ic.class_get_field_from_name(cur, field_name);
+        if (field) {
+            holder = cur;
+            break;
+        }
+    }
+    if (!field)
+        return WARP_CMD_RES_NO_FIELD;
+
+    raw_value = value ? 1 : 0;
+    runtime_class_init(holder);
+    field_static_set_value(field, &raw_value);
+    warp_log("static_set: bool field updated", value ? 1 : 0);
+    return WARP_CMD_RES_OK;
+}
+
+int warp_cmd_static_set_int(const char *text_src, int value)
+{
+    char text[WARP_CMD_TEXT_LEN];
+    char *sep;
+    char *class_init_name;
+    char *field_set_name;
+    char *next;
+    const char *field_name;
+    HMODULE ga;
+    fn_runtime_class_init runtime_class_init;
+    fn_field_static_set_value field_static_set_value;
+    void *klass;
+    void *cur;
+    void *field = NULL;
+    void *holder = NULL;
+    int raw_value = value;
+    int depth;
+
+    if (!text_src || strlen(text_src) >= sizeof(text))
+        return WARP_CMD_RES_FAIL;
+    if (!g_ic.class_get_field_from_name || !g_ic.class_get_parent)
+        return WARP_CMD_RES_FAIL;
+    lstrcpynA(text, text_src, (int)sizeof(text));
+
+    class_init_name = strchr(text, '|');
+    if (!class_init_name || !class_init_name[1])
+        return WARP_CMD_RES_FAIL;
+    *class_init_name++ = '\0';
+    field_set_name = strchr(class_init_name, '|');
+    if (!field_set_name || !field_set_name[1])
+        return WARP_CMD_RES_FAIL;
+    *field_set_name++ = '\0';
+    next = strchr(field_set_name, '|');
+    if (next)
+        return WARP_CMD_RES_FAIL;
+
+    sep = strstr(text, "::");
+    if (!sep || sep == text || !sep[2])
+        return WARP_CMD_RES_FAIL;
+    *sep = '\0';
+    field_name = sep + 2;
+
+    ga = GetModuleHandleW(L"GameAssembly.dll");
+    if (!ga)
+        return WARP_CMD_RES_FAIL;
+    runtime_class_init =
+        (fn_runtime_class_init)GetProcAddress(ga, class_init_name);
+    field_static_set_value =
+        (fn_field_static_set_value)GetProcAddress(ga, field_set_name);
+    if (!runtime_class_init || !field_static_set_value)
+        return WARP_CMD_RES_FAIL;
+
+    klass = warp_find_class(g_domain, text);
+    if (!klass)
+        return WARP_CMD_RES_NO_CLASS;
+    for (cur = klass, depth = 0; cur && depth < 32;
+         cur = g_ic.class_get_parent(cur), depth++) {
+        field = g_ic.class_get_field_from_name(cur, field_name);
+        if (field) {
+            holder = cur;
+            break;
+        }
+    }
+    if (!field)
+        return WARP_CMD_RES_NO_FIELD;
+
+    runtime_class_init(holder);
+    field_static_set_value(field, &raw_value);
+    warp_log("static_set_int: field updated", value);
+    return WARP_CMD_RES_OK;
+}
+
+int warp_cmd_static_set_ref(const char *text_src, int value_slot)
+{
+    char text[WARP_CMD_TEXT_LEN];
+    char *sep;
+    char *class_init_name;
+    char *field_set_name;
+    char *next;
+    const char *field_name;
+    HMODULE ga;
+    fn_runtime_class_init runtime_class_init;
+    fn_field_static_set_value field_static_set_value;
+    void *klass;
+    void *cur;
+    void *field = NULL;
+    void *holder = NULL;
+    void *raw_value;
+    int depth;
+
+    if (!text_src || strlen(text_src) >= sizeof(text))
+        return WARP_CMD_RES_FAIL;
+    if (value_slot < 0 || value_slot >= WARP_OBJECT_COUNT)
+        return WARP_CMD_RES_BAD_SLOT;
+    raw_value = warp_slot_get(value_slot);
+    if (!raw_value)
+        return WARP_CMD_RES_FAIL;
+    if (!g_ic.class_get_field_from_name || !g_ic.class_get_parent)
+        return WARP_CMD_RES_FAIL;
+    lstrcpynA(text, text_src, (int)sizeof(text));
+
+    class_init_name = strchr(text, '|');
+    if (!class_init_name || !class_init_name[1])
+        return WARP_CMD_RES_FAIL;
+    *class_init_name++ = '\0';
+    field_set_name = strchr(class_init_name, '|');
+    if (!field_set_name || !field_set_name[1])
+        return WARP_CMD_RES_FAIL;
+    *field_set_name++ = '\0';
+    next = strchr(field_set_name, '|');
+    if (next)
+        return WARP_CMD_RES_FAIL;
+
+    sep = strstr(text, "::");
+    if (!sep || sep == text || !sep[2])
+        return WARP_CMD_RES_FAIL;
+    *sep = '\0';
+    field_name = sep + 2;
+
+    ga = GetModuleHandleW(L"GameAssembly.dll");
+    if (!ga)
+        return WARP_CMD_RES_FAIL;
+    runtime_class_init =
+        (fn_runtime_class_init)GetProcAddress(ga, class_init_name);
+    field_static_set_value =
+        (fn_field_static_set_value)GetProcAddress(ga, field_set_name);
+    if (!runtime_class_init || !field_static_set_value)
+        return WARP_CMD_RES_FAIL;
+
+    klass = warp_find_class(g_domain, text);
+    if (!klass)
+        return WARP_CMD_RES_NO_CLASS;
+    for (cur = klass, depth = 0; cur && depth < 32;
+         cur = g_ic.class_get_parent(cur), depth++) {
+        field = g_ic.class_get_field_from_name(cur, field_name);
+        if (field) {
+            holder = cur;
+            break;
+        }
+    }
+    if (!field)
+        return WARP_CMD_RES_NO_FIELD;
+
+    runtime_class_init(holder);
+    field_static_set_value(field, &raw_value);
+    warp_log("static_set_ref: field updated", value_slot);
+    return WARP_CMD_RES_OK;
+}
+
 #include "warp_audio_score.inc"
 
 /* v7 代读：Python 把一条读链写进 MAP 尾部的 cmd_read 段，这里在游戏主线程上
@@ -892,6 +1120,193 @@ int warp_cmd_list_insert(int list_slot, int index, int value_slot)
     *(void **)((char *)items + 0x20 + (size_t)index * 8) = value;
     *(int *)((char *)list + 0x18) = size + 1;
     *(int *)((char *)list + 0x1C) += 1;
+    return WARP_CMD_RES_OK;
+}
+
+/* 把对象槽里的引用追加到 List<T>。现有 list_insert 只处理已有空容量；
+ * 这里在满容量时分配同类型的真实托管数组，并复制旧元素。text 传五个
+ * il2cpp 导出名，避免把新导出写进固定协议布局：
+ *
+ *   il2cpp_class_get_element_class|il2cpp_array_new_specific|
+ *   il2cpp_gc_wbarrier_set_field|il2cpp_object_get_class|
+ *   il2cpp_class_is_assignable_from
+ *
+ * 只支持引用类型元素。调用前会校验待追加对象可赋给列表元素类型；值类型
+ * 列表的元素步长不是 8，必须由调用方使用专用写入命令，不能靠这个接口猜。
+ */
+int warp_cmd_list_append(int list_slot, int value_slot, const char *export_names)
+{
+    char names[WARP_CMD_TEXT_LEN];
+    char *second;
+    char *third;
+    char *fourth;
+    char *fifth;
+    HMODULE ga;
+    fn_element_class get_element_class;
+    fn_array_new_specific array_new_specific;
+    fn_gc_wbarrier_set_field wbarrier_set_field;
+    fn_object_get_class object_get_class;
+    fn_class_is_assignable_from class_is_assignable_from;
+    void *list = warp_slot_get(list_slot);
+    void *value = warp_slot_get(value_slot);
+    void *items;
+    void *array_klass;
+    void *element_class;
+    void *value_class;
+    void *grown_items;
+    void *handle;
+    int i;
+    int size;
+    int capacity;
+    int next_capacity;
+
+    if (!list || !value)
+        return WARP_CMD_RES_FAIL;
+    if (!export_names || !export_names[0])
+        return WARP_CMD_RES_FAIL;
+    lstrcpynA(names, export_names, (int)sizeof(names));
+    second = strchr(names, '|');
+    if (!second || !second[1])
+        return WARP_CMD_RES_FAIL;
+    *second++ = '\0';
+    third = strchr(second, '|');
+    if (!third || !third[1])
+        return WARP_CMD_RES_FAIL;
+    *third++ = '\0';
+    fourth = strchr(third, '|');
+    if (!fourth || !fourth[1])
+        return WARP_CMD_RES_FAIL;
+    *fourth++ = '\0';
+    fifth = strchr(fourth, '|');
+    if (!fifth || !fifth[1] || strchr(fifth + 1, '|'))
+        return WARP_CMD_RES_FAIL;
+    *fifth++ = '\0';
+
+    ga = GetModuleHandleW(L"GameAssembly.dll");
+    if (!ga)
+        return WARP_CMD_RES_FAIL;
+    get_element_class = (fn_element_class)GetProcAddress(ga, names);
+    array_new_specific = (fn_array_new_specific)GetProcAddress(ga, second);
+    wbarrier_set_field = (fn_gc_wbarrier_set_field)GetProcAddress(ga, third);
+    object_get_class = (fn_object_get_class)GetProcAddress(ga, fourth);
+    class_is_assignable_from =
+        (fn_class_is_assignable_from)GetProcAddress(ga, fifth);
+    if (!get_element_class || !array_new_specific || !wbarrier_set_field ||
+        !object_get_class || !class_is_assignable_from)
+        return WARP_CMD_RES_FAIL;
+
+    items = *(void **)((char *)list + 0x10);
+    size = *(int *)((char *)list + 0x18);
+    if (!items || size < 0)
+        return WARP_CMD_RES_FAIL;
+    capacity = *(int *)((char *)items + 0x18);
+    if (capacity < size)
+        return WARP_CMD_RES_FAIL;
+    array_klass = *(void **)items;
+    element_class = get_element_class(array_klass);
+    value_class = object_get_class(value);
+    if (!element_class || !value_class ||
+        !class_is_assignable_from(element_class, value_class))
+        return WARP_CMD_RES_FAIL;
+
+    if (size < capacity) {
+        wbarrier_set_field(
+            items,
+            (void **)((char *)items + 0x20 + (size_t)size * 8),
+            value);
+        *(int *)((char *)list + 0x18) = size + 1;
+        *(int *)((char *)list + 0x1C) += 1;
+        return WARP_CMD_RES_OK;
+    }
+
+    next_capacity = capacity > 0 ? capacity * 2 : 4;
+    if (next_capacity <= capacity)
+        return WARP_CMD_RES_FAIL;
+    grown_items = array_new_specific(array_klass, (size_t)next_capacity);
+    if (!grown_items)
+        return WARP_CMD_RES_FAIL;
+
+    /* 新数组分配后到写回 list 之间没有托管根；先挂强句柄，避免并发 GC
+     * 把它收走。复制和最后写回都走写屏障。 */
+    handle = g_ic.gchandle_new
+        ? (void *)(uintptr_t)g_ic.gchandle_new(grown_items, 1)
+        : NULL;
+    for (i = 0; i < size; i++) {
+        void *old_value = *(void **)((char *)items + 0x20 + (size_t)i * 8);
+
+        if (old_value)
+            wbarrier_set_field(
+                grown_items,
+                (void **)((char *)grown_items + 0x20 + (size_t)i * 8),
+                old_value);
+    }
+    wbarrier_set_field(
+        grown_items,
+        (void **)((char *)grown_items + 0x20 + (size_t)size * 8),
+        value);
+    wbarrier_set_field(
+        list,
+        (void **)((char *)list + 0x10),
+        grown_items);
+    *(int *)((char *)list + 0x18) = size + 1;
+    *(int *)((char *)list + 0x1C) += 1;
+    if (handle && g_ic.gchandle_free)
+        g_ic.gchandle_free((uintptr_t)handle);
+    return WARP_CMD_RES_OK;
+}
+
+/* 沿对象字段引用链读取最终对象。text 是逗号分隔的偏移串，例如
+ * "0x4A0,0x10,0x10"：每一步都把当前对象的字段值当作下一跳对象。
+ *
+ * 只支持对象引用字段，最多 16 跳；最终对象挂强句柄写进 out_slot。偏移和
+ * 指针访问都在 worker 隔离舱里完成，坏链只会让这一条命令失败。 */
+int warp_cmd_load_field(int slot, int out_slot, const char *text_src)
+{
+    char text[WARP_CMD_TEXT_LEN];
+    char *cursor;
+    void *value;
+    int depth = 0;
+
+    if (slot < 0 || slot >= WARP_OBJECT_COUNT ||
+        out_slot < 0 || out_slot >= WARP_OBJECT_COUNT)
+        return WARP_CMD_RES_BAD_SLOT;
+    if (!text_src || strlen(text_src) >= sizeof(text))
+        return WARP_CMD_RES_FAIL;
+    lstrcpynA(text, text_src, (int)sizeof(text));
+    value = warp_slot_get(slot);
+    if (!value)
+        return WARP_CMD_RES_FAIL;
+
+    cursor = text;
+    while (*cursor) {
+        char *end;
+        unsigned long offset;
+
+        while (*cursor == ' ' || *cursor == '\t')
+            cursor++;
+        if (!*cursor || depth >= 16)
+            return WARP_CMD_RES_FAIL;
+        offset = strtoul(cursor, &end, 0);
+        if (end == cursor || offset > INT32_MAX)
+            return WARP_CMD_RES_FAIL;
+        while (*end == ' ' || *end == '\t')
+            end++;
+
+        value = *(void **)((char *)value + (size_t)offset);
+        if (!value)
+            return WARP_CMD_RES_FAIL;
+        depth++;
+        if (!*end)
+            break;
+        if (*end != ',' || !end[1])
+            return WARP_CMD_RES_FAIL;
+        cursor = end + 1;
+    }
+    if (depth == 0)
+        return WARP_CMD_RES_FAIL;
+
+    warp_slot_put(out_slot, value, 1);
+    warp_log("load_field: reference chain resolved", depth);
     return WARP_CMD_RES_OK;
 }
 
@@ -1213,6 +1628,36 @@ static DWORD WINAPI work_main(LPVOID arg)
                     if (rc == 0 && g_hdr)
                         g_hdr->fired++;
                     break;
+                case WARP_CMD_LIST_APPEND:
+                    rc = warp_cmd_list_append(WARP_CMD_SLOT(job.type),
+                                              (int)g_hdr->vars[0],
+                                              job.text);
+                    if (rc == 0 && g_hdr)
+                        g_hdr->fired++;
+                    break;
+                case WARP_CMD_STATIC_SET:
+                    rc = warp_cmd_static_set(job.text, (int)g_hdr->vars[0]);
+                    if (rc == 0 && g_hdr)
+                        g_hdr->fired++;
+                    break;
+                case WARP_CMD_STATIC_SET_INT:
+                    rc = warp_cmd_static_set_int(job.text,
+                                                 (int)g_hdr->vars[0]);
+                    if (rc == 0 && g_hdr)
+                        g_hdr->fired++;
+                    break;
+                case WARP_CMD_STATIC_SET_REF:
+                    rc = warp_cmd_static_set_ref(job.text,
+                                                 (int)g_hdr->vars[0]);
+                    if (rc == 0 && g_hdr)
+                        g_hdr->fired++;
+                    break;
+                case WARP_CMD_LOAD_FIELD:
+                    rc = warp_cmd_load_field(WARP_CMD_SLOT(job.type),
+                                             (int)job.out_slot, job.text);
+                    if (rc == 0 && g_hdr)
+                        g_hdr->fired++;
+                    break;
                 default:
                     rc = WARP_CMD_RES_UNKNOWN;
                     break;
@@ -1382,6 +1827,11 @@ void warp_pump_commands(void)
     case WARP_CMD_LIST_ITEM:
     case WARP_CMD_SET_ITEM:
     case WARP_CMD_LIST_INSERT:
+    case WARP_CMD_LIST_APPEND:
+    case WARP_CMD_STATIC_SET:
+    case WARP_CMD_STATIC_SET_INT:
+    case WARP_CMD_STATIC_SET_REF:
+    case WARP_CMD_LOAD_FIELD:
         /* v0.9.23：要进 il2cpp runtime/元数据的命令全部投递 worker 隔离舱，
          * 主线程泵不再亲自执行（六次崩溃都在这条路径上）。先标 BUSY，结果
          * 与 ack 由 worker 写回；worker 没起来就记 FAIL，绝不回退主线程执行。
