@@ -51,8 +51,8 @@ _MANAGER_DICT = fields.field("BattleObjectManager", "_allUnitDictionary")["off"]
 _UNIT_MODEL = fields.field("BattleUnit", "_model")["off"]
 _MODEL_STATE = fields.field("BattleUnitModel", "_state")["off"]
 _MODEL_BUFF = fields.field("BattleUnitModel", "_buffDetail")["off"]
-_BUFF_LIST = fields.field("BuffDetail", "list")["off"]
-_BUFF_STATIC = fields.field("BuffModel", "_staticData")["off"]
+_BUFF_LIST = fields.field("BuffDetail", "_grantedBuffList")["off"]
+_BUFF_STATIC = fields.field("BuffModel", "_buffData")["off"]
 _BUFF_ID = fields.field("BuffStaticData", "id")["off"]
 _BUFF_INFO = fields.field("BuffModel", "_buffInfo")["off"]
 
@@ -557,7 +557,7 @@ class Unit:
         return self.buff(key) is not None
 
     def buff_count(self):
-        """身上有几个 buff（BuffDetail.list 的元素数）。"""
+        """身上有几个 buff（BuffDetail._grantedBuffList 的元素数）。"""
         chain = self._prefix + [{"off": _UNIT_MODEL, "deref": True},
                                 {"off": _MODEL_BUFF, "deref": True},
                                 {"off": _BUFF_LIST, "deref": True}]

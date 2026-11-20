@@ -1,3 +1,10 @@
+## 0.9.86 - 适配 2026-11-19 metadata 字段偏移
+
+- 按新 `20261119_compare/dump.cs` 更新 `BattleUnitModel` 的 40 项字段偏移；新增的 `LimtoErosion*` 字段把 `0x68` 之后整体后移 8 字节，`_instanceID` 现为 `0x70`，`_state` 现为 `0x168`。
+- 同步 `BuffDetail._grantedBuffList` 与 `BuffModel._buffData` 的新字段名，更新 `objects.py`、字段表和设计文档，避免按旧名查找失败。
+- 回归测试锁定新的 `BattleUnitModel` 关键偏移；字段表来源切换到新 dump 的 metadata SHA256。
+- 审计方法挂载路径：WarpHook 通过 `il2cpp_class_get_method_from_name` + `MethodInfo` 首指针 + MinHook 工作，不维护方法 RVA；本次更新只需刷新字段表。
+
 ## 0.9.85 - 静态字段写入、字段链加载与动态列表扩容
 
 - 协议升至 v24，新增 `WARP_CMD_STATIC_SET`（18）、`WARP_CMD_LOAD_FIELD`（19）、`WARP_CMD_STATIC_SET_INT`（20）与 `WARP_CMD_STATIC_SET_REF`（21）；必须完整退出游戏后加载新版 `warp_host.dll`。

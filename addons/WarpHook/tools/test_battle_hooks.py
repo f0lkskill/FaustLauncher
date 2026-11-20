@@ -125,19 +125,23 @@ class BattleHookTests(unittest.TestCase):
         spec.loader.exec_module(module)
         table = module.FIELD_TABLE["BattleUnitModel"]
         expected = {
-            "_instanceID": 0x68,
-            "_originID": 0x6C,
-            "_actionList": 0xA8,
-            "_buffDetail": 0xF8,
-            "_formationPos": 0x108,
-            "_state": 0x160,
-            "_changeStat": 0x178,
-            "_thisTurnIntSpeedOnCmdPhase": 0x19C,
+            "_instanceID": 0x70,
+            "_originID": 0x74,
+            "_actionList": 0xB0,
+            "_buffDetail": 0x100,
+            "_formationPos": 0x110,
+            "_state": 0x168,
+            "_changeStat": 0x180,
+            "_thisTurnIntSpeedOnCmdPhase": 0x1A4,
         }
 
         for name, offset in expected.items():
             self.assertEqual(table[name]["off"], offset, name)
         self.assertEqual(module.FIELD_TABLE["CharacterState"]["_hp"]["off"], 0x148)
+        self.assertEqual(
+            module.FIELD_TABLE["BuffDetail"]["_grantedBuffList"]["off"], 0x10)
+        self.assertEqual(
+            module.FIELD_TABLE["BuffModel"]["_buffData"]["off"], 0x68)
 
 
 if __name__ == "__main__":

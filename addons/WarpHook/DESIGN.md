@@ -771,8 +771,8 @@ objects.scene_full(host)                                            # 同上，�
 纯命令通道那条路（8 跳用满）拿的是 buff **英文 ID** 的 32 位指纹：
 
 ```
-BattleUnit → _model(+0x10) → _buffDetail(+0xE0) → list(+0x10)
-          → [i] → _staticData(+0x68) → id(+0x18)   ← 正好 8 跳，用满
+BattleUnit → _model(+0x10) → _buffDetail(+0x100) → _grantedBuffList(+0x10)
+          → [i] → _buffData(+0x68) → id(+0x18)   ← 正好 8 跳，用满
 ```
 
 `kind='text'` 的落点是 `WARP_READ_TEXT_NUM`，它把 il2cpp string 换算成一个

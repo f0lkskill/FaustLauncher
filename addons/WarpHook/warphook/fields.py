@@ -15,8 +15,8 @@
         >>> spec["kind"]
         'obscured'
 
-当前字段来源：``cache/hook/dump/1ECCA01A/out/dump.cs``，对应 GameAssembly
-SHA256 ``1ECCA01AF7EAF92C5D6D6D000C105DF7768BE0E689A7EB2736CA1A566E361CE1``。
+当前字段来源：``cache/hook/dump/20261119_compare/dump.cs``，对应 metadata
+SHA256 ``7D3CCF0F3C150E0D5A7F36D8A5250E161AEE03752DF9E1A4B543BF110B367C25``。
 
 ``kind_of("BattleUnitModel", "_state", "_hp")``
     只要落点 kind。
@@ -32,8 +32,8 @@ SHA256 ``1ECCA01AF7EAF92C5D6D6D000C105DF7768BE0E689A7EB2736CA1A566E361CE1``。
 「verified=False」的条目照 dump.cs 抄的、还没在真机上对过数，用之前先对一眼
 （症状是「全 0」或者「数很大」，先怀疑偏移和尺寸）。
 
-字段来源：``cache/hook/dump/E6312D92/out/dump.cs``（Il2CppDumper，10-24 生成），
-抽取工具 ``test/_dump_fields.py``。
+字段来源：``cache/hook/dump/20261119_compare/dump.cs``（Il2CppDumper，
+2026-11-19 游戏更新后生成）。
 """
 
 # 落点 kind 与 C 侧 WARP_READ_* 同名，Host.read / reads= 直接用字符串。
@@ -83,63 +83,63 @@ FIELD_TABLE = {
                       "note": "Vector3 内嵌，偏移和尺寸都得自己对"},
     },
     "BattleUnitModel": {
-        "_instanceID": {"off": 0x68, "ref": None, "kind": INT, "verified": True,
+        "_instanceID": {"off": 0x70, "ref": None, "kind": INT, "verified": True,
                         "note": "1/2/3 这种小整数，真机对过"},
-        "_originID": {"off": 0x6C, "ref": None, "kind": INT, "verified": True},
-        "_defaultPhaseID": {"off": 0x70, "ref": None, "kind": INT, "verified": False},
-        "_participateOrder": {"off": 0x74, "ref": None, "kind": INT, "verified": False,
+        "_originID": {"off": 0x74, "ref": None, "kind": INT, "verified": True},
+        "_defaultPhaseID": {"off": 0x78, "ref": None, "kind": INT, "verified": False},
+        "_participateOrder": {"off": 0x7c, "ref": None, "kind": INT, "verified": False,
                               "note": "入场顺序"},
-        "_position": {"off": 0x78, "ref": None, "kind": INT, "verified": False,
+        "_position": {"off": 0x80, "ref": None, "kind": INT, "verified": False,
                       "note": "UNIT_POSITION 枚举（槽位），不是坐标"},
-        "_passiveDetail": {"off": 0x80, "ref": "PassiveDetail", "kind": INT, "verified": False},
-        "_systemAbilityDetail": {"off": 0x88, "ref": "BattleSystemAbilityDetail",
+        "_passiveDetail": {"off": 0x88, "ref": "PassiveDetail", "kind": INT, "verified": False},
+        "_systemAbilityDetail": {"off": 0x90, "ref": "BattleSystemAbilityDetail",
                                  "kind": INT, "verified": False},
-        "_actionSlotDetail": {"off": 0x90, "ref": "ActionSlotDetail", "kind": INT,
+        "_actionSlotDetail": {"off": 0x98, "ref": "ActionSlotDetail", "kind": INT,
                               "verified": False},
-        "_doneDefenseAction": {"off": 0x98, "ref": None, "kind": BOOL, "verified": False},
-        "_actionList": {"off": 0xA8, "ref": "List", "kind": LIST, "verified": False,
+        "_doneDefenseAction": {"off": 0xa0, "ref": None, "kind": BOOL, "verified": False},
+        "_actionList": {"off": 0xb0, "ref": "List", "kind": LIST, "verified": False,
                         "note": "List<BattleActionModel>，本回合行动"},
-        "_activatedAbilityDic": {"off": 0xC8, "ref": "Dictionary", "kind": DICT,
+        "_activatedAbilityDic": {"off": 0xd0, "ref": "Dictionary", "kind": DICT,
                                  "verified": False, "note": "Dictionary<string, int>"},
-        "_deadAllyCount": {"off": 0xD0, "ref": None, "kind": INT, "verified": False},
-        "_originSpeed": {"off": 0xD4, "ref": None, "kind": INT, "verified": True,
+        "_deadAllyCount": {"off": 0xd8, "ref": None, "kind": INT, "verified": False},
+        "_originSpeed": {"off": 0xdc, "ref": None, "kind": INT, "verified": True,
                          "note": "×1000 定点，读到 5000 就是 5 速"},
-        "_overwritedSpeed": {"off": 0xD8, "ref": None, "kind": INT, "verified": True},
-        "_firstTurnSeed": {"off": 0xE8, "ref": None, "kind": INT, "verified": False},
-        "_duelRank": {"off": 0xF0, "ref": None, "kind": INT, "verified": False,
+        "_overwritedSpeed": {"off": 0xe0, "ref": None, "kind": INT, "verified": True},
+        "_firstTurnSeed": {"off": 0xf0, "ref": None, "kind": INT, "verified": False},
+        "_duelRank": {"off": 0xf8, "ref": None, "kind": INT, "verified": False,
                       "note": "拼点排名"},
-        "_buffDetail": {"off": 0xF8, "ref": "BuffDetail", "kind": INT, "verified": True},
-        "_formationPos": {"off": 0x108, "ref": None, "kind": FLOAT, "verified": False,
+        "_buffDetail": {"off": 0x100, "ref": "BuffDetail", "kind": INT, "verified": True},
+        "_formationPos": {"off": 0x110, "ref": None, "kind": FLOAT, "verified": False,
                           "note": "Vector3 内嵌（阵型坐标）"},
-        "_overrideAppearanceID": {"off": 0x118, "ref": None, "kind": TEXT, "verified": False,
+        "_overrideAppearanceID": {"off": 0x120, "ref": None, "kind": TEXT, "verified": False,
                                   "note": "il2cpp string，只给 ID 不给名字"},
-        "_originViewID": {"off": 0x120, "ref": None, "kind": INT, "verified": False},
-        "_erosionData": {"off": 0x128, "ref": "EgoAndErosionState", "kind": INT,
+        "_originViewID": {"off": 0x128, "ref": None, "kind": INT, "verified": False},
+        "_erosionData": {"off": 0x130, "ref": "EgoAndErosionState", "kind": INT,
                          "verified": False},
-        "_defaultPanicType": {"off": 0x130, "ref": None, "kind": INT, "verified": False,
+        "_defaultPanicType": {"off": 0x138, "ref": None, "kind": INT, "verified": False,
                               "note": "PANIC_TYPE 枚举"},
-        "_cachedPanicType": {"off": 0x134, "ref": None, "kind": INT, "verified": False},
-        "_cachedPanicTypeBuff": {"off": 0x138, "ref": None, "kind": INT, "verified": False},
-        "_lowMoraleCondition": {"off": 0x13C, "ref": None, "kind": INT, "verified": False},
-        "_panicCondition": {"off": 0x140, "ref": None, "kind": INT, "verified": False},
-        "_discardedSinThisTurnList": {"off": 0x148, "ref": "List", "kind": LIST,
+        "_cachedPanicType": {"off": 0x13c, "ref": None, "kind": INT, "verified": False},
+        "_cachedPanicTypeBuff": {"off": 0x140, "ref": None, "kind": INT, "verified": False},
+        "_lowMoraleCondition": {"off": 0x144, "ref": None, "kind": INT, "verified": False},
+        "_panicCondition": {"off": 0x148, "ref": None, "kind": INT, "verified": False},
+        "_discardedSinThisTurnList": {"off": 0x150, "ref": "List", "kind": LIST,
                                       "verified": False},
-        "_discardedSinPrevTurnList": {"off": 0x150, "ref": "List", "kind": LIST,
+        "_discardedSinPrevTurnList": {"off": 0x158, "ref": "List", "kind": LIST,
                                       "verified": False},
-        "_concentratedAttackData": {"off": 0x158, "ref": None, "kind": INT,
+        "_concentratedAttackData": {"off": 0x160, "ref": None, "kind": INT,
                                     "verified": False},
-        "_state": {"off": 0x160, "ref": "CharacterState", "kind": INT, "verified": True},
-        "_resistDetail": {"off": 0x168, "ref": "ResistDetail", "kind": INT, "verified": False},
-        "_mentalDetail": {"off": 0x170, "ref": "MentalDetail", "kind": INT, "verified": False},
-        "_changeStat": {"off": 0x178, "ref": "ChangeStat", "kind": INT, "verified": False},
-        "_hpRetentionRatio": {"off": 0x180, "ref": None, "kind": FLOAT, "verified": False},
-        "_prevTurnMpOnCmdPhase": {"off": 0x188, "ref": None, "kind": INT, "verified": False},
-        "_thisTurnMpOnCmdPhase": {"off": 0x18C, "ref": None, "kind": INT, "verified": False},
-        "_prevTurnHpOnCmdPhase": {"off": 0x190, "ref": None, "kind": INT, "verified": False},
-        "_thisTurnHpOnCmdPhase": {"off": 0x194, "ref": None, "kind": INT, "verified": False},
-        "_prevTurnIntSpeedOnCmdPhase": {"off": 0x198, "ref": None, "kind": INT,
+        "_state": {"off": 0x168, "ref": "CharacterState", "kind": INT, "verified": True},
+        "_resistDetail": {"off": 0x170, "ref": "ResistDetail", "kind": INT, "verified": False},
+        "_mentalDetail": {"off": 0x178, "ref": "MentalDetail", "kind": INT, "verified": False},
+        "_changeStat": {"off": 0x180, "ref": "ChangeStat", "kind": INT, "verified": False},
+        "_hpRetentionRatio": {"off": 0x188, "ref": None, "kind": FLOAT, "verified": False},
+        "_prevTurnMpOnCmdPhase": {"off": 0x190, "ref": None, "kind": INT, "verified": False},
+        "_thisTurnMpOnCmdPhase": {"off": 0x194, "ref": None, "kind": INT, "verified": False},
+        "_prevTurnHpOnCmdPhase": {"off": 0x198, "ref": None, "kind": INT, "verified": False},
+        "_thisTurnHpOnCmdPhase": {"off": 0x19c, "ref": None, "kind": INT, "verified": False},
+        "_prevTurnIntSpeedOnCmdPhase": {"off": 0x1a0, "ref": None, "kind": INT,
                                         "verified": False},
-        "_thisTurnIntSpeedOnCmdPhase": {"off": 0x19C, "ref": None, "kind": INT,
+        "_thisTurnIntSpeedOnCmdPhase": {"off": 0x1a4, "ref": None, "kind": INT,
                                         "verified": False},
     },
     # 血量、理智、生死都藏在 Obscured* 里；同一个对象上是一串 12 字节一个的
@@ -208,13 +208,13 @@ FIELD_TABLE = {
                                             "verified": False},
     },
     "BuffDetail": {
-        "list": {"off": 0x10, "ref": "List", "kind": LIST, "verified": True,
-                 "note": "List<BuffModel>"},
+        "_grantedBuffList": {"off": 0x10, "ref": "List", "kind": LIST, "verified": True,
+                             "note": "List<BuffModel>"},
     },
     "BuffModel": {
         "_buffInfo": {"off": 0x58, "ref": "BuffInfo", "kind": INT, "verified": True,
                       "note": "当前层数/次数在这里（BuffStaticData 只有模板值）"},
-        "_staticData": {"off": 0x68, "ref": "BuffStaticData", "kind": INT, "verified": True},
+        "_buffData": {"off": 0x68, "ref": "BuffStaticData", "kind": INT, "verified": True},
         "_buffName": {"off": 0xA0, "ref": None, "kind": TEXT, "verified": False,
                       "note": "il2cpp string，缓存的名字"},
     },
