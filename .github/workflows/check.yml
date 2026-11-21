@@ -1,4 +1,4 @@
-name: Check Newest Package
+name: 检查汉化更新包
 
 on:
   # 手动触发
@@ -8,8 +8,14 @@ on:
     - cron: '0 0 * * *'
     - cron: '0 12 * * *'
 
+# 同一时间只允许一个检查任务运行, 避免定时触发与手动触发并发写笔记
+concurrency:
+  group: check-newest-package
+  cancel-in-progress: false
+
 jobs:
   check-and-run:
+    name: 检查并同步零协会汉化
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -20,16 +26,18 @@ jobs:
       TZ: Asia/Shanghai
 
     steps:
-      - name: Checkout code
+      - name: 检出代码
         uses: actions/checkout@v5
 
-      - name: Set up Python
+      - name: 配置 Python
         uses: actions/setup-python@v6
         with:
-          python-version: '3.9'
+          # 不用 3.9: 新版 Ubuntu runner 已不再提供该版本, 会直接找不到解释器
+          python-version: '3.12'
           cache: 'pip'
+          cache-dependency-path: requirements.txt
 
-      - name: Install dependencies
+      - name: 安装依赖
         run: |
           python -m pip install --upgrade pip
           pip install requests
@@ -37,7 +45,7 @@ jobs:
       # 版本判断统一交给 UpdatePackage.py (唯一持有持久状态的一方):
       # 它比对零协会最新 release 与笔记里的 llc_version, 需要更新或镜像该刷新时才
       # 下载 / 上传 / 写笔记, 都没有变化时直接返回。
-      - name: Run update check
+      - name: 执行更新检查
         env:
           ADDRESS: ${{ secrets.WEBNOTE_ADDRESS }}
           # 蓝奏云上传凭据 (浏览器登录 pan.lanzou.com 后 F12 复制 cookie, 过期需更新)
