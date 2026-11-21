@@ -48,6 +48,8 @@ jobs:
       - name: 执行更新检查
         env:
           ADDRESS: ${{ secrets.WEBNOTE_ADDRESS }}
+          # 使用内置 token 调用 GitHub API, 避免共享 runner 的未认证请求被限流
+          GH_TOKEN: ${{ github.token }}
           # 蓝奏云上传凭据 (浏览器登录 pan.lanzou.com 后 F12 复制 cookie, 过期需更新)
           LANZOU_YLOGIN: ${{ secrets.LANZOU_YLOGIN }}
           LANZOU_YLOGINS: ${{ secrets.LANZOU_YLOGINS }}

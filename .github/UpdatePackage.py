@@ -61,6 +61,13 @@ def get_llc():
     """零协会最新 release -> (tag, release 对象); 失败返回 (None, None)"""
     try:
         fetcher = GitHubReleaseFetcher(False, ignore_ssl=True)
+        # 未认证的 GitHub API 按出口 IP 限流 (60 次/小时), Actions 共享 IP 很容易
+        # 返回 403; workflow 注入 GH_TOKEN 后按仓库计算额度, 可显著提高限额。
+        token = (os.environ.get('GH_TOKEN') or os.environ.get('GITHUB_TOKEN') or '').strip()
+        if token:
+            fetcher.session.headers['Authorization'] = f'Bearer {token}'
+        else:
+            print("未提供 GitHub token，可能触发 API 限流")
         last_ver = fetcher.get_latest_release(GITHUB_OWNER, GITHUB_REPO)
         return last_ver.tag_name, last_ver  # type: ignore
     except Exception as e:
