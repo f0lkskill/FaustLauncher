@@ -1,3 +1,17 @@
+## 0.9.88 - 修复跨战斗 BattleObjectManager 缓存失效
+
+- `Live.battle()` 在单位数读取为 `0` 时，以 1 秒节流强制重新解析 `SingletonBehaviorCollector::get_BattleObjectManager`，避免 `SLOT_MANAGER` 持有上一场战斗已销毁的实例。
+- 离开战斗场景时主动清空 `SLOT_MANAGER`；下一场战斗重新获取 manager，恢复 `on_round_start` 业务回调。
+- 保留 `_round_pending` 重试逻辑；首次战斗和后续战斗均可重新识别回合命中。
+- 同步包含自定义关卡入口的非破坏复制、Walpu3 子章节复用和顶部插入修复。
+
+## 0.9.87 - 修复更新时 warp.log 无法删除
+
+- Python 与原生宿主的日志都允许共享删除：`warp.log` 在启动器/游戏进程仍持有句柄时也能被 7-Zip 覆盖或删除。
+- `warp.log` 不再用长期独占的 `logging.FileHandler`，改为 Windows `CreateFileW(... FILE_SHARE_DELETE)` 的单句柄写入。
+- `warp_host.dll` 的日志句柄同步加入 `FILE_SHARE_DELETE`；重启游戏后加载新 DLL。
+- 修复 WarpHook 更新时 7-Zip 报 `Cannot delete output file: addons/WarpHook/warp.log` 并回退到 zipfile 的问题。
+
 ## 0.9.86 - 适配 2026-11-19 metadata 字段偏移
 
 - 按新 `20261119_compare/dump.cs` 更新 `BattleUnitModel` 的 40 项字段偏移；新增的 `LimtoErosion*` 字段把 `0x68` 之后整体后移 8 字节，`_instanceID` 现为 `0x70`，`_state` 现为 `0x168`。

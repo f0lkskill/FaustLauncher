@@ -124,7 +124,7 @@ void warp_log(const char *msg, int value)
      * 共享读/写是为了让启动器与诊断工具能在游戏运行中随时 tail。 */
     attr = GetFileAttributesA(path);
     f = CreateFileA(path, FILE_APPEND_DATA | FILE_WRITE_DATA,
-                    FILE_SHARE_READ | FILE_SHARE_WRITE, NULL,
+                    FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
                     (attr == INVALID_FILE_ATTRIBUTES) ? CREATE_ALWAYS : OPEN_EXISTING,
                     FILE_ATTRIBUTE_NORMAL, NULL);
     if (f == INVALID_HANDLE_VALUE)

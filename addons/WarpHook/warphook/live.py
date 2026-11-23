@@ -432,7 +432,8 @@ def _clone_list_on(host, src_slot, out_slot, clone_items=True, timeout=3.0):
     return True
 
 
-def _deep_clone_stage_on(host, source_id, slot=_SLOT_STAGE, timeout=3.0):
+def _deep_clone_stage_on(host, source_id, slot=_SLOT_STAGE, timeout=3.0,
+                         strip_story=False):
     """深拷贝 StageStaticData：wave/敌人/脚本列表都不再共享源关卡。"""
     located = _stage_locate_on(host, source_id, timeout)
     if located is None:
@@ -495,16 +496,18 @@ def _deep_clone_stage_on(host, source_id, slot=_SLOT_STAGE, timeout=3.0):
         host.write_int(20, 0x18, 0, timeout=timeout)
         _set_ptr_at(host, slot, off, host.object_ptr(20), timeout)
 
-    # story 是 LeaveStageForStoryBattle 需要的，复制一份而不是清空。
-    story = _ptr_at(host, 26, 0x60, timeout)
-    if story:
-        host.put_slot(21, story)
-        result = host.call('System.Object::MemberwiseClone', slot=21,
-                           ret='ref', out_slot=20, via='invoke',
-                           timeout=timeout)
-        if isinstance(result, str) or not host.object_ptr(20):
-            return {'ok': False, 'reason': result or '克隆 story 失败'}
-        _set_ptr_at(host, slot, 0x60, host.object_ptr(20), timeout)
+    if strip_story:
+        _set_ptr_at(host, slot, 0x60, 0, timeout)
+    else:
+        story = _ptr_at(host, 26, 0x60, timeout)
+        if story:
+            host.put_slot(21, story)
+            result = host.call('System.Object::MemberwiseClone', slot=21,
+                               ret='ref', out_slot=20, via='invoke',
+                               timeout=timeout)
+            if isinstance(result, str) or not host.object_ptr(20):
+                return {'ok': False, 'reason': result or 'clone story failed'}
+            _set_ptr_at(host, slot, 0x60, host.object_ptr(20), timeout)
     host.write_int(slot, 0xA0, 0, timeout=timeout)
     host.write_int(slot, 0xA4, 0, timeout=timeout)
     stage_id = host.read(slot, [{'off': 0x10, 'deref': False}],
@@ -679,59 +682,34 @@ def _remove_subchapter_on(host, part_slot, sub_id, timeout=3.0):
     return True
 
 
-def _chapter_add_top_on(host, source_node_id, new_node_id, stage_id,
-                        source_subchapter_id=None, new_subchapter_id=9910,
-                        timeout=3.0):
-    """克隆章节 UI 里的 STAGE_NODE，插到 ``SubchapterUIList`` 顶部。
-
-    同时克隆 ``StageNodeInfo`` 并插入原节点所在的 stageNodeList；原 UI/节点
-    保持不变。调用前需先把 ``stage_id`` 对应的 StageStaticData 追加进关卡表。
-    """
-    result = host.call('StaticDataManager::get_Instance', slot=None,
-                       ret='ref', out_slot=30, via='invoke', timeout=timeout)
-    if isinstance(result, str):
-        return {'ok': False, 'reason': result}
-    result = host.call('StaticDataManager::get_partList', slot=30,
-                       ret='ref', out_slot=31, via='invoke', timeout=timeout)
-    if isinstance(result, str) or not host.object_ptr(31):
-        return {'ok': False, 'reason': result or '取 partList 失败'}
-    part_list_ptr = _ptr_at(host, 31, 0x10, timeout)
-    if not part_list_ptr:
-        return {'ok': False, 'reason': 'partList.list 为空'}
-    host.put_slot(24, part_list_ptr)
-    parts = host.read(24, [], kind='count', default=0, timeout=timeout) or 0
-
-    found = False
-    for pi in range(parts):
-        host.put_slot(23, 0)
-        host.list_item(24, pi, 23, timeout=timeout)
-        ui_ptr = _ptr_at(host, 23, 0x28, timeout)
-        if not ui_ptr:
-            continue
-        host.put_slot(22, ui_ptr)
-        ui_count = host.read(22, [], kind='count', default=0,
-                             timeout=timeout) or 0
-        for ui in range(ui_count):
-            host.put_slot(21, 0)
-            host.list_item(22, ui, 21, timeout=timeout)
-            if (_i32_at(host, 21, 0x48, timeout) == 3 and
-                    _i32_at(host, 21, 0x18, timeout) == int(source_node_id)):
-                host.put_slot(11, host.object_ptr(23))   # part
-                host.put_slot(18, host.object_ptr(22))   # SubchapterUIList
-                source_ui = 21
-                found = True
-                break
-        if found:
-            break
-    if not found:
-        return {'ok': False, 'reason': f'找不到 UI 节点 {source_node_id}'}
-    source_sub_id = _i32_at(host, source_ui, 0x14, timeout)
+def _chapter_add_node_top_on(host, source_ui, source_sub_id, source_node_id,
+                             source_node_list, source_node_index, new_node_id,
+                             stage_id, new_subchapter_id, timeout=3.0):
+    """Add a cloned node to the existing Walpu3 subchapter without replacing it."""
+    source_main_id = _i32_at(host, source_ui, 0x10, timeout)
+    host.put_slot(24, source_node_list)
+    host.put_slot(6, 0)
+    host.list_item(24, source_node_index, 6, timeout=timeout)
+    if not host.object_ptr(6):
+        return {'ok': False, 'reason': 'source StageNodeInfo is null'}
+    result = host.call('System.Object::MemberwiseClone', slot=6,
+                       ret='ref', out_slot=5, via='invoke', timeout=timeout)
+    if isinstance(result, str) or not host.object_ptr(5):
+        return {'ok': False, 'reason': result or 'clone StageNodeInfo failed'}
+    host.write_int(5, 0x10, int(new_node_id), timeout=timeout)
+    host.write_int(5, 0x1C, int(stage_id), timeout=timeout)
+    host.write_int(5, 0x68, int(new_subchapter_id), timeout=timeout)
+    host.write_int(5, 0x50, 0, timeout=timeout)
+    host.write_int(5, 0x51, 0, timeout=timeout)
+    host.write_int(5, 0x78, 0, timeout=timeout)
+    appended = host.list_append(24, 5, timeout=timeout)
+    if appended not in ('\u5df2\u6267\u884c', '\u6210\u529f'):
+        return {'ok': False, 'reason': appended or 'append StageNodeInfo failed'}
 
     result = host.call('System.Object::MemberwiseClone', slot=source_ui,
-                       ret='ref', out_slot=17, via='invoke',
-                       timeout=timeout)
+                       ret='ref', out_slot=17, via='invoke', timeout=timeout)
     if isinstance(result, str) or not host.object_ptr(17):
-        return {'ok': False, 'reason': result or '克隆 UI 失败'}
+        return {'ok': False, 'reason': result or 'clone UI failed'}
     rel_ptr = _ptr_at(host, source_ui, 0x30, timeout)
     if rel_ptr:
         host.put_slot(16, rel_ptr)
@@ -739,7 +717,8 @@ def _chapter_add_top_on(host, source_node_id, new_node_id, stage_id,
                            ret='ref', out_slot=15, via='invoke',
                            timeout=timeout)
         if isinstance(result, str) or not host.object_ptr(15):
-            return {'ok': False, 'reason': result or '克隆 relatedData 失败'}
+            return {'ok': False, 'reason': result or 'clone relatedData failed'}
+        host.write_int(15, 0x14, int(new_subchapter_id), timeout=timeout)
         host.write_int(15, 0x18, int(new_node_id), timeout=timeout)
         _set_ptr_at(host, 17, 0x30, host.object_ptr(15), timeout)
     else:
@@ -752,89 +731,196 @@ def _chapter_add_top_on(host, source_node_id, new_node_id, stage_id,
                            timeout=timeout)
         if not isinstance(result, str) and host.object_ptr(13):
             _set_ptr_at(host, 17, 0x38, host.object_ptr(13), timeout)
+    host.write_int(17, 0x10, int(source_main_id), timeout=timeout)
+    host.write_int(17, 0x14, int(new_subchapter_id), timeout=timeout)
     host.write_int(17, 0x18, int(new_node_id), timeout=timeout)
     host.write_int(17, 0x20, 1, timeout=timeout)
     host.write_int(17, 0x48, 3, timeout=timeout)
 
-    # 新增一个 SubChapterData；AddSubChapterUI 会按 subchapterId 去重，
-    # 用旧 id 会被它静默忽略，所以这里必须换新 subchapter id。
+    ui_before = host.read(1, [], kind='count', default=0,
+                          timeout=timeout) or 0
+    appended = host.list_append(1, 17, timeout=timeout)
+    if appended not in ('\u5df2\u6267\u884c', '\u6210\u529f'):
+        return {'ok': False, 'reason': appended or 'append UI failed'}
+    inserted = host.list_insert(1, 0, 17, timeout=timeout)
+    if inserted in ('\u5df2\u6267\u884c', '\u6210\u529f'):
+        host.write_int(1, 0x18, ui_before + 1, timeout=timeout)
+    return {'ok': True, 'source_node_id': int(source_node_id),
+            'node_id': int(new_node_id), 'stage_id': int(stage_id),
+            'ui_index': 0, 'node_index': 0,
+            'target_subchapter_id': int(new_subchapter_id)}
+
+
+def _chapter_add_top_on(host, source_node_id, new_node_id, stage_id,
+                        source_subchapter_id=None, new_subchapter_id=9910,
+                        timeout=3.0):
+    """Copy a Walpu3 entry into a new top subchapter without replacing data.
+
+    The old implementation borrowed an unused StageNodeInfo and overwrote its
+    stageId.  That mutates an existing static-data node and can corrupt another
+    chapter.  This version clones the source node list, clears only the clone,
+    appends a cloned source node, and keeps the source and all existing UI
+    entries intact.
+    """
+    result = host.call('StaticDataManager::get_Instance', slot=None,
+                       ret='ref', out_slot=30, via='invoke', timeout=timeout)
+    if isinstance(result, str):
+        return {'ok': False, 'reason': result}
+    result = host.call('StaticDataManager::get_partList', slot=30,
+                       ret='ref', out_slot=31, via='invoke', timeout=timeout)
+    if isinstance(result, str) or not host.object_ptr(31):
+        return {'ok': False, 'reason': result or 'get partList failed'}
+    part_list_ptr = _ptr_at(host, 31, 0x10, timeout)
+    if not part_list_ptr:
+        return {'ok': False, 'reason': 'partList.list is null'}
+    host.put_slot(24, part_list_ptr)
+    parts = host.read(24, [], kind='count', default=0, timeout=timeout) or 0
+
+    found = False
+    ui_list_ptr = 0
+    for pi in range(parts):
+        host.put_slot(23, 0)
+        host.list_item(24, pi, 23, timeout=timeout)
+        candidate = _ptr_at(host, 23, 0x28, timeout)
+        if not candidate:
+            continue
+        host.put_slot(22, candidate)
+        ui_count = host.read(22, [], kind='count', default=0,
+                             timeout=timeout) or 0
+        for ui in range(ui_count):
+            host.put_slot(21, 0)
+            host.list_item(22, ui, 21, timeout=timeout)
+            if (_i32_at(host, 21, 0x48, timeout) == 3 and
+                    _i32_at(host, 21, 0x18, timeout) == int(source_node_id)):
+                host.put_slot(11, host.object_ptr(23))
+                host.put_slot(2, host.object_ptr(21))
+                ui_list_ptr = host.object_ptr(22)
+                found = True
+                break
+        if found:
+            break
+    if not found:
+        return {'ok': False, 'reason': f'UI node {source_node_id} not found'}
+
+    host.put_slot(1, ui_list_ptr)
+    source_ui = 2
+    source_sub_id = _i32_at(host, source_ui, 0x14, timeout)
+    source_main_id = _i32_at(host, source_ui, 0x10, timeout)
+
+    # Locate the source node list, then clone the container and its backing
+    # array.  Clearing the clone's count is safe: the source list keeps all
+    # its nodes and the clone gets only the new node below.
+    owner = _find_stage_node_list_on(host, source_node_id, part_list_ptr,
+                                     timeout=timeout)
+    if owner is None:
+        return {'ok': False, 'reason': f'StageNodeInfo {source_node_id} not found'}
+    source_node_list, source_node_index = owner
+    if int(new_subchapter_id) == int(source_sub_id):
+        return _chapter_add_node_top_on(
+            host, source_ui, source_sub_id, source_node_id,
+            source_node_list, source_node_index, new_node_id, stage_id,
+            new_subchapter_id, timeout=timeout)
+    host.put_slot(24, source_node_list)
+    if not _clone_list_on(host, 24, 3, clone_items=False, timeout=timeout):
+        return {'ok': False, 'reason': 'clone stageNodeList failed'}
+    host.write_int(3, 0x18, 0, timeout=timeout)
+
+    host.put_slot(4, source_node_list)
+    host.put_slot(6, 0)
+    host.list_item(4, source_node_index, 6, timeout=timeout)
+    if not host.object_ptr(6):
+        return {'ok': False, 'reason': 'source StageNodeInfo is null'}
+    result = host.call('System.Object::MemberwiseClone', slot=6,
+                       ret='ref', out_slot=5, via='invoke', timeout=timeout)
+    if isinstance(result, str) or not host.object_ptr(5):
+        return {'ok': False, 'reason': result or 'clone StageNodeInfo failed'}
+    host.write_int(5, 0x10, int(new_node_id), timeout=timeout)
+    host.write_int(5, 0x1C, int(stage_id), timeout=timeout)
+    host.write_int(5, 0x68, int(new_subchapter_id), timeout=timeout)
+    host.write_int(5, 0x50, 0, timeout=timeout)
+    host.write_int(5, 0x51, 0, timeout=timeout)
+    host.write_int(5, 0x78, 0, timeout=timeout)
+    host.put_slot(4, host.object_ptr(3))
+    appended = host.list_append(4, 5, timeout=timeout)
+    if appended not in ('\u5df2\u6267\u884c', '\u6210\u529f'):
+        return {'ok': False, 'reason': appended or 'append StageNodeInfo failed'}
+
+    # Clone the UI wrapper and its related/config payloads.
+    result = host.call('System.Object::MemberwiseClone', slot=source_ui,
+                       ret='ref', out_slot=17, via='invoke', timeout=timeout)
+    if isinstance(result, str) or not host.object_ptr(17):
+        return {'ok': False, 'reason': result or 'clone UI failed'}
+    rel_ptr = _ptr_at(host, source_ui, 0x30, timeout)
+    if rel_ptr:
+        host.put_slot(16, rel_ptr)
+        result = host.call('System.Object::MemberwiseClone', slot=16,
+                           ret='ref', out_slot=15, via='invoke',
+                           timeout=timeout)
+        if isinstance(result, str) or not host.object_ptr(15):
+            return {'ok': False, 'reason': result or 'clone relatedData failed'}
+        host.write_int(15, 0x14, int(new_subchapter_id), timeout=timeout)
+        host.write_int(15, 0x18, int(new_node_id), timeout=timeout)
+        _set_ptr_at(host, 17, 0x30, host.object_ptr(15), timeout)
+    else:
+        _set_ptr_at(host, 17, 0x30, 0, timeout)
+    cfg_ptr = _ptr_at(host, source_ui, 0x38, timeout)
+    if cfg_ptr:
+        host.put_slot(14, cfg_ptr)
+        result = host.call('System.Object::MemberwiseClone', slot=14,
+                           ret='ref', out_slot=13, via='invoke',
+                           timeout=timeout)
+        if not isinstance(result, str) and host.object_ptr(13):
+            _set_ptr_at(host, 17, 0x38, host.object_ptr(13), timeout)
+    host.write_int(17, 0x10, int(source_main_id), timeout=timeout)
+    host.write_int(17, 0x14, int(new_subchapter_id), timeout=timeout)
+    host.write_int(17, 0x18, int(new_node_id), timeout=timeout)
+    host.write_int(17, 0x20, 1, timeout=timeout)
+    host.write_int(17, 0x48, 3, timeout=timeout)
+
+    # Clone SubChapterData and point only the clone at the new node list.
     result = host.call('PartStaticDataList::GetChapter', slot=31,
                        args=(int(source_sub_id),), ret='ref', out_slot=9,
                        via='invoke', timeout=timeout)
     if isinstance(result, str) or not host.object_ptr(9):
-        return {'ok': False, 'reason': result or '取源 SubChapterData 失败'}
+        return {'ok': False, 'reason': result or 'get source SubChapterData failed'}
     result = host.call('System.Object::MemberwiseClone', slot=9,
-                       ret='ref', out_slot=8, via='invoke',
-                       timeout=timeout)
+                       ret='ref', out_slot=8, via='invoke', timeout=timeout)
     if isinstance(result, str) or not host.object_ptr(8):
-        return {'ok': False, 'reason': result or '克隆 SubChapterData 失败'}
+        return {'ok': False, 'reason': result or 'clone SubChapterData failed'}
     host.write_int(8, 0x14, int(new_subchapter_id), timeout=timeout)
+    host.write_int(8, 0x68, int(new_node_id), timeout=timeout)
+    _set_ptr_at(host, 8, 0x58, host.object_ptr(3), timeout)
+
+    chapter_list = _ptr_at(host, 11, 0x20, timeout)
+    host.put_slot(10, chapter_list)
+    chapter_before = (host.read(10, [], kind='count', default=0,
+                                timeout=timeout) or 0) if chapter_list else 0
+    ui_before = host.read(1, [], kind='count', default=0,
+                          timeout=timeout) or 0
     result = host.call('PartStaticData::AddSubChapter', slot=11,
                        args=(('slot', 8),), ret='void', via='invoke',
                        timeout=timeout)
-    if result != '已执行':
-        return {'ok': False, 'reason': result or 'AddSubChapter 失败'}
-    host.write_int(17, 0x14, int(new_subchapter_id), timeout=timeout)
-    if host.object_ptr(15):
-        host.write_int(15, 0x14, int(new_subchapter_id), timeout=timeout)
-
-    # stageNodeList 都是满的；复用一条当前没有任何 UI 引用的旧节点，
-    # 只把它的 stageId 指向新关卡，原 Walpu3 的节点/入口不受影响。
-    unused = _find_unused_stage_node_on(host, part_list_ptr, timeout)
-    if unused is None:
-        return {'ok': False, 'reason': '找不到可复用的 StageNodeInfo'}
-    node_ptr, actual_node_id, sub_id, main_id, node_list_ptr, node_index = unused
-    if node_list_ptr:
-        # 新 SubChapterData 自己的 stageNodeList 指向 hidden 节点列表；
-        # 不改源 Walpu3 的 subchapter/节点。
-        result = host.call('PartStaticDataList::GetChapter', slot=31,
-                           args=(int(new_subchapter_id),), ret='ref',
-                           out_slot=9, via='invoke', timeout=timeout)
-        if not isinstance(result, str) and host.object_ptr(9):
-            _set_ptr_at(host, 9, 0x58, node_list_ptr, timeout)
-    # 用 Walpu3 的 StageNodeInfo 克隆替换“未引用节点”槽位，而不是只改
-    # 一个来自其他章节的旧节点；这样节点模板和服务器路径仍与素材一致。
-    result = host.call('PartStaticDataList::GetStageInfoForUI', slot=31,
-                       args=(int(source_node_id),), ret='ref', out_slot=6,
-                       via='invoke', timeout=timeout)
-    if isinstance(result, str) or not host.object_ptr(6):
-        return {'ok': False, 'reason': result or '取素材 StageNodeInfo 失败'}
-    result = host.call('System.Object::MemberwiseClone', slot=6,
-                       ret='ref', out_slot=5, via='invoke',
-                       timeout=timeout)
-    if isinstance(result, str) or not host.object_ptr(5):
-        return {'ok': False, 'reason': result or '克隆素材 StageNodeInfo 失败'}
-    host.write_int(5, 0x10, int(actual_node_id), timeout=timeout)
-    host.write_int(5, 0x1C, int(stage_id), timeout=timeout)
-    host.write_int(5, 0x68, int(new_subchapter_id), timeout=timeout)
-    host.write_int(5, 0x50, 0, timeout=timeout)
-    host.write_int(5, 0x78, 0, timeout=timeout)
-    host.put_slot(4, node_list_ptr)
-    result = host.set_list_item(4, node_index, 5, timeout=timeout)
-    if result not in ('已执行', '成功'):
-        return {'ok': False, 'reason': result or '替换 StageNodeInfo 失败'}
-    host.write_int(17, 0x10, int(main_id), timeout=timeout)
-    host.write_int(17, 0x14, int(new_subchapter_id), timeout=timeout)
-    host.write_int(17, 0x18, int(actual_node_id), timeout=timeout)
-    if host.object_ptr(15):
-        host.write_int(15, 0x14, int(new_subchapter_id), timeout=timeout)
-        host.write_int(15, 0x18, int(actual_node_id), timeout=timeout)
-
-    # UI 列表也可能满：先用游戏自己的 AddSubChapterUI 扩容并追加，
-    # 再把同一克隆插到顶部，最后去掉末尾重复项。
-    before = host.read(18, [], kind='count', default=0, timeout=timeout) or 0
+    if result != '\u5df2\u6267\u884c':
+        return {'ok': False, 'reason': result or 'AddSubChapter failed'}
     result = host.call('PartStaticData::AddSubChapterUI', slot=11,
                        args=(('slot', 17),), ret='void', via='invoke',
                        timeout=timeout)
-    if result != '已执行':
-        return {'ok': False, 'reason': result or 'AddSubChapterUI 失败'}
-    result = host.list_insert(18, 0, 17, timeout=timeout)
-    if result not in ('已执行', '成功'):
-        return {'ok': False, 'reason': result or '插入章节 UI 失败'}
-    host.write_int(18, 0x18, before + 1, timeout=timeout)
+    if result != '\u5df2\u6267\u884c':
+        return {'ok': False, 'reason': result or 'AddSubChapterUI failed'}
+
+    # Both Add methods append.  Insert the clone at index 0, then drop the
+    # duplicate at the end by restoring the original count.  All original
+    # entries remain in their original relative order.
+    if chapter_list:
+        chapter_inserted = host.list_insert(10, 0, 8, timeout=timeout)
+        if chapter_inserted in ('\u5df2\u6267\u884c', '\u6210\u529f'):
+            host.write_int(10, 0x18, chapter_before + 1, timeout=timeout)
+    ui_inserted = host.list_insert(1, 0, 17, timeout=timeout)
+    if ui_inserted in ('\u5df2\u6267\u884c', '\u6210\u529f'):
+        host.write_int(1, 0x18, ui_before + 1, timeout=timeout)
     return {'ok': True, 'source_node_id': int(source_node_id),
-            'node_id': int(actual_node_id), 'stage_id': int(stage_id),
-            'ui_index': 0, 'node_index': None,
+            'node_id': int(new_node_id), 'stage_id': int(stage_id),
+            'ui_index': 0, 'node_index': 0,
             'target_subchapter_id': int(new_subchapter_id)}
 
 
@@ -995,6 +1081,7 @@ class Live:
         self._scene_at = 0.0
         self._scene_retry_at = 0.0
         self._scene_backoff = 0.5
+        self._mgr_rescue_at = 0.0
         self._hooks_on = False
         self._pushed_ok = False
         self._spawn_enemy_id = None
@@ -1150,6 +1237,16 @@ class Live:
             if objects.ensure_manager(host, timeout=timeout) is None:
                 return None
             live_count = objects.count(host, objects.SLOT_MANAGER)
+            if live_count <= 0:
+                # SLOT_MANAGER may still point at a manager destroyed when the
+                # previous battle ended.  Re-resolve the singleton, but rate
+                # limit it so polling cannot spam il2cpp invokes.
+                now = time.monotonic()
+                if now >= self._mgr_rescue_at:
+                    self._mgr_rescue_at = now + 1.0
+                    if objects.ensure_manager(host, timeout=timeout,
+                                              force=True) is not None:
+                        live_count = objects.count(host, objects.SLOT_MANAGER)
         except Exception:  # noqa: BLE001
             return None
         if live_count <= 0:
@@ -1638,6 +1735,7 @@ class Live:
         host = self.host()
         if deep:
             result = _deep_clone_stage_on(host, source_id,
+                                          strip_story=strip_story,
                                           timeout=timeout)
         else:
             result = _stage_clone_on(host, source_id,
@@ -2047,6 +2145,13 @@ class Live:
         self._round_backoff = 0.25
         return True
 
+    def _drop_manager(self):
+        """Drop the cached BattleObjectManager after leaving a battle."""
+        try:
+            self.host().put_slot(objects.SLOT_MANAGER, 0)
+        except Exception:  # noqa: BLE001
+            pass
+
     def _pump(self):
         """后台循环：心跳 + 回合命中 + 场景变化。"""
         host = self.host()
@@ -2081,6 +2186,8 @@ class Live:
                         elif last_scene is None:
                             last_scene = scene.get('value')
                         elif scene.get('value') != last_scene:
+                            if last_scene == 1:
+                                self._drop_manager()
                             last_scene = scene.get('value')
                             for cb in list(self._scene_cbs):
                                 self._safe(cb, scene)

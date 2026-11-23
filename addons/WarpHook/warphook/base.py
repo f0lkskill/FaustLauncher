@@ -189,6 +189,69 @@ def wait_for_injection_delay(stop_event=None, on_wait=None):
     return True
 
 
+class _ShareDeleteFileHandler(__import__("logging").Handler):
+    """Windows log handler whose file can be deleted while the process runs."""
+
+    def __init__(self, path):
+        import logging
+        super().__init__()
+        self.path = str(path)
+        self._handle = None
+        self._write = None
+        self._open()
+
+    def _open(self):
+        if os.name != "nt":
+            import logging
+            self._fallback = logging.FileHandler(self.path, mode="w", encoding="utf-8")
+            return
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel32.CreateFileW.argtypes = [
+            ctypes.c_wchar_p, wintypes.DWORD, wintypes.DWORD, ctypes.c_void_p,
+            wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE,
+        ]
+        kernel32.CreateFileW.restype = wintypes.HANDLE
+        handle = kernel32.CreateFileW(
+            self.path, 0x00000004, 0x00000001 | 0x00000002 | 0x00000004,
+            None, 2, 0x00000080, None,
+        )
+        if handle in (None, wintypes.HANDLE(-1).value):
+            raise OSError(ctypes.get_last_error(), "CreateFileW warp.log")
+        self._handle = handle
+        kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+        kernel32.CloseHandle.restype = wintypes.BOOL
+        self._close = kernel32.CloseHandle
+        self._write = kernel32.WriteFile
+        self._write.argtypes = [
+            wintypes.HANDLE, ctypes.c_void_p, wintypes.DWORD,
+            ctypes.POINTER(wintypes.DWORD), ctypes.c_void_p,
+        ]
+        self._write.restype = wintypes.BOOL
+
+    def emit(self, record):
+        try:
+            text = self.format(record) + "\r\n"
+            if os.name != "nt":
+                self._fallback.emit(record)
+                return
+            data = text.encode("utf-8")
+            written = wintypes.DWORD()
+            if not self._write(self._handle, data, len(data), ctypes.byref(written), None):
+                raise OSError(ctypes.get_last_error(), "WriteFile warp.log")
+        except Exception:
+            self.handleError(record)
+
+    def close(self):
+        try:
+            if os.name == "nt" and self._handle:
+                self._close(self._handle)
+                self._handle = None
+            elif os.name != "nt" and getattr(self, "_fallback", None):
+                self._fallback.close()
+        finally:
+            super().close()
+
+
 def debug_log(message, prefix="[WarpHook]", tag="debug"):
     if is_debug_enabled():
         log(message, prefix=prefix, tag=tag)
@@ -224,8 +287,7 @@ def log(message, prefix="[WarpHook]", tag="host"):
                         path = os.path.join(os.path.dirname(os.path.dirname(__file__)),
                                             'warp.log')
                         # 不轮转：同一个进程只覆盖一次，之后一律追加。
-                        handler = logging.FileHandler(path, mode='w',
-                                                      encoding='utf-8')
+                        handler = _ShareDeleteFileHandler(path)
                         handler.setFormatter(logging.Formatter(
                             '%(asctime)s.%(msecs)03d pid=%(process)d '
                             'thread=%(threadName)s %(message)s',
