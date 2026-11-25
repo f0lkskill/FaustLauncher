@@ -257,28 +257,13 @@ def publish(name, log=None, progress=None) -> dict:
     try:
         _materialize(name, tmp, kind)
         log("已提取发布内容到临时目录")
-        count = _zip_dir(tmp, zip_path, arc_name=arc_name)
-        log(f"已生成临时 zip 包: {count} 个文件")
-
-        upload_err = None
-        urls = {}
-        try:
-            urls = _upload_zip(kind, tmp, zip_path, log, progress)
-        except Exception as e:
-            upload_err = str(e)
-            urls = getattr(e, "partial_urls", None) or {}
-            log(f"蓝奏云上传失败: {upload_err}")
-
-        if progress:
-            progress(100, "更新云端信息...")
-        ok, msg = pet.upload_extension_info(
-            kind, tmp, urls=urls, keep_old_urls=True, tags=None, tags_style=None)
+        # 走统一的“测验 → 上传 → 提交审核”流程（publish_mod/addon 内部处理）
+        if kind == "addon":
+            ok, msg = pet.publish_addon(tmp, log=log, progress=progress)
+        else:
+            ok, msg = pet.publish_mod(tmp, log=log, progress=progress)
         if ok:
             _save_last_version(name, version)
-        if upload_err:
-            return {"ok": False,
-                    "msg": f"上传失败: {upload_err} | 但信息已更新到云端: {msg}",
-                    "version": version}
         return {"ok": bool(ok), "msg": msg, "version": version}
     except Exception as e:
         return {"ok": False, "msg": f"发布失败: {e}", "version": version}

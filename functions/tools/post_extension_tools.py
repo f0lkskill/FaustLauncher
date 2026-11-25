@@ -410,34 +410,82 @@ def upload_mod_to_lanzou(mod_folder, log=None, progress=None):
 def upload_addon_to_lanzou(addon_folder, log=None, progress=None):
     return upload_extension_to_lanzou('addon', addon_folder, log=log, progress=progress)
 
+def _workshop_check(log=None):
+    """向服务端测验当前用户今天是否还有上传资格（每日 3 次）。"""
+    try:
+        from functions.base import user_api
+        result = user_api._request("POST", "/api/workshop/check", {}, note="workshop-check")
+    except Exception as e:
+        return False, f"无法确认上传资格: {e}"
+    data = result.get("data") or {}
+    if not result.get("ok"):
+        return False, str(data.get("reason") or result.get("error") or "无法确认上传资格")
+    if not data.get("allow"):
+        return False, str(data.get("reason") or "今日上传次数已达上限")
+    return True, ""
+
+
+def _workshop_submit(payload, log=None):
+    """提交审核（服务端按名字决定更新/追加，并对同名重置 approve）。"""
+    try:
+        from functions.base import user_api
+        result = user_api._request("POST", "/api/workshop/submit", payload, note="workshop-submit")
+    except Exception as e:
+        return False, f"提交审核失败: {e}"
+    data = result.get("data") or {}
+    if not result.get("ok"):
+        return False, str(data.get("msg") or result.get("error") or "提交审核失败")
+    return True, str(data.get("msg") or "已提交审核，请等待管理员审核")
+
+
 def publish_extension(kind, folder, address=None, log=None, progress=None,
                       tags=None, tags_style=None):
+    """发布 = 上传资格测验 → 上传文件 → 提交审核（审核通过后由服务端并入资源库）。"""
     meta = INFO_KINDS.get(kind)
     if not meta:
         return False, f'未知的扩展类型: {kind}'
     label = meta['label']
     if log is None:
         log = print
-    upload_err = None
-    urls = {}
+
+    # 1) 上传资格测验（每日 3 次，跨天服务端自动重置）
+    allow, reason = _workshop_check(log)
+    if not allow:
+        log(f'上传被拒绝: {reason}')
+        return False, reason
+
+    # 2) 上传文件到蓝奏云
+    log(f'开始上传{label}本体...')
     try:
         urls = upload_extension_to_lanzou(kind, folder, log=log, progress=progress)
     except Exception as e:
-        upload_err = str(e)
-        urls = getattr(e, 'partial_urls', None) or {}
-        log(f'⚠ 蓝奏云上传失败: {upload_err}')
-        log(f'继续发布{label}信息到云端（缺失链接将沿用云端旧值）...')
-    if urls:
-        log(f'图标链接: {urls.get("icon_url") or "(无, 沿用旧值)"}')
-        log(f'下载链接: {urls.get("dowload_url") or "(无, 沿用旧值)"}')
+        log(f'上传失败: {e}')
+        return False, f'上传失败: {e}'
+
+    # 3) 提交审核（服务端决定更新或追加，approve 重置为 false）
+    info, err = load_extension_info(kind, folder)
+    if err:
+        return False, err
+    payload = {
+        'kind': kind,
+        'name': info.get('name'),
+        'version': info.get('version') or '0.0.1',
+        'desc': info.get('desc') or '',
+        'authors': info.get('authors') or {},
+        'download_url': urls.get('dowload_url') or '',
+        'icon_url': urls.get('icon_url') or '',
+        'files': info.get('file_names') or [],
+        'tags': [],
+    }
     if progress:
-        progress(100, f'更新云端{label}信息...')
-    ok, msg = upload_extension_info(
-        kind, folder, address=address, log=log, urls=urls,
-        keep_old_urls=True, tags=tags, tags_style=tags_style,
-    )
-    if upload_err:
-        return False, f'上传失败: {upload_err} | 但{label}信息已更新到云端: {msg}'
+        progress(100, '提交审核...')
+    log('提交审核...')
+    ok, msg = _workshop_submit(payload, log)
+    if ok:
+        msg = msg + '；可点击右上角头像进入主页查看审核进度'
+        log(msg)
+    else:
+        log(f'提交审核失败: {msg}')
     return ok, msg
 
 def publish_mod(mod_folder, address=None, log=None, progress=None,
