@@ -507,7 +507,7 @@ input[readonly] { color: var(--text-2, #b0b7c3); }
 }
 .info-head {
   display: flex; align-items: center; justify-content: space-between;
-  padding: 14px 18px; border-bottom: 1px solid rgba(var(--tint-rgb, 255, 255, 255), .1);
+  padding: 14px 18px;
   font-size: 14px; font-weight: 700; color: var(--text, #f1f5f9);
 }
 .info-x {
@@ -544,7 +544,7 @@ input[readonly] { color: var(--text-2, #b0b7c3); }
 .icon-add img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .info-foot {
   display: flex; justify-content: flex-end; gap: 8px;
-  padding: 12px 18px; border-top: 1px solid rgba(var(--tint-rgb, 255, 255, 255), .1);
+  padding: 12px 18px;
 }
 .info-hint { color: var(--danger, #ef4444); font-size: 12px; margin-top: 4px; }
 .author-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
@@ -680,12 +680,10 @@ input[readonly] { color: var(--text-2, #b0b7c3); }
 }
 @keyframes wf-fade-in { from { opacity: 0; } to { opacity: 1; } }
 .info-loading {
-  display: flex; align-items: center; justify-content: center; gap: 10px;
+  display: none; align-items: center; justify-content: center; gap: 10px;
   padding: 44px 18px; color: var(--text-3, #7a8496); font-size: 12.5px;
-  opacity: 0; visibility: hidden;
-  transition: opacity .2s ease, visibility .2s ease;
 }
-.info-loading.show { opacity: 1; visibility: visible; }
+.info-loading.show { display: flex; animation: wf-fade-in .2s ease both; }
 
 /* 自定义确认模态 */
 .confirm-card {
