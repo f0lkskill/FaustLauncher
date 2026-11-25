@@ -17,13 +17,14 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 import zipfile
 from datetime import datetime
 from pathlib import Path
 
 WORKFLOW_NAME = "YisangMirrorFlow"
-VERSION = "0.0.10"
+VERSION = "0.0.11"
 
 WORKFLOW_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = WORKFLOW_DIR.parent.parent
@@ -52,7 +53,7 @@ ADDON_SCR_TEMPLATE = (
     "# 完整示例请参考 addons/example/scr.py\n"
 )
 
-ALLOWED_EXTS = (".zip", ".bank", ".carra2", ".rebank")
+ALLOWED_EXTS = (".zip", ".7z", ".rar", ".bank", ".carra2", ".rebank")
 IGNORED_NAMES = {
     JOB_NAME, PROGRESS_NAME, THREADS_NAME, LOG_NAME, WORKER_LOG_NAME,
     MANIFEST_NAME, KIND_NAME, PUBLISH_STATE_NAME,
@@ -362,7 +363,7 @@ def package_files(name) -> list:
 
 
 def _file_counts(files: list) -> dict:
-    counts = {".zip": 0, ".bank": 0, ".carra2": 0, ".rebank": 0}
+    counts = {".zip": 0, ".7z": 0, ".rar": 0, ".bank": 0, ".carra2": 0, ".rebank": 0}
     for item in files:
         ext = item.get("ext")
         if ext in counts:
@@ -423,76 +424,155 @@ def delete_package(name) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# 解包
+# 解包（zip / 7z / rar）：自动识别并提取“合适的内容根”
+#   · installer 类：归档里含 Installer.bat/Uninstaller.bat 的目录 → 提取该目录到包根
+#   · bank 类：归档里的 .bank/.rebank/.carra2 等 → 提取到包根
 # ---------------------------------------------------------------------------
 
-def _zip_top_level_dir(zf: zipfile.ZipFile) -> str:
-    """返回 zip 内第一个顶层目录；没有目录时返回空字符串（按根目录处理）。"""
-    skipped = set()
-    for info in zf.infolist():
-        name = str(info.filename or "").replace("\\", "/").lstrip("/")
-        if not name:
+ARCHIVE_EXTS = (".zip", ".7z", ".rar")
+
+
+def _find_7z() -> str:
+    """定位 7-Zip 可执行文件（解 7z/rar 用）。"""
+    candidates = [
+        os.environ.get("SEVENZIP_PATH", ""),
+        "7z",
+        "7za",
+        r"C:\Program Files\7-Zip\7z.exe",
+        r"C:\Program Files (x86)\7-Zip\7z.exe",
+    ]
+    for cand in candidates:
+        if not cand:
             continue
-        parts = [p for p in name.split("/") if p not in ("", ".")]
-        if not parts:
-            continue
-        top = parts[0]
-        if top in skipped:
-            continue
-        is_dir = info.is_dir() or len(parts) > 1
-        if not is_dir:
-            continue
-        if top == "__MACOSX" or top.startswith("."):
-            skipped.add(top)
-            continue
-        return top
+        if os.path.isabs(cand):
+            if os.path.isfile(cand):
+                return cand
+        else:
+            found = shutil.which(cand)
+            if found:
+                return found
     return ""
 
 
-def _zip_member_rel(filename, prefix: str) -> str:
-    text = str(filename or "").replace("\\", "/").lstrip("/")
-    if prefix:
-        if not text.startswith(prefix):
-            return ""
-        text = text[len(prefix):]
-    return text
-
-
-def _unpack_one_zip(pkg: Path, zip_path: Path) -> dict:
-    extracted = 0
-    failed = 0
+def _safe_extract_zip(zip_path: Path, out_dir: Path) -> None:
+    """安全解压 zip 到 out_dir（跳过 .. 路径穿越）。"""
     with zipfile.ZipFile(zip_path, "r") as zf:
-        top = _zip_top_level_dir(zf)
-        prefix = (top + "/") if top else ""
         for info in zf.infolist():
-            rel = _zip_member_rel(info.filename, prefix)
-            if not rel:
-                continue
-            parts = [p for p in rel.split("/") if p not in ("", ".")]
+            name = str(info.filename or "").replace("\\", "/").lstrip("/")
+            parts = [p for p in name.split("/") if p not in ("", ".")]
             if not parts or any(p == ".." for p in parts):
                 continue
-            target = pkg.joinpath(*parts)
+            target = out_dir.joinpath(*parts)
             try:
-                if info.is_dir() or rel.endswith("/"):
+                if info.is_dir() or name.endswith("/"):
                     target.mkdir(parents=True, exist_ok=True)
                     continue
                 target.parent.mkdir(parents=True, exist_ok=True)
                 with zf.open(info, "r") as src, open(target, "wb") as dst:
                     shutil.copyfileobj(src, dst, length=1024 * 1024)
-                extracted += 1
             except (OSError, RuntimeError, NotImplementedError, KeyError, ValueError,
                     zipfile.BadZipFile):
-                failed += 1
-    return {
-        "zip": zip_path.name,
-        "dir": top or "(根目录)",
-        "files": extracted,
-        "failed": failed,
-    }
+                continue
+
+
+def _extract_archive(archive: Path, out_dir: Path) -> None:
+    """把归档解压到 out_dir（zip 用内置库；7z/rar 调 7-Zip）。"""
+    if archive.suffix.lower() == ".zip":
+        _safe_extract_zip(archive, out_dir)
+        return
+    seven = _find_7z()
+    if not seven:
+        raise RuntimeError("未找到 7-Zip，无法解压 %s（请安装 7-Zip 或设置 SEVENZIP_PATH）"
+                           % archive.name)
+    cmd = [seven, "x", "-y", "-scsUTF-8", "-o" + str(out_dir), str(archive)]
+    flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    proc = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+                          creationflags=flags, text=True, encoding="utf-8", errors="replace")
+    if proc.returncode != 0:
+        lines = [ln for ln in (proc.stderr or "").strip().splitlines() if ln.strip()]
+        raise RuntimeError("7-Zip 解压失败(%d): %s"
+                           % (proc.returncode, lines[-1] if lines else ""))
+
+
+def _find_installer_dir(base: Path):
+    """递归找含 Installer.bat/Uninstaller.bat 的最浅目录（installer 类 Mod）。"""
+    best = None
+    best_depth = 1 << 30
+    for root, _dirs, files in os.walk(base):
+        low = {f.lower() for f in files}
+        if "installer.bat" in low or "uninstaller.bat" in low:
+            rel = os.path.relpath(root, base)
+            depth = 0 if rel == "." else len(rel.split(os.sep))
+            if depth < best_depth:
+                best = Path(root)
+                best_depth = depth
+    return best
+
+
+def _first_top_dir(base: Path) -> str:
+    """返回第一个非隐藏/非 __MACOSX 的顶层目录名；没有则空串。"""
+    try:
+        items = sorted(os.listdir(base))
+    except OSError:
+        return ""
+    for item in items:
+        if item == "__MACOSX" or item.startswith("."):
+            continue
+        if (base / item).is_dir():
+            return item
+    return ""
+
+
+def _content_root(temp: Path) -> Path:
+    """决定归档里“真正的内容根”：
+    installer 类 → 含 bat 的目录；否则第一个顶层目录；再否则归档根。"""
+    inst = _find_installer_dir(temp)
+    if inst is not None:
+        return inst
+    top = _first_top_dir(temp)
+    if top:
+        return temp / top
+    return temp
+
+
+def _copy_tree_into(src: Path, dst: Path) -> int:
+    """把 src 内容覆盖复制到 dst（保留相对结构），返回文件数。"""
+    count = 0
+    for root, _dirs, files in os.walk(src):
+        rel = os.path.relpath(root, src)
+        target_root = dst if rel == "." else dst / rel
+        try:
+            target_root.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            continue
+        for f in files:
+            try:
+                shutil.copy2(os.path.join(root, f), os.path.join(target_root, f))
+                count += 1
+            except OSError:
+                pass
+    return count
+
+
+def _unpack_one_archive(pkg: Path, archive: Path) -> dict:
+    """解压单个归档到临时目录，再把“内容根”平铺到包根。"""
+    temp = Path(tempfile.mkdtemp(prefix="wf_unpack_"))
+    try:
+        _extract_archive(archive, temp)
+        content = _content_root(temp)
+        files = _copy_tree_into(content, pkg)
+        label = "(根目录)" if os.path.normcase(str(content)) == os.path.normcase(str(temp)) else content.name
+        return {"archive": archive.name, "zip": archive.name,
+                "dir": label, "files": files, "failed": 0}
+    finally:
+        shutil.rmtree(temp, ignore_errors=True)
 
 
 def unpack_zips(name) -> dict:
-    """把包内全部 .zip 的第一个顶层目录内容解压到包根目录，重复文件覆盖。"""
+    """解包包内全部 .zip/.7z/.rar：自动识别 installer 目录 / bank 类内容并提取到包根。
+
+    函数名保留 unpack_zips（前端调用不变），但现在同时支持 7z / rar。
+    """
     pkg = package_dir(name)
     if not pkg.is_dir():
         return {"ok": False, "error": "包不存在", "unpacked": 0, "errors": []}
@@ -500,36 +580,36 @@ def unpack_zips(name) -> dict:
     if job["status"] == "running":
         return {"ok": False, "error": "正在打包，暂时不能解包", "unpacked": 0, "errors": []}
 
-    zips = sorted(
-        [p for p in pkg.iterdir() if p.is_file() and not p.name.startswith(".")
-         and p.suffix.lower() == ".zip"],
+    archives = sorted(
+        [p for p in pkg.iterdir()
+         if p.is_file() and not p.name.startswith(".") and p.suffix.lower() in ARCHIVE_EXTS],
         key=lambda p: p.name.lower(),
     )
-    if not zips:
-        return {"ok": False, "error": "包内没有 .zip 文件", "unpacked": 0, "errors": []}
+    if not archives:
+        return {"ok": False, "error": "包内没有可解包的归档 (.zip/.7z/.rar)",
+                "unpacked": 0, "errors": []}
 
     unpacked = 0
     extracted_files = 0
     errors = []
     details = []
-    for zip_path in zips:
+    for archive in archives:
         try:
-            detail = _unpack_one_zip(pkg, zip_path)
-        except (OSError, zipfile.BadZipFile, RuntimeError, NotImplementedError) as exc:
-            errors.append("%s (%s)" % (zip_path.name, exc))
+            detail = _unpack_one_archive(pkg, archive)
+        except Exception as exc:
+            errors.append("%s (%s)" % (archive.name, exc))
             continue
         extracted_files += int(detail.get("files") or 0)
         if int(detail.get("files") or 0) > 0:
             unpacked += 1
             details.append(detail)
         else:
-            errors.append("%s (没有可解压的内容)" % zip_path.name)
-        if int(detail.get("failed") or 0) > 0:
-            errors.append("%s (有 %d 个文件解压失败)" % (zip_path.name, detail["failed"]))
+            errors.append("%s (没有可解压的内容)" % archive.name)
 
     return {
         "ok": True,
-        "zip_count": len(zips),
+        "zip_count": len(archives),
+        "archive_count": len(archives),
         "unpacked": unpacked,
         "extracted_files": extracted_files,
         "errors": errors,

@@ -214,6 +214,8 @@
     var meta = el("div", "wf-meta");
     [
       ["zip", counts[".zip"] || 0],
+      ["7z", counts[".7z"] || 0],
+      ["rar", counts[".rar"] || 0],
       ["bank", counts[".bank"] || 0],
       ["carra2", counts[".carra2"] || 0],
       ["rebank", counts[".rebank"] || 0]
@@ -283,9 +285,10 @@
     actions.appendChild(start);
 
     var unpack = el("button", "wf-btn", "解包");
-    unpack.disabled = running || !!unpackBusy[pkg.name] || !(counts[".zip"] > 0);
+    unpack.disabled = running || !!unpackBusy[pkg.name]
+      || !((counts[".zip"] > 0) || (counts[".7z"] > 0) || (counts[".rar"] > 0));
     unpack.addEventListener("click", function () {
-      if (!confirm("将解压包内全部 zip，重复文件会覆盖，继续？")) return;
+      if (!confirm("将解压包内全部归档（zip/7z/rar），重复文件会覆盖，继续？")) return;
       unpackBusy[pkg.name] = true;
       unpack.disabled = true;
       invoke("unpack_zips", pkg.name).then(function (result) {

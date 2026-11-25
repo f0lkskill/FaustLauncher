@@ -101,7 +101,7 @@ class OverviewApi(ExtensionToolsMixin, WindowChromeBridge):
                 webview.FileDialog.OPEN,
                 allow_multiple=True,
                 file_types=(
-                    "打包文件 (*.zip;*.bank;*.carra2;*.rebank)",
+                    "打包文件 (*.zip;*.7z;*.rar;*.bank;*.carra2;*.rebank)",
                     "所有文件 (*.*)",
                 ),
             )

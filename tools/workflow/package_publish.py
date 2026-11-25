@@ -99,8 +99,8 @@ def _keep(kind: str, rel: str, fname: str) -> bool:
         return False
     lower = fname.lower()
     if kind == "addon":
-        # 插件：除源 zip 外都带上（scr.py、脚本、资源等）
-        return not lower.endswith(".zip")
+        # 插件：除源归档 zip/7z/rar 外都带上（scr.py、脚本、资源等）
+        return not lower.endswith((".zip", ".7z", ".rar"))
     # Mod：根目录白名单 + Assets/ 资源目录
     ext = os.path.splitext(lower)[1]
     if len(rel_parts) == 1:
