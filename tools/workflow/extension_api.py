@@ -17,7 +17,9 @@ import os
 import core
 from functions.tools import post_extension_tools as pet
 
-pet.MODS_DIR = os.path.join(str(core.PROJECT_ROOT), "mods")
+# 包装/发布 Mod 统一使用 workflow 下的 mods（tools/workflow/mods），
+# 与打包工作流的包目录一致；插件模板仍放在仓库根的 addons/。
+pet.MODS_DIR = str(core.MODS_DIR)
 pet.ADDONS_DIR = os.path.join(str(core.PROJECT_ROOT), "addons")
 
 
@@ -39,6 +41,16 @@ def _notify(func_name: str, arg) -> None:
 
 class ExtensionToolsMixin:
     """给 OverviewApi 提供扩展工具的全部 js_api 方法。"""
+
+    def _default_pick_dir(self):
+        """文件夹/文件对话框的默认打开目录：优先 tools/workflow/mods。"""
+        for cand in (pet.MODS_DIR, str(core.WORKFLOW_DIR)):
+            try:
+                if cand and os.path.isdir(cand):
+                    return cand
+            except Exception:
+                pass
+        return pet.MODS_DIR
 
     def assets(self):
         try:
@@ -88,7 +100,8 @@ class ExtensionToolsMixin:
             window = self._win()
             if window is None:
                 return None
-            paths = window.create_file_dialog(webview.FileDialog.FOLDER)
+            paths = window.create_file_dialog(
+                webview.FileDialog.FOLDER, directory=self._default_pick_dir())
             return paths[0] if paths else None
         except Exception as e:
             print(f"[Extensions] 打开文件夹对话框失败: {e}")
@@ -102,8 +115,9 @@ class ExtensionToolsMixin:
                 return []
             paths = window.create_file_dialog(
                 webview.FileDialog.OPEN,
+                directory=self._default_pick_dir(),
                 allow_multiple=True,
-                file_types=("Mod文件 (*.bank;*.carra2)",))
+                file_types=("Mod文件 (*.bank;*.carra2;*.rebank;*.json)", "所有文件 (*.*)"))
             return list(paths) if paths else []
         except Exception as e:
             print(f"[Extensions] 打开文件对话框失败: {e}")

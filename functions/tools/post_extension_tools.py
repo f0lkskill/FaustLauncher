@@ -20,7 +20,7 @@ from functions.base.common.cloud_tags import (
 
 MODS_DIR = 'mods'
 ADDONS_DIR = 'addons'
-MOD_FILE_EXTS = ('.bank', '.carra2')
+MOD_FILE_EXTS = ('.bank', '.carra2', '.rebank')
 DEFAULT_ICON_BG = (30, 41, 59, 255)
 DEFAULT_ICON_ACCENT = (99, 102, 241, 255)
 
@@ -162,13 +162,20 @@ def wrap_mod(source_folder, info=None, icon_path=None, extra_files=None, single_
                     else:
                         os.makedirs(os.path.dirname(dst_entry), exist_ok=True)
                         shutil.copy2(src_entry, dst_entry)
+        # 额外文件统一复制到 Mod 根目录；.json 等辅助文件只跟随放置、不做其它处理，
+        # 数量不限；只有游戏可载入的扩展名才写入 mod_info.json 的 file_names。
         extra_names = []
         for f in extra_files:
             if not f or not os.path.isfile(f):
                 continue
-            shutil.copy2(f, os.path.join(target, os.path.basename(f)))
-            extra_names.append(os.path.basename(f))
-        file_names = sorted(set(info.get('file_names') or []) | set(extra_names))
+            base = os.path.basename(f)
+            shutil.copy2(f, os.path.join(target, base))
+            if os.path.splitext(base)[1].lower() in MOD_FILE_EXTS:
+                extra_names.append(base)
+        file_names = sorted(
+            name for name in (set(info.get('file_names') or []) | set(extra_names))
+            if os.path.splitext(name)[1].lower() in MOD_FILE_EXTS
+        )
         same_dir = os.path.abspath(source) == os.path.abspath(target)
         for fn in file_names:
             src_file = os.path.join(source, fn)

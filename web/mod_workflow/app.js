@@ -707,7 +707,7 @@
     if (!formCtx.files.length) {
       var d = document.createElement("div");
       d.className = "empty";
-      d.textContent = "未发现 .bank/.carra2 文件，可通过「添加其他文件」选择";
+      d.textContent = "未发现 .bank/.carra2/.rebank 文件，可通过「添加其他文件」选择（支持 .json）";
       box.appendChild(d);
       return;
     }

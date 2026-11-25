@@ -81,7 +81,7 @@
 
         <!-- 模式1: 包装 Mod -->
         <div class="sec show" id="sec-wrap">
-          <div class="hint">选择 Mod 原始文件夹复制到 mods/ 目录并填写 mod_info.json。<br>标准 Mod 需包含 Installer.bat、Assets 文件夹、Uninstaller.bat；单文件 Mod 仅需 .bank/.carra2 等文件，跳过结构检测。</div>
+          <div class="hint">选择 Mod 原始文件夹复制到 mods/ 目录并填写 mod_info.json。<br>标准 Mod 需包含 Installer.bat、Assets 文件夹、Uninstaller.bat；单文件 Mod 支持 .bank/.carra2/.rebank 等文件，跳过结构检测。<br>可额外导入不限量的 .json 文件，直接放到 Mod 根目录，不做其它处理。</div>
           <div class="field">
             <div class="field-label">Mod 类型</div>
             <div class="row-input" style="gap:10px">
@@ -229,7 +229,7 @@
         <div class="field-label">载入游戏的文件 (file_names)</div>
         <div class="file-list" id="form-files"></div>
         <div class="action-row" style="margin-top:6px">
-          <button class="btn btn-sm" id="form-add-files">➕ 添加其他文件...</button>
+          <button class="btn btn-sm" id="form-add-files">➕ 添加其他文件 (.json/.rebank 等)...</button>
         </div>
       </div>
       <div class="field">

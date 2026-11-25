@@ -56,6 +56,13 @@ tools/workflow/
 - 如果 zip 内没有顶层目录，则按 zip 根目录解压。
 - 同名文件直接覆盖；解压不会删除原 `.zip`。
 
+## 扩展工具（合并页）
+
+- 包装 Mod 的工作目录与打包工作流一致：`tools/workflow/mods/`；浏览/选择对话框默认打开这里。
+- 单文件 Mod 支持 `.bank` / `.carra2` / `.rebank`。
+- 可通过“添加其他文件”额外导入不限量的 `.json`：只复制到 Mod 根目录，不做其它处理，也不写入 `mod_info.json` 的 `file_names`。
+- 包装/发布复用 `functions/tools/post_extension_tools.py`；插件模板仍生成到仓库根 `addons/`。
+
 ## 环境
 
 - UI / worker：启动器 `venv\Scripts\python.exe`（pywebview）。
