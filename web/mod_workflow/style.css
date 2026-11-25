@@ -59,7 +59,8 @@ body {
   background: linear-gradient(145deg, var(--accent, #2586f5), var(--accent-2, #1e80f0));
   box-shadow: 0 8px 24px rgba(var(--accent-rgb, 55, 148, 255), .28);
 }
-.wf-mark img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: none; }
+.wf-mark img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: none; opacity: 0; transition: opacity .25s ease; }
+.wf-mark img.loaded { opacity: 1; }
 .wf-mark.has-icon img { display: block; }
 .wf-mark.has-icon span { display: none; }
 .wf-mark.has-icon { background: rgba(var(--tint-rgb, 255, 255, 255), .05); box-shadow: none; }
@@ -482,7 +483,8 @@ input[readonly] { color: var(--text-2, #b0b7c3); }
   color: #fff; font-weight: 700; font-size: 17px;
 }
 .wf-card-icon.has-img { background: transparent; }
-.wf-card-icon img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.wf-card-icon img { width: 100%; height: 100%; object-fit: cover; display: block; opacity: 0; transition: opacity .25s ease; }
+.wf-card-icon img.loaded { opacity: 1; }
 .wf-card-title { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .wf-card-title .wf-card-name { flex: 0 0 auto; }
 .wf-card-ver { font-size: 11px; font-weight: 600; color: var(--text-3, #7a8496); font-variant-numeric: tabular-nums; }
@@ -674,12 +676,16 @@ input[readonly] { color: var(--text-2, #b0b7c3); }
 .wf-loading {
   display: flex; flex-direction: column; align-items: center; justify-content: center;
   gap: 10px; padding: 40px 12px; color: var(--text-3, #7a8496); font-size: 12.5px;
+  animation: wf-fade-in .22s ease both;
 }
+@keyframes wf-fade-in { from { opacity: 0; } to { opacity: 1; } }
 .info-loading {
   display: flex; align-items: center; justify-content: center; gap: 10px;
   padding: 44px 18px; color: var(--text-3, #7a8496); font-size: 12.5px;
+  opacity: 0; visibility: hidden;
+  transition: opacity .2s ease, visibility .2s ease;
 }
-.info-loading[hidden] { display: none; }
+.info-loading.show { opacity: 1; visibility: visible; }
 
 /* 自定义确认模态 */
 .confirm-card {

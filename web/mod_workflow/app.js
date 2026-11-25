@@ -153,7 +153,9 @@
     state = next;
 
     if (next.icon && ui.icon && !ui.icon.dataset.ready) {
+      ui.icon.onload = function () { ui.icon.classList.add("loaded"); };
       ui.icon.src = next.icon;
+      if (ui.icon.complete && ui.icon.naturalWidth) ui.icon.classList.add("loaded");
       ui.icon.dataset.ready = "1";
       if (ui.mark) ui.mark.classList.add("has-icon");
     }
@@ -215,8 +217,10 @@
     if (pkg.icon) {
       iconWrap.classList.add("has-img");
       var im = el("img");
-      im.src = pkg.icon;
       im.alt = "";
+      im.onload = function () { im.classList.add("loaded"); };
+      im.src = pkg.icon;
+      if (im.complete && im.naturalWidth) im.classList.add("loaded");
       iconWrap.appendChild(im);
     } else {
       iconWrap.textContent = "?";
@@ -478,15 +482,23 @@
     });
   }
 
+  var infoLoadingTimer = null;
   async function openInfo(name) {
     infoCtx = { name: name, iconPath: "" };
     var modal = $("infoModal");
+    var loading = $("info-loading");
+    var body = $("info-body");
     modal.classList.remove("closing");
     modal.hidden = false;
-    $("info-loading").hidden = false;
-    $("info-body").hidden = true;
+    body.hidden = true;
+    loading.classList.remove("show");
+    // 本地读取通常很快；超过 200ms 才显示加载，避免一闪而过反而难看
+    clearTimeout(infoLoadingTimer);
+    infoLoadingTimer = setTimeout(function () { loading.classList.add("show"); }, 200);
     try {
       var r = await invoke("get_package_info", name);
+      clearTimeout(infoLoadingTimer);
+      loading.classList.remove("show");
       if (!r.ok) {
         toast(errorText(r), true);
         closeModal(modal);
@@ -510,12 +522,12 @@
       setInfoIcon(r.icon);
       $("info-hint").textContent = (r.missing && r.missing.length)
         ? ("待补全：" + r.missing.join("、")) : "";
-      $("info-loading").hidden = true;
-      $("info-body").hidden = false;
+      body.hidden = false;
     } catch (e) {
+      clearTimeout(infoLoadingTimer);
+      loading.classList.remove("show");
+      body.hidden = false;
       toast(String(e), true);
-      $("info-loading").hidden = true;
-      $("info-body").hidden = false;
     }
   }
 
