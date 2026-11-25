@@ -278,25 +278,29 @@
     head.appendChild(titleBox);
 
     head.appendChild(el("span", "wf-chip kind", pkg.kind === "addon" ? "插件包" : "Mod 包"));
-    head.appendChild(el("span", "wf-chip " + status.cls, status.text));
+    if (pkg.kind !== "addon") {
+      head.appendChild(el("span", "wf-chip " + status.cls, status.text));
+    }
     card.appendChild(head);
 
-    // ---- 计数 ----
-    var meta = el("div", "wf-meta");
-    [
-      ["zip", counts[".zip"] || 0],
-      ["7z", counts[".7z"] || 0],
-      ["rar", counts[".rar"] || 0],
-      ["bank", counts[".bank"] || 0],
-      ["carra2", counts[".carra2"] || 0],
-      ["rebank", counts[".rebank"] || 0]
-    ].forEach(function (pair) {
-      var item = el("span");
-      item.appendChild(el("b", null, String(pair[1])));
-      item.appendChild(document.createTextNode(" " + pair[0]));
-      meta.appendChild(item);
-    });
-    card.appendChild(meta);
+    // ---- 计数（插件包不统计资源）----
+    if (pkg.kind !== "addon") {
+      var meta = el("div", "wf-meta");
+      [
+        ["zip", counts[".zip"] || 0],
+        ["7z", counts[".7z"] || 0],
+        ["rar", counts[".rar"] || 0],
+        ["bank", counts[".bank"] || 0],
+        ["carra2", counts[".carra2"] || 0],
+        ["rebank", counts[".rebank"] || 0]
+      ].forEach(function (pair) {
+        var item = el("span");
+        item.appendChild(el("b", null, String(pair[1])));
+        item.appendChild(document.createTextNode(" " + pair[0]));
+        meta.appendChild(item);
+      });
+      card.appendChild(meta);
+    }
 
     if (pkg.job && pkg.job.status === "failed" && pkg.job.message) {
       card.appendChild(el("div", "wf-job-msg", pkg.job.message));
@@ -304,57 +308,62 @@
       card.appendChild(el("div", "wf-job-msg", "打包进程已退出，请重新开始。"));
     }
 
-    // ---- 文件 ----
-    var files = el("div", "wf-files");
-    if (!pkg.files || !pkg.files.length) {
-      files.appendChild(el("span", "wf-files-empty", "包内暂无打包文件"));
-    } else {
-      pkg.files.forEach(function (file) {
-        var chip = el("span", "wf-file");
-        chip.appendChild(el("span", "wf-file-name", file.name));
-        chip.appendChild(el("span", "wf-file-size", fmtSize(file.size)));
-        if (!running) {
-          var remove = el("button", "wf-file-x", "×");
-          remove.addEventListener("click", function (event) {
-            event.stopPropagation();
-            openConfirm("从包中移除 " + file.name + " ？", function () {
-              invoke("remove_file", pkg.name, file.name).then(function (result) {
-                if (!result.ok) return toast(errorText(result), true);
-                applyState(result.state);
-              }).catch(function (err) { toast(String(err), true); });
+    // ---- 文件（插件包不显示资源/无打包文件提示）----
+    if (pkg.kind !== "addon") {
+      var files = el("div", "wf-files");
+      if (!pkg.files || !pkg.files.length) {
+        files.appendChild(el("span", "wf-files-empty", "包内暂无打包文件"));
+      } else {
+        pkg.files.forEach(function (file) {
+          var chip = el("span", "wf-file");
+          chip.appendChild(el("span", "wf-file-name", file.name));
+          chip.appendChild(el("span", "wf-file-size", fmtSize(file.size)));
+          if (!running) {
+            var remove = el("button", "wf-file-x", "×");
+            remove.addEventListener("click", function (event) {
+              event.stopPropagation();
+              openConfirm("从包中移除 " + file.name + " ？", function () {
+                invoke("remove_file", pkg.name, file.name).then(function (result) {
+                  if (!result.ok) return toast(errorText(result), true);
+                  applyState(result.state);
+                }).catch(function (err) { toast(String(err), true); });
+              });
             });
-          });
-          chip.appendChild(remove);
-        }
-        files.appendChild(chip);
-      });
+            chip.appendChild(remove);
+          }
+          files.appendChild(chip);
+        });
+      }
+      card.appendChild(files);
     }
-    card.appendChild(files);
 
     // ---- 操作 ----
     var actions = el("div", "wf-card-actions");
 
-    var start = el("button", "wf-btn primary", status.cls === "done" ? "重新打包" : "开始打包");
-    start.disabled = !pkg.can_start || running || !!startBusy[pkg.name];
-    start.addEventListener("click", function () {
-      startBusy[pkg.name] = true;
-      start.disabled = true;
-      invoke("start_package", pkg.name).then(function (result) {
-        delete startBusy[pkg.name];
-        if (!result.ok) {
-          toast(errorText(result), true);
+    // 插件包不打 carra2/rebank，隐藏“开始打包”
+    if (pkg.kind !== "addon") {
+      var start = el("button", "wf-btn primary", status.cls === "done" ? "重新打包" : "开始打包");
+      start.disabled = !pkg.can_start || running || !!startBusy[pkg.name];
+      start.addEventListener("click", function () {
+        startBusy[pkg.name] = true;
+        start.disabled = true;
+        invoke("start_package", pkg.name).then(function (result) {
+          delete startBusy[pkg.name];
+          if (!result.ok) {
+            toast(errorText(result), true);
+            applyState(result.state);
+            return;
+          }
+          toast("已开始打包: " + pkg.name);
           applyState(result.state);
-          return;
-        }
-        toast("已开始打包: " + pkg.name);
-        applyState(result.state);
-      }).catch(function (err) {
-        delete startBusy[pkg.name];
-        start.disabled = false;
-        toast(String(err), true);
+        }).catch(function (err) {
+          delete startBusy[pkg.name];
+          start.disabled = false;
+          toast(String(err), true);
+        });
       });
-    });
-    actions.appendChild(start);
+      actions.appendChild(start);
+    }
 
     var add = el("button", "wf-btn", "添加文件");
     add.disabled = running;
@@ -516,6 +525,11 @@
       var row = el("div", "author-item");
       row.appendChild(el("span", "an", name));
       row.appendChild(el("span", "al", authorsMap[name] || "(无链接)"));
+      var edit = el("button", "ae", "✎");
+      edit.type = "button";
+      edit.title = "编辑";
+      edit.addEventListener("click", function () { openAuthorModal(name); });
+      row.appendChild(edit);
       var x = el("button", "ax", "×");
       x.type = "button";
       x.addEventListener("click", function () {
@@ -601,9 +615,11 @@
   }
 
   /* ---- 作者子模态 ---- */
-  function openAuthorModal() {
-    $("author-name").value = "";
-    $("author-link").value = "";
+  var authorEditKey = null;
+  function openAuthorModal(key) {
+    authorEditKey = (typeof key === "string" && key) ? key : null;
+    $("author-name").value = authorEditKey || "";
+    $("author-link").value = authorEditKey ? (authorsMap[authorEditKey] || "") : "";
     $("authorModal").classList.remove("closing");
     $("authorModal").hidden = false;
     setTimeout(function () { $("author-name").focus(); }, 30);
@@ -612,7 +628,12 @@
   function confirmAuthor() {
     var name = $("author-name").value.trim();
     if (!name) { toast("请填写作者名字", true); return; }
-    authorsMap[name] = $("author-link").value.trim();
+    var link = $("author-link").value.trim();
+    if (authorEditKey && authorEditKey !== name) {
+      delete authorsMap[authorEditKey];
+    }
+    authorsMap[name] = link;
+    authorEditKey = null;
     renderAuthors();
     closeModal($("authorModal"));
   }
@@ -773,7 +794,7 @@
         else { setInfoIcon(""); toast((d && d.error) || "无法预览该图片", true); }
       } catch (e) { toast(String(e), true); }
     });
-    $("info-add-author").addEventListener("click", openAuthorModal);
+    $("info-add-author").addEventListener("click", function () { openAuthorModal(); });
     $("infoModal").addEventListener("mousedown", function (event) {
       if (event.target === $("infoModal")) closeModal($("infoModal"));
     });
