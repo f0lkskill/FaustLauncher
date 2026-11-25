@@ -163,6 +163,9 @@ class PageLoader:
             {"name": "📦 Mod 管理器", "description": "管理边狱巴士的 Mod。\n",
              "color": accent_indigo, "command": self.core.open_mod_manager},
             
+            {"name": "🧩 YisangMirrorFlow", "description": "打包 carra2 / rebank，\n包装与发布 Mod / 插件。",
+             "color": accent_pink, "command": self.core.open_yisang_workflow},
+            
             {"name": "🚀 零协会CDN优选", "description": "自动选择最优质的CDN，优化游戏资源下载和服务器连接",
              "color": accent_cyan, "command": launch_babel}
         ]

@@ -32,6 +32,7 @@ const MOCK = {
     { id: 'gradient', name: '💻 渐变文本处理器', desc: '生成 Unity 富文本渐变色代码', image: 'gradient.png' },
     { id: 'folder_link', name: '📂 文件夹超链接', desc: '创建符号链接, 转移C盘资源文件', image: 'folder_link.png' },
     { id: 'nyos', name: '📖 今日指令', desc: '获取食指的最新指令\n仅供娱乐，请勿上升到指令成瘾。', image: 'nyos.png' },
+    { id: 'yisang_workflow', name: '🧩 YisangMirrorFlow', desc: '打包 carra2 / rebank\n包装与发布 Mod / 插件', image: 'extension_tools.png' },
     { id: 'font', name: '📝 字体修改', desc: '选择字体替换汉化包字体', image: 'font.png' },
     // { id: 'auto_translate', name: '🤖 自动汉化', desc: '思知 AI 批量剧情文本翻译' },
   ],

@@ -101,6 +101,7 @@
 | `upload_assets.bat` | `pack` + `upload` 两步 | **素材改动后的一键发布**：先查关键素材在不在 → `pack`（覆盖 `faust-assets.zip`）→ `upload`（覆盖 Release `tag=assets` 的资产）。可选参数传版本号（默认今天日期）。任何一步失败就中止，不会拿旧 zip 去传。改完素材、想让别人 `fetch` 到新版就跑它 |
 | `debug.bat` | `python main.py --debug` | 调试模式启动启动器（`--debug` 不重定向 stdout，控制台能直接看到输出） |
 | `yisang_workflow.bat` | `python tools/workflow/main.py` | 打开 YisangMirrorFlow 合并前端（打包工作流 + 扩展工具） |
+| `yisang_workflow_dev.bat` | `python tools/workflow/main.py --debug` | 开发调试启动（pywebview 调试/devtools） |
 | `update_hook.bat` | `python -m functions.hook.main update` | 手动重建并上传偏移索引（约 1~2 分钟满核）请先挂起游戏之后再运行 |
 
 这几个 `.bat` 都先 `cd /d "%~dp0..\.."` 回到仓库根再执行，所以**双击、从任意目录调用都能用**；

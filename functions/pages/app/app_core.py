@@ -132,6 +132,30 @@ class FaustLauncherCore:
             from tkinter import messagebox
             messagebox.showerror("错误", f"打开自定义汉化工具失败: {str(e)}")
 
+    def open_yisang_workflow(self):
+        """从工具页打开 YisangMirrorFlow（源码运行：启动 tools/workflow/main.py）。"""
+        try:
+            import subprocess
+            from functions.base.common.path_utils import get_app_root
+            root = get_app_root(create=False)
+            script = os.path.join(root, "tools", "workflow", "main.py")
+            if not os.path.isfile(script):
+                from tkinter import messagebox
+                messagebox.showinfo(
+                    "YisangMirrorFlow",
+                    "当前安装未内置打包工作流。\n请使用 tools/run/yisang_workflow.bat 启动。")
+                return
+            python_exe = sys.executable
+            if not getattr(sys, "frozen", False):
+                pythonw = os.path.join(os.path.dirname(sys.executable), "pythonw.exe")
+                if os.path.isfile(pythonw):
+                    python_exe = pythonw
+            flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+            subprocess.Popen([python_exe, script], cwd=root, creationflags=flags)
+            print("YisangMirrorFlow 已打开")
+        except Exception as e:
+            print(f"打开 YisangMirrorFlow 失败: {e}")
+
     def update_translation(self):
         from functions.pages.app.page_loader import download_and_launch
         Thread(target=download_and_launch).start()
