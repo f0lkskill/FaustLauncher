@@ -217,19 +217,31 @@ class ExtensionToolsMixin:
             return ""
 
     def get_user_profile(self):
-        """读取启动器记录的用户名、头像 URL、主页 URL。"""
+        """轻量读取用户名、头像 URL、主页 URL（不读游玩时长等慢数据）。"""
         try:
+            from functions.base import user_api
             from functions.base import user_system
             try:
                 from functions.base.settings_manager import get_settings_manager
-                sm = get_settings_manager()
+                name = str(get_settings_manager().get_setting("user_name") or "Player")
             except Exception:
-                sm = None
-            info = user_system.get_user_info(sm)
-            return {"ok": True,
-                    "name": str(info.get("user_name") or "Player"),
-                    "avatar": str(info.get("avatar") or ""),
-                    "profile_url": str(info.get("profile_url") or "")}
+                name = "Player"
+            profile = user_system.server_profile()
+            try:
+                base = str(user_api.api_base() or "").rstrip("/")
+            except Exception:
+                base = ""
+            token = str(profile.get("profile_token") or "").strip()
+            avatar = str(profile.get("avatar") or "").strip()
+            if avatar.startswith("//"):
+                avatar = "https:" + avatar
+            elif avatar.startswith("/"):
+                avatar = base + avatar
+            elif avatar and not avatar.startswith(("http://", "https://")):
+                avatar = (base + "/" + avatar.lstrip("/")) if base else avatar
+            profile_url = ("%s/user/%s" % (base, token)) if base and token else ""
+            return {"ok": True, "name": name or "Player",
+                    "avatar": avatar, "profile_url": profile_url}
         except Exception as e:
             return {"ok": False, "error": str(e)}
 

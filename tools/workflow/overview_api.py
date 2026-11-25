@@ -72,6 +72,13 @@ class OverviewApi(ExtensionToolsMixin, WindowChromeBridge):
         except Exception:
             return None
 
+    def get_brand_icon(self):
+        """轻量返回品牌图标（不等包列表/资源加载）。"""
+        try:
+            return {"ok": True, "icon": _icon_data_uri()}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
     def get_state(self):
         try:
             state = core.overview_state()

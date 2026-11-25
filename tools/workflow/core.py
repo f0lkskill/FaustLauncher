@@ -24,7 +24,7 @@ from datetime import datetime
 from pathlib import Path
 
 WORKFLOW_NAME = "YisangMirrorFlow"
-VERSION = "0.0.20"
+VERSION = "0.0.21"
 
 WORKFLOW_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = WORKFLOW_DIR.parent.parent

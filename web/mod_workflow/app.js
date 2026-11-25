@@ -102,6 +102,19 @@
     ui.list.appendChild(box);
   }
 
+  async function loadBrandIcon() {
+    try {
+      var r = await invoke("get_brand_icon");
+      if (r && r.ok && r.icon && ui.icon) {
+        ui.icon.onload = function () { ui.icon.classList.add("loaded"); };
+        ui.icon.src = r.icon;
+        if (ui.icon.complete && ui.icon.naturalWidth) ui.icon.classList.add("loaded");
+        ui.icon.dataset.ready = "1";
+        if (ui.mark) ui.mark.classList.add("has-icon");
+      }
+    } catch (e) { /* ignore */ }
+  }
+
   var userProfile = { name: "Player", url: "" };
 
   function setUserName(name) {
@@ -841,6 +854,7 @@
     bindWorkflow();
     bindModals();
     showListLoading();
+    loadBrandIcon();
     loadUser();
     refresh();
     setInterval(refresh, 1400);

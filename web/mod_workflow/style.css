@@ -709,6 +709,7 @@ input[readonly] { color: var(--text-2, #b0b7c3); }
 }
 .wf-user:hover { background: rgba(var(--tint-rgb, 255, 255, 255), .09); border-color: rgba(var(--accent-rgb, 55, 148, 255), .4); }
 .wf-user:disabled { cursor: default; opacity: .85; }
+.wf-user:focus, .wf-user:focus-visible { outline: none; }
 .wf-user-avatar {
   width: 34px; height: 34px; flex: 0 0 auto; border-radius: 50%; overflow: hidden;
   display: flex; align-items: center; justify-content: center;
