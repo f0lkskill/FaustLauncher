@@ -60,9 +60,9 @@
     <h2>新建包</h2>
     <p>包名会作为 mods 下的文件夹名。</p>
     <input id="wf-new-name" type="text" maxlength="60" placeholder="例如：镜像人格-音效">
-    <div class="wf-kind-row">
-      <label class="radio-label" title="需要打包 zip/bank"><input type="radio" name="pkg-kind" value="mod" checked><span>Mod 包</span></label>
-      <label class="radio-label" title="自带 scr.py，免打包，可直接发布"><input type="radio" name="pkg-kind" value="addon"><span>插件包</span></label>
+    <div class="wf-kind-row" id="wf-kind-row">
+      <button type="button" class="wf-kind active" data-kind="mod" title="需要打包 zip/bank">Mod 包</button>
+      <button type="button" class="wf-kind" data-kind="addon" title="自带 scr.py，免打包，可直接发布">插件包</button>
     </div>
     <div class="wf-dialog-actions">
       <button class="wf-btn ghost" id="wf-new-cancel">取消</button>

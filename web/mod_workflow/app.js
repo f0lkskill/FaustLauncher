@@ -386,12 +386,22 @@
     });
   }
 
+  function setKind(kind) {
+    document.querySelectorAll(".wf-kind").forEach(function (b) {
+      b.classList.toggle("active", b.dataset.kind === kind);
+    });
+  }
+
+  function getKind() {
+    var b = document.querySelector(".wf-kind.active");
+    return b ? b.dataset.kind : "mod";
+  }
+
   function openNewModal() {
     ui.modal.classList.remove("closing");
     ui.modal.hidden = false;
     ui.newName.value = "新包";
-    var mod = document.querySelector('input[name="pkg-kind"][value="mod"]');
-    if (mod) mod.checked = true;
+    setKind("mod");
     setTimeout(function () {
       ui.newName.focus();
       ui.newName.select();
@@ -404,8 +414,7 @@
 
   function createPackage() {
     var name = ui.newName.value.trim();
-    var kindEl = document.querySelector('input[name="pkg-kind"]:checked');
-    var kind = kindEl ? kindEl.value : "mod";
+    var kind = getKind();
     invoke("create_package", name, kind).then(function (result) {
       if (!result.ok) return toast(errorText(result), true);
       closeNewModal();
@@ -618,6 +627,9 @@
      ============================================================ */
   function bindWorkflow() {
     $("wf-new").addEventListener("click", openNewModal);
+    document.querySelectorAll(".wf-kind").forEach(function (b) {
+      b.addEventListener("click", function () { setKind(b.dataset.kind); });
+    });
     $("wf-new-cancel").addEventListener("click", closeNewModal);
     $("wf-new-confirm").addEventListener("click", createPackage);
     ui.newName.addEventListener("keydown", function (event) {

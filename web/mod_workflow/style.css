@@ -631,14 +631,23 @@ input[readonly] { color: var(--text-2, #b0b7c3); }
 }
 
 /* 新建包类型：两列等宽、文字不换行 */
-/* 新建包类型：两列等宽、内容居中且不溢出换行 */
+/* 新建包类型：自定义按钮（不用原生 radio，避免各 WebView 渲染差异） */
 .wf-kind-row { display: flex; gap: 8px; }
-.wf-kind-row .radio-label {
-  flex: 1 1 0; min-width: 0; display: flex; align-items: center; justify-content: center;
-  gap: 8px; padding: 10px 8px; white-space: nowrap; overflow: hidden;
+.wf-kind {
+  flex: 1 1 0; min-width: 0; height: 40px; padding: 0 8px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 9px; cursor: pointer; font: inherit; font-size: 13px; font-weight: 600;
+  color: var(--text-2, #b0b7c3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  background: rgba(var(--tint-rgb, 255, 255, 255), .05);
+  border: 1px solid rgba(var(--tint-rgb, 255, 255, 255), .16);
+  transition: background .15s ease, color .15s ease, border-color .15s ease;
 }
-.wf-kind-row .radio-label input { flex: 0 0 auto; margin: 0; }
-.wf-kind-row .radio-label span { flex: 0 0 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wf-kind:hover { background: rgba(var(--tint-rgb, 255, 255, 255), .09); color: var(--text, #e8ecf4); }
+.wf-kind.active {
+  color: var(--text, #e8ecf4);
+  border-color: var(--accent, #6366f1);
+  background: rgba(var(--accent-rgb, 99, 102, 241), .15);
+}
 
 /* 关闭动画：JS 加 .closing 后延时隐藏 */
 @keyframes wf-modal-fade-out { from { opacity: 1; } to { opacity: 0; } }
