@@ -65,7 +65,9 @@ tools/workflow/
 - **发布**：Mod 包需打包完成且无失败；插件包免打包。发布前检查名称 / 版本 / 描述 / 至少一位作者 / 图标 /（Mod 包）至少一个载入文件，不写 tag 标签。
 - **版本号**：与上次发布相同则自动 patch+1（记录在包内 `.workflow_publish.json`）。
 - **上传日志**：模态窗口，可最小化到右下角浮标，再点开查看详情。
-- 发布用临时干净目录上传，自动排除 `.workflow_*`、日志/进度、源 `.zip` 等运行时文件。
+- 发布技术流程：读取 info → 必填校验 → 版本自增 → 只把“真正有用”的文件提取到临时目录 → 压缩成临时 zip → 用该 zip 上传蓝奏云 → 更新云端信息 → 清理临时文件。
+  - Mod 白名单：`carra2` / `rebank` / `bank` / `json` / `mod_info.json` / `icon.png` / `Installer.bat` / `Uninstaller.bat` / `changes.json` 及 `Assets/` 资源；源 `.zip`、日志/进度、`.workflow_*` 一律不带。
+  - 插件：除源 `.zip` 外的文件全部带上（含 `scr.py`、资源）。
 - 单文件 Mod 支持 `.bank` / `.carra2` / `.rebank`；可额外导入不限量 `.json`（仅放根目录，不做处理）。
 - 默认目录统一在 `tools/workflow/mods/`；包装/发布复用 `functions/tools/post_extension_tools.py`。
 

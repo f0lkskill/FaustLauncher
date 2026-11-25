@@ -69,6 +69,16 @@
     return node;
   }
 
+  function closeModal(node) {
+    // 播放关闭动画后再真正隐藏（.closing 规则见 style.css）
+    if (!node || node.hidden || node.classList.contains("closing")) return;
+    node.classList.add("closing");
+    setTimeout(function () {
+      node.classList.remove("closing");
+      node.hidden = true;
+    }, 150);
+  }
+
   function fileUrl(path) {
     if (!path) return "";
     try {
@@ -377,6 +387,7 @@
   }
 
   function openNewModal() {
+    ui.modal.classList.remove("closing");
     ui.modal.hidden = false;
     ui.newName.value = "新包";
     var mod = document.querySelector('input[name="pkg-kind"][value="mod"]');
@@ -388,7 +399,7 @@
   }
 
   function closeNewModal() {
-    ui.modal.hidden = true;
+    closeModal(ui.modal);
   }
 
   function createPackage() {
@@ -472,6 +483,7 @@
       setInfoIcon(r.icon);
       $("info-hint").textContent = (r.missing && r.missing.length)
         ? ("待补全：" + r.missing.join("、")) : "";
+      $("infoModal").classList.remove("closing");
       $("infoModal").hidden = false;
     } catch (e) {
       toast(String(e), true);
@@ -492,7 +504,7 @@
       var r = await invoke("save_package_info", name, data);
       if (!r.ok) { toast(errorText(r), true); return; }
       toast("信息已保存");
-      $("infoModal").hidden = true;
+      closeModal($("infoModal"));
       if (r.state) applyState(r.state);
     } catch (e) {
       toast(String(e), true);
@@ -503,6 +515,7 @@
   function openAuthorModal() {
     $("author-name").value = "";
     $("author-link").value = "";
+    $("authorModal").classList.remove("closing");
     $("authorModal").hidden = false;
     setTimeout(function () { $("author-name").focus(); }, 30);
   }
@@ -512,7 +525,7 @@
     if (!name) { toast("请填写作者名字", true); return; }
     authorsMap[name] = $("author-link").value.trim();
     renderAuthors();
-    $("authorModal").hidden = true;
+    closeModal($("authorModal"));
   }
 
   /* ============================================================
@@ -526,6 +539,7 @@
     $("log-status").textContent = "准备中...";
     $("log-text").textContent = "";
     logResultText = "";
+    $("logModal").classList.remove("closing");
     $("logModal").hidden = false;
     $("logFloat").hidden = true;
   }
@@ -543,7 +557,7 @@
   }
 
   function closeLog() {
-    $("logModal").hidden = true;
+    closeModal($("logModal"));
     $("logFloat").hidden = true;
   }
 
@@ -653,8 +667,8 @@
 
   function bindModals() {
     // 信息模态
-    $("info-close").addEventListener("click", function () { $("infoModal").hidden = true; });
-    $("info-cancel").addEventListener("click", function () { $("infoModal").hidden = true; });
+    $("info-close").addEventListener("click", function () { closeModal($("infoModal")); });
+    $("info-cancel").addEventListener("click", function () { closeModal($("infoModal")); });
     $("info-save").addEventListener("click", saveInfo);
     $("info-icon").addEventListener("click", async function () {
       try {
@@ -666,18 +680,18 @@
     });
     $("info-add-author").addEventListener("click", openAuthorModal);
     $("infoModal").addEventListener("mousedown", function (event) {
-      if (event.target === $("infoModal")) $("infoModal").hidden = true;
+      if (event.target === $("infoModal")) closeModal($("infoModal"));
     });
 
     // 作者模态
-    $("author-close").addEventListener("click", function () { $("authorModal").hidden = true; });
-    $("author-cancel").addEventListener("click", function () { $("authorModal").hidden = true; });
+    $("author-close").addEventListener("click", function () { closeModal($("authorModal")); });
+    $("author-cancel").addEventListener("click", function () { closeModal($("authorModal")); });
     $("author-add").addEventListener("click", confirmAuthor);
     $("author-link").addEventListener("keydown", function (e) {
       if (e.key === "Enter") { e.preventDefault(); confirmAuthor(); }
     });
     $("authorModal").addEventListener("mousedown", function (event) {
-      if (event.target === $("authorModal")) $("authorModal").hidden = true;
+      if (event.target === $("authorModal")) closeModal($("authorModal"));
     });
 
     // 日志模态 + 浮标

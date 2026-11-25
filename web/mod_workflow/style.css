@@ -239,8 +239,10 @@ input[readonly] { color: var(--text-2, #b0b7c3); }
 
 /* ---------------- 新建包弹窗 ---------------- */
 .wf-modal {
-  /* absolute + body 定位祖先：只覆盖标题栏以下的可视区，不盖住系统标题栏 */
-  position: absolute; inset: 0; z-index: 10000;
+  /* fixed + 从标题栏底部开始：不覆盖系统标题栏，也不受 body 尺寸影响 */
+  position: fixed; left: 0; right: 0; bottom: 0;
+  top: var(--titlebar-h, 40px);
+  z-index: 10000;
   display: flex; align-items: center; justify-content: center;
   background: rgba(0, 0, 0, .42);
   backdrop-filter: blur(4px);
@@ -629,9 +631,27 @@ input[readonly] { color: var(--text-2, #b0b7c3); }
 }
 
 /* 新建包类型：两列等宽、文字不换行 */
-.wf-kind-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-.wf-kind-row .radio-label { justify-content: center; white-space: nowrap; padding: 10px 8px; }
+/* 新建包类型：两列等宽、内容居中且不溢出换行 */
+.wf-kind-row { display: flex; gap: 8px; }
+.wf-kind-row .radio-label {
+  flex: 1 1 0; min-width: 0; display: flex; align-items: center; justify-content: center;
+  gap: 8px; padding: 10px 8px; white-space: nowrap; overflow: hidden;
+}
 .wf-kind-row .radio-label input { flex: 0 0 auto; margin: 0; }
-.wf-kind-row .radio-label span { white-space: nowrap; }
+.wf-kind-row .radio-label span { flex: 0 0 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* 关闭动画：JS 加 .closing 后延时隐藏 */
+@keyframes wf-modal-fade-out { from { opacity: 1; } to { opacity: 0; } }
+@keyframes wf-modal-pop-out {
+  from { opacity: 1; transform: translateY(0) scale(1); }
+  to   { opacity: 0; transform: translateY(6px) scale(.98); }
+}
+.wf-modal.closing { animation: wf-modal-fade-out .15s ease both; }
+.wf-modal.closing > .wf-dialog,
+.wf-modal.closing > .info-card,
+.wf-modal.closing > .author-card,
+.wf-modal.closing > .log-card {
+  animation: wf-modal-pop-out .15s ease both;
+}
 
 
