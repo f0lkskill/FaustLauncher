@@ -187,7 +187,7 @@
       im.alt = "";
       iconWrap.appendChild(im);
     } else {
-      iconWrap.textContent = String(info.name || pkg.name || "?").slice(0, 1).toUpperCase();
+      iconWrap.textContent = "?";
     }
     head.appendChild(iconWrap);
 

@@ -239,10 +239,11 @@ input[readonly] { color: var(--text-2, #b0b7c3); }
 
 /* ---------------- 新建包弹窗 ---------------- */
 .wf-modal {
-  position: fixed; inset: 0; z-index: 10000;
+  /* absolute + body 定位祖先：只覆盖标题栏以下的可视区，不盖住系统标题栏 */
+  position: absolute; inset: 0; z-index: 10000;
   display: flex; align-items: center; justify-content: center;
-  background: rgba(0, 0, 0, .45);
-  backdrop-filter: blur(3px);
+  background: rgba(0, 0, 0, .42);
+  backdrop-filter: blur(4px);
 }
 .wf-modal[hidden] { display: none; }
 .wf-dialog {
@@ -596,4 +597,41 @@ input[readonly] { color: var(--text-2, #b0b7c3); }
 .log-float-open { appearance: none; border: none; background: rgba(var(--tint-rgb, 255, 255, 255), .08); color: var(--text-2, #b0b7c3); cursor: pointer; width: 24px; height: 24px; border-radius: 7px; }
 .log-float-open:hover { background: rgba(var(--tint-rgb, 255, 255, 255), .16); color: var(--text, #e8ecf4); }
 @keyframes wf-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
+
+/* ============================================================
+   模态统一：柔和配色 + 进出场动画 + 新建包类型不换行
+   ============================================================ */
+
+/* 统一模态卡片配色，贴合主题面板色，去掉纯黑突兀感 */
+.wf-dialog,
+.info-card,
+.author-card,
+.log-card {
+  background: rgba(var(--panel-rgb, 37, 37, 38), .97);
+  border: 1px solid rgba(var(--tint-rgb, 255, 255, 255), .12);
+  box-shadow: 0 26px 72px rgba(0, 0, 0, .5);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+/* 淡入 + 弹入动画（每次从 hidden 显示时触发） */
+@keyframes wf-modal-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes wf-modal-pop {
+  from { opacity: 0; transform: translateY(10px) scale(.97); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+.wf-modal:not([hidden]) { animation: wf-modal-fade .16s ease both; }
+.wf-modal:not([hidden]) > .wf-dialog,
+.wf-modal:not([hidden]) > .info-card,
+.wf-modal:not([hidden]) > .author-card,
+.wf-modal:not([hidden]) > .log-card {
+  animation: wf-modal-pop .22s cubic-bezier(.22, .8, .28, 1) both;
+}
+
+/* 新建包类型：两列等宽、文字不换行 */
+.wf-kind-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.wf-kind-row .radio-label { justify-content: center; white-space: nowrap; padding: 10px 8px; }
+.wf-kind-row .radio-label input { flex: 0 0 auto; margin: 0; }
+.wf-kind-row .radio-label span { white-space: nowrap; }
+
 

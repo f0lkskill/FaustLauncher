@@ -49,11 +49,6 @@
           </div>
           <div class="wf-list" id="wf-list"></div>
         </main>
-
-        <footer class="wf-foot">
-          <span id="wf-foot-text">把 .zip 与 .bank 放进包内打包；打包完成后填写信息即可发布。</span>
-          <span class="wf-foot-hint">zip → carra2 · bank → rebank</span>
-        </footer>
       </div>
     </section>
   </div>
@@ -66,8 +61,8 @@
     <p>包名会作为 mods 下的文件夹名。</p>
     <input id="wf-new-name" type="text" maxlength="60" placeholder="例如：镜像人格-音效">
     <div class="wf-kind-row">
-      <label class="radio-label"><input type="radio" name="pkg-kind" value="mod" checked>Mod 包</label>
-      <label class="radio-label"><input type="radio" name="pkg-kind" value="addon">插件包（自带 scr.py）</label>
+      <label class="radio-label" title="需要打包 zip/bank"><input type="radio" name="pkg-kind" value="mod" checked><span>Mod 包</span></label>
+      <label class="radio-label" title="自带 scr.py，免打包，可直接发布"><input type="radio" name="pkg-kind" value="addon"><span>插件包</span></label>
     </div>
     <div class="wf-dialog-actions">
       <button class="wf-btn ghost" id="wf-new-cancel">取消</button>
