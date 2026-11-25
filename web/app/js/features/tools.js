@@ -5,7 +5,7 @@
  *   · 工具卡片点击分发到各工具窗口/模态: 自动汉化、字体选择、渐变文本、扩展工具等
  *   · 字体预览与字体信息刷新
  * 本文件提供:
- *  函数: closePanel / openAutoTranslate / openFontSelector / openGradientTool / openExtensionTools
+ *  函数: closePanel / openAutoTranslate / openFontSelector / openGradientTool
  * 依赖: 依赖 bootstrap/state/utils
  * 加载顺序: 18/22    (拆分自原 app.js 行 1519-1770)
  * ============================================================================== */
@@ -229,37 +229,3 @@ function openGradientTool() {
   };
 }
 
-function openExtensionTools() {
-  if (!api) { toast('浏览器预览模式', 'warn'); return; }
-  const existing = document.getElementById('ext-panel');
-  if (existing) { closePanel(existing); return; }
-  const panel = document.createElement('div');
-  panel.id = 'ext-panel';
-  panel.className = 'panel-overlay';
-  panel.innerHTML =
-    '<div class="panel-card">' +
-      '<div class="panel-head"><h3>' + iconSvg('moreApp') + ' 扩展工具</h3>' + panelCloseBtn('ext-close') + '</div>' +
-      '<div class="panel-body ext-center">' +
-        '<div class="at-row"><label style="text-align:center"></label>' +
-          '<input type="text" id="ext-key" placeholder="请输入密钥" autocomplete="off" spellcheck="false" style="text-align:center">' +
-        '</div>' +
-        '<button class="btn btn-primary" id="ext-verify" style="width:100%;justify-content:center;margin-top:6px">验证</button>' +
-      '</div>' +
-    '</div>';
-  document.body.appendChild(panel);
-  panel.addEventListener('click', (e) => { if (e.target === panel) closePanel(panel); });
-  $('#ext-close').onclick = () => closePanel(panel);
-  $('#ext-key').onkeydown = (e) => { if (e.key === 'Enter') $('#ext-verify').click(); };
-  setTimeout(() => $('#ext-key').focus(), 120);
-  $('#ext-verify').onclick = async () => {
-    const key = $('#ext-key').value.trim();
-    if (!key) { toast('请输入密钥', 'warn'); return; }
-    const r = await api.verify_extension_key(key);
-    if (r.ok) {
-      closePanel(panel);
-      api.open_extension_tools_window().then(ok => {
-        toast(ok ? '扩展工具已打开' : '打开失败', ok ? 'success' : 'error');
-      });
-    } else { toast(r.error || '密钥错误', 'error'); }
-  };
-}

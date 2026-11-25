@@ -7,6 +7,7 @@
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
+<img id="bgimg" alt="">
 <div class="wf-app">
 
   <header class="wf-head">
@@ -17,44 +18,177 @@
       </div>
       <div class="wf-brand-text">
         <h1>YisangMirrorFlow</h1>
-        <p id="wf-version">Mod 打包工作流</p>
+        <p id="wf-version">Mod 打包工作流 · 扩展工具</p>
       </div>
     </div>
-    <div class="wf-head-actions">
-      <button class="wf-btn" id="wf-open-mods">打开包目录</button>
-      <button class="wf-btn primary" id="wf-new">新建包</button>
-      <button class="wf-btn ghost" id="wf-refresh">刷新</button>
-    </div>
+    <nav class="wf-pageswitch" id="wf-pageswitch">
+      <button class="wf-pagetab active" data-page="workflow">📦 打包工作流</button>
+      <button class="wf-pagetab" data-page="ext">🧩 扩展工具</button>
+    </nav>
   </header>
 
-  <section class="wf-config">
-    <div class="wf-field">
-      <label for="wf-game-path">游戏目录</label>
-      <input id="wf-game-path" type="text" readonly placeholder="尚未设置，.bank 需要对照原版 bank">
-      <button class="wf-btn" id="wf-pick-game">选择目录</button>
-      <span class="wf-state" id="wf-sound-state"></span>
-    </div>
-    <div class="wf-field small">
-      <label for="wf-threads">线程</label>
-      <input id="wf-threads" type="number" min="1" max="10" step="1" value="5">
-    </div>
-  </section>
+  <div class="wf-body">
 
-  <main class="wf-main">
-    <div class="wf-list-head">
-      <span>打包队列</span>
-      <span class="wf-badge" id="wf-count">0</span>
-    </div>
-    <div class="wf-list" id="wf-list"></div>
-  </main>
+    <!-- ==================== 页面1: 打包工作流 ==================== -->
+    <section class="wf-page show" id="page-workflow">
+      <div class="wf-workflow">
+        <section class="wf-config">
+          <div class="wf-field">
+            <label for="wf-game-path">游戏目录</label>
+            <input id="wf-game-path" type="text" readonly placeholder="尚未设置，.bank 需要对照原版 bank">
+            <button class="wf-btn" id="wf-pick-game">选择目录</button>
+            <span class="wf-state" id="wf-sound-state"></span>
+          </div>
+          <div class="wf-field small">
+            <label for="wf-threads">线程</label>
+            <input id="wf-threads" type="number" min="1" max="10" step="1" value="5">
+          </div>
+        </section>
 
-  <footer class="wf-foot">
-    <span id="wf-foot-text">提示：把 .zip 与 .bank 放进包内，点“开始打包”。</span>
-    <span class="wf-foot-hint">zip → carra2 · bank → rebank</span>
-  </footer>
+        <main class="wf-main">
+          <div class="wf-list-head">
+            <span>打包队列</span>
+            <span class="wf-badge" id="wf-count">0</span>
+            <span class="wf-spacer"></span>
+            <button class="wf-btn" id="wf-open-mods">打开包目录</button>
+            <button class="wf-btn primary" id="wf-new">新建包</button>
+            <button class="wf-btn ghost" id="wf-refresh">刷新</button>
+          </div>
+          <div class="wf-list" id="wf-list"></div>
+        </main>
 
+        <footer class="wf-foot">
+          <span id="wf-foot-text">提示：把 .zip 与 .bank 放进包内，点“开始打包”。</span>
+          <span class="wf-foot-hint">zip → carra2 · bank → rebank</span>
+        </footer>
+      </div>
+    </section>
+
+    <!-- ==================== 页面2: 扩展工具 ==================== -->
+    <section class="wf-page" id="page-ext">
+      <div class="ex-app">
+        <div class="ex-head">
+          <div class="head-title">🧩 扩展工具</div>
+          <div class="head-sub">包装 Mod / 生成插件模板 / 发布 Mod·插件信息到云端</div>
+        </div>
+
+        <div class="tabs">
+          <div class="tab active" data-mode="1">📦 包装 Mod</div>
+          <div class="tab" data-mode="2">🧩 生成插件模板</div>
+          <div class="tab" data-mode="3">☁️ 发布 Mod 信息</div>
+          <div class="tab" data-mode="4">🧩 发布插件信息</div>
+        </div>
+
+        <!-- 模式1: 包装 Mod -->
+        <div class="sec show" id="sec-wrap">
+          <div class="hint">选择 Mod 原始文件夹复制到 mods/ 目录并填写 mod_info.json。<br>标准 Mod 需包含 Installer.bat、Assets 文件夹、Uninstaller.bat；单文件 Mod 仅需 .bank/.carra2 等文件，跳过结构检测。</div>
+          <div class="field">
+            <div class="field-label">Mod 类型</div>
+            <div class="row-input" style="gap:10px">
+              <label class="radio-label"><input type="radio" name="wrap-type" value="standard" checked>标准 Mod</label>
+              <label class="radio-label"><input type="radio" name="wrap-type" value="single">单文件 Mod</label>
+            </div>
+          </div>
+          <div class="field">
+            <div class="field-label">原始文件夹</div>
+            <div class="row-input">
+              <input type="text" id="wrap-folder" placeholder="未选择">
+              <button class="btn" id="wrap-browse">浏览...</button>
+              <select id="wrap-mods"></select>
+              <button class="btn btn-sm" id="wrap-from-mods">从 mods/ 选择</button>
+            </div>
+          </div>
+          <div class="action-row">
+            <button class="btn btn-primary" id="wrap-start">🚀 开始包装</button>
+          </div>
+        </div>
+
+        <!-- 模式2: 生成插件模板 -->
+        <div class="sec" id="sec-plugin">
+          <div class="hint">填写插件信息后，在 addons/ 目录下生成插件模板（scr.py、图标、addon_info.json），可直接在此基础上开发插件。</div>
+          <div class="field">
+            <div class="field-label">插件名称</div>
+            <div class="row-input">
+              <input type="text" id="plugin-name" placeholder="例如: MyPlugin">
+            </div>
+          </div>
+          <div class="action-row">
+            <button class="btn btn-green" id="plugin-start">✨ 生成模板</button>
+          </div>
+        </div>
+
+        <!-- 模式3: 发布 Mod 信息 -->
+        <div class="sec" id="sec-publish">
+          <div class="hint">选择 mods/ 下已包装的 Mod 文件夹。发布时自动压缩 Mod 本体并上传蓝奏云（图标 → FaustLauncher.icons，压缩包 → FaustLauncher.Mods），以直链解析链接填写 dowload_url/icon_url 后连同 mod_info 发布到云端。</div>
+          <div class="field">
+            <div class="field-label">Mod 文件夹</div>
+            <div class="row-input">
+              <input type="text" id="pub-folder" placeholder="未选择">
+              <button class="btn" id="pub-browse">浏览...</button>
+              <select id="pub-mods"></select>
+              <button class="btn btn-sm" id="pub-from-mods">从 mods/ 选择</button>
+            </div>
+          </div>
+          <div class="field">
+            <div class="field-label">标签 (可选, 逗号分隔)</div>
+            <input type="text" id="pub-tags" maxlength="260" placeholder="例如: 推荐, 画面">
+          </div>
+          <div class="field">
+            <div class="field-label">标签颜色 (可选, JSON 对象)</div>
+            <input type="text" id="pub-tags-style" maxlength="2048" placeholder='例如: {"推荐":"#ffffff","画面":"#66ccff"}'>
+          </div>
+          <div class="preview" id="pub-preview">尚未选择 Mod 文件夹</div>
+          <div class="action-row">
+            <button class="btn btn-primary" id="pub-upload">🚀 上传到云端</button>
+          </div>
+          <div class="progress-wrap" id="pub-progress" style="display:none">
+            <div class="progress-bar"><div class="progress-fill" id="pub-progress-fill"></div></div>
+            <div class="progress-text" id="pub-progress-text"></div>
+          </div>
+          <div class="log" id="pub-log"></div>
+        </div>
+
+        <!-- 模式4: 发布插件信息 -->
+        <div class="sec" id="sec-addon-publish">
+          <div class="hint">选择 addons/ 下已开发的插件文件夹（需含 addon_info.json 与 icon.png）。发布时自动压缩插件本体并上传蓝奏云（图标 → FaustLauncher.icons，压缩包 → FaustLauncher.Addons），以直链解析链接填写 dowload_url/icon_url 后，以与 Mod 相同的机制更新云端插件数据库。</div>
+          <div class="field">
+            <div class="field-label">插件文件夹</div>
+            <div class="row-input">
+              <input type="text" id="addon-pub-folder" placeholder="未选择">
+              <button class="btn" id="addon-pub-browse">浏览...</button>
+              <select id="addon-pub-addons"></select>
+              <button class="btn btn-sm" id="addon-pub-from-addons">从 addons/ 选择</button>
+            </div>
+          </div>
+          <div class="field">
+            <div class="field-label">标签 (可选, 逗号分隔)</div>
+            <input type="text" id="addon-pub-tags" maxlength="260" placeholder="例如: 推荐, 工具">
+          </div>
+          <div class="field">
+            <div class="field-label">标签颜色 (可选, JSON 对象)</div>
+            <input type="text" id="addon-pub-tags-style" maxlength="2048" placeholder='例如: {"推荐":"#ffffff","工具":"#66ccff"}'>
+          </div>
+          <div class="preview" id="addon-pub-preview">尚未选择插件文件夹</div>
+          <div class="action-row">
+            <button class="btn btn-primary" id="addon-pub-upload">🚀 上传到云端</button>
+          </div>
+          <div class="progress-wrap" id="addon-pub-progress" style="display:none">
+            <div class="progress-bar"><div class="progress-fill" id="addon-pub-progress-fill"></div></div>
+            <div class="progress-text" id="addon-pub-progress-text"></div>
+          </div>
+          <div class="log" id="addon-pub-log"></div>
+        </div>
+
+        <div class="statusbar">
+          <span id="ex-count">扩展工具</span>
+          <span class="msg" id="ex-msg"></span>
+        </div>
+      </div>
+    </section>
+  </div>
 </div>
 
+<!-- 新建包弹窗 (打包工作流) -->
 <div class="wf-modal" id="wf-modal" hidden>
   <div class="wf-dialog">
     <h2>新建包</h2>
@@ -63,6 +197,52 @@
     <div class="wf-dialog-actions">
       <button class="wf-btn ghost" id="wf-new-cancel">取消</button>
       <button class="wf-btn primary" id="wf-new-confirm">创建</button>
+    </div>
+  </div>
+</div>
+
+<!-- 信息填写表单弹层 (扩展工具) -->
+<div id="formOverlay">
+  <div class="form-card">
+    <div class="form-head">
+      <span id="form-title">填写信息</span>
+      <button class="btn btn-sm" id="form-close">✕</button>
+    </div>
+    <div class="form-body">
+      <div class="field">
+        <div class="field-label">名称</div>
+        <input type="text" id="form-name">
+      </div>
+      <div class="field">
+        <div class="field-label">描述</div>
+        <textarea id="form-desc" rows="3" placeholder="Mod / 插件功能说明..."></textarea>
+      </div>
+      <div class="field">
+        <div class="field-label">版本</div>
+        <input type="text" id="form-version" value="0.0.1">
+      </div>
+      <div class="field">
+        <div class="field-label">作者 (每行一个, 格式: 名字 或 名字|链接)</div>
+        <textarea id="form-authors" rows="2" placeholder="作者A|https://example.com&#10;作者B"></textarea>
+      </div>
+      <div class="field" id="form-files-field">
+        <div class="field-label">载入游戏的文件 (file_names)</div>
+        <div class="file-list" id="form-files"></div>
+        <div class="action-row" style="margin-top:6px">
+          <button class="btn btn-sm" id="form-add-files">➕ 添加其他文件...</button>
+        </div>
+      </div>
+      <div class="field">
+        <div class="field-label">自定义图标 (可选)</div>
+        <div class="row-input">
+          <button class="btn btn-sm" id="form-pick-icon">🎨 选择图标</button>
+          <span class="icon-hint" id="form-icon-hint">不选择则自动生成默认图标</span>
+        </div>
+      </div>
+    </div>
+    <div class="form-foot">
+      <button class="btn" id="form-cancel">取消</button>
+      <button class="btn btn-primary" id="form-confirm">✔ 确认生成</button>
     </div>
   </div>
 </div>

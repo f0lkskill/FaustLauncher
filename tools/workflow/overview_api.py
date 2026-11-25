@@ -1,4 +1,9 @@
-"""总览页：包列表、游戏路径、文件管理、启动打包 worker。"""
+"""总览页：包列表、游戏路径、文件管理、启动打包 worker。
+
+合并前端后，同一个窗口分两页：打包工作流 + 扩展工具。
+扩展工具的 js_api 方法由 :class:`extension_api.ExtensionToolsMixin` 提供，
+这里通过多继承把它和窗口 API 合并到同一个 OverviewApi 实例上。
+"""
 
 from __future__ import annotations
 
@@ -7,6 +12,15 @@ import sys
 from pathlib import Path
 
 import core
+
+# 扩展工具后端（包装 Mod / 生成插件 / 发布）。依赖缺失时降级为只提供打包工作流。
+try:
+    from extension_api import ExtensionToolsMixin  # type: ignore
+except Exception as _ext_err:  # pragma: no cover
+    print(f"[workflow] 扩展工具后端未加载: {_ext_err}")
+
+    class ExtensionToolsMixin:  # type: ignore
+        pass
 
 try:
     from functions.base.window_chrome import WindowChromeBridge # type: ignore
@@ -33,7 +47,13 @@ def _icon_data_uri() -> str:
     return ""
 
 
-class OverviewApi(WindowChromeBridge):
+class OverviewApi(ExtensionToolsMixin, WindowChromeBridge):
+    """总览 + 扩展工具的统一 js_api。
+
+    MRO 里 ExtensionToolsMixin 在前，提供 assets/list_mods/wrap_mod/publish_* 等；
+    WindowChromeBridge 在后，提供窗口拖拽/最大化/主题热更新等能力。
+    """
+
     def __init__(self):
         self._window = None
         self._project_root = str(core.PROJECT_ROOT)

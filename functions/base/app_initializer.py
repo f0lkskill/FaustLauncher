@@ -6,7 +6,6 @@ import tkinter as tk
 from functions.achievement.hook import run_achievement_hook
 from functions.pages.tools.nyos_prescript import run_prescript_window
 from functions.pages.tools.mod_manager_window import run_mod_manager_window
-from functions.pages.tools.extension_tools_window import run_extension_tools_window
 from functions.pages.tools.custom_translation_window import run_custom_translation_window
 from functions.pages.app.app_core import FaustLauncherCore
 from functions.pages.app.app_ui import FaustLauncherUI, check_single_instance
@@ -113,7 +112,6 @@ LAUNCH_MODE = {
     "--achievement-hook": run_achievement_hook,    
     "--nyos-window": run_prescript_window,
     "--mod-manager-window": run_mod_manager_window,
-    "--extension-tools-window": run_extension_tools_window,
     "--custom-translation-window": run_custom_translation_window,
     "--addon-host": run_addon_host,
     "--launcher-mode": run_launcher_mode
@@ -234,10 +232,6 @@ def launch_app():
         return
 
     if detect_mod_loader_window():
-        return
-
-    if "--extension-tools-window" in sys.argv:
-        run_extension_tools_window(debug="--debug" in sys.argv)
         return
 
     if "--custom-translation-window" in sys.argv:

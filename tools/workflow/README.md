@@ -1,11 +1,11 @@
 # YisangMirrorFlow
 
-把 lunartime `.zip` 与 `.bank` 批量打包成 `.carra2` / `.rebank` 的独立工作流。
+合并前端（两页）：打包工作流把 lunartime `.zip` 与 `.bank` 批量打包成 `.carra2` / `.rebank`；扩展工具负责包装 Mod / 生成插件模板 / 发布 Mod·插件。两页共用顶部常驻标题栏。
 
 ## 启动
 
 ```bat
-tools\run\mod_workflow.bat
+tools\run\yisang_workflow.bat
 ```
 
 或：
@@ -27,13 +27,17 @@ venv\Scripts\python.exe tools\workflow\main.py
 
 ```
 tools/workflow/
-├─ main.py          入口（总览 / --worker 子进程）
+├─ main.py          入口（合并前端 / --worker 子进程）
 ├─ core.py          包管理、游戏路径、任务状态、启动 worker
-├─ overview_api.py  总览页 API
+├─ overview_api.py  合并前端 API（包管理 + 扩展工具）
+├─ extension_api.py 扩展工具后端（包装 Mod / 插件模板 / 发布）
 ├─ worker.py        单个包的打包子进程 + pywebview 窗口
 ├─ VERSION
 └─ mods/            每个包一个文件夹（不入库）
 ```
+
+> 前端页面在 `web/mod_workflow/`；扩展工具的包装/发布逻辑复用
+> `functions/tools/post_extension_tools.py`。启动器不再提供扩展工具入口，也不需要开发者密钥。
 
 ## 打包规则
 

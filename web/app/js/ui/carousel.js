@@ -316,7 +316,6 @@ function openToolAction(t) {
   if (t.id === 'auto_translate') { openAutoTranslate(); return; }
   if (t.id === 'font') { openFontSelector(); return; }
   if (t.id === 'gradient') { openGradientTool(); return; }
-  if (t.id === 'extension_tools') { openExtensionTools(); return; }
   if (api) api.open_tool(t.id).catch(e => toast(String(e), 'error'));
   else toast('浏览器预览模式', 'warn');
 }

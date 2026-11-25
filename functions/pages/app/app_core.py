@@ -132,28 +132,6 @@ class FaustLauncherCore:
             from tkinter import messagebox
             messagebox.showerror("错误", f"打开自定义汉化工具失败: {str(e)}")
 
-    def open_post_extension_tools(self):
-        try:
-            from tkinter import simpledialog, messagebox
-            from functions.base.web_config import get_web_config
-            secret = get_web_config().get('extension_tool_key')
-            if not secret:
-                messagebox.showerror("访问被拒绝", "未配置开发者工具密钥 (extension_tool_key), 无法访问")
-                return
-            answer = simpledialog.askstring("密钥验证", "请输入开发者工具密钥:", show='*', parent=self.root)
-            if answer is None:
-                return
-            if answer.strip() != str(secret):
-                messagebox.showerror("访问被拒绝", "密钥错误, 无法访问开发者工具")
-                return
-            from functions.pages.tools.extension_tools_window import open_extension_tools_window
-            open_extension_tools_window(self)
-            print("扩展工具已打开")
-        except Exception as e:
-            print(f"打开扩展工具失败: {e}")
-            from tkinter import messagebox
-            messagebox.showerror("错误", f"打开扩展工具失败: {str(e)}")
-
     def update_translation(self):
         from functions.pages.app.page_loader import download_and_launch
         Thread(target=download_and_launch).start()

@@ -1123,7 +1123,6 @@ class AppApi:
             { "id": 'gradient', "name": '💻 渐变文本处理器', "desc": '生成 Unity 富文本渐变色代码', "image": "gradient.png" },
             { "id": 'folder_link', "name": '📂 文件夹超链接', "desc": '创建符号链接, 转移C盘资源文件', "image": "folder_link.png" },
             { "id": 'nyos', "name": '📖 今日指令', "desc": '获取食指的最新指令\n仅供娱乐，请勿上升到指令成瘾。', "image": "nyos.png" },
-            { "id": 'extension_tools', "name": '🧩 扩展工具', "desc": '插件模板 / 打包发布\n给开发者提供的工具\n需要输入开发者密钥。', "image": "extension_tools.png" },
             { "id": 'cdn', "name": '🚀 零协会CDN优选', "desc": '自动选择最优质的CDN\n优化游戏资源下载和服务器连接', "image": "cdn.png" },
         ]
         for t in tools:
@@ -1911,26 +1910,6 @@ class AppApi:
                     "game_busy": bool(_game_state["busy"]),
                     "kind": None, "error": str(e)}
 
-    def verify_extension_key(self, key):
-        try:
-            from functions.base.web_config import get_web_config
-            secret = get_web_config().get('extension_tool_key', '')
-            if not secret:
-                return {'ok': False, 'error': '未配置开发者工具密钥'}
-            if str(key).strip() == str(secret):
-                return {'ok': True, 'error': None}
-            return {'ok': False, 'error': '密钥错误'}
-        except Exception as e:
-            return {'ok': False, 'error': str(e)}
-
-    def open_extension_tools_window(self):
-        try:
-            from functions.pages.tools.extension_tools_window import open_extension_tools_window as _open
-            return bool(_open(self.core))
-        except Exception as e:
-            print(f"打开扩展工具失败: {e}")
-            return False
-
     def open_feature(self, name):
         self.core.open_feature({"name": name})
         return True
@@ -1949,8 +1928,6 @@ class AppApi:
             self.core.open_custom_translation_tool()
         elif tool_id == "folder_link":
             self._open_folder_link()
-        elif tool_id == "extension_tools":
-            self.core.open_post_extension_tools()
         elif tool_id == "font":
             print("字体修改工具将在后续版本接入 Web UI")
         elif tool_id == "auto_translate":

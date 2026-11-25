@@ -15,7 +15,7 @@
 | `diag/` | 线上排障用的一次性诊断脚本（网络/云端/缓存） |
 | `run/` | 免记命令的启动快捷方式（`.bat`，双击即用） |
 | `doc/` | 面向二次开发的文档 |
-| `workflow/` | YisangMirrorFlow：把 `.zip` / `.bank` 批量打包成 `.carra2` / `.rebank`，并支持解包 zip 的独立工作流 |
+| `workflow/` | YisangMirrorFlow：合并前端（打包工作流 + 扩展工具）。把 `.zip` / `.bank` 批量打包成 `.carra2` / `.rebank`、支持解包 zip，并包装 Mod / 生成插件模板 / 发布 Mod·插件 |
 | `preview/` | 界面预览图与预览页（本地产物，不入库） |
 
 ## build/
@@ -61,16 +61,24 @@
 
 ## workflow/ — YisangMirrorFlow
 
-独立的小工具，不复用启动器主界面：总览页管理多个"包"，每个包点开始后单独开一个打包窗口，可并行跑。
+独立的小工具，不复用启动器主界面。合并前端分两页，共用顶部常驻标题栏（品牌 + 页面切换）：
+
+- **打包工作流**：总览页管理多个“包”，每个包点开始后单独开一个打包窗口，可并行跑。
+- **扩展工具**：包装 Mod / 生成插件模板 / 发布 Mod·插件信息到云端。
 
 | 文件 | 说明 |
 |---|---|
-| `main.py` | 入口：`python tools/workflow/main.py` 打开总览；`--worker --package-dir <目录>` 是内部子进程入口 |
+| `main.py` | 入口：`python tools/workflow/main.py` 打开合并前端；`--worker --package-dir <目录>` 是内部子进程入口 |
 | `core.py` | 包/文件管理、游戏路径、`.workflow_job.json` 状态、启动 worker |
-| `overview_api.py` | 总览页的 pywebview API（新建包 / 添加文件 / 解包 zip / 开始打包 / 选择游戏目录） |
+| `overview_api.py` | 合并前端的 pywebview API（包管理 + 解包/打包 + 游戏目录 + 窗口控制） |
+| `extension_api.py` | 扩展工具后端（包装 Mod / 生成插件模板 / 发布 Mod·插件），并入 OverviewApi |
 | `worker.py` | 启动 `mod_loader --package-only`，并复用 `web/mod_loader` 页面显示打包进度 |
 | `mods/` | 用户数据：每个包一个文件夹，不入库 |
 | `settings.json` | 本工具的设置（覆盖游戏路径、线程数），不入库 |
+
+> 前端页面在 `web/mod_workflow/`（`index.html` / `app.js` / `style.css`），通过
+> `apply_window_chrome` 注入共享主题与常驻标题栏；扩展工具的包装/发布功能复用
+> `functions/tools/post_extension_tools.py`（启动器不再提供该入口，也不再需要开发者密钥）。
 
 打包规则：
 - `.zip` → `.carra2`（lunartime 压缩）
@@ -92,8 +100,7 @@
 | `assets.bat` | `python tools/build/assets_pack.py <动作>` | 素材资源包：`pack`（生成 zip）/ `status`（本地 vs 包）/ `fetch`（下载合并）/ `upload`（gh 发布）。**不带参数＝pack**。clone 之后先跑 `assets.bat fetch` |
 | `upload_assets.bat` | `pack` + `upload` 两步 | **素材改动后的一键发布**：先查关键素材在不在 → `pack`（覆盖 `faust-assets.zip`）→ `upload`（覆盖 Release `tag=assets` 的资产）。可选参数传版本号（默认今天日期）。任何一步失败就中止，不会拿旧 zip 去传。改完素材、想让别人 `fetch` 到新版就跑它 |
 | `debug.bat` | `python main.py --debug` | 调试模式启动启动器（`--debug` 不重定向 stdout，控制台能直接看到输出） |
-| `web_tool.bat` | `python main.py --extension-tools-window` | 只拉起"扩展工具"窗口 |
-| `mod_workflow.bat` | `python tools/workflow/main.py` | 打开 YisangMirrorFlow 总览页（打包 `.zip` / `.bank`） |
+| `yisang_workflow.bat` | `python tools/workflow/main.py` | 打开 YisangMirrorFlow 合并前端（打包工作流 + 扩展工具） |
 | `update_hook.bat` | `python -m functions.hook.main update` | 手动重建并上传偏移索引（约 1~2 分钟满核）请先挂起游戏之后再运行 |
 
 这几个 `.bat` 都先 `cd /d "%~dp0..\.."` 回到仓库根再执行，所以**双击、从任意目录调用都能用**；
