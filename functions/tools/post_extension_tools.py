@@ -474,8 +474,6 @@ def publish_extension(kind, folder, address=None, log=None, progress=None,
         'authors': info.get('authors') or {},
         'download_url': urls.get('dowload_url') or '',
         'icon_url': urls.get('icon_url') or '',
-        'files': info.get('file_names') or [],
-        'tags': [],
     }
     if progress:
         progress(100, '提交审核...')
