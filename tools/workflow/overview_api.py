@@ -83,9 +83,9 @@ class OverviewApi(ExtensionToolsMixin, WindowChromeBridge):
     def refresh(self):
         return self.get_state()
 
-    def create_package(self, name=""):
+    def create_package(self, name="", kind="mod"):
         try:
-            result = core.create_package(name)
+            result = core.create_package(name, kind)
             result["state"] = self.get_state()
             return result
         except Exception as exc:

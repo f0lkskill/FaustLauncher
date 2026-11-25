@@ -15,6 +15,7 @@ import json
 import os
 
 import core
+import package_publish
 from functions.tools import post_extension_tools as pet
 
 # 包装/发布 Mod 统一使用 workflow 下的 mods（tools/workflow/mods），
@@ -51,6 +52,58 @@ class ExtensionToolsMixin:
             except Exception:
                 pass
         return pet.MODS_DIR
+
+    def get_package_info(self, name):
+        """读取包的信息（用于发布信息编辑模态）。"""
+        try:
+            kind, info = core.package_info(name)
+            return {
+                "ok": True,
+                "name": name,
+                "kind": kind,
+                "info": {
+                    "name": str(info.get("name") or ""),
+                    "desc": str(info.get("desc") or ""),
+                    "version": str(info.get("version") or ""),
+                    "authors": info.get("authors") or {},
+                },
+                "icon": core.package_icon_uri(name),
+                "load_files": core.scan_load_files(name),
+                "last_version": core.last_published_version(name),
+                "missing": core.publish_missing(name),
+            }
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def save_package_info(self, name, data):
+        """就地保存包信息（先手动包装再发布）。"""
+        try:
+            result = package_publish.save_info(name, data or {})
+            result["state"] = self.get_state()
+            return result
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def publish_package(self, name):
+        """发布包：校验 → 版本自增 → 上传；日志经 __onPublishLog/Progress 推送。"""
+        logs = []
+
+        def _log(s):
+            text = str(s)
+            logs.append(text)
+            _notify("__onPublishLog", text)
+
+        def _progress(percent, text):
+            _notify("__onPublishProgress", {"percent": percent, "text": text})
+
+        try:
+            result = package_publish.publish(name, log=_log, progress=_progress)
+            result["log"] = "\n".join(logs)
+            result["state"] = self.get_state()
+            return result
+        except Exception as e:
+            return {"ok": False, "msg": f"发布失败: {e}",
+                    "log": "\n".join(logs), "state": self.get_state()}
 
     def assets(self):
         try:

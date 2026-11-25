@@ -56,12 +56,18 @@ tools/workflow/
 - 如果 zip 内没有顶层目录，则按 zip 根目录解压。
 - 同名文件直接覆盖；解压不会删除原 `.zip`。
 
-## 扩展工具（合并页）
+## 信息与发布（融合在打包页）
 
-- 包装 Mod 的工作目录与打包工作流一致：`tools/workflow/mods/`；浏览/选择对话框默认打开这里。
-- 单文件 Mod 支持 `.bank` / `.carra2` / `.rebank`。
-- 可通过“添加其他文件”额外导入不限量的 `.json`：只复制到 Mod 根目录，不做其它处理，也不写入 `mod_info.json` 的 `file_names`。
-- 包装/发布复用 `functions/tools/post_extension_tools.py`；插件模板仍生成到仓库根 `addons/`。
+单页无分区，所有操作都在包卡片上完成：
+
+- **新建包**可选类型：Mod 包（需打包）/ 插件包（自带 `scr.py`、免打包）。
+- **信息**就地写 `mod_info.json` / `addon_info.json` 与 `icon.png`（先手动包装再发布）；作者用“+ 添加作者”模态填写名字与链接。
+- **发布**：Mod 包需打包完成且无失败；插件包免打包。发布前检查名称 / 版本 / 描述 / 至少一位作者 / 图标 /（Mod 包）至少一个载入文件，不写 tag 标签。
+- **版本号**：与上次发布相同则自动 patch+1（记录在包内 `.workflow_publish.json`）。
+- **上传日志**：模态窗口，可最小化到右下角浮标，再点开查看详情。
+- 发布用临时干净目录上传，自动排除 `.workflow_*`、日志/进度、源 `.zip` 等运行时文件。
+- 单文件 Mod 支持 `.bank` / `.carra2` / `.rebank`；可额外导入不限量 `.json`（仅放根目录，不做处理）。
+- 默认目录统一在 `tools/workflow/mods/`；包装/发布复用 `functions/tools/post_extension_tools.py`。
 
 ## 环境
 

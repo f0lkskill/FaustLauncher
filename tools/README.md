@@ -15,7 +15,7 @@
 | `diag/` | 线上排障用的一次性诊断脚本（网络/云端/缓存） |
 | `run/` | 免记命令的启动快捷方式（`.bat`，双击即用） |
 | `doc/` | 面向二次开发的文档 |
-| `workflow/` | YisangMirrorFlow：合并前端（打包工作流 + 扩展工具）。把 `.zip` / `.bank` 批量打包成 `.carra2` / `.rebank`、支持解包 zip，并包装 Mod / 生成插件模板 / 发布 Mod·插件 |
+| `workflow/` | YisangMirrorFlow：单页融合（打包 + 信息 + 发布）。把 `.zip` / `.bank` 批量打包成 `.carra2` / `.rebank`、支持解包 zip；包内就地填写 Mod/插件信息并发布到云端（版本自增、插件包免打包） |
 | `preview/` | 界面预览图与预览页（本地产物，不入库） |
 
 ## build/

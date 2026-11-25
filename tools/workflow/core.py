@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import base64
 import glob
 import json
 import os
@@ -22,7 +23,7 @@ from datetime import datetime
 from pathlib import Path
 
 WORKFLOW_NAME = "YisangMirrorFlow"
-VERSION = "0.0.6"
+VERSION = "0.0.7"
 
 WORKFLOW_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = WORKFLOW_DIR.parent.parent
@@ -37,10 +38,24 @@ LOG_NAME = "log.txt"
 WORKER_LOG_NAME = "workflow.log"
 MANIFEST_NAME = "launcher_manifest.json"
 
+# 包类型 / 发布信息的本地文件（均以 . 或固定名存放，不参与打包上传）
+KIND_NAME = ".workflow_kind"           # {"kind": "mod"|"addon"}
+PUBLISH_STATE_NAME = ".workflow_publish.json"  # {"last_version": "x"}
+INFO_MOD_NAME = "mod_info.json"
+INFO_ADDON_NAME = "addon_info.json"
+ICON_NAME = "icon.png"
+LOAD_EXTS = (".bank", ".carra2", ".rebank")
+
+ADDON_SCR_TEMPLATE = (
+    "# 插件代码入口: 在此编写插件的加载逻辑\n"
+    "# 可用全局变量: ADDON_ARG (含 AddonManager / AddonName)\n"
+    "# 完整示例请参考 addons/example/scr.py\n"
+)
+
 ALLOWED_EXTS = (".zip", ".bank", ".carra2", ".rebank")
 IGNORED_NAMES = {
     JOB_NAME, PROGRESS_NAME, THREADS_NAME, LOG_NAME, WORKER_LOG_NAME,
-    MANIFEST_NAME,
+    MANIFEST_NAME, KIND_NAME, PUBLISH_STATE_NAME,
 }
 STAGE_TOTAL = 4
 STAGE_TITLES = {
@@ -297,8 +312,10 @@ def package_dir(name) -> Path:
     return MODS_DIR / safe_package_name(name)
 
 
-def create_package(name) -> dict:
+def create_package(name, kind="mod") -> dict:
+    """新建包。kind: "mod"（需打包）或 "addon"（插件包，自带 scr.py，免打包）。"""
     ensure_dirs()
+    kind = "addon" if str(kind or "").lower() == "addon" else "mod"
     base = safe_package_name(name)
     candidate = base
     index = 2
@@ -307,7 +324,14 @@ def create_package(name) -> dict:
         index += 1
     path = MODS_DIR / candidate
     path.mkdir(parents=True, exist_ok=False)
-    return {"ok": True, "name": candidate}
+    try:
+        _write_json(path / KIND_NAME, {"kind": kind})
+        if kind == "addon":
+            # 插件包根目录自带 scr.py，开发者在此基础上写加载逻辑
+            (path / "scr.py").write_text(ADDON_SCR_TEMPLATE, encoding="utf-8")
+    except OSError:
+        pass
+    return {"ok": True, "name": candidate, "kind": kind}
 
 
 def _is_allowed_file(path: Path) -> bool:
@@ -560,11 +584,90 @@ def write_job(name, **fields) -> None:
     _write_json(pkg / JOB_NAME, data)
 
 
+def package_kind(name) -> str:
+    """读取包类型；没有记录时按是否已有 addon_info.json 推断。"""
+    meta = _read_json(package_dir(name) / KIND_NAME)
+    kind = str(meta.get("kind") or "").strip().lower()
+    if kind in ("mod", "addon"):
+        return kind
+    return "addon" if (package_dir(name) / INFO_ADDON_NAME).is_file() else "mod"
+
+
+def package_info(name) -> tuple:
+    kind = package_kind(name)
+    info_file = INFO_ADDON_NAME if kind == "addon" else INFO_MOD_NAME
+    return kind, _read_json(package_dir(name) / info_file)
+
+
+def package_icon_uri(name) -> str:
+    try:
+        path = package_dir(name) / ICON_NAME
+        if path.is_file():
+            return "data:image/png;base64," + base64.b64encode(path.read_bytes()).decode("ascii")
+    except OSError:
+        pass
+    return ""
+
+
+def scan_load_files(name) -> list:
+    """包根目录下可载入游戏的文件（.bank/.carra2/.rebank）。"""
+    result = []
+    try:
+        for item in package_dir(name).iterdir():
+            if item.is_file() and not item.name.startswith(".") and item.suffix.lower() in LOAD_EXTS:
+                result.append(item.name)
+    except OSError:
+        pass
+    return sorted(result)
+
+
+def _has_load_file_recursive(name) -> bool:
+    for _root, _dirs, files in os.walk(package_dir(name)):
+        for f in files:
+            if not f.startswith(".") and os.path.splitext(f)[1].lower() in LOAD_EXTS:
+                return True
+    return False
+
+
+def last_published_version(name) -> str:
+    return str(_read_json(package_dir(name) / PUBLISH_STATE_NAME).get("last_version") or "")
+
+
+def publish_missing(name) -> list:
+    """发布前必填检查：名称/版本/描述/至少一作者/图标/（Mod 包）至少一个载入文件。"""
+    kind, info = package_info(name)
+    missing = []
+    if not str(info.get("name") or "").strip():
+        missing.append("名称")
+    if not str(info.get("version") or "").strip():
+        missing.append("版本号")
+    if not str(info.get("desc") or "").strip():
+        missing.append("描述")
+    authors = info.get("authors") or {}
+    if isinstance(authors, dict):
+        has_author = any(str(k).strip() for k in authors)
+    elif isinstance(authors, list):
+        has_author = any(str(x).strip() for x in authors if isinstance(x, str))
+    else:
+        has_author = False
+    if not has_author:
+        missing.append("至少一位作者")
+    if not (package_dir(name) / ICON_NAME).is_file():
+        missing.append("图标")
+    if kind == "mod" and not _has_load_file_recursive(name):
+        missing.append("至少一个载入文件(.bank/.carra2/.rebank)")
+    return missing
+
+
 def package_summary(name) -> dict:
     files = package_files(name)
     counts = _file_counts(files)
     job = read_job(name)
+    kind, info = package_info(name)
+    missing = publish_missing(name)
     can_start = job["status"] != "running" and counts["total"] > 0
+    # Mod 包需打包完成（无失败）才能发布；插件包免打包，随时可发布。
+    publish_ready = job["status"] != "running" and (kind == "addon" or job["status"] == "done")
     return {
         "name": name,
         "path": str(package_dir(name)),
@@ -572,6 +675,17 @@ def package_summary(name) -> dict:
         "counts": counts,
         "job": job,
         "can_start": can_start,
+        "kind": kind,
+        "info": {
+            "name": str(info.get("name") or ""),
+            "version": str(info.get("version") or ""),
+            "desc": str(info.get("desc") or ""),
+        },
+        "icon": package_icon_uri(name),
+        "load_files": scan_load_files(name),
+        "last_version": last_published_version(name),
+        "publish_missing": missing,
+        "publish_ready": publish_ready,
     }
 
 

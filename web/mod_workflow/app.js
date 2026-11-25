@@ -1,9 +1,10 @@
 /* ==============================================================================
- * YisangMirrorFlow 合并前端（web/mod_workflow/app.js）
+ * YisangMirrorFlow 单页前端（web/mod_workflow/app.js）
  * ------------------------------------------------------------------------------
- * 一个 pywebview 窗口里分两页，共用常驻头部（品牌 + 页面切换）：
- *   · 打包工作流：包列表 / 新建 / 添加文件 / 解包 / 开始打包（轮询 .workflow_job.json）
- *   · 扩展工具：包装 Mod / 生成插件模板 / 发布 Mod·插件（原 web/extension_tools）
+ * 只保留“打包工作流”一个页面；每个包卡片内融合了：
+ *   · 打包（zip/bank → carra2/rebank）、解包、添加文件、打开/删除
+ *   · “信息”就地填写 mod_info / addon_info（先手动包装）
+ *   · “发布”在打包完成后可用：校验必填 → 版本自增 → 上传，日志走模态/浮标
  * 所有后端调用都走同一个 window.pywebview.api（OverviewApi）。
  * ============================================================================== */
 (function () {
@@ -20,7 +21,6 @@
     gamePath: $("wf-game-path"),
     soundState: $("wf-sound-state"),
     threads: $("wf-threads"),
-    foot: $("wf-foot-text"),
     modal: $("wf-modal"),
     newName: $("wf-new-name"),
     toast: $("wf-toast")
@@ -69,45 +69,24 @@
     return node;
   }
 
-  /* ============================================================
-     页面切换（常驻头部）
-     ============================================================ */
-  var currentPage = "workflow";
-  var extInited = false;
-
-  function switchPage(name) {
-    currentPage = name;
-    document.querySelectorAll(".wf-pagetab").forEach(function (t) {
-      t.classList.toggle("active", t.dataset.page === name);
-    });
-    for (const [key, id] of Object.entries({ workflow: "page-workflow", ext: "page-ext" })) {
-      var node = $(id);
-      if (node) node.classList.toggle("show", key === name);
-    }
-    if (name === "ext" && !extInited) {
-      extInited = true;
-      initExtension();
-    }
-    if (name === "workflow") {
-      lastListKey = "";
-      refresh();
+  function fileUrl(path) {
+    if (!path) return "";
+    try {
+      return "file:///" + encodeURI(String(path).replace(/\\/g, "/"));
+    } catch (e) {
+      return "";
     }
   }
 
-  function bindPageswitch() {
-    document.querySelectorAll(".wf-pagetab").forEach(function (t) {
-      t.addEventListener("click", function () { switchPage(t.dataset.page); });
-    });
-  }
-
   /* ============================================================
-     Workflow 页面
+     打包工作流
      ============================================================ */
   var state = null;
   var lastListKey = "";
   var busy = false;
   var startBusy = {};
   var unpackBusy = {};
+  var publishBusy = {};
 
   function statusInfo(pkg) {
     var status = pkg.job && pkg.job.status ? pkg.job.status : "idle";
@@ -115,18 +94,21 @@
     if (status === "done") return { text: "已完成", cls: "done" };
     if (status === "failed") return { text: "失败", cls: "failed" };
     if (status === "interrupted") return { text: "已中断", cls: "interrupted" };
+    if (pkg.kind === "addon") return { text: "插件包", cls: "idle" };
     return { text: "待打包", cls: "idle" };
   }
 
   function listKey(packages) {
     return JSON.stringify(packages.map(function (p) {
       return [
-        p.name, p.counts,
-        p.files.map(function (f) { return f.name + ":" + f.size; }).join("|"),
-        p.job && p.job.status,
-        p.job && p.job.message,
-        startBusy[p.name] ? 1 : 0,
-        unpackBusy[p.name] ? 1 : 0
+        p.name, p.counts, p.kind,
+        (p.info && p.info.name) || "", (p.info && p.info.version) || "",
+        (p.icon || "").length,
+        p.job && p.job.status, p.job && p.job.message,
+        (p.publish_missing || []).join(","), p.publish_ready ? 1 : 0,
+        p.last_version || "",
+        startBusy[p.name] ? 1 : 0, unpackBusy[p.name] ? 1 : 0, publishBusy[p.name] ? 1 : 0,
+        p.files.map(function (f) { return f.name + ":" + f.size; }).join("|")
       ];
     }));
   }
@@ -144,7 +126,7 @@
       if (ui.mark) ui.mark.classList.add("has-icon");
     }
 
-    ui.version.textContent = "Mod 打包工作流 · 扩展工具 · v" + (next.version || "?");
+    ui.version.textContent = "Mod 打包工作流 · v" + (next.version || "?");
     var game = next.game || {};
     ui.gamePath.value = game.path || "";
     if (game.path && game.sound_exists) {
@@ -176,7 +158,7 @@
     if (!packages.length) {
       var empty = el("div", "wf-empty");
       empty.appendChild(el("div", null, "还没有打包包。"));
-      empty.appendChild(el("div", null, "点“新建包”，再添加 .zip / .bank 文件。"));
+      empty.appendChild(el("div", null, "点“新建包”，再添加 .zip / .bank 文件；插件包可直接填写信息发布。"));
       ui.list.appendChild(empty);
       return;
     }
@@ -190,14 +172,35 @@
     var status = statusInfo(pkg);
     var running = pkg.job && pkg.job.status === "running";
     var counts = pkg.counts || {};
+    var info = pkg.info || {};
 
     var card = el("div", "wf-card " + status.cls);
 
+    // ---- 头部：图标 + 名字/版本 + 徽标 ----
     var head = el("div", "wf-card-head");
-    head.appendChild(el("div", "wf-card-name", pkg.name));
+
+    var iconWrap = el("div", "wf-card-icon");
+    if (pkg.icon) {
+      iconWrap.classList.add("has-img");
+      var im = el("img");
+      im.src = pkg.icon;
+      im.alt = "";
+      iconWrap.appendChild(im);
+    } else {
+      iconWrap.textContent = String(info.name || pkg.name || "?").slice(0, 1).toUpperCase();
+    }
+    head.appendChild(iconWrap);
+
+    var titleBox = el("div", "wf-card-title");
+    titleBox.appendChild(el("div", "wf-card-name", info.name || pkg.name));
+    if (info.version) titleBox.appendChild(el("div", "wf-card-ver", "v" + info.version));
+    head.appendChild(titleBox);
+
+    head.appendChild(el("span", "wf-chip kind", pkg.kind === "addon" ? "插件包" : "Mod 包"));
     head.appendChild(el("span", "wf-chip " + status.cls, status.text));
     card.appendChild(head);
 
+    // ---- 计数 ----
     var meta = el("div", "wf-meta");
     [
       ["zip", counts[".zip"] || 0],
@@ -218,9 +221,10 @@
       card.appendChild(el("div", "wf-job-msg", "打包进程已退出，请重新开始。"));
     }
 
+    // ---- 文件 ----
     var files = el("div", "wf-files");
     if (!pkg.files || !pkg.files.length) {
-      files.appendChild(el("span", "wf-files-empty", "包内暂无文件"));
+      files.appendChild(el("span", "wf-files-empty", "包内暂无打包文件"));
     } else {
       pkg.files.forEach(function (file) {
         var chip = el("span", "wf-file");
@@ -243,6 +247,7 @@
     }
     card.appendChild(files);
 
+    // ---- 操作 ----
     var actions = el("div", "wf-card-actions");
 
     var start = el("button", "wf-btn primary", status.cls === "done" ? "重新打包" : "开始打包");
@@ -282,12 +287,7 @@
         }
         var msg = "解包完成: " + result.unpacked + "/" + result.zip_count + " 个 zip";
         if (result.extracted_files) msg += "，共 " + result.extracted_files + " 个文件";
-        if (result.errors && result.errors.length) {
-          msg += "；" + result.errors.join("；");
-          toast(msg, true);
-        } else {
-          toast(msg);
-        }
+        toast(msg, !!(result.errors && result.errors.length));
         if (result.state) applyState(result.state);
         else refresh();
       }).catch(function (err) {
@@ -324,6 +324,12 @@
     });
     actions.appendChild(open);
 
+    // 信息（就地包装）：填 mod_info / addon_info + 图标
+    var infoBtn = el("button", "wf-btn ghost", "信息");
+    infoBtn.addEventListener("click", function () { openInfo(pkg.name); });
+    actions.appendChild(infoBtn);
+
+    // 删除
     var del = el("button", "wf-btn ghost danger", "删除");
     del.disabled = running;
     del.addEventListener("click", function () {
@@ -335,6 +341,23 @@
       }).catch(function (err) { toast(String(err), true); });
     });
     actions.appendChild(del);
+
+    // 发布（删除右侧）：打包完成（插件包免打包）才可点；点击前先校验必填
+    var pub = el("button", "wf-btn primary", "发布");
+    pub.disabled = running || !!publishBusy[pkg.name] || !pkg.publish_ready;
+    if (!running && !pkg.publish_ready) {
+      pub.title = pkg.kind === "addon" ? "正在处理，稍候" : "请先完成打包";
+    }
+    pub.addEventListener("click", function () {
+      var missing = pkg.publish_missing || [];
+      if (missing.length) {
+        toast("请先补全信息：" + missing.join("、"), true);
+        openInfo(pkg.name);
+        return;
+      }
+      startPublish(pkg.name);
+    });
+    actions.appendChild(pub);
 
     card.appendChild(actions);
     return card;
@@ -356,6 +379,8 @@
   function openNewModal() {
     ui.modal.hidden = false;
     ui.newName.value = "新包";
+    var mod = document.querySelector('input[name="pkg-kind"][value="mod"]');
+    if (mod) mod.checked = true;
     setTimeout(function () {
       ui.newName.focus();
       ui.newName.select();
@@ -368,14 +393,215 @@
 
   function createPackage() {
     var name = ui.newName.value.trim();
-    invoke("create_package", name).then(function (result) {
+    var kindEl = document.querySelector('input[name="pkg-kind"]:checked');
+    var kind = kindEl ? kindEl.value : "mod";
+    invoke("create_package", name, kind).then(function (result) {
       if (!result.ok) return toast(errorText(result), true);
       closeNewModal();
-      toast("已创建包: " + result.name);
+      toast("已创建" + (kind === "addon" ? "插件包" : "包") + ": " + result.name);
       applyState(result.state);
     }).catch(function (err) { toast(String(err), true); });
   }
 
+  /* ============================================================
+     包信息模态（先手动包装再发布）
+     ============================================================ */
+  var infoCtx = { name: "", iconPath: "" };
+  var authorsMap = {};
+
+  function setInfoIcon(uri) {
+    var img = $("info-icon-img"), plus = $("info-icon-plus"), btn = $("info-icon");
+    if (!img || !btn) return;
+    if (uri) {
+      img.src = uri;
+      img.hidden = false;
+      if (plus) plus.hidden = true;
+      btn.classList.add("has-icon");
+    } else {
+      img.hidden = true;
+      img.removeAttribute("src");
+      if (plus) plus.hidden = false;
+      btn.classList.remove("has-icon");
+    }
+  }
+
+  function renderAuthors() {
+    var box = $("info-authors");
+    if (!box) return;
+    box.textContent = "";
+    var keys = Object.keys(authorsMap);
+    if (!keys.length) {
+      box.appendChild(el("div", "author-empty", "还没有作者，点下方添加"));
+      return;
+    }
+    keys.forEach(function (name) {
+      var row = el("div", "author-item");
+      row.appendChild(el("span", "an", name));
+      row.appendChild(el("span", "al", authorsMap[name] || "(无链接)"));
+      var x = el("button", "ax", "×");
+      x.type = "button";
+      x.addEventListener("click", function () {
+        delete authorsMap[name];
+        renderAuthors();
+      });
+      row.appendChild(x);
+      box.appendChild(row);
+    });
+  }
+
+  async function openInfo(name) {
+    try {
+      var r = await invoke("get_package_info", name);
+      if (!r.ok) { toast(errorText(r), true); return; }
+      infoCtx = { name: name, iconPath: "" };
+      $("info-title").textContent = r.kind === "addon" ? "插件包信息" : "Mod 包信息";
+      $("info-name").value = (r.info && r.info.name) || "";
+      $("info-desc").value = (r.info && r.info.desc) || "";
+      $("info-version").value = (r.info && r.info.version) || "0.0.1";
+
+      authorsMap = {};
+      var authors = (r.info && r.info.authors) || {};
+      if (Array.isArray(authors)) {
+        authors.forEach(function (k) {
+          if (typeof k === "string") authorsMap[k] = "";
+        });
+      } else if (authors && typeof authors === "object") {
+        Object.keys(authors).forEach(function (k) { authorsMap[k] = authors[k] || ""; });
+      }
+      renderAuthors();
+      setInfoIcon(r.icon);
+      $("info-hint").textContent = (r.missing && r.missing.length)
+        ? ("待补全：" + r.missing.join("、")) : "";
+      $("infoModal").hidden = false;
+    } catch (e) {
+      toast(String(e), true);
+    }
+  }
+
+  async function saveInfo() {
+    var name = infoCtx.name;
+    if (!name) return;
+    var data = {
+      name: $("info-name").value.trim(),
+      desc: $("info-desc").value.trim(),
+      version: $("info-version").value.trim() || "0.0.1",
+      authors: authorsMap,
+      icon_path: infoCtx.iconPath || ""
+    };
+    try {
+      var r = await invoke("save_package_info", name, data);
+      if (!r.ok) { toast(errorText(r), true); return; }
+      toast("信息已保存");
+      $("infoModal").hidden = true;
+      if (r.state) applyState(r.state);
+    } catch (e) {
+      toast(String(e), true);
+    }
+  }
+
+  /* ---- 作者子模态 ---- */
+  function openAuthorModal() {
+    $("author-name").value = "";
+    $("author-link").value = "";
+    $("authorModal").hidden = false;
+    setTimeout(function () { $("author-name").focus(); }, 30);
+  }
+
+  function confirmAuthor() {
+    var name = $("author-name").value.trim();
+    if (!name) { toast("请填写作者名字", true); return; }
+    authorsMap[name] = $("author-link").value.trim();
+    renderAuthors();
+    $("authorModal").hidden = true;
+  }
+
+  /* ============================================================
+     发布日志（模态 + 右下角浮标）
+     ============================================================ */
+  var logResultText = "";
+
+  function openLog(title) {
+    $("log-title").textContent = title || "发布日志";
+    $("log-fill").style.width = "0%";
+    $("log-status").textContent = "准备中...";
+    $("log-text").textContent = "";
+    logResultText = "";
+    $("logModal").hidden = false;
+    $("logFloat").hidden = true;
+  }
+
+  function minimizeLog() {
+    $("logModal").hidden = true;
+    var txt = $("log-status").textContent || "发布中...";
+    $("log-float-text").textContent = txt;
+    $("logFloat").hidden = false;
+  }
+
+  function restoreLog() {
+    $("logFloat").hidden = true;
+    $("logModal").hidden = false;
+  }
+
+  function closeLog() {
+    $("logModal").hidden = true;
+    $("logFloat").hidden = true;
+  }
+
+  // Python 侧通过 evaluate_js 推送进度/日志
+  window.__onPublishProgress = function (p) {
+    var pct = Math.max(0, Math.min(100, Math.round((p && p.percent) || 0)));
+    var text = (p && p.text) || "";
+    var fill = $("log-fill");
+    if (fill) fill.style.width = pct + "%";
+    var st = $("log-status");
+    if (st) st.textContent = text + " " + pct + "%";
+    if ($("logModal") && $("logModal").hidden) {
+      $("log-float-text").textContent = (text || "发布中") + " " + pct + "%";
+      $("logFloat").hidden = false;
+    }
+  };
+
+  window.__onPublishLog = function (s) {
+    var t = $("log-text");
+    if (!t) return;
+    t.textContent += (t.textContent ? "\n" : "") + String(s);
+    t.scrollTop = t.scrollHeight;
+    logResultText = t.textContent;
+  };
+
+  async function startPublish(name) {
+    publishBusy[name] = true;
+    lastListKey = "";
+    refresh();
+    openLog("发布 - " + name);
+    try {
+      var r = await invoke("publish_package", name);
+      var t = $("log-text");
+      if (r.log) t.textContent = r.log;
+      $("log-fill").style.width = r.ok ? "100%" : "0%";
+      $("log-status").textContent = r.ok
+        ? ("发布完成 · v" + (r.version || ""))
+        : (r.msg || "发布失败");
+      if (r.ok) toast("发布成功: " + name);
+      else toast(r.msg || "发布失败", true);
+      if ($("logModal").hidden) {
+        $("log-float-text").textContent = r.ok ? ("完成 v" + (r.version || "")) : (r.msg || "失败");
+        $("logFloat").hidden = false;
+      }
+      if (r.state) applyState(r.state);
+    } catch (e) {
+      $("log-status").textContent = "发布失败: " + errorText(e);
+      toast(String(e), true);
+    } finally {
+      delete publishBusy[name];
+      lastListKey = "";
+      refresh();
+    }
+  }
+
+  /* ============================================================
+     绑定 & 启动
+     ============================================================ */
   function bindWorkflow() {
     $("wf-new").addEventListener("click", openNewModal);
     $("wf-new-cancel").addEventListener("click", closeNewModal);
@@ -404,11 +630,8 @@
         if (result.canceled) return;
         if (!result.ok) return toast(errorText(result), true);
         applyState(result.state);
-        if (result.game && result.game.sound_exists) {
-          toast("游戏目录已保存");
-        } else {
-          toast("已保存，但没有找到原版音效目录", true);
-        }
+        if (result.game && result.game.sound_exists) toast("游戏目录已保存");
+        else toast("已保存，但没有找到原版音效目录", true);
       }).catch(function (err) { toast(String(err), true); });
     });
 
@@ -428,584 +651,47 @@
     });
   }
 
-  /* ============================================================
-     Extension 页面（原 web/extension_tools）
-     ============================================================ */
-  function exSetMsg(text, isErr) {
-    var m = $("ex-msg");
-    if (!m) return;
-    m.textContent = text || "";
-    m.className = "msg" + (isErr ? " err" : "");
-  }
-
-  function errTextLocal(e) {
-    return (e && (e.message || e)) || e;
-  }
-
-  function parseTagList(value) {
-    var source = Array.isArray(value) ? value : String(value || "").split(/[,，\n\r]+/);
-    var result = [];
-    var seen = new Set();
-    source.forEach(function (raw) {
-      if (typeof raw !== "string") return;
-      var tag = raw.trim();
-      if (!tag || tag.length > 32 || seen.has(tag) || result.length >= 8) return;
-      seen.add(tag);
-      result.push(tag);
-    });
-    return result;
-  }
-
-  function parseTagsStyleInput(inputId) {
-    var text = $(inputId).value.trim();
-    if (!text) return null;
-    var parsed;
-    try {
-      parsed = JSON.parse(text);
-    } catch (e) {
-      throw new Error("标签颜色必须是合法 JSON 对象");
-    }
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-      throw new Error("标签颜色必须是 JSON 对象");
-    }
-    return parsed;
-  }
-
-  var secIds = { "1": "sec-wrap", "2": "sec-plugin", "3": "sec-publish", "4": "sec-addon-publish" };
-
-  function switchMode(mode) {
-    document.querySelectorAll("#page-ext .tab").forEach(function (t) {
-      t.classList.toggle("active", t.dataset.mode === mode);
-    });
-    for (var m in secIds) {
-      if (Object.prototype.hasOwnProperty.call(secIds, m)) {
-        $(secIds[m]).classList.toggle("show", m === mode);
-      }
-    }
-    exSetMsg("");
-    if (mode === "1") { fillModsSelect("wrap-mods", false); }
-    if (mode === "3") { fillModsSelect("pub-mods", true); }
-    if (mode === "4") { fillAddonsSelect("addon-pub-addons", true); }
-  }
-
-  async function fillModsSelect(selId, wrappedOnly) {
-    try {
-      var mods = await invoke("list_mods");
-      var sel = $(selId);
-      var prev = sel.value;
-      sel.innerHTML = "";
-      var usable = (mods || []).filter(function (m) { return !wrappedOnly || m.wrapped; });
-      if (!usable.length) {
-        var o = document.createElement("option");
-        o.value = "";
-        o.textContent = wrappedOnly ? "(mods/ 下暂无已包装 Mod)" : "(mods/ 下没有文件夹)";
-        sel.appendChild(o);
-        return;
-      }
-      usable.forEach(function (m) {
-        var op = document.createElement("option");
-        op.value = m.path;
-        op.textContent = m.wrapped ? m.name : m.name + " (未打包)";
-        sel.appendChild(op);
-      });
-      if (prev) sel.value = prev;
-    } catch (e) {
-      console.error(e);
-    }
-  }
-
-  async function fillAddonsSelect(selId, usableOnly) {
-    try {
-      var addons = await invoke("list_addons");
-      var sel = $(selId);
-      if (!sel) return;
-      var prev = sel.value;
-      sel.innerHTML = "";
-      var usable = (addons || []).filter(function (a) { return !usableOnly || a.wrapped; });
-      if (!usable.length) {
-        var o = document.createElement("option");
-        o.value = "";
-        o.textContent = usableOnly ? "(addons/ 下暂无含 addon_info.json 的插件)" : "(addons/ 下没有文件夹)";
-        sel.appendChild(o);
-        return;
-      }
-      usable.forEach(function (a) {
-        var op = document.createElement("option");
-        op.value = a.path;
-        op.textContent = a.wrapped ? a.name : a.name + " (缺 addon_info.json)";
-        sel.appendChild(op);
-      });
-      if (prev) sel.value = prev;
-    } catch (e) {
-      console.error(e);
-    }
-  }
-
-  async function pickFolderAndSet(inputId, scanFn) {
-    try {
-      var path = await invoke("pick_folder");
-      if (!path) return;
-      $(inputId).value = path;
-      if (scanFn) await scanFn(path);
-    } catch (e) {
-      exSetMsg("选择文件夹失败: " + errTextLocal(e), true);
-    }
-  }
-
-  async function chooseFromMods(inputId, scanFn) {
-    var selId = inputId === "wrap-folder" ? "wrap-mods" : "pub-mods";
-    var sel = $(selId);
-    var path = sel.value;
-    if (!path) {
-      toast("mods/ 下没有可选的 Mod", true);
-      return;
-    }
-    $(inputId).value = path;
-    if (scanFn) await scanFn(path);
-  }
-
-  function bindFolderInput(inputId, scanFn) {
-    var input = $(inputId);
-    var timer = null;
-    input.addEventListener("input", function () {
-      clearTimeout(timer);
-      timer = setTimeout(function () {
-        var v = input.value.trim();
-        if (v && scanFn) scanFn(v);
-      }, 350);
-    });
-    input.addEventListener("change", function () {
-      var v = input.value.trim();
-      if (v && scanFn) scanFn(v);
-    });
-  }
-
-  /* 模式1: 包装 Mod */
-  var wrapState = { files: [], extra: [] };
-
-  function wrapIsSingleFile() {
-    var r = document.querySelector('input[name="wrap-type"]:checked');
-    return !!r && r.value === "single";
-  }
-
-  async function scanWrapFolder(path) {
-    try {
-      var r = await invoke("scan_mod_files", path, wrapIsSingleFile());
-      if (!r.ok) {
-        wrapState = { files: [], extra: [] };
-        exSetMsg(r.error, true);
-        return false;
-      }
-      wrapState = { files: r.files || [], extra: [] };
-      exSetMsg("");
-      return true;
-    } catch (e) {
-      exSetMsg("扫描失败: " + errTextLocal(e), true);
-      return false;
-    }
-  }
-
-  /* 模式3: 发布 Mod */
-  async function loadPublishPreview(path, syncTags) {
-    if (syncTags === undefined) syncTags = true;
-    try {
-      var r = await invoke("preview_mod", path);
-      if (!r.ok) {
-        $("pub-preview").textContent = r.error;
-        $("pub-preview").classList.add("err");
-        return false;
-      }
-      var i = r.info;
-      if (syncTags) {
-        $("pub-tags").value = parseTagList(i.tags).join(", ");
-        var style = i.tags_style;
-        $("pub-tags-style").value = style && typeof style === "object" ? JSON.stringify(style) : "";
-      }
-      var lines = [
-        "名称: " + (i.name || ""),
-        "版本: " + ((i.version || "").trim() || "0.0.1"),
-        "作者: " + JSON.stringify(i.authors || {}),
-        "描述: " + ((i.desc || "").trim() || "(空)"),
-        "标签: " + (parseTagList($("pub-tags").value).join(", ") || "(无)"),
-        "载入文件: " + ((i.file_names || []).join(", ") || "(空)"),
-        "",
-        "上传后: 图标 → 蓝奏云 FaustLauncher.icons, 压缩包 → FaustLauncher.Mods,",
-        "       dowload_url/icon_url = 直链解析链接, download_count=0, disabled=false",
-        "单文件上限: " + (r.max_size_mb || 66) + " MB (web_config.json → lanzou.max_size_mb, 该账号实测约 66MB)",
-      ];
-      $("pub-preview").textContent = lines.join("\n");
-      $("pub-preview").classList.remove("err");
-      return true;
-    } catch (e) {
-      $("pub-preview").textContent = "预览失败: " + errTextLocal(e);
-      $("pub-preview").classList.add("err");
-      return false;
-    }
-  }
-
-  /* 模式4: 发布插件 */
-  async function loadAddonPreview(path, syncTags) {
-    if (syncTags === undefined) syncTags = true;
-    try {
-      var r = await invoke("preview_addon", path);
-      if (!r.ok) {
-        $("addon-pub-preview").textContent = r.error;
-        $("addon-pub-preview").classList.add("err");
-        return false;
-      }
-      var i = r.info;
-      if (syncTags) {
-        $("addon-pub-tags").value = parseTagList(i.tags).join(", ");
-        var style = i.tags_style;
-        $("addon-pub-tags-style").value = style && typeof style === "object" ? JSON.stringify(style) : "";
-      }
-      var lines = [
-        "名称: " + (i.name || ""),
-        "版本: " + ((i.version || "").trim() || "0.0.1"),
-        "作者: " + JSON.stringify(i.authors || {}),
-        "描述: " + ((i.desc || "").trim() || "(空)"),
-        "标签: " + (parseTagList($("addon-pub-tags").value).join(", ") || "(无)"),
-        "",
-        "上传后: 图标 → 蓝奏云 FaustLauncher.icons, 压缩包 → FaustLauncher.Addons,",
-        "       dowload_url/icon_url = 直链解析链接, download_count 沿用云端旧值,",
-        "       同名插件视为更新并置顶（插件库 total_addons 重算）",
-        "单文件上限: " + (r.max_size_mb || 66) + " MB (web_config.json → lanzou.max_size_mb)",
-      ];
-      $("addon-pub-preview").textContent = lines.join("\n");
-      $("addon-pub-preview").classList.remove("err");
-      return true;
-    } catch (e) {
-      $("addon-pub-preview").textContent = "预览失败: " + errTextLocal(e);
-      $("addon-pub-preview").classList.add("err");
-      return false;
-    }
-  }
-
-  /* 信息表单弹层 */
-  var formCtx = null;
-
-  function openForm(type, nameDefault, files, extra, singleFile) {
-    formCtx = { type: type, files: files || [], extra: extra || [], iconPath: "", singleFile: !!singleFile };
-    $("form-title").textContent = type === "wrap"
-      ? (formCtx.singleFile ? "填写信息 - 包装单文件 Mod" : "填写信息 - 包装 Mod")
-      : "填写信息 - 生成插件";
-    $("form-name").value = nameDefault;
-    $("form-desc").value = "";
-    $("form-version").value = "0.0.1";
-    $("form-authors").value = "";
-    $("form-icon-hint").textContent = "不选择则自动生成默认图标";
-    $("form-files-field").style.display = type === "wrap" ? "" : "none";
-    renderFormFiles();
-    $("formOverlay").classList.add("show");
-    $("form-name").focus();
-  }
-
-  function renderFormFiles() {
-    var box = $("form-files");
-    box.innerHTML = "";
-    var extraSet = new Set(formCtx.extra.map(function (p) { return p.split(/[\\/]/).pop(); }));
-    if (!formCtx.files.length) {
-      var d = document.createElement("div");
-      d.className = "empty";
-      d.textContent = "未发现 .bank/.carra2/.rebank 文件，可通过「添加其他文件」选择（支持 .json）";
-      box.appendChild(d);
-      return;
-    }
-    formCtx.files.forEach(function (f) {
-      var label = document.createElement("label");
-      var cb = document.createElement("input");
-      cb.type = "checkbox";
-      cb.checked = true;
-      cb.value = f;
-      var span = document.createElement("span");
-      span.textContent = f;
-      if (extraSet.has(f)) span.className = "extra";
-      label.appendChild(cb);
-      label.appendChild(span);
-      box.appendChild(label);
-    });
-  }
-
-  function parseAuthors() {
-    var authors = {};
-    $("form-authors").value.split("\n").forEach(function (line) {
-      line = line.trim();
-      if (!line) return;
-      var idx = line.indexOf("|");
-      if (idx >= 0) {
-        authors[line.slice(0, idx).trim()] = line.slice(idx + 1).trim();
-      } else {
-        authors[line] = "";
-      }
-    });
-    return authors;
-  }
-
-  function bindExtension() {
-    document.querySelectorAll("#page-ext .tab").forEach(function (t) {
-      t.addEventListener("click", function () { switchMode(t.dataset.mode); });
-    });
-
-    $("wrap-browse").addEventListener("click", function () { pickFolderAndSet("wrap-folder", scanWrapFolder); });
-    $("wrap-from-mods").addEventListener("click", function () { chooseFromMods("wrap-folder", scanWrapFolder); });
-
-    document.querySelectorAll('input[name="wrap-type"]').forEach(function (r) {
-      r.addEventListener("change", function () {
-        var v = $("wrap-folder").value.trim();
-        if (v) scanWrapFolder(v);
-      });
-    });
-
-    $("wrap-mods").addEventListener("change", function () {
-      var v = $("wrap-mods").value;
-      if (!v) return;
-      $("wrap-folder").value = v;
-      scanWrapFolder(v);
-    });
-
-    $("wrap-start").addEventListener("click", async function () {
-      var folder = $("wrap-folder").value.trim();
-      if (!folder) { exSetMsg("请先选择原始文件夹", true); return; }
-      if (!(await scanWrapFolder(folder))) return;
-      var base = folder.split(/[\\/]/).pop() || "";
-      openForm("wrap", base, wrapState.files, wrapState.extra, wrapIsSingleFile());
-    });
-
-    $("plugin-start").addEventListener("click", function () {
-      var name = $("plugin-name").value.trim();
-      if (!name) { exSetMsg("请先填写插件名称", true); return; }
-      openForm("plugin", name, [], []);
-    });
-
-    $("pub-browse").addEventListener("click", function () { pickFolderAndSet("pub-folder", loadPublishPreview); });
-    $("pub-from-mods").addEventListener("click", function () { chooseFromMods("pub-folder", loadPublishPreview); });
-    $("pub-mods").addEventListener("change", function () {
-      var v = $("pub-mods").value;
-      if (!v) return;
-      $("pub-folder").value = v;
-      loadPublishPreview(v);
-    });
-
-    $("pub-upload").addEventListener("click", async function () {
-      var folder = $("pub-folder").value.trim();
-      if (!folder) { exSetMsg("请先选择 Mod 文件夹", true); return; }
-      var tags, tagsStyle;
-      try {
-        tags = parseTagList($("pub-tags").value);
-        tagsStyle = parseTagsStyleInput("pub-tags-style");
-      } catch (e) {
-        exSetMsg(errTextLocal(e), true); return;
-      }
-      if (!(await loadPublishPreview(folder, false))) return;
-      var btn = $("pub-upload");
-      var progress = $("pub-progress");
-      var fill = $("pub-progress-fill");
-      var ptext = $("pub-progress-text");
-      btn.disabled = true;
-      btn.textContent = "上传中...";
-      $("pub-log").textContent = "";
-      $("pub-log").className = "log";
-      progress.style.display = "";
-      fill.style.width = "0%";
-      ptext.textContent = "准备中...";
-      try {
-        var r = await invoke("publish_mod", folder, tags, tagsStyle);
-        var logEl = $("pub-log");
-        logEl.textContent = r.log || "";
-        logEl.className = "log " + (r.ok ? "ok" : "err");
-        exSetMsg(r.msg, !r.ok);
-        if (r.ok) toast("发布成功: " + ((r.info && r.info.name) || ""));
-      } catch (e) {
-        exSetMsg("发布失败: " + errTextLocal(e), true);
-      } finally {
-        btn.disabled = false;
-        btn.textContent = "🚀 上传到云端";
-        setTimeout(function () { progress.style.display = "none"; }, 3000);
-      }
-    });
-
-    $("addon-pub-browse").addEventListener("click", function () { pickFolderAndSet("addon-pub-folder", loadAddonPreview); });
-    $("addon-pub-from-addons").addEventListener("click", async function () {
-      var sel = $("addon-pub-addons");
-      var path = sel && sel.value;
-      if (!path) { toast("addons/ 下没有可选的插件", true); return; }
-      $("addon-pub-folder").value = path;
-      await loadAddonPreview(path);
-    });
-    $("addon-pub-addons").addEventListener("change", function () {
-      var v = $("addon-pub-addons").value;
-      if (!v) return;
-      $("addon-pub-folder").value = v;
-      loadAddonPreview(v);
-    });
-    bindFolderInput("addon-pub-folder", loadAddonPreview);
-
-    $("addon-pub-upload").addEventListener("click", async function () {
-      var folder = $("addon-pub-folder").value.trim();
-      if (!folder) { exSetMsg("请先选择插件文件夹", true); return; }
-      var tags, tagsStyle;
-      try {
-        tags = parseTagList($("addon-pub-tags").value);
-        tagsStyle = parseTagsStyleInput("addon-pub-tags-style");
-      } catch (e) {
-        exSetMsg(errTextLocal(e), true); return;
-      }
-      if (!(await loadAddonPreview(folder, false))) return;
-      var btn = $("addon-pub-upload");
-      var progress = $("addon-pub-progress");
-      var fill = $("addon-pub-progress-fill");
-      var ptext = $("addon-pub-progress-text");
-      btn.disabled = true;
-      btn.textContent = "上传中...";
-      $("addon-pub-log").textContent = "";
-      $("addon-pub-log").className = "log";
-      progress.style.display = "";
-      fill.style.width = "0%";
-      ptext.textContent = "准备中...";
-      try {
-        var r = await invoke("publish_addon", folder, tags, tagsStyle);
-        var logEl = $("addon-pub-log");
-        logEl.textContent = r.log || "";
-        logEl.className = "log " + (r.ok ? "ok" : "err");
-        exSetMsg(r.msg, !r.ok);
-        if (r.ok) toast("发布成功: " + ((r.info && r.info.name) || ""));
-      } catch (e) {
-        exSetMsg("发布失败: " + errTextLocal(e), true);
-      } finally {
-        btn.disabled = false;
-        btn.textContent = "🚀 上传到云端";
-        setTimeout(function () { progress.style.display = "none"; }, 3000);
-      }
-    });
-
-    $("form-add-files").addEventListener("click", async function () {
-      try {
-        var paths = await invoke("pick_files");
-        if (!paths || !paths.length) return;
-        paths.forEach(function (p) {
-          var base = p.split(/[\\/]/).pop();
-          if (formCtx.files.indexOf(base) < 0) {
-            formCtx.files.push(base);
-            formCtx.extra.push(p);
-          }
-        });
-        renderFormFiles();
-      } catch (e) {
-        toast("添加文件失败: " + errTextLocal(e), true);
-      }
-    });
-
-    $("form-pick-icon").addEventListener("click", async function () {
+  function bindModals() {
+    // 信息模态
+    $("info-close").addEventListener("click", function () { $("infoModal").hidden = true; });
+    $("info-cancel").addEventListener("click", function () { $("infoModal").hidden = true; });
+    $("info-save").addEventListener("click", saveInfo);
+    $("info-icon").addEventListener("click", async function () {
       try {
         var path = await invoke("pick_icon");
         if (!path) return;
-        formCtx.iconPath = path;
-        $("form-icon-hint").textContent = path;
-      } catch (e) {
-        toast("选择图标失败: " + errTextLocal(e), true);
-      }
+        infoCtx.iconPath = path;
+        setInfoIcon(fileUrl(path));
+      } catch (e) { toast(String(e), true); }
+    });
+    $("info-add-author").addEventListener("click", openAuthorModal);
+    $("infoModal").addEventListener("mousedown", function (event) {
+      if (event.target === $("infoModal")) $("infoModal").hidden = true;
     });
 
-    $("form-confirm").addEventListener("click", async function () {
-      var name = $("form-name").value.trim();
-      if (!name) { toast("请填写名称", true); return; }
-      var data = {
-        name: name,
-        desc: $("form-desc").value.trim(),
-        version: $("form-version").value.trim() || "0.0.1",
-        authors: parseAuthors(),
-        icon_path: formCtx.iconPath || "",
-      };
-      var btn = $("form-confirm");
-      btn.disabled = true;
-      try {
-        var r;
-        if (formCtx.type === "wrap") {
-          data.folder = $("wrap-folder").value.trim();
-          data.files = Array.from(document.querySelectorAll("#form-files input:checked")).map(function (c) { return c.value; });
-          data.extra_files = formCtx.extra;
-          data.single_file = formCtx.singleFile;
-          r = await invoke("wrap_mod", data);
-        } else {
-          r = await invoke("spawn_extension", data);
-        }
-        if (r.ok) {
-          $("formOverlay").classList.remove("show");
-          exSetMsg(r.msg);
-          toast("生成成功");
-          fillModsSelect("wrap-mods", false);
-          fillModsSelect("pub-mods", true);
-        } else {
-          exSetMsg(r.msg, true);
-          toast(r.msg, true);
-        }
-      } catch (e) {
-        exSetMsg("生成失败: " + errTextLocal(e), true);
-      } finally {
-        btn.disabled = false;
-      }
+    // 作者模态
+    $("author-close").addEventListener("click", function () { $("authorModal").hidden = true; });
+    $("author-cancel").addEventListener("click", function () { $("authorModal").hidden = true; });
+    $("author-add").addEventListener("click", confirmAuthor);
+    $("author-link").addEventListener("keydown", function (e) {
+      if (e.key === "Enter") { e.preventDefault(); confirmAuthor(); }
+    });
+    $("authorModal").addEventListener("mousedown", function (event) {
+      if (event.target === $("authorModal")) $("authorModal").hidden = true;
     });
 
-    $("form-cancel").addEventListener("click", function () { $("formOverlay").classList.remove("show"); });
-    $("form-close").addEventListener("click", function () { $("formOverlay").classList.remove("show"); });
+    // 日志模态 + 浮标
+    $("log-min").addEventListener("click", minimizeLog);
+    $("log-close").addEventListener("click", closeLog);
+    $("log-float-open").addEventListener("click", function (e) { e.stopPropagation(); restoreLog(); });
+    $("logFloat").addEventListener("click", restoreLog);
   }
 
-  /* 发布进度/日志实时推送 (Python 侧经 pywebview evaluate_js 调用) */
-  window.__onPublishProgress = function (p) {
-    var progress = $("pub-progress"), fill = $("pub-progress-fill"), ptext = $("pub-progress-text");
-    if (!progress || !fill || !ptext) return;
-    var pct = Math.max(0, Math.min(100, Math.round((p && p.percent) || 0)));
-    progress.style.display = "";
-    fill.style.width = pct + "%";
-    ptext.textContent = ((p && p.text) || "") + " " + pct + "%";
-  };
-  window.__onPublishLog = function (s) {
-    var elx = $("pub-log");
-    if (!elx) return;
-    elx.textContent += (elx.textContent ? "\n" : "") + String(s);
-    elx.scrollTop = elx.scrollHeight;
-  };
-  window.__onAddonProgress = function (p) {
-    var progress = $("addon-pub-progress"), fill = $("addon-pub-progress-fill"), ptext = $("addon-pub-progress-text");
-    if (!progress || !fill || !ptext) return;
-    var pct = Math.max(0, Math.min(100, Math.round((p && p.percent) || 0)));
-    progress.style.display = "";
-    fill.style.width = pct + "%";
-    ptext.textContent = ((p && p.text) || "") + " " + pct + "%";
-  };
-  window.__onAddonLog = function (s) {
-    var elx = $("addon-pub-log");
-    if (!elx) return;
-    elx.textContent += (elx.textContent ? "\n" : "") + String(s);
-    elx.scrollTop = elx.scrollHeight;
-  };
-
-  async function loadBg() {
-    try {
-      var a = await invoke("assets");
-      if (a && a.bg) $("bgimg").src = a.bg;
-    } catch (e) {
-      console.error(e);
-    }
-  }
-
-  function initExtension() {
-    fillModsSelect("wrap-mods", false);
-    fillModsSelect("pub-mods", true);
-    bindFolderInput("wrap-folder", scanWrapFolder);
-    bindFolderInput("pub-folder", loadPublishPreview);
-    loadBg();
-  }
-
-  /* ============================================================
-     启动
-     ============================================================ */
   function boot() {
     api = window.pywebview && window.pywebview.api;
     if (!api) return;
-    bindPageswitch();
     bindWorkflow();
-    bindExtension();
+    bindModals();
     refresh();
     setInterval(refresh, 1400);
   }
