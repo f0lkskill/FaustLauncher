@@ -17,9 +17,16 @@
       </div>
       <div class="wf-brand-text">
         <h1>YisangMirrorFlow</h1>
-        <p id="wf-version">Mod 打包工作流</p>
+        <p id="wf-version"></p>
       </div>
     </div>
+    <button class="wf-user" id="wf-user" type="button" title="打开我的主页">
+      <span class="wf-user-avatar" id="wf-user-avatar">
+        <img id="wf-user-avatar-img" alt="" hidden>
+        <span class="wf-user-initial" id="wf-user-initial">P</span>
+      </span>
+      <span class="wf-user-name" id="wf-user-name">Player</span>
+    </button>
   </header>
 
   <div class="wf-body">
@@ -29,7 +36,7 @@
           <div class="wf-field">
             <label for="wf-game-path">游戏目录</label>
             <input id="wf-game-path" type="text" readonly placeholder="尚未设置，.bank 需要对照原版 bank">
-            <button class="wf-btn" id="wf-pick-game">选择目录</button>
+            <button class="wf-btn" id="wf-pick-game">浏览</button>
             <span class="wf-state" id="wf-sound-state"></span>
           </div>
           <div class="wf-field small">
@@ -43,9 +50,9 @@
             <span>打包队列</span>
             <span class="wf-badge" id="wf-count">0</span>
             <span class="wf-spacer"></span>
-            <button class="wf-btn" id="wf-open-mods">打开包目录</button>
-            <button class="wf-btn primary" id="wf-new">新建包</button>
             <button class="wf-btn ghost" id="wf-refresh">刷新</button>
+            <!-- <button class="wf-btn" id="wf-open-mods">目录</button> -->
+            <button class="wf-btn primary" id="wf-new">新建</button>
           </div>
           <div class="wf-list" id="wf-list"></div>
         </main>

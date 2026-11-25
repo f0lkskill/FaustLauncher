@@ -206,6 +206,61 @@ class ExtensionToolsMixin:
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
+    @staticmethod
+    def _avatar_data_uri(got):
+        if not got:
+            return ""
+        try:
+            raw, mime = got
+            return "data:" + mime + ";base64," + base64.b64encode(raw).decode("ascii")
+        except Exception:
+            return ""
+
+    def get_user_profile(self):
+        """读取启动器记录的用户名、头像 URL、主页 URL。"""
+        try:
+            from functions.base import user_system
+            try:
+                from functions.base.settings_manager import get_settings_manager
+                sm = get_settings_manager()
+            except Exception:
+                sm = None
+            info = user_system.get_user_info(sm)
+            return {"ok": True,
+                    "name": str(info.get("user_name") or "Player"),
+                    "avatar": str(info.get("avatar") or ""),
+                    "profile_url": str(info.get("profile_url") or "")}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def get_user_avatar(self, url):
+        """优先读本地缓存头像（仿启动器）。"""
+        try:
+            from functions.base import user_api
+            return self._avatar_data_uri(user_api.load_avatar_local(str(url or "").strip()))
+        except Exception:
+            return ""
+
+    def refresh_user_avatar(self, url):
+        """无本地缓存时条件拉取远端头像并落盘（仿启动器“申请”流程）。"""
+        try:
+            from functions.base import user_api
+            return self._avatar_data_uri(user_api.check_avatar_update(str(url or "").strip()))
+        except Exception:
+            return ""
+
+    def open_user_url(self, url):
+        """在系统浏览器打开用户主页 URL。"""
+        u = str(url or "").strip()
+        if not (u.startswith("http://") or u.startswith("https://")):
+            return {"ok": False, "error": "无效链接"}
+        try:
+            import webbrowser
+            webbrowser.open(u)
+            return {"ok": True}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
     def scan_mod_files(self, folder, single_file=False):
         folder = (folder or "").strip()
         if not folder:

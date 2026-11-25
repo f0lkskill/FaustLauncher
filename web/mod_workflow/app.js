@@ -102,6 +102,51 @@
     ui.list.appendChild(box);
   }
 
+  var userProfile = { name: "Player", url: "" };
+
+  function setUserName(name) {
+    var el = $("wf-user-name");
+    if (el) el.textContent = name || "Player";
+  }
+
+  function setUserAvatar(uri) {
+    var img = $("wf-user-avatar-img");
+    var ini = $("wf-user-initial");
+    if (!img) return;
+    img.onload = function () { img.hidden = false; if (ini) ini.hidden = true; };
+    img.src = uri;
+    if (img.complete && img.naturalWidth) { img.hidden = false; if (ini) ini.hidden = true; }
+  }
+
+  function setUserInitial(name) {
+    var img = $("wf-user-avatar-img");
+    var ini = $("wf-user-initial");
+    if (img) { img.hidden = true; img.removeAttribute("src"); }
+    if (ini) {
+      ini.hidden = false;
+      ini.textContent = String(name || "P").slice(0, 1).toUpperCase() || "P";
+    }
+  }
+
+  // 仿启动器：本地缓存头像优先，没有就条件申请（拉取并落盘），再没有用首字母
+  async function loadUser() {
+    try {
+      var p = await invoke("get_user_profile");
+      if (!p || !p.ok) return;
+      userProfile.name = String(p.name || "Player");
+      userProfile.url = String(p.profile_url || "");
+      setUserName(userProfile.name);
+      var avatarUrl = String(p.avatar || "");
+      if (avatarUrl) {
+        var uri = "";
+        try { uri = await invoke("get_user_avatar", avatarUrl); } catch (e) {}
+        if (!uri) { try { uri = await invoke("refresh_user_avatar", avatarUrl); } catch (e) {} }
+        if (uri) { setUserAvatar(uri); return; }
+      }
+      setUserInitial(userProfile.name);
+    } catch (e) { /* 保持默认 */ }
+  }
+
   function fileUrl(path) {
     if (!path) return "";
     try {
@@ -160,11 +205,11 @@
       if (ui.mark) ui.mark.classList.add("has-icon");
     }
 
-    ui.version.textContent = "Mod 打包工作流 · v" + (next.version || "?");
+    ui.version.textContent = (next.version || "?");
     var game = next.game || {};
     ui.gamePath.value = game.path || "";
     if (game.path && game.sound_exists) {
-      ui.soundState.textContent = "音效目录已就绪";
+      ui.soundState.textContent = "";
       ui.soundState.className = "wf-state ok";
     } else if (game.path) {
       ui.soundState.textContent = "未找到原版音效目录";
@@ -338,7 +383,7 @@
 
     actions.appendChild(el("span", "wf-spacer"));
 
-    var open = el("button", "wf-btn ghost", "打开目录");
+    var open = el("button", "wf-btn ghost", "目录");
     open.addEventListener("click", function () {
       invoke("open_package", pkg.name).then(function (result) {
         if (!result.ok) toast(errorText(result), true);
@@ -518,6 +563,9 @@
       } else if (authors && typeof authors === "object") {
         Object.keys(authors).forEach(function (k) { authorsMap[k] = authors[k] || ""; });
       }
+      if (Object.keys(authorsMap).length === 0 && userProfile.name) {
+        authorsMap[userProfile.name] = userProfile.url || "";
+      }
       renderAuthors();
       setInfoIcon(r.icon);
       $("info-hint").textContent = (r.missing && r.missing.length)
@@ -677,11 +725,11 @@
       refresh();
     });
 
-    $("wf-open-mods").addEventListener("click", function () {
-      invoke("open_mods_dir").then(function (result) {
-        if (!result.ok) toast(errorText(result), true);
-      }).catch(function (err) { toast(String(err), true); });
-    });
+    // $("wf-open-mods").addEventListener("click", function () {
+    //   invoke("open_mods_dir").then(function (result) {
+    //     if (!result.ok) toast(errorText(result), true);
+    //   }).catch(function (err) { toast(String(err), true); });
+    // });
 
     $("wf-pick-game").addEventListener("click", function () {
       invoke("pick_game_dir").then(function (result) {
@@ -757,6 +805,13 @@
     $("confirmModal").addEventListener("mousedown", function (event) {
       if (event.target === $("confirmModal")) closeConfirm();
     });
+
+    // 头部用户资料：点击打开启动器记录的主页
+    var ub = $("wf-user");
+    if (ub) ub.addEventListener("click", function () {
+      if (!userProfile.url) { toast("未配置用户主页，请先在启动器登录同步", true); return; }
+      invoke("open_user_url", userProfile.url).catch(function (e) { toast(String(e), true); });
+    });
   }
 
   function boot() {
@@ -765,6 +820,7 @@
     bindWorkflow();
     bindModals();
     showListLoading();
+    loadUser();
     refresh();
     setInterval(refresh, 1400);
   }

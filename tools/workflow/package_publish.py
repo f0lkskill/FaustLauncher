@@ -60,11 +60,23 @@ def save_info(name, data) -> dict:
         return {"ok": False, "error": "包不存在"}
     data = data or {}
     kind = core.package_kind(name)
+    # 作者：没填时默认把自己（启动器记录的用户名 + 主页 URL）作为第一位作者
+    authors = data.get("authors") or {}
+    if not authors:
+        try:
+            from functions.base import user_system
+            from functions.base.settings_manager import get_settings_manager
+            ui = user_system.get_user_info(get_settings_manager())
+            uname = str(ui.get("user_name") or "").strip()
+            if uname:
+                authors = {uname: str(ui.get("profile_url") or "").strip()}
+        except Exception:
+            authors = {}
     info = {
         "name": (str(data.get("name") or name)).strip() or name,
         "desc": str(data.get("desc") or "").strip(),
         "version": str(data.get("version") or "0.0.1").strip() or "0.0.1",
-        "authors": data.get("authors") or {},
+        "authors": authors,
     }
     if kind == "addon":
         info["settings"] = {"enable": False}
