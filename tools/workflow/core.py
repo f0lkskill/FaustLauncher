@@ -24,7 +24,7 @@ from datetime import datetime
 from pathlib import Path
 
 WORKFLOW_NAME = "YisangMirrorFlow"
-VERSION = "0.0.12"
+VERSION = "0.0.13"
 
 WORKFLOW_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = WORKFLOW_DIR.parent.parent
@@ -451,6 +451,8 @@ def delete_package(name) -> dict:
 # ---------------------------------------------------------------------------
 
 ARCHIVE_EXTS = (".zip", ".7z", ".rar")
+# 打包流真正需要的音效文件；其它（json/txt/图片等）一律不提取到包根
+AUDIO_EXTS = (".bank", ".rebank", ".carra2")
 
 
 def _find_7z() -> str:
@@ -556,51 +558,94 @@ def _copy_tree_into(src: Path, dst: Path) -> int:
     return count
 
 
-def _has_installer(dir_path: Path) -> bool:
-    """目录（递归）里是否含 Installer.bat/Uninstaller.bat。"""
-    for _root, _dirs, files in os.walk(dir_path):
+def _installer_dirs(base: Path) -> list:
+    """含 Installer.bat/Uninstaller.bat 的目录（取最外层，避免嵌套重复）。"""
+    found = []
+    for root, _dirs, files in os.walk(base):
         low = {f.lower() for f in files}
         if "installer.bat" in low or "uninstaller.bat" in low:
+            found.append(Path(root))
+    result = []
+    for d in found:
+        if not any(d != o and o in d.parents for o in found):
+            result.append(d)
+    return result
+
+
+def _is_under(path: Path, dirs: list) -> bool:
+    for d in dirs:
+        try:
+            path.relative_to(d)
             return True
+        except ValueError:
+            pass
     return False
 
 
+def _zip_installer_dir(src_dir: Path, zip_path: Path, top_name: str) -> int:
+    """把完整包目录压成 zip（保留顶层目录名，打包流只认 zip）。"""
+    try:
+        if zip_path.exists():
+            zip_path.unlink()
+    except OSError:
+        pass
+    count = 0
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+        for root, _dirs, files in os.walk(src_dir):
+            for f in files:
+                full = Path(root) / f
+                rel = os.path.relpath(full, src_dir).replace("\\", "/")
+                arc = (top_name + "/" + rel) if top_name else rel
+                try:
+                    zf.write(full, arc)
+                    count += 1
+                except OSError:
+                    pass
+    return count
+
+
 def _unpack_one_archive(pkg: Path, archive: Path) -> dict:
-    """解压到临时目录后按“分级”提取到包根：
-    - 文件 → 包根；
-    - installer 子目录（含 bat）→ 把内容提升到包根（交给后续识别）；
-    - 普通子目录 → 保留目录结构整体复制；
-    这样混合包（根有 bank/json + 子目录 installer）能完整提取，不丢内容。"""
+    """按“打包流需求”提取：
+    - 含 Installer.bat 的完整包目录 → 单独压成 <目录名>.zip（保留顶层目录，打包流只认 zip）；
+    - `.bank/.rebank/.carra2` 音效 → 复制到包根（完整包 zip 内的除外）；
+    - json/txt 等其它无用文件一律忽略。"""
     temp = Path(tempfile.mkdtemp(prefix="wf_unpack_"))
     try:
         _extract_archive(archive, temp)
         base = _content_root(temp)
+        at_temp = os.path.normcase(str(base)) == os.path.normcase(str(temp))
+        installer_dirs = _installer_dirs(base)
         files = 0
-        try:
-            entries = sorted(os.listdir(base))
-        except OSError:
-            entries = []
-        for name in entries:
-            if name == "__MACOSX" or name.startswith("."):
-                continue
-            src = base / name
-            if src.is_dir():
-                if _has_installer(src):
-                    files += _copy_tree_into(src, pkg)
-                else:
-                    try:
-                        (pkg / name).mkdir(parents=True, exist_ok=True)
-                    except OSError:
-                        pass
-                    files += _copy_tree_into(src, pkg / name)
-            elif src.is_file():
+
+        # 完整包 → 单独 zip
+        used = set()
+        for d in installer_dirs:
+            if d == base:
+                top = "mod" if at_temp else (base.name or "mod")
+            else:
+                top = d.name or "mod"
+            fname = top + ".zip"
+            if fname in used:
+                fname = "%s_%d.zip" % (top, len(used) + 1)
+            used.add(fname)
+            files += _zip_installer_dir(d, pkg / fname, top)
+
+        # 音效文件 → 包根（排除已进入完整包 zip 的）
+        for root, _dirs, fs in os.walk(base):
+            for f in fs:
+                if os.path.splitext(f)[1].lower() not in AUDIO_EXTS:
+                    continue
+                full = Path(root) / f
+                if _is_under(full, installer_dirs):
+                    continue
                 try:
                     pkg.mkdir(parents=True, exist_ok=True)
-                    shutil.copy2(src, pkg / name)
+                    shutil.copy2(full, pkg / f)
                     files += 1
                 except OSError:
                     pass
-        label = "(根目录)" if os.path.normcase(str(base)) == os.path.normcase(str(temp)) else base.name
+
+        label = "(根目录)" if at_temp else base.name
         return {"archive": archive.name, "zip": archive.name,
                 "dir": label, "files": files, "failed": 0}
     finally:
