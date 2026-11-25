@@ -95,7 +95,6 @@
   var lastListKey = "";
   var busy = false;
   var startBusy = {};
-  var unpackBusy = {};
   var publishBusy = {};
 
   function statusInfo(pkg) {
@@ -117,7 +116,7 @@
         p.job && p.job.status, p.job && p.job.message,
         (p.publish_missing || []).join(","), p.publish_ready ? 1 : 0,
         p.last_version || "",
-        startBusy[p.name] ? 1 : 0, unpackBusy[p.name] ? 1 : 0, publishBusy[p.name] ? 1 : 0,
+        startBusy[p.name] ? 1 : 0, publishBusy[p.name] ? 1 : 0,
         p.files.map(function (f) { return f.name + ":" + f.size; }).join("|")
       ];
     }));
@@ -284,44 +283,26 @@
     });
     actions.appendChild(start);
 
-    var unpack = el("button", "wf-btn", "解包");
-    unpack.disabled = running || !!unpackBusy[pkg.name]
-      || !((counts[".zip"] > 0) || (counts[".7z"] > 0) || (counts[".rar"] > 0));
-    unpack.addEventListener("click", function () {
-      if (!confirm("将解压包内全部归档（zip/7z/rar），重复文件会覆盖，继续？")) return;
-      unpackBusy[pkg.name] = true;
-      unpack.disabled = true;
-      invoke("unpack_zips", pkg.name).then(function (result) {
-        delete unpackBusy[pkg.name];
-        if (!result.ok) {
-          toast(errorText(result), true);
-          refresh();
-          return;
-        }
-        var msg = "解包完成: " + result.unpacked + "/" + result.zip_count + " 个 zip";
-        if (result.extracted_files) msg += "，共 " + result.extracted_files + " 个文件";
-        toast(msg, !!(result.errors && result.errors.length));
-        if (result.state) applyState(result.state);
-        else refresh();
-      }).catch(function (err) {
-        delete unpackBusy[pkg.name];
-        toast(String(err), true);
-        refresh();
-      });
-    });
-    actions.appendChild(unpack);
-
     var add = el("button", "wf-btn", "添加文件");
     add.disabled = running;
     add.addEventListener("click", function () {
       invoke("add_files", pkg.name).then(function (result) {
         if (result.canceled) return;
         if (!result.ok) return toast(errorText(result), true);
-        var msg = "已添加 " + result.added + " 个文件";
+        var msg = "已导入 " + result.added + " 个文件";
+        if (result.unpacked && result.unpacked.length) {
+          msg += "，自动解包 " + result.unpacked.length + " 个归档";
+        }
+        var hasErr = false;
         if (result.skipped && result.skipped.length) {
           msg += "，跳过: " + result.skipped.join(", ");
+          hasErr = true;
         }
-        toast(msg, !!(result.skipped && result.skipped.length));
+        if (result.errors && result.errors.length) {
+          msg += "；" + result.errors.join("；");
+          hasErr = true;
+        }
+        toast(msg, hasErr);
         applyState(result.state);
       }).catch(function (err) { toast(String(err), true); });
     });

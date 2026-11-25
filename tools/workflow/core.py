@@ -24,7 +24,7 @@ from datetime import datetime
 from pathlib import Path
 
 WORKFLOW_NAME = "YisangMirrorFlow"
-VERSION = "0.0.11"
+VERSION = "0.0.12"
 
 WORKFLOW_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = WORKFLOW_DIR.parent.parent
@@ -373,15 +373,19 @@ def _file_counts(files: list) -> dict:
 
 
 def add_files(name, source_paths) -> dict:
+    """把文件复制进包；归档（zip/7z/rar）自动解包到包根并删除归档。"""
     pkg = package_dir(name)
     if not pkg.is_dir():
-        return {"ok": False, "error": "包不存在", "added": 0, "skipped": []}
+        return {"ok": False, "error": "包不存在", "added": 0, "skipped": [], "unpacked": [], "errors": []}
     job = read_job(name)
     if job["status"] == "running":
-        return {"ok": False, "error": "正在打包，暂时不能添加文件", "added": 0, "skipped": []}
+        return {"ok": False, "error": "正在打包，暂时不能添加文件", "added": 0,
+                "skipped": [], "unpacked": [], "errors": []}
 
     added = 0
     skipped = []
+    unpacked = []
+    errors = []
     for src in source_paths or []:
         source = Path(str(src))
         if not _is_allowed_file(source):
@@ -394,7 +398,24 @@ def add_files(name, source_paths) -> dict:
             added += 1
         except OSError as exc:
             skipped.append("%s (%s)" % (source.name, exc))
-    return {"ok": True, "added": added, "skipped": skipped, "error": ""}
+            continue
+        # 归档自动解包，满足后续打包/识别；成功后移除归档，失败则保留
+        if target.suffix.lower() in ARCHIVE_EXTS:
+            try:
+                detail = _unpack_one_archive(pkg, target)
+                files = int(detail.get("files") or 0)
+                if files > 0:
+                    unpacked.append({"name": target.name, "dir": detail.get("dir"), "files": files})
+                    try:
+                        target.unlink()
+                    except OSError:
+                        pass
+                else:
+                    errors.append("%s (没有可解压的内容)" % target.name)
+            except Exception as exc:
+                errors.append("%s (%s)" % (target.name, exc))
+    return {"ok": True, "added": added, "skipped": skipped,
+            "unpacked": unpacked, "errors": errors, "error": ""}
 
 
 def remove_file(name, filename) -> dict:
@@ -494,44 +515,25 @@ def _extract_archive(archive: Path, out_dir: Path) -> None:
                            % (proc.returncode, lines[-1] if lines else ""))
 
 
-def _find_installer_dir(base: Path):
-    """递归找含 Installer.bat/Uninstaller.bat 的最浅目录（installer 类 Mod）。"""
-    best = None
-    best_depth = 1 << 30
-    for root, _dirs, files in os.walk(base):
-        low = {f.lower() for f in files}
-        if "installer.bat" in low or "uninstaller.bat" in low:
-            rel = os.path.relpath(root, base)
-            depth = 0 if rel == "." else len(rel.split(os.sep))
-            if depth < best_depth:
-                best = Path(root)
-                best_depth = depth
-    return best
-
-
-def _first_top_dir(base: Path) -> str:
-    """返回第一个非隐藏/非 __MACOSX 的顶层目录名；没有则空串。"""
+def _top_entries(base: Path) -> list:
+    """顶层条目（跳过 __MACOSX / 隐藏）。"""
     try:
         items = sorted(os.listdir(base))
     except OSError:
-        return ""
-    for item in items:
-        if item == "__MACOSX" or item.startswith("."):
-            continue
-        if (base / item).is_dir():
-            return item
-    return ""
+        return []
+    return [i for i in items if i != "__MACOSX" and not i.startswith(".")]
 
 
 def _content_root(temp: Path) -> Path:
-    """决定归档里“真正的内容根”：
-    installer 类 → 含 bat 的目录；否则第一个顶层目录；再否则归档根。"""
-    inst = _find_installer_dir(temp)
-    if inst is not None:
-        return inst
-    top = _first_top_dir(temp)
-    if top:
-        return temp / top
+    """分级判断“内容根”：
+    - 归档里只有一个顶层目录 → 去掉这层包裹，取该目录；
+      （标准 bat 模组：Installer.bat 会随之落到包根；
+       单目录音效包：里面的 bank/json 也会落到包根）
+    - 其它情况（根直接文件 / 多混合）→ 取归档根，整体保留到包根。
+    这样混合包（根有 bank/json + 子目录 installer）也能完整提取，不会丢内容。"""
+    entries = _top_entries(temp)
+    if len(entries) == 1 and (temp / entries[0]).is_dir():
+        return temp / entries[0]
     return temp
 
 
@@ -554,14 +556,51 @@ def _copy_tree_into(src: Path, dst: Path) -> int:
     return count
 
 
+def _has_installer(dir_path: Path) -> bool:
+    """目录（递归）里是否含 Installer.bat/Uninstaller.bat。"""
+    for _root, _dirs, files in os.walk(dir_path):
+        low = {f.lower() for f in files}
+        if "installer.bat" in low or "uninstaller.bat" in low:
+            return True
+    return False
+
+
 def _unpack_one_archive(pkg: Path, archive: Path) -> dict:
-    """解压单个归档到临时目录，再把“内容根”平铺到包根。"""
+    """解压到临时目录后按“分级”提取到包根：
+    - 文件 → 包根；
+    - installer 子目录（含 bat）→ 把内容提升到包根（交给后续识别）；
+    - 普通子目录 → 保留目录结构整体复制；
+    这样混合包（根有 bank/json + 子目录 installer）能完整提取，不丢内容。"""
     temp = Path(tempfile.mkdtemp(prefix="wf_unpack_"))
     try:
         _extract_archive(archive, temp)
-        content = _content_root(temp)
-        files = _copy_tree_into(content, pkg)
-        label = "(根目录)" if os.path.normcase(str(content)) == os.path.normcase(str(temp)) else content.name
+        base = _content_root(temp)
+        files = 0
+        try:
+            entries = sorted(os.listdir(base))
+        except OSError:
+            entries = []
+        for name in entries:
+            if name == "__MACOSX" or name.startswith("."):
+                continue
+            src = base / name
+            if src.is_dir():
+                if _has_installer(src):
+                    files += _copy_tree_into(src, pkg)
+                else:
+                    try:
+                        (pkg / name).mkdir(parents=True, exist_ok=True)
+                    except OSError:
+                        pass
+                    files += _copy_tree_into(src, pkg / name)
+            elif src.is_file():
+                try:
+                    pkg.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(src, pkg / name)
+                    files += 1
+                except OSError:
+                    pass
+        label = "(根目录)" if os.path.normcase(str(base)) == os.path.normcase(str(temp)) else base.name
         return {"archive": archive.name, "zip": archive.name,
                 "dir": label, "files": files, "failed": 0}
     finally:
@@ -603,6 +642,11 @@ def unpack_zips(name) -> dict:
         if int(detail.get("files") or 0) > 0:
             unpacked += 1
             details.append(detail)
+            # 解包成功即删除原归档
+            try:
+                archive.unlink()
+            except OSError:
+                pass
         else:
             errors.append("%s (没有可解压的内容)" % archive.name)
 
