@@ -78,7 +78,10 @@
       <span id="info-title">包信息</span>
       <button class="info-x" id="info-close" type="button">✕</button>
     </div>
-    <div class="info-body">
+    <div class="info-loading" id="info-loading" hidden>
+      <div class="spinner"></div><span>正在载入…</span>
+    </div>
+    <div class="info-body" id="info-body">
       <div class="info-toprow">
         <button class="icon-add" id="info-icon" type="button" title="选择图标">
           <img id="info-icon-img" alt="" hidden>
@@ -145,6 +148,18 @@
   <span class="log-float-dot"></span>
   <span class="log-float-text" id="log-float-text">发布中...</span>
   <button class="log-float-open" id="log-float-open" type="button" title="查看详情">⤢</button>
+</div>
+
+<!-- 自定义确认模态（替代系统 confirm） -->
+<div class="wf-modal" id="confirmModal" hidden>
+  <div class="confirm-card">
+    <div class="info-head"><span id="confirm-title">确认</span></div>
+    <div class="info-body"><div class="confirm-msg" id="confirm-msg"></div></div>
+    <div class="info-foot">
+      <button class="wf-btn ghost" id="confirm-cancel" type="button">取消</button>
+      <button class="wf-btn primary" id="confirm-ok" type="button">确认</button>
+    </div>
+  </div>
 </div>
 
 <div class="wf-toast" id="wf-toast" hidden></div>

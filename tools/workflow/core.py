@@ -24,7 +24,7 @@ from datetime import datetime
 from pathlib import Path
 
 WORKFLOW_NAME = "YisangMirrorFlow"
-VERSION = "0.0.13"
+VERSION = "0.0.14"
 
 WORKFLOW_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = WORKFLOW_DIR.parent.parent
@@ -330,6 +330,17 @@ def create_package(name, kind="mod") -> dict:
         if kind == "addon":
             # 插件包根目录自带 scr.py，开发者在此基础上写加载逻辑
             (path / "scr.py").write_text(ADDON_SCR_TEMPLATE, encoding="utf-8")
+            _write_json(path / INFO_ADDON_NAME, {
+                "name": candidate, "desc": "", "version": "0.0.1",
+                "authors": {}, "settings": {"enable": False},
+            })
+        else:
+            # 创建 Mod 包即写入初始 mod_info.json（后续“信息”里再补全）
+            _write_json(path / INFO_MOD_NAME, {
+                "name": candidate, "desc": "", "version": "0.0.1",
+                "authors": {}, "settings": {"enable": True},
+                "single_file": True, "file_names": [],
+            })
     except OSError:
         pass
     return {"ok": True, "name": candidate, "kind": kind}

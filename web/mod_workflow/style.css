@@ -663,4 +663,32 @@ input[readonly] { color: var(--text-2, #b0b7c3); }
   animation: wf-modal-pop-out .15s ease both;
 }
 
+/* 载入转圈 */
+.spinner {
+  width: 18px; height: 18px; border-radius: 50%;
+  border: 2px solid rgba(var(--tint-rgb, 255, 255, 255), .25);
+  border-top-color: var(--accent, #2586f5);
+  animation: wf-spin .8s linear infinite;
+}
+@keyframes wf-spin { to { transform: rotate(360deg); } }
+.wf-loading {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 10px; padding: 40px 12px; color: var(--text-3, #7a8496); font-size: 12.5px;
+}
+.info-loading {
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+  padding: 44px 18px; color: var(--text-3, #7a8496); font-size: 12.5px;
+}
+.info-loading[hidden] { display: none; }
+
+/* 自定义确认模态 */
+.confirm-card {
+  width: min(420px, 90vw); display: flex; flex-direction: column;
+  background: rgba(var(--panel-rgb, 37, 37, 38), .97);
+  border: 1px solid rgba(var(--tint-rgb, 255, 255, 255), .12);
+  border-radius: 14px; box-shadow: 0 26px 72px rgba(0, 0, 0, .5);
+  backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+}
+.confirm-msg { font-size: 13px; line-height: 1.8; color: var(--text-2, #b0b7c3); word-break: break-all; }
+
 

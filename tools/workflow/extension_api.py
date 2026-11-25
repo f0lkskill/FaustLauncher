@@ -190,6 +190,22 @@ class ExtensionToolsMixin:
             print(f"[Extensions] 打开图标对话框失败: {e}")
             return None
 
+    def read_image_data_uri(self, path):
+        """读取本地图片为 data URI（图标预览用，避免 file:// 破图/缓存问题）。"""
+        try:
+            import base64
+            import mimetypes
+            p = str(path or "")
+            if not p or not os.path.isfile(p):
+                return {"ok": False, "error": "图片文件不存在"}
+            mime, _ = mimetypes.guess_type(p)
+            with open(p, "rb") as f:
+                data = f.read()
+            return {"ok": True, "uri": "data:%s;base64,%s" % (
+                mime or "image/png", base64.b64encode(data).decode("ascii"))}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
     def scan_mod_files(self, folder, single_file=False):
         folder = (folder or "").strip()
         if not folder:

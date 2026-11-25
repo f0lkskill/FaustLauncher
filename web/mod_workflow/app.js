@@ -79,6 +79,29 @@
     }, 150);
   }
 
+  var confirmCb = null;
+  function openConfirm(message, onOk) {
+    confirmCb = typeof onOk === "function" ? onOk : null;
+    var msg = $("confirm-msg");
+    if (msg) msg.textContent = message || "";
+    var node = $("confirmModal");
+    if (node) { node.classList.remove("closing"); node.hidden = false; }
+  }
+
+  function closeConfirm() {
+    confirmCb = null;
+    closeModal($("confirmModal"));
+  }
+
+  function showListLoading() {
+    if (!ui.list) return;
+    ui.list.textContent = "";
+    var box = el("div", "wf-loading");
+    box.appendChild(el("div", "spinner"));
+    box.appendChild(el("div", null, "正在载入本地数据…"));
+    ui.list.appendChild(box);
+  }
+
   function fileUrl(path) {
     if (!path) return "";
     try {
@@ -245,11 +268,12 @@
           var remove = el("button", "wf-file-x", "×");
           remove.addEventListener("click", function (event) {
             event.stopPropagation();
-            if (!confirm("从包中移除 " + file.name + " ？")) return;
-            invoke("remove_file", pkg.name, file.name).then(function (result) {
-              if (!result.ok) return toast(errorText(result), true);
-              applyState(result.state);
-            }).catch(function (err) { toast(String(err), true); });
+            openConfirm("从包中移除 " + file.name + " ？", function () {
+              invoke("remove_file", pkg.name, file.name).then(function (result) {
+                if (!result.ok) return toast(errorText(result), true);
+                applyState(result.state);
+              }).catch(function (err) { toast(String(err), true); });
+            });
           });
           chip.appendChild(remove);
         }
@@ -327,12 +351,13 @@
     var del = el("button", "wf-btn ghost danger", "删除");
     del.disabled = running;
     del.addEventListener("click", function () {
-      if (!confirm("删除包 " + pkg.name + " 及其中的文件？此操作不可撤销。")) return;
-      invoke("delete_package", pkg.name).then(function (result) {
-        if (!result.ok) return toast(errorText(result), true);
-        toast("已删除: " + pkg.name);
-        applyState(result.state);
-      }).catch(function (err) { toast(String(err), true); });
+      openConfirm("删除包 " + pkg.name + " 及其中的文件？此操作不可撤销。", function () {
+        invoke("delete_package", pkg.name).then(function (result) {
+          if (!result.ok) return toast(errorText(result), true);
+          toast("已删除: " + pkg.name);
+          applyState(result.state);
+        }).catch(function (err) { toast(String(err), true); });
+      });
     });
     actions.appendChild(del);
 
@@ -454,10 +479,19 @@
   }
 
   async function openInfo(name) {
+    infoCtx = { name: name, iconPath: "" };
+    var modal = $("infoModal");
+    modal.classList.remove("closing");
+    modal.hidden = false;
+    $("info-loading").hidden = false;
+    $("info-body").hidden = true;
     try {
       var r = await invoke("get_package_info", name);
-      if (!r.ok) { toast(errorText(r), true); return; }
-      infoCtx = { name: name, iconPath: "" };
+      if (!r.ok) {
+        toast(errorText(r), true);
+        closeModal(modal);
+        return;
+      }
       $("info-title").textContent = r.kind === "addon" ? "插件包信息" : "Mod 包信息";
       $("info-name").value = (r.info && r.info.name) || "";
       $("info-desc").value = (r.info && r.info.desc) || "";
@@ -476,10 +510,12 @@
       setInfoIcon(r.icon);
       $("info-hint").textContent = (r.missing && r.missing.length)
         ? ("待补全：" + r.missing.join("、")) : "";
-      $("infoModal").classList.remove("closing");
-      $("infoModal").hidden = false;
+      $("info-loading").hidden = true;
+      $("info-body").hidden = false;
     } catch (e) {
       toast(String(e), true);
+      $("info-loading").hidden = true;
+      $("info-body").hidden = false;
     }
   }
 
@@ -671,7 +707,10 @@
         var path = await invoke("pick_icon");
         if (!path) return;
         infoCtx.iconPath = path;
-        setInfoIcon(fileUrl(path));
+        // 用后端读成 data URI 预览，避免 file:// 破图/缓存问题
+        var d = await invoke("read_image_data_uri", path);
+        if (d && d.ok && d.uri) setInfoIcon(d.uri);
+        else { setInfoIcon(""); toast((d && d.error) || "无法预览该图片", true); }
       } catch (e) { toast(String(e), true); }
     });
     $("info-add-author").addEventListener("click", openAuthorModal);
@@ -695,6 +734,17 @@
     $("log-close").addEventListener("click", closeLog);
     $("log-float-open").addEventListener("click", function (e) { e.stopPropagation(); restoreLog(); });
     $("logFloat").addEventListener("click", restoreLog);
+
+    // 自定义确认模态
+    $("confirm-ok").addEventListener("click", function () {
+      var cb = confirmCb;
+      closeConfirm();
+      if (cb) { try { cb(); } catch (e) {} }
+    });
+    $("confirm-cancel").addEventListener("click", closeConfirm);
+    $("confirmModal").addEventListener("mousedown", function (event) {
+      if (event.target === $("confirmModal")) closeConfirm();
+    });
   }
 
   function boot() {
@@ -702,6 +752,7 @@
     if (!api) return;
     bindWorkflow();
     bindModals();
+    showListLoading();
     refresh();
     setInterval(refresh, 1400);
   }
