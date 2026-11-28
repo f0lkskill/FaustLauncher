@@ -2255,7 +2255,7 @@ class AppApi:
         return index.get(str(name).strip())
 
     def _reinstall_local(self, kind, local_dir):
-        import json, shutil
+        import json
         root = 'addons' if kind == 'addon' else 'mods'
         info_name = 'addon_info.json' if kind == 'addon' else 'mod_info.json'
         local_dir = str(local_dir)
@@ -2271,13 +2271,25 @@ class AppApi:
             cloud_name = str(cloud.get('name'))
             url = cloud.get('dowload_url') or cloud.get('download_url') or cloud.get('url')
 
+            if kind == 'addon':
+                am = getattr(self.core, 'addon_manager', None)
+                if am is not None and hasattr(am, 'unload_addon'):
+                    am.unload_addon(local_dir)
+                self._release_addon_dir(local_dir)
             if kind == 'mod':
                 try:
                     from functions.extension.mod.mod_utils import ModManager
                     ModManager().unload_mod(local_dir)
                 except Exception:
                     pass
-            shutil.rmtree(local_path, ignore_errors=True)
+            if os.path.isdir(local_path):
+                errs = self._rmtree_robust(local_path)
+                if errs or os.path.isdir(local_path):
+                    first = errs[0][0] if errs else local_path
+                    return {'ok': False, 'error': f'删除旧资源失败，仍被占用: {first}'}
+            if kind == 'addon':
+                # 旧插件已卸载，先重载（下载完成后下载链路还会再重载一次）。
+                self._reload_addons_async(notify=False)
             from functions.web_update.zeroasso_download import download_and_extract_mod
             gui = HeadlessDownloadGUI(root, auto_start=False, task=cloud_name)
             ok = download_and_extract_mod(gui, root, [{
@@ -2299,7 +2311,7 @@ class AppApi:
         return {'ok': True, 'error': None}
 
     def prepare_reinstall(self, kind, local_dir):
-        import json, shutil
+        import json
         root = 'addons' if kind == 'addon' else 'mods'
         info_name = 'addon_info.json' if kind == 'addon' else 'mod_info.json'
         local_dir = str(local_dir)
@@ -2312,13 +2324,27 @@ class AppApi:
             cloud = self._cached_resource(kind, str(info.get('name') or local_dir))
             if cloud is None:
                 return {'ok': False, 'error': '缓存中没有完全匹配的云端资源'}
+            if kind == 'addon':
+                # 重装前先停插件线程、杀掉工作台等子进程，否则它们把插件目录
+                # 当工作目录，旧目录删不掉（文件删完、目录仍提示占用）。
+                am = getattr(self.core, 'addon_manager', None)
+                if am is not None and hasattr(am, 'unload_addon'):
+                    am.unload_addon(local_dir)
+                self._release_addon_dir(local_dir)
             if kind == 'mod':
                 try:
                     from functions.extension.mod.mod_utils import ModManager
                     ModManager().unload_mod(local_dir)
                 except Exception as e:
                     return {'ok': False, 'error': f'卸载旧 Mod 失败: {e}'}
-            shutil.rmtree(local_path, ignore_errors=False)
+            if os.path.isdir(local_path):
+                errs = self._rmtree_robust(local_path)
+                if errs or os.path.isdir(local_path):
+                    first = errs[0][0] if errs else local_path
+                    return {'ok': False, 'error': f'删除旧资源失败，仍被占用: {first}'}
+            if kind == 'addon':
+                # 删除即重载：让管理器忘掉旧插件，下载完成后还会再重载一次。
+                self._reload_addons_async(notify=False)
             return {'ok': True, 'error': None, 'item': cloud}
         except Exception as e:
             return {'ok': False, 'error': str(e)}
@@ -2554,8 +2580,36 @@ class AppApi:
         except Exception:
             pass
 
+    def _release_addon_dir(self, name):
+        """删除/重装插件前释放它的目录。
+
+        插件可能已经拉起自己的工作台/窗口子进程，并且这些进程把插件目录当作
+        工作目录。Windows 下这会阻止删除目录（文件删得掉、目录却一直"被占用"）。
+        这里先停独立宿主，再结束仍引用该目录的插件子进程，之后才能安全删除。
+        """
+        path = os.path.abspath(os.path.join('addons', str(name)))
+        try:
+            from functions.extension.addon import addon_host
+            addon_host.stop_host(timeout=3.0, force=True)
+        except Exception as e:
+            print(f'[Addon] 停止插件宿主失败(忽略): {type(e).__name__}: {e}')
+        try:
+            from functions.extension.addon.addon_processes import release_addon_dir
+            killed = release_addon_dir(path)
+            if killed:
+                print(f"[Addon] 已结束占用插件 {name} 的进程: "
+                      f"{', '.join(str(pid) for pid in killed)}")
+            return killed
+        except Exception as e:
+            print(f'[Addon] 清理插件 {name} 的子进程失败(忽略): {type(e).__name__}: {e}')
+            return []
+
     def delete_addon(self, name):
         try:
+            name = str(name)
+            # 先结束插件子进程，再让插件自己收尾并删除目录；否则子进程把插件
+            # 目录当工作目录时，文件能删掉但目录会一直提示被占用。
+            self._release_addon_dir(name)
             am = getattr(self.core, 'addon_manager', None)
             ok = False
             if am is not None and hasattr(am, 'remove_addon'):
@@ -2567,7 +2621,15 @@ class AppApi:
                     shutil.rmtree(path, ignore_errors=False)
                     ok = True
             if not ok:
-                return {'error': f'插件 {name} 删除失败'}
+                # 外部进程可能刚好在删除瞬间才退出：用带重试的删除再兜一次。
+                path = os.path.abspath(os.path.join('addons', str(name)))
+                if os.path.isdir(path):
+                    errs = self._rmtree_robust(path)
+                    ok = not errs and not os.path.isdir(path)
+                else:
+                    ok = True
+            if not ok:
+                return {'error': f'插件 {name} 删除失败，目录仍被占用'}
             self._reload_addons_async()
             return {'error': None}
         except Exception as e:

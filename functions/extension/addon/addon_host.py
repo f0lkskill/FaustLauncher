@@ -274,7 +274,7 @@ def stop_host(timeout: float = 8.0, force: bool = True) -> bool:
     if pid:
         try:
             subprocess.run(
-                ["taskkill", "/F", "/PID", str(pid)],
+                ["taskkill", "/F", "/T", "/PID", str(pid)],
                 capture_output=True,
                 creationflags=0x08000000,
             )

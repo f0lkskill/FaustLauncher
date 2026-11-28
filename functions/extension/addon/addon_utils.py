@@ -458,6 +458,32 @@ class AddonManager:
                 except Exception as e:
                     print(f"执行插件 {addon_name} 的禁用回调失败: {e}")
 
+    def unload_addon(self, addon_name: str) -> bool:
+        """卸载单个插件：执行它的 ``on_unload`` 并从管理器里摘掉。
+
+        与 :meth:`remove_addon` 的区别：这里**只停插件、不碰磁盘**。重装插件前
+        要先让插件的线程、共享内存、外部子进程收尾，之后才能安全删除目录。
+        """
+        name = str(addon_name or '').strip()
+        mod = self.loaded_modules.pop(name, None)
+        if mod is not None:
+            try:
+                on_unload = getattr(mod, 'on_unload', None)
+                if callable(on_unload):
+                    on_unload()
+            except Exception as e:  # noqa: BLE001 - 插件收尾失败也要继续删
+                print(f"卸载插件 {name} 时出错: {type(e).__name__}: {e}")
+
+        # 摘掉这个插件遗留的回调，避免重装后同一函数被注册两次。
+        owners = getattr(self, 'gamestart_owners', {}) or {}
+        self.gamestart_funcs[:] = [
+            f for f in self.gamestart_funcs if owners.get(id(f)) != name]
+        self.gamestart_owners = {k: v for k, v in owners.items() if v != name}
+        for bucket in (self.del_funcs, self.enabled_funcs, self.disabled_funcs):
+            bucket[:] = [x for x in bucket if x.get('name') != name]
+        self.run_funcs.pop(name, None)
+        return mod is not None
+
     def unload_all_addons(self) -> None:
         for name, mod in list(self.loaded_modules.items()):
             try:
