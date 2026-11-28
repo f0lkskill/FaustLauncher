@@ -1,3 +1,11 @@
+"""GitHub Releases 查询客户端与数据结构。
+
+直接请求 GitHub API 在国内经常不通，这里用一组 gh-proxy 加速地址并发尝试，
+取第一个成功响应的代理并记录为优先项；也可关掉代理直连。对外提供最新
+release、预发布、按 tag 查询和分页列表，并把 API JSON 转成
+:class:`ReleaseInfo` / :class:`ReleaseAsset` 供上层取下载地址。
+"""
+
 import requests
 import warnings
 from typing import Optional, List, Dict, Any
@@ -8,6 +16,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 @dataclass
 class ReleaseAsset:
+    """发布资源：文件名、大小、下载地址与所属代理管理器。"""
     name: str
     size: int
     download_url: str
@@ -17,6 +26,7 @@ class ReleaseAsset:
     
     @property
     def formatted_size(self) -> str:
+        """把字节数格式化成 ``B/KB/MB/GB/TB`` 的可读字符串。"""
         if self.size == 0:
             return "0 B"
         
@@ -30,6 +40,7 @@ class ReleaseAsset:
 
 @dataclass
 class ReleaseInfo:
+    """一次 release 的结构化信息及其资源列表。"""
     repo_owner: str
     repo_name: str
     tag_name: str
@@ -42,31 +53,38 @@ class ReleaseInfo:
     proxys: 'ProxyManager'
     
     def get_asset_by_name(self, name: str) -> Optional[ReleaseAsset]:
+        """按文件名精确查找发布资源，找不到返回 None。"""
         for asset in self.assets:
             if asset.name == name:
                 return asset
         return None
     
     def get_assets_by_extension(self, extension: str) -> List[ReleaseAsset]:
+        """返回文件名以 extension 结尾的所有发布资源。"""
         return [asset for asset in self.assets if asset.name.endswith(extension)]
     
     @property
     def source_zip_url(self) -> str:
+        """该 tag 的源码 ZIP 下载地址。"""
         return f"https://github.com/{self.repo_owner}/{self.repo_name}/archive/refs/tags/{self.tag_name}.zip"
     
     @property
     def source_tar_url(self) -> str:
+        """该 tag 的源码 tar.gz 下载地址。"""
         return f"https://github.com/{self.repo_owner}/{self.repo_name}/archive/refs/tags/{self.tag_name}.tar.gz"
 
 class ProxyManager:
     
+    """GitHub 加速代理列表与当前优先代理。"""
     def __init__(self):
+        """初始化代理列表；直接请求模式不创建代理管理器。"""
         self.proxies: List[str] = []
         self.current_index: int = 0
         self.last_successful_proxy: Optional[str] = None
         self._initialize_proxies()
     
     def _initialize_proxies(self):
+        """先放默认 gh-proxy，再尝试从 API 拉取更多可用代理。"""
         self.proxies.append("https://gh-proxy.org/")
         
         try:
@@ -75,6 +93,7 @@ class ProxyManager:
             print(f"从API获取代理列表失败，使用默认代理: {e}")
     
     def _fetch_proxies_from_api(self):
+        """从 api.akams.cn 拉取代理节点，过滤 HTTPS 并去重。"""
         api_url = "https://api.akams.cn/github"
         try:
             response = requests.get(api_url, timeout=5)
@@ -98,6 +117,7 @@ class ProxyManager:
             print(f"获取代理列表失败: {e}")
     
     def set_proxy_by_url(self, proxy_url: str):
+        """把某个代理设为当前优先项；不在列表里返回 False。"""
         if proxy_url in self.proxies:
             self.current_index = self.proxies.index(proxy_url)
             self.last_successful_proxy = proxy_url
@@ -105,13 +125,16 @@ class ProxyManager:
         return False
     
     def get_proxies(self) -> List[str]:
+        """把代理列表按当前下标轮转，优先尝试最近成功的代理。"""
         result = self.proxies[self.current_index:] + self.proxies[:self.current_index]
         
         return result
 
 class GitHubReleaseFetcher:
     
+    """GitHub Releases API 客户端，支持多代理并发回退。"""
     def __init__(self, use_proxy: bool = True, ignore_ssl: bool = False):
+        """初始化代理列表；直接请求模式不创建代理管理器。"""
         self.use_proxy = use_proxy
         self.ignore_ssl = ignore_ssl
         
@@ -133,10 +156,12 @@ class GitHubReleaseFetcher:
             warnings.filterwarnings('ignore', message='Unverified HTTPS request')
     
     def update_config(self, use_proxy: bool = True, ignore_ssl: bool = False):
+        """更新是否走代理与是否忽略 SSL 校验。"""
         self.use_proxy = use_proxy
         self.ignore_ssl = ignore_ssl
     
     def _build_api_url(self, repo_owner: str, repo_name: str, endpoint: str, proxy_url: str = "") -> str:
+        """拼出 GitHub API 地址；proxy_url 非空时前缀到 URL 前。"""
         api_url = f"{self.github_api_base}/repos/{repo_owner}/{repo_name}/{endpoint}"
         
         if proxy_url:
@@ -146,6 +171,7 @@ class GitHubReleaseFetcher:
     
     def _request_with_proxy(self, repo_owner: str, repo_name: str, endpoint: str, 
                           proxy_url: str, timeout: float = None) -> Optional[Dict[str, Any]]: # type: ignore
+        """经单个代理请求 API，返回 ``(数据, 代理地址)``；失败数据为 None。"""
         if timeout is None:
             timeout = self.request_timeout
             
@@ -164,6 +190,7 @@ class GitHubReleaseFetcher:
             return None, proxy_url # type: ignore
     
     def _make_request(self, repo_owner: str, repo_name: str, endpoint: str, **kwargs) -> Optional[Dict[str, Any]]:
+        """并发尝试所有代理直到成功；返回 JSON 数据或 None。"""
         if not self.use_proxy or not self.proxy_manager:
             api_url = self._build_api_url(repo_owner, repo_name, endpoint)
             try:
@@ -186,6 +213,7 @@ class GitHubReleaseFetcher:
         
         @contextmanager
         def auto_shutdown_pool():
+            """上下文管理器：离开时取消未完成任务并关闭线程池。"""
             yield
             try:
                 executor.shutdown(wait=False, cancel_futures=True)
@@ -225,6 +253,7 @@ class GitHubReleaseFetcher:
         print("所有代理尝试均失败")
         return None    
     def get_latest_release(self, repo_owner: str, repo_name: str) -> Optional[ReleaseInfo]:
+        """取仓库最新 release；失败返回 None。"""
         try:
             print(f"正在获取最新release: {repo_owner}/{repo_name}")
             
@@ -240,6 +269,7 @@ class GitHubReleaseFetcher:
             return None
     
     def get_latest_pre_release(self, repo_owner: str, repo_name: str) -> Optional[ReleaseInfo]:
+        """优先取第一页里的预发布版，没有则退回最新版。"""
         try:
             print(f"正在获取第 1 页release列表...")
             params = {"per_page": 30, "page": 1}
@@ -262,6 +292,7 @@ class GitHubReleaseFetcher:
             return None
     
     def get_release_by_tag(self, repo_owner: str, repo_name: str, tag_name: str) -> Optional[ReleaseInfo]:
+        """按 tag 取指定 release；失败返回 None。"""
         try:
             print(f"正在获取release: {repo_owner}/{repo_name}@{tag_name}")
             
@@ -277,6 +308,7 @@ class GitHubReleaseFetcher:
             return None
     
     def list_all_releases(self, repo_owner: str, repo_name: str, per_page: int = 30) -> List[ReleaseInfo]:
+        """分页列出全部 release；失败时返回已取到的部分。"""
         try:
             print(f"正在列出所有release: {repo_owner}/{repo_name}")
             
@@ -308,6 +340,7 @@ class GitHubReleaseFetcher:
             return []
     
     def _parse_release_data(self, repo_owner: str, repo_name: str, release_data: Dict[str, Any]) -> ReleaseInfo:
+        """把 GitHub API 的 release JSON 转成 ReleaseInfo/ReleaseAsset。"""
         assets = []
         proxys = deepcopy(self.proxy_manager)
         for asset in release_data.get('assets', []):
@@ -341,19 +374,23 @@ class GitHubReleaseFetcher:
 
 class RepoBoundGitHubReleaseFetcher(GitHubReleaseFetcher):
 
+    """绑定固定仓库的便捷封装，调用时不必每次传 owner/name。"""
     def __init__(self, repo_owner: str, repo_name: str,
                  use_proxy: bool = True,
                  proxy_url: str = "https://gh-proxy.org/",
                  ignore_ssl: bool = False):
+        """初始化代理列表；直接请求模式不创建代理管理器。"""
         super().__init__(use_proxy=use_proxy, ignore_ssl=ignore_ssl)
         self.repo_owner = repo_owner
         self.repo_name = repo_name
         self.proxy_url = proxy_url.rstrip('/')
 
     def get_latest_release(self) -> Optional[ReleaseInfo]:
+        """取仓库最新 release；失败返回 None。"""
         return super().get_latest_release(self.repo_owner, self.repo_name)
 
     def get_latest_stable_release(self) -> Optional[ReleaseInfo]:
+        """取发布时间最新的非预发布、非草稿版本。"""
         try:
             all_releases = self.list_all_releases()
 
@@ -385,12 +422,15 @@ class RepoBoundGitHubReleaseFetcher(GitHubReleaseFetcher):
             return None
 
     def get_release_by_tag(self, tag_name: str) -> Optional[ReleaseInfo]:
+        """按 tag 取指定 release；失败返回 None。"""
         return super().get_release_by_tag(self.repo_owner, self.repo_name, tag_name)
 
     def list_all_releases(self, per_page: int = 30) -> List[ReleaseInfo]:
+        """分页列出全部 release；失败时返回已取到的部分。"""
         return super().list_all_releases(self.repo_owner, self.repo_name, per_page)
 
     def get_simple_release_info(self) -> Optional[Dict[str, Any]]:
+        """把 release 压成前端易用的纯字典（含资源与源码地址）。"""
         release_info = self.get_latest_release()
         if not release_info:
             return None
@@ -424,6 +464,7 @@ class RepoBoundGitHubReleaseFetcher(GitHubReleaseFetcher):
         }
 
 def print_release_summary(release_info: ReleaseInfo) -> None:
+    """把 release 概要打印到终端。"""
     print(f"仓库: {release_info.repo_owner}/{release_info.repo_name}")
     print(f"版本: {release_info.tag_name}")
     print(f"名称: {release_info.name}")

@@ -76,6 +76,7 @@ def _request_headers(resp: Optional[requests.Response]) -> Dict[str, str]:
 
 
 def _content_size(resp: Optional[requests.Response]) -> int:
+    """从响应头读文件总字节数；缺失或格式错误返回 0。"""
     if resp is None:
         return 0
     try:
@@ -85,6 +86,7 @@ def _content_size(resp: Optional[requests.Response]) -> int:
 
 
 def _supports_ranges(resp: Optional[requests.Response]) -> bool:
+    """服务端是否声明支持字节范围请求（分块并发下载的前提）。"""
     if resp is None:
         return False
     return str(resp.headers.get("accept-ranges", "")).strip().lower() == "bytes"
@@ -129,6 +131,7 @@ def _parallel(url, part, size, headers, threads, progress, cancel) -> bool:
         return False
 
     def worker(index: int) -> None:
+        """下载第 index 个分段并写入预分配文件的对应偏移。"""
         nonlocal done
         start = index * seg
         end = size - 1 if index == threads - 1 else start + seg - 1
@@ -294,6 +297,7 @@ def download(url: str, dest: str, *, resp: Optional[requests.Response] = None,
 
 
 def __main__() -> int:  # pragma: no cover - 手工测速入口
+    """命令行手工测速入口：下载一个示例链接并打印耗时。"""
     import sys
     import time
 
