@@ -22,6 +22,8 @@ __all__ = [
 
 LAUNCHER_MODE_FLAG = "--launcher-mode"
 FILE_MODE_FLAG = "--file-mode"
+#: 已下线的设置键：仍作为标识使用（启动清理旧绑定、识别旧接口调用），
+#: 但设置页不再提供这个开关，读取一律由 settings_manager 按“未开启”返回。
 STEAM_BINDING_KEY = "steam_launch_with_launcher"
 
 

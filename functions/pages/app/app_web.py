@@ -1713,7 +1713,10 @@ class AppApi:
             return False
         if str(key) != str(STEAM_BINDING_KEY):
             return False
-        self._apply_steam_binding(bool(value))
+        # 用设置总入口的“生效值”而不是调用方传进来的值：该设置项已下线，
+        # 旧界面/老接口即使再传 True，也只会按 False 同步（即清除绑定）。
+        effective = self.core.settings_manager.get_setting(STEAM_BINDING_KEY)
+        self._apply_steam_binding(bool(effective))
         return True
 
     def set_setting(self, key, value):

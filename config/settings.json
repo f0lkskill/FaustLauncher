@@ -41,14 +41,6 @@
         "description": "翻译的下载方式。",
         "page": "通用"
     },
-    "steam_launch_with_launcher": {
-        "name": "从 Steam 启动时使用启动器",
-        "type": "boolean",
-        "default": false,
-        "value": false,
-        "description": "是否将 Steam 的高级启动项绑定到启动器。",
-        "page": "通用"
-    },
     "check_translate_update": {
         "name": "启动前检查汉化更新",
         "type": "boolean",

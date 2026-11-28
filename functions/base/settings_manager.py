@@ -1,5 +1,17 @@
 import os
 from functions.base.common.json_io import read_json, write_json
+from functions.base.launcher_mode import STEAM_BINDING_KEY
+
+#: 已下线功能对应的设置键 -> 对外强制暴露的值。
+#:
+#: 老版本的 config/settings.json（以及用户的旧部署）里可能还留着这些键，
+#: 甚至存着 true。把它们收口在这里统一处理：设置页不再渲染，任何读取方
+#: 都只能拿到“未开启”，写入请求也一律拒绝 —— 这样功能入口真正关闭，
+#: 不会因为是旧配置文件就悄悄复活。
+_RETIRED_SETTINGS = {
+    STEAM_BINDING_KEY: False,
+}
+
 
 class SettingsManager:
     def __init__(self, config_path="config/settings.json"):
@@ -69,12 +81,17 @@ class SettingsManager:
             return False
     
     def get_setting(self, key):
+        # 总入口兜底：下线的设置项无论文件里写的是什么，都按“未开启”返回。
+        if key in _RETIRED_SETTINGS:
+            return _RETIRED_SETTINGS[key]
         if key in self.settings:
             return self.settings[key].get('value', self.settings[key].get('default', ''))
         return None
     
     def set_setting(self, key, value):
-        
+        # 已下线的入口不接受写入，避免旧界面/接口把值改回 true。
+        if key in _RETIRED_SETTINGS:
+            return False
         if key in self.settings:
             setting_type = self.settings[key].get('type', 'string')
             try:
@@ -92,6 +109,8 @@ class SettingsManager:
         return False
     
     def reset_setting(self, key):
+        if key in _RETIRED_SETTINGS:
+            return False
         if key in self.settings and 'default' in self.settings[key]:
             self.settings[key]['value'] = self.settings[key]['default']
             return True
@@ -104,9 +123,13 @@ class SettingsManager:
         return True
     
     def get_all_settings(self):
-        return self.settings
+        # 设置页拿这份数据渲染；过滤掉下线项，旧配置文件也不会把它显示出来。
+        return {key: info for key, info in self.settings.items()
+                if key not in _RETIRED_SETTINGS}
     
     def get_setting_info(self, key):
+        if key in _RETIRED_SETTINGS:
+            return None
         if key in self.settings:
             return self.settings[key]
         return None

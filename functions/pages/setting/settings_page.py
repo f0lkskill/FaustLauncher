@@ -26,10 +26,14 @@ def _after_setting_change(key, value):
 
         import threading
         from functions.base import steam_binding
+        from functions.base.settings_manager import get_settings_manager
+
+        # 取设置总入口的生效值：该键已下线，旧界面即使传来 True 也按关闭处理。
+        effective = get_settings_manager().get_setting(key)
 
         def worker():
             try:
-                result = steam_binding.apply(bool(value))
+                result = steam_binding.apply(bool(effective))
                 if result.get("ok"):
                     print(f"[SteamBinding] {result.get('message') or '已同步 Steam 启动项'}")
                 else:
