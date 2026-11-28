@@ -9,6 +9,9 @@ from functions.web_update.lanzou_utils import LoginByCookie, UploadFile
 
 # 蓝奏云 LLC_lang 文件夹 id
 LLC_LANG_FOLDER_ID = 13813177
+# CI 单文件读取超时（秒）。只在这里收紧，不改共用库默认值，
+# 打包/发布工具仍沿用它们原本的 600 秒。
+CI_UPLOAD_TIMEOUT = 180
 # lz0.qaiu.top 直链解析服务 (老域名 lz.qaiu.top 已失效, 2026-09-25 起改用修复版)
 PARSER_BASE = "https://lz.qaiu.top/parser?url="
 
@@ -53,7 +56,8 @@ class LanzouUploader:
         if not self.session:
             if not self.login():
                 return {"success": False, "share_url": None, "parse_url": None, "error": "蓝奏云登录失败"}
-        result = UploadFile(self.session, file_path, folder_id=folder_id)
+        result = UploadFile(self.session, file_path, folder_id=folder_id,
+                            timeout=CI_UPLOAD_TIMEOUT)
         if result.get("status") != 1:
             return {"success": False, "share_url": None, "parse_url": None, "error": result.get("msg")}
         share_url = result.get("share_url") or ""

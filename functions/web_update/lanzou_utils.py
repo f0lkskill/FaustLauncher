@@ -31,9 +31,7 @@ MYDISK_URL = "https://pc.woozooo.com/mydisk.php"
 ACCOUNT_URL = "https://pc.woozooo.com/account.php"
 DO_LOAD_URL = "https://pc.woozooo.com/doupload.php"
 UPLOAD_URL = "https://pc.woozooo.com/html5up.php"
-# 单文件读取超时。600 秒意味着一次卡住最多要等 10 分钟才报错，
-# 两个包叠加会让定时 workflow 卡满 20 分钟并堵住整个并发组。
-UPLOAD_TIMEOUT_SECONDS = 180
+UPLOAD_TIMEOUT_SECONDS = 600
 
 ALLOW_UP_TYPES = [
     'doc', 'docx', 'zip', 'rar', 'apk', 'ipa', 'txt', 'exe', '7z', 'e', 'z', 'ct', 'ke',
@@ -1038,7 +1036,12 @@ class _ProgressReader:
     def close(self):
         self.f.close()
 
-def UploadFile(session, file_path, folder_id=-1, progress_callback=None, max_size_mb=66):
+def UploadFile(session, file_path, folder_id=-1, progress_callback=None, max_size_mb=66,
+               timeout=None):
+    """上传文件到蓝奏云。timeout 为单次读取超时（秒），None 时用模块默认值。
+
+    默认行为保持不变；定时 CI 可以传较小的值，避免网络 stall 时占住整个并发组。
+    """
     ret = {"status": 0, "msg": "", "f_id": None}
     if not os.path.isfile(file_path):
         ret["msg"] = "%s 不是一个文件" % file_path
@@ -1082,9 +1085,10 @@ def UploadFile(session, file_path, folder_id=-1, progress_callback=None, max_siz
         return ret
     try:
         files = {"upload_file": (filename, f, "application/octet-stream")}
+        read_timeout = UPLOAD_TIMEOUT_SECONDS if timeout is None else timeout
         response = session.post(UPLOAD_URL, data=data, files=files,
                                 headers=upload_headers,
-                                timeout=(UPLOAD_TIMEOUT_SECONDS, UPLOAD_TIMEOUT_SECONDS))
+                                timeout=(read_timeout, read_timeout))
     except requests.exceptions.ReadTimeout:
         ret["msg"] = "上传超时：长时间未收到服务器响应（网络过慢或文件过大，请重试；单文件上限 %d MB）" % max_size_mb
         return ret
