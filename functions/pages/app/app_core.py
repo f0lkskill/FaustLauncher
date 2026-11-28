@@ -170,7 +170,7 @@ class FaustLauncherCore:
         if feature['name'] == "📁 游戏目录":
             path = self.settings_manager.get_setting("game_path")
             if path and os.path.exists(path):
-                os.startfile(path)
+                os.startfile(path) # type: ignore
         elif feature['name'] == "🔄 零协会":
             webbrowser.open("https://zeroasso.top")
         elif feature['name'] == "📒 气泡文本":

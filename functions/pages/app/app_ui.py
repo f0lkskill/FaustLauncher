@@ -16,6 +16,7 @@ from functions.extension.addon.addon_utils import AddonManager
 from functions.extension.mod.mod_utils import ModManager
 from functions.pages.app.app_core import FaustLauncherCore
 
+# 禁用 url 警告
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 class FaustLauncherUI:

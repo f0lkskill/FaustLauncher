@@ -142,7 +142,7 @@ class GameLauncher:
         self._settings = get_settings_manager()
         self._addon_manager = addon_manager
         self._progress = progress or (lambda text, icon=None: None)
-        self._game_path: str = self._settings.get_setting('game_path') or ''
+        self._game_path: str = self._settings.get_setting('game_path') or '' # type: ignore
 
         if self._addon_manager:
             translation_source_lib.set_extend_translate_source(self._addon_manager.extend_translate_source)
