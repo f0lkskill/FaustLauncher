@@ -1,3 +1,10 @@
+"""钩子偏移索引的自动更新流程。
+
+游戏更新后 DLL 内的字段偏移会失效：这里负责读取新 metadata/dump、用
+:mod:`functions.hook.locator` 重新定位、与云端已有索引比对，并在必要时
+发布新版。扫描过程降到低优先级、等游戏空闲后再做，避免卡住游戏和 UI。
+"""
+
 
 from __future__ import annotations
 
@@ -25,6 +32,7 @@ _auto_updating = False
 
 @dataclass
 class UpdateResult:
+    """一次索引更新的结果：状态、索引、是否上传、日志与耗时。"""
     status: str = "failed"
     index: index_mod.HookIndex | None = None
     pushed: bool = False
@@ -32,6 +40,7 @@ class UpdateResult:
     elapsed: float = 0.0
 
     def summary(self) -> str:
+        """把更新结果压成一行中文摘要。"""
         head = {
             "updated": "偏移索引已更新",
             "up-to-date": "偏移索引已是最新（无需更新）",
@@ -43,10 +52,12 @@ class UpdateResult:
         return f"{head}，耗时 {self.elapsed:.1f}s" + (f"：{tail}" if tail else "")
 
 def _already_published(index: index_mod.HookIndex) -> bool:
+    """该索引是否已发布到云端。"""
     return index_mod.already_published(index)
 
 @contextlib.contextmanager
 def low_priority_process():
+    """上下文管理器：扫描期间把进程降到低于正常优先级，退出时恢复。"""
     kernel32 = None
     previous = 0
     try:
@@ -73,6 +84,7 @@ def low_priority_process():
                 pass
 
 def _cloud_same_as(index: index_mod.HookIndex, log=None) -> tuple[bool, str]:
+    """比对本地索引与云端索引的指纹/载荷，判断是否等价。"""
     try:
         cloud = index_mod.pull_cloud(on_log=log)
         if cloud is None:
@@ -91,6 +103,7 @@ def _cloud_same_as(index: index_mod.HookIndex, log=None) -> tuple[bool, str]:
         return False, ""
 
 def status(game_path: str = "") -> dict:
+    """汇总游戏文件、本地索引、指纹与发布状态，供界面展示。"""
     paths = paths_mod.game_paths(game_path)
     info = {
         "game_path": paths.root,
@@ -131,11 +144,13 @@ def update_hook_index(game_path: str = "", force: bool = False, push: bool = Tru
                       on_log=None, process_name: str = "LimbusCompany.exe",
                       focus=(), reader: ProcessMemoryReader | None = None,
                       launcher_version: str = "", low_priority: bool = False) -> UpdateResult:
+    """更新钩子偏移索引的主入口：建索引、校验、按需上传。"""
     log = on_log or (lambda _m: None)
     started = time.time()
     messages: list[str] = []
 
     def note(msg: str) -> None:
+        """取最近一次更新的说明文本。"""
         messages.append(msg)
         log(msg)
 
@@ -187,6 +202,7 @@ def _build_index(fingerprint, paths, previous, *, force: bool, push: bool, dry_r
                  low_priority: bool, note, log, messages: list[str],
                  started: float) -> UpdateResult:
 
+    """从 dump/内存读取器构建新的 HookIndex。"""
     dump_dir = paths_mod.cache_path("dump", fingerprint.short)
     meta = _reuse_decrypted(dump_dir, on_log=log)
     if meta is None:
@@ -410,6 +426,7 @@ def _build_index(fingerprint, paths, previous, *, force: bool, push: bool, dry_r
 STEAM_APP_ID = "1973530"
 
 def _iso_local(timestamp: int) -> str:
+    """把本地时间转成 ISO 字符串。"""
     if not timestamp:
         return ""
     try:
@@ -418,6 +435,7 @@ def _iso_local(timestamp: int) -> str:
         return ""
 
 def _steam_app_state(game_root: str) -> dict:
+    """读取 Steam appmanifest 里的安装状态。"""
     root = str(game_root or "").rstrip("\\/")
     if not root:
         return {}
@@ -436,6 +454,7 @@ def _steam_app_state(game_root: str) -> dict:
     return out
 
 def game_build_note(paths) -> dict:
+    """从游戏目录/版本文件推断构建说明。"""
     app = _steam_app_state(getattr(paths, "root", "") or "")
     updated_ts = 0
     try:
@@ -461,6 +480,7 @@ def game_build_note(paths) -> dict:
     }
 
 def _game_version_info(paths, pe=None, metadata_version: int = 0) -> dict:
+    """读取游戏版本信息。"""
     app = _steam_app_state(getattr(paths, "root", "") or "")
     build = game_build_note(paths)
 
@@ -475,6 +495,7 @@ def _game_version_info(paths, pe=None, metadata_version: int = 0) -> dict:
     }
 
 def _reuse_decrypted(dump_dir: str, on_log=None) -> metadata_source.MetadataResult | None:
+    """复用已解密的 metadata，避免重复恢复流程。"""
     log = on_log or (lambda _m: None)
     for name, source in (("standard-rebuilt.dat", "static"),
                          ("memory-global-metadata.dat", "memory")):
@@ -496,6 +517,7 @@ def _reuse_decrypted(dump_dir: str, on_log=None) -> metadata_source.MetadataResu
 def _locate_with_reader(effective: targets_mod.ChainTarget, process_name: str,
                         paths: paths_mod.GamePaths, reader: ProcessMemoryReader | None,
                         log) -> dict:
+    """挂上进程读取器后重新定位偏移链。"""
     own = reader is None
     owner = reader or ProcessMemoryReader(process_name)
     try:
@@ -508,6 +530,7 @@ def _locate_with_reader(effective: targets_mod.ChainTarget, process_name: str,
 
 def _merge_chain(chain: targets_mod.ChainTarget, previous: index_mod.HookIndex | None
                  ) -> targets_mod.ChainTarget:
+    """把新定位结果合并回旧索引的链。"""
     merged = deepcopy(chain)
     if previous is None:
         return merged
@@ -529,6 +552,7 @@ def _merge_chain(chain: targets_mod.ChainTarget, previous: index_mod.HookIndex |
     return merged
 
 def _replace_chain(chain: targets_mod.ChainTarget, **kwargs) -> targets_mod.ChainTarget:
+    """用新偏移替换旧链。"""
     values = {
         "key": chain.key, "description": chain.description,
         "base_offset": chain.base_offset, "offsets": chain.offsets,
@@ -542,7 +566,9 @@ def _replace_chain(chain: targets_mod.ChainTarget, **kwargs) -> targets_mod.Chai
     return targets_mod.ChainTarget(**values)
 
 def _build_symbols(symbols: dump_cs_mod.SymbolIndex) -> dict:
+    """从 dump.cs 构建符号表（字段偏移/类型）供按名字解析。"""
     def _slim(item: dict) -> dict:
+        """压缩返回给前端的索引数据。"""
         return {"rva": int(item.get("rva") or 0),
                 "va": int(item.get("va") or 0),
                 "slot": item.get("slot")}
@@ -566,6 +592,7 @@ def _build_symbols(symbols: dump_cs_mod.SymbolIndex) -> dict:
     return {"methods": methods, "fields": fields}
 
 def preload(on_log=None) -> None:
+    """启动前预载索引/符号，尽量不阻塞 UI。"""
     log = on_log or (lambda _m: None)
     try:
         from . import metadata_source as _ms  # noqa: F401
@@ -581,6 +608,7 @@ def auto_update_async(on_log=None, game_path: str = "", force: bool = False,
                       wait_for_game_idle: bool = True,
                       idle_wait_seconds: float = 900.0,
                       process_name: str = "LimbusCompany.exe") -> bool:
+    """后台自动更新索引；同一时刻只允许一个任务。"""
     global _auto_updating
     preload(on_log=on_log)
     with PUBLISHED_LOCK:
@@ -589,6 +617,7 @@ def auto_update_async(on_log=None, game_path: str = "", force: bool = False,
         _auto_updating = True
 
     def wait_until_game_idle() -> bool:
+        """等待游戏进程退出或空闲后再做内存读取。"""
         try:
             from .memory import is_process_running
         except Exception:  # noqa: BLE001
@@ -611,6 +640,7 @@ def auto_update_async(on_log=None, game_path: str = "", force: bool = False,
         return False
 
     def worker() -> None:
+        """后台线程体：执行完整更新流程并记录结果。"""
         global _auto_updating
         try:
             if not force:
@@ -645,4 +675,5 @@ def auto_update_async(on_log=None, game_path: str = "", force: bool = False,
     return True
 
 def is_auto_updating() -> bool:
+    """当前是否正在自动更新。"""
     return _auto_updating

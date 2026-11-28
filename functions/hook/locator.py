@@ -1,3 +1,11 @@
+"""IL2CPP 对象槽位定位器。
+
+优先复用已知基址（:func:`validate_chain`），失效后按类名重定位，再不行才做
+结构性扫描（扫模块可写数据节里指向 Il2Class 的指针）。:class:`Candidate` 记录
+每个候选的 RVA/类名/取值；:func:`attribute_chain` 可把偏移链翻译成字段引用，
+供游戏更新后按名字重新解析偏移。
+"""
+
 
 from __future__ import annotations
 
@@ -19,6 +27,7 @@ _MAX_CANDIDATES = 200
 @dataclass
 class Candidate:
 
+    """一个候选槽位：RVA/地址、类名/命名空间、取值与链路类名。"""
     mode: str
     slot_rva: int
     slot_address: int
@@ -29,6 +38,7 @@ class Candidate:
     note: str = ""
 
     def as_dict(self) -> dict:
+        """把候选转成可 JSON 序列化的字典。"""
         return {
             "mode": self.mode,
             "slot_rva": self.slot_rva,
@@ -42,7 +52,9 @@ class Candidate:
 
 class _Ranges:
 
+    """用二分查找判断地址是否落在一组 [start,end) 区间内。"""
     def __init__(self, ranges) -> None:
+        """初始化区间表或扫描上下文。"""
         self._starts: list[int] = []
         self._ends: list[int] = []
         for start, size in sorted(ranges):
@@ -50,13 +62,16 @@ class _Ranges:
             self._ends.append(start + size)
 
     def __contains__(self, value: int) -> bool:
+        """地址是否落在任一区间内。"""
         index = bisect_right(self._starts, value) - 1
         return index >= 0 and value < self._ends[index]
 
     def __bool__(self) -> bool:
+        """区间表是否非空。"""
         return bool(self._starts)
 
 def _is_plausible_name(text: str) -> bool:
+    """粗筛类名/命名空间字符串，过滤乱码。"""
     if not text or len(text) > _MAX_NAME_LEN - 1:
         return False
     if not (text[0].isalpha() or text[0] in "_<"):
@@ -64,6 +79,7 @@ def _is_plausible_name(text: str) -> bool:
     return all(ch.isalnum() or ch in "_.<>`$@+=-" for ch in text)
 
 def read_class_name(reader: ProcessMemoryReader, class_ptr: int) -> tuple[str, str]:
+    """从 Il2Class* 的 name/namespace 字段读类名与命名空间。"""
     name_ptr = reader.read_u64(class_ptr + IL2CPP_CLASS_NAME)
     name = reader.read_cstring(name_ptr, _MAX_NAME_LEN) if name_ptr else ""
     ns_ptr = reader.read_u64(class_ptr + IL2CPP_CLASS_NAMESPACE)
@@ -71,6 +87,7 @@ def read_class_name(reader: ProcessMemoryReader, class_ptr: int) -> tuple[str, s
     return (name if _is_plausible_name(name) else ""), (ns if _is_plausible_name(ns) else "")
 
 def read_object_class(reader: ProcessMemoryReader, object_ptr: int) -> tuple[str, str]:
+    """从 Il2Object* 读它所属的类名与命名空间。"""
     klass = reader.read_u64(object_ptr + IL2CPP_OBJECT_KLASS)
     if not klass:
         return "", ""
@@ -78,6 +95,7 @@ def read_object_class(reader: ProcessMemoryReader, object_ptr: int) -> tuple[str
 
 def walk_chain(reader: ProcessMemoryReader, start_address: int, offsets,
                value_type: str = "int32") -> tuple[int | float | None, list[int], list[str]]:
+    """按偏移链逐跳读指针并记录中间类名，最后按类型取值。"""
     address = int(start_address)
     pointers: list[int] = []
     classes: list[str] = []
@@ -93,6 +111,7 @@ def walk_chain(reader: ProcessMemoryReader, start_address: int, offsets,
 
 def module_data_ranges(reader: ProcessMemoryReader, module_name: str = "GameAssembly.dll",
                        local_path: str = "", on_log=None):
+    """取模块可写数据节范围；本地 PE 可用时按节表缩小扫描面。"""
     log = on_log or (lambda _m: None)
     module = reader.module(module_name)
     if module is None:
@@ -114,11 +133,13 @@ def module_data_ranges(reader: ProcessMemoryReader, module_name: str = "GameAsse
     return [(module.base, module.size)]
 
 def _in_range(module, low: int, high: int) -> bool:
+    """模块基址是否落在 [low, high) 内。"""
     return low <= module.base < module.base + module.size
 
 @dataclass
 class ScanContext:
 
+    """一次定位扫描的上下文：模块范围、可写数据节、可读内存区间。"""
     module_base: int
     module_size: int
     ranges: list[tuple[int, int]]
@@ -126,13 +147,16 @@ class ScanContext:
 
     @property
     def module_end(self) -> int:
+        """模块末地址（base+size）。"""
         return self.module_base + self.module_size
 
     def in_module(self, address: int) -> bool:
+        """地址是否落在该模块内。"""
         return self.module_base <= address < self.module_end
 
 def build_context(reader: ProcessMemoryReader, module_name: str = "GameAssembly.dll",
                   local_path: str = "", on_log=None) -> "ScanContext | None":
+    """准备一次扫描：模块、可写节、可读内存区间。"""
     log = on_log or (lambda _m: None)
     module = reader.module(module_name)
     if module is None:
@@ -145,6 +169,7 @@ def build_context(reader: ProcessMemoryReader, module_name: str = "GameAssembly.
     return ScanContext(module.base, module.size, ranges, roots)
 
 def _value_ok(value, value_range) -> bool:
+    """值是否非空且落在目标允许区间内。"""
     if value is None:
         return False
     low, high = value_range or (None, None)
@@ -158,6 +183,7 @@ def discover_candidates(reader: ProcessMemoryReader, target: ChainTarget,
                         module_name: str = "", local_path: str = "",
                         on_log=None, limit: int = _MAX_CANDIDATES,
                         context: "ScanContext | None" = None) -> list[Candidate]:
+    """结构性扫描：按类指针/类名/值域筛出候选槽位。"""
     log = on_log or (lambda _m: None)
     context = context or build_context(reader, module_name or target.module, local_path, log)
     if context is None:
@@ -202,6 +228,7 @@ def find_class_slot(reader: ProcessMemoryReader, class_name: str,
                     value_type: str = "int32",
                     value_range: tuple[int | None, int | None] = (None, None),
                     on_log=None, context: "ScanContext | None" = None) -> list[Candidate]:
+    """按指定类名扫描槽位，可附带偏移链与值域校验。"""
     log = on_log or (lambda _m: None)
     context = context or build_context(reader, module_name, local_path, log)
     if context is None:
@@ -237,6 +264,7 @@ def find_class_slot(reader: ProcessMemoryReader, class_name: str,
 
 def validate_chain(reader: ProcessMemoryReader, base_offset: int, target: ChainTarget,
                    module_name: str = "") -> dict:
+    """用已知基址走一遍偏移链，校验旧偏移是否仍有效。"""
     module = reader.module(module_name or target.module)
     if module is None:
         return {"ok": False, "reason": f"模块 {module_name or target.module} 未加载"}
@@ -254,6 +282,7 @@ def validate_chain(reader: ProcessMemoryReader, base_offset: int, target: ChainT
 
 def locate(reader: ProcessMemoryReader, target: ChainTarget, on_log=None,
            local_path: str = "", context: ScanContext | None = None) -> dict:
+    """定位入口：旧偏移→类名重定位→结构性发现，逐级回退。"""
     log = on_log or (lambda _m: None)
     offsets = tuple(target.offsets)
     floor, high = (target.value_range or (None, None))
@@ -298,7 +327,9 @@ def locate(reader: ProcessMemoryReader, target: ChainTarget, on_log=None,
             "reason": "结构性发现没有候选（游戏没进主界面 / 链已失效，需要 CE 复查）"}
 
 def _pick_candidate(candidates: list[Candidate]) -> Candidate:
+    """从候选中挑最可信的一个（有命名空间/有效值/链完整优先）。"""
     def score(item: Candidate) -> tuple:
+        """候选打分函数：命名空间、值、链路长度、RVA。"""
         return (
             1 if item.namespace else 0,
             1 if item.value else 0,
@@ -309,6 +340,7 @@ def _pick_candidate(candidates: list[Candidate]) -> Candidate:
 
 def attribute_chain(symbols, target: ChainTarget, root_class: str, root_kind: str = "class",
                     on_log=None) -> dict:
+    """用 dump 的字段偏移把偏移链翻译成 类::字段 引用。"""
     log = on_log or (lambda _m: None)
     offsets = list(target.offsets)
     field_offsets = offsets[1:] if root_kind == "class" else offsets
@@ -339,6 +371,7 @@ def attribute_chain(symbols, target: ChainTarget, root_class: str, root_kind: st
             "complete": complete, "detail": "完整" if complete else missing}
 
 def resolve_offsets_from_refs(symbols, target: ChainTarget, on_log=None) -> tuple[int, ...] | None:
+    """按字段引用在新 dump 里解析出新的偏移链。"""
     log = on_log or (lambda _m: None)
     if not target.field_refs:
         return None
