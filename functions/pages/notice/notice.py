@@ -57,6 +57,9 @@ class AppNoticeManager:
             base_id, get_webnote(base_id)[0])
         self.notice_data: list[dict] = []
         self.last_load_error = ""
+        # 最近一次内容是否确实来自云端（而不是断网时的本地缓存）。只有在
+        # 云端内容有效时才允许清理本地已读 ID，见 _prune_read_ids。
+        self._cloud_fresh = False
 
         self.load_data()
 
@@ -93,6 +96,7 @@ class AppNoticeManager:
             allow_refresh: 是否跳过本地短期缓存并重新请求云端。
         """
         self.last_load_error = ""
+        self._cloud_fresh = False
         try:
             self.notice_note.fetch_note_info(bool(allow_refresh))
             content = str(self.notice_note.note_content or "").lstrip("\ufeff")
@@ -102,6 +106,9 @@ class AppNoticeManager:
                 return
             parsed = json.loads(content)
             self.notice_data = self._normalize(parsed)
+            # 缓存兜底拿到的旧列表不代表“云端现在有什么”，不能据此清理。
+            self._cloud_fresh = not getattr(self.notice_note, "used_cache", False)
+            self._prune_read_ids()
         except (OSError, TypeError, ValueError, json.JSONDecodeError) as exc:
             self.notice_data = []
             self.last_load_error = f"{type(exc).__name__}: {exc}"
@@ -110,6 +117,27 @@ class AppNoticeManager:
             self.notice_data = []
             self.last_load_error = f"{type(exc).__name__}: {exc}"
             print(f"[Notice] 公告数据读取失败: {self.last_load_error}")
+
+    def _prune_read_ids(self) -> None:
+        """删除本地已读记录里云端已经不存在的历史公告 ID。
+
+        只在云端内容**成功解析且不是本地缓存兜底**时调用：网络失败或 JSON
+        损坏时绝不能清理，否则一次断网就会把用户积攒的已读状态抹掉。
+        云端列表为空（公告全部撤下）属于有效结果，此时会清空已读记录。
+        """
+        if not self._cloud_fresh:
+            return
+        cloud_ids = {item["id"] for item in self.notice_data}
+        try:
+            with _READ_LOCK:
+                read_ids = _load_read_ids()
+                stale = read_ids - cloud_ids
+                if not stale:
+                    return
+                _save_read_ids(read_ids & cloud_ids)
+            print(f"[Notice] 清理 {len(stale)} 个云端已不存在的已读公告 ID")
+        except Exception as exc:  # noqa: BLE001 - 清理失败不应影响公告展示
+            print(f"[Notice] 清理已读记录失败: {type(exc).__name__}: {exc}")
 
     def get_notices(self) -> list[dict]:
         """返回供前端渲染的公告列表，保留服务端顺序。"""

@@ -447,6 +447,9 @@ class Note:
         self.has_get = False
         self.last_fetch_error = ""
         self.empty_note = False
+        #: 本次内容是否来自本地缓存（云端没拿到）。调用方据此决定能不能拿
+        #: 这份内容去做“云端已不存在”的清理，避免断网时误删本地记录。
+        self.used_cache = False
 
     def _candidate_keys(self):
         keys = []
@@ -495,6 +498,7 @@ class Note:
 
         self.last_fetch_error = ""
         self.empty_note = False
+        self.used_cache = False
 
         text, source, used, err = _fetch_note(keys)
         if text:
@@ -516,6 +520,7 @@ class Note:
                   f"({_fmt_age(best[2])}前, 可能过期) | 原因: {err}")
             self.note_content = best[0]
             self.has_get = True
+            self.used_cache = True
             memo_put(best[1], best[0])
             return {"note_content": self.note_content, "note_id": self.note_name}
 
