@@ -1,3 +1,10 @@
+"""汉化来源与本地汉化包路径的集中解析。
+
+内置来源有三种（零协会 / OurPlay 普通 / OurPlay 神人），插件还能通过
+``set_extend_translate_source`` 注册额外来源；所有“用哪个目录、要不要更新”
+的判断都走这里，避免下载链路和游戏启动链路各自猜路径。
+"""
+
 import os
 
 from functions.base.settings_manager import get_settings_manager
@@ -27,14 +34,18 @@ PLATFORM_TAG_BY_SOURCE = {
 extend_translate_source:list[CustomTranslateSource] = []
 
 class CustomTranslateSource:
+    """插件注册的自定义汉化源：来源路径 + 显示名。"""
     def __init__(self, source: str, name: str):
+        """保存来源地址与显示名。"""
         self.source = source
         self.name = name
 
     def __str__(self):
+        """自定义源的文本表示。"""
         return self.name, self.source
 
 def get_translate_source() -> int:
+    """从设置读取汉化来源编号，非法值回退到零协会。"""
     try:
         value = get_settings_manager().get_setting("translate_source")
         value = int(value) # type: ignore
@@ -45,6 +56,7 @@ def get_translate_source() -> int:
         return SOURCE_ZERO
 
 def set_extend_translate_source(sources=None) -> list:
+    """原地更新插件注册的额外汉化源列表，返回该列表。"""
     try:
         extend_translate_source[:] = list(sources or [])
     except Exception:
@@ -52,6 +64,7 @@ def set_extend_translate_source(sources=None) -> list:
     return extend_translate_source
 
 def get_translate_source_name() -> str:
+    """优先用插件自定义源的名字，否则用内置来源名。"""
     for source in extend_translate_source:
         name = str(getattr(source, "name", "") or "").strip()
         if name:
@@ -59,12 +72,14 @@ def get_translate_source_name() -> str:
     return SOURCE_NAMES.get(get_translate_source(), "未知")
 
 def get_translation_dir_name() -> str:
+    """当前汉化包目录名：自定义源取路径末段，否则用内置约定。"""
     if len(extend_translate_source) == 0:
         return DIR_NAME_BY_SOURCE[get_translate_source()]
     else:
         return extend_translate_source[-1].source.split("/")[-1]
 
 def get_translation_dir() -> str:
+    """当前汉化包所在的本地目录。"""
     if len(extend_translate_source) == 0:
         dir_source = os.path.join("lang", get_translation_dir_name())
     else:
@@ -72,24 +87,30 @@ def get_translation_dir() -> str:
     return dir_source
 
 def get_builtin_dir_name() -> str:
+    """内置来源对应的目录名（忽略插件自定义源）。"""
     return DIR_NAME_BY_SOURCE[get_translate_source()]
 
 def get_builtin_translation_dir() -> str:
+    """内置来源对应的本地目录。"""
     return os.path.join("lang", get_builtin_dir_name())
 
 def get_game_lang_dir(game_path: str) -> str:
+    """游戏目录下汉化资源应投放的 Lang 子目录。"""
     if len(extend_translate_source) == 0:
         return os.path.join(game_path, "LimbusCompany_Data", "Lang", get_translation_dir_name())
     else:
         return os.path.join(game_path, "LimbusCompany_Data", "Lang", extend_translate_source[-1].source.split("/")[-1])
 
 def is_ourplay_source() -> bool:
+    """当前是否为 OurPlay 来源（普通版或神人版）。"""
     return get_translate_source() in (SOURCE_OURPLAY, SOURCE_OURPLAY_GOD)
 
 def is_god_source() -> bool:
+    """当前是否为 OurPlay 神人版。"""
     return get_translate_source() == SOURCE_OURPLAY_GOD
 
 def get_local_version() -> str:
+    """读内置汉化包 info/version.json 的 version，失败返回空串。"""
     version_path = os.path.join(get_builtin_translation_dir(), "info", "version.json")
     try:
         from json import load
@@ -99,6 +120,7 @@ def get_local_version() -> str:
         return ""
 
 def get_local_platform() -> str:
+    """读内置汉化包 info/version.json 的 platform，失败返回空串。"""
     version_path = os.path.join(get_builtin_translation_dir(), "info", "version.json")
     try:
         from json import load
@@ -108,6 +130,7 @@ def get_local_platform() -> str:
         return ""
 
 def check_need_up_translate(version_info: str = "") -> bool:
+    """比对本地版本/平台标记与云端版本，判断是否需要更新汉化包。"""
     local_dir = get_builtin_translation_dir()
     if not os.path.isdir(local_dir):
         print(f"[Locale] 本地没有内置汉化包目录 {local_dir}, 需要下载")

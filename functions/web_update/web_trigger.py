@@ -1,3 +1,10 @@
+"""云端资源目录（addon_info / mod_info）的读取、分页与下载计数维护。
+
+笔记第 0 页是头部（total_page、tags_style 等），后续每页是资源列表；
+:class:`WebTrigger` 提供分页读取、全量拉取、按下载次数重排并写回，以及
+把下载事件上报给用户系统。
+"""
+
 from functions.webFunc import Note
 from functions.base.web_config import get_webnote
 from functions.base.common.cloud_tags import normalize_tags_style
@@ -5,31 +12,39 @@ from json import loads, dumps
 
 class WebTrigger:
     
+    """云端资源目录与下载次数上报的封装，读写 addon_info/mod_info 两份笔记。"""
     def __init__(self):
+        """按 web_config 里的地址创建两份云端笔记客户端。"""
         self.addon_info = Note("addon_info", get_webnote('addon_info')[0])
         self.mod_info = Note("mod_info", get_webnote('mod_info')[0])
 
     def _get_note_info(self, note:Note, allow_refresh=False):
         # 获取并载入笔记信息
+        """读取并解析一份笔记 JSON；内容为空时返回空字典。"""
         note.fetch_note_info(allow_refresh)
         if not note.note_content.strip():
             return {}
         return loads(note.note_content)
 
     def get_note_info_mod(self, allow_refresh=False):
+        """取 Mod 目录的原始笔记数据。"""
         return self._get_note_info(self.mod_info, allow_refresh)
     
     def get_note_info_addon(self, allow_refresh=False):
+        """取插件目录的原始笔记数据。"""
         return self._get_note_info(self.addon_info, allow_refresh)
 
     def get_addon_info(self, page: int = 0, allow_refresh=False):
+        """取插件目录的指定分页（第 0 页是头部）。"""
         return self._get_note_info(self.addon_info, allow_refresh)[page]
 
     def get_mod_info(self, page: int = 0, allow_refresh=False):
+        """取 Mod 目录的指定分页（第 0 页是头部）。"""
         return self._get_note_info(self.mod_info, allow_refresh)[page]
     
     def _fetch_all(self, get_page, allow_refresh=False) -> list[dict]:
         
+        """按头部 total_page 把全部分页取回来。"""
         total_page = get_page(0, allow_refresh=allow_refresh)['total_page']
         info_list = []
         for page in range(1, total_page + 1):
@@ -37,9 +52,11 @@ class WebTrigger:
         return info_list
     
     def fetch_all_addon_info(self, allow_refresh=False) -> list[dict]:
+        """取插件目录全部分页。"""
         return self._fetch_all(self.get_addon_info, allow_refresh)
     
     def fetch_all_mod_info(self, allow_refresh=False) -> list[dict]:
+        """取 Mod 目录全部分页。"""
         return self._fetch_all(self.get_mod_info, allow_refresh)
 
     def _fetch_catalog(self, get_catalog, allow_refresh=False) -> dict:
@@ -54,19 +71,24 @@ class WebTrigger:
         return {'pages': pages, 'header': header}
 
     def fetch_addon_catalog(self, allow_refresh=False) -> dict:
+        """取插件目录的结构化数据 ``{'pages': [...], 'header': {...}}``。"""
         return self._fetch_catalog(self.get_note_info_addon, allow_refresh)
 
     def fetch_mod_catalog(self, allow_refresh=False) -> dict:
+        """取 Mod 目录的结构化数据 ``{'pages': [...], 'header': {...}}``。"""
         return self._fetch_catalog(self.get_note_info_mod, allow_refresh)
     
     def add_download_number_addon(self, addon_name: str):
+        """上报一次插件下载计数。"""
         self._report_download(addon_name, "addon")
 
     def add_download_number_mod(self, mod_name: str):
+        """上报一次 Mod 下载计数。"""
         self._report_download(mod_name, "mod")
 
     @staticmethod
     def _report_download(name: str, kind: str) -> dict:
+        """调用 user_api.report_download 上报下载次数，失败只打印。"""
         clean = str(name or "").strip()
         if not clean:
             return {"ok": False, "error": "名字为空"}
@@ -89,6 +111,7 @@ class WebTrigger:
         return result
 
     def sort_addon_info_by_download_number(self):
+        """按 新发布/禁用/下载数 重排插件目录并写回云端。"""
         try:
             pages = self.get_note_info_addon()
             for page in pages[1:]:
@@ -106,6 +129,7 @@ class WebTrigger:
             print(f"排序插件信息时出错: {e}")
 
     def sort_mod_info_by_download_number(self):
+        """按同样规则重排 Mod 目录，重新分 5 条一页并更新头部统计。"""
         try:
             pages = self.get_note_info_mod()
             old_header = dict(pages[0]) if pages and isinstance(pages[0], dict) else {}
@@ -138,6 +162,7 @@ class WebTrigger:
             print(f"排序Mod信息时出错: {e}")
     
     def sort_info_by_download_number(self, mode: str = "all"):
+        """按 mode(all/addon/mod) 执行排序，非法模式抛 ValueError。"""
         if mode == "all":
             self.sort_addon_info_by_download_number()
             self.sort_mod_info_by_download_number()

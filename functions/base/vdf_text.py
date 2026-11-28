@@ -52,6 +52,7 @@ class VdfTextError(ValueError):
 # --------------------------------------------------------------------------- #
 @dataclass
 class Token:
+    """词法单元：字符串或花括号，记录原文区间以便原位改写。"""
     kind: str                 # 'string' | 'open' | 'close'
     start: int                # 含引号的起点
     end: int                  # 含引号的终点（开区间）
@@ -107,6 +108,7 @@ def tokenize(text: str) -> list[Token]:
 # --------------------------------------------------------------------------- #
 @dataclass
 class Node:
+    """语法节点：键、值/子块及其在原文中的位置。"""
     key: str
     key_start: int
     key_end: int
@@ -119,6 +121,7 @@ class Node:
 
     @property
     def is_block(self) -> bool:
+        """该节点是否包含子块。"""
         return self.block is not None
 
 
@@ -186,10 +189,12 @@ def find_path(nodes: Sequence[Node], path: Sequence[str]) -> Node | None:
 
 
 def has_path(text: str, path: Sequence[str]) -> bool:
+    """VDF 文本里是否存在给定的键路径。"""
     return find_path(parse(text), path) is not None
 
 
 def get_string(text: str, path: Sequence[str], default: str | None = None) -> str | None:
+    """取路径上的字符串值；路径不存在或指向块时返回默认值。"""
     node = find_path(parse(text), path)
     if node is None or node.block is not None:
         return default
@@ -200,15 +205,18 @@ def get_string(text: str, path: Sequence[str], default: str | None = None) -> st
 # 排版辅助
 # --------------------------------------------------------------------------- #
 def detect_newline(text: str) -> str:
+    """取样开头判断文件用 CRLF 还是 LF。"""
     head = text[:8192]
     return "\r\n" if "\r\n" in head else "\n"
 
 
 def escape(value: str) -> str:
+    """转义字符串值里的反斜杠和双引号。"""
     return str(value).replace("\\", "\\\\").replace('"', '\\"')
 
 
 def _line_start(text: str, pos: int) -> int:
+    """返回 pos 所在行的行首下标。"""
     i = pos
     while i > 0 and text[i - 1] not in "\r\n":
         i -= 1
@@ -216,6 +224,7 @@ def _line_start(text: str, pos: int) -> int:
 
 
 def _line_indent(text: str, pos: int) -> str:
+    """返回 pos 所在行开头的空白字符。"""
     i = _line_start(text, pos)
     j = i
     while j < len(text) and text[j] in " \t":
@@ -224,6 +233,7 @@ def _line_indent(text: str, pos: int) -> str:
 
 
 def _child_indent(text: str, node: Node) -> str:
+    """推断某个块内部子键应使用的缩进。"""
     if node.block:
         return _line_indent(text, node.block[0].key_start)
     return _line_indent(text, node.block_span[0]) + TAB
@@ -303,6 +313,7 @@ def set_string(text: str, path: Sequence[str], value) -> tuple[str, bool]:
 
 def _create_chain(text: str, roots: Sequence[Node], parent_path: Sequence[str],
                   leaf_key: str, value: str) -> str:
+    """沿已有前缀补齐缺失的父块和叶子键，返回新文本。"""
     depth = 0
     for k in range(len(parent_path), 0, -1):
         if find_path(roots, parent_path[:k]) is not None:
