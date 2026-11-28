@@ -3,6 +3,7 @@ import base64
 import json
 import os
 import sys
+import tempfile
 import threading
 import time
 from io import BytesIO
@@ -2359,43 +2360,92 @@ class AppApi:
         threading.Thread(target=_run, daemon=True).start()
         return {'ok': True, 'error': None}
 
-    def _install_from_archive(self, archive, kind):
-        import tempfile, shutil
-        tmp = tempfile.mkdtemp(prefix='faust_inst_')
-        try:
-            if archive.lower().endswith('.zip'):
+    @staticmethod
+    def _archive_stage_name(archive):
+        """压缩包文件名（去掉扩展名）→ 可安全用作暂存目录名的片段。
+
+        解压目录直接沿用压缩包名，而不是 ``faust_inst_*`` 随机串；这里只做
+        最基本的非法字符替换，真正的插件目录名仍以清单里的 ``name`` 为准。
+        """
+        stem = os.path.splitext(os.path.basename(str(archive or '')))[0]
+        cleaned = ''.join(
+            '_' if ch in '<>:"/\\|?*' or ord(ch) < 32 else ch for ch in stem
+        ).strip().rstrip('.')
+        return cleaned or 'faust_inst'
+
+    @staticmethod
+    def _extract_archive(archive, dest):
+        """把 zip/7z 解压到 ``dest``，返回错误说明（成功时为空串）。"""
+        lower = str(archive or '').lower()
+        if lower.endswith('.zip'):
+            try:
                 import zipfile
                 with zipfile.ZipFile(archive) as zf:
-                    zf.extractall(tmp)
-            elif archive.lower().endswith('.7z'):
-                from functions.web_update.zeroasso_download import extract_with_7zip
-                if not extract_with_7zip(archive, tmp):
-                    return {'ok': False, 'error': '7z 解压失败'}
-            else:
-                return {'ok': False, 'error': '仅支持 zip/7z 压缩包'}
-            info_name = 'addon_info.json' if kind == 'addon' else 'mod_info.json'
-            target = None
-            for root, dirs, files in os.walk(tmp):
-                if info_name in files:
-                    target = root
-                    break
-            if not target:
+                    zf.extractall(dest)
+                return ''
+            except Exception as e:
+                return f'zip 解压失败: {e}'
+        if lower.endswith('.7z'):
+            from functions.web_update.zeroasso_download import extract_with_7zip
+            return '' if extract_with_7zip(archive, dest) else '7z 解压失败'
+        return '仅支持 zip/7z 压缩包'
+
+    @staticmethod
+    def _find_manifest_dir(base, manifest):
+        """找包含 ``manifest`` 的最浅目录，没有则返回 ``None``。
+
+        压缩包可能把插件放在根目录，也可能多套一层包装目录；取最浅的一层
+        可以避免把嵌套的依赖/备份目录误当成插件本体。
+        """
+        found, found_depth = None, None
+        for root, _dirs, files in os.walk(base):
+            if manifest not in files:
+                continue
+            depth = 0 if root == base else os.path.relpath(root, base).count(os.sep) + 1
+            if found is None or depth < found_depth:
+                found, found_depth = root, depth
+        return found
+
+    def _install_from_archive(self, archive, kind):
+        """从本地 zip/7z 安装插件或 Mod。
+
+        临时解压目录使用压缩包名，不再让 ``faust_inst_*`` 随机名变成插件
+        目录。插件安装前先校验格式（``addon_info.json`` 可解析、``name``
+        能当目录名、``scr.py`` 存在）：不合格只清理临时目录，不落盘、不
+        重载；合格后按清单里的 ``name`` 安装。
+        """
+        import shutil
+        info_name = 'addon_info.json' if kind == 'addon' else 'mod_info.json'
+        with tempfile.TemporaryDirectory(prefix='faust_inst_') as staging:
+            extract_dir = os.path.join(staging, self._archive_stage_name(archive))
+            os.makedirs(extract_dir, exist_ok=True)
+            error = self._extract_archive(archive, extract_dir)
+            if error:
+                return {'ok': False, 'error': error}
+            target = self._find_manifest_dir(extract_dir, info_name)
+            if target is None:
                 return {'ok': False, 'error': f'压缩包中未找到 {info_name}'}
+
             if kind == 'addon':
-                from functions.extension.addon.addon_utils import AddonManager
-                ok = AddonManager().add_addon(target)
-            else:
-                import shutil as _sh
-                name = os.path.basename(target) or 'mod'
-                dest = os.path.join('mods', name)
-                if os.path.exists(dest):
-                    _sh.rmtree(dest, ignore_errors=True)
-                os.makedirs(os.path.dirname(dest), exist_ok=True)
-                _sh.copytree(target, dest)
-                ok = True
-            return {'ok': bool(ok), 'error': None}
-        finally:
-            shutil.rmtree(tmp, ignore_errors=True)
+                from functions.extension.addon.addon_utils import (
+                    AddonManager, validate_addon_dir)
+                name, error = validate_addon_dir(target)
+                if error:
+                    return {'ok': False, 'error': f'插件格式不合格: {error}'}
+                # 优先复用启动器正在用的管理器：新建实例会把
+                # current_manager() 指向一个立刻被丢弃的对象。
+                manager = getattr(self.core, 'addon_manager', None) or AddonManager()
+                if not manager.add_addon(target, name):
+                    return {'ok': False, 'error': f'插件 {name} 已安装或复制失败'}
+                return {'ok': True, 'error': None, 'name': name}
+
+            name = os.path.basename(target) or 'mod'
+            dest = os.path.join('mods', name)
+            if os.path.exists(dest):
+                shutil.rmtree(dest, ignore_errors=True)
+            os.makedirs(os.path.dirname(dest), exist_ok=True)
+            shutil.copytree(target, dest)
+            return {'ok': True, 'error': None}
 
     def install_addon_dialog(self):
         try:
