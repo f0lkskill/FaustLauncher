@@ -1,3 +1,17 @@
+"""蓝奏云分享链接的直链解析、缓存与限流。
+
+解析流程：``IsLanzouUrl`` 识别链接（也接受 ``lz.qaiu.top/parser?url=...``
+这种包装链接）→ ``ParseShareUrl`` 取出内层分享地址 → ``GetDirectLink`` 抓
+分享页/iframe、处理 WAF 挑战、POST downprocess 接口、跟随跳转拿到真实文件
+直链。新版分享页用 ``ajaxfiles.php``，旧版用 ``ajaxm/ajaxfile.php``，
+``_ParseSharePage`` 同时兼容。
+
+直链带时效，缓存分两层：``_direct_cache``（进程内，按分享链接+提取码）和
+``cache/lanzou_links.json``（跨进程，按原始 URL）。请求之间有限流冷却，
+限流期间不再打蓝奏接口；失败时 ``ResolveDownloadUrl`` 会原样返回入参，由
+调用方决定何时放弃，而不是把同一个链接反复当“直链”重试。
+"""
+
 import os
 import re
 import json
@@ -43,6 +57,14 @@ ALLOW_UP_TYPES = [
 ]
 
 def IsLanzouUrl(url):
+    """判断一个链接是否指向蓝奏云（包括解析器包装链接）。
+
+    Args:
+        url: 原始链接或 ``.../parser?url=<蓝奏链接>``。
+
+    Returns:
+        bool: 内层链接的主机名匹配 ``lanzou*`` 域名时为 True。
+    """
     if not url:
         return False
     inner, _ = ParseShareUrl(url)
@@ -52,6 +74,15 @@ def IsLanzouUrl(url):
         return False
 
 def ParseShareUrl(url, pwd=None):
+    """从解析器包装链接里取出真正的分享地址与提取码。
+
+    Args:
+        url: 包装链接或已是裸分享链接。
+        pwd: 显式提取码；给了就不再从 URL 的 pwd/p/password 参数里猜。
+
+    Returns:
+        tuple[str, str|None]: ``(内层分享链接, 提取码)``。
+    """
     if not url:
         return url, pwd
     match = re.search(r"[?&](?:url|u)=([^&]+)", url)
@@ -64,6 +95,11 @@ def ParseShareUrl(url, pwd=None):
     return inner, (unquote(pwd_match.group(1)) if pwd_match else pwd)
 
 def _ResolveOnce(session, share_url, pwd, timeout):
+    """完整跑一遍解析：分享页 → iframe → downprocess → 文件直链。
+
+    Returns:
+        str|None: 文件直链；任一步失败返回 None 并打印原因。
+    """
     page_url = share_url
     resp = _RequestWithWaf(session, page_url, timeout=timeout)
     if resp.status_code != 200 or "html" not in (resp.headers.get("Content-Type") or "").lower():
@@ -103,6 +139,20 @@ def _ResolveOnce(session, share_url, pwd, timeout):
     return _FollowToFile(session, dom + "/file/" + path.lstrip("/"), page_url, timeout)
 
 def GetDirectLink(url, pwd=None, session=None, timeout=(10, 30)):
+    """解析蓝奏链接的真实文件直链，优先命中缓存。
+
+    有提取码却解析失败时，会再按“无提取码”试一次（不少分享页的提取码是
+    可选的）。解析成功后同时写进程内缓存和跨进程缓存。
+
+    Args:
+        url: 裸分享链接或解析器包装链接。
+        pwd: 显式提取码，留空时从 URL 参数里取。
+        session: 可复用的 requests.Session；None 时新建。
+        timeout: 连接/读取超时秒数。
+
+    Returns:
+        str|None: 文件直链；限流冷却中、缓存未命中且解析失败时返回 None。
+    """
     if not url or not IsLanzouUrl(url):
         return None
     share_url, pwd = ParseShareUrl(url, pwd)
@@ -131,6 +181,20 @@ def GetDirectLink(url, pwd=None, session=None, timeout=(10, 30)):
     return direct
 
 def ResolveDownloadUrl(url, pwd=None, session=None, log=None, retries=0, retry_wait=8.0):
+    """带重试/日志的直链解析入口，供下载链路调用。
+
+    Args:
+        url: 原始链接；不是蓝奏链接时原样返回。
+        pwd: 显式提取码。
+        session: 可复用的 requests.Session。
+        log: 可选的单参数日志回调（函数/状态栏更新）。
+        retries: 失败后的额外尝试次数。
+        retry_wait: 每次重试前的等待秒数。
+
+    Returns:
+        str: 解析出的直链；失败或限流时**原样返回入参**，调用方需要自己
+        判断返回值是否与入参相同，避免把同一个失败链接再请求一遍。
+    """
     if not url:
         return url
     try:
@@ -229,6 +293,7 @@ def _EntryAgeSeconds(item):
     return None
 
 def CachedDirectLink(url):
+    """按原始 URL 查跨进程直链缓存；命中后返回直链，过期条目会被删除。"""
     if not url:
         return None
     _LoadLinkCache()
@@ -282,6 +347,7 @@ def PeekCachedDirectLink(url, pwd=None):
 
 
 def CacheDirectLink(url, direct):
+    """把 ``原始 URL -> 直链`` 写进跨进程缓存，供下次启动直接命中。"""
     if not url or not direct:
         return
     _LoadLinkCache()
@@ -290,6 +356,7 @@ def CacheDirectLink(url, direct):
     _SaveLinkCache()
 
 def InvalidateDirectLink(url):
+    """让一个链接的直链失效：同时清掉跨进程缓存和进程内缓存。"""
     if not url:
         return
     _LoadLinkCache()
@@ -304,6 +371,7 @@ def InvalidateDirectLink(url):
         print("蓝奏云直链已失效，下次将重新解析：%s" % url[:90])
 
 def ClearLinkCache():
+    """清空全部直链缓存，返回被清掉的条数。"""
     _LoadLinkCache()
     with _link_cache_lock:
         count = len(_link_cache)
@@ -314,17 +382,26 @@ def ClearLinkCache():
     return count
 
 def LinkCacheSize():
+    """返回当前直链缓存里的条目数。"""
     _LoadLinkCache()
     with _link_cache_lock:
         return len(_link_cache)
 
 def LooksLikeFileResponse(resp):
+    """粗略判断响应体是不是文件（200 且 Content-Type 不是 html/json/xml）。"""
     if resp is None or resp.status_code != 200:
         return False
     ctype = (resp.headers.get("Content-Type") or "").lower()
     return not any(part in ctype for part in ("json", "html", "xml"))
 
 def GetWithDirectLink(url, accept=None, timeout=(10, 30), session=None, **kwargs):
+    """解析直链并请求文件；第一次不像文件时让缓存失效再解析一次。
+
+    图标下载常用它：accept 可以换成自己的图片判定函数。
+
+    Returns:
+        requests.Response|None: 最后一次响应（可能仍不是文件）。
+    """
     sess = session or _http_session()
     resolved = ResolveDownloadUrl(url, session=sess)
     resp = None
@@ -619,6 +696,14 @@ def _FindDownloadFrame(html, origin):
     return _Absolutize(match.group(1), origin) if match else None
 
 def _ParseSharePage(html, origin, pwd=None):
+    """从分享页（含 iframe 页）提取 downprocess 接口和 POST 参数。
+
+    新版页面用 ``ajaxfiles.php`` + websignkey/signs/ves，旧版用
+    ``ajaxm/ajaxfile.php`` + sign/kd；这里统一成 ``{api, data}``。
+
+    Returns:
+        dict|None: ``{'api': 绝对地址, 'data': POST 参数字典}``。
+    """
     # 蓝奏新版分享页把下载接口从 ajaxm/ajaxfile.php 换成了 ajaxfiles.php，
     # 参数也从 sign/kd 扩成 websignkey/signs/ves；两种格式都要认。
     _ajax_api = r"[^'\"]*(?:ajaxfiles?|ajaxm)\.php[^'\"]*"

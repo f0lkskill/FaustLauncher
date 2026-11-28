@@ -1,3 +1,15 @@
+"""资源下载与解压链路（GUI 与无界面调用共用）。
+
+下载入口分两级：先用笔记/云端里记录的**原始链接**请求，确认拿到的不是文件
+（HTML/JSON 页面或 HTTP 错误）才触发 :func:`resolve_download_url` 走启动器
+本地的蓝奏直链解析；解析成功再请求直链。整个过程只在必要时解析一次，失败
+会明确抛错，不把同一个链接当“回退直链”反复请求。
+
+下载完成后由 ``extract_*`` 系列解压到目标目录；``download_and_extract_mod``
+是无界面入口（下载中心/重装流程调用），``download_and_extract_gui`` 是带
+进度界面的入口。取消、限流、失败状态都通过 HeadlessDownloadGUI 回传。
+"""
+
 import os
 import sys
 
@@ -21,6 +33,7 @@ SEVEN_ZIP_PATH = r"resources\7-zip\7z.exe"
 settings_manager = get_settings_manager()
 
 def get_github_release_url() -> tuple[str, str] | None:
+    """从 GitHub Releases 找最新的汉化包下载地址（走 gh-proxy）。"""
     try:
         fetcher = GitHubReleaseFetcher(
             repo_owner="LocalizeLimbusCompany",
@@ -44,6 +57,7 @@ def get_github_release_url() -> tuple[str, str] | None:
         return None, None # type: ignore
 
 def _invalidate_direct_link(source_url):
+    """原始链接对应的直链失效时，清掉缓存迫使下一轮重新解析。"""
     try:
         from functions.web_update.lanzou_utils import InvalidateDirectLink
         InvalidateDirectLink(source_url)
@@ -51,6 +65,7 @@ def _invalidate_direct_link(source_url):
         pass
 
 def _open_stream(url, source_url, **kwargs):
+    """请求直链；失败时让旧直链失效、重新解析一次再请求。"""
     try:
         resp = fast_download.session().get(url, **kwargs)
         resp.raise_for_status()
@@ -68,6 +83,7 @@ def _open_stream(url, source_url, **kwargs):
         return resp
 
 def _status_reporter(gui, label=''):
+    """生成一个状态回调：同时更新下载抽屉文案和终端日志。"""
     prefix = f"{label}: " if label else ""
 
     def _status(text):
@@ -85,6 +101,7 @@ RAW_LINK_ATTEMPTS = 1
 RAW_LINK_RETRY_WAIT = 0.0
 
 def _close_quietly(resp):
+    """尽力关闭响应对象，None/已关闭都不算错误。"""
     try:
         if resp is not None:
             resp.close()
@@ -96,6 +113,18 @@ def open_download_source(url, gui=None, label='', **kwargs):
 
     返回 ``(response, source_url)``; 两条路都拿不到文件时抛
     ``requests.exceptions.RequestException``, 由调用方统一记为失败。
+
+    Args:
+        url: 笔记/云端里记录的原始链接（可能是解析器包装链接）。
+        gui: 可选下载 GUI，用于回传阶段文案。
+        label: 日志里的资源名前缀。
+        **kwargs: 透传给 ``session.get``（如 stream=True、timeout）。
+
+    Returns:
+        tuple[requests.Response, str]: 响应体与原始链接。
+
+    Raises:
+        requests.exceptions.RequestException: 原始链接和直链都无法下载。
     """
     if not url:
         raise ValueError('下载链接为空')
@@ -127,6 +156,16 @@ def open_download_source(url, gui=None, label='', **kwargs):
         '原链接与直链均无法下载: %s' % (label or url))
 
 def resolve_download_url(url, gui=None, label=''):
+    """触发本地蓝奏直链解析，并把阶段信息回报给下载 UI。
+
+    Args:
+        url: 原始链接；非蓝奏链接时原样返回。
+        gui: 可选下载 GUI。
+        label: 日志前缀。
+
+    Returns:
+        str: 直链；解析失败仍是原始链接，调用方需比较两者是否相同。
+    """
     if not url:
         return url
     try:
@@ -144,6 +183,7 @@ def resolve_download_url(url, gui=None, label=''):
         return url
 
 def download_file(url, local_filename):
+    """把 URL 下载到本地文件并打印进度，失败返回 False。"""
     try:
         response, _source = open_download_source(
             url, label=os.path.basename(local_filename), stream=True)
@@ -171,6 +211,7 @@ def download_file(url, local_filename):
         return False
 
 def extract_with_7zip(archive_path, extract_path):
+    """用随包附带的 7z.exe 把压缩包解到目标目录，成功返回 True。"""
     try:
         if not os.path.exists(SEVEN_ZIP_PATH):
             print(f"错误: 7-Zip可执行文件不存在: {SEVEN_ZIP_PATH}")
@@ -798,6 +839,16 @@ def main_gui(parent, config_path: str = ""):
     return gui
 
 def download_and_extract_mod(gui, target_dir, download_files):
+    """无界面下载+解压入口，供下载中心/重装流程调用。
+
+    Args:
+        gui: HeadlessDownloadGUI 实例，承载进度文案与取消状态。
+        target_dir: 解压目标目录（``addons`` 或 ``mods``）。
+        download_files: ``[{'url', 'name', 'temp_filename'}, ...]``。
+
+    Returns:
+        bool: 全部文件下载且解压成功；取消、失败或异常返回 False。
+    """
     import traceback as _tb
     import tempfile as _tf
     import shutil
