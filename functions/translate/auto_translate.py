@@ -1,3 +1,5 @@
+"""自动翻译流程。"""
+
 import os
 import json
 import concurrent.futures
@@ -7,6 +9,7 @@ import unicodedata
 from functions.base.common.json_io import read_json, write_json
 
 def is_all_punctuation(sentence):
+    """判断全部punctuation。"""
     if not sentence:
         return False
     
@@ -18,16 +21,20 @@ def is_all_punctuation(sentence):
     return True
 
 class AutoTranslator:
+    """AutoTranslator类。"""
     def __init__(self, window):
+        """初始化对象状态。"""
         self.window = window
         self.translator = AITranslator()
         self.target_keys = {'content', 'teller', 'dlg', 'desc', 'dialog', 'abName', 'name', 'place'}
         self.is_running = True
     
     def set_running_state(self, state):
+        """设置running状态。"""
         self.is_running = state
     
     def _get_json_files(self, source_path):
+        """内部获取json文件。"""
         json_files = []
         for root, dirs, files in os.walk(source_path):
             for file in files:
@@ -36,6 +43,7 @@ class AutoTranslator:
         return json_files
     
     def _translate_value(self, value):
+        """内部翻译值相关处理。"""
         if not value or not isinstance(value, str):
             return value
         
@@ -59,6 +67,7 @@ class AutoTranslator:
             return value
     
     def _process_file(self, source_file, target_file, is_skill=False):
+        """内部进程文件相关处理。"""
         if not self.is_running:
             return False
         
@@ -106,6 +115,7 @@ class AutoTranslator:
             return False
     
     def translate(self, source_path, target_path, blacklist_files=None, progress_callback=None, is_skill=False):
+        """翻译相关处理。"""
         if blacklist_files is None:
             blacklist_files = []
         
@@ -175,5 +185,6 @@ class AutoTranslator:
             return False
 
 def auto_translate(window, source_path, target_path, blacklist_files=None, progress_callback=None, is_skill=False):
+    """auto翻译相关处理。"""
     translator = AutoTranslator(window)
     translator.translate(source_path, target_path, blacklist_files, progress_callback, is_skill)

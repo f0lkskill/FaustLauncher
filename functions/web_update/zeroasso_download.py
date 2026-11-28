@@ -87,6 +87,7 @@ def _status_reporter(gui, label=''):
     prefix = f"{label}: " if label else ""
 
     def _status(text):
+        """内部状态相关处理。"""
         try:
             if gui is not None and getattr(gui, 'current_file_var', None) is not None:
                 gui.current_file_var.set(prefix + str(text))
@@ -193,6 +194,7 @@ def download_file(url, local_filename):
         os.makedirs(os.path.dirname(local_filename), exist_ok=True)
 
         def _progress(done, total):
+            """内部进度相关处理。"""
             size = total or total_size
             if size > 0:
                 percent = (done / size) * 100
@@ -248,6 +250,7 @@ def extract_with_7zip(archive_path, extract_path):
         return False
 
 def extract_with_zipfile_backup(archive_path, extract_path):
+    """extractwithzipfilebackup相关处理。"""
     import zipfile
     try:
         print("尝试使用zipfile作为备用方案...")
@@ -263,6 +266,7 @@ def extract_with_zipfile_backup(archive_path, extract_path):
         print(f"zipfile解压失败: {e}")
         return False
 def extract_7z_file(archive_path, extract_path):
+    """extract7z文件相关处理。"""
     print(f"开始解压文件到: {extract_path}")
     
     if not os.path.exists(archive_path):
@@ -276,6 +280,7 @@ def extract_7z_file(archive_path, extract_path):
     return extract_with_zipfile_backup(archive_path, extract_path)
 
 def _install_fonts(archive_path):
+    """内部安装fonts。"""
     import shutil
     import tempfile
     tmp = tempfile.mkdtemp(prefix='faust_font_')
@@ -312,6 +317,7 @@ def _install_fonts(archive_path):
         shutil.rmtree(tmp, ignore_errors=True)
 
 def create_config_file(game_path):
+    """创建配置文件。"""
     try:
         config_path = os.path.join(game_path, 'LimbusCompany_Data', 'Lang', 'config.json')
         config_dir = os.path.dirname(config_path)
@@ -338,6 +344,7 @@ def create_config_file(game_path):
         return False
 
 def cleanup_temp_files(temp_path):
+    """清理temp文件。"""
     try:
         if os.path.exists(temp_path):
             os.remove(temp_path)
@@ -346,6 +353,7 @@ def cleanup_temp_files(temp_path):
         print(f"清理临时文件失败: {e}")
 
 def verify_download(file_path):
+    """verify下载相关处理。"""
     try:
         file_size = os.path.getsize(file_path)
         if file_size < 1000:
@@ -365,6 +373,7 @@ def verify_download(file_path):
         return False
     
 def download_file_with_gui(url, local_filename, gui, file_name):
+    """下载文件with界面相关处理。"""
     try:
         response, source_url = open_download_source(url, gui=gui, label=file_name,
                                                     stream=True, verify=False)
@@ -395,6 +404,7 @@ def download_file_with_gui(url, local_filename, gui, file_name):
         state_lock = threading.Lock()
 
         def on_progress(done, total):
+            """响应进度。"""
             now = time.time()
             with state_lock:
                 span = now - state["last_time"]
@@ -452,6 +462,7 @@ def download_file_with_gui(url, local_filename, gui, file_name):
         return False
 
 def _fetch_download_path(note_name: str, pwd: str, get_path) -> tuple[str, str] | None:
+    """内部拉取下载路径。"""
     from webFunc import Note
     from json import loads
     note = Note("translation", note_name, pwd)
@@ -468,21 +479,25 @@ def _fetch_download_path(note_name: str, pwd: str, get_path) -> tuple[str, str] 
     return None
 
 def get_download_path_ByNote() -> tuple[str, str] | None:
+    """获取下载路径By笔记。"""
     address, pwd = get_webnote('translation')
     return _fetch_download_path(address, pwd,
                                 lambda n: n['llc_download_mirror']['seven']['direct'])
 
 def get_download_path_ByGhProxy() -> tuple[str, str] | None:
+    """获取下载路径ByGhProxy。"""
     address, _ = get_webnote('translation')
     return _fetch_download_path(address, "",
                                 lambda n: 'https://gh-proxy.org/' + n['llc_download_url']['seven'])
 
 def get_download_path_ByLanzouyun() -> tuple[str, str] | None:
+    """获取下载路径ByLanzouyun。"""
     address, _ = get_webnote('translation')
     return _fetch_download_path(address, "",
                                 lambda n: n['lanzou_download_url']['seven'])
 
 def _find_refer_root() -> str:
+    """内部查找refer根。"""
     from functions.web_update.translation_source import (
         get_translation_dir_name, get_translation_dir,
     )
@@ -507,6 +522,7 @@ def _find_refer_root() -> str:
     return ""
 
 def _ensure_refer_root(gui) -> str:
+    """内部确保refer根。"""
     refer = _find_refer_root()
     if refer:
         return refer
@@ -567,6 +583,7 @@ def _ensure_refer_root(gui) -> str:
             cleanup_temp_files(temp_file)
 
 def _install_ourplay(gui, temp_file, game_path, version, is_god):
+    """内部安装ourplay。"""
     import json
     from functions.web_update.ourplay_download import prepare_ourplay_dir
     from functions.web_update.translation_source import get_builtin_translation_dir
@@ -625,6 +642,7 @@ def _install_ourplay(gui, temp_file, game_path, version, is_god):
             _shutil.rmtree(temp_extract, ignore_errors=True)
 
 def download_and_extract_gui(gui:DownloadGUI, config_path: str = "", download_files = None, auto_close:bool = True) -> bool:
+    """下载andextract界面相关处理。"""
     from functions.web_update.translation_source import (
         get_translate_source, is_ourplay_source, is_god_source,
         check_need_up_translate as need_up,
@@ -834,6 +852,7 @@ def download_and_extract_gui(gui:DownloadGUI, config_path: str = "", download_fi
         return False
 
 def main_gui(parent, config_path: str = ""):
+    """主入口界面相关处理。"""
     gui = DownloadGUI(parent, config_path, download_func=download_and_extract_gui)
     
     return gui

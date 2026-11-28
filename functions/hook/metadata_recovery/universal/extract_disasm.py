@@ -1,3 +1,5 @@
+"""IL2CPP metadata 恢复流程辅助模块：<extract_disasm>。"""
+
 #!/usr/bin/env python3
 
 from __future__ import annotations
@@ -21,13 +23,16 @@ _LOOKAHEAD = 20
 FUNC_WINDOW = 0x4000
 
 def _require_capstone():
+    """内部requirecapstone相关处理。"""
     if not _CAPSTONE_OK:
         raise RuntimeError(
             "缺少 capstone 反汇编库：请先在 Metadata 恢复页「步骤 1」一键安装"
             "（或 pip install capstone）")
 
 class Extraction:
+    """Extraction类。"""
     def __init__(self) -> None:
+        """初始化对象状态。"""
         self.header_size: int | None = None
         self.header_seed: int | None = None
         self.table_addr: str | None = None
@@ -39,6 +44,7 @@ class Extraction:
         self.evidence: list[str] = []
 
     def to_dict(self) -> dict:
+        """todict相关处理。"""
         return {
             "header_size": self.header_size,
             "header_seed": None if self.header_seed is None else f"0x{self.header_seed:X}",
@@ -50,6 +56,7 @@ class Extraction:
         }
 
     def to_profile(self) -> dict:
+        """toprofile相关处理。"""
         return {
             "header_size": self.header_size,
             "header_seed": None if self.header_seed is None else f"0x{self.header_seed:X}",
@@ -61,18 +68,22 @@ class Extraction:
         }
 
 def _imm(s: str) -> int | None:
+    """内部imm相关处理。"""
     m = re.search(r"0x([0-9A-Fa-f]+)", s)
     return int(m.group(1), 16) if m else None
 
 def _is_reg64(s: str) -> bool:
+    """内部判断reg64。"""
     return s in ("rax", "rbx", "rcx", "rdx", "rsi", "rdi", "rbp", "rsp",
                  "r8", "r9", "r10", "r11", "r12", "r13", "r14", "r15")
 
 def _is_mem_rip(ops: str, imm: int) -> bool:
+    """内部判断memrip。"""
     return f"0x{imm:x}" in ops.lower() and "[rip" in ops
 
 def _trim_to_function(image: PEImage, func_va: int,
                       insns: list[tuple[int, int, str, str]]) -> list[tuple[int, int, str, str]]:
+    """内部trimtofunction相关处理。"""
     sec = image.text_section
     raw = image.data[sec.raw_offset:sec.raw_offset + sec.raw_size]
     base = image.image_base + sec.virtual_address
@@ -93,6 +104,7 @@ def _trim_to_function(image: PEImage, func_va: int,
     return [insn for insn in insns if insn[0] < end_va]
 
 def extract_from_disasm(image: PEImage, func_va: int, insns: list[tuple[int, int, str, str]] | None = None) -> Extraction:
+    """extractfromdisasm相关处理。"""
     _require_capstone()
     ext = Extraction()
     if insns is None:
@@ -222,6 +234,7 @@ def extract_from_disasm(image: PEImage, func_va: int, insns: list[tuple[int, int
 
 def _extract_section(insns: list[tuple[int, int, str, str]],
                      anchor: int, file_base: int) -> dict | None:
+    """内部extractsection相关处理。"""
     seed = None
     call_idx = None
     for j in range(anchor + 1, min(anchor + 12, len(insns))):
@@ -244,6 +257,7 @@ def _extract_section(insns: list[tuple[int, int, str, str]],
         r"dword ptr \[([^\]\s]+)(?:\s*\+\s*(-?0x[0-9A-Fa-f]+|-?\d+))?\]")
 
     def _disp(m) -> int:
+        """内部disp相关处理。"""
         g = m.group(2)
         if g is None:
             return 0

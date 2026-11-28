@@ -21,6 +21,7 @@ def _parse_vdf(text):
     n = len(text)
 
     def skip_ws():
+        """skipws相关处理。"""
         nonlocal i
         while i < n:
             c = text[i]
@@ -33,6 +34,7 @@ def _parse_vdf(text):
                 break
 
     def read_string():
+        """读取string。"""
         nonlocal i
         skip_ws()
         if i >= n or text[i] != '"':
@@ -53,6 +55,7 @@ def _parse_vdf(text):
         return ''.join(out)
 
     def parse_block():
+        """解析block。"""
         nonlocal i
         i += 1
         d = {}

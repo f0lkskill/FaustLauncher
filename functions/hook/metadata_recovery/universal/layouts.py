@@ -1,3 +1,5 @@
+"""IL2CPP metadata 恢复流程辅助模块：<layouts>。"""
+
 #!/usr/bin/env python3
 
 from __future__ import annotations
@@ -15,12 +17,14 @@ LAYOUTS: dict[str, list[str]] = {
 UINT64_MASK = (1 << 64) - 1
 
 def next_xorshift64(state: int) -> int:
+    """下一项xorshift64相关处理。"""
     state ^= state << 13 & UINT64_MASK
     state ^= state >> 7
     state ^= state << 17 & UINT64_MASK
     return state & UINT64_MASK
 
 def decrypt_bytes(data: bytes, seed: int, table: bytes) -> bytes:
+    """decryptbytes相关处理。"""
     output = bytearray(data)
     state = seed
     for index in range(len(output)):
@@ -30,6 +34,7 @@ def decrypt_bytes(data: bytes, seed: int, table: bytes) -> bytes:
     return bytes(output)
 
 def parse_triplets(header: bytes, layout: list[str]) -> list[dict]:
+    """解析triplets。"""
     entries = []
     for index, offset in enumerate(range(0, len(header) - len(header) % 12, 12)):
         fields = dict(zip(layout, struct.unpack_from("<iii", header, offset)))
@@ -43,6 +48,7 @@ def parse_triplets(header: bytes, layout: list[str]) -> list[dict]:
     return entries
 
 def score_layout(entries: list[dict], file_size: int) -> float:
+    """scorelayout相关处理。"""
     if not entries:
         return 0.0
     score = 0.0
@@ -63,6 +69,7 @@ def score_layout(entries: list[dict], file_size: int) -> float:
     return score / len(entries)
 
 def detect_layout(header: bytes, file_size: int) -> tuple[str, list[dict], dict[str, float]]:
+    """检测layout。"""
     scores = {name: score_layout(parse_triplets(header, layout), file_size)
               for name, layout in LAYOUTS.items()}
     best = max(scores, key=scores.get)

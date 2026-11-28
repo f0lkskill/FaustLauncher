@@ -29,6 +29,7 @@ _STILL_ACTIVE = 259
 
 
 class _PROCESSENTRY32W(ctypes.Structure):
+    """内部PROCESSENTRY32W类。"""
     _fields_ = [
         ("dwSize", wt.DWORD),
         ("cntUsage", wt.DWORD),

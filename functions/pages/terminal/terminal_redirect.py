@@ -1,3 +1,5 @@
+"""终端输出重定向到前端。"""
+
 
 import re
 import sys
@@ -7,6 +9,7 @@ import tkinter as tk
 
 class TerminalRedirector:
 
+    """TerminalRedirector类。"""
     ANSI_COLOR_MAP = {
         '30': '#000000',
         '31': '#ff6b6b',
@@ -31,6 +34,7 @@ class TerminalRedirector:
     _ANSI_CODE_RE = re.compile(r'\[([0-9;]+)m')
 
     def __init__(self, text_widget):
+        """初始化对象状态。"""
         self.text_widget = text_widget
         self.current_color = None
         self.is_typing = False
@@ -45,6 +49,7 @@ class TerminalRedirector:
         self._pending_after = None
 
     def _line_hook(self, line):
+        """内部行钩子相关处理。"""
         if not line or not self.initialized or not self.text_widget:
             return
         if line.startswith('|') or not line.strip():
@@ -57,6 +62,7 @@ class TerminalRedirector:
         self._schedule(self._flush_buffer)
 
     def _schedule(self, func):
+        """内部schedule相关处理。"""
         try:
             self.text_widget.after(0, func)
         except Exception:
@@ -64,6 +70,7 @@ class TerminalRedirector:
                 self._flush_scheduled = False
 
     def _flush_buffer(self):
+        """内部flushbuffer相关处理。"""
         with self._buffer_lock:
             self._flush_scheduled = False
             if not self._line_buffer:
@@ -73,6 +80,7 @@ class TerminalRedirector:
         self._enqueue(text)
 
     def _enqueue(self, text):
+        """内部enqueue相关处理。"""
         if not self.initialized or not self.text_widget or not text:
             return
         try:
@@ -92,6 +100,7 @@ class TerminalRedirector:
         self._start_typing(force=True)
 
     def _cancel_pending_after(self):
+        """内部cancelpendingafter相关处理。"""
         after_id, self._pending_after = self._pending_after, None
         if after_id is None:
             return
@@ -101,6 +110,7 @@ class TerminalRedirector:
             pass
 
     def _direct_output(self, message):
+        """内部directoutput相关处理。"""
         try:
             self.text_widget.config(state=tk.NORMAL)
             self._insert_with_ansi(message + "\n")
@@ -111,6 +121,7 @@ class TerminalRedirector:
             print(f"_direct_output error: {e}", file=sys.__stdout__)
 
     def _start_typing(self, force: bool = False):
+        """内部启动typing。"""
         if force and self.is_typing:
             self._cancel_pending_after()
             self.is_typing = False
@@ -133,6 +144,7 @@ class TerminalRedirector:
         self._type_next_char(parts, 0, 0, delay)
 
     def _prepare_typing_parts(self, message):
+        """内部准备typingparts。"""
         parts = []
         for part in self._ANSI_RE.split(message):
             if not part:
@@ -149,6 +161,7 @@ class TerminalRedirector:
 
     @staticmethod
     def _tag_of(text):
+        """内部tagof相关处理。"""
         m = TerminalRedirect._LEVEL_RE.search(text)
         if m:
             return {"ERROR": "error", "WARN": "warning",
@@ -156,6 +169,7 @@ class TerminalRedirector:
         return "info"
 
     def _type_next_char(self, parts, part_idx, char_idx, delay):
+        """内部类型下一项char相关处理。"""
         if not self.is_typing:
             return
 
@@ -202,6 +216,7 @@ class TerminalRedirector:
             self._start_typing()
 
     def _insert_with_ansi(self, message):
+        """内部insertwithansi相关处理。"""
         for part in self._ANSI_RE.split(message):
             if not part:
                 continue
@@ -221,6 +236,7 @@ class TerminalRedirector:
         self.current_color = None
 
     def _parse_ansi_code(self, code):
+        """内部解析ansicode。"""
         match = self._ANSI_CODE_RE.search(code)
         if not match:
             return
@@ -231,12 +247,14 @@ class TerminalRedirector:
                 self.current_color = self.ANSI_COLOR_MAP[c]
 
     def flush(self):
+        """flush相关处理。"""
         try:
             self._flush_buffer()
         except Exception:
             pass
 
     def start_redirect(self, debug: bool = False):
+        """启动redirect。"""
         if debug:
             return
         self.initialized = True
@@ -248,6 +266,7 @@ class TerminalRedirector:
             print(f"终端重定向挂接失败: {e}", file=sys.__stdout__)
 
     def stop_redirect(self):
+        """停止redirect。"""
         if self._hooked:
             try:
                 from functions.base.console_log import remove_line_hook

@@ -1,3 +1,5 @@
+"""链式内存目标定义。"""
+
 
 from __future__ import annotations
 
@@ -6,6 +8,7 @@ from dataclasses import dataclass, field
 @dataclass(frozen=True)
 class HookTarget:
 
+    """钩子目标。"""
     key: str
     symbol: str
     description: str
@@ -49,6 +52,7 @@ HOOK_TARGETS: tuple[HookTarget, ...] = (
 @dataclass
 class ChainTarget:
 
+    """链目标。"""
     key: str
     description: str
     base_offset: int
@@ -62,6 +66,7 @@ class ChainTarget:
     step_classes: tuple[str, ...] = ()
 
     def as_dict(self, **extra) -> dict:
+        """asdict相关处理。"""
         data = {
             "description": self.description,
             "module": self.module,
@@ -91,6 +96,7 @@ CHAIN_TARGETS: tuple[ChainTarget, ...] = (ENKEPHALIN_CHAIN,)
 @dataclass(frozen=True)
 class ObserveTarget:
 
+    """Observe目标。"""
     key: str
     symbol: str
     kind: str
@@ -230,6 +236,7 @@ OBSERVE_TARGETS: tuple[ObserveTarget, ...] = (
 )
 
 def hook_symbol_entries() -> list[tuple[str, str, str, str]]:
+    """钩子符号entries相关处理。"""
     entries = [(t.key, t.symbol, t.description, t.compat_field) for t in HOOK_TARGETS]
     entries += [(t.key, t.symbol, t.description, "") for t in OBSERVE_TARGETS]
     return entries
@@ -294,9 +301,11 @@ MAX_METHODS = 40000
 MAX_FIELDS = 20000
 
 def all_targets() -> tuple[tuple[HookTarget, ...], tuple[ChainTarget, ...]]:
+    """全部目标相关处理。"""
     return HOOK_TARGETS, CHAIN_TARGETS
 
 def required_symbols() -> list[str]:
+    """required符号相关处理。"""
     names = [t.symbol for t in HOOK_TARGETS]
     names += [t.symbol for t in OBSERVE_TARGETS]
     for chain in CHAIN_TARGETS:
@@ -309,4 +318,5 @@ def required_symbols() -> list[str]:
     return names
 
 def battle_field_keys() -> tuple[str, ...]:
+    """战斗字段keys相关处理。"""
     return tuple(BATTLE_FIELDS.keys())

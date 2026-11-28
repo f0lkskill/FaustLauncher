@@ -208,6 +208,7 @@ def scan(game_dir: str, *, names_path: str = "") -> Dict[str, Any]:
 
 
 def _file_sha256(path: str) -> str:
+    """内部文件sha256相关处理。"""
     digest = hashlib.sha256()
     with open(path, "rb") as handle:
         for chunk in iter(lambda: handle.read(1 << 20), b""):
@@ -216,6 +217,7 @@ def _file_sha256(path: str) -> str:
 
 
 def _cache_identity(game_dir: str, canonical: List[str]) -> Dict[str, Any]:
+    """内部缓存identity。"""
     return {
         "schema": CACHE_SCHEMA,
         "sha256": gameassembly_sha256(game_dir),
@@ -342,6 +344,7 @@ def verify(game_dir: str = "", *, names_path: str = "") -> Dict[str, Any]:
 
 
 def __main__() -> int:  # pragma: no cover - 手工自检入口
+    """内部主入口相关处理。"""
     import sys
 
     try:

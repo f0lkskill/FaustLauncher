@@ -1,3 +1,5 @@
+"""Mod 加载入口。"""
+
 import subprocess
 import os
 
@@ -15,6 +17,7 @@ _MOD_SUFFIXES = (".zip", ".carra", ".carra2", ".bank", ".rebank", ".bank.orig")
 
 
 def _has_loader_mods():
+    """内部hasloaderMod相关处理。"""
     try:
         mgr = ModManager()
         for mod_path in mgr.get_mod_path():
@@ -33,6 +36,7 @@ def _has_loader_mods():
 
 
 def _game_exe_path() -> str:
+    """内部游戏程序路径相关处理。"""
     game_path = _settings.get_setting('game_path') or ''
     return os.path.join(game_path, GAME_EXE)
 
@@ -50,6 +54,7 @@ def _run_game_exe():
 
 
 def _launch_via_steam():
+    """内部启动viaSteam。"""
     subprocess.Popen(['start', f'steam://rungameid/{STEAM_APP_ID}'], shell=True)
     return True
 
@@ -70,6 +75,7 @@ def _steam_launch_bound() -> bool:
 
 
 def _start_game(launcher_mode: bool) -> bool:
+    """内部启动游戏。"""
     if launcher_mode:
         return _run_game_exe()
     if _steam_launch_bound():
@@ -79,6 +85,7 @@ def _start_game(launcher_mode: bool) -> bool:
 
 
 def launch_game_process():
+    """启动游戏进程。"""
     launcher_mode = is_launcher_mode()
 
     if not _settings.get_setting("enable_mods"):
@@ -98,6 +105,7 @@ def launch_game_process():
 
 
 def _start_with_mod_loader(launcher_mode: bool = False):
+    """内部启动withModloader。"""
     game_path = _settings.get_setting('game_path') or ''
     extra_mod_loader = _settings.get_setting('extra_mod_loader') or ''
     game_exe = os.path.join(game_path, GAME_EXE)

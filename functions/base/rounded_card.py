@@ -1,7 +1,10 @@
+"""base 子模块：<rounded_card>（具体职责见函数文档）。"""
+
 import tkinter as tk
 
 def draw_rounded_rect(canvas: tk.Canvas, x: float, y: float, w: float, h: float, *,
                       fill: str = '', outline: str = '', radius: int = 10, **kw):
+    """drawrounded矩形相关处理。"""
     r = radius
     d = r * 2
     rx = x + w - 1

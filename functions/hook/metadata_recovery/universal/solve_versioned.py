@@ -1,3 +1,5 @@
+"""按版本求解 metadata 结构。"""
+
 #!/usr/bin/env python3
 
 from __future__ import annotations
@@ -14,9 +16,11 @@ SCORE_TEXT_SIZE = 4 << 20
 SCORE_MONO_MIN = 0.95
 
 class SolveError(RuntimeError):
+    """Solve错误类。"""
     pass
 
 def _direct_reads(header: bytes, profile: dict) -> list[dict]:
+    """内部directreads相关处理。"""
     out = []
     for sec in profile.get("sections", []):
         size_off, offset_off = sec["size_off"], sec.get("offset_off")
@@ -38,28 +42,34 @@ def _direct_reads(header: bytes, profile: dict) -> list[dict]:
     return out
 
 def _rec_of(entry: dict) -> int | None:
+    """内部recof相关处理。"""
     if entry["count"] > 0 and entry["size"] > 0 and entry["size"] % entry["count"] == 0:
         return entry["size"] // entry["count"]
     return None
 
 class _Scorer:
 
+    """内部Scorer类。"""
     def __init__(self, metadata: bytes, by_index: dict) -> None:
+        """初始化对象状态。"""
         self.metadata = metadata
         self.by_index = by_index
         self.cache: dict[tuple, float] = {}
 
     def strong(self, entry: dict) -> bool:
+        """strong相关处理。"""
         sz = entry["size"]
         return 12 <= sz <= SCORE_MONO_SIZE and sz % 4 == 0
 
     def score(self, entry_index: int, phys: int) -> float:
+        """score相关处理。"""
         key = (entry_index, phys)
         if key not in self.cache:
             self.cache[key] = self._compute(entry_index, phys)
         return self.cache[key]
 
     def align_score(self, phys: int) -> float:
+        """alignscore相关处理。"""
         s = 0.0
         if phys >= 0 and phys % 4 == 0:
             s += 0.3
@@ -69,6 +79,7 @@ class _Scorer:
         return s
 
     def _compute(self, entry_index: int, phys: int) -> float:
+        """内部compute相关处理。"""
         entry = self.by_index[entry_index]
         size = entry["size"]
         if size <= 0 or phys < 0 or phys + size > len(self.metadata):
@@ -95,6 +106,7 @@ class _Scorer:
         return score
 
 def solve(metadata: bytes, profile: dict, version: int = 39) -> dict:
+    """solve相关处理。"""
     vt = version_table(version)
     names = vt["names"]
     rec = vt["rec"]
@@ -144,6 +156,7 @@ def solve(metadata: bytes, profile: dict, version: int = 39) -> dict:
         slot_sets.append(slots)
 
     def enumerate_assignments(idx: int, chosen: list[int]) -> list[list[int]]:
+        """enumerateassignments相关处理。"""
         if idx == len(slot_sets):
             return [list(chosen)]
         out = []
@@ -156,6 +169,7 @@ def solve(metadata: bytes, profile: dict, version: int = 39) -> dict:
         return out
 
     def gaps_of(slot_assign: list[int]) -> list[tuple[int | None, int | None, list[int]]]:
+        """gapsof相关处理。"""
         gaps = []
         prev_slot = -1
         prev_end = None
@@ -168,6 +182,7 @@ def solve(metadata: bytes, profile: dict, version: int = 39) -> dict:
 
     def solve_gap(prev_end: int | None, next_start: int | None,
                   slots: list[int], used: set[int]) -> tuple[list, float] | None:
+        """solvegap相关处理。"""
         non_zero = [s for s in slots if rec[names[s]] != 0]
         if not non_zero:
             return [], 0.0
@@ -177,6 +192,7 @@ def solve(metadata: bytes, profile: dict, version: int = 39) -> dict:
         pads_used: list[int] = []
 
         def placements_rank(placements: list) -> tuple:
+            """placementsrank相关处理。"""
             sc = sum(scorer.score(e, ph) for (_, e, ph) in placements)
             sc += sum(scorer.align_score(ph) for (_, e, ph) in placements)
             prev = prev_end
@@ -194,6 +210,7 @@ def solve(metadata: bytes, profile: dict, version: int = 39) -> dict:
 
         def enumerate_pads(i: int, cum_sizes: int, cum_pads: int, sigma: int,
                            placements: list) -> None:
+            """enumeratepads相关处理。"""
             nonlocal best
             if i == m:
                 if cum_pads == sigma:
@@ -215,6 +232,7 @@ def solve(metadata: bytes, profile: dict, version: int = 39) -> dict:
                 pads_used.pop()
 
         def finish(chosen: list) -> None:
+            """finish相关处理。"""
             nonlocal best
             if prev_end is None:
                 placements = []
@@ -248,6 +266,7 @@ def solve(metadata: bytes, profile: dict, version: int = 39) -> dict:
                 enumerate_pads(0, 0, 0, sigma, placements)
 
         def dfs_entries(i: int, chosen: list, used_local: set[int]) -> None:
+            """dfsentries相关处理。"""
             if i == m:
                 finish(chosen)
                 return

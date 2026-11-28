@@ -1,3 +1,5 @@
+"""IL2CPP metadata 恢复流程辅助模块：<pipeline>。"""
+
 #!/usr/bin/env python3
 
 from __future__ import annotations
@@ -21,6 +23,7 @@ TRUTH_INIT = 0x18069C5E0
 def run(dll_path: str, metadata_path: str, version: int = 39,
         out_dir: Path = Path("out"), name: str = "universal",
         on_log=None, cancel_check=None) -> dict:
+    """执行相关操作。"""
     if on_log is None:
         on_log = lambda msg: print(msg, flush=True)  # noqa: E731
     if cancel_check is None:
@@ -121,6 +124,7 @@ def run(dll_path: str, metadata_path: str, version: int = 39,
     return report
 
 def main() -> int:
+    """主入口相关处理。"""
     parser = argparse.ArgumentParser(description="universal metadata 解密管线")
     parser.add_argument("--dll", required=True, help="GameAssembly.dll 路径")
     parser.add_argument("--metadata", required=True, help="加密 global-metadata.dat")

@@ -1,3 +1,5 @@
+"""IL2CPP metadata 恢复流程辅助模块：<__init__>。"""
+
 # -*- coding: utf-8 -*-
 
 from __future__ import annotations
@@ -28,6 +30,7 @@ __all__ = [
 ]
 
 def install_capstone(on_log: Callable = None) -> dict:
+    """安装capstone。"""
     if on_log is None:
         on_log = lambda msg: print(msg, flush=True)  # noqa: E731
     on_log("正在安装 capstone（pip install capstone）...")
@@ -58,6 +61,7 @@ def install_capstone(on_log: Callable = None) -> dict:
     return {"success": True, "message": "capstone 安装完成"}
 
 def derive_game_files(game_path: str = "") -> dict:
+    """derive游戏文件相关处理。"""
     if not game_path:
         return {"game_path": "", "derived": False,
                 "metadata_path": "", "metadata_exists": False,

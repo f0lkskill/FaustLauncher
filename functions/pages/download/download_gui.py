@@ -1,3 +1,5 @@
+"""下载窗口 GUI 组件。"""
+
 import tkinter as tk
 import threading
 import time
@@ -9,6 +11,7 @@ BG_COLOR: str = get_settings_manager().get_setting("bg_color") # type: ignore
 bg_gaussian_blur_factor: int = (get_settings_manager().get_setting("bg_gaussian_blur_factor") or 0) + 5
 
 def _parse_rgb(hex_color: str):
+    """内部解析rgb。"""
     h = hex_color.lstrip('#')
     return tuple(int(h[i:i + 2], 16) for i in (0, 2, 4))
 
@@ -20,8 +23,10 @@ TEXT_MUTED = "#c2dcff"
 BAR_BG = C.DOWNLOAD_BAR_BG
 
 class DownloadGUI:
+    """下载界面。"""
     def __init__(self, parent, config_path: str = "", auto_start: bool = True,
                  download_func=None):
+        """初始化对象状态。"""
         self.root = tk.Toplevel(parent)
         self.root.attributes('-alpha', 0.0)
         self.root.withdraw()
@@ -68,6 +73,7 @@ class DownloadGUI:
 
     @staticmethod
     def _pil_rounded_rect_mask(size, radius):
+        """内部pilrounded矩形mask相关处理。"""
         from PIL import Image, ImageDraw
         W, H = size
         mask = Image.new('L', (W, H), 0)
@@ -76,6 +82,7 @@ class DownloadGUI:
         return mask
 
     def _draw_background(self):
+        """内部drawbackground相关处理。"""
         W, H = 500, 280
         R = 18
 
@@ -120,6 +127,7 @@ class DownloadGUI:
                 pass
 
     def _rounded_rect(self, x1, y1, x2, y2, r=12, **kwargs):
+        """内部rounded矩形相关处理。"""
         d = r * 2
         self.canvas.create_arc(x1, y1, x1 + d, y1 + d,
                                start=90, extent=90, style='pieslice', **kwargs)
@@ -133,7 +141,9 @@ class DownloadGUI:
         self.canvas.create_rectangle(x1, y1 + r, x2, y2 - r, **kwargs)
 
     def fade_in(self):
+        """fadein相关处理。"""
         def animate(alpha=0.0):
+            """animate相关处理。"""
             if alpha < 1.0 and self.is_downloading:
                 self.root.attributes('-alpha', alpha)
                 self.root.after(25, lambda: animate(alpha + 0.05))
@@ -142,6 +152,7 @@ class DownloadGUI:
         animate()
 
     def create_widgets(self):
+        """创建widgets。"""
         cx = 250
 
         self.title_item = self.canvas.create_text(
@@ -181,10 +192,12 @@ class DownloadGUI:
             font=('Microsoft YaHei UI', 12), fill=ACCENT)
 
     def _start_drag(self, event):
+        """内部启动drag。"""
         self._drag_x = event.x
         self._drag_y = event.y
 
     def _do_drag(self, event):
+        """内部dodrag相关处理。"""
         dx = event.x - self._drag_x
         dy = event.y - self._drag_y
         x = self.root.winfo_x() + dx
@@ -192,7 +205,9 @@ class DownloadGUI:
         self.root.geometry(f'+{x}+{y}')
 
     def fade_out(self):
+        """fadeout相关处理。"""
         def animate(alpha=1.0):
+            """animate相关处理。"""
             if alpha > 0.0:
                 self.root.attributes('-alpha', alpha)
                 self.root.after(20, lambda: animate(alpha - 0.05))
@@ -203,6 +218,7 @@ class DownloadGUI:
         animate()
 
     def _on_file_var_changed(self, *args):
+        """内部响应文件varchanged。"""
         try:
             if hasattr(self, 'file_item'):
                 self.canvas.itemconfig(self.file_item, text=self.current_file_var.get())
@@ -210,6 +226,7 @@ class DownloadGUI:
             pass
 
     def update_progress(self, percent, downloaded, total, speed):
+        """更新进度。"""
         if hasattr(self, 'progress_fg'):
             total_w = self._bar_x2 - self._bar_x1
             if total_w > 0:
@@ -263,12 +280,14 @@ class DownloadGUI:
         self.root.update_idletasks()
 
     def start_download(self, download_func=None):
+        """启动下载。"""
         self.is_downloading = True
         thread = threading.Thread(target=self.run_download, args=(download_func,))
         thread.daemon = True
         thread.start()
 
     def run_download(self, download_func=None):
+        """执行下载。"""
         try:
             success = download_func(self, self.config_path) # type: ignore
             if success:

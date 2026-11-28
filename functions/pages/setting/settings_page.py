@@ -1,3 +1,5 @@
+"""设置页面的 Tk 控件渲染与读写交互。"""
+
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, colorchooser
 from functions.base.settings_manager import get_settings_manager
@@ -32,6 +34,7 @@ def _after_setting_change(key, value):
         effective = get_settings_manager().get_setting(key)
 
         def worker():
+            """工作线程相关处理。"""
             try:
                 result = steam_binding.apply(bool(effective))
                 if result.get("ok"):
@@ -47,7 +50,9 @@ def _after_setting_change(key, value):
 
 
 class SettingsPage:
+    """设置页面。"""
     def __init__(self, parent_frame, bg_color, lighten_bg_color):
+        """初始化对象状态。"""
         self.parent = parent_frame
         self.settings_manager = get_settings_manager()
         self.setting_widgets = {}
@@ -69,6 +74,7 @@ class SettingsPage:
         self.auto_refresh()
 
     def create_widgets(self):
+        """创建widgets。"""
         outer_frame = RoundedFrame(self.parent,
                                    bg=self.lighten_bg_color,
                                    border_color=border_color(self.lighten_bg_color),
@@ -101,6 +107,7 @@ class SettingsPage:
         reset_all_btn.pack(anchor=tk.CENTER, padx=10)
 
     def group_settings_by_page(self):
+        """分组设置by页面相关处理。"""
         settings = self.settings_manager.get_all_settings()
         settings_by_page = {}
         for key, setting_info in settings.items():
@@ -113,6 +120,7 @@ class SettingsPage:
         return settings_by_page
 
     def create_scrollable_settings_area(self, parent, settings_list):
+        """创建scrollable设置area。"""
         canvas_holder = tk.Frame(parent, bg=self.lighten_bg_color)
         canvas_holder.pack(fill=tk.BOTH, expand=True)
 
@@ -131,6 +139,7 @@ class SettingsPage:
         )
 
         def _sync_canvas_width(event):
+            """内部同步canvas宽度。"""
             canvas.itemconfigure('scroll_window', width=event.width)
         canvas.bind('<Configure>', _sync_canvas_width)
 
@@ -149,6 +158,7 @@ class SettingsPage:
                                          'anim_id': None}
 
         def _on_mousewheel(event):
+            """内部响应mousewheel。"""
             smooth_scroll(self, canvas, event.delta, self._anim_states[id(canvas)])
 
         canvas.bind("<MouseWheel>", _on_mousewheel)
@@ -156,6 +166,7 @@ class SettingsPage:
         self._bind_mousewheel_recursive(scrollable_frame, _on_mousewheel)
 
     def _animate_scroll_step(self, canvas):
+        """内部animatescrollstep相关处理。"""
         state = self._anim_states.get(id(canvas))
         if state is None or state['steps'] <= 0:
             return
@@ -184,6 +195,7 @@ class SettingsPage:
             state['current'] = target
 
     def _bind_mousewheel_recursive(self, widget, handler):
+        """内部绑定mousewheelrecursive。"""
         try:
             klass = widget.winfo_class()
             if klass not in ('TCombobox', 'TSpinbox'):
@@ -194,6 +206,7 @@ class SettingsPage:
             self._bind_mousewheel_recursive(child, handler)
 
     def create_settings_controls(self, parent, settings_list):
+        """创建设置controls。"""
         tk.Frame(parent, bg=self.bg_color, height=8).pack(fill=tk.X)
 
         for i, (key, setting_info) in enumerate(settings_list):
@@ -250,6 +263,7 @@ class SettingsPage:
         tk.Frame(parent, bg=self.bg_color, height=10).pack(fill=tk.X)
 
     def create_combobox_control(self, parent, key, setting_info, current_value):
+        """创建comboboxcontrol。"""
         control_frame = tk.Frame(parent, bg=self._card_bg)
         control_frame.pack(fill=tk.X, pady=4)
 
@@ -273,11 +287,13 @@ class SettingsPage:
         self.setting_widgets[key] = combobox
 
     def on_combobox_change(self, key, combobox, options):
+        """响应comboboxchange。"""
         selected_text = combobox.get()
         selected_index = options.index(selected_text) if selected_text in options else 0
         self.settings_manager.set_setting(key, selected_index)
 
     def create_boolean_control(self, parent, key, setting_info, current_value):
+        """创建booleancontrol。"""
         var = tk.BooleanVar(value=current_value)
         checkbox_text = "  启用该选项"
 
@@ -299,6 +315,7 @@ class SettingsPage:
         self.setting_widgets[key] = var
 
     def create_string_control(self, parent, key, setting_info, current_value):
+        """创建stringcontrol。"""
         control_frame = tk.Frame(parent, bg=self._card_bg)
         control_frame.pack(fill=tk.X, pady=4)
 
@@ -341,6 +358,7 @@ class SettingsPage:
         self.setting_widgets[key] = entry
 
     def create_numeric_control(self, parent, key, setting_info, current_value):
+        """创建numericcontrol。"""
         control_frame = tk.Frame(parent, bg=self._card_bg)
         control_frame.pack(fill=tk.X, pady=4)
 
@@ -385,6 +403,7 @@ class SettingsPage:
         self.setting_widgets[key] = scale
 
     def create_color_control(self, parent, key, setting_info, current_value):
+        """创建颜色control。"""
         control_frame = tk.Frame(parent, bg=self._card_bg)
         control_frame.pack(fill=tk.X, pady=4)
 
@@ -423,19 +442,23 @@ class SettingsPage:
         self.setting_widgets[key] = color_entry
 
     def on_boolean_change(self, key, var):
+        """响应booleanchange。"""
         self.settings_manager.set_setting(key, var.get())
         _after_setting_change(key, var.get())
 
     def on_string_change(self, key, entry):
+        """响应stringchange。"""
         self.settings_manager.set_setting(key, entry.get())
 
     def on_scale_change(self, key, value, value_label, is_int=False):
+        """响应scalechange。"""
         value = float(value)
         stored_value = int(value) if is_int else value
         self.settings_manager.set_setting(key, stored_value)
         value_label.config(text=f"当前值: {int(value)}" if is_int else f"当前值: {value:.1f}")
 
     def on_color_entry_change(self, key, entry, color_frame):
+        """响应颜色条目change。"""
         color_value = entry.get().strip()
         if not color_value:
             return
@@ -446,6 +469,7 @@ class SettingsPage:
             pass
 
     def on_color_button_click(self, key, entry, color_frame):
+        """响应颜色按钮click。"""
         current_color = entry.get().strip() or '#ffffff'
         try:
             result = colorchooser.askcolor(initialcolor=current_color)
@@ -459,6 +483,7 @@ class SettingsPage:
             self.settings_manager.set_setting(key, color)
 
     def browse_game_path(self, entry):
+        """browse游戏路径相关处理。"""
         from functions.base.steam_locator import resolve_game_dir, GAME_EXE
         path = filedialog.askopenfilename(
             title=f"选择边狱巴士主程序 ({GAME_EXE})",
@@ -478,6 +503,7 @@ class SettingsPage:
         self.settings_manager.set_setting('game_path', game_dir)
 
     def reset_setting(self, key):
+        """重置setting。"""
         setting_info = self.settings_manager.get_setting_info(key)
         setting_name = (setting_info.get('name', setting_info.get('description', key))
                         if setting_info else key)
@@ -488,6 +514,7 @@ class SettingsPage:
             messagebox.showinfo("成功", f"已重置设置项: {setting_name}")
 
     def reset_all_settings(self):
+        """重置全部设置。"""
         if messagebox.askyesno("确认", "确定要重置所有设置为默认值吗？"):
             self.settings_manager.reset_all_settings()
             self.save_all_settings()
@@ -495,12 +522,14 @@ class SettingsPage:
             messagebox.showinfo("成功", "已重置所有设置")
 
     def save_all_settings(self):
+        """保存全部设置。"""
         if self.settings_manager.save_settings():
             pass
         else:
             messagebox.showerror("错误", "保存设置失败")
 
     def refresh_setting_display(self, key):
+        """刷新settingdisplay。"""
         current_value: str = self.settings_manager.get_setting(key) # type: ignore
         setting_info: dict = self.settings_manager.get_setting_info(key)  # type: ignore
 
@@ -541,12 +570,15 @@ class SettingsPage:
                         widget.set(options[0] if options else "")
 
     def refresh_all_displays(self):
+        """刷新全部displays。"""
         for key in self.settings_manager.get_all_settings():
             self.refresh_setting_display(key)
 
     def auto_refresh(self):
+        """autorefresh相关处理。"""
         self.save_all_settings()
         self.parent.after(1000, self.auto_refresh)
 
 def init_settings_page(parent_frame, bg_color: str, lighten_bg_color: str) -> SettingsPage:
+    """初始化设置页面。"""
     return SettingsPage(parent_frame, bg_color, lighten_bg_color)

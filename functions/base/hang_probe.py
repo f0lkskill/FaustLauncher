@@ -100,6 +100,7 @@ def _visit_windows(pid: int, want_hung: bool = False) -> list:
     target = int(pid)
 
     def _visit(hwnd, _lparam):
+        """内部visit相关处理。"""
         owner = wt.DWORD()
         u32.GetWindowThreadProcessId(hwnd, ctypes.byref(owner))
         if owner.value != target:

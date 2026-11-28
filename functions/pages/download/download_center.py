@@ -30,6 +30,7 @@ def _safe_mod_dir_name(name) -> str:
     return n
 
 class DownloadCenterPage:
+    """下载Center页面。"""
     def __init__(self, parent, root, bg_color, lighten_bg_color):
         """初始化下载中心状态与控件引用。"""
         self.parent = parent

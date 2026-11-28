@@ -1,5 +1,8 @@
+"""base 子模块：<window_utils>（具体职责见函数文档）。"""
+
 
 def center_window(root, auto_deiconify=True, size = None):
+    """center窗口相关处理。"""
     root.update_idletasks()
     
     if not size:

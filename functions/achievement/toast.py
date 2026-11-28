@@ -1,3 +1,5 @@
+"""成就解锁提示的界面/通知封装。"""
+
 
 import os
 import queue
@@ -66,6 +68,7 @@ _BG_CACHE_MAX = 12
 _DESC_FONTS: dict[int, "tkfont.Font"] = {}
 
 def desc_font(root: tk.Tk) -> "tkfont.Font":
+    """desc字体相关处理。"""
     key = id(root)
     font = _DESC_FONTS.get(key)
     if font is None:
@@ -74,6 +77,7 @@ def desc_font(root: tk.Tk) -> "tkfont.Font":
     return font
 
 def _resolve_icon_path() -> str | None:
+    """内部解析图标路径。"""
     global _ICON_PATH
     if _ICON_PATH:
         return _ICON_PATH
@@ -89,6 +93,7 @@ def _resolve_icon_path() -> str | None:
     return None
 
 def _achievement_art_dir() -> str:
+    """内部成就art目录相关处理。"""
     global _ACH_ART_DIR
     if _ACH_ART_DIR is None:
         try:
@@ -99,6 +104,7 @@ def _achievement_art_dir() -> str:
     return _ACH_ART_DIR
 
 def _resolve_achievement_icon(ach_id: str) -> str | None:
+    """内部解析成就图标。"""
     aid = str(ach_id or "").strip()
     if not aid:
         return None
@@ -116,6 +122,7 @@ def _resolve_achievement_icon(ach_id: str) -> str | None:
     return path
 
 def _rounded_icon(src_path: str, size: int = 60, radius: int = 10) -> Image.Image:
+    """内部rounded图标相关处理。"""
     with Image.open(src_path) as im:
         im = im.convert("RGBA")
         pad = 4
@@ -132,6 +139,7 @@ def _rounded_icon(src_path: str, size: int = 60, radius: int = 10) -> Image.Imag
 
 def render_toast_bg(rarity: str = "common", height: int = CARD_MIN_H,
                     ach_id: str = "") -> Image.Image:
+    """渲染提示bg。"""
     border_col = RARITY_BORDER_COLORS.get(rarity, RARITY_BORDER_COLORS["common"])
     bg_col = BG_MID
     h = max(CARD_MIN_H, int(height))
@@ -166,10 +174,12 @@ def render_toast_bg(rarity: str = "common", height: int = CARD_MIN_H,
     return out
 
 def _hex(col) -> str:
+    """内部hex相关处理。"""
     return "#%02x%02x%02x" % col
 
 def wrap_text(text: str, font, max_width: int,
               max_lines: int = MAX_DESC_LINES) -> list[str]:
+    """wrap文本相关处理。"""
     if not text:
         return []
     lines: list[str] = []
@@ -203,6 +213,7 @@ def wrap_text(text: str, font, max_width: int,
 _toast_q: "queue.Queue[tuple[str, str, str, str]]" = queue.Queue()
 
 def show_toast_async(name: str, desc: str, rarity: str = "common", ach_id: str = ""):
+    """显示提示（异步）。"""
     try:
         _toast_q.put_nowait((name, desc, rarity, str(ach_id or "")))
     except Exception:
@@ -210,8 +221,10 @@ def show_toast_async(name: str, desc: str, rarity: str = "common", ach_id: str =
 
 class _ToastWindow:
 
+    """内部提示窗口。"""
     def __init__(self, root: tk.Tk, name: str, desc: str, rarity: str = "common",
                  ach_id: str = ""):
+        """初始化对象状态。"""
         self.root = root
         self.done = False
         self._alive = True
@@ -276,12 +289,14 @@ class _ToastWindow:
         self._last_alpha = -1.0
 
     def set_slot(self, idx_from_bottom: int):
+        """设置slot。"""
         ty = self._screen_h - PAD_BOTTOM - self._h - idx_from_bottom * (self._h + GAP)
         if ty < 40:
             ty = 40
         self._target_y = ty
 
     def tick(self) -> bool:
+        """tick相关处理。"""
         try:
             self._frames_total += 1
             if self._frames_total > HOLD_FRAMES + SLIDE_FRAMES + FADE_FRAMES * 4:
@@ -327,6 +342,7 @@ class _ToastWindow:
             return False
 
     def _apply_geometry(self, x: int, y: int, alpha: float) -> None:
+        """内部应用geometry。"""
         if (x, y) != self._last_geom:
             self._last_geom = (x, y)
             self.win.geometry(f"{CARD_W}x{self._h}+{x}+{y}")
@@ -338,6 +354,7 @@ class _ToastWindow:
                 pass
 
     def _destroy(self):
+        """内部destroy相关处理。"""
         if not self._alive:
             return
         self._alive = False
@@ -352,7 +369,9 @@ class _ToastWindow:
 
 class ToastController:
 
+    """提示Controller类。"""
     def __init__(self):
+        """初始化对象状态。"""
         self.root = tk.Tk()
         self.root.withdraw()
         self.root.overrideredirect(True)
@@ -361,6 +380,7 @@ class ToastController:
         self._prewarm()
 
     def _prewarm(self):
+        """内部prewarm相关处理。"""
         try:
             img = render_toast_bg("common", CARD_MIN_H)
             self._prewarm_img = ImageTk.PhotoImage(img)
@@ -373,6 +393,7 @@ class ToastController:
             pass
 
     def _spawn(self, name: str, desc: str, rarity: str = "common", ach_id: str = ""):
+        """内部拉起相关操作。"""
         try:
             w = _ToastWindow(self.root, name, desc, rarity, ach_id)
             self._active.append(w)
@@ -380,14 +401,17 @@ class ToastController:
             pass
 
     def _relayout(self):
+        """内部relayout相关处理。"""
         n = len(self._active)
         for i in range(n):
             self._active[i].set_slot(n - 1 - i)
 
     def has_work(self) -> bool:
+        """haswork相关处理。"""
         return bool(self._active) or not _toast_q.empty()
 
     def pump(self):
+        """pump相关处理。"""
         try:
             if len(self._active) < MAX_SHOW:
                 try:
@@ -410,12 +434,14 @@ class ToastController:
             pass
 
     def destroy(self):
+        """destroy相关处理。"""
         try:
             self.root.destroy()
         except Exception:
             pass
 
 def demo():
+    """demo相关处理。"""
     import time
     ctrl = ToastController()
     show_toast_async("初次战斗", "完成1场战斗", "common")
@@ -439,6 +465,7 @@ def demo():
     ctrl.destroy()
 
 def preview(out_png: str = "toast_preview.png", rarity: str = "legendary"):
+    """preview相关处理。"""
     im = render_toast_bg(rarity)
     im.save(out_png)
     print("saved:", out_png)

@@ -1,3 +1,5 @@
+"""Mod 加载器的 Web 界面辅助。"""
+
 from __future__ import annotations
 
 import json
@@ -36,6 +38,7 @@ LOG_MAX_LINES = 200
 NO_PID_IDLE_TIMEOUT = 90.0
 
 def _pid_alive(pid):
+    """内部pidalive相关处理。"""
     if not pid:
         return True
     try:
@@ -55,6 +58,7 @@ def _pid_alive(pid):
         return True
 
 def _read_progress_raw():
+    """内部读取进度raw。"""
     try:
         with open(PROGRESS_FILE, "r", encoding="utf-8") as f:
             return f.read().strip()
@@ -62,6 +66,7 @@ def _read_progress_raw():
         return ""
 
 def _parse_progress(raw: str):
+    """内部解析进度。"""
     if not raw:
         return "", 0, ""
     if raw == "LAUNCH":
@@ -77,6 +82,7 @@ def _parse_progress(raw: str):
     return "unknown", 0, raw
 
 def _read_threads():
+    """内部读取threads。"""
     try:
         with open(THREADS_FILE, "r", encoding="utf-8") as f:
             data = json.load(f)
@@ -96,6 +102,7 @@ def _read_threads():
     return out
 
 def _log_level(line: str) -> str:
+    """内部日志level相关处理。"""
     low = line.lower()
     if "错误" in line or "失败" in line or "error" in low or "traceback" in low:
         return "error"
@@ -107,6 +114,7 @@ def _log_level(line: str) -> str:
     return "info"
 
 def _read_log_tail(max_lines=LOG_MAX_LINES, max_bytes=200000):
+    """内部读取日志tail。"""
     try:
         size = os.path.getsize(LOG_FILE)
         with open(LOG_FILE, "rb") as f:
@@ -122,6 +130,7 @@ def _read_log_tail(max_lines=LOG_MAX_LINES, max_bytes=200000):
         return []
 
 def _icon_data_uri():
+    """内部图标数据uri相关处理。"""
     try:
         import base64
         if os.path.isfile(ICON_FILE):
@@ -133,7 +142,9 @@ def _icon_data_uri():
 
 class ModLoaderApi(WindowChromeBridge):
 
+    """ModLoaderApi类。"""
     def __init__(self, loader_pid=0):
+        """初始化对象状态。"""
         self._pid = int(loader_pid or 0)
         self._window = None
         self._t0 = time.time()
@@ -145,6 +156,7 @@ class ModLoaderApi(WindowChromeBridge):
         self._eval_ok = True
 
     def attach(self, window):
+        """attach相关处理。"""
         self._window = window
         try:
             self._icon = _icon_data_uri()
@@ -152,6 +164,7 @@ class ModLoaderApi(WindowChromeBridge):
             self._icon = ""
 
     def _call_window(self, fn, *args):
+        """内部call窗口相关处理。"""
         if not self._window or not self._eval_ok:
             return False
         try:
@@ -163,6 +176,7 @@ class ModLoaderApi(WindowChromeBridge):
             return False
 
     def _finish(self):
+        """内部finish相关处理。"""
         if self._finished:
             return
         self._finished = True
@@ -174,6 +188,7 @@ class ModLoaderApi(WindowChromeBridge):
             self._call_window("destroy")
 
     def get_state(self):
+        """获取状态。"""
         raw = _read_progress_raw()
         if raw != self._last_raw:
             self._last_raw = raw
@@ -233,6 +248,7 @@ class ModLoaderApi(WindowChromeBridge):
         }
 
     def close(self):
+        """关闭相关操作。"""
         if self._window is not None:
             fade_out_window(self._window, then_close=True)
         else:
@@ -240,6 +256,7 @@ class ModLoaderApi(WindowChromeBridge):
         return True
 
 def run_mod_loader_web(loader_pid=0, debug=False):
+    """执行ModloaderWeb。"""
     try:
         import webview
     except Exception as e:

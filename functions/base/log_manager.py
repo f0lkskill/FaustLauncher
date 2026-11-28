@@ -1,3 +1,5 @@
+"""日志文件写入与轮转。"""
+
 import os
 import re
 import datetime
@@ -10,9 +12,11 @@ MAX_KEEP_PER_DAY = 7
 _logger = None
 
 def _ensure_dir():
+    """内部确保目录。"""
     os.makedirs(LOG_DIR, exist_ok=True)
 
 def _cleanup_logs():
+    """内部清理logs。"""
     try:
         today = datetime.date.today()
         cutoff = today - datetime.timedelta(days=MAX_KEEP_DAYS - 1)
@@ -22,6 +26,7 @@ def _cleanup_logs():
         pass
 
 def _cleanup_folder(folder: str, cutoff: datetime.date) -> None:
+    """内部清理folder。"""
     by_day = {}
     for fname in os.listdir(folder):
         path = os.path.join(folder, fname)
@@ -51,6 +56,7 @@ def _cleanup_folder(folder: str, cutoff: datetime.date) -> None:
                     pass
 
 def init_logger():
+    """初始化logger。"""
     global _logger
 
     # 成就监测子进程不落主日志：它的输出由主进程泵进 achievement_hook.log，
@@ -91,6 +97,7 @@ def init_logger():
     return _logger
 
 def _announce(message: str) -> None:
+    """内部announce相关处理。"""
     try:
         from functions.base import log_format
         write_line(log_format.build_line(message, site=("log_manager.py", 0, "logs")))
@@ -98,12 +105,14 @@ def _announce(message: str) -> None:
         pass
 
 def get_logger():
+    """获取logger。"""
     global _logger
     if _logger is None:
         init_logger()
     return _logger
 
 def write_line(line: str) -> None:
+    """写入行。"""
     try:
         text = re.sub(r"\x1b\[[0-9;]*m", "", line).rstrip("\r\n")
         if not text:
@@ -113,6 +122,7 @@ def write_line(line: str) -> None:
         pass
 
 def flush() -> None:
+    """flush相关处理。"""
     if _logger is None:
         return
     for handler in list(_logger.handlers):
@@ -122,6 +132,7 @@ def flush() -> None:
             pass
 
 def log_message(message) -> None:
+    """日志message相关处理。"""
     try:
         from functions.base import log_format
         write_line(log_format.format_message(str(message)))

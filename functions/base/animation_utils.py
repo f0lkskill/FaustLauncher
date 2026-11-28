@@ -1,6 +1,9 @@
+"""base 子模块：<animation_utils>（具体职责见函数文档）。"""
+
 import tkinter as tk
 
 def smooth_scroll(self, canvas, delta, anim_state):
+    """smoothscroll相关处理。"""
     unit = int(delta / 120) if abs(delta) >= 120 else (1 if delta > 0 else -1)
 
     state = anim_state

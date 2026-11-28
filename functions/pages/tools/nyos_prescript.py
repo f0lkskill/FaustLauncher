@@ -1,3 +1,5 @@
+"""NYOS 预脚本处理。"""
+
 #! 今日指令?
 
 import difflib
@@ -22,6 +24,7 @@ from functions.base.window_chrome import (  # noqa: E402
 )
 
 def _center_xy(width, height):
+    """内部centerxy相关处理。"""
     try:
         import ctypes
 
@@ -38,6 +41,7 @@ except ImportError:
     import json
 
     def read_json(path):
+        """读取json。"""
         with open(path, 'r', encoding='utf-8-sig') as f:
             return json.load(f)
 
@@ -68,6 +72,7 @@ DEFAULT_DATA = {
 }
 
 class NyosPrescript:
+    """NyosPrescript类。"""
     do = []
     where = []
     people = []
@@ -86,10 +91,12 @@ class NyosPrescript:
     where_flag = False
 
     def __init__(self):
+        """初始化对象状态。"""
         pass
 
     @staticmethod
     def reload_data():
+        """reload数据相关处理。"""
         keys = ["do", "where", "people", "when", "actions", "drinks",
                 "foods", "objects", "songs", "words", "creatures",
                 "direction", "turn", "color"]
@@ -107,6 +114,7 @@ class NyosPrescript:
 
     @staticmethod
     def spawn_prescript_steps():
+        """拉起prescriptsteps。"""
         NyosPrescript.mems.clear()
         NyosPrescript.where_flag = False
 
@@ -132,6 +140,7 @@ class NyosPrescript:
 
     @staticmethod
     def compute_birth(steps):
+        """computebirth相关处理。"""
         if not steps:
             return []
         final = steps[-1]
@@ -158,11 +167,13 @@ class NyosPrescript:
 
     @staticmethod
     def spawn_prescript():
+        """拉起prescript。"""
         steps, final = NyosPrescript.spawn_prescript_steps()
         return final
 
     @staticmethod
     def check_text(text: str):
+        """检查文本。"""
         key_words = ["&time&", "&pepople&", "&where&", "&do&", "&drink&", "&food&", "&count&", "&action&", "&object&", "&song&", "&word&", "&creature&", "&direction&", "&turn&", "&color&"]
         for word in key_words:
             if word not in text:
@@ -206,6 +217,7 @@ class NyosPrescript:
     @staticmethod
     def replace_text(text: str, old: str, new: str):
 
+        """replace文本相关处理。"""
         if new in NyosPrescript.mems:
             return text
 
@@ -220,6 +232,7 @@ class NyosPrescript:
 
     @staticmethod
     def resolve_tail(text: str):
+        """解析tail。"""
         finals = {
             "&time&": "现在",
             "&do&": "做一件平常的小事",
@@ -243,7 +256,9 @@ class NyosPrescript:
 
 class NyosPrescriptApi(WindowChromeBridge):
 
+    """NyosPrescriptApi类。"""
     def generate(self):
+        """generate相关处理。"""
         NyosPrescript.reload_data()
         steps, final = NyosPrescript.spawn_prescript_steps()
         birth = NyosPrescript.compute_birth(steps)
@@ -251,9 +266,11 @@ class NyosPrescriptApi(WindowChromeBridge):
 
     @staticmethod
     def assets():
+        """assets相关处理。"""
         import base64
 
         def data_uri(rel_path, mime):
+            """数据uri相关处理。"""
             try:
                 with open(os.path.join(_PROJECT_ROOT, rel_path), "rb") as f:
                     return f"data:{mime};base64," + base64.b64encode(f.read()).decode("ascii")
@@ -268,6 +285,7 @@ class NyosPrescriptApi(WindowChromeBridge):
         }
 
 def _msgbox(title, text, is_error=True):
+    """内部msgbox相关处理。"""
     try:
         import ctypes
         ctypes.windll.user32.MessageBoxW(None, text, title, 0x10 if is_error else 0x40)
@@ -275,6 +293,7 @@ def _msgbox(title, text, is_error=True):
         pass
 
 def run_prescript_window(debug: bool = False):
+    """执行prescript窗口。"""
     try:
         import webview
     except BaseException as e:
@@ -326,6 +345,7 @@ def run_prescript_window(debug: bool = False):
         raise SystemExit(1)
 
 def open_prescript_window(debug: bool = False):
+    """打开prescript窗口。"""
     if getattr(sys, "frozen", False):
         cmd = [os.path.abspath(sys.executable), "--nyos-window"]
     else:

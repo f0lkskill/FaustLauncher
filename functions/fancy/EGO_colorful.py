@@ -1,3 +1,5 @@
+"""fancy 子模块：<EGO_colorful>（具体职责见函数文档）。"""
+
 import glob
 from typing import Dict, Any
 from functions.fancy.dialog_colorful import apply_color_gradient_custom
@@ -7,6 +9,7 @@ from functions.base.common.json_io import read_json, write_json
 settings_manager = get_settings_manager()
 
 def process_ego_json_files():
+    """进程egojson文件相关处理。"""
     global settings_manager
     from functions.web_update.translation_source import get_translation_dir_name
 
@@ -34,6 +37,7 @@ def process_ego_json_files():
     return True
 
 def process_single_json_file(file_path: str) -> bool:
+    """进程singlejson文件相关处理。"""
     try:
         data = read_json(file_path)
         
@@ -53,6 +57,7 @@ def process_single_json_file(file_path: str) -> bool:
         return False
 
 def process_ego_item(item: Dict[str, Any]):
+    """进程ego条目相关处理。"""
     if 'levelList' not in item or not isinstance(item['levelList'], list):
         return
     
@@ -60,6 +65,7 @@ def process_ego_item(item: Dict[str, Any]):
         process_ego_level(level_data)
 
 def process_ego_level(level_data: Dict[str, Any]):
+    """进程egolevel相关处理。"""
     desc_contains_specified = False
     if 'desc' in level_data and level_data['desc']:
         desc_contains_specified = '指定' in level_data['desc']
@@ -78,6 +84,7 @@ def process_ego_level(level_data: Dict[str, Any]):
 
 def process_text_field(text: str, is_specified: bool) -> str:
     
+    """进程文本字段相关处理。"""
     if is_specified:
         processed_text = apply_color_gradient_custom(f"! {text} !", "#ff0000", "#ffffff", 0.5)
         processed_text = f"<b><i>{processed_text}</i></b>"
@@ -89,6 +96,7 @@ def process_text_field(text: str, is_specified: bool) -> str:
 
 def main():
     
+    """主入口相关处理。"""
     try:
         success = process_ego_json_files()
         if success:

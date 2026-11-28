@@ -1,3 +1,5 @@
+"""IL2CPP metadata 的获取/解密/恢复入口。"""
+
 
 from __future__ import annotations
 
@@ -17,6 +19,7 @@ _MAX_METADATA_SIZE = 256 << 20
 
 @dataclass
 class MetadataHeader:
+    """元数据Header类。"""
     version: int
     section_count: int
     max_end: int
@@ -24,6 +27,7 @@ class MetadataHeader:
     layout: str = ""
 
 def _section_count_from_first_offset(first_offset: int, stride: int) -> int | None:
+    """内部section计数from首个偏移相关处理。"""
     if first_offset < 8:
         return None
     unit = stride * 4
@@ -33,6 +37,7 @@ def _section_count_from_first_offset(first_offset: int, stride: int) -> int | No
     return count if 1 <= count <= 64 else None
 
 def _walk_sections(values: list[int], stride: int) -> list[tuple[int, int]] | None:
+    """内部walksections相关处理。"""
     if not values:
         return None
     count = _section_count_from_first_offset(int(values[0]), stride)
@@ -49,6 +54,7 @@ def _walk_sections(values: list[int], stride: int) -> list[tuple[int, int]] | No
 
 def _score_layout(sections: list[tuple[int, int]], stride: int,
                   reference_size: int = 0) -> tuple:
+    """内部scorelayout相关处理。"""
     filled = [(offset, size) for offset, size in sections if size > 0]
     if not filled:
         return (-1,)
@@ -62,6 +68,7 @@ def _score_layout(sections: list[tuple[int, int]], stride: int,
     return (monotonic, in_bounds, exact, self_consistent, len(filled))
 
 def parse_header(data: bytes, reference_size: int = 0) -> MetadataHeader | None:
+    """解析header。"""
     if len(data) < 16 or struct.unpack_from("<I", data, 0)[0] != METADATA_MAGIC:
         return None
     version = struct.unpack_from("<i", data, 4)[0]
@@ -91,6 +98,7 @@ def parse_header(data: bytes, reference_size: int = 0) -> MetadataHeader | None:
                           layout=f"stride{best_stride}")
 
 def header_from_file(path: str) -> MetadataHeader | None:
+    """headerfrom文件相关处理。"""
     try:
         size = os.path.getsize(path)
         with open(path, "rb") as fh:
@@ -99,9 +107,11 @@ def header_from_file(path: str) -> MetadataHeader | None:
         return None
 
 def is_standard_metadata(path: str) -> bool:
+    """判断standard元数据。"""
     return header_from_file(path) is not None
 
 def _validate_file(path: str) -> tuple[bool, str]:
+    """内部校验文件。"""
     size = os.path.getsize(path)
     header = header_from_file(path)
     if header is None:
@@ -114,6 +124,7 @@ def _validate_file(path: str) -> tuple[bool, str]:
                   f"({header.layout}) size={size}")
 
 def _file_contains(path: str, needle: bytes, chunk: int = 8 << 20) -> bool:
+    """内部文件contains相关处理。"""
     overlap = len(needle) - 1
     tail = b""
     try:
@@ -129,6 +140,7 @@ def _file_contains(path: str, needle: bytes, chunk: int = 8 << 20) -> bool:
         return False
 
 def _validate_payload(data: bytes) -> tuple[bool, str]:
+    """内部校验载荷。"""
     header = parse_header(data)
     if header is None:
         return False, "魔数/头部非法"
@@ -141,6 +153,7 @@ def _validate_payload(data: bytes) -> tuple[bool, str]:
 @dataclass
 class MetadataResult:
 
+    """元数据结果。"""
     ok: bool
     source: str = ""
     path: str = ""
@@ -152,12 +165,14 @@ class MetadataResult:
     extras: dict = field(default_factory=dict)
 
     def describe(self) -> str:
+        """describe相关处理。"""
         if not self.ok:
             return f"[metadata] 获取失败: {self.detail}"
         return (f"[metadata] 来源={self.source} version={self.version} "
                 f"size={self.size} ({self.detail})")
 
 def capstone_available() -> bool:
+    """capstoneavailable相关处理。"""
     try:
         from .metadata_recovery import capstone_available as _impl
         return bool(_impl())
@@ -165,6 +180,7 @@ def capstone_available() -> bool:
         return False
 
 def install_capstone(on_log=None) -> dict:
+    """安装capstone。"""
     try:
         from .metadata_recovery import install_capstone as _impl
         return _impl(on_log) # type: ignore
@@ -174,6 +190,7 @@ def install_capstone(on_log=None) -> dict:
 def decrypt_static(metadata_path: str, dll_path: str, on_log=None,
                    out_dir: str = "", version: int = DEFAULT_VERSION,
                    expect_sha256: str = "") -> MetadataResult:
+    """decryptstatic相关处理。"""
     log = on_log or (lambda _m: None)
     if not capstone_available():
         return MetadataResult(False, detail="缺少 capstone（pip install capstone 后重试）")
@@ -205,6 +222,7 @@ def decrypt_static(metadata_path: str, dll_path: str, on_log=None,
         extras={"run_dir": result.get("run_dir"), "verdicts": result.get("verdicts")})
 
 def _read_head_tail(path: str, head: int = 1 << 20, tail: int = 8 << 20) -> bytes:
+    """内部读取headtail。"""
     with open(path, "rb") as fh:
         data = fh.read(head)
         try:
@@ -215,12 +233,14 @@ def _read_head_tail(path: str, head: int = 1 << 20, tail: int = 8 << 20) -> byte
     return data
 
 def _stamp() -> str:
+    """内部stamp相关处理。"""
     import time
     return time.strftime("%Y%m%d_%H%M%S")
 
 def dump_from_memory(disk_metadata: str, process_name: str = "LimbusCompany.exe",
                      on_log=None, out_path: str = "",
                      reader: ProcessMemoryReader | None = None) -> MetadataResult:
+    """转储from内存相关处理。"""
     log = on_log or (lambda _m: None)
     owner = reader if reader is not None else ProcessMemoryReader(process_name)
     temp_attach = reader is None
@@ -307,6 +327,7 @@ def dump_from_memory(disk_metadata: str, process_name: str = "LimbusCompany.exe"
 
 def _read_large(reader: ProcessMemoryReader, address: int, size: int,
                 chunk: int = 8 << 20) -> bytes:
+    """内部读取large。"""
     out = bytearray()
     offset = 0
     while offset < size:
@@ -324,6 +345,7 @@ def _read_large(reader: ProcessMemoryReader, address: int, size: int,
     return bytes(out)
 
 def detect_runtime_version(process_name: str = "LimbusCompany.exe") -> int | None:
+    """检测runtime版本。"""
     reader = ProcessMemoryReader(process_name)
     if not reader.attach():
         return None
@@ -346,6 +368,7 @@ def obtain_metadata(metadata_path: str, gameassembly_path: str, on_log=None,
                     process_name: str = "LimbusCompany.exe",
                     dump_dir: str = "", version: int = DEFAULT_VERSION,
                     prefer_memory: bool | None = None) -> MetadataResult:
+    """obtain元数据相关处理。"""
     log = on_log or (lambda _m: None)
     if is_standard_metadata(metadata_path):
         header = header_from_file(metadata_path)
@@ -363,10 +386,12 @@ def obtain_metadata(metadata_path: str, gameassembly_path: str, on_log=None,
             log(f"[metadata] 检测到 {process_name} 正在运行 → 优先从进程内存 dump（更快）")
 
     def try_memory() -> MetadataResult:
+        """try内存相关处理。"""
         out_path = os.path.join(dump_dir, "memory-global-metadata.dat") if dump_dir else ""
         return dump_from_memory(metadata_path, process_name, on_log=log, out_path=out_path)
 
     def try_static() -> MetadataResult:
+        """trystatic相关处理。"""
         return decrypt_static(metadata_path, gameassembly_path, on_log=log,
                               out_dir=dump_dir, version=version)
 

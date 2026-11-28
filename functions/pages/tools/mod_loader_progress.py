@@ -1,3 +1,5 @@
+"""Mod 加载器进度窗口。"""
+
 #! Mod 加载器进度提示窗口 (tkinter)
 
 import os
@@ -57,6 +59,7 @@ LOG_MAX_LINES = 14
 POLL_MS = 300
 
 def _pick_font(candidates):
+    """内部pick字体相关处理。"""
     try:
         import tkinter.font as tkfont
         available = set(tkfont.families())
@@ -79,6 +82,7 @@ FONT_THREAD = (MONO_FONT, 8)
 FONT_THREAD_NAME = (UI_FONT, 8, "bold")
 
 def _pid_alive(pid):
+    """内部pidalive相关处理。"""
     if not pid:
         return True
     try:
@@ -98,6 +102,7 @@ def _pid_alive(pid):
         return True
 
 def _read_progress():
+    """内部读取进度。"""
     try:
         with open(PROGRESS_FILE, "r", encoding="utf-8") as f:
             lines = [line.strip() for line in f if line.strip()]
@@ -106,6 +111,7 @@ def _read_progress():
         return ""
 
 def _read_threads():
+    """内部读取threads。"""
     try:
         with open(THREADS_FILE, "r", encoding="utf-8") as f:
             data = json.load(f)
@@ -114,6 +120,7 @@ def _read_threads():
         return {}
 
 def _read_log_tail(max_lines=LOG_MAX_LINES, max_bytes=200000):
+    """内部读取日志tail。"""
     try:
         size = os.path.getsize(LOG_FILE)
         with open(LOG_FILE, "rb") as f:
@@ -129,6 +136,7 @@ def _read_log_tail(max_lines=LOG_MAX_LINES, max_bytes=200000):
         return []
 
 def _is_success_log(line: str) -> bool:
+    """内部判断success日志。"""
     lower = line.lower()
     success_keywords = [
         "* 修补完成", "* 完成", "* 备份", "已恢复",
@@ -140,6 +148,7 @@ def _is_success_log(line: str) -> bool:
     return False
 
 def _load_header_icon(size=24):
+    """内部加载header图标。"""
     if not HAS_PIL or not os.path.isfile(ICON_FILE):
         return None
     try:
@@ -152,7 +161,9 @@ def _load_header_icon(size=24):
 
 class LoaderProgressWindow:
 
+    """Loader进度窗口。"""
     def __init__(self, root, loader_pid):
+        """初始化对象状态。"""
         self.root = root
         self.pid = loader_pid
         self.state = "loading"
@@ -164,6 +175,7 @@ class LoaderProgressWindow:
         self._poll()
 
     def _build_ui(self):
+        """内部构建界面。"""
         import random
 
         root = self.root
@@ -244,13 +256,16 @@ class LoaderProgressWindow:
         self.log_text.tag_config("ok", foreground=LOG_SUCCESS_FG)
 
     def _on_threads_configure(self, event):
+        """内部响应threadsconfigure。"""
         self._threads_canvas.configure(scrollregion=self._threads_canvas.bbox("all"))
 
     def _set_error(self, message):
+        """内部设置错误。"""
         self.stage_lbl.config(text="加载出错", fg=LOG_ERR_FG)
         self.detail_lbl.config(text=message, fg=FG_DETAIL)
 
     def _update_log(self):
+        """内部更新日志。"""
         lines = _read_log_tail()
         if lines == self._last_log_lines:
             return
@@ -272,6 +287,7 @@ class LoaderProgressWindow:
         t.see("end")
 
     def _update_threads(self):
+        """内部更新threads。"""
         threads = _read_threads()
         stable = json.dumps(threads, sort_keys=True, ensure_ascii=False)
         if stable == self._last_threads_state:
@@ -334,6 +350,7 @@ class LoaderProgressWindow:
         self._threads_header.config(text=header_text)
 
     def _finish(self, text, delay_ms):
+        """内部finish相关处理。"""
         if self._closing:
             return
         self._closing = True
@@ -345,6 +362,7 @@ class LoaderProgressWindow:
         self.root.after(delay_ms, self.root.destroy)
 
     def _poll(self):
+        """内部poll相关处理。"""
         try:
             self._tick()
         except Exception:
@@ -358,6 +376,7 @@ class LoaderProgressWindow:
             self.root.after(POLL_MS, self._poll)
 
     def _tick(self):
+        """内部tick相关处理。"""
         content = _read_progress()
         pid_alive = _pid_alive(self.pid)
 
@@ -425,6 +444,7 @@ class LoaderProgressWindow:
         self._update_threads()
 
 def _set_window_icon(root):
+    """内部设置窗口图标。"""
     try:
         path = os.path.join(os.getcwd(), "assets", "images", "icon", "icon.png")
         if not os.path.isfile(path):
@@ -437,6 +457,7 @@ def _set_window_icon(root):
         pass
 
 def run_mod_loader_progress(loader_pid=0, debug=False):
+    """执行Modloader进度。"""
     try:
         from functions.pages.tools.mod_loader_web import run_mod_loader_web
         if run_mod_loader_web(loader_pid, debug=debug):
@@ -466,6 +487,7 @@ def run_mod_loader_progress(loader_pid=0, debug=False):
         raise SystemExit(1)
 
 def open_mod_loader_progress(loader_pid):
+    """打开Modloader进度。"""
     if getattr(sys, "frozen", False):
         cmd = [os.path.abspath(sys.executable), "--mod-loader-progress", "--pid", str(loader_pid)]
     else:

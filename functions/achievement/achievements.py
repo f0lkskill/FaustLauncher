@@ -1,3 +1,5 @@
+"""成就注册与运行时状态汇总。"""
+
 
 import os
 import json
@@ -28,6 +30,7 @@ _FALLBACK_ITEM_NAMES = {
 }
 
 def _load_item_names() -> dict[int, str]:
+    """内部加载条目names。"""
     names = dict(_FALLBACK_ITEM_NAMES)
     try:
         from functions.web_update.translation_source import get_translation_dir_name
@@ -95,8 +98,10 @@ ITEM_FAMILIES = [
 
 class ItemFamily:
 
+    """条目Family类。"""
     @staticmethod
     def family_of(item_id: int) -> int:
+        """familyof相关处理。"""
         for idx, fam in enumerate(ITEM_FAMILIES):
             if item_id in fam:
                 return idx
@@ -104,10 +109,13 @@ class ItemFamily:
 
 class GlobalState:
 
+    """Global状态类。"""
     def __init__(self):
+        """初始化对象状态。"""
         self.reset()
 
     def reset(self):
+        """重置相关操作。"""
         self.battle_count = 0
         self.steam_logged = False
         self.inventory_open_count = 0
@@ -129,19 +137,23 @@ class GlobalState:
         self.running_owned_ids: set[int] = set()
 
     def load_owned(self, ids: set[int]):
+        """加载owned。"""
         self.running_owned_ids = set(ids)
         self.owned_items = set(ids)
 
     def remember_family(self, fam_idx: int, zero_ids: set[int]):
+        """记住family。"""
         self.families[fam_idx] = set(zero_ids)
 
 _state = GlobalState()
 
 def get_state() -> GlobalState:
+    """获取状态。"""
     return _state
 
 class Achievement:
 
+    """成就类。"""
     def __init__(
         self,
         ach_id: str,
@@ -152,6 +164,7 @@ class Achievement:
         hidden: bool = False,
         rarity: str = RARITY_COMMON,
     ):
+        """初始化对象状态。"""
         self.id = ach_id
         self.name = name
         self.description = description
@@ -164,15 +177,18 @@ class Achievement:
         self.unlock_time: datetime | None = None
 
     def with_rarity(self, rarity: str):
+        """withrarity相关处理。"""
         self.rarity = rarity
         return self
 
     def check(self):
+        """检查相关操作。"""
         ...
 
 achievements: list[Achievement] = []
 
 def _define_achievements():
+    """内部defineachievements相关处理。"""
     s = get_state
 
     achievements.append(Achievement(
@@ -296,6 +312,7 @@ def _define_achievements():
 _completed_state_loaded = False
 
 def load_completed_state(force: bool = False) -> int:
+    """加载completed状态。"""
     global _completed_state_loaded
     if _completed_state_loaded and not force:
         return 0
@@ -329,6 +346,7 @@ ADDON_ENTRY_DEFAULT = "achievements.py"
 ADDON_MANIFEST = "addon_info.json"
 
 def _project_root() -> str:
+    """内部project根相关处理。"""
     try:
         from functions.hook.paths import project_root as _pr  # type: ignore
         return _pr()
@@ -336,6 +354,7 @@ def _project_root() -> str:
         return os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir, os.pardir))
 
 def register_achievement(instance) -> bool:
+    """注册成就。"""
     from functions.achievement.base_achievement import BaseAchievement
     if not isinstance(instance, BaseAchievement):
         return False
@@ -348,9 +367,11 @@ def register_achievement(instance) -> bool:
     return True
 
 def register_achievements(items) -> int:
+    """注册achievements。"""
     return sum(1 for item in (items or ()) if register_achievement(item))
 
 def _addon_dirs() -> list[str]:
+    """内部插件目录相关处理。"""
     root = os.path.join(_project_root(), ADDON_ROOT_DIR)
     if not os.path.isdir(root):
         return []
@@ -360,6 +381,7 @@ def _addon_dirs() -> list[str]:
     )
 
 def _addon_entry_file(addon_dir: str) -> str:
+    """内部插件条目文件相关处理。"""
     entry = ADDON_ENTRY_DEFAULT
     manifest = os.path.join(addon_dir, ADDON_MANIFEST)
     if os.path.isfile(manifest):
@@ -377,6 +399,7 @@ def _addon_entry_file(addon_dir: str) -> str:
     return path if os.path.isfile(path) else ""
 
 def sync_addon_icons(addon_dir: str) -> int:
+    """同步插件icons。"""
     import shutil
 
     src_dir = os.path.join(addon_dir, "assets", "achievement")
@@ -408,6 +431,7 @@ def sync_addon_icons(addon_dir: str) -> int:
     return copied
 
 def load_addon_achievements() -> list[str]:
+    """加载插件achievements。"""
     import importlib.util
 
     added: list[str] = []
@@ -448,6 +472,7 @@ def load_addon_achievements() -> list[str]:
     return added
 
 def _tag_plugin_achievement(instance, addon_name: str) -> None:
+    """内部tagplugin成就相关处理。"""
     try:
         instance.plugin = True
         instance.addon = addon_name
@@ -455,6 +480,7 @@ def _tag_plugin_achievement(instance, addon_name: str) -> None:
         pass
 
 def _classes_in_module(mod) -> list:
+    """内部类inmodule相关处理。"""
     from functions.achievement.base_achievement import BaseAchievement
     out = []
     for _name, obj in vars(mod).items():
@@ -472,6 +498,7 @@ def _classes_in_module(mod) -> list:
 _define_achievements()
 
 def check_achievements(log_callback) -> list[Achievement]:
+    """检查achievements。"""
     unlocked = []
     from functions.achievement.base_achievement import BattleAchievement
     for ach in achievements:
@@ -497,6 +524,7 @@ def check_achievements(log_callback) -> list[Achievement]:
     return unlocked
 
 def record_zero_item(item_id: int):
+    """记录zero条目。"""
     s = get_state()
     now = _time.time()
     if not s.zero_item_ids:
@@ -505,6 +533,7 @@ def record_zero_item(item_id: int):
     s.last_zero_time = now
 
 def detect_owned_items(zero_ids: set[int]) -> list[tuple[int, str]]:
+    """检测owned条目。"""
     s = get_state()
     zero_ids = set(zero_ids)
     new_owned = []
@@ -519,11 +548,13 @@ def detect_owned_items(zero_ids: set[int]) -> list[tuple[int, str]]:
     return new_owned
 
 def register_inventory_open() -> bool:
+    """注册inventoryopen。"""
     s = get_state()
     s.inventory_open_count += 1
     return True
 
 def poll_inventory_window(now=None):
+    """pollinventory窗口相关处理。"""
     s = get_state()
     if not s.round_active or not s.zero_item_ids:
         return None
@@ -538,6 +569,7 @@ def poll_inventory_window(now=None):
     return collected
 
 def reset_achievements():
+    """重置achievements。"""
     get_state().reset()
     for ach in achievements:
         ach.unlocked = False
@@ -545,39 +577,50 @@ def reset_achievements():
         ach.unlock_time = None
 
 def get_manager() -> "AchievementManager":
+    """获取manager。"""
     return AchievementManager()
 
 class AchievementManager:
 
+    """成就管理器。"""
     def __init__(self):
+        """初始化对象状态。"""
         self.achievements = achievements
 
     @property
     def battle_count(self) -> int:
+        """战斗计数相关处理。"""
         return get_state().battle_count
 
     @property
     def death_detected(self) -> bool:
+        """deathdetected相关处理。"""
         return get_state().death_detected
 
     @property
     def owned_items(self) -> set[int]:
+        """owned条目相关处理。"""
         return get_state().owned_items
 
     @property
     def steam_logged(self) -> bool:
+        """Steamlogged相关处理。"""
         return get_state().steam_logged
 
     def check_all(self) -> list[BaseAchievement]:
+        """检查全部。"""
         return check_achievements(lambda msg: print(msg))  # type: ignore # noqa
 
     def reset(self):
+        """重置相关操作。"""
         reset_achievements()
 
     def get_unlocked_count(self) -> int:
+        """获取unlocked计数。"""
         return sum(1 for ach in achievements if ach.unlocked)
 
     def get_achievements_info(self) -> list[dict]:
+        """获取achievements信息。"""
         return [
             {
                 "id": ach.id,
@@ -592,6 +635,7 @@ class AchievementManager:
         ]
 
     def get_achievement(self, ach_id: str) -> Achievement | None:
+        """获取成就。"""
         for ach in achievements:
             if ach.id == ach_id:
                 return ach

@@ -1,3 +1,5 @@
+"""achievement 子模块：<log_sink>（具体职责见函数文档）。"""
+
 
 from __future__ import annotations
 
@@ -19,11 +21,13 @@ DEFAULT_AREA = "AchMonitor"
 _TS_PREFIX_RE = re.compile(r"^\[?\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?\]?[ \t]+")
 
 def _now_stamp() -> str:
+    """内部nowstamp相关处理。"""
     now = _datetime.datetime.now()
     return now.strftime("%H:%M:%S") + f".{now.microsecond // 1000:03d}"
 
 def format_line(message: str, *, area: str | None = None,
                 stamp: str | None = None) -> str:
+    """格式化行。"""
     text = _strip_ansi(str(message)).replace("\r\n", "\n").rstrip("\n")
     if not text.strip():
         return ""
@@ -37,20 +41,24 @@ def format_line(message: str, *, area: str | None = None,
     return head_out + (f"\n{tail}" if tail else "")
 
 def install(sink) -> None:
+    """安装相关操作。"""
     global _SINK
     with _LOCK:
         _SINK = sink
 
 def clear() -> None:
+    """清空相关操作。"""
     global _SINK
     with _LOCK:
         _SINK = None
 
 def installed() -> bool:
+    """installed相关处理。"""
     with _LOCK:
         return _SINK is not None
 
 def write(message: str, area: str | None = None) -> bool:
+    """写入相关操作。"""
     with _LOCK:
         sink = _SINK
     if sink is None:

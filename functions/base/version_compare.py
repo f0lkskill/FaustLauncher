@@ -1,3 +1,5 @@
+"""base 子模块：<version_compare>（具体职责见函数文档）。"""
+
 # -*- coding: utf-8 -*-
 
 import re
@@ -9,6 +11,7 @@ _RANK_FIX = 2
 _PRERELEASE_NAMES = ('alpha', 'beta', 'rc', 'pre', 'dev', 'test')
 
 def parse_version_key(version):
+    """解析版本键。"""
     text = str(version or '').strip().lstrip('vV')
     match = re.match(r'(\d+(?:\.\d+)*)', text)
     nums = tuple(int(x) for x in match.group(1).split('.')) if match else (0,)
@@ -23,6 +26,7 @@ def parse_version_key(version):
     return (nums, _RANK_RELEASE, 0)
 
 def is_newer_version(candidate, current):
+    """判断newer版本。"""
     if not str(candidate or '').strip():
         return False
     return parse_version_key(candidate) > parse_version_key(current)

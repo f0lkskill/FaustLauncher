@@ -1,3 +1,5 @@
+"""彩色对话框样式集合。"""
+
 import os
 import re
 from typing import List, Dict, Tuple
@@ -8,6 +10,7 @@ from functions.base.common.color_utils import hex_to_rgb, rgb_to_hex, interpolat
 from functions.base.common.json_io import read_json, write_json
 
 def extract_text_and_tags(text: str) -> List[Dict]:
+    """extract文本and标签相关处理。"""
     tag_pattern = r'(<[^>]+>)'
     parts = []
     
@@ -28,6 +31,7 @@ def extract_text_and_tags(text: str) -> List[Dict]:
     return parts
 
 def apply_color_gradient_custom(text: str, start_color: str, end_color: str, gradient_rate: float = 2.0) -> str:
+    """应用颜色gradientcustom。"""
     if not text:
         return text
     
@@ -63,9 +67,11 @@ def apply_color_gradient_custom(text: str, start_color: str, end_color: str, gra
     return ''.join(result_parts)
 
 def apply_color_gradient(text: str, start_color: str, gradient_rate: float = 2.0) -> str:
+    """应用颜色gradient。"""
     return apply_color_gradient_custom(text, start_color, "#ffffff", gradient_rate)
 
 def process_dlg_text(dlg_text: str, gradient_rate: float = 2.0) -> str:
+    """进程dlg文本相关处理。"""
     color_pattern = r'<color=#([a-fA-F0-9]{3,6})>(.*?)</color>'
     match = re.search(color_pattern, dlg_text, re.DOTALL)
     
@@ -80,11 +86,13 @@ def process_dlg_text(dlg_text: str, gradient_rate: float = 2.0) -> str:
     return dlg_text.replace(match.group(0), processed_text)
 
 def create_gradient_test_gui(window, root):
+    """创建gradient测试界面。"""
     import tkinter as tk
     from tkinter import scrolledtext, colorchooser, font
     import os
     
     def choose_start_color():
+        """choosestart颜色相关处理。"""
         color = colorchooser.askcolor(title="选择起始颜色", initialcolor=start_color_var.get())[1]
         if color:
             start_color_var.set(color)
@@ -92,6 +100,7 @@ def create_gradient_test_gui(window, root):
             update_preview()
     
     def choose_end_color():
+        """chooseend颜色相关处理。"""
         color = colorchooser.askcolor(title="选择结束颜色", initialcolor=end_color_var.get())[1]
         if color:
             end_color_var.set(color)
@@ -99,6 +108,7 @@ def create_gradient_test_gui(window, root):
             update_preview()
     
     def update_preview(event=None):
+        """更新preview。"""
         try:
             text_content = text_entry.get("1.0", tk.END).strip()
             if not text_content:
@@ -118,6 +128,7 @@ def create_gradient_test_gui(window, root):
             print(f"更新预览时出错: {e}")
     
     def copy_html():
+        """copyHTML相关处理。"""
         try:
             html_content = html_text.get("1.0", tk.END).strip()
             if html_content:
@@ -127,6 +138,7 @@ def create_gradient_test_gui(window, root):
             pass
     
     def reset_settings():
+        """重置设置。"""
         start_color_var.set(C.CYAN)
         end_color_var.set(C.TEXT_WHITE)
         start_color_canvas.configure(bg=C.TEXT_WHITE)
@@ -215,6 +227,7 @@ def create_gradient_test_gui(window, root):
     gradient_value_label.grid(row=1, column=2)
     
     def update_gradient_label(event):
+        """更新gradientlabel。"""
         gradient_value_label.config(text=f"{gradient_scale.get():.1f}")
     
     gradient_scale.configure(command=lambda e: [update_gradient_label(e), update_preview()])
@@ -267,9 +280,11 @@ def create_gradient_test_gui(window, root):
     close_btn.pack(side=tk.LEFT)
     
     def on_enter(btn, original_color):
+        """响应enter。"""
         btn.configure(bg=darken_color(original_color))
     
     def on_leave(btn, original_color):
+        """响应leave。"""
         btn.configure(bg=original_color)
     
     copy_btn.bind("<Enter>", lambda e: on_enter(copy_btn, '#3498db'))
@@ -286,6 +301,7 @@ def create_gradient_test_gui(window, root):
     return root
 
 def test_color_gradient_gui(UI):
+    """测试颜色gradient界面相关处理。"""
     try:
         root = create_gradient_test_gui(UI, UI.root)
         root.mainloop()
@@ -295,6 +311,7 @@ def test_color_gradient_gui(UI):
         return False
 
 def test_color_gradient(gradient_rate: float = 2.0):
+    """测试颜色gradient相关处理。"""
     test_cases = [
         {
             'input': '<color=#6e44a6>呼，洗盘子的家伙们\n也会捅刀过来。</color>',
@@ -333,6 +350,7 @@ def test_color_gradient(gradient_rate: float = 2.0):
         print("-" * 40)
 
 def process_json_file(file_path: str, gradient_rate: float = 2.0) -> bool:
+    """进程json文件相关处理。"""
     try:
         data = read_json(file_path)
         
@@ -363,6 +381,7 @@ def process_json_file(file_path: str, gradient_rate: float = 2.0) -> bool:
         return False
 
 def process_all_json_files(game_path: str, gradient_rate: float = 2.0) -> bool:
+    """进程全部json文件相关处理。"""
     from functions.web_update.translation_source import get_game_lang_dir
     target_dir = get_game_lang_dir(game_path)
     
@@ -394,6 +413,7 @@ def process_all_json_files(game_path: str, gradient_rate: float = 2.0) -> bool:
 _COLOR_TAG_PATTERN = re.compile(r'<color=#([0-9a-fA-F]{3,8})>(.*?)</color>', re.DOTALL)
 
 def remove_dlg_color_tags(dlg_text: str) -> str:
+    """移除dlg颜色标签。"""
     if not dlg_text:
         return dlg_text
     result = dlg_text
@@ -405,6 +425,7 @@ def remove_dlg_color_tags(dlg_text: str) -> str:
     return result
 
 def process_json_file_remove_color(file_path: str) -> bool:
+    """进程json文件remove颜色相关处理。"""
     try:
         data = read_json(file_path)
 
@@ -434,6 +455,7 @@ def process_json_file_remove_color(file_path: str) -> bool:
         return False
 
 def process_all_json_files_remove_color(game_path: str) -> bool:
+    """进程全部json文件remove颜色相关处理。"""
     from functions.web_update.translation_source import get_game_lang_dir
     target_dir = get_game_lang_dir(game_path)
 
@@ -458,6 +480,7 @@ def process_all_json_files_remove_color(game_path: str) -> bool:
     return success_count > 0
 
 def main_remove_color() -> bool:
+    """主入口remove颜色相关处理。"""
     try:
         game_path = get_settings_manager().get_setting('game_path')
 
@@ -472,6 +495,7 @@ def main_remove_color() -> bool:
         return False
 
 def process_temp_json_files(gradient_rate: float = 2.0) -> bool:
+    """进程tempjson文件相关处理。"""
     temp_dir = os.path.join(os.path.dirname(__file__), '..', 'temp')
     temp_dir = os.path.abspath(temp_dir)
     
@@ -499,6 +523,7 @@ def process_temp_json_files(gradient_rate: float = 2.0) -> bool:
     return success_count > 0
 
 def main():
+    """主入口相关处理。"""
     print("气泡文本 JSON 颜色渐变处理器")
     try:
         gradient_rate = get_settings_manager().get_setting('bubble_text_gradient_rate')
@@ -517,6 +542,7 @@ def main():
         return False
 
 def maint():
+    """maint相关处理。"""
     print("=" * 50)
     print("气泡文本 JSON 颜色渐变处理器")
     print("=" * 50)

@@ -1,3 +1,5 @@
+"""成就系统的事件钩子：把游戏日志/内存事件转成成就判定所需状态。"""
+
 
 import os
 import re
@@ -17,6 +19,7 @@ from functions.achievement.achievements import (
 from functions.achievement import log_sink
 
 def _writable_root() -> str:
+    """内部writable根相关处理。"""
     try:
         from functions.base.common.path_utils import get_app_root
         return get_app_root()
@@ -27,13 +30,16 @@ ACHIEVEMENT_POLL_SEC = 1.0
 
 class LogReader:
 
+    """日志读取器。"""
     def __init__(self, log_path: str):
+        """初始化对象状态。"""
         self.log_path = log_path
         self.last_position = 0
         self.lock = threading.Lock()
         self.last_size = 0
 
     def _get_file_size(self) -> int:
+        """内部获取文件尺寸。"""
         for _ in range(RETRY_COUNT):
             try:
                 return os.path.getsize(self.log_path)
@@ -42,6 +48,7 @@ class LogReader:
         return self.last_size
 
     def read_new_lines(self) -> list[str]:
+        """读取newlines。"""
         with self.lock:
             current_size = self._get_file_size()
             if current_size == self.last_size:
@@ -83,17 +90,20 @@ class LogReader:
             return []
 
     def sync_to_end(self):
+        """同步toend。"""
         size = self._get_file_size()
         self.last_position = size
         self.last_size = size
 
 def with_timestamp(message: str) -> str:
+    """withtimestamp相关处理。"""
     return log_sink.format_line(message)
 
 _logged_unlocks: set[str] = set()
 _unlock_log_lock = threading.Lock()
 
 def _report_unlocks(log_callback, unlocked, header: str = "") -> list:
+    """内部上报unlocks。"""
     if not unlocked:
         return []
     fresh = []
@@ -129,6 +139,7 @@ def _report_unlocks(log_callback, unlocked, header: str = "") -> list:
             from functions.base import user_system as _us
 
             def _push() -> None:
+                """内部推送相关操作。"""
                 for _aid in _builtin_ids:
                     try:
                         _us.push_achievement(_aid)
@@ -148,9 +159,11 @@ def _report_unlocks(log_callback, unlocked, header: str = "") -> list:
 
 class _LogSink:
 
+    """内部日志接收器。"""
     _BOM = b"\xef\xbb\xbf"
 
     def __init__(self, path: str, truncate: bool = True) -> None:
+        """初始化对象状态。"""
         self.path = path
         self._lock = threading.Lock()
         self._fd: int | None = None
@@ -167,6 +180,7 @@ class _LogSink:
         self._open()
 
     def _report_failure(self, message: str) -> None:
+        """内部上报failure。"""
         self.failures += 1
         if self.failures <= 3 or self.failures % 100 == 0:
             try:
@@ -176,6 +190,7 @@ class _LogSink:
                 pass
 
     def _open(self) -> None:
+        """内部打开相关操作。"""
         flags = os.O_WRONLY | os.O_CREAT | os.O_APPEND
         if hasattr(os, "O_BINARY"):
             flags |= os.O_BINARY
@@ -188,6 +203,7 @@ class _LogSink:
             self._report_failure(f"打开失败: {exc}")
 
     def write_line(self, message: str, area: str | None = None) -> None:
+        """写入行。"""
         text = log_sink.format_line(message, area=area)
         data = b"\n" if not text else (text + "\n").encode("utf-8", "replace")
         with self._lock:
@@ -214,6 +230,7 @@ class _LogSink:
                     self._report_failure(f"重开仍失败: {exc}")
 
     def close(self) -> None:
+        """关闭相关操作。"""
         with self._lock:
             if self._fd is not None:
                 try:
@@ -223,6 +240,7 @@ class _LogSink:
                 self._fd = None
 
 def _self_image_paths() -> set[str]:
+    """内部self图片paths相关处理。"""
     import sys as _sys
     cand = {getattr(_sys, "executable", "") or "",
             getattr(_sys, "_base_executable", "") or ""}
@@ -248,6 +266,7 @@ def _self_image_paths() -> set[str]:
     return out
 
 def _self_and_ancestors() -> set[int]:
+    """内部selfandancestors相关处理。"""
     pids = {os.getpid()}
     try:
         ppid = os.getppid()
@@ -258,6 +277,7 @@ def _self_and_ancestors() -> set[int]:
     return pids
 
 def _is_self_image(image: str) -> bool:
+    """内部判断self图片。"""
     if not image:
         return False
     try:
@@ -267,6 +287,7 @@ def _is_self_image(image: str) -> bool:
     return image in _self_image_paths()
 
 def _other_hook_running(pid_file: str = "") -> int:
+    """内部other钩子running相关处理。"""
     import ctypes
     try:
         with open(pid_file or _default_pid_file(), "r", encoding="utf-8") as fh:
@@ -297,6 +318,7 @@ def _other_hook_running(pid_file: str = "") -> int:
     return pid
 
 def _default_pid_file() -> str:
+    """内部defaultpid文件相关处理。"""
     return os.path.join(_writable_root(), "cache", "achievement", "hook.pid")
 
 HOOK_MUTEX_NAME = "Local\\FaustLauncher_AchievementHook"
@@ -306,6 +328,7 @@ WAIT_TIMEOUT = 0x00000102
 ERROR_ALREADY_EXISTS = 183
 
 def _write_own_pid(pid_file: str = "") -> None:
+    """内部写入ownpid。"""
     try:
         path = pid_file or _default_pid_file()
         os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -315,6 +338,7 @@ def _write_own_pid(pid_file: str = "") -> None:
         pass
 
 def _terminate_pid(pid: int, on_log=None) -> bool:
+    """内部结束pid。"""
     import ctypes
     from ctypes import wintypes
     log = on_log or (lambda _m: None)
@@ -354,6 +378,7 @@ def _terminate_pid(pid: int, on_log=None) -> bool:
 
 def _acquire_single_instance(pid_file: str = "", on_log=None,
                              timeout: float = 8.0) -> tuple[bool, str]:
+    """内部acquiresingleinstance相关处理。"""
     import ctypes
     from ctypes import wintypes
     log = on_log or (lambda _m: None)
@@ -368,6 +393,7 @@ def _acquire_single_instance(pid_file: str = "", on_log=None,
     globals()["_hook_mutex"] = handle
 
     def _try_take(seconds: float) -> bool:
+        """内部trytake相关处理。"""
         rc = kernel32.WaitForSingleObject(handle, int(seconds * 1000))
         return rc in (WAIT_OBJECT_0, WAIT_ABANDONED)
 
@@ -409,6 +435,7 @@ def _acquire_single_instance(pid_file: str = "", on_log=None,
     return False, f"旧实例 PID {other} 未退出"
 
 def _notify_toast(unlocked):
+    """内部通知提示。"""
     if not unlocked:
         return
     try:
@@ -427,7 +454,9 @@ def _notify_toast(unlocked):
 
 class LogProcessor:
 
+    """日志Processor类。"""
     def __init__(self, log_callback):
+        """初始化对象状态。"""
         self.log_callback = log_callback
         self._battle_end_marker = "StageController:EndStage()"
         self._game_quit_patterns = [
@@ -439,9 +468,11 @@ class LogProcessor:
 
     @staticmethod
     def _ts() -> str:
+        """内部ts相关处理。"""
         return datetime.now().strftime('%H:%M:%S')
 
     def process_log_line(self, line: str) -> bool:
+        """进程日志行相关处理。"""
         s = get_state()
         quit_seen = False
 
@@ -486,7 +517,9 @@ class LogProcessor:
 
 class AchievementHook:
 
+    """成就钩子类。"""
     def __init__(self, log_path: str, log_callback):
+        """初始化对象状态。"""
         self.log_path = log_path
         self.log_callback = log_callback
         self.log_reader = LogReader(log_path)
@@ -496,6 +529,7 @@ class AchievementHook:
         self.battle_watch = None
 
     def start_monitoring(self):
+        """启动monitoring。"""
         self.monitor_thread = threading.Thread(
             target=self._monitor_logs,
             daemon=False,
@@ -509,6 +543,7 @@ class AchievementHook:
             self.log_callback(f"[AchMonitor] 战斗事件观测不可用（仅日志成就生效）: {exc}")
 
     def _prepare_tail(self):
+        """内部准备tail。"""
         log_path = self.log_path
         try:
             base_size = os.path.getsize(log_path)
@@ -518,6 +553,7 @@ class AchievementHook:
         self.log_callback(f"[AchMonitor] 已同步日志偏移 ({base_size} B), 开始实时监控")
 
     def _monitor_logs(self):
+        """内部monitorlogs相关处理。"""
         self._prepare_tail()
 
         while self.running:
@@ -546,6 +582,7 @@ class AchievementHook:
                 time.sleep(1)
 
     def _check_memory_achievements(self):
+        """内部检查内存achievements。"""
         unlocked = []
         for ach in achievements:
             if ach.unlocked or not getattr(ach, "memory_driven", False):
@@ -560,6 +597,7 @@ class AchievementHook:
             _notify_toast(unlocked)
 
     def _check_battle_achievements(self):
+        """内部检查战斗achievements。"""
         unlocked = []
         for ach in achievements:
             if ach.unlocked or not getattr(ach, "battle_driven", False):
@@ -576,6 +614,7 @@ class AchievementHook:
             _notify_toast(unlocked)
 
     def _settle_inventory_browse(self, zero_ids: set[int]):
+        """内部settleinventorybrowse相关处理。"""
         try:
             newly = detect_owned_items(zero_ids)
             register_inventory_open()
@@ -590,6 +629,7 @@ class AchievementHook:
             self.log_callback(f"[AchievementHook] 浏览结算错误: {e}")
 
     def stop_monitoring(self):
+        """停止monitoring。"""
         self.running = False
         if self.monitor_thread:
             self.monitor_thread.join(timeout=5)
@@ -600,6 +640,7 @@ class AchievementHook:
             pass
 
     def get_status(self) -> dict:
+        """获取状态。"""
         s = get_state()
         return {
             "running": self.running,
@@ -613,10 +654,12 @@ class AchievementHook:
         }
 
 def _hook_boot_path() -> str:
+    """内部钩子boot路径相关处理。"""
     base = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     return os.path.join(base, "cache", "achievement", "hook_boot.log")
 
 def _boot(message: str) -> None:
+    """内部boot相关处理。"""
     line = f"[{time.strftime('%H:%M:%S')}] pid={os.getpid()} {message}"
     try:
         path = _hook_boot_path()
@@ -633,6 +676,7 @@ def _boot(message: str) -> None:
         pass
 
 def _install_child_diagnostics() -> None:
+    """内部安装childdiagnostics。"""
     try:
         import faulthandler
         import threading as _threading
@@ -644,9 +688,11 @@ def _install_child_diagnostics() -> None:
         globals()["_fatal_handle"] = _fatal_fh
 
         def _dump_hook(exc_type, exc, tb):
+            """内部转储钩子相关处理。"""
             _boot("未捕获异常:\n" + "".join(_tb.format_exception(exc_type, exc, tb)))
 
         def _thread_hook(args):
+            """内部线程钩子相关处理。"""
             _boot(f"线程 {getattr(args.thread, 'name', '?')} 未捕获异常:\n"
                   + "".join(_tb.format_exception(args.exc_type, args.exc_value,
                                                  args.exc_traceback)))
@@ -663,6 +709,7 @@ def _install_child_diagnostics() -> None:
 _hook_instance: AchievementHook | None = None
 
 def run_achievement_hook(debug = False):
+    """执行成就钩子。"""
     global _hook_instance
     _install_child_diagnostics()
     _boot("进入成就监测主流程")
@@ -697,6 +744,7 @@ def run_achievement_hook(debug = False):
         sink = _LogSink(args.output, truncate=not already_truncated)
 
         def _write(msg: str, area: str | None = None):
+            """内部写入相关操作。"""
             sink.write_line(msg, area)
 
         log_callback = _write
@@ -704,6 +752,7 @@ def run_achievement_hook(debug = False):
         log_callback(f"[AchMonitor] 单实例：{sole_note}")
 
         def _cleanup():
+            """内部清理相关操作。"""
             log_sink.clear()
             sink.close()
         _atexit.register(_cleanup)
@@ -770,6 +819,7 @@ def run_achievement_hook(debug = False):
     poll_stop = threading.Event()
 
     def _poll_loop():
+        """内部pollloop相关处理。"""
         while _hook_instance is not None and _hook_instance.running and not poll_stop.is_set():
             try:
                 _check_input_achievements(log_callback)
@@ -810,6 +860,7 @@ def run_achievement_hook(debug = False):
         log_callback("[AchMonitor] 已停止")
 
 def _start_hook_index_refresh(log_callback):
+    """内部启动钩子索引refresh。"""
     refresh = None
     try:
         from functions.achievement.memory_reader import refresh_chain_from_cloud as refresh
@@ -823,6 +874,7 @@ def _start_hook_index_refresh(log_callback):
             log_callback(f"[AchMonitor] 云端偏移链刷新不可用: {exc}")
 
 def _check_input_achievements(log_callback=None):
+    """内部检查输入achievements。"""
     try:
         get_state()
         unlocked = check_achievements(log_callback or (lambda m: None))
@@ -833,9 +885,11 @@ def _check_input_achievements(log_callback=None):
         pass
 
 def start_achievement_monitoring(log_path: str = LOG_FILE) -> AchievementHook:
+    """启动成就monitoring。"""
     global _hook_instance
 
     def log_callback(msg: str):
+        """日志回调相关处理。"""
         print(with_timestamp(msg))
 
     try:
@@ -849,9 +903,11 @@ def start_achievement_monitoring(log_path: str = LOG_FILE) -> AchievementHook:
     return _hook_instance
 
 def stop_achievement_monitoring():
+    """停止成就monitoring。"""
     global _hook_instance
     if _hook_instance:
         _hook_instance.stop_monitoring()
 
 def get_hook(log_path: str = LOG_FILE) -> AchievementHook | None:
+    """获取钩子。"""
     return _hook_instance

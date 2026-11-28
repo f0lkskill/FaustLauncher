@@ -21,11 +21,14 @@ import threading
 from urllib.parse import urljoin, urlparse, unquote
 
 class RateLimiter:
+    """RateLimiter类。"""
     def __init__(self, rate_limit):
+        """初始化对象状态。"""
         self.rate_limit = rate_limit
         self.last_request_time = 0
 
     def wait_if_needed(self):
+        """等待ifneeded。"""
         current_time = time.time()
         time_since_last_request = current_time - self.last_request_time
 
@@ -231,6 +234,7 @@ _link_cache_save_lock = threading.Lock()
 _link_cache_loaded = False
 
 def _LinkCacheTTL():
+    """内部Link（缓存）TTL相关处理。"""
     try:
         from functions.base.web_config import get_lanzou_config
         raw = get_lanzou_config().get("link_cache_ttl_sec")
@@ -241,6 +245,7 @@ def _LinkCacheTTL():
     return DEFAULT_LINK_CACHE_TTL
 
 def _LoadLinkCache():
+    """内部加载Link（缓存）。"""
     global _link_cache_loaded
     with _link_cache_lock:
         if _link_cache_loaded:
@@ -271,6 +276,7 @@ def _LoadLinkCache():
         _SaveLinkCache()
 
 def _SaveLinkCache():
+    """内部保存Link（缓存）。"""
     try:
         os.makedirs(os.path.dirname(LINK_CACHE_FILE) or ".", exist_ok=True)
         with _link_cache_lock:
@@ -284,6 +290,7 @@ def _SaveLinkCache():
         print("蓝奏云直链缓存写入失败：%s" % e)
 
 def _EntryAgeSeconds(item):
+    """内部条目AgeSeconds相关处理。"""
     ts = item.get("ts")
     if ts:
         return max(time.time() - float(ts), 0.0)
@@ -454,6 +461,7 @@ _acw_cache = {}
 _acw_lock = threading.Lock()
 
 def _MinInterval():
+    """内部MinInterval相关处理。"""
     try:
         from functions.base.web_config import get_lanzou_config
         raw = get_lanzou_config().get("min_interval_sec")
@@ -465,14 +473,17 @@ def _MinInterval():
 
 class _TokenBucket:
 
+    """内部令牌Bucket类。"""
     __slots__ = ("lock", "tokens", "last")
 
     def __init__(self, burst):
+        """初始化对象状态。"""
         self.lock = threading.Lock()
         self.tokens = float(burst)
         self.last = time.time()
 
 def _Burst():
+    """内部Burst相关处理。"""
     try:
         from functions.base.web_config import get_lanzou_config
         raw = get_lanzou_config().get("burst_requests")
@@ -483,6 +494,7 @@ def _Burst():
     return DEFAULT_BURST
 
 def _BucketFor(host, burst):
+    """内部BucketFor相关处理。"""
     with _buckets_lock:
         bucket = _buckets.get(host)
         if bucket is None:
@@ -491,6 +503,7 @@ def _BucketFor(host, burst):
         return bucket
 
 def _Throttle(host, burst=None, interval=None):
+    """内部Throttle相关处理。"""
     if not host:
         return
     burst = float(_Burst() if burst is None else burst)
@@ -511,6 +524,7 @@ def _Throttle(host, burst=None, interval=None):
         time.sleep(min(max(wait, 0.02), 0.25))
 
 def _IsRateLimited(resp):
+    """内部判断RateLimited。"""
     if "ratelimit" in (resp.headers.get("X-Tengine-Error") or ""):
         return True
     if resp.status_code == 407:
@@ -524,6 +538,7 @@ def _IsRateLimited(resp):
     return "aliyun_waf_aa" in text or "captchaV2.js" in text
 
 def _NoteRateLimit():
+    """内部笔记RateLimit相关处理。"""
     global _ratelimit_until, _ratelimit_hits
     with _acw_lock:
         _ratelimit_hits += 1
@@ -533,9 +548,11 @@ def _NoteRateLimit():
     print("蓝奏云接口触发限流：%.0f 秒内不再尝试直链解析" % wait)
 
 def _CooldownRest():
+    """内部CooldownRest相关处理。"""
     return max(0.0, _ratelimit_until - time.time())
 
 def _LoadCooldown():
+    """内部加载Cooldown。"""
     global _ratelimit_until, _ratelimit_hits
     try:
         with open(_COOLDOWN_FILE, encoding="utf-8") as fh:
@@ -549,6 +566,7 @@ def _LoadCooldown():
         pass
 
 def _SaveCooldown():
+    """内部保存Cooldown。"""
     try:
         os.makedirs(os.path.dirname(_COOLDOWN_FILE), exist_ok=True)
         with open(_COOLDOWN_FILE, "w", encoding="utf-8") as fh:
@@ -557,11 +575,13 @@ def _SaveCooldown():
         pass
 
 def _CacheDirect(key, direct):
+    """内部缓存Direct。"""
     ttl = _LinkCacheTTL() or DIRECT_CACHE_TTL
     with _acw_lock:
         _direct_cache[key] = (direct, time.time() + ttl)
 
 def _CachedDirect(key):
+    """内部CachedDirect相关处理。"""
     with _acw_lock:
         item = _direct_cache.get(key)
     if not item:
@@ -576,6 +596,7 @@ def _CachedDirect(key):
 _LoadCooldown()
 
 def _http_session():
+    """内部httpsession相关处理。"""
     sess = getattr(_thread_local, "session", None)
     if sess is None:
         sess = requests.Session()
@@ -584,6 +605,7 @@ def _http_session():
     return sess
 
 def _AcwScV2(arg1):
+    """内部AcwScV2相关处理。"""
     ordered = [""] * len(_ACW_PERM)
     for index, ch in enumerate(arg1):
         for pos, value in enumerate(_ACW_PERM):
@@ -596,15 +618,18 @@ def _AcwScV2(arg1):
                    for i in range(0, len(_ACW_KEY), 2))
 
 def _RememberAcw(host, value):
+    """内部记住Acw。"""
     with _acw_lock:
         _acw_cache[host] = (value, time.time() + _ACW_COOKIE_TTL)
 
 def _RecallAcw(host):
+    """内部RecallAcw相关处理。"""
     with _acw_lock:
         item = _acw_cache.get(host)
     return item[0] if item and item[1] > time.time() else None
 
 def _ApplyChallenge(session, resp, host):
+    """内部应用Challenge。"""
     arg1 = _ChallengeArg1(resp)
     if not arg1:
         return False
@@ -616,6 +641,7 @@ def _ApplyChallenge(session, resp, host):
     return True
 
 def _RequestWithWaf(session, url, **kwargs):
+    """内部请求WithWaf相关处理。"""
     host = urlparse(url).hostname or ""
     cached = _RecallAcw(host)
     if cached and not session.cookies.get("acw_sc__v2", domain=host):
@@ -633,6 +659,7 @@ def _RequestWithWaf(session, url, **kwargs):
     return resp
 
 def _ChallengeArg1(resp):
+    """内部ChallengeArg1相关处理。"""
     if "html" not in (resp.headers.get("Content-Type") or "").lower():
         return None
     try:
@@ -645,6 +672,7 @@ def _ChallengeArg1(resp):
     return match.group(1) if match else None
 
 def _Absolutize(target, origin):
+    """内部Absolutize相关处理。"""
     if not target:
         return target
     if target.startswith("//"):
@@ -656,9 +684,11 @@ def _Absolutize(target, origin):
     return urljoin((origin or "").rstrip("/") + "/", target)
 
 def _OriginOf(url):
+    """内部OriginOf相关处理。"""
     return "{0.scheme}://{0.netloc}".format(urlparse(url))
 
 def _LookupVar(html, name):
+    """内部LookupVar相关处理。"""
     name_re = re.escape(name)
     strings = (re.findall(r"var\s+%s\s*=\s*'([^']*)'" % name_re, html)
                + re.findall(r'var\s+%s\s*=\s*"([^"]*)"' % name_re, html))
@@ -668,6 +698,7 @@ def _LookupVar(html, name):
     return int(numbers[0]) if numbers else None
 
 def _ParseSubmitData(html, pwd=None):
+    """内部解析Submit数据。"""
     block = re.search(r"data\s*:\s*\{(.*?)\}", html, re.S)
     if not block:
         return None
@@ -692,6 +723,7 @@ def _ParseSubmitData(html, pwd=None):
     return data or None
 
 def _FindDownloadFrame(html, origin):
+    """内部查找下载Frame。"""
     match = re.search(r"<iframe[^>]+src=['\"]([^'\"]*?/fn\?[^'\"]*)['\"]", html)
     return _Absolutize(match.group(1), origin) if match else None
 
@@ -721,6 +753,7 @@ def _ParseSharePage(html, origin, pwd=None):
     return {"api": api, "data": data}
 
 def _ParseSignKd(html, pwd=None):
+    """内部解析SignKd。"""
     sign = None
     literal = re.search(r"['\"]sign['\"]\s*:\s*['\"]([^'\"]+)['\"]", html)
     if literal:
@@ -744,6 +777,7 @@ def _ParseSignKd(html, pwd=None):
     return data
 
 def _PostDownProcess(session, api, data, referer, timeout):
+    """内部投递Down进程。"""
     headers = {"Referer": referer, "X-Requested-With": "XMLHttpRequest"}
     host = urlparse(api).hostname or ""
     cached = _RecallAcw(host)
@@ -769,6 +803,7 @@ def _PostDownProcess(session, api, data, referer, timeout):
         return None
 
 def _FollowToFile(session, file_url, referer, timeout):
+    """内部FollowTo文件相关处理。"""
     try:
         resp = _RequestWithWaf(session, file_url, timeout=timeout, allow_redirects=False,
                                stream=True, headers={"Referer": referer})
@@ -787,6 +822,7 @@ def _FollowToFile(session, file_url, referer, timeout):
         resp.close()
 
 def PrepareData(url,pwd,pg=1):
+    """准备数据。"""
     try:
         response = requests.get(url, headers=headers, timeout=(10, 30))
     except requests.RequestException as e:
@@ -880,6 +916,7 @@ def PrepareData(url,pwd,pg=1):
     return data
 
 def Get_final_link(_id):
+    """获取finallink。"""
     try:
         response = requests.get("https://wwjn.lanzout.com/tp/"+_id,headers=headers,timeout=(10, 30))
     except requests.RequestException as e:
@@ -918,6 +955,7 @@ def Get_final_link(_id):
         return None
 
 def GetFileListByData(data,pg):
+    """获取文件列表By数据。"""
     url = 'https://wwjn.lanzout.com/filemoreajax.php?file='+str(data["fid"])
     data["pg"] = pg
     try:
@@ -940,6 +978,7 @@ def GetFileListByData(data,pg):
         return None
 
 def GetFileListByUrl(url,pwd='',pg=1):
+    """获取文件列表By链接。"""
     data=PrepareData(url, pwd,1)
     if data is False:
         print("GetFileListByUrl 失败：PrepareData 未返回有效数据")
@@ -961,6 +1000,7 @@ def GetFileListByUrl(url,pwd='',pg=1):
     return result
 
 def GetAllFileListByUrl(url,pwd=''):
+    """获取全部文件列表By链接。"""
     lists=[]
     pg=1
     data=PrepareData(url, pwd)
@@ -986,6 +1026,7 @@ def GetAllFileListByUrl(url,pwd=''):
     print("获取文件列表失败：已重试 3 次")
     return []
 def _CheckLogin(session):
+    """内部检查Login。"""
     try:
         response = session.get(MYDISK_URL, headers=headers, timeout=(10, 30))
     except requests.RequestException:
@@ -993,6 +1034,7 @@ def _CheckLogin(session):
     return "网盘用户登录" not in response.text
 
 def Login(username, password):
+    """Login相关处理。"""
     session = requests.Session()
     try:
         html = session.get(ACCOUNT_URL, headers=headers, timeout=(10, 30))
@@ -1032,6 +1074,7 @@ def Login(username, password):
     return session
 
 def LoginByCookie(cookie):
+    """LoginByCookie相关处理。"""
     session = requests.Session()
     session.cookies.update(cookie)
     if not _CheckLogin(session):
@@ -1041,6 +1084,7 @@ def LoginByCookie(cookie):
     return session
 
 def _SetFolderID(session, folder_id):
+    """内部设置FolderID。"""
     try:
         session.post(DO_LOAD_URL, data={'task': '47', 'folder_id': str(folder_id)}, headers=headers, timeout=(10, 30))
     except requests.RequestException as e:
@@ -1049,6 +1093,7 @@ def _SetFolderID(session, folder_id):
     return True
 
 def GetFolderList(session, folder_id=-1):
+    """获取Folder列表。"""
     try:
         response = session.post(DO_LOAD_URL, data={'task': '47', 'folder_id': str(folder_id)},
                                 headers=headers, timeout=(10, 30))
@@ -1064,6 +1109,7 @@ def GetFolderList(session, folder_id=-1):
     return None
 
 def CreateFolder(session, folder_name, parent_id=-1):
+    """创建Folder。"""
     data = {'task': '2', 'folder_name': folder_name, 'folder_description': '', 'folder_id': str(parent_id)}
     last_err = None
     for url in (MYDISK_URL, DO_LOAD_URL):
@@ -1086,6 +1132,7 @@ def CreateFolder(session, folder_name, parent_id=-1):
     return None
 
 def GetOrCreateFolder(session, folder_name, parent_id=-1):
+    """获取OrCreateFolder。"""
     folders = GetFolderList(session, parent_id)
     if folders:
         for f in folders:
@@ -1102,13 +1149,16 @@ def GetOrCreateFolder(session, folder_name, parent_id=-1):
 
 class _ProgressReader:
 
+    """内部进度读取器。"""
     def __init__(self, path, progress_callback=None):
+        """初始化对象状态。"""
         self.f = open(path, "rb")
         self.size = os.path.getsize(path)
         self.sent = 0
         self.cb = progress_callback
 
     def read(self, n=-1):
+        """读取相关操作。"""
         data = self.f.read(n)
         self.sent += len(data)
         if self.cb:
@@ -1119,9 +1169,11 @@ class _ProgressReader:
         return data
 
     def __len__(self):
+        """容器的 Python 协议实现。"""
         return self.size
 
     def close(self):
+        """关闭相关操作。"""
         self.f.close()
 
 def UploadFile(session, file_path, folder_id=-1, progress_callback=None, max_size_mb=66,

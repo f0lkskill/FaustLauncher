@@ -1,3 +1,5 @@
+"""启动器核心对象：持有各管理器并串起初始化流程。"""
+
 import os
 import sys
 from subprocess import Popen
@@ -15,7 +17,9 @@ from functions.pages.app.page_loader import PageLoader
 
 class FaustLauncherCore:
     
+    """FaustLauncherCore类。"""
     def __init__(self, debug=False):
+        """初始化对象状态。"""
         self.settings_manager = get_settings_manager()
         self.bg_color: str = self.settings_manager.get_setting("bg_color")  # type: ignore
         self.version_info = self.settings_manager.get_setting("version_info")
@@ -41,9 +45,11 @@ class FaustLauncherCore:
         self.root: tk.Tk = None  # type: ignore
         
     def refresh_all_tabs(self):
+        """刷新全部tabs。"""
         self.page_loader.pages['mod_addon'].refresh_all_tabs()
 
     def load_background_images(self):
+        """加载backgroundimages。"""
         background_dir = "assets/images/background"
         if os.path.exists(background_dir):
             for file in os.listdir(background_dir):
@@ -57,6 +63,7 @@ class FaustLauncherCore:
             print(f"找到 {len(self.background_images)} 张背景图片")
 
     def _on_global_click(self, event):
+        """内部响应globalclick。"""
         if not self.settings_manager.get_setting("click_sound"):
             return
         import time
@@ -76,6 +83,7 @@ class FaustLauncherCore:
             play_sound("assets/voices/click.wav")
 
     def _on_reload_addons(self):
+        """内部响应reload插件。"""
         try:
             self.addon_manager.reload_all_addons()
             if hasattr(self, 'tray') and self.tray is not None: # type: ignore
@@ -87,6 +95,7 @@ class FaustLauncherCore:
             print(f"重载插件时发生错误: {e}")
 
     def setup_terminal_redirect(self):
+        """setupterminalredirect相关处理。"""
         if self.terminal_text:
             import tkinter as tk
             self.terminal_text.config(state=tk.NORMAL)
@@ -96,6 +105,7 @@ class FaustLauncherCore:
             print("终端重定向已启用")
             
     def add_terminal_message(self, message: str):
+        """添加terminalmessage。"""
         if self.terminal_text:
             import tkinter as tk
             self.terminal_text.config(state=tk.NORMAL)
@@ -105,6 +115,7 @@ class FaustLauncherCore:
             self.terminal_text.update_idletasks()
             
     def clear_terminal(self):
+        """清空terminal。"""
         if self.terminal_text:
             import tkinter as tk
             self.terminal_text.config(state=tk.NORMAL)
@@ -113,6 +124,7 @@ class FaustLauncherCore:
             print("终端内容已清空")
             
     def copy_terminal_content(self):
+        """copyterminal内容相关处理。"""
         try:
             if self.terminal_text:
                 content = self.terminal_text.get(1.0, tk.END)
@@ -123,6 +135,7 @@ class FaustLauncherCore:
             print(f"复制失败: {e}")
             
     def open_custom_translation_tool(self):
+        """打开custom翻译tool。"""
         try:
             from functions.pages.tools.custom_translation_window import open_custom_translation_window
             open_custom_translation_window(self)
@@ -157,14 +170,17 @@ class FaustLauncherCore:
             print(f"打开 YisangMirrorFlow 失败: {e}")
 
     def update_translation(self):
+        """更新翻译。"""
         from functions.pages.app.page_loader import download_and_launch
         Thread(target=download_and_launch).start()
         
     def show_help(self):
+        """显示help。"""
         import webbrowser
         webbrowser.open("https://www.showdoc.com.cn/faustlauncher/11559060627455094")
         
     def open_feature(self, feature):
+        """打开feature。"""
         import webbrowser
         
         if feature['name'] == "📁 游戏目录":
@@ -183,14 +199,17 @@ class FaustLauncherCore:
             webbrowser.open("https://github.com/f0lkskill/FaustLauncher")
             
     def open_website(self):
+        """打开website。"""
         import webbrowser
         webbrowser.open("https://space.bilibili.com/599331034")
         
     def send_feedback(self):
+        """发送feedback。"""
         import webbrowser
         webbrowser.open("https://space.bilibili.com/599331034")
         
     def open_mod_manager(self):
+        """打开Modmanager。"""
         try:
             from functions.pages.tools.mod_manager_window import open_mod_manager_window
             open_mod_manager_window(self)
@@ -200,6 +219,7 @@ class FaustLauncherCore:
             messagebox.showerror("错误", f"打开mod管理器失败: {str(e)}")
             
     def _ask_web_game_path(self, found: str, force=False) -> None:
+        """内部askWeb游戏路径相关处理。"""
         from functions.base.steam_locator import resolve_game_dir, GAME_EXE
         found = str(found or "").strip()
         resolved = resolve_game_dir(found) if found else ""
@@ -235,6 +255,7 @@ class FaustLauncherCore:
             print(f"[Settings] 推送游戏路径确认窗口失败: {e}")
 
     def ensure_game_path(self, interactive=True):
+        """确保游戏路径。"""
         if self.settings_manager.get_setting("game_path"):
             return
         if not interactive and getattr(self, "_steam_path_checked", False):
@@ -286,6 +307,7 @@ class FaustLauncherCore:
             print(f"游戏路径已保存: {found}")
 
     def check_settings(self, skip_auto_download=False, interactive=True):
+        """检查设置。"""
         self.ensure_game_path(interactive=interactive)
 
         mems: dict = self.settings_manager.get_setting('mems')  # type: ignore
@@ -321,6 +343,7 @@ class FaustLauncherCore:
             print("未找到字体文件 Font/Context/ChineseFont.ttf\n请尝试手动添加或者使用汉化更新修复")
 
     def folder_link(self):
+        """folderlink相关处理。"""
         import tkinter.messagebox as messagebox
         from tkinter.filedialog import askdirectory
         
@@ -372,7 +395,9 @@ if %errorlevel% equ 0 (
             messagebox.showerror("错误", f"创建文件夹链接时出错: {str(e)}")
             
     def lighten_color(self, color, percent):
+        """lighten颜色相关处理。"""
         return _lighten_color(color, percent)
         
     def darken_color(self, color, factor=0.8):
+        """darken颜色相关处理。"""
         return _darken_color(color, factor)

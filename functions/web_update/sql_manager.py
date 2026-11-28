@@ -1,3 +1,5 @@
+"""资源库 SQL 数据的拉取、缓存与更新管理。"""
+
 import pymysql
 import os
 import tkinter as tk
@@ -5,6 +7,7 @@ from tkinter import ttk, messagebox, scrolledtext
 from functions.base.common.mysql_utils import connect_db
 
 def set_bubble_json_files(host, port, user, password, database, battle_speech_file, cultivation_file, mowe_file):
+    """设置bubblejson文件。"""
     try:
         connection = connect_db(host, port, user, password, database)
         
@@ -71,6 +74,7 @@ def set_bubble_json_files(host, port, user, password, database, battle_speech_fi
             connection.close() # type: ignore
 
 def get_bubble_json_files(host, port, user, password, database):
+    """获取bubblejson文件。"""
     try:
         connection = connect_db(host, port, user, password, database)
         
@@ -103,6 +107,7 @@ def get_bubble_json_files(host, port, user, password, database):
             connection.close() # type: ignore
 
 def upload_bubble_files_from_temp(host, port, user, password, database, temp_dir=None):
+    """uploadbubble文件fromtemp相关处理。"""
     if temp_dir is None:
         temp_dir = 'temp'
     
@@ -151,6 +156,7 @@ def upload_bubble_files_from_temp(host, port, user, password, database, temp_dir
         return False
 
 def download_bubble_files_to_game(host, port, user, password, database, game_path):
+    """下载bubble文件to游戏相关处理。"""
     print("正在从数据库获取JSON文件内容...")
     battle_speech, cultivation, mowe = get_bubble_json_files(host, port, user, password, database)
     
@@ -196,10 +202,12 @@ def download_bubble_files_to_game(host, port, user, password, database, game_pat
         return False
 
 def check_bubble_files_exist(host, port, user, password, database):
+    """检查bubble文件exist。"""
     battle_speech, cultivation, mowe = get_bubble_json_files(host, port, user, password, database)
     return battle_speech is not None and cultivation is not None and mowe is not None
 
 def get_all_records(host, port, user, password, database):
+    """获取全部records。"""
     try:
         connection = connect_db(host, port, user, password, database)
         
@@ -228,6 +236,7 @@ def get_all_records(host, port, user, password, database):
             connection.close() # type: ignore
 
 def create_version_table(host, port, user, password, database):
+    """创建版本table。"""
     try:
         connection = connect_db(host, port, user, password, database)
         
@@ -265,6 +274,7 @@ def create_version_table(host, port, user, password, database):
             connection.close() # type: ignore
 
 def add_version(host, port, user, password, database, version_name, bilibili_url, version_description, is_latest=False):
+    """添加版本。"""
     try:
         connection = connect_db(host, port, user, password, database)
         
@@ -294,6 +304,7 @@ def add_version(host, port, user, password, database, version_name, bilibili_url
             connection.close() # type: ignore
 
 def update_version(host, port, user, password, database, version_id, version_name, bilibili_url, version_description, is_latest=False):
+    """更新版本。"""
     try:
         connection = connect_db(host, port, user, password, database)
         
@@ -328,6 +339,7 @@ def update_version(host, port, user, password, database, version_id, version_nam
             connection.close() # type: ignore
 
 def delete_version(host, port, user, password, database, version_id):
+    """删除版本。"""
     try:
         connection = connect_db(host, port, user, password, database)
         
@@ -351,6 +363,7 @@ def delete_version(host, port, user, password, database, version_id):
             connection.close() # type: ignore
 
 def get_all_versions(host, port, user, password, database):
+    """获取全部versions。"""
     try:
         connection = connect_db(host, port, user, password, database)
         
@@ -372,6 +385,7 @@ def get_all_versions(host, port, user, password, database):
             connection.close() # type: ignore
 
 def get_latest_version(host, port, user, password, database):
+    """获取latest版本。"""
     try:
         connection = connect_db(host, port, user, password, database)
         
@@ -397,6 +411,7 @@ def get_latest_version(host, port, user, password, database):
             connection.close() # type: ignore
 
 def get_version_by_id(host, port, user, password, database, version_id):
+    """获取版本byid。"""
     try:
         connection = connect_db(host, port, user, password, database)
         
@@ -422,7 +437,9 @@ def get_version_by_id(host, port, user, password, database, version_id):
             connection.close() # type: ignore
 
 class VersionManagerGUI:
+    """版本Manager界面。"""
     def __init__(self, root, db_config):
+        """初始化对象状态。"""
         self.root = root
         self.db_config = db_config
         self.current_version_id = None
@@ -441,6 +458,7 @@ class VersionManagerGUI:
         create_version_table(**db_config) # type: ignore
     
     def create_widgets(self):
+        """创建widgets。"""
         title_label = ttk.Label(self.main_frame, text="版本信息管理器", font=("Arial", 16, "bold"))
         title_label.grid(row=0, column=0, columnspan=3, pady=(0, 20))
         
@@ -507,6 +525,7 @@ class VersionManagerGUI:
         input_frame.columnconfigure(1, weight=1)
     
     def refresh_versions(self):
+        """刷新versions。"""
         for item in self.tree.get_children():
             self.tree.delete(item)
         
@@ -522,6 +541,7 @@ class VersionManagerGUI:
             ))
     
     def on_tree_select(self, event):
+        """响应treeselect。"""
         selection = self.tree.selection()
         if selection:
             item = selection[0]
@@ -546,6 +566,7 @@ class VersionManagerGUI:
                 self.add_button.config(state=tk.DISABLED)
     
     def add_version(self):
+        """添加版本。"""
         version_name = self.version_name_entry.get().strip()
         bilibili_url = self.bilibili_url_entry.get().strip()
         version_description = self.version_description_text.get(1.0, tk.END).strip()
@@ -567,6 +588,7 @@ class VersionManagerGUI:
             messagebox.showerror("错误", "版本添加失败！")
     
     def update_version(self):
+        """更新版本。"""
         if not self.current_version_id:
             messagebox.showerror("错误", "请先选择要更新的版本！")
             return
@@ -593,6 +615,7 @@ class VersionManagerGUI:
             messagebox.showerror("错误", "版本更新失败！")
     
     def delete_version(self):
+        """删除版本。"""
         if not self.current_version_id:
             messagebox.showerror("错误", "请先选择要删除的版本！")
             return
@@ -606,6 +629,7 @@ class VersionManagerGUI:
                 messagebox.showerror("错误", "版本删除失败！")
     
     def clear_inputs(self):
+        """清空inputs。"""
         self.version_name_entry.delete(0, tk.END)
         self.bilibili_url_entry.delete(0, tk.END)
         self.version_description_text.delete(1.0, tk.END)
@@ -617,11 +641,13 @@ class VersionManagerGUI:
         self.add_button.config(state=tk.NORMAL)
 
 def run_version_manager_gui():
+    """执行版本manager界面。"""
     root = tk.Tk()
     app = VersionManagerGUI(root, db_config)
     root.mainloop()
 
 def check_new_version(current_version_name):
+    """检查new版本。"""
     try:
         latest_version = get_latest_version(**db_config)
         
@@ -643,6 +669,7 @@ def check_new_version(current_version_name):
         return False, None
 
 def notify_new_version(current_version_name, info = '发现新版本', root = None, must_show = False, has_new_version = False, latest_info = None):
+    """通知new版本。"""
     try:
         from functions.pages.notice.version_update_window import show_version_update_window, ask_window_just_opened
         from functions.base.settings_manager import get_settings_manager

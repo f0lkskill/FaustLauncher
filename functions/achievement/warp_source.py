@@ -336,18 +336,23 @@ class _NullDiag:
     """诊断日志的空壳：warphook.diag 导入不了时顶上，接口全空操作。"""
 
     def config_snapshot(self, _source):
+        """配置snapshot相关处理。"""
         pass
 
     def event(self, _source, _ev, _hook, _lines):
+        """事件相关处理。"""
         pass
 
     def dropped(self, _source, _delta):
+        """dropped相关处理。"""
         pass
 
     def state(self, _source, force=False):
+        """状态相关处理。"""
         pass
 
     def reset(self):
+        """重置相关操作。"""
         pass
 
 
@@ -366,6 +371,7 @@ class WarpSource:
 
     def __init__(self, watch, names=None, offsets=None, poll_interval=0.1,
                  log=None):
+        """初始化对象状态。"""
         self.watch = watch
         self.names = tuple(names or FIRST_BATCH)
         self.offsets = offsets if offsets is not None else default_offsets()
@@ -579,6 +585,7 @@ class WarpSource:
             self._stop.wait(self.poll_interval)
 
     def start(self):
+        """启动相关操作。"""
         if self._thread and self._thread.is_alive():
             return True
         self._stop.clear()
@@ -587,17 +594,21 @@ class WarpSource:
         return True
 
     def stop(self):
+        """停止相关操作。"""
         self._stop.set()
 
     def join(self, timeout=None):
+        """join相关处理。"""
         if self._thread:
             self._thread.join(timeout)
 
     @property
     def running(self):
+        """running相关处理。"""
         return bool(self._thread and self._thread.is_alive())
 
     def stats(self):
+        """stats相关处理。"""
         return {
             'hooks': len(self._hooks),
             'events': self.events_out,

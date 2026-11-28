@@ -1,3 +1,5 @@
+"""web_update 子模块：<update_resource>（具体职责见函数文档）。"""
+
 from functions.webFunc import Note
 from functions.base.web_config import get_webnote
 from functions.web_update.zeroasso_download import download_and_extract_gui, DownloadGUI
@@ -26,6 +28,7 @@ else:
     local_data:dict = loads(local_data_str)
 
 def _is_empty_dir(path):
+    """内部判断empty目录。"""
     import os
     try:
         return os.path.isdir(path) and not any(os.scandir(path))
@@ -33,6 +36,7 @@ def _is_empty_dir(path):
         return False
 
 def update_resource(dow_root:DownloadGUI, download_files:list, res:str, auto_close:bool = True):
+    """更新resource。"""
     global download_gui
     
     import shutil,os
@@ -61,6 +65,7 @@ def update_resource(dow_root:DownloadGUI, download_files:list, res:str, auto_clo
         download_gui.is_downloading = False
 
 def check_resource_update(dow_root):
+    """检查resource更新。"""
     global download_gui
     
     thread_count = 0

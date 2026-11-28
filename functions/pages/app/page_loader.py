@@ -1,3 +1,5 @@
+"""前端页面加载与脚本注入管理。"""
+
 import tkinter as tk
 from tkinter import ttk
 from typing import Dict, Callable, Optional, Any
@@ -13,24 +15,30 @@ downloading = False
 _cancel_requested = False
 
 def request_cancel():
+    """请求cancel相关处理。"""
     global _cancel_requested
     _cancel_requested = True
 
 def clear_cancel():
+    """清空cancel。"""
     global _cancel_requested
     _cancel_requested = False
 
 def is_cancel_requested():
+    """判断cancelrequested。"""
     return _cancel_requested
 
 class _PipelineAborted(Exception):
+    """内部PipelineAborted类。"""
     pass
 
 _cloud_sync_cache = {'addon': None, 'mod': None, 'ts': 0}
 
 class PageLoader:
     
+    """页面加载器。"""
     def __init__(self, app):
+        """初始化对象状态。"""
         self.app = app
         self.core = app.core
         self.pages: Dict[str, Any] = {}
@@ -45,6 +53,7 @@ class PageLoader:
         }
         
     def load_page(self, page_name: str) -> Optional[Any]:
+        """加载页面。"""
         if page_name in self.pages:
             return self.pages[page_name]
             
@@ -63,13 +72,16 @@ class PageLoader:
             return None
             
     def load_all_pages(self):
+        """加载全部pages。"""
         for page_name in self.page_initializers.keys():
             self.load_page(page_name)
             
     def get_page(self, page_name: str) -> Optional[Any]:
+        """获取页面。"""
         return self.pages.get(page_name)
         
     def _init_settings_page(self):
+        """内部初始化设置页面。"""
         try:
             from functions.pages.setting.settings_page import init_settings_page
             return init_settings_page(
@@ -82,6 +94,7 @@ class PageLoader:
             return None
             
     def _init_mod_addon_page(self):
+        """内部初始化Mod插件页面。"""
         try:
             from functions.pages.extension.mod_addon_info import init_mod_addon_manager
             return init_mod_addon_manager(
@@ -95,6 +108,7 @@ class PageLoader:
             return None
             
     def _init_download_center_page(self):
+        """内部初始化下载center页面。"""
         try:
             from functions.pages.download.download_center import init_download_center
             return init_download_center(
@@ -108,6 +122,7 @@ class PageLoader:
             return None
             
     def _init_tools_page(self):
+        """内部初始化tools页面。"""
         from functions.fancy.dialog_colorful import test_color_gradient_gui
         from functions.pages.tools.select_font import select_font_gui
         from functions.pages.tools.auto_translate_gui import show_auto_translate_gui
@@ -126,6 +141,7 @@ class PageLoader:
         self.app.tab_frost_canvases.append(tools_frost)
         
         def spawn_function_tr():
+            """拉起functiontr。"""
             from functions.web_update.translation_source import get_translation_dir
             source_path = f"{settings_manager.get_setting('game_path')}/LimbusCompany_Data/Assets/Resources_moved/Localize/en"
             target_path = get_translation_dir()
@@ -223,6 +239,7 @@ class PageLoader:
         return tools_container
         
     def _init_home_page(self):
+        """内部初始化home页面。"""
         description = "欢迎使用 Faust Launcher - 您人生中绝无仅有的完美启动器！\n懒人化的一键操作，这就是浮士德大人的聪明才智口牙！"
         
         frost = self.app.tab_frost_canvases[0]
@@ -338,6 +355,7 @@ class PageLoader:
         return quick_actions_frame
         
     def _init_features_page(self):
+        """内部初始化features页面。"""
         features_container = tk.Frame(self.app.page_frames['features'], bg=self.core.bg_color)
         features_container.pack(fill=tk.BOTH, expand=True, padx=20, pady=10)
         
@@ -403,6 +421,7 @@ class PageLoader:
         return features_container
         
     def _init_about_page(self):
+        """内部初始化about页面。"""
         frost = self.app.tab_frost_canvases[5]
         
         bg_color = self.core.bg_color
@@ -495,6 +514,7 @@ class PageLoader:
         self._current_about_tab = tk.StringVar(value="contributors")
         
         def switch_tab(tab_name):
+            """switch标签页相关处理。"""
             self._current_about_tab.set(tab_name)
             for tab_id, btn in tab_buttons.items():
                 if tab_id == tab_name:
@@ -524,9 +544,11 @@ class PageLoader:
             tab_buttons[tab_id] = btn
             
             def on_enter(e, b=btn, tid=tab_id):
+                """响应enter。"""
                 if self._current_about_tab.get() != tid:
                     b.configure(bg=self.core.darken_color(bg_color, 0.9))
             def on_leave(e, b=btn, tid=tab_id):
+                """响应leave。"""
                 is_current = self._current_about_tab.get() == tid
                 b.configure(bg=bg_color if is_current else lighten_bg)
             
@@ -540,6 +562,7 @@ class PageLoader:
     def _show_about_content(self, parent, tab_name, contributors, bg_color, lighten_bg,
                            text_primary, text_secondary, text_muted,
                            accent_blue, accent_cyan, accent_green):
+        """内部显示about内容。"""
         for widget in parent.winfo_children():
             widget.destroy()
         
@@ -552,6 +575,7 @@ class PageLoader:
     
     def _show_program_info(self, parent, bg_color, lighten_bg, text_primary, text_secondary, 
                           text_muted, accent_blue, accent_cyan, accent_green):
+        """内部显示program信息。"""
         from functions.web_update.sql_manager import notify_new_version
         
         canvas = tk.Canvas(parent, bg=bg_color, highlightthickness=0)
@@ -568,9 +592,11 @@ class PageLoader:
         canvas.configure(yscrollcommand=scrollbar.set)
         
         def on_mousewheel(event):
+            """响应mousewheel。"""
             canvas.yview_scroll(int(-1*(event.delta/120)), "units")
         
         def bind_mousewheel(widget):
+            """绑定mousewheel。"""
             widget.bind("<MouseWheel>", on_mousewheel)
             for child in widget.winfo_children():
                 bind_mousewheel(child)
@@ -662,6 +688,7 @@ class PageLoader:
     
     def _show_contributors(self, parent, contributors, bg_color, lighten_bg, text_primary, 
                           text_secondary, text_muted, accent_blue):
+        """内部显示contributors。"""
         list_frame = tk.Frame(parent, bg=bg_color, width=200)
         list_frame.pack(side=tk.LEFT, fill=tk.Y, padx=(15, 0), pady=15)
         list_frame.pack_propagate(False)
@@ -735,6 +762,7 @@ class PageLoader:
     
     def _select_contributor(self, index, contributors, list_frame, detail_frame,
                            bg_color, lighten_bg, text_primary, text_secondary, text_muted, accent_blue):
+        """内部选择contributor。"""
         self._selected_contributor.set(index)
         
         for i, item in enumerate(self._contributor_list_buttons):
@@ -758,6 +786,7 @@ class PageLoader:
     
     def _update_contributor_detail(self, parent, contributor, bg_color, lighten_bg,
                                    text_primary, text_secondary, text_muted, accent_blue):
+        """内部更新contributordetail。"""
         avatar_frame = tk.Frame(parent, bg=bg_color)
         avatar_frame.pack(fill=tk.X, pady=(10, 15))
         
@@ -839,6 +868,7 @@ class PageLoader:
                 btn.pack(side=tk.LEFT, padx=(0, 8))
         
     def _show_page_error(self, frame, page_name: str, error: Exception):
+        """内部显示页面错误。"""
         error_label = tk.Label(frame, 
                             text=f"{page_name}加载失败",
                             font=('Microsoft YaHei UI', 16),
@@ -852,6 +882,7 @@ class PageLoader:
         detail_label.pack()
 
 def download_and_launch(obj=None, need_run_game=False, manual=False):
+    """下载andlaunch相关处理。"""
     from functions.base.game_launcher import GameLauncher
     from functions.web_update.zeroasso_download import main_gui as download_translation, DownloadGUI, download_and_extract_gui
     from functions.web_update.update_resource import check_resource_update
@@ -898,6 +929,7 @@ def download_and_launch(obj=None, need_run_game=False, manual=False):
         pipe_kind = 'launch' if (need_run_game or obj is not None) else 'translate'
 
         def _push_step(step):
+            """内部推送step。"""
             try:
                 from functions.web_update import zeroasso_download as _zd
                 _push = getattr(_zd, '_web_progress', None)
@@ -907,6 +939,7 @@ def download_and_launch(obj=None, need_run_game=False, manual=False):
                 pass
 
         def _push_status(task, text):
+            """内部推送状态。"""
             try:
                 from functions.web_update import zeroasso_download as _zd
                 _push = getattr(_zd, '_web_progress', None)
@@ -916,6 +949,7 @@ def download_and_launch(obj=None, need_run_game=False, manual=False):
                 pass
 
         def _sync_cloud_items():
+            """内部同步cloud条目。"""
             try:
                 from functions.web_update import zeroasso_download as zd
                 from functions.web_update.web_trigger import WebTrigger
@@ -925,6 +959,7 @@ def download_and_launch(obj=None, need_run_game=False, manual=False):
                 import time as _time
 
                 def _ver(v):
+                    """内部ver相关处理。"""
                     try:
                         return [int(x) for x in _re.findall(r'\d+', str(v) or '0')[:3]] or [0]
                     except Exception:
@@ -1014,6 +1049,7 @@ def download_and_launch(obj=None, need_run_game=False, manual=False):
                             # 自动更新不经过前端下载抽屉，这里补记下载次数；
                             # 后台执行，避免上报接口拖慢后续资源更新。
                             def _report_auto_download(kind=kind, name=name):
+                                """内部上报auto下载。"""
                                 try:
                                     if kind == 'addon':
                                         wt.add_download_number_addon(name)
@@ -1183,6 +1219,7 @@ def download_and_launch(obj=None, need_run_game=False, manual=False):
             return
         
         def _launch_progress(text, icon=None):
+            """内部启动进度。"""
             try:
                 from functions.web_update import zeroasso_download as _zd
                 _push = getattr(_zd, '_web_progress', None)

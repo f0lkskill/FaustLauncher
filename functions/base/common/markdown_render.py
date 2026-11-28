@@ -338,6 +338,7 @@ def _is_block_start(stripped: str) -> bool:
 def _table_html(table_lines: list[str]) -> str:
     """把连续的表格行渲染成 table；识别第二行的 ``:---:`` 对齐分隔。"""
     def parse_row(line: str) -> list[str]:
+        """解析row。"""
         value = line.strip()
         if value.startswith("|"):
             value = value[1:]
@@ -377,6 +378,7 @@ def _table_html(table_lines: list[str]) -> str:
             alignments.append("left")
 
     def render_cells(row: list[str], cell_tag: str) -> str:
+        """渲染cells。"""
         return "".join(
             '<%s style="text-align:%s">%s</%s>'
             % (

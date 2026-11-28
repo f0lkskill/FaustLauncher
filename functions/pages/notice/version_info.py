@@ -1,3 +1,5 @@
+"""版本信息页数据整理。"""
+
 import tkinter as tk
 from tkinter import messagebox, ttk
 import os
@@ -10,6 +12,7 @@ bg_color:str = get_settings_manager().get_setting('bg_color') # type: ignore
 version_info:str = get_settings_manager().get_setting('version_info') # type: ignore
 
 def _setup_markdown_tags(tw):
+    """内部setupmarkdown标签相关处理。"""
     F = ('Microsoft YaHei',)
 
     tw.tag_configure("normal", font=(*F, 10), foreground=C.MARKDOWN_NORMAL)
@@ -47,6 +50,7 @@ def _setup_markdown_tags(tw):
     tw.tag_configure("bold_italic", font=(*F, 10, 'bold italic'))
 
 def _render_github_markdown(tw, md_text):
+    """内部渲染githubmarkdown。"""
     md_text = md_text.replace('\r\n', '\n').replace('\r', '\n')
     lines = md_text.split('\n')
     in_code_block = False
@@ -164,6 +168,7 @@ def _render_github_markdown(tw, md_text):
         _insert_inline(tw, ' '.join(para_lines) + '\n', 'normal')
 
 def _is_block_start(stripped):
+    """内部判断blockstart。"""
     if not stripped:
         return True
     if stripped.startswith('#'):
@@ -183,10 +188,12 @@ def _is_block_start(stripped):
     return False
 
 def _insert_table(tw, table_lines):
+    """内部inserttable相关处理。"""
     if not table_lines:
         return
 
     def parse_row(line):
+        """解析row。"""
         s = line.strip()
         if s.startswith('|'):
             s = s[1:]
@@ -235,6 +242,7 @@ def _insert_table(tw, table_lines):
             widths[j] = max(widths[j], _visible_width(cell))
 
     def format_cell(cell, width, align):
+        """格式化cell。"""
         pad = max(0, width - _visible_width(cell))
         if align == 'right':
             return ' ' * pad + cell
@@ -245,6 +253,7 @@ def _insert_table(tw, table_lines):
         return cell + ' ' * pad
 
     def draw_border(left, mid, right, dash):
+        """drawborder相关处理。"""
         sep = left
         parts = [dash * (w + 2) for w in widths]
         sep += mid.join(parts)
@@ -265,12 +274,14 @@ def _insert_table(tw, table_lines):
     draw_border('└', '┴', '┘', '─')
 
 def _visible_width(text):
+    """内部visible宽度相关处理。"""
     w = 0
     for ch in text:
         w += 2 if ord(ch) > 127 else 1
     return w
 
 def _insert_table_row_text(tw, cells):
+    """内部inserttablerow文本相关处理。"""
     row_text = '│ ' + ' │ '.join(cells) + ' │\n'
     tw.insert(tk.END, row_text, 'table_cell')
 
@@ -286,6 +297,7 @@ _TAG_FONT_INFO = {
 }
 
 def _ensure_font_tag(tw, base_tag, fmt):
+    """内部确保字体tag。"""
     F = ('Microsoft YaHei',)
     info = _TAG_FONT_INFO.get(base_tag)
 
@@ -318,13 +330,16 @@ def _ensure_font_tag(tw, base_tag, fmt):
     return composite
 
 def _insert_inline(tw, text, base_tag):
+    """内部insertinline相关处理。"""
     i, n = 0, len(text)
     buf = []
 
     def ft(fmt):
+        """ft相关处理。"""
         return _ensure_font_tag(tw, base_tag, fmt)
 
     def flush(extra_tags=None):
+        """flush相关处理。"""
         if buf:
             seg = ''.join(buf)
             tags = [base_tag]
@@ -341,6 +356,7 @@ def _insert_inline(tw, text, base_tag):
             buf.clear()
 
     def find_inline_link(link_start):
+        """查找inlinelink。"""
         if text[link_start] != '[':
             return None
         depth = 0
@@ -540,6 +556,7 @@ def _insert_inline(tw, text, base_tag):
     flush()
 
 def show_version_update_dialog(current_version, latest_info, info='发现新版本', root=None):
+    """显示版本更新dialog。"""
     try:
         root = tk.Toplevel(root)
         root.withdraw()
@@ -642,6 +659,7 @@ def show_version_update_dialog(current_version, latest_info, info='发现新版�
             link_label.pack(anchor=tk.W, side=tk.LEFT)
             
             def open_bilibili():
+                """打开bilibili。"""
                 import webbrowser
                 webbrowser.open(latest_info['bilibili_url'])
             
@@ -667,9 +685,11 @@ def show_version_update_dialog(current_version, latest_info, info='发现新版�
         ok_button.pack(side=tk.RIGHT)
         
         def on_enter(e):
+            """响应enter。"""
             ok_button.config(bg=C.INFO_HOVER)
         
         def on_leave(e):
+            """响应leave。"""
             ok_button.config(bg=C.ACCENT_SECONDARY)
         
         ok_button.bind("<Enter>", on_enter)

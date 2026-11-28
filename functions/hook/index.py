@@ -1,3 +1,5 @@
+"""钩子偏移索引：加载、指纹比对与云端发布数据结构。"""
+
 
 from __future__ import annotations
 
@@ -19,6 +21,7 @@ _SYMBOL_BUDGET_STEPS = ((MAX_PUBLISH_METHODS, MAX_PUBLISH_FIELDS),
                         (300, 200), (120, 80), (40, 30), (0, 0))
 
 def note_key() -> str:
+    """笔记键相关处理。"""
     try:
         from functions.base.web_config import get_webnote
         address, _pwd = get_webnote(CONFIG_NOTE_ID)
@@ -31,6 +34,7 @@ def note_key() -> str:
 @dataclass
 class HookIndex:
 
+    """钩子索引。"""
     schema: int = SCHEMA
     kind: str = DEFAULT_NOTE_KEY
     generated_at: str = ""
@@ -45,6 +49,7 @@ class HookIndex:
     warnings: list[str] = field(default_factory=list)
 
     def to_dict(self, compact: bool = False, caps: tuple[int, int] | None = None) -> dict:
+        """todict相关处理。"""
         payload = {
             "schema": self.schema,
             "kind": self.kind,
@@ -63,9 +68,11 @@ class HookIndex:
         return payload
 
     def to_json(self, compact: bool = False, indent: int = 1) -> str:
+        """tojson相关处理。"""
         return json.dumps(self.to_dict(compact=compact), ensure_ascii=False, indent=indent)
 
     def to_publish_dict(self, budget: int = NOTE_BUDGET_BYTES) -> dict:
+        """topublishdict相关处理。"""
         payload = None
         for caps in _SYMBOL_BUDGET_STEPS:
             payload = self.to_dict(compact=True, caps=caps)
@@ -75,10 +82,12 @@ class HookIndex:
         return payload if payload is not None else self.to_dict(compact=True)
 
     def to_publish_json(self, budget: int = NOTE_BUDGET_BYTES, indent: int = 1) -> str:
+        """topublishjson相关处理。"""
         return json.dumps(self.to_publish_dict(budget), ensure_ascii=False, indent=indent)
 
     @staticmethod
     def from_json(text: str) -> "HookIndex | None":
+        """fromjson相关处理。"""
         try:
             data = json.loads(text)
         except (ValueError, TypeError):
@@ -102,19 +111,24 @@ class HookIndex:
         )
 
     def fingerprint(self) -> tuple:
+        """fingerprint相关处理。"""
         return (int(self.game.get("gameassembly_size") or 0),
                 str(self.game.get("gameassembly_sha256") or "").upper())
 
     def matches(self, size: int, sha256: str) -> bool:
+        """matches相关处理。"""
         return self.fingerprint() == (int(size), str(sha256).upper())
 
     def target(self, key: str) -> dict:
+        """目标相关处理。"""
         return dict(self.targets.get(key) or {})
 
     def hook(self, key: str) -> dict:
+        """钩子相关处理。"""
         return dict(self.hooks.get(key) or {})
 
     def field_offset(self, key: str, default: int = 0) -> int:
+        """字段偏移相关处理。"""
         item = self.fields.get(key) or {}
         try:
             return int(item.get("offset"))
@@ -122,6 +136,7 @@ class HookIndex:
             return int(default)
 
     def symbol_offset(self, name: str) -> int | None:
+        """符号偏移相关处理。"""
         fields = self.symbols.get("fields") or {}
         for candidate in _name_variants(name):
             value = fields.get(candidate)
@@ -132,6 +147,7 @@ class HookIndex:
         return None
 
     def symbol_rva(self, name: str) -> int | None:
+        """符号rva相关处理。"""
         methods = self.symbols.get("methods") or {}
         for candidate in _name_variants(name):
             value = methods.get(candidate)
@@ -142,6 +158,7 @@ class HookIndex:
         return None
 
     def describe(self) -> str:
+        """describe相关处理。"""
         size, sha = self.fingerprint()
         game = self.game or {}
         version_bits = " ".join(bit for bit in (
@@ -166,9 +183,11 @@ class HookIndex:
         return "\n".join(lines)
 
     def render_c_header(self, prefix: str = "LIMBUS_") -> str:
+        """渲染cheader。"""
         return render_c_header(self, prefix=prefix)
 
 def _name_variants(name: str) -> list[str]:
+    """内部名称variants相关处理。"""
     raw = str(name or "").strip()
     out = [raw, raw.replace("$$", "::"), raw.replace("::", "$$")]
     if "." in raw:
@@ -181,6 +200,7 @@ def _name_variants(name: str) -> list[str]:
 
 def _compact_symbols(symbols: dict, hooks: dict,
                      caps: tuple[int, int] | None = None) -> dict:
+    """内部compact符号相关处理。"""
     max_methods, max_fields = caps or (MAX_PUBLISH_METHODS, MAX_PUBLISH_FIELDS)
     methods = dict(symbols.get("methods") or {})
     fields = dict(symbols.get("fields") or {})
@@ -202,12 +222,15 @@ def _compact_symbols(symbols: dict, hooks: dict,
     return {"methods": trimmed_methods, "fields": trimmed_fields}
 
 def marker_path() -> str:
+    """marker路径相关处理。"""
     return paths_mod.cache_path("published.json")
 
 def payload_hash(payload: str) -> str:
+    """载荷hash相关处理。"""
     return hashlib.sha1(payload.encode("utf-8")).hexdigest()
 
 def load_marker() -> dict:
+    """加载marker。"""
     try:
         with open(marker_path(), "r", encoding="utf-8") as fh:
             data = json.load(fh)
@@ -216,6 +239,7 @@ def load_marker() -> dict:
         return {}
 
 def mark_published(index: HookIndex) -> None:
+    """markpublished相关处理。"""
     size, sha256 = index.fingerprint()
     data = {"size": size, "sha256": sha256,
             "payload_sha1": payload_hash(index.to_publish_json()),
@@ -227,6 +251,7 @@ def mark_published(index: HookIndex) -> None:
         pass
 
 def already_published(index: HookIndex) -> bool:
+    """alreadypublished相关处理。"""
     marker = load_marker()
     size, sha256 = index.fingerprint()
     return (int(marker.get("size") or 0) == size
@@ -234,12 +259,14 @@ def already_published(index: HookIndex) -> bool:
             and marker.get("payload_sha1") == payload_hash(index.to_publish_json()))
 
 def save_local(index: HookIndex, path: str = "") -> str:
+    """保存local。"""
     path = path or paths_mod.local_index_path()
     with open(path, "w", encoding="utf-8") as fh:
         fh.write(index.to_json(compact=False))
     return path
 
 def load_local(path: str = "") -> HookIndex | None:
+    """加载local。"""
     path = path or paths_mod.local_index_path()
     try:
         with open(path, "r", encoding="utf-8") as fh:
@@ -248,6 +275,7 @@ def load_local(path: str = "") -> HookIndex | None:
         return None
 
 def pull_cloud(allow_refresh: bool = False, on_log=None) -> HookIndex | None:
+    """拉取cloud。"""
     log = on_log or (lambda _m: None)
     try:
         from functions.webFunc.Webnote import Note
@@ -273,6 +301,7 @@ def pull_cloud(allow_refresh: bool = False, on_log=None) -> HookIndex | None:
     return index
 
 def push_cloud(index: HookIndex, on_log=None) -> dict:
+    """推送cloud。"""
     log = on_log or (lambda _m: None)
     try:
         from functions.webFunc.Webnote import Note
@@ -296,6 +325,7 @@ def push_cloud(index: HookIndex, on_log=None) -> dict:
     return {"ok": ok, "error": result.get("error"), "bytes": len(payload), "key": key}
 
 def refresh_local_from_cloud(allow_refresh: bool = True, on_log=None) -> HookIndex | None:
+    """刷新localfromcloud。"""
     index = pull_cloud(allow_refresh=allow_refresh, on_log=on_log)
     if index is not None:
         save_local(index, paths_mod.cloud_index_path())
@@ -307,17 +337,20 @@ _MEMO: HookIndex | None = None
 _MEMO_SOURCE = ""
 
 def use_index(index: HookIndex | None, source: str = "") -> None:
+    """use索引相关处理。"""
     global _MEMO, _MEMO_SOURCE
     _MEMO = index
     _MEMO_SOURCE = source
 
 def clear_memo() -> None:
+    """清空memo。"""
     global _MEMO, _MEMO_SOURCE
     _MEMO = None
     _MEMO_SOURCE = ""
 
 def get_index(allow_cloud: bool = False, allow_refresh: bool = False,
               on_log=None) -> tuple[HookIndex | None, str]:
+    """获取索引。"""
     global _MEMO, _MEMO_SOURCE
     if _MEMO is not None:
         return _MEMO, _MEMO_SOURCE
@@ -339,6 +372,7 @@ def get_index(allow_cloud: bool = False, allow_refresh: bool = False,
     return None, ""
 
 def get_target_chain(key: str, on_log=None) -> tuple[dict, str]:
+    """获取目标链。"""
     index, source = get_index()
     if index is not None:
         item = index.target(key)
@@ -350,6 +384,7 @@ def get_target_chain(key: str, on_log=None) -> tuple[dict, str]:
     return default.as_dict(), "builtin"
 
 def default_index(launcher_version: str = "") -> HookIndex:
+    """default索引相关处理。"""
     index = HookIndex(generated_at=paths_mod.now_iso(),
                       game={"launcher_version": launcher_version},
                       metadata={"source": "builtin"})
@@ -358,6 +393,7 @@ def default_index(launcher_version: str = "") -> HookIndex:
     return index
 
 def render_c_header(index: HookIndex, prefix: str = "LIMBUS_") -> str:
+    """渲染cheader。"""
     lines = [
         "/* 由 FaustLauncher functions/hook 自动生成，请勿手改。",
         f" * 生成时间: {index.generated_at}",

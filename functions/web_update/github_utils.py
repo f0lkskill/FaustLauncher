@@ -1,3 +1,5 @@
+"""web_update 子模块：<github_utils>（具体职责见函数文档）。"""
+
 
 from functions.base.common.github_release import (
     ReleaseAsset,

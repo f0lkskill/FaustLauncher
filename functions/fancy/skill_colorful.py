@@ -1,3 +1,5 @@
+"""fancy 子模块：<skill_colorful>（具体职责见函数文档）。"""
+
 from functions.fancy.dialog_colorful import apply_color_gradient_custom
 from functions.base.settings_manager import get_settings_manager
 from functions.base.common.json_io import read_json, write_json
@@ -6,6 +8,7 @@ settings_manager = get_settings_manager()
 skill_text_gradient_rate:float = settings_manager.get_setting("skill_text_gradient_rate") # type: ignore
 
 def get_personality_skill_files(path = "",head_str = "") -> list:
+    """获取personalityskill文件。"""
     files = []
 
     for id in range(1,13):
@@ -19,6 +22,7 @@ def get_personality_skill_files(path = "",head_str = "") -> list:
     return files
 
 def skill_color_process(gameLang: str):
+    """skill颜色进程相关处理。"""
     import os
     from functions.web_update.translation_source import get_translation_dir_name
     package_files = get_personality_skill_files(gameLang, get_translation_dir_name() + "/Skills_")
@@ -60,6 +64,7 @@ def skill_color_process(gameLang: str):
                             info_color = sin_color.get(info_type,'ffffff')
 
                             def count_length(text: str) -> float:
+                                """统计length。"""
                                 return sum(0.5 if ch.isascii() else 1 for ch in text)
 
                             def truncate_by_display_len(text: str, max_len: float, ellipsis: str = '') -> str:

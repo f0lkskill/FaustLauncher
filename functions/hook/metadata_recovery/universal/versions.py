@@ -1,3 +1,5 @@
+"""IL2CPP metadata 恢复流程辅助模块：<versions>。"""
+
 #!/usr/bin/env python3
 
 from __future__ import annotations
@@ -57,6 +59,7 @@ VERSIONS = {
 }
 
 def version_table(metadata_version: int) -> dict:
+    """版本table相关处理。"""
     if metadata_version not in VERSIONS:
         raise ValueError(f"unsupported IL2CPP metadata version {metadata_version}")
     return VERSIONS[metadata_version]

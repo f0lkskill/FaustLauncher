@@ -1,3 +1,5 @@
+"""插件/Mod 打包发布工具。"""
+
 #! 扩展工具 — 后端操作 (GUI 为 web/extension_tools/index.html, 经 extension_tools_window.py 的 js_api 调用)
 
 import json
@@ -29,6 +31,7 @@ PAGE_SIZE = 5
 PARSER_BASE = 'https://lz.qaiu.top/parser?url='
 
 def _note_read_url(address):
+    """内部笔记read链接相关处理。"""
     try:
         from functions.webFunc.Webnote import get_note_bases
         bases = get_note_bases()
@@ -41,6 +44,7 @@ def _note_read_url(address):
             else base.rstrip('/') + '/' + str(address))
 
 def generate_icon(path, text=''):
+    """generate图标相关处理。"""
     img = Image.new('RGBA', (256, 256), DEFAULT_ICON_BG)
     draw = ImageDraw.Draw(img)
     draw.rounded_rectangle([8, 8, 247, 247], radius=24,
@@ -68,6 +72,7 @@ SCR_TEMPLATE = """# 插件代码入口: 在此编写插件的加载逻辑
 """
 
 def spawn_extension(name, info=None):
+    """拉起extension。"""
     name = (name or '').strip()
     if not name:
         return False, '插件名称不能为空'
@@ -97,6 +102,7 @@ def spawn_extension(name, info=None):
         return False, f'生成插件模板失败: {e}'
 
 def _scan_mod_files(mod_dir):
+    """内部扫描Mod文件。"""
     result = []
     try:
         for f in os.listdir(mod_dir):
@@ -108,6 +114,7 @@ def _scan_mod_files(mod_dir):
     return sorted(result)
 
 def _validate_wrap_source(source_folder):
+    """内部校验wrap来源。"""
     source = (source_folder or '').strip()
     if not source:
         return '请先选择原始文件夹'
@@ -124,6 +131,7 @@ def _validate_wrap_source(source_folder):
     return None
 
 def wrap_mod(source_folder, info=None, icon_path=None, extra_files=None, single_file=False):
+    """wrapMod相关处理。"""
     source = (source_folder or '').strip()
     if not source:
         return False, '请先选择原始文件夹'
@@ -220,6 +228,7 @@ INFO_KINDS = {
 }
 
 def load_extension_info(kind, folder):
+    """加载extension信息。"""
     meta = INFO_KINDS.get(kind)
     if not meta:
         return None, f'未知的扩展类型: {kind}'
@@ -247,12 +256,15 @@ def load_extension_info(kind, folder):
     return info, None
 
 def load_mod_info(mod_folder):
+    """加载Mod信息。"""
     return load_extension_info('mod', mod_folder)
 
 def load_addon_info(addon_folder):
+    """加载插件信息。"""
     return load_extension_info('addon', addon_folder)
 
 def _fetch_note(address, label='Mod'):
+    """内部拉取笔记。"""
     from functions.webFunc.Webnote import read_note_live
     text, _used, err = read_note_live(None, address)
     text = str(text or '').strip()
@@ -275,9 +287,11 @@ def _fetch_note(address, label='Mod'):
     return data
 
 def _fetch_mod_note(address):
+    """内部拉取Mod笔记。"""
     return _fetch_note(address, 'Mod')
 
 def _lanzou_session(log=None):
+    """内部lanzousession相关处理。"""
     cfg = get_lanzou_config()
     cookie = {}
     for key in ('phpdisk_info', 'ylogin', 'ylogins'):
@@ -294,6 +308,7 @@ def _lanzou_session(log=None):
     return session
 
 def _zip_folder(folder, target_zip, arc_name=None, progress=None, label='Mod'):
+    """内部zipfolder相关处理。"""
     folder = os.path.abspath(folder)
     if not os.path.isdir(folder):
         raise RuntimeError(f'{label} 文件夹不存在: {folder}')
@@ -314,10 +329,12 @@ def _zip_folder(folder, target_zip, arc_name=None, progress=None, label='Mod'):
                 progress((i + 1) / len(files) * 100, f'压缩中 {os.path.basename(full)} ({i + 1}/{len(files)})')
 
 def _zip_mod_folder(mod_folder, target_zip, arc_name=None, progress=None):
+    """内部zipModfolder相关处理。"""
     return _zip_folder(mod_folder, target_zip, arc_name=arc_name, progress=progress,
                        label='Mod')
 
 def upload_extension_to_lanzou(kind, folder, log=None, progress=None):
+    """uploadextensiontolanzou相关处理。"""
     meta = INFO_KINDS.get(kind)
     if not meta:
         raise RuntimeError(f'未知的扩展类型: {kind}')
@@ -344,6 +361,7 @@ def upload_extension_to_lanzou(kind, folder, log=None, progress=None):
     partial = {}
 
     def _fail(msg):
+        """内部fail相关处理。"""
         e = RuntimeError(msg)
         e.partial_urls = dict(partial)
         raise e
@@ -405,9 +423,11 @@ def upload_extension_to_lanzou(kind, folder, log=None, progress=None):
         shutil.rmtree(tmpdir, ignore_errors=True)
 
 def upload_mod_to_lanzou(mod_folder, log=None, progress=None):
+    """uploadModtolanzou相关处理。"""
     return upload_extension_to_lanzou('mod', mod_folder, log=log, progress=progress)
 
 def upload_addon_to_lanzou(addon_folder, log=None, progress=None):
+    """upload插件tolanzou相关处理。"""
     return upload_extension_to_lanzou('addon', addon_folder, log=log, progress=progress)
 
 def _workshop_check(log=None):
@@ -488,16 +508,19 @@ def publish_extension(kind, folder, address=None, log=None, progress=None,
 
 def publish_mod(mod_folder, address=None, log=None, progress=None,
                 tags=None, tags_style=None):
+    """publishMod相关处理。"""
     return publish_extension('mod', mod_folder, address=address, log=log, progress=progress,
                              tags=tags, tags_style=tags_style)
 
 def publish_addon(addon_folder, address=None, log=None, progress=None,
                   tags=None, tags_style=None):
+    """publish插件相关处理。"""
     return publish_extension('addon', addon_folder, address=address, log=log,
                              progress=progress, tags=tags, tags_style=tags_style)
 
 def upload_extension_info(kind, folder, address=None, log=None, urls=None,
                           keep_old_urls=True, tags=None, tags_style=None):
+    """uploadextension信息相关处理。"""
     meta = INFO_KINDS.get(kind)
     if not meta:
         return False, f'未知的扩展类型: {kind}'
@@ -615,12 +638,14 @@ def upload_extension_info(kind, folder, address=None, log=None, urls=None,
 
 def upload_mod_info(mod_folder, address=None, log=None, urls=None, keep_old_urls=True,
                     tags=None, tags_style=None):
+    """uploadMod信息相关处理。"""
     return upload_extension_info('mod', mod_folder, address=address, log=log, urls=urls,
                                  keep_old_urls=keep_old_urls, tags=tags,
                                  tags_style=tags_style)
 
 def upload_addon_info(addon_folder, address=None, log=None, urls=None, keep_old_urls=True,
                       tags=None, tags_style=None):
+    """upload插件信息相关处理。"""
     return upload_extension_info('addon', addon_folder, address=address, log=log, urls=urls,
                                  keep_old_urls=keep_old_urls, tags=tags,
                                  tags_style=tags_style)

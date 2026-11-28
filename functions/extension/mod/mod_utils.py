@@ -342,6 +342,7 @@ class ModManager:
 
     def __init__(self):
         # 目前无需实例状态：目录与设置都实时从环境/配置文件读取
+        """初始化对象状态。"""
         pass
 
     def get_mod_directory(self) -> str:

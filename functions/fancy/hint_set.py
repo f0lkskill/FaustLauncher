@@ -1,9 +1,12 @@
+"""fancy 子模块：<hint_set>（具体职责见函数文档）。"""
+
 import os
 import random
 from functions.base.common.json_io import read_json, write_json
 
 def simple_replace(battlehint_path:str):
 
+    """simplereplace相关处理。"""
     dir_path = os.path.dirname(battlehint_path)
     ui_file_path = os.path.join(dir_path, "LoginUIText.json")
     if os.path.isfile(ui_file_path):

@@ -1,3 +1,5 @@
+"""成就用的内存读取封装。"""
+
 
 from __future__ import annotations
 
@@ -18,6 +20,7 @@ TH32CS_SNAPMODULE = 0x00000008
 INVALID_HANDLE_VALUE = ctypes.c_void_p(-1).value
 
 class MODULEENTRY32(ctypes.Structure):
+    """MODULEENTRY32类。"""
     _fields_ = [
         ("dwSize", wintypes.DWORD),
         ("th32ModuleID", wintypes.DWORD),
@@ -34,6 +37,7 @@ class MODULEENTRY32(ctypes.Structure):
 @dataclass(frozen=True)
 class MemoryTarget:
 
+    """内存目标。"""
     module_name: str
     base_offset: int
     offsets: tuple[int, ...]
@@ -53,6 +57,7 @@ _CLOUD_REFRESHED = False
 _CLOUD_REFRESHING = False
 
 def _local_gameassembly_size() -> int:
+    """内部localgameassembly尺寸相关处理。"""
     try:
         from functions.hook.paths import game_paths
         paths = game_paths()
@@ -63,6 +68,7 @@ def _local_gameassembly_size() -> int:
     return 0
 
 def _target_from_dict(item: dict, default: MemoryTarget) -> MemoryTarget | None:
+    """内部目标fromdict相关处理。"""
     try:
         base_offset = int(item.get("base_offset")) # type: ignore
         offsets = tuple(int(x) for x in item.get("offsets") or [])
@@ -78,6 +84,7 @@ def _target_from_dict(item: dict, default: MemoryTarget) -> MemoryTarget | None:
     )
 
 def memory_target(key: str = "enkephalin") -> MemoryTarget:
+    """内存目标相关处理。"""
     default = _KNOWN_TARGETS.get(key, ENKEPHALIN_TARGET)
     with _CHAIN_LOCK:
         cached = _RESOLVED.get(key)
@@ -110,11 +117,13 @@ def memory_target(key: str = "enkephalin") -> MemoryTarget:
     return resolved
 
 def chain_source(key: str = "enkephalin") -> str:
+    """链来源相关处理。"""
     memory_target(key)
     with _CHAIN_LOCK:
         return _CHAIN_SOURCE.get(key, "unknown")
 
 def _local_index_matches_game() -> bool:
+    """内部local索引matches游戏相关处理。"""
     try:
         from functions.hook import index as index_mod
         from functions.hook import paths as paths_mod
@@ -130,6 +139,7 @@ def _local_index_matches_game() -> bool:
         return False
 
 def refresh_chain_from_cloud(background: bool = True, on_log=print) -> bool:
+    """刷新链fromcloud。"""
     global _CLOUD_REFRESHED, _CLOUD_REFRESHING
     hook_index = _hook_index_mod
     if hook_index is None:
@@ -142,6 +152,7 @@ def refresh_chain_from_cloud(background: bool = True, on_log=print) -> bool:
         _CLOUD_REFRESHING = True
 
     def worker() -> None:
+        """工作线程相关处理。"""
         global _CLOUD_REFRESHED, _CLOUD_REFRESHING
         try:
             if _local_index_matches_game():
@@ -172,6 +183,7 @@ def refresh_chain_from_cloud(background: bool = True, on_log=print) -> bool:
     return True
 
 def _fast_find_process(process_name: str = "LimbusCompany.exe") -> int:
+    """内部fastfind进程相关处理。"""
     try:
         from functions.achievement.battle_watch import find_process_id
         return int(find_process_id(process_name) or 0)
@@ -180,7 +192,9 @@ def _fast_find_process(process_name: str = "LimbusCompany.exe") -> int:
 
 class LimbusMemoryReader:
 
+    """Limbus内存读取器。"""
     def __init__(self, process_name: str = "LimbusCompany.exe") -> None:
+        """初始化对象状态。"""
         self.process_name = process_name.lower()
         self.kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
         self.handle: int | None = None
@@ -191,6 +205,7 @@ class LimbusMemoryReader:
         self._configure_api()
 
     def _configure_api(self) -> None:
+        """内部configureapi相关处理。"""
         k = self.kernel32
         k.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
         k.OpenProcess.restype = wintypes.HANDLE
@@ -212,10 +227,12 @@ class LimbusMemoryReader:
         k.Module32Next.restype = wintypes.BOOL
 
     def _find_process(self) -> tuple[int, int] | None:
+        """内部查找进程。"""
         pid = _fast_find_process(self.process_name)
         return (pid, 0) if pid else None
 
     def _find_module(self, pid: int, module_name: str) -> int | None:
+        """内部查找module。"""
         snapshot = self.kernel32.CreateToolhelp32Snapshot(TH32CS_SNAPMODULE, pid)
         if snapshot in (None, INVALID_HANDLE_VALUE):
             return None
@@ -237,6 +254,7 @@ class LimbusMemoryReader:
         return None
 
     def attach(self, target: MemoryTarget = ENKEPHALIN_TARGET) -> bool:
+        """attach相关处理。"""
         if self.is_attached:
             return True
         found = self._find_process()
@@ -260,9 +278,11 @@ class LimbusMemoryReader:
 
     @property
     def is_attached(self) -> bool:
+        """判断attached。"""
         return bool(self.handle and self.pid and self.module_base)
 
     def _read_bytes(self, address: int, size: int) -> bytes | None:
+        """内部读取bytes。"""
         if not self.handle or address <= 0:
             return None
         buffer = ctypes.create_string_buffer(size)
@@ -279,6 +299,7 @@ class LimbusMemoryReader:
         return buffer.raw[:size]
 
     def read_pointer(self, target: MemoryTarget) -> int | None:
+        """读取pointer。"""
         if not self.is_attached or self.module_base is None:
             return None
         address = self.module_base + target.base_offset
@@ -293,11 +314,13 @@ class LimbusMemoryReader:
         return address
 
     def read_int32(self, target: MemoryTarget = ENKEPHALIN_TARGET) -> int | None:
+        """读取int32。"""
         address = self.read_pointer(target)
         raw = self._read_bytes(address, 4) if address else None
         return int.from_bytes(raw, "little", signed=True) if raw else None
 
     def read_enkephalin(self) -> int | None:
+        """读取enkephalin。"""
         target = memory_target("enkephalin")
         if not self.is_attached and not self.attach(target):
             return None
@@ -307,6 +330,7 @@ class LimbusMemoryReader:
         return value
 
     def detach(self) -> None:
+        """detach相关处理。"""
         if self.handle:
             self.kernel32.CloseHandle(self.handle)
         self.handle = None
@@ -315,4 +339,5 @@ class LimbusMemoryReader:
         self.module_name = None
 
     def __del__(self) -> None:
+        """内部del相关处理。"""
         self.detach()

@@ -1,3 +1,5 @@
+"""hook 子模块：<__init__>（具体职责见函数文档）。"""
+
 
 from __future__ import annotations
 
@@ -42,13 +44,16 @@ __all__ = [
 ]
 
 def update_hook_index(*args, **kwargs):
+    """更新钩子索引。"""
     from .updater import update_hook_index as _impl
     return _impl(*args, **kwargs)
 
 def status(*args, **kwargs):
+    """状态相关处理。"""
     from .updater import status as _impl
     return _impl(*args, **kwargs)
 
 def auto_update_async(*args, **kwargs):
+    """auto更新（异步）相关处理。"""
     from .updater import auto_update_async as _impl
     return _impl(*args, **kwargs)

@@ -1,3 +1,5 @@
+"""文件传输辅助。"""
+
 import requests
 import time
 from pathlib import Path
@@ -8,7 +10,9 @@ REQUEST_TIMEOUT = (10, 60)   # (连接, 读取)
 TRANSFER_TIMEOUT = (10, 300)  # 上传/下载大文件
 
 class UpFileClient:
+    """Up文件Client类。"""
     def __init__(self):
+        """初始化对象状态。"""
         self.base_url = "https://upfile.live"
         self.session = requests.Session()
         self.session.headers.update({
@@ -21,6 +25,7 @@ class UpFileClient:
         })
 
     def get_upload_link(self, file_name):
+        """获取uploadlink。"""
         url = f"{self.base_url}/api/file/getUploadLink/"
         data = {
             'vipCode': '',
@@ -38,6 +43,7 @@ class UpFileClient:
             raise Exception(f"HTTP错误: {response.status_code}")
 
     def upload_file(self, upload_url, file_path):
+        """upload文件相关处理。"""
         file_name = Path(file_path).name
         
         with open(file_path, 'rb') as file:
@@ -57,6 +63,7 @@ class UpFileClient:
             raise Exception(f"文件上传失败: {response.status_code}")
 
     def confirm_upload(self, file_size, file_name, file_key):
+        """confirmupload相关处理。"""
         url = f"{self.base_url}/api/file/upload/"
         data = {
             'file_size': file_size,
@@ -75,6 +82,7 @@ class UpFileClient:
             raise Exception(f"HTTP错误: {response.status_code}")
 
     def get_file_info(self, file_id):
+        """获取文件信息。"""
         url = f"{self.base_url}/api/file/info/"
         params = {
             'file_id': file_id,
@@ -92,6 +100,7 @@ class UpFileClient:
             raise Exception(f"HTTP错误: {response.status_code}")
 
     def download_file(self, file_id, save_path=None):
+        """下载文件相关处理。"""
         try:
             file_info = self.get_file_info(file_id)
             file_name = file_info['file_name']
@@ -128,6 +137,7 @@ class UpFileClient:
             }
 
     def delete_file(self, file_id):
+        """删除文件。"""
         try:
             url = f"{self.base_url}/api/file/delete/"
             data = {
@@ -154,6 +164,7 @@ class UpFileClient:
             }
 
     def upload(self, file_path, log_function=print):
+        """upload相关处理。"""
         try:
             file_path_obj = Path(file_path)
             file_name = file_path_obj.name

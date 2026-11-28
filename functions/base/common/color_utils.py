@@ -1,6 +1,9 @@
+"""common 子模块：<color_utils>（具体职责见函数文档）。"""
+
 from typing import Tuple
 
 def hex_to_rgb(hex_color: str) -> Tuple[int, int, int]:
+    """hextorgb相关处理。"""
     hex_color = hex_color.lstrip('#')
     if len(hex_color) == 6:
         r = int(hex_color[0:2], 16)
@@ -15,14 +18,17 @@ def hex_to_rgb(hex_color: str) -> Tuple[int, int, int]:
     return r, g, b
 
 def rgb_to_hex(rgb: Tuple[int, int, int]) -> str:
+    """rgbtohex相关处理。"""
     return f"#{rgb[0]:02x}{rgb[1]:02x}{rgb[2]:02x}"
 
 def interpolate_color(start_rgb: Tuple[int, int, int], end_rgb: Tuple[int, int, int],
                      ratio: float) -> Tuple[int, int, int]:
+    """interpolate颜色相关处理。"""
     r = int(start_rgb[0] + (end_rgb[0] - start_rgb[0]) * ratio)
     g = int(start_rgb[1] + (end_rgb[1] - start_rgb[1]) * ratio)
     b = int(start_rgb[2] + (end_rgb[2] - start_rgb[2]) * ratio)
     return r, g, b
 
 def is_white_color(rgb: Tuple[int, int, int]) -> bool:
+    """判断white颜色。"""
     return rgb == (255, 255, 255)

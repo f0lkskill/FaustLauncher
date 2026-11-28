@@ -1,3 +1,5 @@
+"""IL2CPP metadata 恢复流程辅助模块：<pipeline>。"""
+
 #!/usr/bin/env python3
 
 from __future__ import annotations
@@ -14,13 +16,16 @@ from .universal.pipeline import run as run_universal
 VERSION_DEFAULT = 39
 
 def capstone_available() -> bool:
+    """capstoneavailable相关处理。"""
     import importlib.util
     return importlib.util.find_spec("capstone") is not None
 
 def output_dir() -> Path:
+    """output目录相关处理。"""
     return Path(os.getenv("path_", ".")) / "metadata_recovery"
 
 def new_run_dir() -> Path:
+    """newrun目录相关处理。"""
     root = output_dir()
     stamp = time.strftime("%Y%m%d_%H%M%S")
     run_dir = root / f"run_{stamp}"
@@ -36,6 +41,7 @@ def run_recovery(
     on_log: Callable = None,
     cancel_check: Callable = None,
 ) -> dict:
+    """执行recovery。"""
     if on_log is None:
         on_log = lambda msg: print(msg, flush=True)  # noqa: E731
     if cancel_check is None:
@@ -134,6 +140,7 @@ _STAGE_LABELS = {
 }
 
 def _md_report(summary: dict) -> str:
+    """内部mdreport相关处理。"""
     lines = [
         "# Metadata 恢复运行报告",
         "",

@@ -1,3 +1,5 @@
+"""IL2CPP metadata 恢复流程辅助模块：<rebuild_validate>。"""
+
 #!/usr/bin/env python3
 
 from __future__ import annotations
@@ -13,6 +15,7 @@ METADATA_SANITY = 0xFAB11BAF
 
 def rebuild_standard(metadata: bytes, solution: dict, table_hex: str = "",
                      version: int = 39) -> bytes:
+    """rebuildstandard相关处理。"""
     vt = version_table(version)
     names = vt["names"]
     entries = {e["index"]: e for e in solution["entries"]}
@@ -48,6 +51,7 @@ def rebuild_standard(metadata: bytes, solution: dict, table_hex: str = "",
 
 def validate_standard(std: bytes, solution: dict, metadata: bytes | None = None,
                       table_hex: str = "", version: int = 39) -> list[dict]:
+    """校验standard。"""
     vt = version_table(version)
     names = vt["names"]
     rec = vt["rec"]

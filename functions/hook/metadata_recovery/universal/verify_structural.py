@@ -1,3 +1,5 @@
+"""IL2CPP metadata 恢复流程辅助模块：<verify_structural>。"""
+
 #!/usr/bin/env python3
 
 from __future__ import annotations
@@ -11,6 +13,7 @@ VERDICT_PASS_WITH_REVIEW = "PASS_WITH_REVIEW"
 VERDICT_FAIL = "FAIL"
 
 def classify_section(data: bytes) -> tuple[str, dict]:
+    """classifysection相关处理。"""
     n = len(data)
     printable = sum(1 for b in data if 0x20 <= b <= 0x7E or b in (0x09, 0x0A, 0x0D)) / max(n, 1)
     monotonic = 0.0
@@ -25,6 +28,7 @@ def classify_section(data: bytes) -> tuple[str, dict]:
     return "binary", {"printable": round(printable, 3), "monotonic": round(monotonic, 3)}
 
 def verify(metadata: bytes, profile: dict) -> dict:
+    """verify相关处理。"""
     gates: list[dict] = []
     result: dict = {"verdict": VERDICT_PASS, "gates": gates}
 

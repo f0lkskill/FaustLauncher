@@ -1,3 +1,5 @@
+"""战斗过程监听：从内存/日志采事件，驱动战斗类成就判定。"""
+
 
 from __future__ import annotations
 
@@ -21,6 +23,7 @@ TARGET_PROCESS = "LimbusCompany.exe"
 BUFF_WATCH_MAX = 32
 
 def fnv1a64(text) -> int:
+    """fnv1a64相关处理。"""
     data = text.encode("utf-8", "replace") if isinstance(text, str) else bytes(text)
     h = 0xCBF29CE484222325
     for byte in data:
@@ -52,6 +55,7 @@ VITAL_UNREAD = -1000
 SPEED_FIELD_ORDER = ("os", "ow", "its", "eff")
 
 def speed_int(raw: int) -> int:
+    """speedint相关处理。"""
     if raw is None:
         return -1
     if raw < 0:
@@ -59,6 +63,7 @@ def speed_int(raw: int) -> int:
     return raw // SPEED_SCALE
 
 def speed_text(value: int, raw: int) -> str:
+    """speed文本相关处理。"""
     if raw is None or raw < 0:
         return "未掷"
     return f"{value}(raw {raw})"
@@ -77,6 +82,7 @@ RULE_KINDS_IMMEDIATE = (RULE_KIND_SPEED, RULE_KIND_MENTAL, RULE_KIND_HP,
 @dataclass(frozen=True)
 class BattleRule:
 
+    """战斗Rule类。"""
     key: str
     label: str = ""
     kind: str = RULE_KIND_SKILL
@@ -93,6 +99,7 @@ class BattleRule:
     min_round: int = 0
 
     def round_ok(self, round_seq: int) -> bool:
+        """roundok相关处理。"""
         if self.max_round and round_seq > self.max_round:
             return False
         if self.min_round and round_seq < self.min_round:
@@ -100,6 +107,7 @@ class BattleRule:
         return True
 
     def match_skill(self, skid: int, actor_oid: int, round_seq: int = 0) -> bool:
+        """matchskill相关处理。"""
         if not self.round_ok(round_seq):
             return False
         if self.any_skill:
@@ -116,6 +124,7 @@ class BattleRule:
         return False
 
     def match_buff(self, oid: int, names: set, round_seq: int = 0) -> tuple:
+        """matchbuff相关处理。"""
         if self.kind != RULE_KIND_BUFF or oid not in self.identity_ids:
             return False, ()
         if not self.round_ok(round_seq):
@@ -124,10 +133,12 @@ class BattleRule:
         return bool(hit), hit
 
     def match_presence(self, oid: int, round_seq: int = 0) -> bool:
+        """matchpresence相关处理。"""
         return (self.kind == RULE_KIND_PRESENCE and oid in self.identity_ids
                 and self.round_ok(round_seq))
 
     def match_vitals(self, oid: int, hp: int, mhp: int, mp: int) -> bool:
+        """matchvitals相关处理。"""
         if oid not in self.identity_ids:
             return False
         if self.kind == RULE_KIND_MENTAL:
@@ -139,6 +150,7 @@ class BattleRule:
         return False
 
     def match_speed(self, oid: int, speeds: dict) -> tuple[bool, tuple[str, ...]]:
+        """matchspeed相关处理。"""
         if self.kind != RULE_KIND_SPEED or oid not in self.identity_ids:
             return False, ()
         names = self.fields or SPEED_FIELD_ORDER
@@ -146,6 +158,7 @@ class BattleRule:
         return bool(hit), hit
 
     def threshold_text(self) -> str:
+        """threshold文本相关处理。"""
         if self.kind == RULE_KIND_MENTAL:
             return f"理智 < {self.threshold}"
         if self.kind == RULE_KIND_HP:
@@ -164,6 +177,7 @@ _rules: dict[str, BattleRule] = {}
 _rules_lock = threading.Lock()
 
 def register_rule(rule) -> BattleRule:
+    """注册rule。"""
     if isinstance(rule, dict):
         rule = BattleRule(**rule)
     with _rules_lock:
@@ -171,14 +185,17 @@ def register_rule(rule) -> BattleRule:
     return rule
 
 def registered_rules() -> dict[str, BattleRule]:
+    """registeredrules相关处理。"""
     with _rules_lock:
         return dict(_rules)
 
 def clear_rules() -> None:
+    """清空rules。"""
     with _rules_lock:
         _rules.clear()
 
 def watched_identities() -> set[int]:
+    """watchedidentities相关处理。"""
     with _rules_lock:
         rules = list(_rules.values())
     ids: set[int] = set()
@@ -187,6 +204,7 @@ def watched_identities() -> set[int]:
     return ids
 
 def watched_buff_names() -> tuple[str, ...]:
+    """watchedbuffnames相关处理。"""
     with _rules_lock:
         rules = list(_rules.values())
     names: list[str] = []
@@ -199,6 +217,7 @@ def watched_buff_names() -> tuple[str, ...]:
     return tuple(names[:BUFF_WATCH_MAX])
 
 def rule_hit(key: str) -> str | None:
+    """rulehit相关处理。"""
     with _watch_lock:
         watch = _watch
     if watch is None:
@@ -206,6 +225,7 @@ def rule_hit(key: str) -> str | None:
     return watch.rule_detail(key)
 
 def rule_order(key: str) -> int:
+    """ruleorder相关处理。"""
     with _watch_lock:
         watch = _watch
     if watch is None:
@@ -213,6 +233,7 @@ def rule_order(key: str) -> int:
     return watch.rule_order(key)
 
 def rule_live(key: str) -> bool:
+    """rulelive相关处理。"""
     with _watch_lock:
         watch = _watch
     if watch is None:
@@ -229,6 +250,7 @@ RULE_KINDS_ANIM_WAIT = ("hp", "mental", "buff")
 PENDING_REASON = "待动画结束"
 
 def _stamp_reason(detail: str, reason: str) -> str:
+    """内部stampreason相关处理。"""
     if not reason:
         return detail
     if PENDING_REASON in detail:
@@ -344,6 +366,7 @@ _kernel32.GetProcessTimes.argtypes = [_HANDLE, ctypes.POINTER(wt.FILETIME),
 TH32CS_SNAPPROCESS = 0x00000002
 
 class PROCESSENTRY32W(ctypes.Structure):
+    """PROCESSENTRY32W类。"""
     _fields_ = [
         ("dwSize", wt.DWORD),
         ("cntUsage", wt.DWORD),
@@ -365,6 +388,7 @@ _kernel32.Process32NextW.argtypes = [_HANDLE, ctypes.POINTER(PROCESSENTRY32W)]
 PROCESS_QUERY_LIMITED = 0x1000
 
 def _process_image_path(pid: int) -> str:
+    """内部进程图片路径相关处理。"""
     proc = _kernel32.OpenProcess(PROCESS_QUERY_LIMITED, False, pid)
     if not proc:
         return ""
@@ -380,6 +404,7 @@ def _process_image_path(pid: int) -> str:
     return ""
 
 def _process_start_time(pid: int) -> int:
+    """内部进程start时间相关处理。"""
     proc = _kernel32.OpenProcess(PROCESS_QUERY_LIMITED, False, pid)
     if not proc:
         return 0
@@ -396,6 +421,7 @@ def _process_start_time(pid: int) -> int:
     return 0
 
 def _expected_game_exe() -> str:
+    """内部expected游戏程序相关处理。"""
     try:
         from functions.hook.paths import game_paths
         paths = game_paths()
@@ -407,6 +433,7 @@ def _expected_game_exe() -> str:
     return ""
 
 def _expected_gameassembly() -> str:
+    """内部expectedgameassembly相关处理。"""
     try:
         from functions.hook.paths import game_paths
         return str(getattr(game_paths(), "gameassembly", "") or "")
@@ -414,6 +441,7 @@ def _expected_gameassembly() -> str:
         return ""
 
 def _same_file(a: str, b: str) -> bool:
+    """内部same文件相关处理。"""
     if not a or not b:
         return False
     try:
@@ -422,6 +450,7 @@ def _same_file(a: str, b: str) -> bool:
         return False
 
 def find_process_candidates(process_name: str = TARGET_PROCESS) -> list[tuple[int, str]]:
+    """查找进程candidates。"""
     wanted = process_name.lower()
     if not wanted.endswith(".exe"):
         wanted += ".exe"
@@ -443,6 +472,7 @@ def find_process_candidates(process_name: str = TARGET_PROCESS) -> list[tuple[in
     return out
 
 def select_game_process(process_name: str = TARGET_PROCESS) -> tuple[int | None, str, str]:
+    """选择游戏进程。"""
     expected = _expected_game_exe()
     candidates = find_process_candidates(process_name)
     if not candidates:
@@ -462,6 +492,7 @@ def select_game_process(process_name: str = TARGET_PROCESS) -> tuple[int | None,
     return pid, image, ""
 
 def _project_root() -> str:
+    """内部project根相关处理。"""
     try:
         from functions.base.common.path_utils import get_app_root
         return get_app_root()
@@ -470,15 +501,18 @@ def _project_root() -> str:
         return os.path.abspath(os.path.join(here, "..", ".."))
 
 def event_log_path() -> str:
+    """事件日志路径相关处理。"""
     return os.path.join(_project_root(), "logs", "battle_watch.log")
 
 def status_path() -> str:
+    """状态路径相关处理。"""
     return os.path.join(_project_root(), "cache", "achievement", "battle_watch_status.json")
 
 _KV_RE = re.compile(r"([A-Za-z_][A-Za-z0-9_]*)=(\S+)")
 
 @dataclass
 class BattleEvent:
+    """战斗事件类。"""
     kind: str
     values: dict = field(default_factory=dict)
     tag: str = ""
@@ -486,12 +520,14 @@ class BattleEvent:
     ts: float = 0.0
 
     def get(self, key: str, default: int = 0) -> int:
+        """获取相关操作。"""
         try:
             return int(self.values.get(key, default))
         except (TypeError, ValueError):
             return default
 
     def opt(self, key: str):
+        """opt相关处理。"""
         if key not in self.values:
             return None
         try:
@@ -500,11 +536,13 @@ class BattleEvent:
             return None
 
     def text(self, key: str, default: str = "") -> str:
+        """文本相关处理。"""
         value = self.values.get(key, default)
         return default if value is None else str(value)
 
 @dataclass
 class BattleState:
+    """战斗状态类。"""
     round_seq: int = 0
     units: dict = field(default_factory=dict)
     speeds: dict = field(default_factory=dict)
@@ -549,6 +587,7 @@ class BattleState:
     flag_counter: int = 0
 
     def snapshot(self) -> dict:
+        """snapshot相关处理。"""
         watched = watched_identities()
         speeds = {iid: info for iid, info in self.speeds.items()
                   if not watched or info.get("oid") in watched}
@@ -597,8 +636,10 @@ class BattleState:
 
 class BattleWatch:
 
+    """战斗监听类。"""
     def __init__(self, log_callback=None, poll_interval: float = 0.25,
                  process_name: str = TARGET_PROCESS, verbose: bool = False) -> None:
+        """初始化对象状态。"""
         self.log_callback = log_callback or (lambda _m: None)
         # 钩子全在 WarpHook：配置即钩子，加减一条不用重编 C，游戏跑着也能换表。
         # 事件从宿主共享内存里泵出来，照样走 :meth:`handle_line` 喂规则引擎。
@@ -624,6 +665,7 @@ class BattleWatch:
         self._phase = "未启动"
 
     def start(self) -> bool:
+        """启动相关操作。"""
         if self.running:
             return True
         return self._start_warp()
@@ -642,6 +684,7 @@ class BattleWatch:
         return True
 
     def stop(self) -> None:
+        """停止相关操作。"""
         if self._source is not None:
             self._source.stop()
             self._source = None
@@ -649,10 +692,12 @@ class BattleWatch:
 
     @property
     def running(self) -> bool:
+        """running相关处理。"""
         return bool(self._source is not None and self._source.running)
 
     def settle_turn(self, reason: str = "", fallback_immediate: bool = True,
                     only_skills: bool = False) -> list:
+        """settleturn相关处理。"""
         settled: list[str] = []
         with self._lock:
             pending = list(self.state.skills)
@@ -694,6 +739,7 @@ class BattleWatch:
         return pending
 
     def settle_skills_if_quiet(self, reason: str = "动画结束（静默兜底）") -> bool:
+        """settleskillsifquiet相关处理。"""
         with self._lock:
             if not self.state.pending_flags and not self.state.pending_immediate:
                 return False
@@ -710,19 +756,23 @@ class BattleWatch:
                                      only_skills=True))
 
     def mark_battle_end(self) -> None:
+        """mark战斗end相关处理。"""
         with self._lock:
             self._battle_ended = True
 
     def rule_detail(self, key: str) -> str | None:
+        """ruledetail相关处理。"""
         with self._lock:
             detail = self.state.flags.get(key)
         return detail or None
 
     def rule_order(self, key: str) -> int:
+        """ruleorder相关处理。"""
         with self._lock:
             return int(self.state.flag_seq.get(key, 0))
 
     def rule_live(self, key: str) -> bool:
+        """rulelive相关处理。"""
         rule = registered_rules().get(key)
         if rule is None:
             return False
@@ -752,6 +802,7 @@ class BattleWatch:
         return False
 
     def snapshot(self) -> dict:
+        """snapshot相关处理。"""
         with self._lock:
             snap = self.state.snapshot()
         snap["phase"] = self._phase
@@ -759,6 +810,7 @@ class BattleWatch:
         return snap
 
     def _open_event_file(self) -> None:
+        """内部打开事件文件。"""
         if self._event_file is not None or self._event_to_sink:
             return
         if log_sink.installed():
@@ -775,6 +827,7 @@ class BattleWatch:
             self._event_file = None
 
     def _close_event_file(self) -> None:
+        """内部关闭事件文件。"""
         if self._event_file is not None:
             try:
                 self._event_file.close()
@@ -783,6 +836,7 @@ class BattleWatch:
             self._event_file = None
 
     def _event(self, message: str) -> None:
+        """内部事件相关处理。"""
         if self._event_to_sink or log_sink.installed():
             self._event_to_sink = True
             if log_sink.write(message, "BattleWatch"):
@@ -795,6 +849,7 @@ class BattleWatch:
                 pass
 
     def _write_status(self, force: bool = False) -> None:
+        """内部写入状态。"""
         now = time.time()
         if not force and now - self._last_status_write < STATUS_WRITE_SEC:
             return
@@ -812,6 +867,7 @@ class BattleWatch:
 
 
     def handle_line(self, line: str) -> BattleEvent | None:
+        """处理行。"""
         if not line:
             return None
         parts = line.split(None, 1)
@@ -896,6 +952,7 @@ class BattleWatch:
         return event
 
     def _apply_anim_tick(self, tag: str, iid: int = -1) -> None:
+        """内部应用animtick。"""
         now = time.time()
         with self._lock:
             self.state.anim_ticks_total += 1
@@ -934,6 +991,7 @@ class BattleWatch:
         self._write_status(force=True)
 
     def _apply_spd(self, event: BattleEvent) -> None:
+        """内部应用spd。"""
         iid = event.get("iid", -1)
         oid = event.get("oid", -1)
         os_raw = event.get("os", -1)
@@ -973,9 +1031,11 @@ class BattleWatch:
                 self._begin_action_batch()
 
     def _boundary_seen(self) -> bool:
+        """内部boundaryseen相关处理。"""
         return any(self._last_hits.get(k, 0) > 0 for k in BOUNDARY_PREFERRED)
 
     def _apply_act(self, event: BattleEvent) -> None:
+        """内部应用act。"""
         record = {
             "actor": event.get("actor", -1),
             "cmd": event.get("cmd", -1),
@@ -1024,6 +1084,7 @@ class BattleWatch:
                              only_skills=True)
 
     def _apply_vitals(self, event: BattleEvent) -> None:
+        """内部应用vitals。"""
         iid = event.get("iid", -1)
         oid = event.get("oid", -1)
         hp = event.get("hp", VITAL_UNREAD)
@@ -1049,6 +1110,7 @@ class BattleWatch:
             self._log(f"[BattleWatch] ★ {detail}")
 
     def _set_flag_locked(self, key: str, detail: str) -> None:
+        """内部设置标记locked。"""
         if key in self.state.flags:
             return
         self.state.flag_counter += 1
@@ -1056,6 +1118,7 @@ class BattleWatch:
         self.state.flag_seq[key] = self.state.flag_counter
 
     def _begin_action_batch(self) -> None:
+        """内部beginactionbatch相关处理。"""
         with self._lock:
             st = self.state
             st.groups = {0: {"oid": -1, "keys": [], "open": True}}
@@ -1070,6 +1133,7 @@ class BattleWatch:
             st.pending_group.clear()
 
     def _open_group_locked(self) -> int:
+        """内部打开分组locked。"""
         st = self.state
         gid = st.next_group
         st.next_group += 1
@@ -1078,6 +1142,7 @@ class BattleWatch:
         return gid
 
     def _assign_group_locked(self, key: str, unit_oid: int = -1) -> int:
+        """内部assign分组locked相关处理。"""
         st = self.state
         gid = st.cur_group
         if unit_oid > 0:
@@ -1091,6 +1156,7 @@ class BattleWatch:
         return gid
 
     def _mark_group_actor_locked(self, oid: int) -> None:
+        """内部mark分组actorlocked相关处理。"""
         if oid <= 0:
             return
         st = self.state
@@ -1101,6 +1167,7 @@ class BattleWatch:
             group["oid"] = oid
 
     def _release_group_locked(self, gid: int, reason: str = "动画结束") -> list[str]:
+        """内部release分组locked相关处理。"""
         st = self.state
         group = st.groups.pop(gid, None)
         st.released_groups.add(gid)
@@ -1123,6 +1190,7 @@ class BattleWatch:
         return out
 
     def _bind_group_locked(self, iid: int) -> int:
+        """内部绑定分组locked。"""
         st = self.state
         if st.group_binding >= 0:
             return st.group_binding
@@ -1143,6 +1211,7 @@ class BattleWatch:
         return pick
 
     def _queue_pending_locked(self, key: str, detail: str, unit_oid: int = -1) -> None:
+        """内部队列pendinglocked相关处理。"""
         if key in self.state.flags or key in self.state.pending_immediate \
                 or key in self.state.pending_flags:
             return
@@ -1152,6 +1221,7 @@ class BattleWatch:
         self._assign_group_locked(key, unit_oid)
 
     def _flush_one_pending_locked(self, reason: str = "") -> str | None:
+        """内部flush单个pendinglocked相关处理。"""
         best_key, best_seq = None, None
         for store in (self.state.pending_flags, self.state.pending_immediate):
             for key in store:
@@ -1170,6 +1240,7 @@ class BattleWatch:
         return detail
 
     def _flush_all_pending_locked(self, reason: str = "") -> list[str]:
+        """内部flush全部pendinglocked相关处理。"""
         st = self.state
         out: list[str] = []
         for gid in sorted(st.groups):
@@ -1182,6 +1253,7 @@ class BattleWatch:
         return out
 
     def _eval_immediate_locked(self, match_fn, detail_fn, unit_oid: int = -1) -> list[str]:
+        """内部evalimmediatelocked相关处理。"""
         hits: list[str] = []
         for key, rule in registered_rules().items():
             if rule.kind not in RULE_KINDS_IMMEDIATE or key in self.state.flags:
@@ -1198,6 +1270,7 @@ class BattleWatch:
         return hits
 
     def _eval_presence_locked(self) -> list[str]:
+        """内部evalpresencelocked相关处理。"""
         if not self.state.units:
             return []
         round_seq = self.state.round_seq
@@ -1207,11 +1280,13 @@ class BattleWatch:
             lambda rule: self._presence_detail(rule))
 
     def _presence_detail(self, rule) -> str:
+        """内部presencedetail相关处理。"""
         oid = next((o for o in self.state.units.values() if o in rule.identity_ids), -1)
         return (f"第 {self.state.round_seq} 回合 {rule.label or rule.key} 在场上"
                 f"（oid={oid}，目标 {'/'.join(str(i) for i in rule.identity_ids)}）")
 
     def _apply_stage_stat(self, event: BattleEvent) -> None:
+        """内部应用stagestat。"""
         uid = event.text("uid", "")
         turn = event.get("turn", -1)
         dead = event.get("dead", -1)
@@ -1227,6 +1302,7 @@ class BattleWatch:
                   f"阵亡={dead} EX={1 if ex else 0}")
 
     def _apply_stage_clear(self, event: BattleEvent) -> None:
+        """内部应用stageclear。"""
         stage = event.get("stage", 0)
         cleared = event.get("cleared", 0)
         if not stage or not cleared:
@@ -1240,6 +1316,7 @@ class BattleWatch:
         self._log(f"[BattleWatch] ★ 存档记录: 关卡 {stage} 已通关（回溯判定）")
 
     def _apply_node_state(self, event: BattleEvent) -> None:
+        """内部应用节点状态。"""
         if not event.get("cleared", 0):
             return
         main = event.get("main", 0)
@@ -1268,6 +1345,7 @@ class BattleWatch:
                   f"(小节id={sub} 节点id={node})")
 
     def _apply_stage_node_id(self, event: BattleEvent) -> None:
+        """内部应用stage节点id。"""
         chapter = event.get("chapter", 0)
         node = event.get("node", 0)
         stage = event.get("stage", 0)
@@ -1288,6 +1366,7 @@ class BattleWatch:
                   + ("（已通关）" if state else ""))
 
     def _apply_railway_ui_text(self, event: BattleEvent) -> None:
+        """内部应用railway界面文本。"""
         raw = event.text("text", "").strip()
         if not raw:
             return
@@ -1306,6 +1385,7 @@ class BattleWatch:
         self._log(f"[BattleWatch] ★ 铁路界面显示: 「{raw}」→ {value}（线路={line_text}）")
 
     def _apply_railway_total(self, event: BattleEvent) -> None:
+        """内部应用railwaytotal。"""
         node = event.opt("node")
         if node is not None:
             turn = event.get("turn", -1)
@@ -1325,6 +1405,7 @@ class BattleWatch:
                   f"节点数={event.get('nodes', -1)}{extra}")
 
     def _apply_buffs(self, event: BattleEvent) -> None:
+        """内部应用buffs。"""
         iid = event.get("iid", -1)
         oid = event.get("oid", -1)
         mask = event.get("m", 0)
@@ -1353,6 +1434,7 @@ class BattleWatch:
             self._log(f"[BattleWatch] ★ {detail}")
 
     def _buff_detail(self, rule, info: dict, tag: str, present: set) -> str:
+        """内部buffdetail相关处理。"""
         hit, names = rule.match_buff(info.get("oid", -1), present, self.state.round_seq)
         return (f"第 {self.state.round_seq} 回合 {rule.label or rule.key} "
                 f"身上有 buff {'/'.join(names)}（看 {'/'.join(rule.buffs)}；"
@@ -1360,6 +1442,7 @@ class BattleWatch:
                 f"oid={info.get('oid', -1)} via {tag}）")
 
     def _skill_detail(self, rule: BattleRule, record: dict, reason: str) -> str:
+        """内部skilldetail相关处理。"""
         label = rule.label or rule.key
         return (f"第 {self.state.round_seq} 回合结算（{reason or '回合边界'}）"
                 f"{label} 技能命中（skid={record.get('skid')} tier={record.get('tier')} "
@@ -1367,6 +1450,7 @@ class BattleWatch:
                 f"via {record.get('tag')}）")
 
     def _vitals_detail(self, rule: BattleRule, info: dict, reason: str) -> str:
+        """内部vitalsdetail相关处理。"""
         label = rule.label or rule.key
         oid = info.get("oid", -1)
         hp, mhp, mp = info.get("hp", -1), info.get("mhp", -1), info.get("mp", -1)
@@ -1380,6 +1464,7 @@ class BattleWatch:
                 f"（oid={oid} via {info.get('tag', '?')}）")
 
     def _speed_detail(self, rule: BattleRule, oid: int, speeds: dict, reason: str) -> str:
+        """内部speeddetail相关处理。"""
         label = rule.label or rule.key
         _matched, names = rule.match_speed(oid, speeds)
         fields = ", ".join(speed_text(speeds.get(name, -1), speeds.get(f"{name}_raw", -1))
@@ -1390,6 +1475,7 @@ class BattleWatch:
 
 
     def _log(self, message: str) -> None:
+        """内部日志相关处理。"""
         for _mark in ("★ 关卡已通关", "★ 关卡身份", "★ 铁路界面显示",
                       "★ 铁路节点记录", "★ 铁路记录"):
             if _mark in message:
@@ -1403,6 +1489,7 @@ _watch: BattleWatch | None = None
 _watch_lock = threading.Lock()
 
 def get_watch(log_callback=None) -> BattleWatch:
+    """获取监听。"""
     global _watch
     with _watch_lock:
         if _watch is None:
@@ -1413,6 +1500,7 @@ def get_watch(log_callback=None) -> BattleWatch:
 
 def start_battle_watch(log_callback=None, process_name: str = TARGET_PROCESS,
                       verbose: bool | None = None) -> BattleWatch:
+    """启动战斗监听。"""
     watch = get_watch(log_callback)
     watch.process_name = process_name
     watch.verbose = log_verbose_enabled() if verbose is None else bool(verbose)
@@ -1420,6 +1508,7 @@ def start_battle_watch(log_callback=None, process_name: str = TARGET_PROCESS,
     return watch
 
 def log_verbose_enabled() -> bool:
+    """日志verboseenabled相关处理。"""
     try:
         from functions.base.settings_manager import get_settings_manager
         value = get_settings_manager().get_setting("achievement_log_verbose")
@@ -1428,6 +1517,7 @@ def log_verbose_enabled() -> bool:
         return False
 
 def stop_battle_watch() -> None:
+    """停止战斗监听。"""
     global _watch
     with _watch_lock:
         if _watch is not None:
@@ -1435,6 +1525,7 @@ def stop_battle_watch() -> None:
             _watch = None
 
 def rule_hits() -> dict:
+    """rulehits相关处理。"""
     with _watch_lock:
         watch = _watch
     if watch is None:
@@ -1443,15 +1534,18 @@ def rule_hits() -> dict:
         return dict(watch.state.flags)
 
 def settle_turn(reason: str = "") -> list:
+    """settleturn相关处理。"""
     with _watch_lock:
         return _watch.settle_turn(reason) if _watch else []
 
 def mark_battle_end() -> None:
+    """mark战斗end相关处理。"""
     with _watch_lock:
         if _watch is not None:
             _watch.mark_battle_end()
 
 def stage_clears() -> dict:
+    """stageclears相关处理。"""
     with _watch_lock:
         watch = _watch
     if watch is None:
@@ -1460,6 +1554,7 @@ def stage_clears() -> dict:
         return {k: dict(v) for k, v in watch.state.stage_clears.items()}
 
 def stage_last() -> dict:
+    """stage最后相关处理。"""
     with _watch_lock:
         watch = _watch
     if watch is None:
@@ -1468,6 +1563,7 @@ def stage_last() -> dict:
         return dict(watch.state.stage_last)
 
 def railway_nodes() -> dict:
+    """railwaynodes相关处理。"""
     with _watch_lock:
         watch = _watch
     if watch is None:
@@ -1476,6 +1572,7 @@ def railway_nodes() -> dict:
         return {int(k): int(v) for k, v in watch.state.railway_nodes.items()}
 
 def observe_stage_ids() -> tuple[int, ...]:
+    """observestageids相关处理。"""
     ids: list[int] = []
     try:
         from functions.achievement.achievements import achievements
@@ -1495,6 +1592,7 @@ def observe_stage_ids() -> tuple[int, ...]:
     return tuple(ids[:STAGE_WATCH_MAX])
 
 def railway_totals() -> dict:
+    """railwaytotals相关处理。"""
     with _watch_lock:
         watch = _watch
     if watch is None:
@@ -1503,10 +1601,12 @@ def railway_totals() -> dict:
         return {int(k): int(v) for k, v in watch.state.railway_totals.items()}
 
 def state_snapshot() -> dict:
+    """状态snapshot相关处理。"""
     with _watch_lock:
         return _watch.snapshot() if _watch else {}
 
 def load_status() -> dict:
+    """加载状态。"""
     try:
         with open(status_path(), "r", encoding="utf-8") as fh:
             return json.load(fh) or {}
@@ -1514,9 +1614,11 @@ def load_status() -> dict:
         return {}
 
 def _print(message: str) -> None:
+    """内部print相关处理。"""
     print(message, flush=True)
 
 def cmd_probe() -> int:
+    """cmdprobe相关处理。"""
     from functions.hook.paths import game_paths
     from functions.achievement.warp_source import build_hooks
     paths = game_paths()
@@ -1548,6 +1650,7 @@ def cmd_probe() -> int:
     return 0
 
 def cmd_status() -> int:
+    """cmd状态相关处理。"""
     data = load_status()
     if not data:
         _print(f"还没有观测状态（{status_path()} 不存在）——游戏还没通过启动器跑过？")
@@ -1567,6 +1670,7 @@ def cmd_status() -> int:
     return 0
 
 def main(argv=None) -> int:
+    """主入口相关处理。"""
     argv = list(sys.argv[1:] if argv is None else argv)
     if "--probe" in argv:
         return cmd_probe()
@@ -1574,6 +1678,7 @@ def main(argv=None) -> int:
         return cmd_status()
 
     def log(message: str) -> None:
+        """日志相关处理。"""
         print(message, flush=True)
 
     watch = BattleWatch(log_callback=log)

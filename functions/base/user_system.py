@@ -1,3 +1,5 @@
+"""用户系统：本地/云端用户状态、昵称、下载上报与登录态维护。"""
+
 
 from __future__ import annotations
 
@@ -20,18 +22,22 @@ _USER_FILE_NAME = "settings.json"
 _legacy_cache_checked = False
 
 def user_dir() -> str:
+    """用户目录相关处理。"""
     return user_data_dir()
 
 def user_file() -> str:
+    """用户文件相关处理。"""
     return os.path.join(user_dir(), _USER_FILE_NAME)
 
 def _project_root() -> str:
+    """内部project根相关处理。"""
     if getattr(sys, "frozen", False):
         return os.path.dirname(os.path.abspath(sys.executable))
     return os.path.abspath(os.path.join(
         os.path.dirname(os.path.abspath(__file__)), "..", ".."))
 
 def drop_legacy_user_cache() -> None:
+    """droplegacy用户（缓存）相关处理。"""
     global _legacy_cache_checked
     if _legacy_cache_checked:
         return
@@ -51,9 +57,11 @@ LOGIN_COOLDOWN_SEC = 12 * 3600
 _RESTRICTIONS_FILE = "restrictions.json"
 
 def restrictions_file() -> str:
+    """restrictions文件相关处理。"""
     return os.path.join(user_dir(), _RESTRICTIONS_FILE)
 
 def _load_restrictions() -> dict:
+    """内部加载restrictions。"""
     try:
         data = read_json(restrictions_file())
     except Exception:
@@ -61,6 +69,7 @@ def _load_restrictions() -> dict:
     return data if isinstance(data, dict) else {}
 
 def _save_restrictions(data: dict) -> None:
+    """内部保存restrictions。"""
     path = restrictions_file()
     try:
         os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -69,6 +78,7 @@ def _save_restrictions(data: dict) -> None:
         print(f"[User] 保存操作限制失败: {exc}")
 
 def _left_seconds(stamp, cooldown: int) -> int:
+    """内部leftseconds相关处理。"""
     try:
         last = float(stamp or 0)
     except (TypeError, ValueError):
@@ -81,6 +91,7 @@ def _left_seconds(stamp, cooldown: int) -> int:
     return int(left) + 1
 
 def format_left(seconds) -> str:
+    """格式化left。"""
     total = int(seconds or 0)
     if total <= 0:
         return ""
@@ -95,6 +106,7 @@ def format_left(seconds) -> str:
     return f"{max(1, total // 60)} 分钟"
 
 def get_restrictions() -> dict:
+    """获取restrictions。"""
     data = _load_restrictions()
     return {
         "rename_left": _left_seconds(data.get("last_rename_at"), RENAME_COOLDOWN_SEC),
@@ -104,29 +116,35 @@ def get_restrictions() -> dict:
     }
 
 def check_rename_allowed() -> str:
+    """检查renameallowed。"""
     left = _left_seconds(_load_restrictions().get("last_rename_at"), RENAME_COOLDOWN_SEC)
     if left <= 0:
         return ""
     return f"用户名 1 小时内只能修改一次，请 {format_left(left)}后再试"
 
 def check_login_allowed() -> str:
+    """检查loginallowed。"""
     left = _left_seconds(_load_restrictions().get("last_login_at"), LOGIN_COOLDOWN_SEC)
     if left <= 0:
         return ""
     return f"登录 12 小时内只能进行一次，请 {format_left(left)}后再试"
 
 def _mark_time(kind: str) -> None:
+    """内部mark时间相关处理。"""
     data = _load_restrictions()
     data[f"last_{kind}_at"] = time.time()
     _save_restrictions(data)
 
 def mark_renamed() -> None:
+    """markrenamed相关处理。"""
     _mark_time("rename")
 
 def mark_logged_in() -> None:
+    """markloggedin相关处理。"""
     _mark_time("login")
 
 def _setting(name, type_name, value, default, description):
+    """内部setting相关处理。"""
     return {
         "name": name,
         "type": type_name,
@@ -136,6 +154,7 @@ def _setting(name, type_name, value, default, description):
     }
 
 def _new_user(user_id: str | None = None) -> dict:
+    """内部new用户相关处理。"""
     uid = user_id or _make_user_id()
     return {
         "user_id": _setting("用户ID", "string", uid, "", "用于跨设备同步用户解锁信息。"),
@@ -147,16 +166,19 @@ def _new_user(user_id: str | None = None) -> dict:
     }
 
 def _make_user_id() -> str:
+    """内部生成用户id。"""
     alphabet = string.ascii_uppercase + string.digits
     return "FL-" + "".join(secrets.choice(alphabet) for _ in range(16))
 
 def _value(data: dict, key: str, fallback):
+    """内部值相关处理。"""
     item = data.get(key)
     if isinstance(item, dict):
         return item.get("value", item.get("default", fallback))
     return fallback
 
 def _skin_root() -> str:
+    """内部皮肤根相关处理。"""
     from functions.base.common.path_utils import get_web_root
     return get_web_root("app_skins")
 
@@ -198,6 +220,7 @@ def skin_metadata() -> dict[str, dict]:
     return out
 
 def _free_skin_ids() -> list[str]:
+    """内部free皮肤ids相关处理。"""
     result = []
     for sid, meta in skin_metadata().items():
         unlock = meta.get("unlock")
@@ -206,6 +229,7 @@ def _free_skin_ids() -> list[str]:
     return result
 
 def _normalize(data: dict) -> dict:
+    """内部规范化相关操作。"""
     if not isinstance(data, dict):
         data = {}
     uid = str(_value(data, "user_id", "")).strip() or _make_user_id()
@@ -238,28 +262,33 @@ def _normalize(data: dict) -> dict:
     return normalized
 
 def _store_server_profile(data: dict, payload: dict) -> dict:
+    """内部storeserverprofile相关处理。"""
     if isinstance(payload, dict) and payload:
         snapshot = {k: v for k, v in payload.items() if k != "ok"}
         data["server_profile"]["value"] = snapshot
     return data
 
 def server_profile() -> dict:
+    """serverprofile相关处理。"""
     profile = _value(load_user(), "server_profile", {})
     return profile if isinstance(profile, dict) else {}
 
 def _profile_keys(payload: dict) -> str:
+    """内部profilekeys相关处理。"""
     if not isinstance(payload, dict):
         return "(无)"
     keys = sorted(k for k in payload.keys() if k != "ok")
     return ", ".join(keys) if keys else "(空)"
 
 def _refresh_profile_from(payload: dict) -> dict:
+    """内部刷新profilefrom。"""
     if not isinstance(payload, dict) or not payload:
         return load_user()
     save_user(_store_server_profile(load_user(), payload))
     return load_user()
 
 def load_user() -> dict:
+    """加载用户。"""
     with _USER_LOCK:
         path = user_file()
         try:
@@ -272,6 +301,7 @@ def load_user() -> dict:
         return normalized
 
 def save_user(data: dict) -> bool:
+    """保存用户。"""
     normalized = _normalize(data)
     path = user_file()
     try:
@@ -283,6 +313,7 @@ def save_user(data: dict) -> bool:
         return False
 
 def _apply_user_name(settings_manager, name: str) -> str:
+    """内部应用用户名称。"""
     name = str(name or "").strip()
     if not name or settings_manager is None:
         return ""
@@ -305,6 +336,7 @@ def _apply_user_name(settings_manager, name: str) -> str:
     return name
 
 def _merge_skins(*lists) -> list[str]:
+    """内部mergeskins相关处理。"""
     out: list[str] = []
     for seq in lists:
         for sid in (seq or []):
@@ -314,6 +346,7 @@ def _merge_skins(*lists) -> list[str]:
     return out
 
 def _server_identity(uid: str, defaults: dict | None = None) -> tuple[dict | None, dict | None]:
+    """内部serveridentity相关处理。"""
     result = user_api.me()
     if result.get("ok"):
         remote_id = str((result.get("data") or {}).get("id") or "")
@@ -338,6 +371,7 @@ def _server_identity(uid: str, defaults: dict | None = None) -> tuple[dict | Non
     return None, (login_result if login_result.get("error") else reg)
 
 def pull_achievements_from_cloud(mode: str = "union") -> dict:
+    """拉取achievementsfromcloud。"""
     result = user_api.me()
     if not result.get("ok"):
         return {"ok": False, "error": result.get("error") or "云端读取失败"}
@@ -366,6 +400,7 @@ def pull_achievements_from_cloud(mode: str = "union") -> dict:
             "local_before": len(mine), "local_after": len(merged), "added": added}
 
 def push_achievement(achievement_id: str, uid: str = "") -> dict:
+    """推送成就。"""
     aid = str(achievement_id or "").strip()
     if not aid:
         return {"ok": False, "error": "成就 ID 为空"}
@@ -388,6 +423,7 @@ def push_achievement(achievement_id: str, uid: str = "") -> dict:
     return {"ok": False, "error": str(result.get("error") or "")}
 
 def push_achievements_to_cloud() -> dict:
+    """推送achievementstocloud。"""
     ids = completed_achievements()
     result = user_api.push_achievements(ids)
     if result.get("ok"):
@@ -399,6 +435,7 @@ def push_achievements_to_cloud() -> dict:
             "first_error": result.get("error")}
 
 def sync_achievements(pull: bool = True, mode: str = "union") -> dict:
+    """同步achievements。"""
     pulled: dict = {"ok": False, "skipped": True}
     if pull:
         pulled = pull_achievements_from_cloud(mode=mode)
@@ -407,6 +444,7 @@ def sync_achievements(pull: bool = True, mode: str = "union") -> dict:
             "local_count": len(completed_achievements())}
 
 def sync_playtime(overwrite: bool = True) -> dict:
+    """同步playtime。"""
     try:
         from functions.base import steam_playtime
         info = steam_playtime.read_playtime()
@@ -424,6 +462,7 @@ def sync_playtime(overwrite: bool = True) -> dict:
             "minutes": int(info["minutes"]), "error": str(result.get("error") or "")}
 
 def sync_user(settings_manager=None) -> dict:
+    """同步用户。"""
     drop_legacy_user_cache()
     with _USER_LOCK:
         local = load_user()
@@ -497,6 +536,7 @@ def sync_user(settings_manager=None) -> dict:
                 "pushed": pushed, "push_error": push_error}
 
 def push_skins(settings_manager=None) -> dict:
+    """推送skins。"""
     with _USER_LOCK:
         local = load_user()
         uid = str(_value(local, "user_id", "")).strip()
@@ -533,6 +573,7 @@ def push_skins(settings_manager=None) -> dict:
         return {"ok": True, "user": load_user(), "cloud": result.get("data") or {}}
 
 def push_name(name: str, settings_manager=None) -> dict:
+    """推送名称。"""
     clean = str(name or "").strip()
     if not clean:
         return {"ok": False, "error": "昵称不能为空"}
@@ -559,6 +600,7 @@ def push_name(name: str, settings_manager=None) -> dict:
         return {"ok": True, "cloud": result.get("data") or {}}
 
 def login_user(user_id: str, settings_manager=None) -> dict:
+    """login用户相关处理。"""
     uid = str(user_id or "").strip()
     if not uid:
         return {"ok": False, "error": "用户 ID 不能为空"}
@@ -598,6 +640,7 @@ def login_user(user_id: str, settings_manager=None) -> dict:
         return {"ok": True, "user": local, "cloud": data}
 
 def playtime_text(seconds: int) -> str:
+    """playtime文本相关处理。"""
     total = max(0, int(seconds or 0))
     days, rest = divmod(total, 86400)
     hours, rest = divmod(rest, 3600)
@@ -611,6 +654,7 @@ def playtime_text(seconds: int) -> str:
     return f"{total} 秒"
 
 def get_user_info(settings_manager=None) -> dict:
+    """获取用户信息。"""
     data = load_user()
     user_name = "Player"
     if settings_manager is not None:
@@ -655,15 +699,18 @@ def get_user_info(settings_manager=None) -> dict:
                          "error": str(play.get("error") or "")}}
 
 def completed_achievements() -> list[str]:
+    """completedachievements相关处理。"""
     done = _value(load_user(), "completed_achievements", [])
     return [str(x) for x in done] if isinstance(done, list) else []
 
 _PLUGIN_ACH_FILE_NAME = "plugin_achievements.json"
 
 def plugin_achievements_file() -> str:
+    """pluginachievements文件相关处理。"""
     return os.path.join(user_dir(), _PLUGIN_ACH_FILE_NAME)
 
 def _load_plugin_achievements() -> dict:
+    """内部加载pluginachievements。"""
     path = plugin_achievements_file()
     if not os.path.isfile(path):
         return {"version": 1, "completed": [], "by_addon": {}}
@@ -680,10 +727,12 @@ def _load_plugin_achievements() -> dict:
     return data
 
 def completed_plugin_achievements() -> list[str]:
+    """completedpluginachievements相关处理。"""
     done = _load_plugin_achievements().get("completed", [])
     return [str(x).strip() for x in done if str(x).strip()] if isinstance(done, list) else []
 
 def record_plugin_achievements(achievement_ids, addon: str = "") -> list[str]:
+    """记录pluginachievements。"""
     wanted: list[str] = []
     for aid in achievement_ids or ():
         aid = str(aid or "").strip()
@@ -725,6 +774,7 @@ def record_plugin_achievements(achievement_ids, addon: str = "") -> list[str]:
         return merged
 
 def record_achievements(achievement_ids) -> list[str]:
+    """记录achievements。"""
     wanted: list[str] = []
     for aid in achievement_ids or ():
         aid = str(aid or "").strip()
@@ -747,6 +797,7 @@ def record_achievements(achievement_ids) -> list[str]:
         return merged
 
 def unlock_skin(skin_id: str, settings_manager=None) -> dict:
+    """unlock皮肤相关处理。"""
     sid = str(skin_id or "").strip()
     if not sid:
         return {"ok": False, "error": "默认皮肤无需解锁"}
@@ -766,6 +817,7 @@ def unlock_skin(skin_id: str, settings_manager=None) -> dict:
     return {"ok": True, "user": load_user(), "sync": pushed}
 
 def _edge_title_contains(keyword: str) -> tuple[bool, str]:
+    """内部edgetitlecontains相关处理。"""
     keyword = str(keyword or "DeepSeek").lower()
     found = []
     if os.name != "nt":
@@ -777,6 +829,7 @@ def _edge_title_contains(keyword: str) -> tuple[bool, str]:
     try:
         callback_type = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
         def callback(hwnd, _lparam):
+            """回调相关处理。"""
             if not user32.IsWindowVisible(hwnd):
                 return True
             length = user32.GetWindowTextLengthW(hwnd)
@@ -795,6 +848,7 @@ def _edge_title_contains(keyword: str) -> tuple[bool, str]:
     return bool(found), (found[0] if found else "")
 
 def verify_skin(skin_id: str) -> dict:
+    """verify皮肤相关处理。"""
     sid = str(skin_id or "").strip()
     meta = skin_metadata().get(sid)
     if not meta:

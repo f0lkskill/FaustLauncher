@@ -1,3 +1,5 @@
+"""Tk 主界面构建与事件绑定。"""
+
 import tkinter as tk
 from tkinter import ttk, font, messagebox
 import os
@@ -21,7 +23,9 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 class FaustLauncherUI:
     
+    """FaustLauncher界面类。"""
     def __init__(self, root: tk.Tk, core: FaustLauncherCore, on_initialized=None):
+        """初始化对象状态。"""
         self.root = root
         self.core: FaustLauncherCore = core
         self.on_initialized = on_initialized
@@ -46,6 +50,7 @@ class FaustLauncherUI:
         self.core.page_loader = PageLoader(self)
         
     def _setup_window(self):
+        """内部setup窗口相关处理。"""
         self.root.title("Faust Launcher")
         self.root.geometry("850x730")
         self.root.resizable(False, False)
@@ -60,6 +65,7 @@ class FaustLauncherUI:
             pass
         
     def _setup_styles(self):
+        """内部setupstyles相关处理。"""
         style = ttk.Style()
         
         style.theme_use('clam')
@@ -146,6 +152,7 @@ class FaustLauncherUI:
         self.button_font = font.Font(family='Microsoft YaHei UI', size=10, weight='bold')
         
     def _create_ui_structure(self):
+        """内部创建界面structure。"""
         self.container = tk.Frame(self.root, bg=self.theme.darken(0.7))
         self.container.pack(fill=tk.BOTH, expand=True)
         
@@ -185,10 +192,12 @@ class FaustLauncherUI:
         self.notebook.add(self.page_frames['about'], text="💻 关于")
         
     def _setup_event_bindings(self):
+        """内部setup事件bindings相关处理。"""
         self.notebook.bind("<<NotebookTabChanged>>", self.on_tab_changed) # type: ignore
         self.root.bind_all("<ButtonPress-1>", self.core._on_global_click)
         
         def check_close():
+            """检查close。"""
             if self.core.settings_manager.get_setting("after_gui_exit") == 0:
                 self.root.withdraw()
             else:
@@ -204,6 +213,7 @@ class FaustLauncherUI:
         self.root.protocol("WM_DELETE_WINDOW", check_close)
         
     def initialize_pages(self):
+        """initializepages相关处理。"""
         self.addon_menu_items = []
         self.core.addon_manager = AddonManager([], app=self)
         self.core.addon_manager.run_all_addon()
@@ -215,6 +225,7 @@ class FaustLauncherUI:
         self._notify_initialized()
         
     def _notify_initialized(self):
+        """内部通知initialized。"""
         self.root.attributes('-topmost', False)
         self.root.update_idletasks()
         self.root.update()
@@ -223,6 +234,7 @@ class FaustLauncherUI:
             self.on_initialized()
         
     def on_tab_changed(self, event):
+        """响应标签页changed。"""
         current_tab = self.notebook.current_index
         
         if current_tab == 3:
@@ -231,9 +243,11 @@ class FaustLauncherUI:
                 mod_addon_page.refresh_all_tabs()
     
     def init_tray(self):
+        """初始化tray。"""
         ico = Image.open("assets/images/icon/icon.ico")
 
         def _show_win(icon=None, item=None):
+            """内部显示win。"""
             try:
                 self.root.after(0, self.root.deiconify)
                 self.root.after(0, self.root.lift)
@@ -241,6 +255,7 @@ class FaustLauncherUI:
                 pass
 
         def _hide_win(icon=None, item=None):
+            """内部隐藏win。"""
             try:
                 self.root.after(0, self.root.withdraw)
             except Exception:
@@ -252,6 +267,7 @@ class FaustLauncherUI:
         ]
         
         def when_exit():
+            """whenexit相关处理。"""
             from functions.base.terminal_banner import get_banner_with_random_style
             print('\n\n' + get_banner_with_random_style('GoodBye'))
             import logging
@@ -277,6 +293,7 @@ class FaustLauncherUI:
         Thread(target=self.tray.run, daemon=True).start()
         
     def set_background_image(self):
+        """设置background图片。"""
         if self.core.background_images:
             try:
                 bg_path = random.choice(self.core.background_images)
@@ -365,13 +382,16 @@ class FaustLauncherUI:
             self.bg_canvas.configure(bg=self.core.bg_color)
         
     def start_background_rotation(self):
+        """启动backgroundrotation。"""
         self.root.after(100, self.rotate_background)
         
     def rotate_background(self):
+        """rotatebackground相关处理。"""
         self.set_background_image()
         self.root.after(30000, self.rotate_background)
         
     def create_status_bar(self):
+        """创建状态bar。"""
         status_bg = self.theme.darken(0.85)
         text_secondary = C.TEXT_MUTED
         text_muted = '#64748b'
@@ -403,6 +423,7 @@ class FaustLauncherUI:
         version_label.pack(side='right', padx=12)
 
 def check_single_instance():
+    """检查singleinstance。"""
     try:
         from functions.pages.app.app_web import (
             activate_existing_window, _find_main_hwnd,

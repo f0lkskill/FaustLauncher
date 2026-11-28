@@ -1,3 +1,5 @@
+"""PE 文件节表/数据目录解析。"""
+
 
 from __future__ import annotations
 
@@ -14,6 +16,7 @@ IMAGE_SCN_CNT_UNINITIALIZED_DATA = 0x00000080
 
 @dataclass(frozen=True)
 class PeSection:
+    """PeSection类。"""
     name: str
     virtual_address: int
     virtual_size: int
@@ -23,19 +26,24 @@ class PeSection:
 
     @property
     def size_in_image(self) -> int:
+        """尺寸in图片相关处理。"""
         return max(self.virtual_size, self.raw_size)
 
     @property
     def writable(self) -> bool:
+        """writable相关处理。"""
         return bool(self.characteristics & IMAGE_SCN_MEM_WRITE)
 
     @property
     def executable(self) -> bool:
+        """executable相关处理。"""
         return bool(self.characteristics & (IMAGE_SCN_MEM_EXECUTE | IMAGE_SCN_CNT_CODE))
 
 class PeFile:
 
+    """Pe文件类。"""
     def __init__(self, path: str) -> None:
+        """初始化对象状态。"""
         self.path = path
         self.sections: list[PeSection] = []
         self.image_base = 0
@@ -44,6 +52,7 @@ class PeFile:
         self._parse()
 
     def _parse(self) -> None:
+        """内部解析相关操作。"""
         with open(self.path, "rb") as fh:
             head = fh.read(0x1000)
         if head[:2] != b"MZ":
@@ -73,12 +82,14 @@ class PeFile:
             off += 40
 
     def rva_to_offset(self, rva: int) -> int | None:
+        """rvato偏移相关处理。"""
         for sec in self.sections:
             if sec.virtual_address <= rva < sec.virtual_address + sec.size_in_image:
                 return sec.raw_offset + (rva - sec.virtual_address)
         return None
 
     def read_at_rva(self, rva: int, size: int) -> bytes:
+        """读取atrva。"""
         off = self.rva_to_offset(rva)
         if off is None:
             raise ValueError(f"RVA 0x{rva:X} 不在任何节内（{os.path.basename(self.path)}）")
@@ -90,12 +101,14 @@ class PeFile:
         return data
 
     def prologue(self, rva: int, size: int = 16) -> bytes:
+        """prologue相关处理。"""
         try:
             return self.read_at_rva(rva, size)
         except (ValueError, OSError):
             return b""
 
     def data_ranges(self, writable_only: bool = True) -> list[tuple[int, int]]:
+        """数据范围相关处理。"""
         out = []
         for sec in self.sections:
             if writable_only and not sec.writable:
@@ -106,9 +119,11 @@ class PeFile:
         return out
 
 def prologue_hex(data: bytes) -> str:
+    """prologuehex相关处理。"""
     return " ".join(f"{b:02X}" for b in data)
 
 def parse_prologue_hex(text: str) -> bytes:
+    """解析prologuehex。"""
     try:
         return bytes.fromhex("".join(str(text).split()))
     except ValueError:

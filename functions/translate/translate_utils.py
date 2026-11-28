@@ -1,3 +1,5 @@
+"""翻译相关工具函数。"""
+
 # -*- coding: utf-8 -*-
 
 import requests
@@ -7,7 +9,9 @@ import time
 
 class BaiduTranslatorFixed:
     
+    """BaiduTranslatorFixed类。"""
     def __init__(self, appid: str, appkey: str):
+        """初始化对象状态。"""
         self.appid = appid
         self.appkey = appkey
         self.endpoint = 'http://api.fanyi.baidu.com'
@@ -15,9 +19,11 @@ class BaiduTranslatorFixed:
         self.url = self.endpoint + self.path
     
     def _make_md5(self, s, encoding='utf-8'):
+        """内部生成md5。"""
         return md5(s.encode(encoding)).hexdigest()
     
     def _validate_query(self, query: str) -> bool:
+        """内部校验query。"""
         if not query or not query.strip():
             return False
         if len(query) > 6000:
@@ -25,6 +31,7 @@ class BaiduTranslatorFixed:
         return True
     
     def translate(self, query: str, from_lang: str = 'en', to_lang: str = 'zh'):
+        """翻译相关处理。"""
         if not self._validate_query(query):
             return {"error": "查询文本无效", "error_code": "54000"}
         
@@ -61,6 +68,7 @@ class BaiduTranslatorFixed:
             return {"error": f"翻译异常: {str(e)}", "error_code": "52002"}
 
 def test_fixed_translator():
+    """测试fixedtranslator相关处理。"""
     appid = "20251225002527257"
     appkey = "1p0t_d5h2m9ocguqhr0nm6e2g"
     
@@ -94,6 +102,7 @@ def test_fixed_translator():
         time.sleep(1)
 
 def debug_signature():
+    """debugsignature相关处理。"""
     appid = "20251225002527257"
     appkey = "1p0t_d5h2m9ocguqhr0nm6e2g"
     query = "Hello World"

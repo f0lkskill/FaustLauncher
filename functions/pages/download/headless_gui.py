@@ -13,11 +13,14 @@ import threading
 
 class _VarHook:
 
+    """内部Var钩子类。"""
     def __init__(self, on_change=None, initial=""):
+        """初始化对象状态。"""
         self._value = initial
         self._on_change = on_change
 
     def set(self, value):
+        """设置相关操作。"""
         self._value = str(value)
         if self._on_change:
             try:
@@ -26,20 +29,26 @@ class _VarHook:
                 pass
 
     def get(self):
+        """获取相关操作。"""
         return self._value
 
     def trace(self, *args):
+        """trace相关处理。"""
         pass
 
 
 class _RootShim:
 
+    """内部根Shim类。"""
     def __init__(self, owner):
+        """初始化对象状态。"""
         self._owner = owner
         self._closed = False
 
     def after(self, ms, cb):
+        """after相关处理。"""
         def _run():
+            """内部执行相关操作。"""
             if not self._closed:
                 try:
                     cb()
@@ -48,21 +57,26 @@ class _RootShim:
         threading.Timer(ms / 1000.0, _run).start()
 
     def deiconify(self):
+        """deiconify相关处理。"""
         pass
 
     def withdraw(self):
+        """withdraw相关处理。"""
         pass
 
     def destroy(self):
+        """destroy相关处理。"""
         self._closed = True
         self._owner.is_downloading = False
 
     def update_idletasks(self):
+        """更新idletasks。"""
         pass
 
 
 class HeadlessDownloadGUI:
 
+    """Headless下载界面。"""
     def __init__(self, config_path: str = "", auto_start: bool = True,
                  download_func=None, task: str = None): # type: ignore
         """_初始化一个无头下载器_
@@ -89,6 +103,7 @@ class HeadlessDownloadGUI:
             self.start_download(download_func)
 
     def _on_status(self, text):
+        """内部响应状态。"""
         import functions.web_update.zeroasso_download as zd
         try:
             getattr(zd, "_web_progress", lambda e, d: None)("status", {
@@ -98,6 +113,7 @@ class HeadlessDownloadGUI:
             pass
 
     def update_progress(self, percent, downloaded, total, speed):
+        """更新进度。"""
         import functions.web_update.zeroasso_download as zd
         try:
             getattr(zd, "_web_progress", lambda e, d: None)("progress", {
@@ -121,6 +137,7 @@ class HeadlessDownloadGUI:
                          daemon=True).start()
 
     def run_download(self, download_func=None):
+        """执行下载。"""
         try:
             success = download_func(self, self.config_path)  # type: ignore
             if success:

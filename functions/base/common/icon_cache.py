@@ -142,6 +142,7 @@ def _file_md5(path):
 
 
 def _mtime(path):
+    """内部mtime相关处理。"""
     try:
         return os.path.getmtime(path)
     except OSError:
@@ -524,6 +525,7 @@ def ensure_icons_shrunk(cache_dir=DEFAULT_ICON_CACHE_DIR, log=None):
         _migrate_started = True
 
     def work():
+        """work相关处理。"""
         try:
             dedupe_icons(cache_dir, log=log)
         except Exception as exc:  # noqa: BLE001 - 清理失败不影响启动

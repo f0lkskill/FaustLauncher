@@ -1,3 +1,5 @@
+"""dump.cs 解析与符号表构建。"""
+
 
 from __future__ import annotations
 
@@ -22,6 +24,7 @@ _MAX_ALT_RVAS = 8
 @dataclass
 class SymbolIndex:
 
+    """符号索引。"""
     types: dict[str, str] = field(default_factory=dict)
     methods: dict[str, dict] = field(default_factory=dict)
     fields: dict[str, dict] = field(default_factory=dict)
@@ -32,6 +35,7 @@ class SymbolIndex:
     dump_mtime: float = 0.0
 
     def find_method(self, name: str) -> dict | None:
+        """查找method。"""
         for key in self._candidates(name, sep="::"):
             item = self.methods.get(key)
             if item:
@@ -50,6 +54,7 @@ class SymbolIndex:
         return None
 
     def find_field(self, class_name: str, field_name: str) -> dict | None:
+        """查找字段。"""
         if not field_name:
             return None
         for key in self._candidates(f"{class_name}::{field_name}" if class_name else field_name,
@@ -65,10 +70,12 @@ class SymbolIndex:
         return None
 
     def field_offset(self, class_name: str, field_name: str) -> int | None:
+        """字段偏移相关处理。"""
         item = self.find_field(class_name, field_name)
         return item.get("offset") if item else None
 
     def fields_of(self, class_name: str) -> dict[str, dict]:
+        """字段of相关处理。"""
         out = {}
         for key, item in self.fields.items():
             owner, _, name = key.partition("::")
@@ -78,6 +85,7 @@ class SymbolIndex:
 
     @staticmethod
     def _candidates(name: str, sep: str = "::") -> list[str]:
+        """内部candidates相关处理。"""
         raw = str(name or "").strip().replace("$$", sep)
         out = []
         for candidate in (raw, raw.split(".")[-1] if "." in raw else raw):
@@ -86,9 +94,11 @@ class SymbolIndex:
         return out
 
 def _normalize_alias(name: str) -> str:
+    """内部规范化alias。"""
     return str(name or "").strip().replace("::", "$$")
 
 def _split_decl(decl: str) -> tuple[str, str]:
+    """内部splitdecl相关处理。"""
     text = decl.strip()
     while text.startswith(("public ", "private ", "protected ", "internal ",
                            "static ", "readonly ", "const ", "volatile ", "unsafe ",
@@ -107,6 +117,7 @@ def _split_decl(decl: str) -> tuple[str, str]:
     return " ".join(parts[:-1]), parts[-1].split("<")[0].strip("!")
 
 def parse_dump_cs(path: str, focus=(), wanted=(), on_log=None, on_progress=None) -> SymbolIndex:
+    """解析转储cs。"""
     import fnmatch
 
     log = on_log or (lambda _m: None)
@@ -116,6 +127,7 @@ def parse_dump_cs(path: str, focus=(), wanted=(), on_log=None, on_progress=None)
     focus_patterns = [str(f) for f in (focus or []) if str(f)]
 
     def keep_type(full_name: str, bare: str) -> bool:
+        """keep类型相关处理。"""
         if not focus_patterns:
             return False
         for pattern in focus_patterns:
@@ -127,6 +139,7 @@ def parse_dump_cs(path: str, focus=(), wanted=(), on_log=None, on_progress=None)
         return False
 
     def keep_symbol(full_name: str, bare_name: str, owner: str) -> bool:
+        """keep符号相关处理。"""
         if bare_name in wanted_bare or full_name in wanted_set:
             return True
         alias = _normalize_alias(full_name)
@@ -232,6 +245,7 @@ def parse_dump_cs(path: str, focus=(), wanted=(), on_log=None, on_progress=None)
     return index
 
 def _to_int(text, base: int = 16) -> int:
+    """内部toint相关处理。"""
     try:
         return int(str(text), base)
     except (TypeError, ValueError):
@@ -239,6 +253,7 @@ def _to_int(text, base: int = 16) -> int:
 
 def _store_symbol(index: SymbolIndex, full: str, owner: str, name: str,
                   item: dict, is_method: bool) -> None:
+    """内部store符号相关处理。"""
     table = index.methods if is_method else index.fields
     existing = table.get(full)
     if existing is not None:
@@ -254,6 +269,7 @@ def _store_symbol(index: SymbolIndex, full: str, owner: str, name: str,
         index.method_aliases.setdefault(_normalize_alias(full), full)
 
 def load_or_parse(dump_path: str, focus=(), wanted=(), on_log=None) -> SymbolIndex:
+    """加载orparse。"""
     key = (dump_path, tuple(sorted(focus or ())), tuple(sorted(wanted or ())))
     cached = _PARSE_CACHE.get(key)
     if cached is not None:
@@ -266,6 +282,7 @@ def load_or_parse(dump_path: str, focus=(), wanted=(), on_log=None) -> SymbolInd
 _PARSE_CACHE: dict = {}
 
 def main() -> int:
+    """主入口相关处理。"""
     import sys
 
     if len(sys.argv) < 2:

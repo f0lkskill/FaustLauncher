@@ -1,3 +1,5 @@
+"""版本信息读写辅助。"""
+
 from functions.webFunc import *
 from json import loads
 from functions.base.settings_manager import get_settings_manager
@@ -10,6 +12,7 @@ from functions.base.version_compare import is_newer_version
 settings_manager = get_settings_manager()
 
 def download_new_version(dow_root, download_files:list):
+    """下载new版本相关处理。"""
     import os,subprocess
     from time import sleep
     print("正在更新启动器版本...")
@@ -71,6 +74,7 @@ def download_new_version(dow_root, download_files:list):
     os._exit(0)
 
 def _start_update_download(root, latest_entry, version_name):
+    """内部启动更新下载。"""
     from functions.web_update.zeroasso_download import DownloadGUI
     gui_dow = DownloadGUI(root, 'cache/', False, download_func=download_and_extract_gui)
 
@@ -83,6 +87,7 @@ def _start_update_download(root, latest_entry, version_name):
     Thread(target=download_new_version, args=(gui_dow, download_files)).start()
 
 def _on_update_choice(root, latest_entry, version_name, action):
+    """内部响应更新choice。"""
     if action != 'update':
         print(f"[Update] 用户选择: {action or '未选择(窗口直接关闭或超时)'}")
         return
@@ -96,6 +101,7 @@ def _on_update_choice(root, latest_entry, version_name, action):
 
 def check_version_update(root):
 
+    """检查版本更新。"""
     current_version: str = settings_manager.get_setting("version_info") # type: ignore
 
     need_update = False

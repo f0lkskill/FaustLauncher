@@ -1,3 +1,5 @@
+"""自定义翻译资源的核心业务逻辑（导入、合并、版本判断）。"""
+
 import tkinter as tk
 from tkinter import ttk, messagebox, simpledialog
 import os
@@ -8,6 +10,7 @@ from functions.base.color_scheme import C, darken_color, lighten_color
 from functions.base.common.json_io import read_json, write_json
 
 def _make_default_nav_items():
+    """内部生成defaultnav条目。"""
     from functions.web_update.translation_source import get_translation_dir_name
     d = get_translation_dir_name()
     return [
@@ -32,8 +35,10 @@ HIDDEN_KEYS = {"id", "usage", "personalityid", "voicefile"}
 
 class CollapsiblePane(tk.Frame):
 
+    """CollapsiblePane类。"""
     def __init__(self, master, title, root_app, bg_color=None,
                  is_container=False, is_root=False, meta=None):
+        """初始化对象状态。"""
         super().__init__(master, bd=0, highlightthickness=0,
                          bg=bg_color or root_app.bg_color)
         self.root_app = root_app
@@ -84,18 +89,22 @@ class CollapsiblePane(tk.Frame):
             self.header.configure(bg=root_app.lighten_bg_color)
 
     def set_info(self, text, color='#95a5a6'):
+        """设置信息。"""
         self.info_lbl.config(text=text, fg=color)
 
     def set_title(self, text):
+        """设置title。"""
         self.title_lbl.config(text=text)
 
     def toggle(self):
+        """toggle相关处理。"""
         if self.is_expanded:
             self.collapse()
         else:
             self.expand()
 
     def collapse(self):
+        """collapse相关处理。"""
         if not self.is_expanded:
             return
         self.body.pack_forget()
@@ -103,6 +112,7 @@ class CollapsiblePane(tk.Frame):
         self.is_expanded = False
 
     def expand(self):
+        """expand相关处理。"""
         if self.is_expanded:
             return
         self.body.pack(fill=tk.X, side=tk.TOP, padx=6, pady=(2, 4))
@@ -111,7 +121,9 @@ class CollapsiblePane(tk.Frame):
 
 class CustomTranslationTool:
 
+    """Custom翻译Tool类。"""
     def __init__(self, root, parent_window):
+        """初始化对象状态。"""
         self.root = root
         self.parent_window = tk.Toplevel(parent_window)
         self.parent_window.geometry("1300x800")
@@ -159,12 +171,14 @@ class CustomTranslationTool:
         self._refresh_file_tree_and_show()
 
     def _refresh_file_tree_and_show(self):
+        """内部刷新文件treeandshow。"""
         for item in self.file_tree.get_children():
             self.file_tree.delete(item)
         root_node = self.file_tree.insert('', 'end', text=" lang",
                                           values=("", "dir"))
         self.file_tree.item(root_node, open=True)
         def build_and_notify():
+            """构建andnotify。"""
             try:
                 self._build_tree(root_node, self.lang_dir)
             except Exception as e:
@@ -175,6 +189,7 @@ class CustomTranslationTool:
         Thread(target=build_and_notify, daemon=True).start()
 
     def _on_tree_loaded(self):
+        """内部响应treeloaded。"""
         self._tree_loading_done = True
         try:
             self.parent_window.title("自定义汉化工具")
@@ -186,11 +201,13 @@ class CustomTranslationTool:
             pass
 
     def _ensure_changes_file(self):
+        """内部确保changes文件。"""
         os.makedirs(os.path.dirname(self.changes_file), exist_ok=True)
         if not os.path.exists(self.changes_file):
             write_json(self.changes_file, {}, indent=4)
 
     def _load_existing_changes(self):
+        """内部加载existingchanges。"""
         try:
             self.changes = read_json(self.changes_file)
             self._normalize_changes_keys()
@@ -199,18 +216,22 @@ class CustomTranslationTool:
             self.changes = {}
 
     def _save_changes_to_file(self):
+        """内部保存changesto文件。"""
         try:
             write_json(self.changes_file, self.changes, indent=4)
         except Exception as e:
             print(f"保存修改记录失败: {e}")
 
     def _normalize_change_path(self, path):
+        """内部规范化change路径。"""
         return os.path.normpath(path).replace("\\", "/")
 
     def _relative_to_lang(self, path):
+        """内部relativeto语言相关处理。"""
         return self._normalize_change_path(os.path.relpath(path, self.lang_dir))
 
     def _change_key_aliases(self, relative):
+        """内部change键aliases相关处理。"""
         normalized = self._normalize_change_path(relative)
         aliases = [normalized, normalized.replace("/", "\\")]
         if relative not in aliases:
@@ -218,6 +239,7 @@ class CustomTranslationTool:
         return aliases
 
     def _normalize_changes_keys(self):
+        """内部规范化changeskeys。"""
         if not isinstance(self.changes, dict):
             self.changes = {}
             return
@@ -227,24 +249,29 @@ class CustomTranslationTool:
         self.changes = normalized_changes
 
     def _get_changes_for_relative(self, relative):
+        """内部获取changesforrelative。"""
         for key in self._change_key_aliases(relative):
             if key in self.changes:
                 return self.changes[key]
         return None
 
     def _has_changes_for_relative(self, relative):
+        """内部haschangesforrelative相关处理。"""
         return self._get_changes_for_relative(relative) is not None
 
     def _set_changes_for_relative(self, relative, diff):
+        """内部设置changesforrelative。"""
         for key in self._change_key_aliases(relative):
             self.changes.pop(key, None)
         self.changes[self._normalize_change_path(relative)] = diff
 
     def _delete_changes_for_relative(self, relative):
+        """内部删除changesforrelative。"""
         for key in self._change_key_aliases(relative):
             self.changes.pop(key, None)
 
     def _load_nav_config(self):
+        """内部加载nav配置。"""
         try:
             if os.path.exists(NAV_CONFIG_FILE):
                 data = read_json(NAV_CONFIG_FILE)
@@ -255,12 +282,14 @@ class CustomTranslationTool:
         self.nav_items = list(DEFAULT_NAV_ITEMS)
 
     def _save_nav_config(self):
+        """内部保存nav配置。"""
         try:
             write_json(NAV_CONFIG_FILE, {"items": self.nav_items}, indent=4)
         except Exception as e:
             print(f"保存导航配置失败: {e}")
 
     def _show_loading(self, text="加载中..."):
+        """内部显示loading。"""
         if self._loading_overlay is not None:
             try:
                 self._loading_overlay.destroy()
@@ -280,6 +309,7 @@ class CustomTranslationTool:
         self.parent_window.update_idletasks()
 
     def _hide_loading(self):
+        """内部隐藏loading。"""
         if self._loading_overlay is not None:
             try:
                 self._loading_overlay.destroy()
@@ -288,6 +318,7 @@ class CustomTranslationTool:
             self._loading_overlay = None
 
     def _init_ui(self):
+        """内部初始化界面。"""
         main_container = tk.Frame(self.parent_window, bg=self.bg, bd=0, highlightthickness=0)
         main_container.pack(fill=tk.BOTH, expand=True)
 
@@ -343,6 +374,7 @@ class CustomTranslationTool:
         self._build_right_panel(split_frame)
 
     def _build_left_panel(self, parent):
+        """内部构建left面板。"""
         left_frame = tk.Frame(parent, bg=self.bg_light, width=310, bd=0, highlightthickness=0)
         left_frame.pack(side=tk.LEFT, fill=tk.Y)
         left_frame.pack_propagate(False)
@@ -405,6 +437,7 @@ class CustomTranslationTool:
         self.file_tree.configure(yscrollcommand=tree_scroll.set)
 
     def _build_right_panel(self, parent):
+        """内部构建right面板。"""
         right_frame = tk.Frame(parent, bg=self.bg, bd=0, highlightthickness=0)
         right_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
 
@@ -563,6 +596,7 @@ class CustomTranslationTool:
         self.status_label.pack(pady=3)
 
     def _refresh_nav_bar(self):
+        """内部刷新navbar。"""
         for w in self.nav_inner.winfo_children():
             w.destroy()
         if not self.nav_items:
@@ -583,6 +617,7 @@ class CustomTranslationTool:
                       activeforeground='white').pack(side=tk.LEFT, padx=3, pady=5)
 
     def _jump_to_nav_path(self, relative_path):
+        """内部jumptonav路径相关处理。"""
         full_path = os.path.join(self.lang_dir, relative_path)
         if os.path.isdir(full_path):
             messagebox.showinfo("提示",
@@ -593,6 +628,7 @@ class CustomTranslationTool:
             messagebox.showwarning("警告", f"未找到文件: {full_path}")
 
     def _add_current_to_nav(self):
+        """内部添加currenttonav。"""
         if not self.current_file:
             messagebox.showwarning("警告", "请先选择一个文件")
             return
@@ -609,6 +645,7 @@ class CustomTranslationTool:
         self.status_label.config(text=f"已添加导航项: {name}")
 
     def _manage_nav_dialog(self):
+        """内部managenavdialog相关处理。"""
         dialog = tk.Toplevel(self.parent_window)
         dialog.title("管理导航项")
         dialog.geometry("640x540")
@@ -634,6 +671,7 @@ class CustomTranslationTool:
         listbox.configure(yscrollcommand=scrollbar.set)
 
         def _refresh():
+            """内部刷新相关操作。"""
             listbox.delete(0, tk.END)
             for item in self.nav_items:
                 listbox.insert(tk.END, f"  {item['name']:20s}  →  {item['path']}")
@@ -644,6 +682,7 @@ class CustomTranslationTool:
         btn_frame.pack(fill=tk.X, padx=12, pady=10)
 
         def move_up():
+            """moveup相关处理。"""
             sel = listbox.curselection()
             if not sel or sel[0] == 0:
                 return
@@ -653,6 +692,7 @@ class CustomTranslationTool:
             listbox.selection_set(i - 1)
 
         def move_down():
+            """movedown相关处理。"""
             sel = listbox.curselection()
             if not sel or sel[0] >= len(self.nav_items) - 1:
                 return
@@ -662,6 +702,7 @@ class CustomTranslationTool:
             listbox.selection_set(i + 1)
 
         def delete_item():
+            """删除条目。"""
             sel = listbox.curselection()
             if not sel:
                 return
@@ -669,6 +710,7 @@ class CustomTranslationTool:
             _refresh()
 
         def add_new():
+            """添加new。"""
             from functions.web_update.translation_source import get_translation_dir_name
             name = simpledialog.askstring("新增导航", "名称:", parent=dialog)
             if not name:
@@ -682,6 +724,7 @@ class CustomTranslationTool:
             _refresh()
 
         def reset_default():
+            """重置default。"""
             if messagebox.askyesno("确认", "恢复默认导航项列表？"):
                 self.nav_items = list(DEFAULT_NAV_ITEMS)
                 _refresh()
@@ -700,11 +743,13 @@ class CustomTranslationTool:
                       activeforeground='white').pack(side=tk.LEFT, padx=4, ipady=3)
 
         def on_ok():
+            """响应ok。"""
             self._save_nav_config()
             self._refresh_nav_bar()
             dialog.destroy()
 
         def on_cancel():
+            """响应cancel。"""
             self._load_nav_config()
             dialog.destroy()
 
@@ -718,6 +763,7 @@ class CustomTranslationTool:
                   cursor='hand2', width=12).pack(side=tk.RIGHT, padx=60, ipady=4)
 
     def _refresh_file_tree(self):
+        """内部刷新文件tree。"""
         for item in self.file_tree.get_children():
             self.file_tree.delete(item)
         root_node = self.file_tree.insert('', 'end', text=" lang",
@@ -728,11 +774,14 @@ class CustomTranslationTool:
         self.status_label.config(text="文件树已刷新")
 
     def _refresh_file_tree_async(self):
+        """内部刷新文件tree（异步）。"""
         self._show_loading("刷新文件树中...")
 
         def _worker():
+            """内部工作线程相关处理。"""
             try:
                 def _clear_and_build():
+                    """内部清空andbuild。"""
                     for item in self.file_tree.get_children():
                         self.file_tree.delete(item)
                     root_node = self.file_tree.insert('', 'end', text=" lang",
@@ -750,10 +799,12 @@ class CustomTranslationTool:
         Thread(target=_worker, daemon=True).start()
 
     def _on_tree_refresh_done(self):
+        """内部响应treerefreshdone。"""
         self._hide_loading()
         self.status_label.config(text="文件树刷新完成")
 
     def _build_tree(self, parent, path):
+        """内部构建tree。"""
         try:
             items = sorted(os.listdir(path), key=lambda x: x.lower())
             dirs = []
@@ -787,6 +838,7 @@ class CustomTranslationTool:
             print(f"构建文件树错误: {e}")
 
     def _on_tree_selected(self, event):
+        """内部响应treeselected。"""
         selection = self.file_tree.selection()
         if selection:
             item = selection[0]
@@ -796,6 +848,7 @@ class CustomTranslationTool:
                 self._load_json_file(file_path)
 
     def _on_search_changed(self, event):
+        """内部响应searchchanged。"""
         keyword = self.search_var.get().lower().strip()
         for item in self.file_tree.get_children():
             self._filter_tree_items(item, keyword)
@@ -804,6 +857,7 @@ class CustomTranslationTool:
                 self._expand_matching_parents(item, keyword)
 
     def _filter_tree_items(self, item, keyword):
+        """内部filtertree条目相关处理。"""
         text = self.file_tree.item(item, 'text').lower()
         has_matching = False
         for child in self.file_tree.get_children(item):
@@ -818,6 +872,7 @@ class CustomTranslationTool:
             return False
 
     def _expand_matching_parents(self, item, keyword):
+        """内部expandmatchingparents相关处理。"""
         text = self.file_tree.item(item, 'text').lower()
         for child in self.file_tree.get_children(item):
             if self._expand_matching_parents(child, keyword):
@@ -830,6 +885,7 @@ class CustomTranslationTool:
 
     def _load_json_file(self, file_path):
 
+        """内部加载json文件。"""
         if self.current_file and self.original_data is not None and self.modified_data is not None:
             try:
                 relative = self._relative_to_lang(self.current_file)
@@ -842,6 +898,7 @@ class CustomTranslationTool:
                 pass
 
         def _worker():
+            """内部工作线程相关处理。"""
             try:
                 loaded_data = read_json(file_path)
 
@@ -861,6 +918,7 @@ class CustomTranslationTool:
         Thread(target=_worker, daemon=True).start()
 
     def _finish_loading_file(self):
+        """内部finishloading文件相关处理。"""
         self.original_data = self._current_original_data
         self.modified_data = self._current_modified_data # type: ignore
         self.current_file = self._current_file_path # type: ignore
@@ -878,16 +936,19 @@ class CustomTranslationTool:
         self.status_label.config(text=f"加载成功: {relative}")
 
     def _fail_loading_file(self, err):
+        """内部failloading文件相关处理。"""
         self._hide_loading()
         messagebox.showerror("错误", f"加载文件失败: {err}")
 
     def _apply_changes_to_data_standalone(self, data, file_path):
+        """内部应用changesto数据standalone。"""
         relative = self._relative_to_lang(file_path)
         changes = self._get_changes_for_relative(relative)
         if changes is not None:
             self._recursive_apply(data, changes)
 
     def _deep_copy(self, data):
+        """内部deepcopy相关处理。"""
         if isinstance(data, dict):
             return {k: self._deep_copy(v) for k, v in data.items()}
         elif isinstance(data, list):
@@ -896,6 +957,7 @@ class CustomTranslationTool:
             return data
 
     def _recursive_apply(self, original, changes):
+        """内部recursiveapply相关处理。"""
         if isinstance(original, dict) and isinstance(changes, dict):
             for k, v in changes.items():
                 if k in original:
@@ -931,6 +993,7 @@ class CustomTranslationTool:
     _BUFFER_ROWS = 50
 
     def _init_virtual_scroll(self, parent):
+        """内部初始化virtualscroll。"""
         self.data_canvas = tk.Canvas(parent, bg=self.bg,
                                      highlightthickness=0, bd=0)
         self.data_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
@@ -946,6 +1009,7 @@ class CustomTranslationTool:
         self._pending_render_id = None
 
         def _tracked_yscroll(*args):
+            """内部trackedyscroll相关处理。"""
             data_scroll.set(*args)
             if hasattr(self, '_flat_entries') and self._flat_entries:
                 self._schedule_render()
@@ -960,6 +1024,7 @@ class CustomTranslationTool:
                               lambda e: self.data_canvas.unbind_all("<MouseWheel>"))
 
     def _on_virtual_mousewheel(self, event):
+        """内部响应virtualmousewheel。"""
         try:
             x, y = event.x_root, event.y_root
             wx = self.data_canvas.winfo_rootx()
@@ -973,6 +1038,7 @@ class CustomTranslationTool:
             pass
 
     def _on_virtual_canvas_configure(self, event):
+        """内部响应virtualcanvasconfigure。"""
         try:
             for item_id, widget in list(self._rendered_widgets.values()):
                 try:
@@ -984,6 +1050,7 @@ class CustomTranslationTool:
             pass
 
     def _schedule_render(self):
+        """内部schedule渲染相关处理。"""
         if self._in_render:
             return
         if self._pending_render_id is not None:
@@ -995,6 +1062,7 @@ class CustomTranslationTool:
             15, self._render_visible)
 
     def _flatten_data(self):
+        """内部flatten数据相关处理。"""
         entries = []
         if not hasattr(self, '_collapsed_paths'):
             self._collapsed_paths = set()
@@ -1002,6 +1070,7 @@ class CustomTranslationTool:
         def walk(current, original, title, depth, dict_key=None,
                  list_index=None, id_value=None, is_root=False,
                  parent_path=""):
+            """walk相关处理。"""
             is_container = isinstance(current, (dict, list))
             if not is_container and dict_key is not None:
                 if not self._show_hidden_keys_var.get() and dict_key in HIDDEN_KEYS:
@@ -1092,6 +1161,7 @@ class CustomTranslationTool:
         return entries
 
     def _render_visible(self):
+        """内部渲染visible。"""
         if not hasattr(self, '_flat_entries') or self._in_render:
             return
         self._in_render = True
@@ -1156,6 +1226,7 @@ class CustomTranslationTool:
             self._in_render = False
 
     def _create_row_widget(self, entry, index, canvas_width):
+        """内部创建rowwidget。"""
         depth = entry['depth']
         is_container = entry['is_container']
         is_root = entry['is_root']
@@ -1258,12 +1329,14 @@ class CustomTranslationTool:
             value_label.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=4)
 
         def _row_mousewheel(event):
+            """内部rowmousewheel相关处理。"""
             self._on_virtual_mousewheel(event)
 
         self._bind_to_hierarchy(frame, _row_mousewheel)
         return frame
 
     def _bind_to_hierarchy(self, widget, handler):
+        """内部绑定tohierarchy。"""
         try:
             widget.bind("<MouseWheel>", handler)
         except Exception:
@@ -1275,6 +1348,7 @@ class CustomTranslationTool:
             pass
 
     def _toggle_container(self, index):
+        """内部togglecontainer相关处理。"""
         if not hasattr(self, '_collapsed_paths'):
             self._collapsed_paths = set()
         if index < 0 or index >= len(self._flat_entries):
@@ -1298,6 +1372,7 @@ class CustomTranslationTool:
     def _refresh_data_view(self, preserve_scroll=True, target_index=None,
                             target_path=None, preserve_scroll_pixel=None,
                             preserve_scroll_fraction=None):
+        """内部刷新数据view。"""
         canvas = self.data_canvas
 
         saved_fraction = 0.0
@@ -1403,6 +1478,7 @@ class CustomTranslationTool:
                  f"仅渲染可视范围内控件")
 
     def _get_depth_color(self, depth):
+        """内部获取depth颜色。"""
         base = self.bg_light
         factor = max(0.55, 0.92 - depth * 0.05)
         return darken_color(base, factor)
@@ -1411,6 +1487,7 @@ class CustomTranslationTool:
                     title, depth, changes_count,
                     is_root=False, dict_key=None, list_index=None,
                     id_value=None):
+        """内部构建pane。"""
         bg_color = self._get_depth_color(depth)
         is_container = isinstance(current_data, (dict, list))
 
@@ -1578,6 +1655,7 @@ class CustomTranslationTool:
 
     def _open_edit_dialog(self, dict_key, current_value, original_value,
                           id_value, list_index, depth, entry_path=None):
+        """内部打开editdialog。"""
         if dict_key == 'id':
             messagebox.showinfo("提示", "'id' 字段用于定位记录，不可修改")
             return
@@ -1644,6 +1722,7 @@ class CustomTranslationTool:
         btn_inner.pack(pady=14)
 
         def on_save():
+            """响应save。"""
             new_value = new_text.get("1.0", tk.END).rstrip('\n')
             if isinstance(current_value, bool):
                 try:
@@ -1673,6 +1752,7 @@ class CustomTranslationTool:
             dialog.destroy()
 
         def on_reset():
+            """响应reset。"""
             new_text.delete("1.0", tk.END)
             new_text.insert("1.0", str(original_value) if original_value is not None else "")
 
@@ -1699,7 +1779,9 @@ class CustomTranslationTool:
 
     def _apply_edit(self, dict_key, new_value, depth, list_index, id_value,
                      entry_path=None):
+        """内部应用edit。"""
         def _navigate_and_set(data, path_parts, value):
+            """内部navigateandset相关处理。"""
             if not path_parts:
                 return False
             parent = data
@@ -1754,6 +1836,7 @@ class CustomTranslationTool:
                 success = _navigate_and_set(self.modified_data, parts, new_value)
             elif id_value is not None:
                 def find_by_id(data):
+                    """查找byid。"""
                     if isinstance(data, list):
                         for item in data:
                             if isinstance(item, dict) and str(item.get('id')) == str(id_value):
@@ -1776,6 +1859,7 @@ class CustomTranslationTool:
                 success = find_by_id(self.modified_data)
             elif list_index is not None:
                 def find_by_index(data, remaining):
+                    """查找by索引。"""
                     if isinstance(data, list):
                         if remaining == 0 and list_index < len(data):
                             item = data[list_index]
@@ -1807,10 +1891,12 @@ class CustomTranslationTool:
             messagebox.showerror("错误", "无法定位到要修改的字段，请尝试重新加载文件")
 
     def _on_data_search_changed(self, event=None):
+        """内部响应数据searchchanged。"""
         if self.current_file:
             self._refresh_data_view(preserve_scroll=False)
 
     def _clear_data_search(self):
+        """内部清空数据search。"""
         self.data_search_var.set("")
         self._search_keyword = ""
         if self.current_file:
@@ -1821,12 +1907,14 @@ class CustomTranslationTool:
             self._refresh_data_view(preserve_scroll_pixel=pixel_top)
 
     def _expand_all(self):
+        """内部expand全部相关处理。"""
         if not hasattr(self, '_collapsed_paths'):
             self._collapsed_paths = set()
         self._collapsed_paths.clear()
         self._refresh_data_view()
 
     def _collapse_all(self):
+        """内部collapse全部相关处理。"""
         if not hasattr(self, '_collapsed_paths'):
             self._collapsed_paths = set()
         if hasattr(self, '_flat_entries') and self._flat_entries:
@@ -1836,8 +1924,10 @@ class CustomTranslationTool:
         self._refresh_data_view()
 
     def _refresh_tree_markers(self):
+        """内部刷新treemarkers。"""
         try:
             def _walk(node):
+                """内部walk相关处理。"""
                 values = self.file_tree.item(node, 'values')
                 if values and len(values) >= 2 and values[1] == "file":
                     relative = self._normalize_change_path(values[0])
@@ -1855,6 +1945,7 @@ class CustomTranslationTool:
             print(f"[_refresh_tree_markers] 错误: {e}")
 
     def _save_all_changes(self):
+        """内部保存全部changes。"""
         if not self.changes and not (self.current_file and self.original_data is not None):
             messagebox.showinfo("信息", "当前没有检测到任何修改")
             return
@@ -1899,6 +1990,7 @@ class CustomTranslationTool:
         self._refresh_data_view(preserve_scroll_pixel=pixel_top)
 
     def _save_json_changes(self):
+        """内部保存jsonchanges。"""
         if not self.current_file:
             messagebox.showwarning("警告", "请先选择一个文件")
             return
@@ -1926,6 +2018,7 @@ class CustomTranslationTool:
             messagebox.showerror("错误", f"保存失败: {e}")
 
     def _compute_diff(self, original, modified):
+        """内部computediff相关处理。"""
         if isinstance(original, dict) and isinstance(modified, dict):
             changes = {}
             for k, v in modified.items():
@@ -1966,6 +2059,7 @@ class CustomTranslationTool:
             return modified if original != modified else None
 
     def _reset_current_file(self):
+        """内部重置current文件。"""
         if not self.current_file:
             messagebox.showwarning("警告", "请先选择一个文件")
             return
@@ -1984,6 +2078,7 @@ class CustomTranslationTool:
         self.status_label.config(text="当前文件的修改已撤销")
 
     def _reset_all_changes(self):
+        """内部重置全部changes。"""
         if not messagebox.askyesno("确认",
                                    "确定要清空整个修改记录吗？此操作不可恢复！"):
             return
@@ -2000,6 +2095,7 @@ class CustomTranslationTool:
         self.status_label.config(text="所有修改记录已清空")
 
     def _open_changes_dir(self):
+        """内部打开changes目录。"""
         try:
             abs_path = os.path.abspath(self.changes_file)
             dir_path = os.path.dirname(abs_path)
@@ -2011,4 +2107,5 @@ class CustomTranslationTool:
             messagebox.showerror("错误", f"打开目录失败: {e}")
 
 def open_custom_translation_tool(root):
+    """打开custom翻译tool。"""
     CustomTranslationTool(root, root.root if hasattr(root, 'root') else root)

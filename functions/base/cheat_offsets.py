@@ -231,6 +231,7 @@ def save_cached(offsets: Dict[str, Any]) -> bool:
 
 
 def _cache_age() -> Optional[float]:
+    """内部缓存age。"""
     try:
         return max(0.0, time.time() - os.path.getmtime(cache_path()))
     except OSError:

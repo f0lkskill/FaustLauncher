@@ -1,3 +1,5 @@
+"""achievement 子模块：<__init__>（具体职责见函数文档）。"""
+
 
 from functions.achievement.base_achievement import (
     BaseAchievement,

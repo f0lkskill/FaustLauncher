@@ -1,3 +1,5 @@
+"""版本更新提示窗口。"""
+
 #! 版本更新提示窗口
 
 import base64
@@ -30,14 +32,18 @@ RESULT_FILE = os.path.join(_PROJECT_ROOT, "cache", "update_choice.json")
 HTML_PATH = get_web_root("version_update", "index.html")
 
 def _esc(text):
+    """内部esc相关处理。"""
     return html.escape(text, quote=False)
 
 class VersionUpdateApi(WindowChromeBridge):
 
+    """版本更新Api类。"""
     def __init__(self, payload):
+        """初始化对象状态。"""
         self._payload = payload
 
     def get_data(self):
+        """获取数据。"""
         data = dict(self._payload)
         try:
             data['html'] = _common_md_to_html(data.get('description') or '')
@@ -48,12 +54,15 @@ class VersionUpdateApi(WindowChromeBridge):
         return data
 
     def choose(self, action):
+        """choose相关处理。"""
         _write_choice(action)
 
     def assets(self):
+        """assets相关处理。"""
         import base64 as _b64
 
         def data_uri(rel_path, mime):
+            """数据uri相关处理。"""
             try:
                 with open(os.path.join(_PROJECT_ROOT, rel_path), "rb") as f:
                     return f"data:{mime};base64," + _b64.b64encode(f.read()).decode("ascii")
@@ -63,6 +72,7 @@ class VersionUpdateApi(WindowChromeBridge):
         return {"bg": data_uri(os.path.join("assets", "images", "icon", "icon.png"), "image/png")}
 
 def _write_choice(action):
+    """内部写入choice。"""
     try:
         os.makedirs(os.path.dirname(RESULT_FILE), exist_ok=True)
         with open(RESULT_FILE, "w", encoding="utf-8") as f:
@@ -77,6 +87,7 @@ def _write_choice(action):
         pass
 
 def _msgbox(title, text, is_error=True):
+    """内部msgbox相关处理。"""
     try:
         import ctypes
         ctypes.windll.user32.MessageBoxW(None, text, title, 0x10 if is_error else 0x40)
@@ -84,6 +95,7 @@ def _msgbox(title, text, is_error=True):
         pass
 
 def _center_xy(width, height):
+    """内部centerxy相关处理。"""
     try:
         import ctypes
         u = ctypes.windll.user32
@@ -94,6 +106,7 @@ def _center_xy(width, height):
         return None, None
 
 def run_update_window(payload_b64=None, debug: bool = False):
+    """执行更新窗口。"""
     try:
         import webview
     except BaseException as e:
@@ -154,7 +167,9 @@ def run_update_window(payload_b64=None, debug: bool = False):
         raise SystemExit(1)
 
 def _build_payload(current_version, latest_info, info, ask_update):
+    """内部构建载荷。"""
     def _dt(value):
+        """内部dt相关处理。"""
         if hasattr(value, 'strftime'):
             return value.strftime('%Y-%m-%d %H:%M:%S')
         return str(value or '')
@@ -177,10 +192,12 @@ def _build_payload(current_version, latest_info, info, ask_update):
 _ASK_WINDOW_OPENED = {'t': 0.0}
 
 def ask_window_just_opened(within_seconds=5):
+    """ask窗口justopened相关处理。"""
     return time.time() - _ASK_WINDOW_OPENED['t'] < within_seconds
 
 def open_version_update_window(current_version, latest_info, info='发现新版本', root=None,
                                ask_update: bool = False, on_result=None, timeout: int = 600):
+    """打开版本更新窗口。"""
     url = latest_info.get('bilibili_url') or latest_info.get('url') or ''
     if ask_update and not url:
         print("[Update] 无下载链接, 跳过更新询问")
@@ -219,6 +236,7 @@ def open_version_update_window(current_version, latest_info, info='发现新版�
         return True
 
     def _watch():
+        """内部监听相关处理。"""
         action = None
         deadline = time.time() + timeout
         while time.time() < deadline:
@@ -248,6 +266,7 @@ def open_version_update_window(current_version, latest_info, info='发现新版�
 def show_version_update_window(current_version, latest_info, info='发现新版本', root=None,
                                ask_update: bool = False, timeout: int = 600):
 
+    """显示版本更新窗口。"""
     return open_version_update_window(current_version, latest_info, info, root,
                                       ask_update=ask_update, on_result=None, timeout=timeout)
 

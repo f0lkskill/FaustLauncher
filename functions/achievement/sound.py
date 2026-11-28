@@ -1,3 +1,5 @@
+"""achievement 子模块：<sound>（具体职责见函数文档）。"""
+
 
 import os
 import time
@@ -12,6 +14,7 @@ _SND_FILENAME = 0x00020000
 _SND_NODEFAULT = 0x0002
 
 def _resolve_wav() -> str | None:
+    """内部解析wav。"""
     global _WAV_PATH
     if _WAV_PATH:
         return _WAV_PATH
@@ -23,6 +26,7 @@ def _resolve_wav() -> str | None:
     return None
 
 def play_achievement_sound() -> bool:
+    """play成就音效相关处理。"""
     wav = _resolve_wav()
     if not wav:
         return False

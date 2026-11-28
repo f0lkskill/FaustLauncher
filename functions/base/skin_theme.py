@@ -1,3 +1,5 @@
+"""皮肤主题桥接与 CSS 生成。"""
+
 from __future__ import annotations
 
 import json
@@ -23,6 +25,7 @@ def skins_root() -> str:
         return ""
 
 def _read_json(path: str) -> dict:
+    """内部读取json。"""
     try:
         with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
@@ -47,6 +50,7 @@ def skin_dir(skin_id) -> str:
     return d if os.path.isdir(d) else ""
 
 def skin_meta(skin_id) -> dict:
+    """皮肤meta相关处理。"""
     sd = skin_dir(skin_id)
     if not sd:
         return {}
@@ -54,6 +58,7 @@ def skin_meta(skin_id) -> dict:
     return _read_json(p) if os.path.isfile(p) else {}
 
 def skin_profile_file(skin_id) -> str:
+    """皮肤profile文件相关处理。"""
     sd = skin_dir(skin_id)
     if not sd:
         return ""
@@ -66,6 +71,7 @@ def skin_profile_file(skin_id) -> str:
 _SETTINGS_STATE = {"path": "", "mtime": -1.0}
 
 def refresh_settings() -> bool:
+    """刷新设置。"""
     try:
         from functions.base.settings_manager import get_settings_manager
         mgr = get_settings_manager()
@@ -88,6 +94,7 @@ def refresh_settings() -> bool:
     return True
 
 def active_skin_id() -> str:
+    """active皮肤id相关处理。"""
     refresh_settings()
     try:
         from functions.base.settings_manager import get_settings_manager
@@ -114,6 +121,7 @@ def active_skin_id() -> str:
         return sid
 
 def skin_css(skin_id) -> str:
+    """皮肤样式相关处理。"""
     sd = skin_dir(skin_id)
     if not sd:
         return ""
@@ -128,12 +136,14 @@ def skin_css(skin_id) -> str:
     return ""
 
 def active_skin_css() -> str:
+    """active皮肤样式相关处理。"""
     try:
         return skin_css(active_skin_id())
     except Exception:
         return ""
 
 def _is_css_color(value: str) -> bool:
+    """内部判断样式颜色。"""
     v = str(value or "").strip()
     if not v:
         return False
@@ -148,6 +158,7 @@ def _is_css_color(value: str) -> bool:
     return bool(re.match(r"^(rgb|rgba|hsl|hsla)\([0-9.,%\s/]+\)$", v, re.I))
 
 def window_background(fallback: str = "#0b0e14") -> str:
+    """窗口background相关处理。"""
     try:
         sid = active_skin_id()
         if sid:
@@ -159,6 +170,7 @@ def window_background(fallback: str = "#0b0e14") -> str:
     return fallback
 
 def shared_theme_css() -> str:
+    """shared主题样式相关处理。"""
     try:
         from functions.base.common.path_utils import get_web_root
         p = get_web_root("shared", "theme.css")
@@ -170,6 +182,7 @@ def shared_theme_css() -> str:
     return ""
 
 def full_theme_css() -> str:
+    """full主题样式相关处理。"""
     parts = [shared_theme_css()]
     sid = ""
     try:
@@ -182,6 +195,7 @@ def full_theme_css() -> str:
     return "\n".join(p for p in parts if p)
 
 def _inject_js(css: str) -> str:
+    """内部注入脚本。"""
     return (
         "(function(){var d=document,id=%s,s=d.getElementById(id);"
         "if(!s){s=d.createElement('style');s.id=id;(d.head||d.documentElement).appendChild(s);}"
@@ -189,7 +203,9 @@ def _inject_js(css: str) -> str:
     )
 
 def apply_theme_to_window(window, *, show_when_ready: bool = False, fallback_ms: int = 1500) -> bool:
+    """应用主题to窗口。"""
     def _apply():
+        """内部应用相关操作。"""
         css = full_theme_css()
         if css:
             try:
@@ -212,6 +228,7 @@ def apply_theme_to_window(window, *, show_when_ready: bool = False, fallback_ms:
     return ok
 
 def _safe_show(window):
+    """内部safeshow相关处理。"""
     try:
         window.show()
     except Exception:
@@ -248,6 +265,7 @@ def list_skins() -> list[dict]:
     return out
 
 def theme_payload() -> dict:
+    """主题载荷相关处理。"""
     sid = ""
     try:
         sid = active_skin_id()
@@ -263,17 +281,23 @@ def theme_payload() -> dict:
 
 class SkinBridge:
 
+    """皮肤桥接器。"""
     def get_active_skin_css(self) -> str:
+        """获取active皮肤样式。"""
         return active_skin_css()
 
     def get_theme(self) -> dict:
+        """获取主题。"""
         return theme_payload()
 
     def get_full_theme_css(self) -> str:
+        """获取full主题样式。"""
         return full_theme_css()
 
     def get_shared_theme_css(self) -> str:
+        """获取shared主题样式。"""
         return shared_theme_css()
 
     def list_skins(self) -> list[dict]:
+        """列表skins相关处理。"""
         return list_skins()

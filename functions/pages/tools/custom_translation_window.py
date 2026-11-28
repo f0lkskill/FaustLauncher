@@ -1,3 +1,5 @@
+"""自定义翻译工具窗口：导入/编辑/发布翻译资源的 Tk 界面。"""
+
 #! 自定义汉化工具窗口 (HTML webview 版)
 
 import base64
@@ -32,15 +34,18 @@ _LAYER_COLORS = ["#f97316", "#eab308", "#22c55e", "#06b6d4",
                  "#3b82f6", "#8b5cf6", "#ec4899", "#f43f5e"]
 
 def _is_changes_file(fname: str) -> bool:
+    """内部判断changes文件。"""
     return bool(CHANGES_PATTERN.match(fname))
 
 def _is_layer_changes_file(fname: str) -> bool:
+    """内部判断layerchanges文件。"""
     return _is_changes_file(fname) and fname.lower() != LAYER_STATE_FILE
 HIDDEN_KEYS = {"id", "usage", "personalityid", "voicefile"}
 _ILLEGAL_MARKER = set('\\/:*?"<>|')
 PAGE_SIZE = 500
 
 def _safe_marker(marker: str) -> str:
+    """内部safemarker相关处理。"""
     marker = (marker or "").strip()
     if not marker:
         return "标记不能为空"
@@ -53,6 +58,7 @@ def _safe_marker(marker: str) -> str:
     return ""
 
 def _deep_copy(data):
+    """内部deepcopy相关处理。"""
     if isinstance(data, dict):
         return {k: _deep_copy(v) for k, v in data.items()}
     elif isinstance(data, list):
@@ -60,9 +66,11 @@ def _deep_copy(data):
     return data
 
 def _normalize_path(path: str) -> str:
+    """内部规范化路径。"""
     return path.replace("\\", "/")
 
 def _recursive_apply(original, changes):
+    """内部recursiveapply相关处理。"""
     if isinstance(original, dict) and isinstance(changes, dict):
         for k, v in changes.items():
             if k in original:
@@ -95,6 +103,7 @@ def _recursive_apply(original, changes):
                     original[idx] = change
 
 def _compute_diff(original, modified, _count=None):
+    """内部computediff相关处理。"""
     if isinstance(original, dict) and isinstance(modified, dict):
         changes = {}
         for k, v in modified.items():
@@ -137,6 +146,7 @@ def _compute_diff(original, modified, _count=None):
         return (None, _count[0] if _count is not None else -1)
 
 def _coerce_value(original, raw):
+    """内部coerce值相关处理。"""
     if isinstance(original, bool):
         lower = str(raw).strip().lower()
         if lower not in ("true", "false"):
@@ -149,6 +159,7 @@ def _coerce_value(original, raw):
     return str(raw)
 
 def _resolve_parts(container, path_str):
+    """内部解析parts。"""
     if isinstance(container, dict):
         if path_str in container:
             return [path_str], True
@@ -178,6 +189,7 @@ def _resolve_parts(container, path_str):
     return [], False
 
 def _diff_has_path(diff, nav):
+    """内部diffhas路径相关处理。"""
     if not nav:
         return bool(diff)
     if isinstance(diff, dict):
@@ -213,6 +225,7 @@ def _diff_has_path(diff, nav):
     return True
 
 def _patch_has_value(patch, kw):
+    """内部patchhas值相关处理。"""
     if isinstance(patch, dict):
         if "action" in patch and isinstance(patch.get("changes"), dict):
             action = patch.get("action")
@@ -244,6 +257,7 @@ def _patch_has_value(patch, kw):
     return False
 
 def _replace_in_data(data, kw, replacement, count):
+    """内部replacein数据相关处理。"""
     if isinstance(data, dict):
         for k, v in list(data.items()):
             if isinstance(v, (dict, list)):
@@ -260,6 +274,7 @@ def _replace_in_data(data, kw, replacement, count):
                 count[0] += 1
 
 def _diff_remove_aligned(diff, original, parts):
+    """内部diffremovealigned相关处理。"""
     if not parts:
         return None, True
     part = parts[0]
@@ -335,6 +350,7 @@ def _diff_remove_aligned(diff, original, parts):
     return diff, False
 
 def _diff_leaf_paths(diff, original, prefix=""):
+    """内部diffleafpaths相关处理。"""
     out = []
     if isinstance(diff, dict):
         if "action" in diff and isinstance(diff.get("changes"), dict):
@@ -370,6 +386,7 @@ def _diff_leaf_paths(diff, original, prefix=""):
     return out
 
 def _diff_union(a, b):
+    """内部diffunion相关处理。"""
     if b is None:
         return a
     if a is None:
@@ -415,6 +432,7 @@ def _diff_union(a, b):
     return b
 
 def _navigate_and_delete(data, path_parts):
+    """内部navigateanddelete相关处理。"""
     if not path_parts:
         return False
     parent = data
@@ -443,6 +461,7 @@ def _navigate_and_delete(data, path_parts):
     return False
 
 def _navigate_get(data, path_parts):
+    """内部navigateget相关处理。"""
     if not path_parts:
         return None, False
     cur = data
@@ -461,6 +480,7 @@ def _navigate_get(data, path_parts):
     return cur, True
 
 def _navigate_and_set(data, path_parts, value):
+    """内部navigateandset相关处理。"""
     if not path_parts:
         return False
     parent = data
@@ -508,7 +528,9 @@ def _navigate_and_set(data, path_parts, value):
 
 class TranslationEngine:
 
+    """翻译Engine类。"""
     def __init__(self, lang_dir: str = "lang"):
+        """初始化对象状态。"""
         self.lang_dir = lang_dir
         os.makedirs(self.lang_dir, exist_ok=True)
         self._layers = None
@@ -529,6 +551,7 @@ class TranslationEngine:
         self._ensure_layer_colors()
 
     def _load_state(self):
+        """内部加载状态。"""
         self._state = {}
         self._active = ""
         try:
@@ -550,6 +573,7 @@ class TranslationEngine:
             print(f"[CustomLocale] 加载修改记录状态失败: {e}")
 
     def _save_state(self):
+        """内部保存状态。"""
         try:
             data = {m: {"disabled": bool(s.get("disabled", False)),
                         "color": s.get("color")} for m, s in self._state.items()}
@@ -560,9 +584,11 @@ class TranslationEngine:
             print(f"[CustomLocale] 保存修改记录状态失败: {e}")
 
     def _layer_color(self, marker: str) -> str:
+        """内部layer颜色相关处理。"""
         return (self._state.get(marker) or {}).get("color") or _MAIN_LAYER_COLOR
 
     def _assign_layer_color(self, marker: str):
+        """内部assignlayer颜色相关处理。"""
         st = self._state.setdefault(marker, {})
         if marker == "":
             st["color"] = _MAIN_LAYER_COLOR
@@ -577,11 +603,13 @@ class TranslationEngine:
         st["color"] = _LAYER_COLORS[len(self._layers) % len(_LAYER_COLORS)]
 
     def _ensure_layer_colors(self):
+        """内部确保layercolors。"""
         for marker in self._layers:
             self._assign_layer_color(marker)
         self._save_state()
 
     def _load_layers(self):
+        """内部加载layers。"""
         self._layers = {}
         self._layer_files = {}
         try:
@@ -614,10 +642,12 @@ class TranslationEngine:
             print(f"[CustomLocale] 加载图层失败: {e}")
 
     def _layer_path(self, marker: str) -> str:
+        """内部layer路径相关处理。"""
         fname = "changes.json" if marker == "" else f"changes_{marker}.json"
         return os.path.join(self.lang_dir, fname)
 
     def _persist_layer(self, marker: str):
+        """内部persistlayer相关处理。"""
         path = self._layer_path(marker)
         os.makedirs(os.path.dirname(path), exist_ok=True)
         data = self._layers.get(marker, {})
@@ -625,18 +655,22 @@ class TranslationEngine:
             json.dump(data, f, ensure_ascii=False, indent=4)
 
     def _persist_all_layers(self):
+        """内部persist全部layers相关处理。"""
         for marker in self._layers:
             self._persist_layer(marker)
 
     def layer_order(self):
+        """layerorder相关处理。"""
         markers = [m for m in self._layers if m == ""] + \
                   sorted(m for m in self._layers if m != "")
         return markers
 
     def is_disabled(self, marker: str) -> bool:
+        """判断disabled。"""
         return bool(self._state.get(marker, {}).get("disabled", False))
 
     def list_layers(self):
+        """列表layers相关处理。"""
         result = []
         for marker in self.layer_order():
             name = "默认 (changes.json)" if marker == "" else f"changes_{marker}.json"
@@ -652,6 +686,7 @@ class TranslationEngine:
         return result
 
     def create_layer(self, marker: str):
+        """创建layer。"""
         err = _safe_marker(marker)
         if err:
             return {"ok": False, "msg": err}
@@ -668,6 +703,7 @@ class TranslationEngine:
         return {"ok": True, "msg": f"已创建 changes_{marker}.json，并设为编辑目标"}
 
     def rename_layer(self, old_marker: str, new_marker: str):
+        """renamelayer相关处理。"""
         if old_marker == "":
             return {"ok": False, "msg": "默认 changes.json 不允许重命名"}
         err = _safe_marker(new_marker)
@@ -697,6 +733,7 @@ class TranslationEngine:
             return {"ok": False, "msg": f"重命名失败: {e}"}
 
     def delete_layer(self, marker: str):
+        """删除layer。"""
         if marker == "":
             return {"ok": False, "msg": "默认 changes.json 不允许删除"}
         if marker not in self._layers:
@@ -716,6 +753,7 @@ class TranslationEngine:
             return {"ok": False, "msg": f"删除失败: {e}"}
 
     def set_layer_disabled(self, marker: str, disabled: bool):
+        """设置layerdisabled。"""
         if marker not in self._layers:
             return {"ok": False, "msg": f"修改记录不存在: {marker}"}
         s = self._state.setdefault(marker, {})
@@ -727,6 +765,7 @@ class TranslationEngine:
         return {"ok": True, "disabled": bool(disabled)}
 
     def set_active_layer(self, marker: str):
+        """设置activelayer。"""
         if marker not in self._layers:
             return {"ok": False, "msg": f"修改记录文件不存在: {marker}"}
         self._active = marker
@@ -734,6 +773,7 @@ class TranslationEngine:
         return {"ok": True}
 
     def _merge_relative(self, relative: str, skip_layer: str = None):
+        """内部mergerelative相关处理。"""
         result = _deep_copy(self.original_data)
         for marker in self.layer_order():
             if marker == skip_layer:
@@ -746,6 +786,7 @@ class TranslationEngine:
         return result
 
     def _changes_colors_for_relative(self, relative: str):
+        """内部changescolorsforrelative相关处理。"""
         colors = []
         for marker in self.layer_order():
             if self.is_disabled(marker):
@@ -756,12 +797,14 @@ class TranslationEngine:
         return colors
 
     def _has_changes_for_relative(self, relative: str) -> bool:
+        """内部haschangesforrelative相关处理。"""
         for marker, patches in (self._layers or {}).items():
             if patches.get(relative):
                 return True
         return False
 
     def open_file(self, relative: str):
+        """打开文件。"""
         relative = _normalize_path(relative)
         full = os.path.abspath(os.path.join(self.lang_dir, relative))
         lang_abs = os.path.abspath(self.lang_dir)
@@ -788,15 +831,18 @@ class TranslationEngine:
         return {"ok": True, "relative": relative}
 
     def _remerge_current(self):
+        """内部remergecurrent相关处理。"""
         if self.current_relative is None or self.original_data is None:
             return
         self.modified_data = self._merge_relative(self.current_relative)
         self._invalidate_flat()
 
     def _invalidate_flat(self):
+        """内部invalidateflat相关处理。"""
         self._flat_cache = None
 
     def _flatten(self):
+        """内部flatten相关处理。"""
         entries = []
         collapsed = set(self._filters.get("collapsed") or [])
         keyword = (self._filters.get("keyword") or "").strip().lower()
@@ -806,6 +852,7 @@ class TranslationEngine:
         saved = self.saved_view
 
         def hidden_only_source(path):
+            """hiddenonly来源相关处理。"""
             if not hidden_layers:
                 return False
             nav = path[5:] if path.startswith("root/") else path
@@ -822,6 +869,7 @@ class TranslationEngine:
 
         def walk(current, original, saved_v, title, depth, path, dict_key=None,
                  list_index=None, id_value=None, is_root=False):
+            """walk相关处理。"""
             is_container = isinstance(current, (dict, list))
             if not is_container and dict_key is not None:
                 if not show_hidden and dict_key in HIDDEN_KEYS:
@@ -907,6 +955,7 @@ class TranslationEngine:
         return entries
 
     def get_entries(self, start: int, count: int, filters: dict = None):
+        """获取entries。"""
         if filters is not None:
             self._filters = {
                 "keyword": (filters.get("keyword") or "").strip().lower(),
@@ -931,6 +980,7 @@ class TranslationEngine:
         }
 
     def unsaved_count(self):
+        """unsaved计数相关处理。"""
         if self.current_relative is None or self.saved_view is None:
             return {"count": 0}
         saved_filters = self._filters
@@ -945,6 +995,7 @@ class TranslationEngine:
             self._invalidate_flat()
 
     def all_container_paths(self):
+        """全部containerpaths相关处理。"""
         saved = self._filters
         self._filters = dict(saved, collapsed=[])
         try:
@@ -956,6 +1007,7 @@ class TranslationEngine:
             self._invalidate_flat()
 
     def set_value(self, path: str, raw):
+        """设置值。"""
         if self.current_relative is None or self.modified_data is None:
             return {"ok": False, "msg": "请先打开一个文件"}
         nav_path = path
@@ -984,6 +1036,7 @@ class TranslationEngine:
         return {"ok": True, "path": path}
 
     def remove_field(self, path: str):
+        """移除字段。"""
         if self.current_relative is None or self.modified_data is None:
             return {"ok": False, "msg": "请先打开一个文件"}
         nav_path = path
@@ -1029,6 +1082,7 @@ class TranslationEngine:
         return {"ok": True, "msg": f"已撤销字段 '{path}' 的修改 ({', '.join(removed)})"}
 
     def _compute_and_save(self, relative: str, marker: str):
+        """内部computeandsave相关处理。"""
         base = self._merge_relative(relative, skip_layer=marker)
         count = [0]
         diff, _ = _compute_diff(base, self.modified_data, count)
@@ -1065,6 +1119,7 @@ class TranslationEngine:
         return count[0]
 
     def compute_and_save(self):
+        """computeandsave相关处理。"""
         if self.current_relative is None or self.modified_data is None:
             return {"ok": False, "msg": "请先打开一个文件"}
         n = self._compute_and_save(self.current_relative, self._active)
@@ -1075,6 +1130,7 @@ class TranslationEngine:
                 "msg": f"已写入编辑目标 {name} ({n} 处修改)", "count": n}
 
     def save_all(self):
+        """保存全部。"""
         if self.current_relative is None or self.modified_data is None:
             return {"ok": False, "msg": "请先打开一个文件"}
         n = self._compute_and_save(self.current_relative, self._active)
@@ -1085,6 +1141,7 @@ class TranslationEngine:
                 "msg": f"已写入编辑目标 {name} ({n} 处修改)"}
 
     def reset_current(self):
+        """重置current。"""
         if self.current_relative is None:
             return {"ok": False, "msg": "请先打开一个文件"}
         for marker in self._layers:
@@ -1097,6 +1154,7 @@ class TranslationEngine:
         return {"ok": True, "msg": "当前文件的修改已撤销"}
 
     def reset_all(self):
+        """重置全部。"""
         for marker in self._layers:
             self._layers[marker] = {}
         self._persist_all_layers()
@@ -1107,12 +1165,15 @@ class TranslationEngine:
         return {"ok": True, "msg": "所有修改记录已清空"}
 
     def _layer_name(self, marker: str) -> str:
+        """内部layer名称相关处理。"""
         return "changes.json" if marker == "" else f"changes_{marker}.json"
 
     def get_tree(self):
+        """获取tree。"""
         nodes = []
 
         def build(rel_dir):
+            """构建相关操作。"""
             try:
                 items = sorted(os.listdir(rel_dir), key=lambda x: x.lower())
             except OSError:
@@ -1143,6 +1204,7 @@ class TranslationEngine:
         return {"root": "lang", "nodes": build(self.lang_dir)}
 
     def search_values(self, keyword: str):
+        """搜索values。"""
         kw = (keyword or "").strip().lower()
         if not kw:
             return {"ok": True, "paths": []}
@@ -1171,6 +1233,7 @@ class TranslationEngine:
         return {"ok": True, "paths": sorted(matches)}
 
     def _replace_in_relative(self, relative, kw, replacement):
+        """内部replaceinrelative相关处理。"""
         full = os.path.join(self.lang_dir, *relative.split("/"))
         try:
             with open(full, "r", encoding="utf-8") as f:
@@ -1220,6 +1283,7 @@ class TranslationEngine:
         return count[0]
 
     def _clear_current_state(self):
+        """内部清空current状态。"""
         self.original_data = None
         self.current_relative = None
         self.modified_data = None
@@ -1227,6 +1291,7 @@ class TranslationEngine:
         self._invalidate_flat()
 
     def replace_values(self, keyword, replacement):
+        """replacevalues相关处理。"""
         kw = (keyword or "").strip().lower()
         if not kw:
             return {"ok": False, "msg": "请先进行值搜索"}
@@ -1247,6 +1312,7 @@ class TranslationEngine:
                 "count": total, "files": files}
 
     def replace_current_values(self, keyword, replacement):
+        """replacecurrentvalues相关处理。"""
         kw = (keyword or "").strip().lower()
         if not kw:
             return {"ok": False, "msg": "请输入待替换值"}
@@ -1261,11 +1327,13 @@ class TranslationEngine:
                 "count": n}
 
     def get_raw_json(self):
+        """获取rawjson。"""
         if self.modified_data is None:
             return {"ok": False, "msg": "请先打开一个文件"}
         return {"ok": True, "text": json.dumps(self.modified_data, ensure_ascii=False, indent=2)}
 
     def apply_raw_json(self, text):
+        """应用rawjson。"""
         if self.current_relative is None:
             return {"ok": False, "msg": "请先打开一个文件"}
         try:
@@ -1279,6 +1347,7 @@ class TranslationEngine:
         return {"ok": True, "msg": "JSON 已应用"}
 
     def open_changes_dir(self):
+        """打开changes目录。"""
         try:
             os.startfile(os.path.abspath(self.lang_dir))  # type: ignore
             return {"ok": True}
@@ -1287,10 +1356,13 @@ class TranslationEngine:
 
 class CustomTranslationApi(WindowChromeBridge):
 
+    """Custom翻译Api类。"""
     def __init__(self):
+        """初始化对象状态。"""
         self.engine = TranslationEngine()
 
     def assets(self):
+        """assets相关处理。"""
         try:
             icon_path = os.path.join(_PROJECT_ROOT, "assets", "images", "icon", "icon.png")
             with open(icon_path, "rb") as f:
@@ -1299,144 +1371,168 @@ class CustomTranslationApi(WindowChromeBridge):
             return {"bg": None}
 
     def get_tree(self):
+        """获取tree。"""
         try:
             return self.engine.get_tree()
         except Exception as e:
             return {"root": "lang", "nodes": [], "error": str(e)}
 
     def search_values(self, keyword):
+        """搜索values。"""
         try:
             return self.engine.search_values(keyword)
         except Exception as e:
             return {"ok": False, "paths": [], "error": str(e)}
 
     def replace_values(self, keyword, replacement):
+        """replacevalues相关处理。"""
         try:
             return self.engine.replace_values(keyword, replacement)
         except Exception as e:
             return {"ok": False, "msg": f"替换失败: {e}"}
 
     def replace_current_values(self, keyword, replacement):
+        """replacecurrentvalues相关处理。"""
         try:
             return self.engine.replace_current_values(keyword, replacement)
         except Exception as e:
             return {"ok": False, "msg": f"替换失败: {e}"}
 
     def list_layers(self):
+        """列表layers相关处理。"""
         try:
             return {"layers": self.engine.list_layers()}
         except Exception as e:
             return {"layers": [], "error": str(e)}
 
     def create_layer(self, marker):
+        """创建layer。"""
         try:
             return self.engine.create_layer(marker or "")
         except Exception as e:
             return {"ok": False, "msg": f"创建失败: {e}"}
 
     def rename_layer(self, old_marker, new_marker):
+        """renamelayer相关处理。"""
         try:
             return self.engine.rename_layer(old_marker or "", new_marker or "")
         except Exception as e:
             return {"ok": False, "msg": f"重命名失败: {e}"}
 
     def delete_layer(self, marker):
+        """删除layer。"""
         try:
             return self.engine.delete_layer(marker or "")
         except Exception as e:
             return {"ok": False, "msg": f"删除失败: {e}"}
 
     def set_layer_disabled(self, marker, disabled):
+        """设置layerdisabled。"""
         try:
             return self.engine.set_layer_disabled(marker or "", bool(disabled))
         except Exception as e:
             return {"ok": False, "msg": str(e)}
 
     def set_active_layer(self, marker):
+        """设置activelayer。"""
         try:
             return self.engine.set_active_layer(marker or "")
         except Exception as e:
             return {"ok": False, "msg": str(e)}
 
     def open_file(self, relative):
+        """打开文件。"""
         try:
             return self.engine.open_file(relative or "")
         except Exception as e:
             return {"ok": False, "msg": f"打开失败: {e}"}
 
     def get_entries(self, start, count, filters=None):
+        """获取entries。"""
         try:
             return self.engine.get_entries(start or 0, count or 200, filters)
         except Exception as e:
             return {"entries": [], "total": 0, "modified_count": 0, "error": str(e)}
 
     def all_container_paths(self):
+        """全部containerpaths相关处理。"""
         try:
             return {"paths": self.engine.all_container_paths()}
         except Exception as e:
             return {"paths": [], "error": str(e)}
 
     def set_value(self, path, raw):
+        """设置值。"""
         try:
             return self.engine.set_value(path or "", raw)
         except Exception as e:
             return {"ok": False, "msg": str(e)}
 
     def remove_field(self, path):
+        """移除字段。"""
         try:
             return self.engine.remove_field(path or "")
         except Exception as e:
             return {"ok": False, "msg": str(e)}
 
     def compute_and_save(self):
+        """computeandsave相关处理。"""
         try:
             return self.engine.compute_and_save()
         except Exception as e:
             return {"ok": False, "msg": f"保存失败: {e}"}
 
     def save_all(self):
+        """保存全部。"""
         try:
             return self.engine.save_all()
         except Exception as e:
             return {"ok": False, "msg": f"保存失败: {e}"}
 
     def reset_current(self):
+        """重置current。"""
         try:
             return self.engine.reset_current()
         except Exception as e:
             return {"ok": False, "msg": str(e)}
 
     def reset_all(self):
+        """重置全部。"""
         try:
             return self.engine.reset_all()
         except Exception as e:
             return {"ok": False, "msg": str(e)}
 
     def unsaved_count(self):
+        """unsaved计数相关处理。"""
         try:
             return self.engine.unsaved_count()
         except Exception as e:
             return {"count": 0, "error": str(e)}
 
     def get_raw_json(self):
+        """获取rawjson。"""
         try:
             return self.engine.get_raw_json()
         except Exception as e:
             return {"ok": False, "msg": str(e)}
 
     def apply_raw_json(self, text):
+        """应用rawjson。"""
         try:
             return self.engine.apply_raw_json(text or "")
         except Exception as e:
             return {"ok": False, "msg": str(e)}
 
     def open_changes_dir(self):
+        """打开changes目录。"""
         try:
             return self.engine.open_changes_dir()
         except Exception as e:
             return {"ok": False, "msg": str(e)}
 
 def _center_xy(width, height):
+    """内部centerxy相关处理。"""
     try:
         import ctypes
         u = ctypes.windll.user32
@@ -1447,6 +1543,7 @@ def _center_xy(width, height):
         return None, None
 
 def _error_dialog(title, text):
+    """内部错误dialog相关处理。"""
     import ctypes
     try:
         ctypes.windll.user32.MessageBoxW(None, text, title, 0x10)
@@ -1454,6 +1551,7 @@ def _error_dialog(title, text):
         pass
 
 def _write_error_log(exc_info):
+    """内部写入错误日志。"""
     try:
         with open(os.path.join(_PROJECT_ROOT, "custom_translation_window_error.log"),
                   "a", encoding="utf-8") as f:
@@ -1462,6 +1560,7 @@ def _write_error_log(exc_info):
         pass
 
 def run_custom_translation_window(debug: bool = False):
+    """执行custom翻译窗口。"""
     try:
         import webview
     except BaseException as e:
@@ -1505,6 +1604,7 @@ def run_custom_translation_window(debug: bool = False):
         raise SystemExit(1)
 
 def open_custom_translation_window(root=None):
+    """打开custom翻译窗口。"""
     if getattr(sys, "frozen", False):
         cmd = [os.path.abspath(sys.executable), "--custom-translation-window"]
     else:

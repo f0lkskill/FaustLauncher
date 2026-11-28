@@ -1,3 +1,5 @@
+"""fancy 子模块：<bubble_transfer>（具体职责见函数文档）。"""
+
 
 import glob
 import os
@@ -5,6 +7,7 @@ import shutil
 import sys
 
 def _bubble_source_dir() -> str:
+    """内部bubble来源目录相关处理。"""
     candidates = []
     try:
         from functions.base.common.path_utils import get_app_root
@@ -21,6 +24,7 @@ def _bubble_source_dir() -> str:
     return candidates[0]
 
 def transfer_bubble_files(config_path: str = "") -> bool:
+    """transferbubble文件相关处理。"""
     if not config_path:
         print("[Cosmetic] 未指定气泡目标目录，跳过气泡文件转移")
         return False
@@ -45,6 +49,7 @@ def transfer_bubble_files(config_path: str = "") -> bool:
     return done > 0
 
 def main(config_path: str = ""):
+    """主入口相关处理。"""
     print(f"[Cosmetic] 开始转移气泡文件, 目标目录: {config_path}")
     source = _bubble_source_dir()
     if not glob.glob(os.path.join(source, "*.json")):

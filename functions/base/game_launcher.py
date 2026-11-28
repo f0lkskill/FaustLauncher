@@ -1,3 +1,5 @@
+"""游戏启动流程：路径校验、Mod 投放、插件回调与启动 exe。"""
+
 
 import os
 import sys
@@ -14,6 +16,7 @@ from functions.extension.addon.addon_utils import AddonManager
 from functions.base.common.json_io import read_json, write_json
 
 def safe_merge_dirs(src, dst, overwrite=True):
+    """safemerge目录相关处理。"""
     try:
         os.makedirs(dst, exist_ok=True)
     except Exception as e:
@@ -37,6 +40,7 @@ def safe_merge_dirs(src, dst, overwrite=True):
                 raise
 
 def apply_changes_to_data(original_data, changes):
+    """应用changesto数据。"""
     if isinstance(changes, dict) and 'dataList' in changes:
         changes = changes['dataList']
 
@@ -94,6 +98,7 @@ def apply_changes_to_data(original_data, changes):
 STALE_HOOK_MIN_AGE = 30.0
 
 def _is_own_interpreter_image(image: str) -> bool:
+    """内部判断owninterpreter图片。"""
     try:
         from functions.achievement.hook import _is_self_image
         return bool(_is_self_image(image))
@@ -116,6 +121,7 @@ def _is_own_interpreter_image(image: str) -> bool:
     return os.path.normcase(os.path.abspath(image)) in want
 
 def _process_age_seconds(kernel32, handle) -> float | None:
+    """内部进程ageseconds相关处理。"""
     try:
         from ctypes import wintypes
         kernel32.GetProcessTimes.argtypes = [wintypes.HANDLE, ctypes.POINTER(wintypes.FILETIME),
@@ -137,8 +143,10 @@ def _process_age_seconds(kernel32, handle) -> float | None:
 
 class GameLauncher:
 
+    """游戏Launcher类。"""
     def __init__(self, addon_manager:AddonManager=None, progress=None): # type: ignore
 
+        """初始化对象状态。"""
         self._settings = get_settings_manager()
         self._addon_manager = addon_manager
         self._progress = progress or (lambda text, icon=None: None)
@@ -150,6 +158,7 @@ class GameLauncher:
         self._lang_dir = translation_source_lib.get_translation_dir()
 
     def launch(self):
+        """启动相关操作。"""
         print("启动游戏流水线作业开始")
 
         steps = [
@@ -179,6 +188,7 @@ class GameLauncher:
         print("启动游戏流水线作业结束\n\n")
 
     def _prepare_translation(self):
+        """内部准备翻译。"""
         from functions.fancy.bubble_transfer import main as transfer_bubble
         transfer_bubble(config_path=self._lang_dir)
 
@@ -200,6 +210,7 @@ class GameLauncher:
 
     @staticmethod
     def _list_changes_files(dir_path):
+        """内部列表changes文件相关处理。"""
         from functions.pages.tools.custom_translation_window import _is_layer_changes_file
         if not os.path.isdir(dir_path):
             return []
@@ -209,6 +220,7 @@ class GameLauncher:
 
     @staticmethod
     def _lang_folder_candidates(lang_root, preferred=None):
+        """内部语言foldercandidates相关处理。"""
         try:
             dirs = [d for d in os.listdir(lang_root)
                     if os.path.isdir(os.path.join(lang_root, d))]
@@ -226,6 +238,7 @@ class GameLauncher:
         return ordered
 
     def _resolve_change_targets(self, lang_root, relative_path):
+        """内部解析change目标。"""
         rel = str(relative_path or "").replace("\\", "/").strip("/")
         parts = [p for p in rel.split("/") if p]
         if not parts:
@@ -252,6 +265,7 @@ class GameLauncher:
 
     @staticmethod
     def _resource_enabled(kind: str, info: dict) -> bool:
+        """内部resourceenabled相关处理。"""
         default = True if kind == 'addon' else False
         try:
             return bool((info or {}).get('settings', {}).get('enable', default))
@@ -260,10 +274,12 @@ class GameLauncher:
 
     @classmethod
     def _changes_backup_dir(cls, kind: str, res_dir: str) -> str:
+        """内部changesbackup目录相关处理。"""
         return os.path.join(cls.CHANGES_BACKUP_ROOT, kind, res_dir)
 
     @staticmethod
     def _load_backup_index(backup_dir: str) -> dict:
+        """内部加载backup索引。"""
         if not backup_dir:
             return {}
         p = os.path.join(backup_dir, 'index.json')
@@ -277,6 +293,7 @@ class GameLauncher:
 
     @staticmethod
     def _save_backup_index(backup_dir: str, index: dict) -> None:
+        """内部保存backup索引。"""
         try:
             os.makedirs(backup_dir, exist_ok=True)
             write_json(os.path.join(backup_dir, 'index.json'), index, indent=2)
@@ -285,6 +302,7 @@ class GameLauncher:
 
     @staticmethod
     def _rel_target(lang_root: str, game_file: str) -> str:
+        """内部rel目标相关处理。"""
         try:
             return os.path.relpath(game_file, lang_root).replace('\\', '/')
         except Exception:
@@ -292,6 +310,7 @@ class GameLauncher:
 
     @classmethod
     def _snapshot_before_patch(cls, backup_dir, index, changes_file, lang_root, game_file):
+        """内部snapshotbeforepatch相关处理。"""
         if not backup_dir:
             return False
         rel = cls._rel_target(lang_root, game_file)
@@ -310,6 +329,7 @@ class GameLauncher:
 
     def _restore_backups(self, kind: str, res_dir: str, lang_root: str,
                          only_changes_files=None, skip_folder=None) -> int:
+        """内部restorebackups相关处理。"""
         backup_dir = self._changes_backup_dir(kind, res_dir)
         index = self._load_backup_index(backup_dir)
         if not index:
@@ -340,6 +360,7 @@ class GameLauncher:
 
     @classmethod
     def _prune_changes_backups(cls, alive) -> None:
+        """内部清理changesbackups。"""
         root = cls.CHANGES_BACKUP_ROOT
         if not os.path.isdir(root):
             return
@@ -353,6 +374,7 @@ class GameLauncher:
 
     @classmethod
     def _gc_changes_backups(cls, lang_root: str, skip_folder=None) -> dict:
+        """内部gcchangesbackups相关处理。"""
         root = cls.CHANGES_BACKUP_ROOT
         stats = {"dirs": 0, "entries": 0, "freed": 0, "kept": 0}
         if not os.path.isdir(root):
@@ -418,6 +440,7 @@ class GameLauncher:
         return stats
 
     def _apply_changes(self):
+        """内部应用changes。"""
         from functions.extension.mod.mod_utils import ModManager
         from functions.pages.tools.custom_translation_window import CHANGES_PATTERN
 
@@ -553,6 +576,7 @@ class GameLauncher:
             print(f"[TextPatch] 文本改动快照: {gc['kept']} 份可用，无需回收")
 
     def _apply_cosmetic_features(self):
+        """内部应用cosmeticfeatures。"""
         lang_path = translation_source_lib.get_game_lang_dir(self._game_path)
         lang_root = os.path.join(self._game_path, 'LimbusCompany_Data', 'Lang')
 
@@ -628,6 +652,7 @@ class GameLauncher:
                 print(f"[Cosmetic] 技能渐变色跳过: {e}")
 
     def _copy_fonts(self):
+        """内部copyfonts相关处理。"""
         from functions.web_update.translation_source import get_game_lang_dir
         from functions.web_update.zeroasso_download import _PROJECT_ROOT as _font_root
         src = os.path.join(_font_root, 'assets', 'Font')
@@ -639,11 +664,13 @@ class GameLauncher:
         shutil.copytree(src, target, dirs_exist_ok=True)
 
     def _create_zeroasso_config(self):
+        """内部创建zeroasso配置。"""
         from functions.web_update.zeroasso_download import create_config_file
         create_config_file(self._game_path)
 
     @staticmethod
     def _original_uid_copy(folder: str):
+        """内部originaluidcopy相关处理。"""
         root = 'lang'
         candidates = [os.path.join(root, str(folder or ''), 'UserInfo_Friends.json')]
         try:
@@ -668,6 +695,7 @@ class GameLauncher:
         return None
 
     def _set_user_name(self):
+        """内部设置用户名称。"""
         from functions.web_update.translation_source import get_game_lang_dir
         lang_dir = get_game_lang_dir(self._game_path)
         file_path = os.path.join(lang_dir, 'UserInfo_Friends.json')
@@ -704,6 +732,7 @@ class GameLauncher:
         print(f"[SetUserName] Uid_Copy 已{'还原为原文' if restore else '写入昵称'}: {wanted}")
 
     def _fire_addon_events(self):
+        """内部fire插件events相关处理。"""
         if not self._addon_manager:
             return
         owners = getattr(self._addon_manager, 'gamestart_owners', {}) or {}
@@ -720,11 +749,13 @@ class GameLauncher:
                 print(f"执行游戏启动回调失败: {e}")
 
     def _launch_game_process(self):
+        """内部启动游戏进程。"""
         from functions.base.load_mod import launch_game_process
         launch_game_process()
         self._start_achievement_hook()
 
     def _start_achievement_hook(self):
+        """内部启动成就钩子。"""
         try:
             import subprocess
 
@@ -811,6 +842,7 @@ class GameLauncher:
             traceback.print_exc()
 
     def _pump_hook_child_log(self, proc, hook_log_path: str) -> None:
+        """内部pump钩子child日志相关处理。"""
         import re as _re
         import threading as _threading
 
@@ -819,6 +851,7 @@ class GameLauncher:
         dll_raw_re = _re.compile(r"^\d{2}:\d{2}:\d{2}\.\d{3}\s+DLL\b")
 
         def worker() -> None:
+            """工作线程相关处理。"""
             try:
                 fh = open(hook_log_path, "a", encoding="utf-8", errors="replace",
                           buffering=1)
@@ -849,7 +882,9 @@ class GameLauncher:
 
     def _watch_hook_child(self, proc, hook_log_path: str) -> None:
 
+        """内部监听钩子child相关处理。"""
         def worker() -> None:
+            """工作线程相关处理。"""
             import threading  # noqa: F401  （保持方法自足；主进程已导入也一样）
             deadline = time.time() + 20
             while time.time() < deadline and proc.poll() is None:
@@ -877,6 +912,7 @@ class GameLauncher:
 
     @staticmethod
     def _kill_stale_hook_child(pid_file: str) -> None:
+        """内部killstale钩子child相关处理。"""
         import ctypes
         from ctypes import wintypes
         try:
@@ -916,6 +952,7 @@ class GameLauncher:
 
     @staticmethod
     def _forget_pid_file(pid_file: str) -> None:
+        """内部忘记pid文件。"""
         try:
             os.remove(pid_file)
         except OSError:

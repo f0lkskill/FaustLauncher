@@ -1,3 +1,5 @@
+"""成就定义：<ach_index_furioso>。"""
+
 
 from __future__ import annotations
 
@@ -9,7 +11,9 @@ FURIOSO_REPLICA_IDS = (134711, 138010, 955110)
 
 class IndexFuriosoReplicaAchievement(SkillUseAchievement):
 
+    """索引FuriosoReplica成就类。"""
     def __init__(self) -> None:
+        """初始化对象状态。"""
         super().__init__(
             ach_id="ach_index_furioso_replica",
             name="仿造的一生",

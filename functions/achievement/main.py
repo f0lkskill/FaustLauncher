@@ -1,3 +1,5 @@
+"""achievement 子模块：<main>（具体职责见函数文档）。"""
+
 
 import os
 import sys
@@ -11,6 +13,7 @@ from functions.achievement.hook import AchievementHook, start_achievement_monito
 from functions.achievement.achievements import LOG_FILE
 
 def parse_args():
+    """解析args。"""
     parser = argparse.ArgumentParser(
         description="Limbus Company Achievement Monitor"
     )
@@ -37,6 +40,7 @@ def parse_args():
     return parser.parse_args()
 
 def run_hidden(log_path: str, debug: bool = False):
+    """执行hidden。"""
     for stream in (sys.stdout, sys.stderr):
         try:
             if hasattr(stream, 'reconfigure'):
@@ -55,6 +59,7 @@ def run_hidden(log_path: str, debug: bool = False):
     hook = AchievementHook(log_path, None)
     
     def signal_handler(signum, frame):
+        """signalhandler相关处理。"""
         print("\n[AchievementMonitor] Shutting down...")
         hook.stop_monitoring()
         sys.exit(0)
@@ -81,6 +86,7 @@ def run_hidden(log_path: str, debug: bool = False):
         print("\n[AchievementMonitor] Stopped.")
 
 def main():
+    """主入口相关处理。"""
     args = parse_args()
 
     log_path = args.log

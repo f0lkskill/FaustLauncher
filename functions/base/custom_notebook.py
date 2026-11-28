@@ -78,10 +78,12 @@ class CustomNotebook(tk.Frame):
         btn.configure(command=lambda i=idx: self.select(i))
         
         def on_enter(e, b=btn, i=idx):
+            """响应enter。"""
             if self._current_index != i:
                 b.configure(fg=C.TEXT_PRIMARY, bg=self._tab_hover_bg)
         
         def on_leave(e, b=btn, i=idx):
+            """响应leave。"""
             if self._current_index != i:
                 b.configure(fg=C.TEXT_MUTED, bg=self._bg)
         
@@ -127,6 +129,7 @@ class CustomNotebook(tk.Frame):
     def _update_indicator(self, index: int):
         """把强调色指示条放到目标按钮下方；延后 10ms 等布局稳定。"""
         def _place():
+            """内部place相关处理。"""
             self._indicator.place_forget()
             btn = self._tab_buttons[index]
             self._tab_center.update_idletasks()

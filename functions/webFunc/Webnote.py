@@ -105,6 +105,7 @@ def configured_note_names():
     names = []
 
     def add(value):
+        """添加相关操作。"""
         text = str(value or "").strip()
         if text and text not in names:
             names.append(text)
@@ -173,6 +174,7 @@ def prune_cache(extra=()):
 _pruned = False
 
 def _prune_once():
+    """内部清理once。"""
     global _pruned
     if _pruned:
         return
@@ -204,6 +206,7 @@ def cache_write(key, text):
         pass
 
 def _fmt_age(seconds):
+    """内部fmtage相关处理。"""
     if seconds is None:
         return "未知时间"
     if seconds < 60:
@@ -238,7 +241,9 @@ def memo_clear():
 
 @contextmanager
 def _prefer_ipv4():
+    """内部preferipv4相关处理。"""
     def _ipv4_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
+        """内部ipv4getaddrinfo相关处理。"""
         return _orig_getaddrinfo(host, port, socket.AF_INET, type, proto, flags)
 
     socket.getaddrinfo = _ipv4_getaddrinfo
@@ -248,6 +253,7 @@ def _prefer_ipv4():
         socket.getaddrinfo = _orig_getaddrinfo
 
 def _is_conn_error(exc):
+    """内部判断conn错误。"""
     text = f"{type(exc).__name__}: {exc}".lower()
     keys = ("timeout", "timed out", "connection", "ssl", "eof", "reset", "refused",
             "unreachable", "getaddrinfo", "socket", "proxy", "handshake", "aborted")
@@ -256,6 +262,7 @@ def _is_conn_error(exc):
 _DOH_HEADERS = dict(_HEADERS, Accept="application/dns-json")
 
 def resolve_via_doh(host):
+    """解析viadoh。"""
     for endpoint in DOH_ENDPOINTS:
         try:
             r = requests.get(endpoint, params={"name": host, "type": "A"},
@@ -273,6 +280,7 @@ def resolve_via_doh(host):
     return []
 
 def _fetch_by_ip(url, host, ips, timeout):
+    """内部拉取byip。"""
     try:
         import ssl
         import urllib3
@@ -531,6 +539,7 @@ class Note:
         keys = []
 
         def add(k):
+            """添加相关操作。"""
             k = str(k or "").strip()
             if k and k not in keys:
                 keys.append(k)

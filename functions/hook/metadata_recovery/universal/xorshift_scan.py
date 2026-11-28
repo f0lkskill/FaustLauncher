@@ -1,3 +1,5 @@
+"""IL2CPP metadata 恢复流程辅助模块：<xorshift_scan>。"""
+
 #!/usr/bin/env python3
 
 from __future__ import annotations
@@ -18,12 +20,14 @@ _TEMPLATE = (
 RE_TEMPLATE = re.compile(_TEMPLATE)
 
 def scan(text_bytes: bytes, base_va: int) -> list[int]:
+    """扫描相关操作。"""
     hits = []
     for m in RE_TEMPLATE.finditer(text_bytes):
         hits.append(base_va + m.start())
     return hits
 
 def scan_pe(image) -> list[int]:
+    """扫描pe。"""
     sec = image.text_section
     if sec is None:
         raise ValueError("PE has no .text section")

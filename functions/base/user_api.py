@@ -1,3 +1,5 @@
+"""用户系统相关的 Web API 客户端封装。"""
+
 
 from __future__ import annotations
 
@@ -30,9 +32,11 @@ def user_data_dir() -> str:
     return get_launcher_user_dir()
 
 def session_file() -> str:
+    """session文件相关处理。"""
     return os.path.join(user_data_dir(), _SESSION_FILE)
 
 def api_base() -> str:
+    """apibase相关处理。"""
     base = ""
     try:
         from functions.base.web_config import get_api_base
@@ -42,6 +46,7 @@ def api_base() -> str:
     return (base or DEFAULT_API_BASE).rstrip("/")
 
 def mask_uid(uid) -> str:
+    """maskuid相关处理。"""
     text = str(uid or "").strip()
     if not text:
         return "(空)"
@@ -71,6 +76,7 @@ _PATH_ACTION_PREFIXES = (
 )
 
 def _safe_path(path: str) -> str:
+    """内部safe路径相关处理。"""
     clean = str(path or "").split("?", 1)[0]
     if clean in _PATH_ACTIONS:
         return _PATH_ACTIONS[clean]
@@ -80,6 +86,7 @@ def _safe_path(path: str) -> str:
     return "[Hidden]"
 
 def _restore_cookies(session, base: str) -> None:
+    """内部restorecookies相关处理。"""
     try:
         data = read_json(session_file())
     except Exception:
@@ -101,6 +108,7 @@ def _restore_cookies(session, base: str) -> None:
         print(f"[UserAPI] 已载入本地登录态。")
 
 def _save_cookies(session) -> None:
+    """内部保存cookies。"""
     cookies = {}
     try:
         for c in session.cookies:
@@ -119,6 +127,7 @@ def _save_cookies(session) -> None:
         print(f"[UserAPI] 保存登录态失败: {exc}")
 
 def clear_session() -> None:
+    """清空session。"""
     global _session, _session_base
     with _lock:
         removed = False
@@ -134,9 +143,11 @@ def clear_session() -> None:
             print("[UserAPI] 已清除本地登录态")
 
 def has_session() -> bool:
+    """hassession相关处理。"""
     return os.path.isfile(session_file())
 
 def _get_session():
+    """内部获取session。"""
     global _session, _session_base
     import requests
     base = api_base()
@@ -154,6 +165,7 @@ def _get_session():
 
 def _request(method: str, path: str, payload: dict | None = None,
              keep_cookies: bool = False, note: str = "") -> dict:
+    """内部请求相关处理。"""
     url = api_base() + path
     label = f"{method} {_safe_path(path)}" + (f" [{note}]" if note else "")
     started = time.time()
@@ -207,6 +219,7 @@ def avatar_cache_dir() -> str:
 
 
 def avatar_manifest_file() -> str:
+    """avatarmanifest文件相关处理。"""
     return os.path.join(avatar_cache_dir(), _AVATAR_MANIFEST_NAME)
 
 
@@ -244,11 +257,13 @@ def _resolve_avatar_url(url: str):
 
 
 def _avatar_manifest() -> dict:
+    """内部avatarmanifest相关处理。"""
     data = try_read_json(avatar_manifest_file(), {})
     return data if isinstance(data, dict) else {}
 
 
 def _avatar_entry(url: str):
+    """内部avatar条目相关处理。"""
     target = _resolve_avatar_url(url)
     if target is None:
         return None, None
@@ -256,6 +271,7 @@ def _avatar_entry(url: str):
 
 
 def _image_mime(data: bytes, content_type: str = "") -> str:
+    """内部图片mime相关处理。"""
     mime = str(content_type or "").split(";", 1)[0].strip().lower()
     if mime.startswith("image/"):
         return mime
@@ -339,6 +355,7 @@ def save_avatar_local(url: str, data: bytes, content_type: str,
 
 
 def _avatar_response(url: str, etag: str = "", last_modified: str = ""):
+    """内部avatar响应相关处理。"""
     target = _resolve_avatar_url(url)
     if target is None:
         return None
@@ -410,6 +427,7 @@ def check_avatar_update(url: str):
     return load_avatar_local(target)
 
 def register(uid: str, user_name: str | None = None, skins=None) -> dict:
+    """注册相关操作。"""
     payload: dict = {"id": str(uid or "").strip()}
     if user_name:
         payload["user_name"] = str(user_name).strip()
@@ -419,35 +437,43 @@ def register(uid: str, user_name: str | None = None, skins=None) -> dict:
                     note=f"id={mask_uid(uid)}")
 
 def login(uid: str) -> dict:
+    """login相关处理。"""
     return _request("POST", "/api/login", {"id": str(uid or "").strip()}, keep_cookies=True,
                     note=f"id={mask_uid(uid)}")
 
 def logout() -> dict:
+    """logout相关处理。"""
     result = _request("GET", "/api/logout")
     clear_session()
     return result
 
 def me() -> dict:
+    """me相关处理。"""
     return _request("GET", "/api/me")
 
 def push_skins(skins) -> dict:
+    """推送skins。"""
     items = [str(s) for s in (skins or [])]
     return _request("POST", "/api/me/skins", {"skins": items}, note=f"{len(items)} 项")
 
 def push_name(name: str) -> dict:
+    """推送名称。"""
     clean = str(name or "").strip()
     return _request("POST", "/api/me/name", {"user_name": clean}, note=f"昵称={clean}")
 
 def public_user(uid: str) -> dict:
+    """public用户相关处理。"""
     return _request("GET", "/api/user/" + quote(str(uid or "").strip(), safe=""),
                     note=f"id={mask_uid(uid)}")
 
 def push_achievements(achievements) -> dict:
+    """推送achievements。"""
     items = [str(a).strip() for a in (achievements or []) if str(a).strip()]
     return _request("POST", "/api/me/achievements", {"achievements": items},
                     note=f"{len(items)} 条")
 
 def overwrite_achievements(achievements, uid: str = "") -> dict:
+    """overwriteachievements相关处理。"""
     items = [str(a).strip() for a in (achievements or []) if str(a).strip()]
     payload: dict = {"achievements": items}
     if str(uid or "").strip():
@@ -456,6 +482,7 @@ def overwrite_achievements(achievements, uid: str = "") -> dict:
                     note=f"{len(items)} 条" + (f" -> {mask_uid(uid)}" if uid else ""))
 
 def add_achievement(achievement_id: str, uid: str = "") -> dict:
+    """添加成就。"""
     aid = str(achievement_id or "").strip()
     if not aid:
         return {"ok": False, "error": "成就 ID 为空", "status": 0, "data": {}, "offline": False}
@@ -465,11 +492,13 @@ def add_achievement(achievement_id: str, uid: str = "") -> dict:
     return _request("POST", "/api/achievements/add", payload, note=f"单条 {aid}")
 
 def report_download(name: str, kind: str) -> dict:
+    """上报下载。"""
     return _request("POST", "/api/download",
                     {"name": str(name or "").strip(), "type": str(kind or "").strip()},
                     note=f"{kind}:{name}")
 
 def report_playtime(seconds: int, overwrite: bool = True) -> dict:
+    """上报playtime。"""
     try:
         value = max(0, int(seconds))
     except (TypeError, ValueError):
@@ -479,6 +508,7 @@ def report_playtime(seconds: int, overwrite: bool = True) -> dict:
                     note=f"{'覆盖' if overwrite else '累加'} {value} 秒")
 
 def leaderboard(kind: str = "playtime", limit: int = 20) -> dict:
+    """leaderboard相关处理。"""
     try:
         size = max(1, min(200, int(limit)))
     except (TypeError, ValueError):

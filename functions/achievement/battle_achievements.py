@@ -1,3 +1,5 @@
+"""战斗类成就定义集合。"""
+
 
 from __future__ import annotations
 
@@ -9,19 +11,23 @@ from functions.achievement.base_achievement import BaseAchievement
 
 class BattleRuleAchievement(BaseAchievement):
 
+    """战斗Rule成就类。"""
     battle_driven = True
 
     def __init__(self, ach_id: str, name: str, description: str,
                  rules=(), rarity: str = "common"):
+        """初始化对象状态。"""
         super().__init__(ach_id, name, description, rarity)
         self.detail = ""
         self.rules = tuple(battle_watch.register_rule(rule) for rule in rules)
 
     @property
     def rule_keys(self) -> tuple[str, ...]:
+        """rulekeys相关处理。"""
         return tuple(rule.key for rule in self.rules)
 
     def check(self) -> bool:
+        """检查相关操作。"""
         if self.unlocked:
             return True
         try:
@@ -37,11 +43,13 @@ class BattleRuleAchievement(BaseAchievement):
 
 class StageClearTurnAchievement(BaseAchievement):
 
+    """StageClearTurn成就类。"""
     battle_driven = True
 
     def __init__(self, ach_id: str, name: str, description: str,
                  uid_prefixes=(), max_turn: int = 0, require_ex: bool = False,
                  max_dead: int = -1, rarity: str = "epic"):
+        """初始化对象状态。"""
         super().__init__(ach_id, name, description, rarity)
         self.uid_prefixes = tuple(str(p) for p in uid_prefixes)
         self.max_turn = int(max_turn)
@@ -50,14 +58,17 @@ class StageClearTurnAchievement(BaseAchievement):
         self.detail = ""
 
     def _uid_matches(self, uid: str) -> bool:
+        """内部uidmatches相关处理。"""
         if not self.uid_prefixes:
             return True
         return any(uid.startswith(p) for p in self.uid_prefixes)
 
     def stage_watch_ids(self) -> tuple:
+        """stage监听ids相关处理。"""
         return ()
 
     def check(self) -> bool:
+        """检查相关操作。"""
         if self.unlocked:
             return True
         try:
@@ -88,11 +99,13 @@ class StageClearTurnAchievement(BaseAchievement):
 
 class RailwayTotalTurnAchievement(BaseAchievement):
 
+    """RailwayTotalTurn成就类。"""
     battle_driven = True
 
     def __init__(self, ach_id: str, name: str, description: str,
                  line_ids=(), max_turn: int = 0, node_prefixes=(),
                  rarity: str = "epic"):
+        """初始化对象状态。"""
         super().__init__(ach_id, name, description, rarity)
         self.line_ids = tuple(int(x) for x in line_ids)
         self.max_turn = int(max_turn)
@@ -100,6 +113,7 @@ class RailwayTotalTurnAchievement(BaseAchievement):
         self.detail = ""
 
     def _node_total(self) -> tuple:
+        """内部节点total相关处理。"""
         try:
             nodes = battle_watch.railway_nodes()
         except Exception:  # noqa: BLE001
@@ -116,6 +130,7 @@ class RailwayTotalTurnAchievement(BaseAchievement):
         return (total, used) if used else (-1, 0)
 
     def check(self) -> bool:
+        """检查相关操作。"""
         if self.unlocked:
             return True
         limit = f"≤{self.max_turn}T" if self.max_turn else "不限回合"
@@ -141,10 +156,12 @@ class RailwayTotalTurnAchievement(BaseAchievement):
 
 class SkillUseAchievement(BattleRuleAchievement):
 
+    """SkillUse成就类。"""
     def __init__(self, *, ach_id: str, name: str, description: str,
                  identity_id: int = 0, skill_ids=(), tiers=(), gated_skill_ids=(),
                  any_skill: bool = False, max_round: int = 0, min_round: int = 0,
                  label: str = "", rarity: str = "epic"):
+        """初始化对象状态。"""
         rule = battle_watch.BattleRule(
             key=ach_id,
             label=label or (f"身份 {identity_id}" if identity_id else ach_id),
@@ -165,9 +182,11 @@ class SkillUseAchievement(BattleRuleAchievement):
 
 class SpeedValueAchievement(BattleRuleAchievement):
 
+    """Speed值成就类。"""
     def __init__(self, *, ach_id: str, name: str, description: str,
                  identity_ids, value: int, fields=(), label: str = "",
                  rarity: str = "common"):
+        """初始化对象状态。"""
         rule = battle_watch.BattleRule(
             key=ach_id,
             label=label or " / ".join(f"身份 {i}" for i in identity_ids),
@@ -183,9 +202,11 @@ class SpeedValueAchievement(BattleRuleAchievement):
 
 class MentalThresholdAchievement(BattleRuleAchievement):
 
+    """MentalThreshold成就类。"""
     def __init__(self, *, ach_id: str, name: str, description: str,
                  identity_ids, threshold: int = 0, label: str = "",
                  rarity: str = "legendary"):
+        """初始化对象状态。"""
         rule = battle_watch.BattleRule(
             key=ach_id,
             label=label or " / ".join(f"身份 {i}" for i in identity_ids),
@@ -199,9 +220,11 @@ class MentalThresholdAchievement(BattleRuleAchievement):
 
 class DamageTakenAchievement(BattleRuleAchievement):
 
+    """DamageTaken成就类。"""
     def __init__(self, *, ach_id: str, name: str, description: str,
                  identity_ids, ratio: float = 1.0, label: str = "",
                  rarity: str = "common"):
+        """初始化对象状态。"""
         rule = battle_watch.BattleRule(
             key=ach_id,
             label=label or " / ".join(f"身份 {i}" for i in identity_ids),
@@ -215,9 +238,11 @@ class DamageTakenAchievement(BattleRuleAchievement):
 
 class BuffPresentAchievement(BattleRuleAchievement):
 
+    """BuffPresent成就类。"""
     def __init__(self, *, ach_id: str, name: str, description: str,
                  identity_ids, buffs, max_round: int = 0, min_round: int = 0,
                  label: str = "", rarity: str = "common"):
+        """初始化对象状态。"""
         rule = battle_watch.BattleRule(
             key=ach_id,
             label=label or " / ".join(f"身份 {i}" for i in identity_ids),
@@ -233,9 +258,11 @@ class BuffPresentAchievement(BattleRuleAchievement):
 
 class FieldPresenceAchievement(BattleRuleAchievement):
 
+    """字段Presence成就类。"""
     def __init__(self, *, ach_id: str, name: str, description: str,
                  identity_ids, max_round: int = 0, min_round: int = 0,
                  label: str = "", rarity: str = "common"):
+        """初始化对象状态。"""
         rule = battle_watch.BattleRule(
             key=ach_id,
             label=label or " / ".join(f"身份 {i}" for i in identity_ids),
@@ -250,19 +277,23 @@ class FieldPresenceAchievement(BattleRuleAchievement):
 @dataclass(frozen=True)
 class Condition:
 
+    """Condition类。"""
     key: str
     rule: "battle_watch.BattleRule"
     state_only: bool = False
 
 def _condition(key: str, rule: "battle_watch.BattleRule",
                state_only: bool = False) -> Condition:
+    """内部condition相关处理。"""
     return Condition(key=key, rule=rule, state_only=state_only)
 
 class CompositeAchievement(BattleRuleAchievement):
 
+    """Composite成就类。"""
     def __init__(self, *, ach_id: str, name: str, description: str,
                  conditions, require: str = "", chain=(), implied=(),
                  label: str = "", rarity: str = "common"):
+        """初始化对象状态。"""
         conditions = tuple(conditions)
         if not conditions:
             raise ValueError("CompositeAchievement 至少需要一个条件")
@@ -282,20 +313,24 @@ class CompositeAchievement(BattleRuleAchievement):
 
     @classmethod
     def all_of(cls, **kwargs) -> "CompositeAchievement":
+        """全部of相关处理。"""
         return cls(**kwargs)
 
     @classmethod
     def any_of(cls, *, conditions, **kwargs) -> "CompositeAchievement":
+        """anyof相关处理。"""
         expr = " or ".join(f"({c.key})" for c in conditions)
         return cls(conditions=conditions, require=expr, **kwargs)
 
     @classmethod
     def chain(cls, *, conditions, **kwargs) -> "CompositeAchievement":
+        """链相关处理。"""
         keys = tuple(c.key for c in conditions)
         return cls(conditions=conditions, chain=keys,
                    require=" and ".join(f"({k})" for k in keys), **kwargs)
 
     def _satisfied(self) -> dict:
+        """内部satisfied相关处理。"""
         state = {}
         for cond in self.conditions:
             hit = bool(battle_watch.rule_hit(cond.rule.key))
@@ -313,6 +348,7 @@ class CompositeAchievement(BattleRuleAchievement):
         return state
 
     def _chain_ok(self) -> bool:
+        """内部链ok相关处理。"""
         order = {cond.key: battle_watch.rule_order(cond.rule.key)
                  for cond in self.conditions}
         for first, second in self.chain: # type: ignore
@@ -323,6 +359,7 @@ class CompositeAchievement(BattleRuleAchievement):
         return True
 
     def check(self) -> bool:
+        """检查相关操作。"""
         if self.unlocked:
             return True
         try:
@@ -343,6 +380,7 @@ class CompositeAchievement(BattleRuleAchievement):
         return self.unlocked
 
     def _detail(self, state: dict, ok: bool) -> str:
+        """内部detail相关处理。"""
         parts = []
         for cond in self.conditions:
             mark = "√" if state.get(cond.key) else "×"
@@ -351,6 +389,7 @@ class CompositeAchievement(BattleRuleAchievement):
         return f"{head}: {' '.join(parts)}" + (f"（require={self.require}）" if self.require else "")
 
 def _validate_expr(expr: str, allowed: set) -> None:
+    """内部校验expr。"""
     tree = _ast.parse(expr, mode="eval")
     for node in _ast.walk(tree):
         if isinstance(node, (_ast.BoolOp, _ast.UnaryOp, _ast.Name, _ast.Load,
@@ -365,10 +404,12 @@ def _validate_expr(expr: str, allowed: set) -> None:
         raise ValueError(f"require 里出现了未定义的条件名: {sorted(unknown)}")
 
 def _eval_expr(expr: str, values: dict) -> bool:
+    """内部evalexpr相关处理。"""
     tree = _ast.parse(expr, mode="eval")
     return bool(_eval_node(tree.body, values))
 
 def _eval_node(node, values: dict):
+    """内部eval节点相关处理。"""
     if isinstance(node, _ast.Name):
         return bool(values.get(node.id))
     if isinstance(node, _ast.BoolOp):
@@ -383,6 +424,7 @@ def _eval_node(node, values: dict):
     raise ValueError(f"不支持的表达式节点: {type(node).__name__}")
 
 def _normalize_chain(chain) -> tuple:
+    """内部规范化链。"""
     chain = tuple(chain)
     if not chain:
         return ()

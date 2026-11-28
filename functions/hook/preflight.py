@@ -1,3 +1,5 @@
+"""hook 子模块：<preflight>（具体职责见函数文档）。"""
+
 
 from __future__ import annotations
 
@@ -16,6 +18,7 @@ VERDICT_NO_GAME_DLL = "no-game-dll"
 VERDICT_ERROR = "error"
 
 def prologue_check(index, gameassembly: str, on_log=None) -> dict:
+    """prologuecheck相关处理。"""
     log = on_log or (lambda _m: None)
     out = {"ok": False, "checked": 0, "matched": 0, "mismatch": [], "skipped": [],
            "detail": "", "fingerprint_ok": False, "disk_size": 0, "disk_timestamp": 0}
@@ -77,6 +80,7 @@ def prologue_check(index, gameassembly: str, on_log=None) -> dict:
     return out
 
 def index_stale_for_game(index, paths) -> tuple[bool, str]:
+    """索引stalefor游戏相关处理。"""
     game = (index.game or {}) if index is not None else {}
     recorded_id = str(game.get("game_build_id") or "")
     recorded_at = str(game.get("game_updated_at") or "")
@@ -95,6 +99,7 @@ def index_stale_for_game(index, paths) -> tuple[bool, str]:
     return False, "索引版本与本机一致"
 
 def _candidate_score(entry: dict, paths) -> tuple:
+    """内部candidatescore相关处理。"""
     game = (entry.get("index").game or {}) if entry.get("index") is not None else {}
     has_version = bool(str(game.get("game_build_id") or "")
                        or str(game.get("game_updated_at") or ""))
@@ -107,6 +112,7 @@ def _candidate_score(entry: dict, paths) -> tuple:
 
 def ensure_offsets_ready(on_log=None, game_path: str = "",
                          allow_cloud: bool = True, local_index=None) -> dict:
+    """确保偏移ready。"""
     log = on_log or (lambda _m: None)
 
     paths = paths_mod.game_paths(game_path)

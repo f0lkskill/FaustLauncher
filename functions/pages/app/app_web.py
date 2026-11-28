@@ -30,10 +30,12 @@ if _PROJECT_ROOT not in sys.path:
     sys.path.insert(0, _PROJECT_ROOT)
 
 def _resolve_html_path():
+    """内部解析HTML路径。"""
     from functions.base.common.path_utils import get_web_root
     return get_web_root("app", "index.html")
 
 def _feature_image_uri(image_name):
+    """内部feature图片uri相关处理。"""
     if not image_name:
         return ""
     p = _launcher_asset_file(_active_skin_id(), "features", image_name)
@@ -64,6 +66,7 @@ def _feature_image_uri(image_name):
         return ""
 
 def _tool_image_uri(image_name):
+    """内部tool图片uri相关处理。"""
     if not image_name:
         return ""
     p = _launcher_asset_file(_active_skin_id(), "tools", image_name)
@@ -99,6 +102,7 @@ _log_lock = threading.Lock()
 _log_lines: list[str] = []
 
 def _msgbox(title, text, is_error=True):
+    """内部msgbox相关处理。"""
     try:
         import ctypes
         ctypes.windll.user32.MessageBoxW(
@@ -109,6 +113,7 @@ def _msgbox(title, text, is_error=True):
 MAIN_WINDOW_TITLE = "Faust Launcher"
 
 def _find_main_hwnd():
+    """内部查找主入口hwnd。"""
     try:
         import ctypes
         return int(ctypes.windll.user32.FindWindowW(None, MAIN_WINDOW_TITLE) or 0)
@@ -116,6 +121,7 @@ def _find_main_hwnd():
         return 0
 
 def activate_existing_window(hwnd):
+    """activateexisting窗口相关处理。"""
     if not hwnd:
         return False
     try:
@@ -149,6 +155,7 @@ def activate_existing_window(hwnd):
         return False
 
 def check_single_instance():
+    """检查singleinstance。"""
     hwnd = _find_main_hwnd()
     if hwnd:
         activate_existing_window(hwnd)
@@ -156,6 +163,7 @@ def check_single_instance():
     return False
 
 def _win32_hwnd(window):
+    """内部win32hwnd相关处理。"""
     try:
         import ctypes
         native = getattr(window, "native", None)
@@ -182,6 +190,7 @@ _system_shutdown_requested = False
 _DRAG_SWP_FLAGS = 0x0001 | 0x0004 | 0x0010 | 0x4000
 
 def _disable_system_drag(window):
+    """内部禁用systemdrag。"""
     global _faust_wndproc, _faust_enum_proc, _faust_subclass_hwnds
     try:
         import ctypes
@@ -224,6 +233,7 @@ def _disable_system_drag(window):
         subclass_proc.restype = ctypes.c_ssize_t
 
         def _proc(hwnd, msg, wParam, lParam, uIdSubclass, dwRefData):
+            """内部proc相关处理。"""
             global _system_shutdown_requested
             if msg == WM_QUERYENDSESSION:
                 _system_shutdown_requested = True
@@ -250,6 +260,7 @@ def _disable_system_drag(window):
         enum_proc = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
 
         def _enum_child(child_hwnd, _lparam):
+            """内部enumchild相关处理。"""
             try:
                 set_subclass(child_hwnd, _faust_wndproc, SUBCLASSID, 0)
                 _faust_subclass_hwnds.add(child_hwnd)
@@ -265,6 +276,7 @@ def _disable_system_drag(window):
 _layered_ready = set()
 
 def _ensure_layered(hwnd):
+    """内部确保layered。"""
     if hwnd in _layered_ready:
         return True
     try:
@@ -279,6 +291,7 @@ def _ensure_layered(hwnd):
         return False
 
 def _clear_layered(hwnd):
+    """内部清空layered。"""
     try:
         import ctypes
         GWL_EXSTYLE = -20
@@ -296,6 +309,7 @@ def _clear_layered(hwnd):
         pass
 
 def _set_window_alpha(hwnd, alpha):
+    """内部设置窗口透明度。"""
     try:
         import ctypes
         LWA_ALPHA = 0x2
@@ -305,6 +319,7 @@ def _set_window_alpha(hwnd, alpha):
         pass
 
 def _fade_window(hwnd, start, end, step=20, delay=0.01):
+    """内部fade窗口相关处理。"""
     import time
     if start == end:
         _set_window_alpha(hwnd, end)
@@ -324,6 +339,7 @@ def _fade_window(hwnd, start, end, step=20, delay=0.01):
     _set_window_alpha(hwnd, end)
 
 def _win32_show_window_impl(window, show=True):
+    """内部win32show窗口impl相关处理。"""
     try:
         import ctypes
         hwnd = _win32_hwnd(window)
@@ -337,6 +353,7 @@ def _win32_show_window_impl(window, show=True):
     return False
 
 def _patch_network_timeouts():
+    """内部patchnetworktimeouts相关处理。"""
     try:
         import urllib3
         urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -350,10 +367,12 @@ def _patch_network_timeouts():
         _orig_post = requests.post
 
         def _get(url, *args, **kwargs):
+            """内部获取相关操作。"""
             kwargs.setdefault("timeout", (5, 15))
             return _orig_get(url, *args, **kwargs)
 
         def _post(url, *args, **kwargs):
+            """内部投递相关操作。"""
             kwargs.setdefault("timeout", (5, 15))
             return _orig_post(url, *args, **kwargs)
 
@@ -364,6 +383,7 @@ def _patch_network_timeouts():
         pass
 
 def _patch_tk_dialogs(push_event):
+    """内部patchtkdialogs相关处理。"""
     try:
         import tkinter.messagebox as mb
     except Exception:
@@ -376,7 +396,9 @@ def _patch_tk_dialogs(push_event):
     }
     for _kind, _default in _DEFAULTS.items():
         def _make_handler(kind, default):
+            """内部生成handler。"""
             def _handler(*args, **kwargs):
+                """内部handler相关处理。"""
                 title = args[0] if len(args) > 0 else kwargs.get("title", "提示")
                 message = args[1] if len(args) > 1 else kwargs.get("message", "")
                 try:
@@ -434,6 +456,7 @@ def _skin_dir(skin_id):
     return d if os.path.isdir(d) else ""
 
 def _active_skin_id():
+    """内部active皮肤id相关处理。"""
     try:
         from functions.base.settings_manager import get_settings_manager
         sid = str(get_settings_manager().get_setting(SKIN_SETTING_KEY) or "").strip()
@@ -456,6 +479,7 @@ def _active_skin_id():
         return sid
 
 def _file_uri(path, max_side=1600, quality=82):
+    """内部文件uri相关处理。"""
     try:
         from PIL import Image
         if not path or not os.path.isfile(path):
@@ -478,6 +502,7 @@ def _file_uri(path, max_side=1600, quality=82):
         return ""
 
 def _bg_blur_setting():
+    """内部bgblursetting相关处理。"""
     try:
         from functions.base.settings_manager import get_settings_manager
         return float(get_settings_manager().get_setting("bg_gaussian_blur_factor") or 0.0)
@@ -485,6 +510,7 @@ def _bg_blur_setting():
         return 0.0
 
 def _bg_encode(path, blur=0.0):
+    """内部bgencode相关处理。"""
     try:
         from PIL import Image, ImageFilter
         img = Image.open(path).convert("RGB")
@@ -499,12 +525,14 @@ def _bg_encode(path, blur=0.0):
         return ""
 
 def _image_files_in(d):
+    """内部图片文件in相关处理。"""
     if not d or not os.path.isdir(d):
         return []
     return [os.path.join(d, n) for n in sorted(os.listdir(d))
             if n.lower().endswith(_IMAGE_EXTS) and os.path.isfile(os.path.join(d, n))]
 
 def _skin_background_dir(skin_id):
+    """内部皮肤background目录相关处理。"""
     sd = _skin_dir(skin_id)
     if not sd:
         return ""
@@ -515,9 +543,11 @@ def _skin_background_dir(skin_id):
     return ""
 
 def _default_background_dir():
+    """内部defaultbackground目录相关处理。"""
     return os.path.join(_PROJECT_ROOT, "assets", "images", "background")
 
 def _background_files(skin_id=""):
+    """内部background文件相关处理。"""
     import random
     d = _skin_background_dir(skin_id)
     files = _image_files_in(d) if d else _image_files_in(_default_background_dir())
@@ -525,6 +555,7 @@ def _background_files(skin_id=""):
     return files
 
 def _launcher_asset_file(skin_id, *rel):
+    """内部launcherasset文件相关处理。"""
     sd = _skin_dir(skin_id)
     if not sd:
         return ""
@@ -535,6 +566,7 @@ def _launcher_asset_file(skin_id, *rel):
     return ""
 
 def _web_asset_file(skin_id, *rel):
+    """内部Webasset文件相关处理。"""
     sd = _skin_dir(skin_id)
     if sd:
         p = os.path.join(sd, "assets", "web", *rel)
@@ -568,6 +600,7 @@ def _skin_meta(skin_id):
     return {}
 
 def _skin_profile_file(skin_id):
+    """内部皮肤profile文件相关处理。"""
     sd = _skin_dir(skin_id)
     if not sd:
         return ""
@@ -657,6 +690,7 @@ def _skin_profile_uris(entries, cloud):
         return out
 
     def _one(job):
+        """内部单个相关处理。"""
         sid, icon_url = job
         return sid, skin_store.theme_icon_uri(sid, icon_url)
 
@@ -776,6 +810,7 @@ def _res_icon_prewarm_async():
         _RES_ICON_PREWARMED = True
 
     def _work():
+        """内部work相关处理。"""
         try:
             pairs = []
             for base, kind in (('addons', 'addon'), ('mods', 'mod')):
@@ -819,6 +854,7 @@ def _res_icon_uris(pairs):
     out = {}
 
     def _one(entry):
+        """内部单个相关处理。"""
         key, base, name = entry
         return key, _res_icon_uri(base, name)
 
@@ -839,6 +875,7 @@ def _res_icon_uris(pairs):
     return out
 
 def _get_project_icon_uri():
+    """内部获取project图标uri。"""
     p = _web_asset_file(_active_skin_id(), "icon", "icon.png")
     if p:
         try:
@@ -882,6 +919,7 @@ def _default_project_icon_uri():
     return ""
 
 def _goodbye_to_console():
+    """内部goodbyetoconsole相关处理。"""
     try:
         from functions.base.terminal_banner import get_banner_with_random_style
         banner = get_banner_with_random_style('GoodBye')
@@ -915,6 +953,7 @@ def _handoff_addons():
 
 
 def _terminate_now():
+    """内部结束now。"""
     _handoff_addons()
     _goodbye_to_console()
     try:
@@ -926,6 +965,7 @@ def _terminate_now():
     os._exit(0)
 
 def _is_system_shutting_down():
+    """内部判断systemshuttingdown。"""
     if _system_shutdown_requested:
         return True
     try:
@@ -936,11 +976,13 @@ def _is_system_shutting_down():
         return False
 
 def _fmt_author_links(authors):
+    """内部fmtauthorlinks相关处理。"""
     if isinstance(authors, dict):
         return [{'name': str(k), 'url': str(v)} for k, v in authors.items()]
     return []
 
 def _fmt_authors(authors):
+    """内部fmtauthors相关处理。"""
     if isinstance(authors, dict):
         return ', '.join(str(k) for k in authors.keys())
     if isinstance(authors, list):
@@ -951,7 +993,9 @@ def _fmt_authors(authors):
 
 class AppApi:
 
+    """AppApi类。"""
     def __init__(self, core, window_ref):
+        """初始化对象状态。"""
         self.core = core
         self.window_ref = window_ref
         self.ready_callback = None
@@ -977,6 +1021,7 @@ class AppApi:
             return
 
         def _changed():
+            """内部changed相关处理。"""
             try:
                 self._push_event("skin_themes_changed", {})
             except Exception:
@@ -996,11 +1041,13 @@ class AppApi:
         threading.Thread(target=_sync_active, name="faust-skin-sync", daemon=True).start()
 
     def _start_user_sync(self):
+        """内部启动用户（同步）。"""
         if self._user_sync_started:
             return
         self._user_sync_started = True
         print("[User] 启动后台同步")
         def worker():
+            """工作线程相关处理。"""
             try:
                 from functions.base.user_system import sync_user
                 result = sync_user(self.core.settings_manager)
@@ -1011,6 +1058,7 @@ class AppApi:
         threading.Thread(target=worker, name="faust-user-sync", daemon=True).start()
 
     def set_window_opacity(self, alpha):
+        """设置窗口opacity。"""
         try:
             win = self.window_ref.get("win") if self.window_ref else None
             if win is not None:
@@ -1023,12 +1071,14 @@ class AppApi:
         return True
 
     def ui_ready(self):
+        """界面ready相关处理。"""
         try:
             win = self.window_ref.get("win") if self.window_ref else None
             if win is not None:
                 if self.ready_callback is not None:
                     self.ready_callback()
                 def _later():
+                    """内部later相关处理。"""
                     try:
                         time.sleep(0.5)
                         _disable_system_drag(win)
@@ -1040,6 +1090,7 @@ class AppApi:
         return True
 
     def minimize_window(self):
+        """minimize窗口相关处理。"""
         try:
             win = self.window_ref.get("win") if self.window_ref else None
             if win is not None:
@@ -1100,12 +1151,14 @@ class AppApi:
         return True
 
     def end_move_window(self):
+        """endmove窗口相关处理。"""
         with self._window_drag_lock:
             self._window_drag_origin = None
             self._window_drag_hwnd = 0
         return True
 
     def close_window(self):
+        """关闭窗口。"""
         try:
             win = self.window_ref.get("win") if self.window_ref else None
             if win is not None:
@@ -1118,6 +1171,7 @@ class AppApi:
         return True
 
     def get_bootstrap(self):
+        """获取bootstrap。"""
         from functions.base.settings_manager import get_settings_manager
         sm = get_settings_manager()
         features = [
@@ -1162,11 +1216,13 @@ class AppApi:
         }
 
     def get_user_info(self):
+        """获取用户信息。"""
         from functions.base.user_system import get_user_info
         return get_user_info(self.core.settings_manager)
 
     @staticmethod
     def _avatar_data_uri(got):
+        """内部avatar数据uri相关处理。"""
         if not got:
             return ""
         raw, mime = got
@@ -1183,22 +1239,27 @@ class AppApi:
         return self._avatar_data_uri(user_api.check_avatar_update(str(url or "").strip()))
 
     def sync_user(self):
+        """同步用户。"""
         from functions.base.user_system import sync_user
         return sync_user(self.core.settings_manager)
 
     def login_user(self, user_id):
+        """login用户相关处理。"""
         from functions.base.user_system import login_user
         return login_user(user_id, self.core.settings_manager)
 
     def verify_skin_unlock(self, skin_id):
+        """verify皮肤unlock相关处理。"""
         from functions.base.user_system import verify_skin
         return verify_skin(skin_id)
 
     def unlock_skin(self, skin_id):
+        """unlock皮肤相关处理。"""
         from functions.base.user_system import unlock_skin
         return unlock_skin(skin_id, self.core.settings_manager)
 
     def cloud_sync_achievements(self):
+        """cloud（同步）achievements相关处理。"""
         try:
             from functions.base.user_system import sync_achievements, sync_playtime
             result = sync_achievements(pull=True)
@@ -1227,6 +1288,7 @@ class AppApi:
             return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
 
     def get_achievements(self):
+        """获取achievements。"""
         try:
             from functions.achievement.achievements import achievements
             from functions.base.user_system import (completed_achievements,
@@ -1290,6 +1352,7 @@ class AppApi:
         return uris
 
     def get_background_pool(self):
+        """获取backgroundpool。"""
         out = []
         total = 0
         try:
@@ -1388,6 +1451,7 @@ class AppApi:
         更新下载抽屉里对应的那一行, 抽屉会自动弹出。
         """
         def _push(payload):
+            """内部推送相关操作。"""
             try:
                 self._push_event(str(payload.get("event") or "progress"), payload)
             except Exception:
@@ -1461,6 +1525,7 @@ class AppApi:
         return result
 
     def get_skin_backgrounds(self, skin_id=""):
+        """获取皮肤backgrounds。"""
         sid = str(skin_id or "").strip()
         if sid and not _skin_dir(sid):
             return {"error": "皮肤不存在: " + sid, "backgrounds": []}
@@ -1472,6 +1537,7 @@ class AppApi:
         return {"backgrounds": out}
 
     def get_skin_css(self, skin_id=""):
+        """获取皮肤样式。"""
         sd = _skin_dir(str(skin_id or "").strip())
         if not sd:
             return ""
@@ -1486,6 +1552,7 @@ class AppApi:
         return ""
 
     def get_active_skin_css(self):
+        """获取active皮肤样式。"""
         try:
             return self.get_skin_css(_active_skin_id())
         except Exception:
@@ -1528,6 +1595,7 @@ class AppApi:
         return {"ok": True, "active": sid}
 
     def get_characters(self):
+        """获取characters。"""
         items = []
         try:
             from PIL import Image
@@ -1565,6 +1633,7 @@ class AppApi:
         return items
 
     def get_character_greetings(self):
+        """获取charactergreetings。"""
         try:
             for root in (
                 os.path.join(_PROJECT_ROOT, "config"),
@@ -1579,18 +1648,22 @@ class AppApi:
         return {}
 
     def get_terminal(self):
+        """获取terminal。"""
         with _log_lock:
             return list(_log_lines)
 
     def clear_terminal(self):
+        """清空terminal。"""
         with _log_lock:
             _log_lines.clear()
         return True
 
     def get_setting(self, key):
+        """获取setting。"""
         return self.core.settings_manager.get_setting(key)
 
     def _notify_path_synced(self):
+        """内部通知路径synced。"""
         try:
             win = self.window_ref.get("win") if self.window_ref else None
             if win is not None:
@@ -1599,6 +1672,7 @@ class AppApi:
             print(f"通知前端同步游戏路径失败: {e}")
 
     def get_pending_steam_path(self):
+        """获取pendingSteam路径。"""
         from functions.base.steam_locator import GAME_EXE, resolve_game_dir
         path = str(getattr(self.core, "pending_steam_path", "") or "")
         return {
@@ -1609,6 +1683,7 @@ class AppApi:
         }
 
     def confirm_steam_game_path(self, accept):
+        """confirmSteam游戏路径相关处理。"""
         path = str(getattr(self.core, "pending_steam_path", "") or "").strip()
         if not accept:
             self.core.pending_steam_path = ""
@@ -1632,6 +1707,7 @@ class AppApi:
         return result
 
     def apply_game_path(self, path):
+        """应用游戏路径。"""
         from functions.base.steam_locator import (
             GAME_EXE, normalize_game_path, resolve_game_dir_ex,
         )
@@ -1670,6 +1746,7 @@ class AppApi:
                 "auto_fixed": auto_fixed}
 
     def get_translate_source_name(self):
+        """获取翻译来源名称。"""
         try:
             from functions.web_update.translation_source import get_translate_source_name
             return get_translate_source_name()
@@ -1678,6 +1755,7 @@ class AppApi:
             return ""
 
     def _guard_user_name(self, key, value):
+        """内部guard用户名称相关处理。"""
         if str(key) != "user_name":
             return ""
         try:
@@ -1694,6 +1772,7 @@ class AppApi:
             return ""
 
     def _mark_user_name_changed(self):
+        """内部mark用户名称changed相关处理。"""
         try:
             from functions.base.user_system import mark_renamed
             mark_renamed()
@@ -1705,6 +1784,7 @@ class AppApi:
         关闭 -> 还原成绑定前的启动项。会强杀 Steam，所以丢到后台线程做。"""
 
         def worker():
+            """工作线程相关处理。"""
             try:
                 from functions.base import steam_binding
                 result = steam_binding.apply(bool(enabled))
@@ -1774,13 +1854,16 @@ class AppApi:
         return True
 
     def get_restrictions(self):
+        """获取restrictions。"""
         from functions.base.user_system import get_restrictions
         return get_restrictions()
 
     def _push_user_name(self):
+        """内部推送用户名称。"""
         name = str(self.core.settings_manager.get_setting("user_name") or "").strip()
         print(f"[User] 设置项昵称已更新, 后台同步到服务端: {name}")
         def worker():
+            """工作线程相关处理。"""
             try:
                 from functions.base.user_system import push_name
                 result = push_name(name, self.core.settings_manager)
@@ -1791,6 +1874,7 @@ class AppApi:
         threading.Thread(target=worker, name="faust-user-name", daemon=True).start()
 
     def pick_folder(self):
+        """pickfolder相关处理。"""
         import tkinter as tk
         from tkinter import filedialog
         try:
@@ -1804,6 +1888,7 @@ class AppApi:
             return ""
 
     def open_url(self, url):
+        """打开链接。"""
         import webbrowser
         try:
             webbrowser.open(url)
@@ -1812,6 +1897,7 @@ class AppApi:
         return True
 
     def _require_game_path(self):
+        """内部require游戏路径相关处理。"""
         from functions.base.steam_locator import resolve_game_dir, find_steam_game_path
         try:
             cur = self.core.settings_manager.get_setting("game_path") or ""
@@ -1829,6 +1915,7 @@ class AppApi:
         return {"ok": False, "error": "no_game_path", "path": cur}
 
     def _prepare_pipeline(self):
+        """内部准备pipeline。"""
         blocked = self._require_game_path()
         if blocked:
             return blocked
@@ -1841,11 +1928,13 @@ class AppApi:
         return None
 
     def launch_game(self):
+        """启动游戏。"""
         blocked = self._prepare_pipeline()
         if blocked:
             return blocked
         self._pipeline_kind = 'launch'
         def _run():
+            """内部执行相关操作。"""
             from functions.pages.app.page_loader import download_and_launch
             obj = type("WebAppShim", (), {"root": None, "core": self.core})()
             try:
@@ -1857,6 +1946,7 @@ class AppApi:
         return {"ok": True}
 
     def update_translation(self):
+        """更新翻译。"""
         blocked = self._prepare_pipeline()
         if blocked:
             return blocked
@@ -1864,6 +1954,7 @@ class AppApi:
         from threading import Event as _Event
         done = _Event()
         def _run():
+            """内部执行相关操作。"""
             from functions.pages.app.page_loader import download_and_launch
             try:
                 download_and_launch(obj=None, need_run_game=False, manual=True)
@@ -1876,6 +1967,7 @@ class AppApi:
         return {"ok": True}
 
     def abort_pipeline(self):
+        """abortpipeline相关处理。"""
         try:
             from functions.pages.app import page_loader as _pl
             _pl.request_cancel()
@@ -1887,6 +1979,7 @@ class AppApi:
             return {"ok": False, "error": str(e)}
 
     def kill_game(self):
+        """kill游戏相关处理。"""
         try:
             pids = _game_process_pids()
             if not pids:
@@ -1919,6 +2012,7 @@ class AppApi:
             return {"ok": False, "game_alive": alive, "error": str(e)}
 
     def get_launch_state(self):
+        """获取launch状态。"""
         try:
             from functions.pages.app import page_loader as _pl
             return {
@@ -1935,14 +2029,17 @@ class AppApi:
                     "kind": None, "error": str(e)}
 
     def open_feature(self, name):
+        """打开feature。"""
         self.core.open_feature({"name": name})
         return True
 
     def open_website(self):
+        """打开website。"""
         self.core.open_website()
         return True
 
     def open_tool(self, tool_id):
+        """打开tool。"""
         if tool_id == "nyos":
             from functions.pages.tools.nyos_prescript import open_prescript_window
             open_prescript_window()
@@ -1968,6 +2065,7 @@ class AppApi:
         return True
 
     def get_contributors(self):
+        """获取contributors。"""
         import os
         data = {'program': {'title': '关于 Faust Launcher', 'version': '', 'description': ''}, 'contributors': []}
         try:
@@ -2008,6 +2106,7 @@ class AppApi:
         return data
 
     def get_sound(self, kind):
+        """获取音效。"""
         try:
             if kind == 'welcome':
                 from functions.base.settings_manager import get_settings_manager
@@ -2025,6 +2124,7 @@ class AppApi:
             return ''
 
     def open_mod_item_dir(self, kind, name):
+        """打开Mod条目目录。"""
         import os
         try:
             base = 'addons' if kind == 'addon' else 'mods'
@@ -2280,6 +2380,7 @@ class AppApi:
             return {}
 
     def _cached_resource(self, kind, name):
+        """内部cachedresource相关处理。"""
         index = self._cloud_res_index(kind)
         if not index:
             return None
@@ -2348,6 +2449,7 @@ class AppApi:
     def reinstall_resource(self, kind, local_dir):
         """在后台线程执行 :meth:`_reinstall_local`，失败时通知前端弹错。"""
         def _run():
+            """内部执行相关操作。"""
             result = self._reinstall_local(kind, local_dir)
             if not result.get('ok'):
                 self._notify_res_changed(kind, error=result.get('error'))
@@ -2405,6 +2507,7 @@ class AppApi:
         """批量后台重装：逐个走 :meth:`_reinstall_local`，失败只打印日志。"""
         dirs = [str(x) for x in (local_dirs or [])]
         def _run():
+            """内部执行相关操作。"""
             for local_dir in dirs:
                 result = self._reinstall_local(kind, local_dir)
                 if not result.get('ok'):
@@ -2531,6 +2634,7 @@ class AppApi:
             return {'ok': True, 'error': None}
 
     def install_addon_dialog(self):
+        """安装插件dialog。"""
         try:
             import tkinter as tk
             from tkinter import filedialog
@@ -2551,6 +2655,7 @@ class AppApi:
             return {'ok': False, 'error': str(e)}
 
     def install_mod_dialog(self):
+        """安装Moddialog。"""
         try:
             import tkinter as tk
             from tkinter import filedialog
@@ -2567,6 +2672,7 @@ class AppApi:
             return {'ok': False, 'error': str(e)}
 
     def set_mod_settings(self, name, settings):
+        """设置Mod设置。"""
         import json, os
         path = os.path.join('mods', str(name), 'mod_info.json')
         if not os.path.exists(path):
@@ -2600,6 +2706,7 @@ class AppApi:
             _ADDON_RELOAD_STATE['running'] = True
 
         def _run():
+            """内部执行相关操作。"""
             try:
                 while True:
                     with _ADDON_RELOAD_LOCK:
@@ -2625,6 +2732,7 @@ class AppApi:
         threading.Thread(target=_run, name="faust-addon-reload", daemon=True).start()
 
     def _fire_addon_disabled(self, name):
+        """内部fire插件disabled相关处理。"""
         try:
             am = getattr(self.core, 'addon_manager', None)
             if am is not None and hasattr(am, 'when_addon_disabled'):
@@ -2633,6 +2741,7 @@ class AppApi:
             print(f"触发插件 {name} 的禁用回调失败: {e}")
 
     def set_addon_settings(self, name, settings):
+        """设置插件设置。"""
         import json, os
         path = os.path.join('addons', str(name), 'addon_info.json')
         if not os.path.exists(path):
@@ -2687,6 +2796,7 @@ class AppApi:
             return {'error': str(e)}
 
     def _rmtree_robust(self, path, max_tries=5, delay=1.5):
+        """内部rmtreerobust相关处理。"""
         import time, shutil
         for attempt in range(max_tries):
             try:
@@ -2706,6 +2816,7 @@ class AppApi:
         return errors
 
     def _notify_res_changed(self, kind, error=None):
+        """内部通知reschanged。"""
         try:
             win = self.window_ref.get("win") if self.window_ref else None
             if win is None:
@@ -2785,7 +2896,9 @@ class AppApi:
             return {'error': str(e)}
 
     def delete_mod(self, name):
+        """删除Mod。"""
         def _run():
+            """内部执行相关操作。"""
             try:
                 from functions.extension.mod.mod_utils import ModManager
                 import os
@@ -2816,7 +2929,9 @@ class AppApi:
         return {'error': None}
 
     def apply_mods(self):
+        """应用Mod。"""
         def _run():
+            """内部执行相关操作。"""
             from functions.extension.mod.mod_utils import ModManager
             try:
                 loaded = ModManager().load_all_mods()
@@ -2827,14 +2942,17 @@ class AppApi:
         return True
 
     def toggle_single_file(self, raw_name):
+        """togglesingle文件相关处理。"""
         from functions.pages.tools.mod_manager_window import _toggle_file
         return _toggle_file(raw_name)
 
     def delete_single_file(self, raw_name):
+        """删除single文件。"""
         from functions.pages.tools.mod_manager_window import _delete_file
         return _delete_file(raw_name)
 
     def open_mods_dir(self, which):
+        """打开Mod目录。"""
         import os
         try:
             if which == "single":
@@ -2852,6 +2970,7 @@ class AppApi:
             return {'error': str(e)}
 
     def open_mod_manager_window(self):
+        """打开Modmanager窗口。"""
         try:
             from functions.pages.tools.mod_manager_window import open_mod_manager_window as _open
             return bool(_open(self.core))
@@ -2860,6 +2979,7 @@ class AppApi:
             return False
 
     def _open_folder_link(self):
+        """内部打开folderlink。"""
         import tkinter as tk
         from tkinter import filedialog, messagebox
         try:
@@ -2882,6 +3002,7 @@ class AppApi:
 
     @staticmethod
     def _create_junction(source_path, target_path):
+        """内部创建junction。"""
         import subprocess
         from tkinter import messagebox, Tk
         source_name = os.path.basename(source_path)
@@ -2913,6 +3034,7 @@ if %errorlevel% equ 0 (
             f'powershell Start-Process "{batch_file}" -Verb runAs', shell=True)
 
     def quit_app(self):
+        """quitapp相关处理。"""
         import os
         try:
             self.window_ref.destroy()
@@ -2922,12 +3044,14 @@ if %errorlevel% equ 0 (
         return True
 
     def _get_web_trigger(self):
+        """内部获取Webtrigger。"""
         if not getattr(self, '_web_trigger', None):
             from functions.web_update.web_trigger import WebTrigger
             self._web_trigger = WebTrigger()
         return self._web_trigger
 
     def _check_dc_config(self):
+        """内部检查dc配置。"""
         try:
             from functions.base.web_config import get_webnote
             addon_addr = get_webnote('addon_info')[0]
@@ -2939,6 +3063,7 @@ if %errorlevel% equ 0 (
         return None
 
     def _get_cached_list(self, kind):
+        """内部获取cached列表。"""
         from functions.pages.app import page_loader as _pl
         if _pl._cloud_sync_cache.get(kind):
             print(f"获取到 {kind} 云端资源缓存。")
@@ -2953,6 +3078,7 @@ if %errorlevel% equ 0 (
         return data
 
     def _get_catalog_tags_style(self, kind):
+        """内部获取catalog标签style。"""
         try:
             wt = self._get_web_trigger()
             catalog = (wt.fetch_addon_catalog() if kind == 'addon'
@@ -3043,6 +3169,7 @@ if %errorlevel% equ 0 (
         return result
 
     def check_item_downloaded(self, kind, name):
+        """检查条目downloaded。"""
         import os
         try:
             root = 'addons' if kind == 'addon' else 'mods'
@@ -3070,6 +3197,7 @@ if %errorlevel% equ 0 (
             return {'downloaded': False, 'error': str(e)}
 
     def get_addon_list(self):
+        """获取插件列表。"""
         try:
             return {
                 'pages': self._get_cached_list('addon'),
@@ -3080,6 +3208,7 @@ if %errorlevel% equ 0 (
             return {'pages': [], 'tags_style': {}, 'error': str(e)}
 
     def get_mod_list(self):
+        """获取Mod列表。"""
         try:
             return {
                 'pages': self._get_cached_list('mod'),
@@ -3090,6 +3219,7 @@ if %errorlevel% equ 0 (
             return {'pages': [], 'tags_style': {}, 'error': str(e)}
 
     def increase_download_count(self, kind, name):
+        """increase下载计数相关处理。"""
         try:
             wt = self._get_web_trigger()
 
@@ -3223,6 +3353,7 @@ if %errorlevel% equ 0 (
             gui.is_downloading = False
 
     def _dl_release(self, gui):
+        """内部dlrelease相关处理。"""
         name = str(getattr(gui, 'task', '') or '')
         if not name:
             return
@@ -3238,10 +3369,12 @@ if %errorlevel% equ 0 (
                 self._dl_guis.pop(name, None)
 
     def _dl_was_cancelled(self, name):
+        """内部dlwascancelled相关处理。"""
         with self._dl_lock:
             return str(name or '') in self._dl_cancelled
 
     def _dl_clear_cancel(self, name):
+        """内部dlclearcancel相关处理。"""
         with self._dl_lock:
             self._dl_cancelled.discard(str(name or ''))
 
@@ -3274,7 +3407,9 @@ if %errorlevel% equ 0 (
         self._push_event('failed', {'task': str(task or ''), 'text': str(text or '')})
 
     def download_addon(self, name, url):
+        """下载插件相关处理。"""
         def _run():
+            """内部执行相关操作。"""
             try:
                 pages = None
                 try:
@@ -3304,7 +3439,9 @@ if %errorlevel% equ 0 (
         return True
 
     def download_mod(self, name, url):
+        """下载Mod相关处理。"""
         def _run():
+            """内部执行相关操作。"""
             try:
                 from functions.web_update.zeroasso_download import download_and_extract_mod
                 from functions.extension.mod.mod_utils import ModManager
@@ -3415,10 +3552,13 @@ if %errorlevel% equ 0 (
         return None
 
     def start_auto_translate(self, source, target, blacklist):
+        """启动auto翻译。"""
         def _run():
+            """内部执行相关操作。"""
             try:
                 from functions.translate.auto_translate import auto_translate
                 def progress_cb(percent, msg):
+                    """进度cb相关处理。"""
                     try:
                         self.window_ref.evaluate_js(
                             "window.__onEvent('translate_progress', {percent:" + str(percent) +
@@ -3432,6 +3572,7 @@ if %errorlevel% equ 0 (
         return True
 
     def get_changelog(self):
+        """获取changelog。"""
         try:
             from functions.base.web_config import get_webnote
             from functions.webFunc.Webnote import Note
@@ -3443,6 +3584,7 @@ if %errorlevel% equ 0 (
                 versions = info.get('versions', {})
                 if versions:
                     def _ver_key(v):
+                        """内部ver键相关处理。"""
                         nums = []
                         for seg in str(v).lstrip('vV').split('.'):
                             n = ''
@@ -3482,6 +3624,7 @@ if %errorlevel% equ 0 (
         return ""
 
     def get_random_recommend(self):
+        """获取randomrecommend。"""
         import random
         items = []
         try:
@@ -3513,6 +3656,7 @@ if %errorlevel% equ 0 (
         }
 
     def refresh_cloud_list(self, kind='both'):
+        """刷新cloud列表。"""
         try:
             from functions.pages.app import page_loader as _pl
             from functions.webFunc.Webnote import memo_clear
@@ -3535,6 +3679,7 @@ if %errorlevel% equ 0 (
             return {'ok': False, 'counts': {}, 'error': str(e)}
 
     def check_update(self):
+        """检查更新。"""
         try:
             from functions.base.web_config import get_webnote
             from functions.webFunc.Webnote import Note
@@ -3563,6 +3708,7 @@ if %errorlevel% equ 0 (
             return {'error': str(e)}
 
     def _push_event(self, event, data=None):
+        """内部推送事件。"""
         try:
             win = self.window_ref.get("win") if self.window_ref else None
             if win is None:
@@ -3575,6 +3721,7 @@ if %errorlevel% equ 0 (
             return False
 
     def push_version_modal(self, payload):
+        """推送版本modal。"""
         try:
             win = self.window_ref.get("win") if self.window_ref else None
             if win is None:
@@ -3587,6 +3734,7 @@ if %errorlevel% equ 0 (
             return False
 
     def get_version_modal(self):
+        """获取版本modal。"""
         try:
             from functions.pages.notice.version_notify import manual_payload
             payload = manual_payload()
@@ -3653,6 +3801,7 @@ if %errorlevel% equ 0 (
             return {'ok': False, 'id': str(notice_id or ''), 'error': str(e)}
 
     def start_version_update(self):
+        """启动版本更新。"""
         try:
             from functions.pages.notice.version_notify import (
                 collect_version_info, start_version_download,
@@ -3669,6 +3818,7 @@ if %errorlevel% equ 0 (
                 return {'ok': False, 'error': '未获取到新版本下载地址, 请稍后重试'}
 
             def _push(data):
+                """内部推送相关操作。"""
                 self._push_event('version_update', data)
 
             ok = start_version_download(version, url, _push)
@@ -3680,6 +3830,7 @@ if %errorlevel% equ 0 (
             return {'ok': False, 'error': str(e)}
 
     def get_translation_status(self):
+        """获取翻译状态。"""
         import os
         game_path = ''
         try:
@@ -3702,6 +3853,7 @@ if %errorlevel% equ 0 (
             return {'status': 'error', 'label': '无法读取'}
 
     def get_font_info(self):
+        """获取字体信息。"""
         import os
         result = {}
         for kind in ('context', 'title'):
@@ -3715,6 +3867,7 @@ if %errorlevel% equ 0 (
         return result
 
     def get_font_data(self, kind):
+        """获取字体数据。"""
         import os
         try:
             if kind not in ('context', 'title'):
@@ -3731,6 +3884,7 @@ if %errorlevel% equ 0 (
             return {'uri': '', 'error': str(e)}
 
     def upload_font(self, kind, file_data_b64):
+        """upload字体相关处理。"""
         import base64 as _b64
         try:
             if kind not in ('context', 'title'):
@@ -3745,6 +3899,7 @@ if %errorlevel% equ 0 (
             return {'error': str(e)}
 
     def delete_font(self, kind):
+        """删除字体。"""
         import os
         try:
             if kind not in ('context', 'title'):
@@ -3757,6 +3912,7 @@ if %errorlevel% equ 0 (
             return {'error': str(e)}
 
     def generate_gradient_text(self, text, start_color, end_color, gradient_rate=2.0):
+        """generategradient文本相关处理。"""
         try:
             from functions.fancy.dialog_colorful import apply_color_gradient_custom
             result = apply_color_gradient_custom(text, start_color, end_color, float(gradient_rate))
@@ -3768,6 +3924,7 @@ _k32 = None
 _PROCESSENTRY32W = None
 
 def _init_win32_proc():
+    """内部初始化win32proc。"""
     global _k32, _PROCESSENTRY32W
     if _k32 is not None:
         return _k32
@@ -3775,6 +3932,7 @@ def _init_win32_proc():
     from ctypes import wintypes
 
     class PROCESSENTRY32W(ctypes.Structure):
+        """PROCESSENTRY32W类。"""
         _fields_ = [
             ("dwSize", wintypes.DWORD),
             ("cntUsage", wintypes.DWORD),
@@ -3808,6 +3966,7 @@ def _init_win32_proc():
     return k32
 
 def _find_process_pids(image_name):
+    """内部查找进程pids。"""
     try:
         k32 = _init_win32_proc()
         import ctypes
@@ -3832,6 +3991,7 @@ def _find_process_pids(image_name):
         return []
 
 def _terminate_pid(pid):
+    """内部结束pid。"""
     try:
         k32 = _init_win32_proc()
         h = k32.OpenProcess(0x0001, False, int(pid))
@@ -3853,6 +4013,7 @@ def _terminate_pid(pid):
 _PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
 
 def _process_image_path(pid):
+    """内部进程图片路径相关处理。"""
     try:
         k32 = _init_win32_proc()
         import ctypes
@@ -3871,6 +4032,7 @@ def _process_image_path(pid):
     return ""
 
 def _process_session_id(pid):
+    """内部进程sessionid相关处理。"""
     try:
         k32 = _init_win32_proc()
         import ctypes
@@ -3882,6 +4044,7 @@ def _process_session_id(pid):
     return None
 
 def _same_path(a, b):
+    """内部same路径相关处理。"""
     if not a or not b:
         return False
     try:
@@ -3896,6 +4059,7 @@ def _same_path(a, b):
         return False
 
 def _expected_game_exe():
+    """内部expected游戏程序相关处理。"""
     try:
         from functions.hook.paths import get_game_path
         root = str(get_game_path() or "")
@@ -3908,6 +4072,7 @@ def _expected_game_exe():
 _game_pid_log = {"kept": None, "rejected": None}
 
 def _game_process_pids():
+    """内部游戏进程pids相关处理。"""
     pids = _find_process_pids("LimbusCompany.exe")
     if not pids:
         if _game_pid_log["kept"]:
@@ -3947,15 +4112,18 @@ def _game_process_pids():
     return kept
 
 def _any_game_process_running():
+    """内部any游戏进程running相关处理。"""
     own_pid = os.getpid()
     return any(pid != own_pid for pid in _find_process_pids("LimbusCompany.exe"))
 
 def _game_process_running():
+    """内部游戏进程running相关处理。"""
     return bool(_game_process_pids())
 
 _game_state = {"alive": False, "busy": False, "observed": None}
 
 def _update_game_state(alive, busy, seed=False):
+    """内部更新游戏状态。"""
     snapshot = (bool(alive), bool(busy))
     previous = _game_state["observed"]
     _game_state["observed"] = snapshot
@@ -4012,7 +4180,9 @@ def _idle_count(pid):
 
 
 def _monitor_game_process(window_ref):
+    """内部monitor游戏进程相关处理。"""
     def _push(event, data=None):
+        """内部推送相关操作。"""
         try:
             win = window_ref.get("win")
             if win is None:
@@ -4050,6 +4220,7 @@ def _monitor_game_process(window_ref):
                 continue
 
     def _run():
+        """内部执行相关操作。"""
         started = False
         exited_at = None
         waited = 0.0
@@ -4086,7 +4257,9 @@ def _monitor_game_process(window_ref):
     threading.Thread(target=_run, daemon=True).start()
 
 def _start_game_state_watcher(window_ref):
+    """内部启动游戏状态watcher。"""
     def _push(win):
+        """内部推送相关操作。"""
         try:
             win.evaluate_js("window.__onEvent('game_state', %s)"
                             % json.dumps({"game_alive": bool(_game_state["alive"]),
@@ -4096,6 +4269,7 @@ def _start_game_state_watcher(window_ref):
             return False
 
     def _run():
+        """内部执行相关操作。"""
         seeded = False
         last_push = 0.0
         gone = 0
@@ -4125,6 +4299,7 @@ def _start_game_state_watcher(window_ref):
     threading.Thread(target=_run, daemon=True).start()
 
 def _start_tray(core, window, win32_show):
+    """内部启动tray。"""
     import pystray
     from PIL import Image
 
@@ -4151,7 +4326,9 @@ def _start_tray(core, window, win32_show):
         ico = Image.new("RGBA", (64, 64), (99, 102, 241, 255))
 
     def _tray_window_op(show):
+        """内部tray窗口op相关处理。"""
         def _do():
+            """内部do相关处理。"""
             try:
                 hwnd = _win32_hwnd(window)
                 if show:
@@ -4172,13 +4349,17 @@ def _start_tray(core, window, win32_show):
         threading.Thread(target=_do, daemon=True).start()
 
     def show_win(icon=None, item=None):
+        """显示win。"""
         _tray_window_op(True)
 
     def hide_win(icon=None, item=None):
+        """隐藏win。"""
         _tray_window_op(False)
 
     def when_exit(icon=None, item=None):
+        """whenexit相关处理。"""
         def _quit():
+            """内部quit相关处理。"""
             try:
                 hwnd = _win32_hwnd(window)
                 if hwnd:
@@ -4204,6 +4385,7 @@ def _start_tray(core, window, win32_show):
     return tray
 
 def run_web_ui(debug: bool = False):
+    """执行Web界面。"""
     try:
         import webview
     except BaseException as e:
@@ -4236,6 +4418,7 @@ def run_web_ui(debug: bool = False):
     page_ready = {"value": False}
 
     def _evaluate_js(code, quiet=True):
+        """内部evaluate脚本相关处理。"""
         win = window_holder.get("win")
         if win is None:
             return
@@ -4253,6 +4436,7 @@ def run_web_ui(debug: bool = False):
                     pass
 
     def _push_log(text):
+        """内部推送日志。"""
         if not page_ready["value"]:
             return
         try:
@@ -4262,6 +4446,7 @@ def run_web_ui(debug: bool = False):
             pass
 
     def _push_terminal_line(line):
+        """内部推送terminal行。"""
         from functions.base.log_format import short_stamp
         line = short_stamp(line)
         with _log_lock:
@@ -4286,6 +4471,7 @@ def run_web_ui(debug: bool = False):
         config_path, auto_start=auto_start, download_func=download_func, task=task) # type: ignore
 
     def _web_progress(event, data):
+        """内部Web进度相关处理。"""
         try:
             payload = json.dumps(data, ensure_ascii=False)
             _evaluate_js(f"window.__onEvent({json.dumps(event)}, {payload})")
@@ -4361,6 +4547,7 @@ def run_web_ui(debug: bool = False):
     _start_game_state_watcher(window_holder)
 
     def _show_after_load():
+        """内部显示afterload。"""
         with startup_lock:
             if startup_state["shown"]:
                 return
@@ -4378,6 +4565,7 @@ def run_web_ui(debug: bool = False):
 
         time.sleep(0.05)
         def _fade_in_then_unlayer():
+            """内部fadeinthenunlayer相关处理。"""
             _fade_window(hwnd, 0, 255, step=15, delay=0.01)
             _clear_layered(hwnd)
 
@@ -4396,6 +4584,7 @@ def run_web_ui(debug: bool = False):
         pass
 
     def _force_show():
+        """内部forceshow相关处理。"""
         time.sleep(12)
         try:
             _show_after_load()
@@ -4404,6 +4593,7 @@ def run_web_ui(debug: bool = False):
     threading.Thread(target=_force_show, daemon=True).start()
 
     def _win32_show_window(show=True):
+        """内部win32show窗口相关处理。"""
         return _win32_show_window_impl(window, show)
 
     try:
@@ -4413,6 +4603,7 @@ def run_web_ui(debug: bool = False):
         tray = None
 
     def _on_closing():
+        """内部响应closing。"""
         try:
             if _is_system_shutting_down():
                 threading.Thread(target=_terminate_now, daemon=True).start()
@@ -4424,6 +4615,7 @@ def run_web_ui(debug: bool = False):
                 hide_to_tray = True
             if hide_to_tray:
                 def _hide():
+                    """内部隐藏相关操作。"""
                     try:
                         _hwnd = _win32_hwnd(window)
                         if _hwnd:
@@ -4466,6 +4658,7 @@ def run_web_ui(debug: bool = False):
         print(f"注册关闭事件失败: {e}")
 
     def _delayed_check():
+        """内部delayedcheck相关处理。"""
         try:
             time.sleep(1)
             core.ensure_game_path(interactive=False)

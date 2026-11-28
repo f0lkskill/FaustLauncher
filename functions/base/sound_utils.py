@@ -60,6 +60,7 @@ class _MixerPlayer(threading.Thread):
     MAX_LAYERS = 6
 
     def __init__(self):
+        """初始化对象状态。"""
         super().__init__(daemon=True, name="sound-player")
         self._lock = threading.Lock()
         self._wake = threading.Event()

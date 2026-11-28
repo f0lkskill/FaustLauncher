@@ -1,3 +1,5 @@
+"""启动阶段加载提示界面。"""
+
 import tkinter as tk
 import time
 import threading
@@ -11,6 +13,7 @@ BG_COLOR: str = get_settings_manager().get_setting("bg_color")  # type: ignore
 bg_gaussian_blur_factor: int = (get_settings_manager().get_setting("bg_gaussian_blur_factor") or 0) + 5
 
 def _parse_rgb(hex_color: str):
+    """内部解析rgb。"""
     h = hex_color.lstrip('#')
     return tuple(int(h[i:i + 2], 16) for i in (0, 2, 4))
 
@@ -23,7 +26,9 @@ TEXT_SECONDARY = "#ffffff"
 TEXT_MUTED = "#c2dcff"
 
 class ModernSplashScreen:
+    """ModernSplash屏幕类。"""
     def __init__(self, root):
+        """初始化对象状态。"""
         self.root = root
         self.splash = tk.Toplevel(root)
         self.splash.title("Faust Launcher")
@@ -56,6 +61,7 @@ class ModernSplashScreen:
 
     @staticmethod
     def _pil_rounded_rect_mask(size, radius):
+        """内部pilrounded矩形mask相关处理。"""
         W, H = size
         from PIL import Image, ImageDraw
         mask = Image.new('L', (W, H), 0)
@@ -64,6 +70,7 @@ class ModernSplashScreen:
         return mask
 
     def _draw_background(self):
+        """内部drawbackground相关处理。"""
         W, H = 520, 380
         R = 18
 
@@ -118,6 +125,7 @@ class ModernSplashScreen:
                                    fill=BG_COLOR, outline='')
 
     def _rounded_rect(self, x1, y1, x2, y2, r=12, **kwargs):
+        """内部rounded矩形相关处理。"""
         d = r * 2
         self.canvas.create_arc(x1, y1, x1 + d, y1 + d,
                                start=90, extent=90, style='pieslice', **kwargs)
@@ -131,6 +139,7 @@ class ModernSplashScreen:
         self.canvas.create_rectangle(x1, y1 + r, x2, y2 - r, **kwargs)
 
     def center_window(self):
+        """center窗口相关处理。"""
         self.splash.update_idletasks()
         screen_width = self.splash.winfo_screenwidth()
         screen_height = self.splash.winfo_screenheight()
@@ -139,6 +148,7 @@ class ModernSplashScreen:
         self.splash.geometry(f"+{x}+{y}")
 
     def _fade_in_item(self, item, item_type='text', target_fill=None, steps=12):
+        """内部fadein条目相关处理。"""
         if not self.animation_running:
             return
         self.canvas.itemconfig(item, state='normal')
@@ -146,6 +156,7 @@ class ModernSplashScreen:
             return
         stipple_levels = ['gray12', 'gray25', 'gray50', 'gray75']
         def step(i=0):
+            """step相关处理。"""
             if not self.animation_running:
                 return
             if i < len(stipple_levels):
@@ -162,6 +173,7 @@ class ModernSplashScreen:
         step()
 
     def create_ui_elements(self):
+        """创建界面elements。"""
         cx = 260
 
         try:
@@ -216,7 +228,9 @@ class ModernSplashScreen:
                                                     state='normal')
 
     def fade_in(self):
+        """fadein相关处理。"""
         def animate_fade_in(alpha=0.0):
+            """animatefadein相关处理。"""
             if alpha < 1.0 and self.animation_running:
                 self.splash.attributes('-alpha', alpha)
                 self.splash.after(25, lambda: animate_fade_in(alpha + 0.05))
@@ -228,12 +242,15 @@ class ModernSplashScreen:
         animate_fade_in()
         
     def _show_item(self, item):
+        """内部显示条目。"""
         self._fade_in_item(item)
 
     def show_content_animation(self):
+        """显示内容animation。"""
         self.splash.after(700, self.start_progress_animation)
 
     def _animate_dots(self):
+        """内部animatedots相关处理。"""
         if not self.animation_running:
             return
         self._dots_frame = (self._dots_frame + 1) % 4
@@ -245,9 +262,11 @@ class ModernSplashScreen:
         self.splash.after(400, self._animate_dots)
 
     def start_progress_animation(self):
+        """启动进度animation。"""
         self._animate_dots()
 
         def animate_progress(progress=0):
+            """animate进度相关处理。"""
             if progress <= 100 and self.animation_running:
                 total_w = self._bar_x2 - self._bar_x1
                 progress_w = self._bar_x1 + (progress / 100.0) * total_w
@@ -280,7 +299,9 @@ class ModernSplashScreen:
         animate_progress()
 
     def fade_out(self):
+        """fadeout相关处理。"""
         def animate_fade_out(alpha=1.0):
+            """animatefadeout相关处理。"""
             if alpha > 0.0 and self.animation_running:
                 self.splash.attributes('-alpha', alpha)
                 self.splash.after(20, lambda: animate_fade_out(alpha - 0.05))
@@ -290,15 +311,18 @@ class ModernSplashScreen:
         animate_fade_out()
 
     def show(self):
+        """显示相关操作。"""
         self.splash.update()
         self.splash.after(0, self.fade_in)
         return self.splash
 
     def close(self):
+        """关闭相关操作。"""
         self.animation_running = False
         self.splash.destroy()
 
     def update_status(self, text, progress=None):
+        """更新状态。"""
         if hasattr(self, 'subtitle_item'):
             self.canvas.itemconfig(self.subtitle_item, text=text)
         
@@ -310,10 +334,12 @@ class ModernSplashScreen:
         self.splash.update()
 
 def show_loading_page(root):
+    """显示loading页面。"""
     splash = ModernSplashScreen(root)
     splash_root = splash.show()
     
     def init_app():
+        """初始化app。"""
         stages = [
             ("浮士德正在检查系统环境...", 10),
             ("检测梅菲斯特剩余燃料...", 25),
@@ -337,6 +363,7 @@ def show_loading_page(root):
     splash_root.mainloop()
 
 def create_simple_splash(root):
+    """创建simplesplash。"""
     splash = ModernSplashScreen(root)
     splash_root = splash.show()
     return splash, splash_root

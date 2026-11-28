@@ -1,3 +1,5 @@
+"""成就定义：<ach_magical_girl_tragedy>。"""
+
 
 from __future__ import annotations
 
@@ -9,7 +11,9 @@ MENTAL_THRESHOLD = 0
 
 class MagicalGirlTragedyAchievement(MentalThresholdAchievement):
 
+    """MagicalGirlTragedy成就类。"""
     def __init__(self) -> None:
+        """初始化对象状态。"""
         super().__init__(
             ach_id="ach_magical_girl_tragedy",
             name="魔法少女的悲剧",

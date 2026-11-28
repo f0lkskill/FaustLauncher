@@ -40,6 +40,7 @@ class Namespace:
     __slots__ = ('_name', '_items')
 
     def __init__(self, name: str) -> None:
+        """初始化对象状态。"""
         self._name = name
         self._items: Dict[str, Any] = {}
 
@@ -77,6 +78,7 @@ class Namespace:
     # ---------- 使用方接口 ----------
 
     def __getattr__(self, item: str) -> Any:
+        """内部getattr相关处理。"""
         if item.startswith('_'):
             raise AttributeError(item)
         try:
@@ -87,6 +89,7 @@ class Namespace:
                 f"（现有：{', '.join(sorted(self._items)) or '空'}）") from None
 
     def __getitem__(self, item: str) -> Any:
+        """容器的 Python 协议实现。"""
         try:
             return self._items[str(item)]
         except KeyError:
@@ -94,12 +97,15 @@ class Namespace:
                 f"命名空间 {self._name} 里没有 {item}") from None
 
     def __contains__(self, item: object) -> bool:
+        """容器的 Python 协议实现。"""
         return str(item) in self._items
 
     def __iter__(self) -> Iterator[str]:
+        """容器的 Python 协议实现。"""
         return iter(self._items)
 
     def __len__(self) -> int:
+        """容器的 Python 协议实现。"""
         return len(self._items)
 
     def keys(self) -> List[str]:
@@ -107,6 +113,7 @@ class Namespace:
         return list(self._items)
 
     def __repr__(self) -> str:
+        """返回用于调试的对象表示。"""
         return f"<Namespace {self._name}: {', '.join(sorted(self._items)) or '空'}>"
 
 
@@ -116,6 +123,7 @@ class NamespaceRegistry:
     __slots__ = ('_spaces',)
 
     def __init__(self) -> None:
+        """初始化对象状态。"""
         self._spaces: Dict[str, Namespace] = {}
 
     # ---------- 提供方接口 ----------
@@ -168,6 +176,7 @@ class NamespaceRegistry:
         return {name: sorted(space.keys()) for name, space in self._spaces.items()}
 
     def __getattr__(self, name: str) -> Namespace:
+        """内部getattr相关处理。"""
         if name.startswith('_'):
             raise AttributeError(name)
         target = self._spaces.get(name)
@@ -179,19 +188,24 @@ class NamespaceRegistry:
         return target
 
     def __getitem__(self, name: str) -> Namespace:
+        """容器的 Python 协议实现。"""
         target = self._spaces.get(str(name))
         if target is None:
             raise KeyError(f"命名空间 {name} 尚未注册")
         return target
 
     def __contains__(self, name: object) -> bool:
+        """容器的 Python 协议实现。"""
         return str(name) in self._spaces
 
     def __iter__(self) -> Iterator[str]:
+        """容器的 Python 协议实现。"""
         return iter(self.spaces())
 
     def __len__(self) -> int:
+        """容器的 Python 协议实现。"""
         return len(self._spaces)
 
     def __repr__(self) -> str:
+        """返回用于调试的对象表示。"""
         return f"<NamespaceRegistry {', '.join(self.spaces()) or '空'}>"

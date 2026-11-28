@@ -1,3 +1,5 @@
+"""字体选择工具。"""
+
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 import os
@@ -8,7 +10,9 @@ from functions.base.color_scheme import C
 from functions.base.custom_notebook import CustomNotebook
 
 class FontSelectorGUI:
+    """字体Selector界面。"""
     def __init__(self, window, root):
+        """初始化对象状态。"""
         self.root = tk.Toplevel(root)
         self.root.withdraw()
 
@@ -45,12 +49,14 @@ class FontSelectorGUI:
         self.root.protocol("WM_DELETE_WINDOW", self.on_close)
         
     def on_close(self):
+        """响应close。"""
         for preview_data in [self.context_preview_data, self.title_preview_data]:
             preview_data['photo_refs'] = []
         self.root.destroy()
 
     def create_widgets(self):
         
+        """创建widgets。"""
         main_frame = tk.Frame(self.root, bg=self.parent.bg_color)
         main_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=10)
         
@@ -66,6 +72,7 @@ class FontSelectorGUI:
         self.create_font_tab(title_frame, "Title", self.title_font_path, self.title_preview_data)
         
     def create_font_tab(self, parent, font_type, font_path, preview_data):
+        """创建字体标签页。"""
         info_frame = tk.Frame(parent, bg=self.parent.bg_color)
         info_frame.pack(fill=tk.X, padx=10, pady=(10, 5))
         
@@ -113,6 +120,7 @@ class FontSelectorGUI:
         self.update_font_info(font_type, font_path, preview_data)
     
     def create_button(self, parent, text, command, **pack_args):
+        """创建按钮。"""
         btn = tk.Button(parent, text=text, command=command,
                        font=('Microsoft YaHei UI', 10),
                         bg=C.LEGACY_BLUE, fg=C.TEXT_WHITE,
@@ -123,8 +131,10 @@ class FontSelectorGUI:
         btn.pack(**pack_args)
         
         def on_enter(e):
+            """响应enter。"""
             btn.config(bg=C.LEGACY_BLUE_HOVER)
         def on_leave(e):
+            """响应leave。"""
             btn.config(bg=C.LEGACY_BLUE)
         
         btn.bind("<Enter>", on_enter)
@@ -133,6 +143,7 @@ class FontSelectorGUI:
         return btn
     
     def update_font_info(self, font_type, font_path, preview_data):
+        """更新字体信息。"""
         info_text = preview_data['info_text']
         info_text.config(state=tk.NORMAL)
         info_text.delete(1.0, tk.END)
@@ -168,6 +179,7 @@ class FontSelectorGUI:
         info_text.config(state=tk.DISABLED)
     
     def update_preview(self, font_path, font_type, preview_data):
+        """更新preview。"""
         try:
             img = Image.new('RGB', (600, 450), color=self.parent.lighten_bg_color)
             draw = ImageDraw.Draw(img)
@@ -197,6 +209,7 @@ class FontSelectorGUI:
             self.show_error_preview(font_type, preview_data, str(e))
     
     def show_error_preview(self, font_type, preview_data, error_msg=None):
+        """显示错误preview。"""
         img = Image.new('RGB', (600, 250), color=self.parent.lighten_bg_color)
         draw = ImageDraw.Draw(img)
         
@@ -235,6 +248,7 @@ class FontSelectorGUI:
         preview_data['photo_refs'].append(photo)
     
     def select_font_file(self, font_type, target_path, preview_data):
+        """选择字体文件。"""
         file_path = filedialog.askopenfilename(
             title=f"选择{font_type}字体文件",
             filetypes=[("TrueType字体文件", "*.ttf"), ("OpenType字体文件", "*.otf"), ("所有文件", "*.*")]
@@ -261,6 +275,7 @@ class FontSelectorGUI:
                                    f"请确保选择的是有效的TrueType字体文件(.ttf)")
     
     def delete_font(self, font_type, target_path, preview_data):
+        """删除字体。"""
         if not os.path.exists(target_path):
             messagebox.showinfo("提示", f"当前没有已替换的{font_type}字体文件，无需删除")
             return
@@ -277,6 +292,7 @@ class FontSelectorGUI:
             messagebox.showerror("错误", f"删除字体失败:\n{str(e)}")
     
     def run(self):
+        """执行相关操作。"""
         self.root.update_idletasks()
         x = (self.root.winfo_screenwidth() // 2) - (self.root.winfo_width() // 2)
         y = (self.root.winfo_screenheight() // 2) - (self.root.winfo_height() // 2)
@@ -285,6 +301,7 @@ class FontSelectorGUI:
         self.root.wait_window()
 
 def select_font_gui(root):
+    """选择字体界面。"""
     try:
         app = FontSelectorGUI(root, root.root)
         app.run()

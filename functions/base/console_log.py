@@ -88,6 +88,7 @@ def _mirror_to_log(line: str) -> None:
 
 class _ConsoleStream:
 
+    """内部ConsoleStream类。"""
     def __init__(self, raw, name: str):
         """包装原始输出流，缓存未满行并持有锁。"""
         self._raw = raw

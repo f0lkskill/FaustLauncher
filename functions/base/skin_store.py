@@ -213,6 +213,7 @@ def skin_roots() -> list:
 
 
 def _read_json(path: str) -> dict:
+    """内部读取json。"""
     try:
         with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
@@ -454,6 +455,7 @@ def prefetch(wait: bool = False) -> dict:
             _THEMES["refreshing"] = True
 
     def _work():
+        """内部work相关处理。"""
         try:
             text = _fetch_note_text(False)
             items = parse_themes(text) if text.strip() else []
@@ -484,6 +486,7 @@ def prefetch(wait: bool = False) -> dict:
 
 
 def _fire_change() -> None:
+    """内部firechange相关处理。"""
     hook = _CHANGE_HOOK.get("fn")
     if not callable(hook):
         return
@@ -642,6 +645,7 @@ def _local_theme_icons(themes):
 # ---------------- 版本判断与安装 ----------------
 
 def _norm_version(value) -> str:
+    """内部norm版本相关处理。"""
     return str(value or "").strip().lower().lstrip("v").strip()
 
 
@@ -952,6 +956,7 @@ class ProgressSink:
     """
 
     def __init__(self, skin_id: str, cb=None, task: str = ""):
+        """初始化对象状态。"""
         self.skin_id = skin_id
         self.task = task or skin_id
         self.cb = cb
@@ -1000,19 +1005,23 @@ class _TextSink:
     """替代 tkinter 的 ``StringVar``: 下载链路里的"当前阶段"文案落到这里。"""
 
     def __init__(self, on_set=None):
+        """初始化对象状态。"""
         self._value = ""
         self._on_set = on_set
 
     def set(self, value):
+        """设置相关操作。"""
         self._value = str(value)
         if self._on_set is not None:
             self._on_set(self._value)
 
     def get(self):
+        """获取相关操作。"""
         return self._value
 
 
 def _fmt_bytes(size) -> str:
+    """内部fmtbytes相关处理。"""
     value = float(size or 0)
     for unit in ("B", "KB", "MB", "GB"):
         if value < 1024 or unit == "GB":

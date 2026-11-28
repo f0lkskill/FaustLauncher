@@ -1,3 +1,5 @@
+"""独立 Mod 管理器窗口。"""
+
 #! Mod管理器窗口 (工具页)
 
 import base64
@@ -36,9 +38,11 @@ EXT_INFO = {
 }
 
 def _get_mod_dir():
+    """内部获取Mod目录。"""
     return get_mod_root_dir()
 
 def _sync_manifest(add=(), remove=()):
+    """内部同步manifest。"""
     try:
         mod_dir = _get_mod_dir()
         path = os.path.join(mod_dir, MANIFEST_NAME)
@@ -67,6 +71,7 @@ def _sync_manifest(add=(), remove=()):
         print(f"[Mod管理器] 同步 mod 清单失败: {e}")
 
 def _safe_raw_name(raw_name):
+    """内部saferaw名称相关处理。"""
     n = str(raw_name or '').strip()
     if not n or n in ('.', '..'):
         return ''
@@ -77,16 +82,19 @@ def _safe_raw_name(raw_name):
     return n
 
 def _split_disabled(filename):
+    """内部splitdisabled相关处理。"""
     s = str(filename)
     if s.lower().endswith(DISABLED_SUFFIX):
         return s[:-len(DISABLED_SUFFIX)], True
     return s, False
 
 def _is_mod_file(filename):
+    """内部判断Mod文件。"""
     original, _ = _split_disabled(filename)
     return os.path.splitext(original)[1].lower() in ALLOWED_EXTENSIONS
 
 def _scan_files():
+    """内部扫描文件。"""
     mod_dir = _get_mod_dir()
     files = []
     if os.path.exists(mod_dir):
@@ -119,6 +127,7 @@ def _scan_files():
     return files
 
 def _copy_into_mod_dir(path):
+    """内部copyintoMod目录相关处理。"""
     if not os.path.isfile(path):
         return False, os.path.basename(path), "不是有效文件"
     ext = os.path.splitext(os.path.basename(path))[1].lower()
@@ -133,6 +142,7 @@ def _copy_into_mod_dir(path):
         return False, os.path.basename(path), f"复制失败: {e}"
 
 def _add_files(paths):
+    """内部添加文件。"""
     if not paths:
         return []
     results = []
@@ -145,6 +155,7 @@ def _add_files(paths):
     return results
 
 def _toggle_file(raw_name):
+    """内部toggle文件相关处理。"""
     mod_dir = _get_mod_dir()
     safe = _safe_raw_name(raw_name)
     if not safe:
@@ -161,6 +172,7 @@ def _toggle_file(raw_name):
         return {'error': f"操作失败: {e}"}
 
 def _delete_file(raw_name):
+    """内部删除文件。"""
     mod_dir = _get_mod_dir()
     safe = _safe_raw_name(raw_name)
     if not safe:
@@ -189,6 +201,7 @@ def _delete_file(raw_name):
     return {'error': None}
 
 def _rebank_info(raw_name):
+    """内部rebank信息相关处理。"""
     safe = _safe_raw_name(raw_name)
     if not safe:
         return {'error': f"文件名不合法: {raw_name!r}"}
@@ -223,10 +236,13 @@ def _rebank_info(raw_name):
 
 class ModManagerApi(WindowChromeBridge):
 
+    """ModManagerApi类。"""
     def get_data(self):
+        """获取数据。"""
         return {'mod_dir': _get_mod_dir(), 'files': _scan_files()}
 
     def pick_files(self):
+        """pick文件相关处理。"""
         try:
             import webview
             window = webview.windows[0]
@@ -242,6 +258,7 @@ class ModManagerApi(WindowChromeBridge):
         return _add_files(paths)
 
     def confirm_delete(self, name):
+        """confirmdelete相关处理。"""
         try:
             import webview
             return bool(webview.windows[0].create_confirmation_dialog(
@@ -251,15 +268,19 @@ class ModManagerApi(WindowChromeBridge):
             return True
 
     def toggle(self, raw_name):
+        """toggle相关处理。"""
         return _toggle_file(raw_name)
 
     def delete_file(self, raw_name):
+        """删除文件。"""
         return _delete_file(raw_name)
 
     def rebank_info(self, raw_name):
+        """rebank信息相关处理。"""
         return _rebank_info(raw_name)
 
     def open_file(self, raw_name):
+        """打开文件。"""
         try:
             path = os.path.join(_get_mod_dir(), raw_name)
             if os.path.exists(path):
@@ -269,6 +290,7 @@ class ModManagerApi(WindowChromeBridge):
         return {'error': None}
 
     def open_dir(self):
+        """打开目录。"""
         try:
             mod_dir = _get_mod_dir()
             if os.path.exists(mod_dir):
@@ -278,6 +300,7 @@ class ModManagerApi(WindowChromeBridge):
         return {'error': None}
 
     def assets(self):
+        """assets相关处理。"""
         try:
             icon_path = os.path.join(_PROJECT_ROOT, "assets", "images", "icon", "icon.png")
             with open(icon_path, "rb") as f:
@@ -286,15 +309,18 @@ class ModManagerApi(WindowChromeBridge):
             return {"bg": None}
 
 def _safe_js_str(obj):
+    """内部safe脚本str相关处理。"""
     return json.dumps(obj, ensure_ascii=False).replace('\u2028', '\\u2028').replace('\u2029', '\\u2029')
 
 def _notify(window, func_name, arg):
+    """内部通知相关操作。"""
     try:
         window.evaluate_js(f"window.{func_name} && window.{func_name}({_safe_js_str(arg)})")
     except Exception as e:
         print(f"[Mod管理器] 通知页面失败: {e}")
 
 def _on_drop(event):
+    """内部响应drop。"""
     try:
         files = (event.get('dataTransfer') or {}).get('files', [])
         paths = [f.get('pywebviewFullPath') for f in files if f.get('pywebviewFullPath')]
@@ -309,6 +335,7 @@ def _on_drop(event):
         print(f"[Mod管理器] 处理拖拽失败: {e}")
 
 def _center_xy(width, height):
+    """内部centerxy相关处理。"""
     try:
         import ctypes
         u = ctypes.windll.user32
@@ -319,6 +346,7 @@ def _center_xy(width, height):
         return None, None
 
 def run_mod_manager_window(debug: bool = False):
+    """执行Modmanager窗口。"""
     try:
         import webview
     except BaseException as e:
@@ -369,6 +397,7 @@ def run_mod_manager_window(debug: bool = False):
         apply_window_chrome(window, show_when_ready=True)
 
         def _register_dnd():
+            """内部注册dnd。"""
             try:
                 window.dom.document.events.drop += _on_drop
                 print("[Mod管理器] 拖拽监听已注册")
@@ -394,6 +423,7 @@ def run_mod_manager_window(debug: bool = False):
         raise SystemExit(1)
 
 def open_mod_manager_window(root=None):
+    """打开Modmanager窗口。"""
     if getattr(sys, "frozen", False):
         cmd = [os.path.abspath(sys.executable), "--mod-manager-window"]
     else:

@@ -42,10 +42,12 @@ def _patch_download_gui() -> None:
     from functions.pages.download.headless_gui import HeadlessDownloadGUI
 
     def _main_gui(parent=None, config_path="", **_kwargs):
+        """内部主入口界面相关处理。"""
         return HeadlessDownloadGUI(config_path, download_func=zd.download_and_extract_gui)
 
     def _download_gui(parent=None, config_path="", auto_start=True,
                       download_func=None, task=None, **_kwargs):
+        """内部下载界面相关处理。"""
         return HeadlessDownloadGUI(config_path, auto_start=auto_start,
                                    download_func=download_func, task=task)
 
@@ -82,7 +84,9 @@ def _patch_dialogs() -> None:
     }
 
     def _make_handler(kind, default):
+        """内部生成handler。"""
         def _handler(*args, **kwargs):
+            """内部handler相关处理。"""
             title = args[0] if len(args) > 0 else kwargs.get("title", "")
             message = args[1] if len(args) > 1 else kwargs.get("message", "")
             print(f"[Headless] 对话框已静默({kind}): {title} | {message}")
@@ -120,6 +124,7 @@ def _audit_tk() -> None:
     original_tk_init = tkinter.Tk.__init__
 
     def _patched_tk_init(self, *args, **kwargs):
+        """内部patchedtkinit相关处理。"""
         print("[Headless] 警告: 仍有代码调用 tk.Tk()，该窗口不会响应（请补充静默替身）")
         return original_tk_init(self, *args, **kwargs)
 

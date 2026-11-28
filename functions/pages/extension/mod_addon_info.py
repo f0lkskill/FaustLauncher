@@ -1,3 +1,5 @@
+"""Mod/插件信息聚合页的数据整理与展示。"""
+
 import tkinter as tk
 from tkinter import ttk, messagebox
 import os
@@ -10,7 +12,9 @@ from functions.base.style_utils import apply_scrollbar_style, RoundedFrame, Roun
 from functions.base.common.json_io import read_json, write_json
 
 class ModAddonManagerPage:
+    """Mod插件Manager页面。"""
     def __init__(self, parent_frame, bg_color, lighten_bg_color, app):
+        """初始化对象状态。"""
         self.parent = parent_frame
         self.app = app
         self.bg_color = bg_color
@@ -30,6 +34,7 @@ class ModAddonManagerPage:
         self.refresh_all_tabs()
     
     def create_widgets(self):
+        """创建widgets。"""
         content_frame = RoundedFrame(self.parent,
                                      bg=self.lighten_bg_color,
                                      border_color=border_color(self.lighten_bg_color),
@@ -45,6 +50,7 @@ class ModAddonManagerPage:
 
     def create_addons_tab(self):
         
+        """创建插件标签页。"""
         addons_frame = tk.Frame(self.notebook, bg=self.lighten_bg_color)
         self.notebook.add(addons_frame, text="🔌 插件管理")
         self.addons_list_frame = tk.Frame(addons_frame, bg=self.bg_color)
@@ -55,6 +61,7 @@ class ModAddonManagerPage:
         self.show_addons()
     
     def create_new_mods_tab(self):
+        """创建newMod标签页。"""
         mods_frame = tk.Frame(self.notebook, bg=self.lighten_bg_color)
         self.notebook.add(mods_frame, text="🎮 Mod管理")
         self.mods_list_frame = tk.Frame(mods_frame, bg=self.bg_color)
@@ -66,6 +73,7 @@ class ModAddonManagerPage:
     
     def create_styled_button(self, parent, text, command, color):
         
+        """创建styled按钮。"""
         color_map = {
             '#27ae60': C.LEGACY_GREEN_HOVER,
             '#2980b9': C.ACCENT_SECONDARY,
@@ -87,8 +95,10 @@ class ModAddonManagerPage:
                        cursor='hand2')
         
         def on_enter(e):
+            """响应enter。"""
             btn.config(bg=hover_color)
         def on_leave(e):
+            """响应leave。"""
             btn.config(bg=modern_color) # type: ignore
         
         btn.bind("<Enter>", on_enter)
@@ -97,10 +107,12 @@ class ModAddonManagerPage:
         return btn
     
     def darken_color(self, color, factor=0.85):
+        """darken颜色相关处理。"""
         return darken_color(color, factor)
     
     def show_addons(self):
         
+        """显示插件。"""
         self.addon_manager.scan_addons()
         self.all_addons = self.addon_manager.get_all_addons()
         self._load_enabled_state(self.all_addons, 'addon_info.json', self.addon_enabled)
@@ -110,6 +122,7 @@ class ModAddonManagerPage:
 
     def _show_detail(self, item, item_type):
         
+        """内部显示detail。"""
         info = item['info']
         display_name = info.get('name', item['name'])
         enabled = self._is_enabled(item_type, item['name'])
@@ -159,6 +172,7 @@ class ModAddonManagerPage:
         canvas.configure(yscrollcommand=scrollbar.set)
 
         def _on_mw(event):
+            """内部响应mw。"""
             canvas.yview_scroll(int(-1*(event.delta/120)), "units")
         canvas.bind("<MouseWheel>", _on_mw)
         scroll_frame.bind("<MouseWheel>", _on_mw)
@@ -235,6 +249,7 @@ class ModAddonManagerPage:
         del_btn.pack(side=tk.RIGHT, padx=3)
 
     def on_addon_setting_change(self, addon, setting_key, value_var):
+        """响应插件settingchange。"""
         try:
             if isinstance(value_var, tk.BooleanVar):
                 new_value = value_var.get()
@@ -269,6 +284,7 @@ class ModAddonManagerPage:
             messagebox.showerror("错误", f"更新插件设置失败: {str(e)}")
     
     def run_addon(self, addon_name):
+        """执行插件。"""
         try:
             self.addon_manager.run_addon(addon_name)
             messagebox.showinfo("成功", f"插件 {addon_name} 已运行")
@@ -277,10 +293,12 @@ class ModAddonManagerPage:
             messagebox.showerror("错误", f"运行插件失败: {str(e)}")
     
     def open_url(self, url):
+        """打开链接。"""
         import webbrowser
         webbrowser.open(url)
     
     def show_mods(self):
+        """显示Mod。"""
         mods_dir = ModManager.mod_dir
         if not os.path.exists(mods_dir):
             os.makedirs(mods_dir)
@@ -305,6 +323,7 @@ class ModAddonManagerPage:
                            self.all_mods, self.mod_page, self.mod_enabled, 'mod')
 
     def _load_enabled_state(self, items, info_filename, enabled_dict):
+        """内部加载enabled状态。"""
         for item in items:
             info_path = os.path.join(item['path'], info_filename)
             try:
@@ -317,10 +336,12 @@ class ModAddonManagerPage:
                 enabled_dict[item['name']] = True
 
     def _is_enabled(self, item_type, item_name):
+        """内部判断enabled。"""
         d = self.addon_enabled if item_type == 'addon' else self.mod_enabled
         return d.get(item_name, True)
 
     def _toggle_enabled(self, item_type, item):
+        """内部toggleenabled相关处理。"""
         d = self.addon_enabled if item_type == 'addon' else self.mod_enabled
         info_filename = 'addon_info.json' if item_type == 'addon' else 'mod_info.json'
         current = d.get(item['name'], True)
@@ -336,12 +357,14 @@ class ModAddonManagerPage:
         return not current
 
     def _addon_prev_page(self):
+        """内部插件上一项页面相关处理。"""
         if self.addon_page > 0:
             self.addon_page -= 1
             self._display_page(self.addons_list_frame, self.addons_page_frame,
                                self.all_addons, self.addon_page, self.addon_enabled, 'addon')
 
     def _addon_next_page(self):
+        """内部插件下一项页面相关处理。"""
         total = max(1, (len(self.all_addons) + self.items_per_page - 1) // self.items_per_page)
         if self.addon_page < total - 1:
             self.addon_page += 1
@@ -349,12 +372,14 @@ class ModAddonManagerPage:
                                self.all_addons, self.addon_page, self.addon_enabled, 'addon')
 
     def _mod_prev_page(self):
+        """内部Mod上一项页面相关处理。"""
         if self.mod_page > 0:
             self.mod_page -= 1
             self._display_page(self.mods_list_frame, self.mods_page_frame,
                                self.all_mods, self.mod_page, self.mod_enabled, 'mod')
 
     def _mod_next_page(self):
+        """内部Mod下一项页面相关处理。"""
         total = max(1, (len(self.all_mods) + self.items_per_page - 1) // self.items_per_page)
         if self.mod_page < total - 1:
             self.mod_page += 1
@@ -362,6 +387,7 @@ class ModAddonManagerPage:
                                self.all_mods, self.mod_page, self.mod_enabled, 'mod')
 
     def _display_page(self, list_frame, page_frame, items, page, enabled_dict, item_type):
+        """内部展示页面。"""
         for widget in list_frame.winfo_children():
             widget.destroy()
         for widget in page_frame.winfo_children():
@@ -396,6 +422,7 @@ class ModAddonManagerPage:
         next_btn.pack(side=tk.RIGHT, padx=10)
 
     def _create_compact_row(self, parent, item, item_type, enabled_dict):
+        """内部创建compactrow。"""
         name_key = item['name']
 
         enabled = enabled_dict.get(name_key, True)
@@ -445,6 +472,7 @@ class ModAddonManagerPage:
         detail_btn.pack(side=tk.RIGHT, padx=(0, 5))
     
     def on_mod_setting_change(self, mod, setting_key, value_var):
+        """响应Modsettingchange。"""
         try:
             if isinstance(value_var, tk.BooleanVar):
                 new_value = value_var.get()
@@ -470,6 +498,7 @@ class ModAddonManagerPage:
             messagebox.showerror("错误", f"更新Mod设置失败: {str(e)}")
     
     def delete_mod(self, mod_name):
+        """删除Mod。"""
         mod_path = os.path.join(ModManager.mod_dir, mod_name)
         if os.path.exists(mod_path):
             if messagebox.askyesno("确认删除", f"确定要删除Mod {mod_name} 吗？"):
@@ -482,15 +511,18 @@ class ModAddonManagerPage:
                     messagebox.showerror("错误", f"删除Mod失败: {str(e)}")
     
     def refresh_mods_tab(self):
+        """刷新Mod标签页。"""
         self.show_mods()
     
     def open_addon_folder(self, path):
+        """打开插件folder。"""
         if os.path.exists(path):
             os.startfile(path)
         else:
             messagebox.showinfo("信息", "插件文件夹不存在")
     
     def delete_addon(self, addon_name):
+        """删除插件。"""
         if messagebox.askyesno("确认删除", f"确定要删除插件 {addon_name} 吗？"):
             if self.addon_manager.remove_addon(addon_name):
                 self.refresh_addons_tab()
@@ -499,11 +531,14 @@ class ModAddonManagerPage:
                 messagebox.showerror("错误", f"删除插件 {addon_name} 失败")
     
     def refresh_addons_tab(self):
+        """刷新插件标签页。"""
         self.show_addons()
 
     def refresh_all_tabs(self):
+        """刷新全部tabs。"""
         self.refresh_addons_tab()
         self.refresh_mods_tab()
 
 def init_mod_addon_manager(parent_frame, bg_color, lighten_bg_color, app):
+    """初始化Mod插件manager。"""
     return ModAddonManagerPage(parent_frame, bg_color, lighten_bg_color, app)

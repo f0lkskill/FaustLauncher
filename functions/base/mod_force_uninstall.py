@@ -128,6 +128,7 @@ def _rebank_target(path: str):
 
 
 def _listdir_safe(path: str):
+    """内部listdirsafe相关处理。"""
     try:
         return sorted(os.listdir(path))
     except OSError:
@@ -208,6 +209,7 @@ def _bank_target(base: str):
 
 
 def _exists(kind: str, target) -> bool:
+    """内部exists相关处理。"""
     if not target:
         return False
     return os.path.isdir(target) if kind == "carra2" else os.path.isfile(target)
@@ -477,6 +479,7 @@ def force_uninstall_mod(mod_name: str, *, dry_run: bool = False, log=None):
 
 
 def _describe(result) -> str:
+    """内部describe相关处理。"""
     lines = [
         f"扫描到 {result['total']} 个 mod",
         f"已卸载 {len(result['uninstalled'])} 个",

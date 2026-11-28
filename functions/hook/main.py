@@ -1,3 +1,5 @@
+"""钩子模块命令行入口。"""
+
 
 from __future__ import annotations
 
@@ -16,9 +18,11 @@ from . import updater
 from .memory import ProcessMemoryReader
 
 def _print(message: str) -> None:
+    """内部print相关处理。"""
     print(message, flush=True)
 
 def cmd_status(args) -> int:
+    """cmd状态相关处理。"""
     info = updater.status(args.game)
     _print(json.dumps(info, ensure_ascii=False, indent=1))
     if info.get("local_exists"):
@@ -31,6 +35,7 @@ def cmd_status(args) -> int:
     return 0
 
 def cmd_update(args) -> int:
+    """cmd更新相关处理。"""
     result = updater.update_hook_index(
         game_path=args.game, force=args.force, push=not args.no_push,
         dry_run=args.dry_run, allow_download=not args.no_download,
@@ -45,6 +50,7 @@ def cmd_update(args) -> int:
     return 0 if result.status in ("updated", "up-to-date", "partial", "dry-run") else 1
 
 def cmd_pull(args) -> int:
+    """cmdpull相关处理。"""
     index = index_mod.refresh_local_from_cloud(allow_refresh=True, on_log=_print)
     if index is None:
         _print("云端没有可用索引")
@@ -53,6 +59,7 @@ def cmd_pull(args) -> int:
     return 0
 
 def cmd_push(args) -> int:
+    """cmdpush相关处理。"""
     index = index_mod.load_local()
     if index is None:
         _print("本地没有缓存索引，先跑 update")
@@ -61,6 +68,7 @@ def cmd_push(args) -> int:
     return 0 if result.get("ok") else 1
 
 def cmd_show(args) -> int:
+    """cmdshow相关处理。"""
     index = index_mod.load_local()
     if index is None:
         _print("本地没有缓存索引")
@@ -69,6 +77,7 @@ def cmd_show(args) -> int:
     return 0
 
 def cmd_gen_header(args) -> int:
+    """cmdgenheader相关处理。"""
     index = index_mod.load_local()
     if index is None:
         _print("本地没有缓存索引，先跑 update")
@@ -83,6 +92,7 @@ def cmd_gen_header(args) -> int:
     return 0
 
 def cmd_decrypt(args) -> int:
+    """cmddecrypt相关处理。"""
     paths = paths_mod.game_paths(args.game)
     if not paths.ok:
         _print(f"游戏文件缺失: {paths.missing()}")
@@ -103,6 +113,7 @@ def cmd_decrypt(args) -> int:
     return 0 if result.ok else 1
 
 def cmd_dump(args) -> int:
+    """cmd转储相关处理。"""
     paths = paths_mod.game_paths(args.game)
     if not paths.ok:
         _print(f"游戏文件缺失: {paths.missing()}")
@@ -128,6 +139,7 @@ def cmd_dump(args) -> int:
     return 0 if result.ok else 1
 
 def cmd_locate(args) -> int:
+    """cmdlocate相关处理。"""
     paths = paths_mod.game_paths(args.game)
     reader = ProcessMemoryReader(args.process)
     if not reader.attach():
@@ -162,6 +174,7 @@ def cmd_locate(args) -> int:
         reader.detach()
 
 def cmd_symbols(args) -> int:
+    """cmd符号相关处理。"""
     paths = paths_mod.game_paths(args.game)
     dump_cs_path = args.dump_cs
     if not dump_cs_path:
@@ -181,6 +194,7 @@ def cmd_symbols(args) -> int:
     return 0
 
 def build_parser() -> argparse.ArgumentParser:
+    """构建parser。"""
     parser = argparse.ArgumentParser(
         prog="python -m functions.hook.main",
         description="边狱巴士偏移索引（hook_index）：解密 → dump → 云端笔记")
@@ -236,6 +250,7 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 def main(argv=None) -> int:
+    """主入口相关处理。"""
     parser = build_parser()
     args = parser.parse_args(argv)
     return int(args.func(args) or 0)

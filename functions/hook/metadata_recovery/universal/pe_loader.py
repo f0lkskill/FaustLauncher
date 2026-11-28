@@ -1,3 +1,5 @@
+"""IL2CPP metadata 恢复流程辅助模块：<pe_loader>。"""
+
 #!/usr/bin/env python3
 
 from __future__ import annotations
@@ -6,10 +8,12 @@ import struct
 from dataclasses import dataclass
 
 class PEFormatError(ValueError):
+    """PEFormat错误类。"""
     pass
 
 @dataclass
 class Section:
+    """Section类。"""
     name: str
     virtual_address: int
     virtual_size: int
@@ -19,6 +23,7 @@ class Section:
 
 @dataclass
 class PEImage:
+    """PEImage类。"""
     path: str
     data: bytes
     image_base: int
@@ -27,24 +32,29 @@ class PEImage:
 
     @property
     def text_section(self) -> Section | None:
+        """文本section相关处理。"""
         return next((s for s in self.sections if s.name == ".text"), None)
 
     def rva_to_off(self, rva: int) -> int | None:
+        """rvatooff相关处理。"""
         for s in self.sections:
             if s.virtual_address <= rva < s.virtual_address + max(s.virtual_size, s.raw_size):
                 return s.raw_offset + (rva - s.virtual_address)
         return None
 
     def va_to_off(self, va: int) -> int | None:
+        """vatooff相关处理。"""
         return self.rva_to_off(va - self.image_base)
 
     def bytes_at_va(self, va: int, size: int) -> bytes | None:
+        """bytesatva相关处理。"""
         off = self.va_to_off(va)
         if off is None:
             return None
         return self.data[off:off + size]
 
     def section_at_va(self, va: int) -> Section | None:
+        """sectionatva相关处理。"""
         rva = va - self.image_base
         for s in self.sections:
             if s.virtual_address <= rva < s.virtual_address + max(s.virtual_size, s.raw_size):
@@ -52,6 +62,7 @@ class PEImage:
         return None
 
 def load_pe(path: str) -> PEImage:
+    """加载pe。"""
     data = open(path, "rb").read()
     if data[:2] != b"MZ":
         raise PEFormatError("not a PE (missing MZ header)")

@@ -1,3 +1,5 @@
+"""成就定义：<ach_heathcliff_sunshower_hurt>。"""
+
 
 from __future__ import annotations
 
@@ -8,7 +10,9 @@ HP_RATIO = 1.0
 
 class HeathcliffSunshowerHurtAchievement(DamageTakenAchievement):
 
+    """HeathcliffSunshowerHurt成就类。"""
     def __init__(self) -> None:
+        """初始化对象状态。"""
         super().__init__(
             ach_id="ach_heathcliff_sunshower_hurt",
             name="神也会受伤吗？",

@@ -1,3 +1,5 @@
+"""进程内存读取器：封装 Win32 内存读取、模块枚举与指针扫描。"""
+
 
 from __future__ import annotations
 
@@ -37,6 +39,7 @@ MAX_USER_ADDRESS = 0x7FFFFFFF0000
 INVALID_HANDLE_VALUE = ctypes.c_void_p(-1).value
 
 class MEMORY_BASIC_INFORMATION64(ctypes.Structure):
+    """内存BASICINFORMATION64类。"""
     _fields_ = [
         ("BaseAddress", ctypes.c_ulonglong),
         ("AllocationBase", ctypes.c_ulonglong),
@@ -50,6 +53,7 @@ class MEMORY_BASIC_INFORMATION64(ctypes.Structure):
     ]
 
 class PROCESSENTRY32W(ctypes.Structure):
+    """PROCESSENTRY32W类。"""
     _fields_ = [
         ("dwSize", wintypes.DWORD),
         ("cntUsage", wintypes.DWORD),
@@ -64,6 +68,7 @@ class PROCESSENTRY32W(ctypes.Structure):
     ]
 
 class MODULEENTRY32W(ctypes.Structure):
+    """MODULEENTRY32W类。"""
     _fields_ = [
         ("dwSize", wintypes.DWORD),
         ("th32ModuleID", wintypes.DWORD),
@@ -80,6 +85,7 @@ class MODULEENTRY32W(ctypes.Structure):
 @dataclass(frozen=True)
 class RegionInfo:
 
+    """Region信息。"""
     base: int
     size: int
     protect: int
@@ -87,35 +93,43 @@ class RegionInfo:
 
     @property
     def end(self) -> int:
+        """end相关处理。"""
         return self.base + self.size
 
     @property
     def is_image(self) -> bool:
+        """判断图片。"""
         return self.type == MEM_IMAGE
 
     @property
     def is_private(self) -> bool:
+        """判断private。"""
         return self.type == MEM_PRIVATE
 
     def __contains__(self, addr: int) -> bool:
+        """容器的 Python 协议实现。"""
         return self.base <= addr < self.end
 
 @dataclass(frozen=True)
 class ModuleInfo:
+    """Module信息。"""
     name: str
     base: int
     size: int
 
     @property
     def end(self) -> int:
+        """end相关处理。"""
         return self.base + self.size
 
     def __contains__(self, addr: int) -> bool:
+        """容器的 Python 协议实现。"""
         return self.base <= addr < self.end
 
 _kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
 
 def _configure_api() -> None:
+    """内部configureapi相关处理。"""
     k = _kernel32
     k.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
     k.OpenProcess.restype = wintypes.HANDLE
@@ -143,6 +157,7 @@ def _configure_api() -> None:
 _configure_api()
 
 def find_process_id(process_name: str) -> int | None:
+    """查找进程id。"""
     wanted = process_name.lower()
     if not wanted.endswith(".exe"):
         wanted += ".exe"
@@ -162,18 +177,22 @@ def find_process_id(process_name: str) -> int | None:
     return None
 
 def is_process_running(process_name: str) -> bool:
+    """判断进程running。"""
     return find_process_id(process_name) is not None
 
 class ProcessMemoryReader:
 
+    """进程内存读取器。"""
     def __init__(self, process_name: str = "LimbusCompany.exe",
                  pid: int | None = None) -> None:
+        """初始化对象状态。"""
         self.process_name = process_name
         self.pid_override = int(pid) if pid else None
         self.pid: int | None = None
         self.handle: int | None = None
 
     def attach(self, timeout: float = 0.0, poll: float = 0.5) -> bool:
+        """attach相关处理。"""
         if self.attached:
             return True
         if self.pid_override:
@@ -199,6 +218,7 @@ class ProcessMemoryReader:
             time.sleep(poll)
 
     def detach(self) -> None:
+        """detach相关处理。"""
         if self.handle:
             _kernel32.CloseHandle(self.handle)
         self.handle = None
@@ -206,22 +226,27 @@ class ProcessMemoryReader:
 
     @property
     def attached(self) -> bool:
+        """attached相关处理。"""
         return bool(self.handle and self.pid)
 
     def __enter__(self) -> "ProcessMemoryReader":
+        """上下文管理器入口/出口。"""
         self.attach()
         return self
 
     def __exit__(self, *exc) -> None:
+        """上下文管理器入口/出口。"""
         self.detach()
 
     def __del__(self) -> None:
+        """内部del相关处理。"""
         try:
             self.detach()
         except Exception:
             pass
 
     def _module_snapshot(self, pid: int | None = None):
+        """内部modulesnapshot相关处理。"""
         pid = pid or self.pid
         flags = TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32
         snapshot = _kernel32.CreateToolhelp32Snapshot(flags, pid)
@@ -230,6 +255,7 @@ class ProcessMemoryReader:
         return snapshot
 
     def modules(self) -> dict[str, ModuleInfo]:
+        """modules相关处理。"""
         out: dict[str, ModuleInfo] = {}
         if not self.attached:
             return out
@@ -250,6 +276,7 @@ class ProcessMemoryReader:
         return out
 
     def module(self, name: str) -> ModuleInfo | None:
+        """module相关处理。"""
         mods = self.modules()
         info = mods.get(name.lower())
         if info:
@@ -260,11 +287,13 @@ class ProcessMemoryReader:
         return None
 
     def module_base(self, name: str = "GameAssembly.dll") -> int | None:
+        """modulebase相关处理。"""
         info = self.module(name)
         return info.base if info else None
 
     def regions(self, readable_only: bool = True,
                 include_images: bool = True) -> list[RegionInfo]:
+        """regions相关处理。"""
         out: list[RegionInfo] = []
         if not self.attached:
             return out
@@ -288,11 +317,13 @@ class ProcessMemoryReader:
 
     @staticmethod
     def _is_readable(protect: int) -> bool:
+        """内部判断readable。"""
         if protect & PAGE_GUARD or protect == PAGE_NOACCESS:
             return False
         return any(protect & p for p in _READABLE_PROTECTIONS)
 
     def read(self, address: int, size: int) -> bytes | None:
+        """读取相关操作。"""
         if not self.attached or address <= 0 or size <= 0:
             return None
         buffer = ctypes.create_string_buffer(size)
@@ -304,6 +335,7 @@ class ProcessMemoryReader:
         return buffer.raw[:size]
 
     def read_into(self, address: int, buffer) -> bool:
+        """读取into。"""
         if not self.attached or address <= 0:
             return False
         size = ctypes.sizeof(buffer)
@@ -313,22 +345,27 @@ class ProcessMemoryReader:
         return bool(ok) and read.value == size
 
     def read_u64(self, address: int) -> int | None:
+        """读取u64。"""
         raw = self.read(address, 8)
         return int.from_bytes(raw, "little") if raw else None
 
     def read_u32(self, address: int) -> int | None:
+        """读取u32。"""
         raw = self.read(address, 4)
         return int.from_bytes(raw, "little") if raw else None
 
     def read_i32(self, address: int) -> int | None:
+        """读取i32。"""
         raw = self.read(address, 4)
         return int.from_bytes(raw, "little", signed=True) if raw else None
 
     def read_f32(self, address: int) -> float | None:
+        """读取f32。"""
         raw = self.read(address, 4)
         return struct.unpack("<f", raw)[0] if raw else None
 
     def read_value(self, address: int, value_type: str = "int32"):
+        """读取值。"""
         vt = (value_type or "int32").lower()
         if vt in ("int32", "i32", "int"):
             return self.read_i32(address)
@@ -347,6 +384,7 @@ class ProcessMemoryReader:
         return None
 
     def read_cstring(self, address: int, max_len: int = 128) -> str:
+        """读取cstring。"""
         raw = self.read(address, max_len)
         if not raw:
             return ""
@@ -359,6 +397,7 @@ class ProcessMemoryReader:
             return text.decode("latin1", errors="replace")
 
     def follow_chain(self, address: int, offsets, value_type: str = "pointer"):
+        """follow链相关处理。"""
         if not offsets:
             return self.read_value(address, value_type)
         current = self.read_u64(address) if value_type in ("pointer", "ptr", "uint64", "u64") \
@@ -376,6 +415,7 @@ class ProcessMemoryReader:
         return None
 
     def resolve_chain_address(self, base_address: int, offsets) -> int | None:
+        """解析链address。"""
         current = base_address
         for offset in offsets:
             raw = self.read_u64(current)
@@ -387,6 +427,7 @@ class ProcessMemoryReader:
     def scan_bytes(self, pattern: bytes, ranges=None, limit: int = 8,
                    chunk: int = 8 << 20, overlap: int = 32,
                    progress=None) -> list[int]:
+        """扫描bytes。"""
         if not self.attached or not pattern:
             return []
         hits: list[int] = []
@@ -424,6 +465,7 @@ class ProcessMemoryReader:
 
     def iter_pointers(self, ranges=None, chunk: int = 8 << 20,
                       pointer_filter=None, progress=None):
+        """iterpointers相关处理。"""
         if not self.attached:
             return
         ranges = list(ranges) if ranges is not None else [
@@ -452,15 +494,19 @@ class ProcessMemoryReader:
 
     def collect_pointers(self, ranges=None, chunk: int = 8 << 20,
                          pointer_filter=None, progress=None) -> list[tuple[int, int]]:
+        """收集pointers。"""
         return list(self.iter_pointers(ranges, chunk, pointer_filter, progress))
 
     def pointer_targets(self, ptr: int, offsets, depth: int = 32) -> list[int]:
+        """pointer目标相关处理。"""
         return [ptr + off for off in offsets]
 
 def enumerate_pointer_value(reader: "ProcessMemoryReader", address: int) -> int | None:
+    """enumeratepointer值相关处理。"""
     return reader.read_u64(address)
 
 def describe_regions(regions, limit: int = 12) -> str:
+    """describeregions相关处理。"""
     lines = []
     for region in list(regions)[:limit]:
         kind = "image" if region.is_image else ("heap" if region.is_private else "other")
@@ -470,6 +516,7 @@ def describe_regions(regions, limit: int = 12) -> str:
     return "\n".join(lines)
 
 def main() -> int:
+    """主入口相关处理。"""
     import sys
 
     name = sys.argv[1] if len(sys.argv) > 1 else "LimbusCompany.exe"

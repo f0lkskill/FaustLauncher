@@ -1,3 +1,5 @@
+"""base 子模块：<terminal_banner>（具体职责见函数文档）。"""
+
 import pyfiglet, colorama
 
 FONT_ANSI_REGULAR = 'ansi_regular'
@@ -26,11 +28,13 @@ CYAN = colorama.Fore.CYAN
 RESET = colorama.Fore.RESET
 
 def get_random_color() -> str:
+    """获取random颜色。"""
     colors = [WHITE, RED, GREEM, BLUE, YELLOW, MAGENTA, CYAN]
     import random
     return random.choice(colors)
 
 def get_random_font() -> str:
+    """获取random字体。"""
     fonts = [
         FONT_ANSI_REGULAR, FONT_ANSI_SHADOW, FONT_SLANT, FONT_SMALL_SLANT,
         FONT_SMALL, FONT_STANDARD, FONT_BANNER3, FONT_BANNER3D, FONT_BIG,
@@ -41,6 +45,7 @@ def get_random_font() -> str:
     return random.choice(fonts)
 
 def get_banner(text='FaustLauncher', font=DEFAULT_FONT, colors=WHITE) -> str:
+    """获取banner。"""
     try:
         if colors != '':
             return colors + pyfiglet.figlet_format(text, font=font) + RESET
@@ -50,6 +55,7 @@ def get_banner(text='FaustLauncher', font=DEFAULT_FONT, colors=WHITE) -> str:
         return text
 
 def get_banner_with_random_style(text='FaustLauncher') -> str:
+    """获取bannerwithrandomstyle。"""
     return get_banner(text, font=get_random_font(), colors=get_random_color())
 
 if __name__ == "__main__":

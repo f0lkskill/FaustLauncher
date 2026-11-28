@@ -1,3 +1,5 @@
+"""webFunc 子模块：<GithubDownload>（具体职责见函数文档）。"""
+
 
 from functions.base.common.github_release import (
     ReleaseAsset,
@@ -11,6 +13,7 @@ from functions.base.common.github_release import (
 GithubRequester: GitHubReleaseFetcher = None  # type: ignore
 
 def init_request():
+    """初始化请求。"""
     global GithubRequester
     GithubRequester = GitHubReleaseFetcher(
         use_proxy=True,

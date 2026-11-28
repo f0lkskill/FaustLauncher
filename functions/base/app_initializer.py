@@ -1,3 +1,5 @@
+"""启动器初始化流程。"""
+
 
 import sys, os
 import traceback
@@ -132,6 +134,7 @@ def _is_plain_child() -> bool:
 
 def base_load():
 
+    """baseload相关处理。"""
     from functions.base.common.stdio import harden_stdio
 
     harden_stdio()
@@ -151,6 +154,7 @@ def base_load():
         pass
 
 def detect_update_window() -> bool:
+    """检测更新窗口。"""
     if "--update-window" in sys.argv:
         from functions.pages.notice.version_update_window import run_update_window
         payload_b64 = None
@@ -163,6 +167,7 @@ def detect_update_window() -> bool:
     return False
 
 def detect_mod_loader_window() -> bool:
+    """检测Modloader窗口。"""
     if "--mod-loader-progress" in sys.argv:
         from functions.pages.tools.mod_loader_progress import run_mod_loader_progress
         loader_pid = 0
@@ -208,6 +213,7 @@ def _start_steam_binding_reconcile():
 
 
 def detect_ui_mode() -> bool:
+    """检测界面mode。"""
     from functions.base.settings_manager import get_settings_manager
     if "--tk-ui" in sys.argv:
         pass
@@ -221,6 +227,7 @@ def detect_ui_mode() -> bool:
 
 def launch_app():
 
+    """启动app。"""
     base_load()
 
     for arg in sys.argv:
@@ -261,6 +268,7 @@ def launch_app():
 
 def initialize_tk():
 
+    """initializetk相关处理。"""
     if check_single_instance():
         os._exit(0)
 
@@ -277,6 +285,7 @@ def initialize_tk():
     core = FaustLauncherCore(DEBUG_MODE)
 
     def on_app_initialized():
+        """响应appinitialized。"""
         root.update_idletasks()
         root.update()
         root.after(4000, lambda: root.deiconify())

@@ -1,3 +1,5 @@
+"""输入事件钩子。"""
+
 
 import ctypes
 import ctypes.wintypes as wt
@@ -70,6 +72,7 @@ _CloseHandle.argtypes = [wt.HANDLE]
 _CloseHandle.restype = wt.BOOL
 
 class KBDLLHOOKSTRUCT(ctypes.Structure):
+    """KBDLLHOOKSTRUCT类。"""
     _fields_ = [
         ("vkCode", wt.DWORD),
         ("scanCode", wt.DWORD),
@@ -79,6 +82,7 @@ class KBDLLHOOKSTRUCT(ctypes.Structure):
     ]
 
 class MSLLHOOKSTRUCT(ctypes.Structure):
+    """MSLLHOOKSTRUCT类。"""
     _fields_ = [
         ("pt", wt.POINT),
         ("mouseData", wt.DWORD),
@@ -89,7 +93,9 @@ class MSLLHOOKSTRUCT(ctypes.Structure):
 
 class InputCounter:
 
+    """输入Counter类。"""
     def __init__(self):
+        """初始化对象状态。"""
         self._running = False
         self._thread: threading.Thread | None = None
         self._kbd_hook = None
@@ -100,6 +106,7 @@ class InputCounter:
         self._lock = threading.Lock()
 
     def _inc_p(self):
+        """内部incp相关处理。"""
         from functions.achievement.achievements import get_state
         try:
             with self._lock:
@@ -109,6 +116,7 @@ class InputCounter:
             pass
 
     def _inc_click(self):
+        """内部incclick相关处理。"""
         from functions.achievement.achievements import get_state
         try:
             with self._lock:
@@ -119,6 +127,7 @@ class InputCounter:
 
     @staticmethod
     def _game_foreground() -> bool:
+        """内部游戏foreground相关处理。"""
         try:
             hwnd = _GetForegroundWindow()
             pid = wt.DWORD(0)
@@ -143,6 +152,7 @@ class InputCounter:
         return False
 
     def _kbd_proc(self, nCode, wParam, lParam):
+        """内部kbdproc相关处理。"""
         if nCode >= 0 and wParam == WM_KEYDOWN:
             kb = ctypes.cast(lParam, ctypes.POINTER(KBDLLHOOKSTRUCT)).contents
             if kb.vkCode == VK_P:
@@ -151,12 +161,14 @@ class InputCounter:
         return _CallNextHookEx(self._kbd_hook, nCode, wParam, lParam)
 
     def _mouse_proc(self, nCode, wParam, lParam):
+        """内部鼠标proc相关处理。"""
         if nCode >= 0 and wParam in (WM_LBUTTONDOWN, WM_RBUTTONDOWN):
             if self._game_foreground():
                 self._inc_click()
         return _CallNextHookEx(self._mouse_hook, nCode, wParam, lParam)
 
     def _thread_main(self):
+        """内部线程主入口相关处理。"""
         try:
             module = _GetModuleHandleW(None)
         except Exception:
@@ -184,6 +196,7 @@ class InputCounter:
             _UnhookWindowsHookEx(self._mouse_hook)
 
     def start(self):
+        """启动相关操作。"""
         if self._running:
             return
         self._running = True
@@ -191,6 +204,7 @@ class InputCounter:
         self._thread.start()
 
     def stop(self):
+        """停止相关操作。"""
         self._running = False
         if self._thread:
             self._thread.join(timeout=2)
@@ -198,6 +212,7 @@ class InputCounter:
 _counter: InputCounter | None = None
 
 def start_input_monitoring() -> InputCounter:
+    """启动输入monitoring。"""
     global _counter
     if _counter is None:
         _counter = InputCounter()
@@ -205,6 +220,7 @@ def start_input_monitoring() -> InputCounter:
     return _counter
 
 def stop_input_monitoring():
+    """停止输入monitoring。"""
     global _counter
     if _counter:
         _counter.stop()

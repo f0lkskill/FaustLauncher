@@ -1,3 +1,5 @@
+"""Il2CppDumper 调用封装。"""
+
 
 from __future__ import annotations
 
@@ -40,6 +42,7 @@ _EXTRA_SEARCH = (
 
 @dataclass
 class DumpResult:
+    """转储结果。"""
     ok: bool
     dump_cs: str = ""
     script_json: str = ""
@@ -49,9 +52,11 @@ class DumpResult:
     detail: str = ""
 
 def tool_dir() -> str:
+    """tool目录相关处理。"""
     return paths_mod.cache_path("tools", "il2cppdumper")
 
 def find_dumper(explicit: str = "") -> str:
+    """查找dumper。"""
     candidates = []
     if explicit:
         candidates.append(explicit)
@@ -64,12 +69,14 @@ def find_dumper(explicit: str = "") -> str:
     return ""
 
 def write_config(folder: str) -> str:
+    """写入配置。"""
     path = os.path.join(folder, "config.json")
     with open(path, "w", encoding="utf-8") as fh:
         json.dump(DUMPER_CONFIG, fh, ensure_ascii=False, indent=2)
     return path
 
 def dumper_version(dumper_exe: str) -> str:
+    """dumper版本相关处理。"""
     folder = os.path.dirname(dumper_exe)
     deps = os.path.join(folder, "Il2CppDumper.deps.json")
     try:
@@ -80,6 +87,7 @@ def dumper_version(dumper_exe: str) -> str:
         return "unknown"
 
 def _download(url: str, dest: str, proxies=(), on_log=None) -> bool:
+    """内部下载相关处理。"""
     log = on_log or (lambda _m: None)
     import requests
 
@@ -108,6 +116,7 @@ def _download(url: str, dest: str, proxies=(), on_log=None) -> bool:
     return False
 
 def download_dumper(on_log=None) -> str:
+    """下载dumper相关处理。"""
     log = on_log or (lambda _m: None)
     folder = tool_dir()
     os.makedirs(folder, exist_ok=True)
@@ -128,6 +137,7 @@ def download_dumper(on_log=None) -> str:
         return ""
 
     def rank(asset) -> tuple:
+        """rank相关处理。"""
         name = asset.name.lower()
         return (
             0 if "win-x64" in name else (1 if "net8" in name else (2 if "win" in name else 3)),
@@ -155,6 +165,7 @@ def download_dumper(on_log=None) -> str:
     return exe if os.path.isfile(exe) else ""
 
 def ensure_dumper(on_log=None, allow_download: bool = True, explicit: str = "") -> str:
+    """确保dumper。"""
     log = on_log or (lambda _m: None)
     found = find_dumper(explicit)
     if found:
@@ -170,6 +181,7 @@ def ensure_dumper(on_log=None, allow_download: bool = True, explicit: str = "") 
 
 def run_dumper(dumper_exe: str, gameassembly: str, metadata: str, out_dir: str,
                on_log=None, timeout: float = 2400.0, low_priority: bool = False) -> DumpResult:
+    """执行dumper。"""
     log = on_log or (lambda _m: None)
     if not os.path.isfile(dumper_exe):
         return DumpResult(False, detail=f"Il2CppDumper 不存在: {dumper_exe}")
@@ -205,6 +217,7 @@ def run_dumper(dumper_exe: str, gameassembly: str, metadata: str, out_dir: str,
         log(f"[dumper] stderr: {stderr.strip()[:400]}")
 
     def locate(name: str) -> str:
+        """定位相关操作。"""
         for folder_ in (out_dir, os.path.dirname(dumper_exe), os.getcwd()):
             path = os.path.join(folder_, name)
             if os.path.isfile(path):
@@ -225,6 +238,7 @@ def run_dumper(dumper_exe: str, gameassembly: str, metadata: str, out_dir: str,
                       elapsed=elapsed, stdout_tail=combined[-1200:], detail=detail)
 
 def _decode(raw) -> str:
+    """内部decode相关处理。"""
     if not raw:
         return ""
     for encoding in ("utf-8", "gbk", "mbcs"):
@@ -235,12 +249,14 @@ def _decode(raw) -> str:
     return raw.decode("utf-8", errors="replace")
 
 def _first_error(text: str) -> str:
+    """内部首个错误相关处理。"""
     for line in text.splitlines():
         if "error" in line.lower():
             return line.strip()[:200]
     return ""
 
 def cleanup(out_dir: str, keep_dump_cs: bool = True) -> None:
+    """清理相关操作。"""
     if not os.path.isdir(out_dir):
         return
     for name in os.listdir(out_dir):

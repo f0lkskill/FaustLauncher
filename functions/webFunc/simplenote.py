@@ -1,3 +1,5 @@
+"""SimpleNote 风格笔记接口封装。"""
+
 import requests
 import json
 from functions.base.web_config import get_webnote
@@ -6,11 +8,14 @@ DEFAULT_API_KEY = get_webnote('simplenote_api_key')[0]
 
 class SimpleNote:
     
+    """Simple笔记类。"""
     def __init__(self, api_key):
+        """初始化对象状态。"""
         self.api_key = api_key
         self.base_url = "https://api.simplenotes.cc/v2/"
     
     def _make_request(self, endpoint, data) -> dict:
+        """内部生成请求。"""
         data['key'] = self.api_key
         data['json'] = 1
         
@@ -35,12 +40,15 @@ class SimpleNote:
             return {}
 
     def list_notes(self):
+        """列表notes相关处理。"""
         return self._make_request('get', {})
     
     def get_note(self, note_id) -> dict:
+        """获取笔记。"""
         return self._make_request('get', {'note_id': note_id})
     
     def create_note(self, title, content, folder_id=1):
+        """创建笔记。"""
         data = {
             'title': title,
             'content': content,
@@ -52,6 +60,7 @@ class SimpleNote:
         return result
     
     def update_note(self, note_id, title=None, content=None, share=None):
+        """更新笔记。"""
         data = {'note_id': note_id}
         if title is not None:
             data['title'] = title
@@ -66,6 +75,7 @@ class SimpleNote:
         return result
     
     def delete_note(self, note_id):
+        """删除笔记。"""
         data = {
             'folder_action': 'delete_note',
             'note_id': note_id
@@ -76,6 +86,7 @@ class SimpleNote:
         return result
 
     def create_folder(self, folder_name):
+        """创建folder。"""
         data = {
             'folder_action': 'create',
             'folder_name': folder_name

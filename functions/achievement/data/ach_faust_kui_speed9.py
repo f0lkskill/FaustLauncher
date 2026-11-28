@@ -1,3 +1,5 @@
+"""成就定义：<ach_faust_kui_speed9>。"""
+
 
 from __future__ import annotations
 
@@ -8,7 +10,9 @@ SPEED_TARGET = 9
 
 class FaustKuiSpeedNineAchievement(SpeedValueAchievement):
 
+    """FaustKuiSpeedNine成就类。"""
     def __init__(self) -> None:
+        """初始化对象状态。"""
         super().__init__(
             ach_id="ach_faust_kui_speed9",
             name="呃啊，我脚崴了",

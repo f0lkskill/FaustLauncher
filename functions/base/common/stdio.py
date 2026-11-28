@@ -1,3 +1,5 @@
+"""common 子模块：<stdio>（具体职责见函数文档）。"""
+
 
 import io
 import os
@@ -8,6 +10,7 @@ __all__ = ["harden_stdio"]
 _hardened = False
 
 def _harden_rich_null_file():
+    """内部hardenrichnull文件相关处理。"""
     try:
         module = sys.modules.get("rich.console")
         null_file = getattr(module, "NULL_FILE", None)
@@ -17,6 +20,7 @@ def _harden_rich_null_file():
         pass
 
 def harden_stdio(force=False):
+    """hardenstdio相关处理。"""
     global _hardened
     if _hardened and not force:
         return sys.stdout

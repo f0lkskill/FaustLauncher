@@ -45,6 +45,7 @@ class RoundedFrame(tk.Canvas):
 
     def __init__(self, master, *, bg=None, border_color=None, radius=10,
                  padx=10, pady=10, **kwargs):
+        """初始化对象状态。"""
         self._bg = bg or '#1a1a1a'
         self._border = border_color or lighten_color(self._bg, 15)
         self._radius = radius
@@ -109,6 +110,7 @@ class RoundedButton(tk.Canvas):
                  width=120, height=36, bg=C.ACCENT, fg=C.TEXT_WHITE,
                  hover_bg=None, font=('Microsoft YaHei UI', 10, 'bold'),
                  radius=8, state='normal', **kwargs):
+        """初始化对象状态。"""
         self._w = width
         self._h = height
         self._bg = bg
@@ -212,6 +214,7 @@ class ModernButton(tk.Button):
                  bg=None, fg=C.TEXT_WHITE, hover_bg=None,
                  font=('Microsoft YaHei UI', 10, 'bold'),
                  padx=16, pady=6, **kwargs):
+        """初始化对象状态。"""
         bg = bg or C.ACCENT
         hover_bg = hover_bg or darken_color(bg, 0.85)
         super().__init__(master, text=text, command=command, # type: ignore

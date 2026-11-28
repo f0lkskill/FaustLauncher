@@ -1,3 +1,5 @@
+"""update 子模块：<sync_setting>（具体职责见函数文档）。"""
+
 
 CURRENT_CONFIG_FILE = "config/settings.json"
 TARGET_CONFIG_FILE = "cache/new_version/FaustLauncher/config/settings.json"
@@ -7,6 +9,7 @@ import os
 from functions.base.common.json_io import read_json, write_json
 
 def sync_settings():
+    """同步设置。"""
     if not os.path.exists(CURRENT_CONFIG_FILE):
         print(f"跳过设置同步：源文件不存在 {CURRENT_CONFIG_FILE}")
         return

@@ -1,3 +1,5 @@
+"""成就定义：<ach_yisang_lcb_s3>。"""
+
 
 from __future__ import annotations
 
@@ -8,7 +10,9 @@ SKILL_LCB_YISANG_S3 = 1010103
 
 class YisangLcbThirdSkillAchievement(SkillUseAchievement):
 
+    """YisangLcbThirdSkill成就类。"""
     def __init__(self) -> None:
+        """初始化对象状态。"""
         super().__init__(
             ach_id="ach_yisang_lcb_s3",
             name="将你李箱，也将我李箱。",

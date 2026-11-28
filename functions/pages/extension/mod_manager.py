@@ -1,3 +1,5 @@
+"""Mod 管理页面逻辑。"""
+
 #! 本界面已经废弃
 
 import tkinter as tk
@@ -10,7 +12,9 @@ from functions.base.color_scheme import C, darken_color
 from functions.base.common.path_utils import get_mod_root_dir
 
 class ModManager:
+    """Mod管理器。"""
     def __init__(self, parent_root, parent):
+        """初始化对象状态。"""
         self.parent = parent
         self.mod_dir = self.get_mod_directory()
         self.allowed_extensions = {'.bank', '.carra2'}
@@ -61,9 +65,11 @@ class ModManager:
         self.refresh_file_list()
     
     def get_mod_directory(self):
+        """获取Moddirectory。"""
         return get_mod_root_dir()
     
     def create_toolbar(self):
+        """创建toolbar。"""
         toolbar_frame = tk.Frame(self.main_frame, bg=self.parent.bg_color, relief=tk.RAISED, borderwidth=1)
         toolbar_frame.pack(fill=tk.X, pady=(0, 10))
         
@@ -95,6 +101,7 @@ class ModManager:
         delete_button.pack(side=tk.LEFT, padx=5)
     
     def create_styled_button(self, parent, text, command, color):
+        """创建styled按钮。"""
         btn = tk.Button(parent, text=text, command=command,
                        font=('Microsoft YaHei UI', 10, 'bold'),
                         bg=color, fg=C.TEXT_WHITE,
@@ -105,8 +112,10 @@ class ModManager:
                        cursor='hand2')
         
         def on_enter(e):
+            """响应enter。"""
             btn.config(bg=darken_color(color))
         def on_leave(e):
+            """响应leave。"""
             btn.config(bg=color)
         
         btn.bind("<Enter>", on_enter)
@@ -115,6 +124,7 @@ class ModManager:
         return btn
     
     def create_file_list(self):
+        """创建文件列表。"""
         tree_frame = tk.Frame(self.main_frame, bg=self.parent.bg_color, relief=tk.SUNKEN, borderwidth=1)
         tree_frame.pack(fill=tk.BOTH, expand=True)
         
@@ -143,6 +153,7 @@ class ModManager:
         self.tree.bind('<Button-3>', self.show_context_menu)
     
     def create_status_bar(self):
+        """创建状态bar。"""
         status_frame = tk.Frame(self.main_frame, bg=self.parent.bg_color, height=25)
         status_frame.pack(fill=tk.X, side=tk.BOTTOM, pady=(10, 0))
         status_frame.pack_propagate(False)
@@ -155,6 +166,7 @@ class ModManager:
         status_label.pack(fill=tk.X, padx=10, pady=5)
     
     def show_context_menu(self, event):
+        """显示contextmenu。"""
         item = self.tree.identify_row(event.y)
         if item:
             self.tree.selection_set(item)
@@ -179,14 +191,17 @@ class ModManager:
             menu.post(event.x_root, event.y_root)
     
     def get_original_filename(self, filename):
+        """获取originalfilename。"""
         if filename.endswith(self.disabled_suffix):
             return filename[:-len(self.disabled_suffix)]
         return filename
 
     def is_file_disabled(self, filename):
+        """判断文件disabled。"""
         return filename.endswith(self.disabled_suffix)
     
     def add_files_dialog(self):
+        """添加文件dialog。"""
         file_types = [
             ("Mod文件", "*.bank *.carra2"),
             ("所有文件", "*.*")
@@ -201,6 +216,7 @@ class ModManager:
             self.add_file(file_path)
     
     def add_file(self, file_path):
+        """添加文件。"""
         if not os.path.isfile(file_path):
             return
         
@@ -221,6 +237,7 @@ class ModManager:
             messagebox.showerror("错误", f"添加文件失败: {str(e)}")
     
     def refresh_file_list(self):
+        """刷新文件列表。"""
         for item in self.tree.get_children():
             self.tree.delete(item)
         
@@ -249,12 +266,14 @@ class ModManager:
         self.status_var.set(f"📁 已加载 {len(self.tree.get_children())} 个文件")
     
     def get_file_status(self, filename):
+        """获取文件状态。"""
         if self.is_file_disabled(filename):
             return "禁用"
         else:
             return " 启用"
     
     def get_file_size(self, file_path):
+        """获取文件尺寸。"""
         size = os.path.getsize(file_path)
         if size < 1024:
             return f"{size} B"
@@ -264,6 +283,7 @@ class ModManager:
             return f"{size/(1024*1024):.1f} MB"
     
     def get_file_type(self, file_ext):
+        """获取文件类型。"""
         if file_ext == '.bank':
             return "🎵 音效文件"
         elif file_ext == '.carra2':
@@ -272,6 +292,7 @@ class ModManager:
             return "❓ 未知文件"
     
     def get_file_icon(self, file_ext):
+        """获取文件图标。"""
         if file_ext == '.bank':
             return "🔊"
         elif file_ext == '.carra2':
@@ -280,6 +301,7 @@ class ModManager:
             return "📄"
     
     def on_item_double_click(self, event):
+        """响应条目doubleclick。"""
         selection = self.tree.selection()
         if selection:
             item = selection[0]
@@ -292,6 +314,7 @@ class ModManager:
                 os.startfile(file_path)
     
     def open_mod_directory(self):
+        """打开Moddirectory。"""
         if os.path.exists(self.mod_dir):
             os.startfile(self.mod_dir)
             self.status_var.set("📂 已打开Mod目录")
@@ -299,6 +322,7 @@ class ModManager:
             messagebox.showinfo("信息", "Mod目录不存在")
     
     def enable_selected(self):
+        """启用selected。"""
         selection = self.tree.selection()
         if not selection:
             messagebox.showinfo("信息", "请先选择要启用的文件")
@@ -317,6 +341,7 @@ class ModManager:
         self.refresh_file_list()
     
     def disable_selected(self):
+        """禁用selected。"""
         selection = self.tree.selection()
         if not selection:
             messagebox.showinfo("信息", "请先选择要禁用的文件")
@@ -336,6 +361,7 @@ class ModManager:
         self.refresh_file_list()
     
     def enable_file(self, filename):
+        """启用文件。"""
         try:
             if not self.is_file_disabled(filename):
                 return True
@@ -354,6 +380,7 @@ class ModManager:
         return False
     
     def disable_file(self, filename):
+        """禁用文件。"""
         try:
             if self.is_file_disabled(filename):
                 return True
@@ -371,6 +398,7 @@ class ModManager:
         return False
     
     def delete_selected(self):
+        """删除selected。"""
         selection = self.tree.selection()
         if not selection:
             messagebox.showinfo("信息", "请先选择要删除的文件")
@@ -396,6 +424,7 @@ class ModManager:
                 self.refresh_file_list()
     
     def delete_file(self, filename):
+        """删除文件。"""
         original_filename = self.get_original_filename(filename)
         file_path = os.path.join(self.mod_dir, original_filename)
         
@@ -409,12 +438,14 @@ class ModManager:
                 messagebox.showerror("错误", f"删除文件失败: {str(e)}")
     
     def copy_filename(self, filename):
+        """copyfilename相关处理。"""
         original_filename = self.get_original_filename(filename)
         self.window.clipboard_clear()
         self.window.clipboard_append(original_filename)
         self.status_var.set(f"📋 已复制文件名: {original_filename}")
 
     def set_style(self):
+        """设置style。"""
         style = ttk.Style(self.window)
         
         style.configure('Treeview', 
@@ -434,4 +465,5 @@ class ModManager:
                   foreground=[('selected', C.TEXT_WHITE)])
 
 def open_mod_manager(parent):
+    """打开Modmanager。"""
     return ModManager(parent.root, parent)

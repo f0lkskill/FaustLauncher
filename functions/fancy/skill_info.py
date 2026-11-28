@@ -1,12 +1,16 @@
+"""技能信息展示组件。"""
+
 import os
 from functions.base.common.json_io import read_json, write_json
 
 def handle_base_info(name:str) -> str:
     
+    """处理base信息。"""
     import re as _re
     placeholder_pattern = _re.compile(r'\{(\d+)(?::[^}]*)?\}')
     placeholders = []
     def _idx_to_chars(i: int) -> str:
+        """内部idxtochars相关处理。"""
         s = ""
         i += 1
         while i:
@@ -14,6 +18,7 @@ def handle_base_info(name:str) -> str:
             s = chr(ord('a') + r) + s
         return s
     def _protect(m):
+        """内部protect相关处理。"""
         placeholders.append(m.group(0))
         return f"\x00PLH_{_idx_to_chars(len(placeholders)-1)}_\x00"
     name = placeholder_pattern.sub(_protect, name)
@@ -126,6 +131,7 @@ def handle_base_info(name:str) -> str:
     return name
 
 def handle_skill_structure(skill_content:dict) -> dict: # type: ignore
+    """处理skillstructure。"""
     dataList = skill_content["dataList"]
     for skill in dataList:
         # 一个单独的技能信息
@@ -171,6 +177,7 @@ def handle_skill_structure(skill_content:dict) -> dict: # type: ignore
     return skill_content
 
 def handle_passive_structure(passive_content:dict) -> dict:
+    """处理passivestructure。"""
     dataList = passive_content["dataList"]
     for data in dataList:
         try:
@@ -181,6 +188,7 @@ def handle_passive_structure(passive_content:dict) -> dict:
     return passive_content
 
 def _shape_problem(content):
+    """内部shapeproblem相关处理。"""
     if not isinstance(content, dict):
         return "顶层不是对象(%s)" % type(content).__name__
     data_list = content.get("dataList")
@@ -192,6 +200,7 @@ def _shape_problem(content):
     return None
 
 def get_skill_files(translate_pack_path) -> list:
+    """获取skill文件。"""
     skill_info_list = []
     for root, dirs, files in os.walk(translate_pack_path):
         for file in files:
@@ -203,6 +212,7 @@ def get_skill_files(translate_pack_path) -> list:
     return skill_info_list
 
 def handle_base(translate_pack_path, func_file, func_structure, label="美化") -> None:
+    """处理base。"""
     file_list = func_file(translate_pack_path)
     done = skipped = failed = 0
     for file_path in file_list:
@@ -222,6 +232,7 @@ def handle_base(translate_pack_path, func_file, func_structure, label="美化") 
     print(f"  [Cosmetic/{label}] 完成 {done} 个, 跳过 {skipped} 个(空文件/结构不符), 异常 {failed} 个")
 
 def get_passive_files(translate_pack_path) -> list:
+    """获取passive文件。"""
     passive_info_list = []
     for root, dirs, files in os.walk(translate_pack_path):
         for file in files:
@@ -233,6 +244,7 @@ def get_passive_files(translate_pack_path) -> list:
     return passive_info_list
 
 def get_EGOgift_files(translate_pack_path) -> list:
+    """获取EGOgift文件。"""
     EGOgift_info_list = []
     for root, dirs, files in os.walk(translate_pack_path):
         for file in files:
@@ -244,6 +256,7 @@ def get_EGOgift_files(translate_pack_path) -> list:
     return EGOgift_info_list
 
 def get_buff_files(translate_pack_path) -> list:
+    """获取buff文件。"""
     buff_info_list = []
     for root, dirs, files in os.walk(translate_pack_path):
         for file in files:
@@ -255,18 +268,23 @@ def get_buff_files(translate_pack_path) -> list:
     return buff_info_list
 
 def handle_skill(translate_pack_path) -> None:
+    """处理skill。"""
     handle_base(translate_pack_path, get_skill_files, handle_skill_structure, "技能描述")
 
 def handle_passive(translate_pack_path) -> None:
+    """处理passive。"""
     handle_base(translate_pack_path, get_passive_files, handle_passive_structure, "被动描述")
 
 def handle_EGOgift(translate_pack_path) -> None:
+    """处理EGOgift。"""
     handle_base(translate_pack_path, get_EGOgift_files, handle_passive_structure, "EGO饰品")
 
 def handle_buff(translate_pack_path) -> None:
+    """处理buff。"""
     handle_base(translate_pack_path, get_buff_files, handle_passive_structure, "Buff效果")
 
 def total_handle(translate_pack_path) -> None:
+    """totalhandle相关处理。"""
     handle_skill(translate_pack_path)
     handle_passive(translate_pack_path)
 

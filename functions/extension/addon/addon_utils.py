@@ -99,6 +99,7 @@ class _ScratchAddonManager:
     """
 
     def __init__(self) -> None:
+        """初始化对象状态。"""
         self.menu_items: List[Any] = []
         self.custom_tray_items: List[Any] = []
         self.gamestart_funcs: List[Any] = []
@@ -135,6 +136,7 @@ def current_manager():
 
 class AddonManager:
 
+    """插件管理器。"""
     def __init__(self, menu_items=None, app=None) -> None:
         """新建管理器并立即扫描 ``addons/``。
 
@@ -222,6 +224,7 @@ class AddonManager:
             return {'ok': False, 'error': '运行入口不可用'}
 
         def _call() -> None:
+            """内部call相关处理。"""
             try:
                 func()
             except Exception as exc:  # noqa: BLE001 - 插件自己的异常不能拖垮启动器

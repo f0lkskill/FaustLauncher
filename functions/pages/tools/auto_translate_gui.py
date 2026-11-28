@@ -1,3 +1,5 @@
+"""自动翻译工具界面。"""
+
 import tkinter as tk
 from tkinter import ttk, messagebox
 import threading
@@ -8,7 +10,9 @@ from functions.base.style_utils import apply_scrollbar_style
 import datetime
 
 class AutoTranslateGUI:
+    """Auto翻译界面。"""
     def __init__(self, window, root, source_path="", target_path=""):
+        """初始化对象状态。"""
         self.root = root
         self.root.title("自动翻译工具 - Faust Launcher")
         self.root.geometry("650x700")
@@ -43,6 +47,7 @@ class AutoTranslateGUI:
         self.is_running = False
     
     def configure_styles(self):
+        """configurestyles相关处理。"""
         style = ttk.Style()
         
         style.configure('Dark.TFrame', background=self.bg_color)
@@ -89,6 +94,7 @@ class AutoTranslateGUI:
                        darkcolor=self.accent_color)
     
     def create_widgets(self):
+        """创建widgets。"""
         self.root.configure(bg=self.bg_color)
         
         self._scrollbar_style = apply_scrollbar_style(
@@ -218,6 +224,7 @@ EGOgift.json
         clear_button.pack(side=tk.LEFT)
     
     def get_blacklist_files(self):
+        """获取blacklist文件。"""
         text = self.blacklist_text.get('1.0', tk.END).strip()
         files = []
         for line in text.split('\n'):
@@ -227,16 +234,19 @@ EGOgift.json
         return files
     
     def log_message(self, message):
+        """日志message相关处理。"""
         timestamp = datetime.datetime.now().strftime("%H:%M:%S")
         self.log_text.insert(tk.END, f"[{timestamp}] {message}\n")
         self.log_text.see(tk.END)
         self.root.update_idletasks()
     
     def clear_log(self):
+        """清空日志。"""
         self.log_text.delete('1.0', tk.END)
         self.log_message("日志已清空")
     
     def update_progress(self, current, total, message):
+        """更新进度。"""
         if total > 0:
             progress = (current / total) * 100
             self.progress_bar['value'] = progress
@@ -249,6 +259,7 @@ EGOgift.json
         self.root.update_idletasks()
     
     def start_translation(self):
+        """启动翻译。"""
         if not self.source_path or not self.target_path:
             messagebox.showerror("错误", "请设置源路径和目标路径")
             return
@@ -264,15 +275,18 @@ EGOgift.json
         thread.start()
 
     def get_translation_mode(self):
+        """获取翻译mode。"""
         mode = self.mode_combo_box.get()
         return mode
     
     def run_translation(self):
+        """执行翻译。"""
         try:
             blacklist_files = self.get_blacklist_files()
             is_skill = False
             
             def progress_callback(current, total, message):
+                """进度回调相关处理。"""
                 if self.is_running:
                     self.root.after(0, lambda: self.update_progress(current, total, message))
 
@@ -303,11 +317,13 @@ EGOgift.json
             self.root.after(0, self.translation_finished)
 
     def stop_translation(self):
+        """停止翻译。"""
         self.is_running = False
         self.log_message("正在停止翻译任务...")
         self.stop_button.config(state=tk.DISABLED)
     
     def translation_finished(self):
+        """翻译finished相关处理。"""
         self.is_running = False
         self.start_button.config(state=tk.NORMAL)
         self.stop_button.config(state=tk.DISABLED)
@@ -316,6 +332,7 @@ EGOgift.json
         self.progress_var.set("任务完成")
 
 def show_auto_translate_gui(window, source_path="", target_path=""):
+    """显示auto翻译界面。"""
     root = tk.Toplevel(window.root)
     app = AutoTranslateGUI(window, root, source_path, target_path)
     return app

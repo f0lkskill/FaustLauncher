@@ -1,3 +1,5 @@
+"""OurPlay 汉化包下载链路。"""
+
 import base64
 import json
 import os
@@ -9,6 +11,7 @@ from collections import defaultdict
 import requests
 
 def _make_device_android() -> str:
+    """内部生成deviceandroid。"""
     device = {
         "product": "V1824A",
         "mainver": 306800,
@@ -73,9 +76,11 @@ def _make_device_android() -> str:
     return base64.b64encode(device_str.encode("utf-8")).decode("utf-8")
 
 def get_ourplay_download_info(official: bool = True):
+    """获取ourplay下载信息。"""
     return _fetch_android_info(official=official)
 
 def _fetch_android_info(official: bool):
+    """内部拉取android信息。"""
     headers = {
         "device-user": _make_device_android(),
         "User-Agent": "okhttp/3.12.13",
@@ -93,6 +98,7 @@ def _fetch_android_info(official: bool):
     return d["url"], d["md5"], d["size"], str(d["versionCode"])
 
 def extract_translation_zip(zip_path: str, extract_dir: str) -> bool:
+    """extract翻译zip相关处理。"""
     try:
         with zipfile.ZipFile(zip_path, "r") as zf:
             zf.extractall(extract_dir)
@@ -102,6 +108,7 @@ def extract_translation_zip(zip_path: str, extract_dir: str) -> bool:
         return False
 
 def find_ourplay_root(extract_dir: str) -> str | None:
+    """查找ourplay根。"""
     for dirpath, dirnames, filenames in os.walk(extract_dir):
         if os.path.basename(dirpath) == "OurPlayHanHua":
             if os.path.isfile(os.path.join(dirpath, "manifest.json")):
@@ -115,6 +122,7 @@ _reference_index_cache = {
 }
 
 def _dir_fingerprint(root) -> str:
+    """内部目录fingerprint相关处理。"""
     import hashlib
     h = hashlib.md5()
     try:
@@ -134,6 +142,7 @@ def _dir_fingerprint(root) -> str:
     return h.hexdigest()
 
 def _build_reference_index(refer_root):
+    """内部构建reference索引。"""
     global _reference_index_cache
     fp = _dir_fingerprint(refer_root)
     if fp and fp == _reference_index_cache.get("fingerprint") \
@@ -174,6 +183,7 @@ def _build_reference_index(refer_root):
     return ref_files, id_to_paths
 
 def _build_transfile_index(hash_dir):
+    """内部构建transfile索引。"""
     from concurrent.futures import ThreadPoolExecutor
 
     hash_files = {}
@@ -190,6 +200,7 @@ def _build_transfile_index(hash_dir):
         filenames.append(filename)
 
     def _parse_one(filename):
+        """内部解析单个。"""
         filepath = os.path.join(hash_dir, filename)
         try:
             with open(filepath, "r", encoding="utf-8") as f:
@@ -217,6 +228,7 @@ def _build_transfile_index(hash_dir):
     return hash_files, binary_count
 
 def _match_ref_to_transfile(ref_files, hash_files, id_to_paths):
+    """内部matchreftotransfile相关处理。"""
     id_to_hash = defaultdict(set)
     for hash_name, (data_list, hash_ids) in hash_files.items():
         for hid in hash_ids:
@@ -240,6 +252,7 @@ def _match_ref_to_transfile(ref_files, hash_files, id_to_paths):
     return ref_to_hash
 
 def convert_god_package(extract_dir: str, refer_root: str) -> str:
+    """转换godpackage。"""
     hash_dir = os.path.join(extract_dir, "com.ProjectMoon.LimbusCompany")
     ref_files, id_to_paths = _build_reference_index(refer_root)
     if not ref_files:
@@ -289,6 +302,7 @@ def convert_god_package(extract_dir: str, refer_root: str) -> str:
     return ourplay_root
 
 def prepare_ourplay_dir(zip_path: str, refer_root: str = "") -> tuple[str, str]:
+    """准备ourplay目录。"""
     temp_dir = tempfile.mkdtemp(prefix="ourplay_")
     try:
         if not extract_translation_zip(zip_path, temp_dir):

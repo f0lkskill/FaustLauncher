@@ -1,3 +1,5 @@
+"""IL2CPP metadata 恢复流程辅助模块：<init_locator>。"""
+
 #!/usr/bin/env python3
 
 from __future__ import annotations
@@ -20,12 +22,14 @@ FUNC_WINDOW = 0x4000
 PADDING_RUN = 4
 
 def _require_capstone():
+    """内部requirecapstone相关处理。"""
     if not _CAPSTONE_OK:
         raise RuntimeError(
             "缺少 capstone 反汇编库：请先在 Metadata 恢复页「步骤 1」一键安装"
             "（或 pip install capstone）")
 
 def function_start_of(hit_va: int, image: PEImage, back_window: int = BACK_WINDOW) -> int:
+    """functionstartof相关处理。"""
     _require_capstone()
     sec = image.text_section
     raw = image.data[sec.raw_offset:sec.raw_offset + sec.raw_size]
@@ -36,6 +40,7 @@ def function_start_of(hit_va: int, image: PEImage, back_window: int = BACK_WINDO
     md = Cs(CS_ARCH_X86, CS_MODE_64)
 
     def has_fileload(lo_off: int, hi_off: int) -> bool:
+        """hasfileload相关处理。"""
         for insn in md.disasm(raw[lo_off:lo_off + (hi_off - lo_off)], base + lo_off):
             addr = insn.address
             if addr + 12 > base + hi_off:
@@ -81,6 +86,7 @@ def function_start_of(hit_va: int, image: PEImage, back_window: int = BACK_WINDO
     return base + sec.virtual_address
 
 def disasm_func(image: PEImage, start_va: int, window: int = FUNC_WINDOW) -> list[tuple[int, int, str, str]]:
+    """disasmfunc相关处理。"""
     _require_capstone()
     sec = image.text_section
     raw = image.data[sec.raw_offset:sec.raw_offset + sec.raw_size]
@@ -96,12 +102,14 @@ def disasm_func(image: PEImage, start_va: int, window: int = FUNC_WINDOW) -> lis
     return out
 
 def _imm_of(op_str: str) -> int | None:
+    """内部immof相关处理。"""
     s = op_str.replace(" ", "")
     if s.startswith("0x") or s.startswith("0X"):
         return int(s[2:], 16)
     return None
 
 def fine_features(image: PEImage, start_va: int) -> dict:
+    """finefeatures相关处理。"""
     insns = disasm_func(image, start_va)
 
     table_ref = 0
@@ -153,6 +161,7 @@ def fine_features(image: PEImage, start_va: int) -> dict:
     }
 
 def locate(image: PEImage, top_k: int = 10) -> list[dict]:
+    """定位相关操作。"""
     _require_capstone()
     hits = scan_pe(image)
     if not hits:

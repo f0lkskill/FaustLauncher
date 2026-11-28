@@ -1,3 +1,5 @@
+"""base 子模块：<steam_playtime>（具体职责见函数文档）。"""
+
 
 from __future__ import annotations
 
@@ -9,6 +11,7 @@ from functions.base import steam_locator as _sl
 SECONDS_PER_MINUTE = 60
 
 def localconfig_files() -> list[str]:
+    """localconfig文件相关处理。"""
     out: list[str] = []
     for base in _sl._steam_install_paths():          # noqa: SLF001（同包内复用）
         pattern = os.path.join(str(base).replace("\\", "/"), "userdata", "*", "config",
@@ -17,6 +20,7 @@ def localconfig_files() -> list[str]:
     return out
 
 def _apps_table(path: str) -> dict:
+    """内部appstable相关处理。"""
     try:
         with open(path, encoding="utf-8", errors="ignore") as fh:
             data = _sl._parse_vdf(fh.read())         # noqa: SLF001
@@ -29,12 +33,14 @@ def _apps_table(path: str) -> dict:
     return apps if isinstance(apps, dict) else {}
 
 def _to_int(value) -> int:
+    """内部toint相关处理。"""
     try:
         return int(str(value).strip())
     except (TypeError, ValueError):
         return 0
 
 def read_playtime(app_id: str = _sl.STEAM_APP_ID) -> dict:
+    """读取playtime。"""
     best: dict = {}
     files = localconfig_files()
     for path in files:

@@ -1,3 +1,5 @@
+"""成就定义：<ach_custom_examples>。"""
+
 
 from __future__ import annotations
 
@@ -16,7 +18,9 @@ BUFF_FUTURE_EYE = "FutureEyeOnRodion"
 
 class DeadHandAchievement(BuffPresentAchievement):
 
+    """DeadHand成就类。"""
     def __init__(self) -> None:
+        """初始化对象状态。"""
         super().__init__(
             ach_id="ach_dead_hand",
             name="这他妈的烂牌！",
@@ -30,7 +34,9 @@ class DeadHandAchievement(BuffPresentAchievement):
 
 class HeartHeartAchievement(CompositeAchievement):
 
+    """HeartHeart成就类。"""
     def __init__(self) -> None:
+        """初始化对象状态。"""
         skill = Condition(
             key="skill",
             rule=battle_watch.BattleRule(

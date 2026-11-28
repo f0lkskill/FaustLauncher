@@ -607,6 +607,7 @@ def apply_window_chrome(window, *, title: str = "", kind: str = "launcher",
 
 class WindowChromeBridge(SkinBridge):
 
+    """窗口Chrome桥接器。"""
     _fl_window = None
 
     def attach_window(self, window):
