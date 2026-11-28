@@ -3,6 +3,10 @@
 该模块服务于版本说明、公告等内容展示场景，不执行原始 HTML，并对链接和
 图片地址做协议白名单校验。支持常用 Markdown 语法、任务列表、表格、
 Markdown 图片以及图片直链。
+
+渲染分两层：:func:`md_to_html` 逐行识别块级结构（标题/列表/表格/引用/
+代码块），:func:`_inline` 处理行内强调、链接、图片和自动链接。所有属性
+都经过 HTML 转义，链接/图片地址再经协议白名单校验，不能注入脚本。
 """
 
 from __future__ import annotations
@@ -17,14 +21,17 @@ _IMAGE_EXTENSIONS = (
 
 
 def _esc(value) -> str:
+    """转义正文文本（不转义引号），用于标签之间的内容。"""
     return html.escape(str(value or ""), quote=False)
 
 
 def _esc_attr(value) -> str:
+    """转义属性值（含引号），用于 ``href``/``src``/``alt``。"""
     return html.escape(str(value or ""), quote=True)
 
 
 def _safe_href(url: str) -> str:
+    """链接白名单：只允许 http/https/mailto 和站内相对路径，否则返回空串。"""
     value = html.unescape(str(url or "").strip())
     if not value or any(ord(char) < 32 for char in value):
         return ""
@@ -40,6 +47,7 @@ def _safe_href(url: str) -> str:
 
 
 def _safe_image_url(url: str) -> str:
+    """图片地址白名单：只保留 http/https，``//`` 开头补成 https。"""
     value = html.unescape(str(url or "").strip())
     if value.startswith("//"):
         value = "https:" + value
@@ -53,6 +61,7 @@ def _safe_image_url(url: str) -> str:
 
 
 def _is_image_url(url: str) -> bool:
+    """按路径扩展名判断是不是图片直链（用于把裸 URL 渲染成 img）。"""
     try:
         path = urlsplit(str(url or "")).path.lower()
     except ValueError:
@@ -61,6 +70,7 @@ def _is_image_url(url: str) -> bool:
 
 
 def _image_html(url: str, alt: str) -> str:
+    """生成懒加载的 img 标签；地址不安全时退化为 ``[图片:alt]`` 文本。"""
     safe_url = _safe_image_url(url)
     if not safe_url:
         return _esc("[图片:%s]" % alt)
@@ -71,6 +81,11 @@ def _image_html(url: str, alt: str) -> str:
 
 
 def _find_link(text: str, link_start: int):
+    """找 ``[...](...)`` 结构的括号位置，支持方括号嵌套与反斜杠转义。
+
+    Returns:
+        tuple[int, int]|None: ``(右方括号下标, 右圆括号下标)``；结构不完整返回 None。
+    """
     if text[link_start] != "[":
         return None
     depth = 0
@@ -103,11 +118,13 @@ def _find_link(text: str, link_start: int):
 
 
 def _inline(text: str) -> str:
+    """渲染行内语法：强调、删除线、代码、链接、图片与自动链接。"""
     index, length = 0, len(text)
     buffer: list[str] = []
     output: list[str] = []
 
     def flush() -> None:
+        """把暂存普通文本一次性转义并追加到输出，避免漏掉未识别的字符。"""
         if buffer:
             output.append(_esc("".join(buffer)))
             buffer.clear()
@@ -302,6 +319,7 @@ def _inline(text: str) -> str:
 
 
 def _is_block_start(stripped: str) -> bool:
+    """判断一行是不是新块级结构的开头（段落聚合时据此断行）。"""
     if not stripped:
         return True
     if stripped.startswith("#"):
@@ -318,6 +336,7 @@ def _is_block_start(stripped: str) -> bool:
 
 
 def _table_html(table_lines: list[str]) -> str:
+    """把连续的表格行渲染成 table；识别第二行的 ``:---:`` 对齐分隔。"""
     def parse_row(line: str) -> list[str]:
         value = line.strip()
         if value.startswith("|"):
@@ -377,7 +396,17 @@ def _table_html(table_lines: list[str]) -> str:
 
 
 def md_to_html(md_text: str) -> str:
-    """将 Markdown 文本转换为启动器内容区可安全插入的 HTML。"""
+    """将 Markdown 文本转换为启动器内容区可安全插入的 HTML。
+
+    支持标题、分隔线、引用、有序/无序/任务列表、表格、代码块和段落；行内
+    部分交给 :func:`_inline`。原始 HTML 不会被直接放行。
+
+    Args:
+        md_text: Markdown 原文，None 当空串处理。
+
+    Returns:
+        str: 可赋给 ``innerHTML`` 的 HTML 片段。
+    """
     source = str(md_text or "").replace("\r\n", "\n").replace("\r", "\n")
     lines = source.split("\n")
     index = 0
