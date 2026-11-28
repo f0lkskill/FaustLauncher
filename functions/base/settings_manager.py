@@ -193,6 +193,7 @@ class SettingsManager:
             return self.settings[key]
         return None
 
+# 全局唯一管理器实例
 _settings_manager = None
 
 def get_settings_manager():
