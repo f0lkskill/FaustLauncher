@@ -24,7 +24,7 @@ from datetime import datetime
 from pathlib import Path
 
 WORKFLOW_NAME = "YisangMirrorFlow"
-VERSION = "0.0.23"
+VERSION = "0.0.24"
 
 WORKFLOW_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = WORKFLOW_DIR.parent.parent
@@ -53,7 +53,7 @@ ADDON_SCR_TEMPLATE = (
     "# 完整示例请参考 addons/example/scr.py\n"
 )
 
-ALLOWED_EXTS = (".zip", ".7z", ".rar", ".bank", ".carra2", ".rebank")
+ALLOWED_EXTS = (".zip", ".7z", ".rar", ".bank", ".carra2", ".rebank", ".back")
 IGNORED_NAMES = {
     JOB_NAME, PROGRESS_NAME, THREADS_NAME, LOG_NAME, WORKER_LOG_NAME,
     MANIFEST_NAME, KIND_NAME, PUBLISH_STATE_NAME,
@@ -332,7 +332,7 @@ def create_package(name, kind="mod") -> dict:
             (path / "scr.py").write_text(ADDON_SCR_TEMPLATE, encoding="utf-8")
             _write_json(path / INFO_ADDON_NAME, {
                 "name": candidate, "desc": "", "version": "0.0.1",
-                "authors": {}, "settings": {"enable": False},
+                "authors": {}, "settings": {"enable": True},
             })
         else:
             # 创建 Mod 包即写入初始 mod_info.json（后续“信息”里再补全）
@@ -374,7 +374,7 @@ def package_files(name) -> list:
 
 
 def _file_counts(files: list) -> dict:
-    counts = {".zip": 0, ".7z": 0, ".rar": 0, ".bank": 0, ".carra2": 0, ".rebank": 0}
+    counts = {".zip": 0, ".7z": 0, ".rar": 0, ".bank": 0, ".carra2": 0, ".rebank": 0, ".back": 0}
     for item in files:
         ext = item.get("ext")
         if ext in counts:
@@ -427,6 +427,99 @@ def add_files(name, source_paths) -> dict:
                 errors.append("%s (%s)" % (target.name, exc))
     return {"ok": True, "added": added, "skipped": skipped,
             "unpacked": unpacked, "errors": errors, "error": ""}
+
+
+def toggle_zip_mark(name, filename) -> dict:
+    """标记 .zip 不参与 carra2 打包：x.zip ↔ x.zip.back（.back 后缀打包流程不识别）。"""
+    pkg = package_dir(name)
+    target = (pkg / os.path.basename(str(filename or ""))).resolve()
+    try:
+        if pkg.resolve() not in target.parents:
+            return {"ok": False, "error": "非法路径"}
+        if not target.is_file():
+            return {"ok": False, "error": "文件不存在"}
+        lower = target.name.lower()
+        if lower.endswith(".zip"):
+            new_name = target.name + ".back"
+        elif lower.endswith(".zip.back"):
+            new_name = target.name[:-5]
+        else:
+            return {"ok": False, "error": "只能标记 .zip 文件"}
+        new_path = target.with_name(new_name)
+        if new_path.exists():
+            return {"ok": False, "error": "目标文件已存在"}
+        os.replace(target, new_path)
+        return {"ok": True, "name": new_path.name}
+    except OSError as exc:
+        return {"ok": False, "error": str(exc)}
+
+
+def _detect_package_kind(folder: Path) -> str:
+    """根据包根内容自动识别类型：插件（addon_info.json / scr.py）或 Mod。
+
+    完整安装包（根目录有 installer.bat 或 Assets）一律视为 Mod。
+    """
+    try:
+        names = {p.name.lower() for p in folder.iterdir() if p.is_file()}
+    except OSError:
+        names = set()
+    if "addon_info.json" in names:
+        return "addon"
+    if ("mod_info.json" in names) or ("installer.bat" in names) or ("uninstaller.bat" in names) \
+            or (folder / "Assets").is_dir() or (folder / "assets").is_dir():
+        return "mod"
+    if (folder / "scr.py").is_file():
+        return "addon"
+    return "mod"
+
+
+def _copy_import_tree(src: Path, dst: Path) -> list:
+    """完整复制导入内容；跳过工作流运行时标记（保留 mod_info/addon_info 等内容）。"""
+    errors = []
+    for item in src.iterdir():
+        # 运行时标记 / 隐藏文件不属于包内容，避免把旧任务状态带进新包
+        if item.name in IGNORED_NAMES or item.name.startswith("."):
+            continue
+        target = dst / item.name
+        try:
+            if item.is_dir():
+                shutil.copytree(item, target, dirs_exist_ok=True)
+            elif item.is_file():
+                shutil.copy2(item, target)
+        except OSError as exc:
+            errors.append("%s (%s)" % (item.name, exc))
+    return errors
+
+
+def import_package(src_path) -> dict:
+    """导入已包装好的包：文件夹或 .zip/.7z/.rar，自动识别 Mod/插件并完整复制。"""
+    src = Path(str(src_path or "")).expanduser()
+    if not src.exists():
+        return {"ok": False, "error": "路径不存在"}
+    temp = None
+    try:
+        if src.is_file():
+            if src.suffix.lower() not in ARCHIVE_EXTS:
+                return {"ok": False, "error": "只支持导入文件夹或 .zip/.7z/.rar"}
+            temp = Path(tempfile.mkdtemp(prefix="wf_import_"))
+            _extract_archive(src, temp)
+            folder = _content_root(temp)
+        else:
+            folder = src
+        if not folder.is_dir():
+            return {"ok": False, "error": "不是有效的包文件夹"}
+        kind = _detect_package_kind(folder)
+        created = create_package(folder.name, kind)
+        if not created.get("ok"):
+            return created
+        pkg = package_dir(created["name"])
+        errors = _copy_import_tree(folder, pkg)
+        return {"ok": True, "name": created["name"], "kind": kind, "errors": errors}
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
+    finally:
+        if temp is not None:
+            shutil.rmtree(temp, ignore_errors=True)
 
 
 def remove_file(name, filename) -> dict:
@@ -663,6 +756,46 @@ def _unpack_one_archive(pkg: Path, archive: Path) -> dict:
         shutil.rmtree(temp, ignore_errors=True)
 
 
+def _archive_has_bat(archive: Path) -> bool:
+    """归档内是否含 installer.bat / uninstaller.bat（用于识别完整安装包）。"""
+    try:
+        with zipfile.ZipFile(archive, "r") as zf:
+            for name in zf.namelist():
+                if os.path.basename(str(name).replace("\\", "/")).lower() in (
+                        "installer.bat", "uninstaller.bat"):
+                    return True
+    except (OSError, zipfile.BadZipFile):
+        pass
+    return False
+
+
+def expand_installer_archive(archive, dst) -> dict:
+    """把含 installer.bat 的归档按“内容根”展开到 dst（发布前调用）。
+
+    去掉外层包裹目录，让 installer.bat / uninstaller.bat / Assets 直接落到
+    发布根目录；不含安装脚本的归档不处理，保持原样。
+    """
+    archive = Path(str(archive or ""))
+    dst = Path(str(dst or ""))
+    if not archive.is_file():
+        return {"ok": False, "expanded": False, "files": 0, "error": "文件不存在"}
+    if not _archive_has_bat(archive):
+        return {"ok": True, "expanded": False, "files": 0, "error": ""}
+    temp = Path(tempfile.mkdtemp(prefix="wf_expand_"))
+    try:
+        _extract_archive(archive, temp)
+        base = _content_root(temp)
+        dirs = _installer_dirs(base)
+        src = dirs[0] if dirs else base
+        dst.mkdir(parents=True, exist_ok=True)
+        count = _copy_tree_into(src, dst)
+        return {"ok": True, "expanded": count > 0, "files": count, "error": ""}
+    except Exception as exc:
+        return {"ok": False, "expanded": False, "files": 0, "error": str(exc)}
+    finally:
+        shutil.rmtree(temp, ignore_errors=True)
+
+
 def unpack_zips(name) -> dict:
     """解包包内全部 .zip/.7z/.rar：自动识别 installer 目录 / bank 类内容并提取到包根。
 
@@ -813,6 +946,32 @@ def last_published_version(name) -> str:
     return str(_read_json(package_dir(name) / PUBLISH_STATE_NAME).get("last_version") or "")
 
 
+def _has_installer_content(name) -> bool:
+    """包内是否含完整安装包内容：installer.bat/Assets（直接存在或压在同名 zip 里）。
+
+    这类 Mod 不需要 carra2/rebank，发布前会把 zip 展开到根目录。
+    """
+    pkg = package_dir(name)
+    try:
+        for _root, _dirs, files in os.walk(pkg):
+            low = {f.lower() for f in files}
+            if "installer.bat" in low or "uninstaller.bat" in low:
+                return True
+    except OSError:
+        pass
+    try:
+        for item in pkg.iterdir():
+            if not item.is_file():
+                continue
+            lower = item.name.lower()
+            if lower.endswith(".zip") or lower.endswith(".zip.back"):
+                if _archive_has_bat(item):
+                    return True
+    except OSError:
+        pass
+    return False
+
+
 def publish_missing(name) -> list:
     """发布前必填检查：名称/版本/描述/至少一作者/图标/（Mod 包）至少一个载入文件。"""
     kind, info = package_info(name)
@@ -834,7 +993,7 @@ def publish_missing(name) -> list:
         missing.append("至少一位作者")
     if not (package_dir(name) / ICON_NAME).is_file():
         missing.append("图标")
-    if kind == "mod" and not _has_load_file_recursive(name):
+    if kind == "mod" and not _has_load_file_recursive(name) and not _has_installer_content(name):
         missing.append("至少一个载入文件(.bank/.carra2/.rebank)")
     return missing
 
@@ -847,7 +1006,10 @@ def package_summary(name) -> dict:
     missing = publish_missing(name)
     can_start = job["status"] != "running" and counts["total"] > 0
     # Mod 包需打包完成（无失败）才能发布；插件包免打包，随时可发布。
-    publish_ready = job["status"] != "running" and (kind == "addon" or job["status"] == "done")
+    # 完整安装包（installer.bat/Assets）无需 carra2 打包，可直接发布。
+    installer = kind == "mod" and _has_installer_content(name)
+    publish_ready = job["status"] != "running" and (
+        kind == "addon" or job["status"] == "done" or installer)
     return {
         "name": name,
         "path": str(package_dir(name)),
@@ -863,6 +1025,7 @@ def package_summary(name) -> dict:
         },
         "icon": package_icon_uri(name),
         "load_files": scan_load_files(name),
+        "installer": installer,
         "last_version": last_published_version(name),
         "publish_missing": missing,
         "publish_ready": publish_ready,

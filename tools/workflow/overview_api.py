@@ -98,6 +98,47 @@ class OverviewApi(ExtensionToolsMixin, WindowChromeBridge):
         except Exception as exc:
             return {"ok": False, "error": str(exc)}
 
+    def import_package(self, mode="folder"):
+        """导入已包装好的包：mode=folder 选文件夹，mode=archive 选压缩包。
+
+        自动识别 Mod / 插件并完整复制到 tools/workflow/mods 下。
+        """
+        try:
+            import webview
+            window = self._win()
+            if window is None:
+                return {"ok": False, "error": "窗口未就绪"}
+            default_dir = ""
+            try:
+                default_dir = self._default_pick_dir() or ""
+            except Exception:
+                default_dir = ""
+            if str(mode) == "archive":
+                paths = window.create_file_dialog(
+                    webview.FileDialog.OPEN,
+                    directory=default_dir,
+                    file_types=("压缩包 (*.zip;*.7z;*.rar)", "所有文件 (*.*)"),
+                )
+            else:
+                paths = window.create_file_dialog(
+                    webview.FileDialog.FOLDER, directory=default_dir)
+            if not paths:
+                return {"ok": False, "canceled": True, "error": ""}
+            result = core.import_package(paths[0])
+            result["state"] = self.get_state()
+            return result
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
+
+    def toggle_zip_mark(self, name="", filename=""):
+        """标记/取消标记 zip：x.zip ↔ x.zip.back（.back 不参与 carra2 打包）。"""
+        try:
+            result = core.toggle_zip_mark(name, filename)
+            result["state"] = self.get_state()
+            return result
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
+
     def add_files(self, name):
         try:
             import webview

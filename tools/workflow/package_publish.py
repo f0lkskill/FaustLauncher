@@ -2,7 +2,7 @@
 
 包目录（tools/workflow/mods/<包名>）本身是发布对象：
   · 发布前从 mod_info.json / addon_info.json 提取信息并按必填项校验；
-  · 只把“真正有用”的文件复制到临时目录（见 _keep），不把运行时文件/源 zip 带上；
+  · 只排除启动器/工作流的运行时标记文件（见 _keep），其余内容统一带上；
   · 再把临时目录压缩成临时 zip，用该 zip 上传蓝奏云，最后更新云端信息；
   · 每次发布保证版本号变化：与上次发布相同则自动 patch+1。
 """
@@ -19,11 +19,14 @@ from datetime import datetime
 import core
 from functions.tools import post_extension_tools as pet
 
-# Mod 包根目录真正需要发布的文件（其余如源 zip、日志、进度一律丢弃）
-_MOD_ROOT_FILES = {
-    "mod_info.json", "icon.png", "installer.bat", "uninstaller.bat", "changes.json",
-}
-_MOD_ROOT_EXTS = (".carra2", ".rebank", ".bank", ".json")
+# 发布时排除的启动器/工作流运行时标记（只排这些，其余内容统一发布）：
+#   · core.IGNORED_NAMES 里的 job / 进度 / 日志 / manifest 等固定文件名
+#   · 任意 *.log（打包日志）
+#   · 音效备份与版本标记：<bank>.bank.orig、<stem>.rebank.src
+#   · 临时文件 *.tmp
+# 注意：mod_info.json / addon_info.json / changes.json / 任意 .json 都是内容，不排除。
+_PUBLISH_SKIP_SUFFIXES = (".log", ".bank.orig", ".rebank.src", ".tmp")
+_PUBLISH_SKIP_NAMES = {name.lower() for name in core.IGNORED_NAMES}
 
 
 def _bump_patch(version: str) -> str:
@@ -79,7 +82,7 @@ def save_info(name, data) -> dict:
         "authors": authors,
     }
     if kind == "addon":
-        info["settings"] = {"enable": False}
+        info["settings"] = {"enable": True}
         info_file = core.INFO_ADDON_NAME
     else:
         info["settings"] = {"enable": True}
@@ -104,24 +107,25 @@ def save_info(name, data) -> dict:
     return {"ok": True, "kind": kind, "info": info}
 
 
-def _keep(kind: str, rel: str, fname: str) -> bool:
-    """判断包内某文件是否应进入发布内容（只取真正有用的内容）。"""
+def _keep(rel: str, fname: str) -> bool:
+    """判断包内某文件是否进入发布内容。
+
+    只排除启动器/工作流的运行时标记文件，其余内容一律发布：
+    不再按 carra2 / rebank / json 白名单挑选，避免“无法打成 carra2”的
+    mod（Installer 完整包、混合资源等）在发布时被误删内容。
+    """
     rel_parts = rel.replace("\\", "/").split("/")
-    if any(p == "__pycache__" for p in rel_parts):
+    # 隐藏文件/目录（.workflow_* 等标记）与 Python 缓存一律不带
+    if any(p.startswith(".") for p in rel_parts) or "__pycache__" in rel_parts:
         return False
     lower = fname.lower()
-    if kind == "addon":
-        # 插件：除源归档 zip/7z/rar 外都带上（scr.py、脚本、资源等）
-        return not lower.endswith((".zip", ".7z", ".rar"))
-    # Mod：根目录白名单 + Assets/ 资源目录
-    ext = os.path.splitext(lower)[1]
-    if len(rel_parts) == 1:
-        return lower in _MOD_ROOT_FILES or ext in _MOD_ROOT_EXTS
-    return rel_parts[0].lower() == "assets"
+    if lower in _PUBLISH_SKIP_NAMES:
+        return False
+    return not lower.endswith(_PUBLISH_SKIP_SUFFIXES)
 
 
-def _materialize(name: str, dst: str, kind: str) -> None:
-    """把“真正有用”的文件复制到临时发布目录。"""
+def _materialize(name: str, dst: str) -> None:
+    """把需要发布的文件复制到临时发布目录（只跳过运行时标记）。"""
     pkg = core.package_dir(name)
     for root, _dirs, files in os.walk(pkg):
         for f in files:
@@ -129,11 +133,49 @@ def _materialize(name: str, dst: str, kind: str) -> None:
                 continue
             src = os.path.join(root, f)
             rel = os.path.relpath(src, pkg)
-            if not _keep(kind, rel, f):
+            if not _keep(rel, f):
                 continue
             out = os.path.join(dst, rel)
             os.makedirs(os.path.dirname(out), exist_ok=True)
             shutil.copy2(src, out)
+
+
+def _expand_installer_archives(root: str, log) -> None:
+    """上传前把含 installer.bat 的归档展开到发布根目录。
+
+    · 含安装脚本的 .zip / .zip.back：去掉外层目录展开到根目录后删除归档，
+      发布内容根目录即 installer.bat / uninstaller.bat / Assets；
+    · 其它 .zip.back：仅恢复为 .zip（标记只是阻止打包流识别）。
+    """
+    try:
+        entries = sorted(os.listdir(root))
+    except OSError:
+        return
+    for entry in entries:
+        path = os.path.join(root, entry)
+        if not os.path.isfile(path):
+            continue
+        lower = entry.lower()
+        if not (lower.endswith(".zip") or lower.endswith(".zip.back")):
+            continue
+        detail = core.expand_installer_archive(path, root)
+        if not detail.get("ok"):
+            log(f"展开 {entry} 失败: {detail.get('error')}")
+            continue
+        if detail.get("expanded"):
+            try:
+                os.remove(path)
+            except OSError:
+                pass
+            log(f"已展开安装包 {entry} → 根目录（installer.bat / Assets）")
+        elif lower.endswith(".zip.back"):
+            target = os.path.join(root, entry[:-5])
+            if not os.path.exists(target):
+                try:
+                    os.rename(path, target)
+                    log(f"已恢复归档名: {entry} → {entry[:-5]}")
+                except OSError as exc:
+                    log(f"恢复 {entry} 失败: {exc}")
 
 
 def _zip_dir(src_dir: str, zip_path: str, arc_name: str) -> int:
@@ -255,8 +297,9 @@ def publish(name, log=None, progress=None) -> dict:
     tmp = tempfile.mkdtemp(prefix="wf_publish_")
     zip_path = tmp + ".zip"
     try:
-        _materialize(name, tmp, kind)
+        _materialize(name, tmp)
         log("已提取发布内容到临时目录")
+        _expand_installer_archives(tmp, log)
         # 走统一的“测验 → 上传 → 提交审核”流程（publish_mod/addon 内部处理）
         if kind == "addon":
             ok, msg = pet.publish_addon(tmp, log=log, progress=progress)

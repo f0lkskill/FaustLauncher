@@ -185,6 +185,7 @@
     if (status === "failed") return { text: "失败", cls: "failed" };
     if (status === "interrupted") return { text: "已中断", cls: "interrupted" };
     if (pkg.kind === "addon") return { text: "插件包", cls: "idle" };
+    if (pkg.installer) return { text: "完整安装包", cls: "idle" };
     return { text: "待打包", cls: "idle" };
   }
 
@@ -305,7 +306,8 @@
         ["rar", counts[".rar"] || 0],
         ["bank", counts[".bank"] || 0],
         ["carra2", counts[".carra2"] || 0],
-        ["rebank", counts[".rebank"] || 0]
+        ["rebank", counts[".rebank"] || 0],
+        ["免转", counts[".back"] || 0]
       ].forEach(function (pair) {
         var item = el("span");
         item.appendChild(el("b", null, String(pair[1])));
@@ -332,6 +334,25 @@
           chip.appendChild(el("span", "wf-file-name", file.name));
           chip.appendChild(el("span", "wf-file-size", fmtSize(file.size)));
           if (!running) {
+            // 标记 zip 不参与 carra2 打包：x.zip ↔ x.zip.back
+            var marked = /\.zip\.back$/i.test(file.name);
+            if (marked || /\.zip$/i.test(file.name)) {
+              var mark = el("button", "wf-file-mark" + (marked ? " active" : ""),
+                marked ? "取消免转" : "免转");
+              mark.type = "button";
+              mark.title = marked
+                ? "恢复为 .zip（重新参与 carra2 打包）"
+                : "标记为不参与 carra2 打包（后缀改为 .zip.back）";
+              mark.addEventListener("click", function (event) {
+                event.stopPropagation();
+                invoke("toggle_zip_mark", pkg.name, file.name).then(function (result) {
+                  if (!result.ok) return toast(errorText(result), true);
+                  toast(result.name ? ("已更名: " + result.name) : "已更新标记");
+                  applyState(result.state);
+                }).catch(function (err) { toast(String(err), true); });
+              });
+              chip.appendChild(mark);
+            }
             var remove = el("button", "wf-file-x", "×");
             remove.addEventListener("click", function (event) {
               event.stopPropagation();
@@ -500,6 +521,32 @@
       closeNewModal();
       toast("已创建" + (kind === "addon" ? "插件包" : "包") + ": " + result.name);
       applyState(result.state);
+    }).catch(function (err) { toast(String(err), true); });
+  }
+
+  /* ---- 导入已包装好的包（文件夹 / 压缩包）---- */
+  function openImportModal() {
+    var node = $("importModal");
+    if (!node) return;
+    node.classList.remove("closing");
+    node.hidden = false;
+  }
+
+  function closeImportModal() {
+    closeModal($("importModal"));
+  }
+
+  function runImport(mode) {
+    closeImportModal();
+    invoke("import_package", mode).then(function (result) {
+      if (!result || result.canceled) return;
+      if (!result.ok) return toast(errorText(result), true);
+      var msg = "已导入" + (result.kind === "addon" ? "插件包" : "Mod 包") + ": " + result.name;
+      var hasErr = !!(result.errors && result.errors.length);
+      if (hasErr) msg += "；部分文件失败: " + result.errors.join("；");
+      toast(msg, hasErr);
+      if (result.state) applyState(result.state);
+      else refresh();
     }).catch(function (err) { toast(String(err), true); });
   }
 
@@ -741,6 +788,13 @@
      ============================================================ */
   function bindWorkflow() {
     $("wf-new").addEventListener("click", openNewModal);
+    $("wf-import").addEventListener("click", openImportModal);
+    $("wf-import-cancel").addEventListener("click", closeImportModal);
+    $("wf-import-folder").addEventListener("click", function () { runImport("folder"); });
+    $("wf-import-archive").addEventListener("click", function () { runImport("archive"); });
+    $("importModal").addEventListener("mousedown", function (event) {
+      if (event.target === $("importModal")) closeImportModal();
+    });
     document.querySelectorAll(".wf-kind").forEach(function (b) {
       b.addEventListener("click", function () { setKind(b.dataset.kind); });
     });
