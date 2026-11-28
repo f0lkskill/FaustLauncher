@@ -1,3 +1,12 @@
+"""pywebview 自绘标题栏与 Win32 窗口外观控制。
+
+页面侧由 ``web/shared/chrome.css`` + ``chrome.js`` 画标题栏，Python 侧负责：
+注入主题/CSS/配置、生成窗口图标、取句柄，以及无边框窗口的移动/缩放/最大化
+和淡入淡出。所有 Win32 调用都做了异常兜底，失败只返回 False，不影响业务。
+
+:class:`WindowChromeBridge` 把这些能力暴露给 JS（换肤回调会用它刷新标题栏）。
+"""
+
 from __future__ import annotations
 
 import json
@@ -15,14 +24,17 @@ FRAME_WIDTH = 14
 FRAME_HEIGHT = 37
 
 def child_window_size(width: int, height: int) -> tuple:
+    """把内容区尺寸换算成包含自绘标题栏/边框的窗口外框尺寸。"""
     return int(width) + FRAME_WIDTH, int(height) + TITLEBAR_HEIGHT + FRAME_HEIGHT
 
 def _project_root() -> str:
+    """返回运行时根目录：打包版为 exe 目录，开发版为仓库根。"""
     if getattr(sys, "frozen", False):
         return os.path.dirname(os.path.abspath(sys.executable))
     return os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
 
 def _web_shared(*parts) -> str:
+    """取 web/shared 下资源路径。"""
     try:
         from functions.base.common.path_utils import get_web_root
         return get_web_root("shared", *parts)
@@ -30,9 +42,11 @@ def _web_shared(*parts) -> str:
         return os.path.join(_project_root(), "web", "shared", *parts)
 
 def _asset_path(*parts) -> str:
+    """取 assets 下资源路径。"""
     return os.path.join(_project_root(), "assets", *parts)
 
 def _read_text(path: str) -> str:
+    """读 UTF-8 文本，文件不存在或读取失败时返回空串。"""
     try:
         if path and os.path.isfile(path):
             with open(path, "r", encoding="utf-8") as f:
@@ -42,12 +56,15 @@ def _read_text(path: str) -> str:
     return ""
 
 def chrome_css() -> str:
+    """读取自绘标题栏的 CSS 文本。"""
     return _read_text(_web_shared("chrome.css"))
 
 def chrome_js() -> str:
+    """读取自绘标题栏的 JS 文本。"""
     return _read_text(_web_shared("chrome.js"))
 
 def icon_data_uri(path: str) -> str:
+    """把图片文件转成带 MIME 的 data URI。"""
     try:
         import base64
         if path and os.path.isfile(path):
@@ -64,6 +81,7 @@ def icon_data_uri(path: str) -> str:
     return ""
 
 def titlebar_icon_path(kind: str = "launcher") -> str:
+    """找标题栏图标路径；kind 可选 launcher/yisang。"""
     if kind == "yisang":
         cands = [
             os.path.join(_project_root(), "resources", "mod_loader", "_internal", "assets", "icon.png"),
@@ -85,6 +103,7 @@ def titlebar_icon_path(kind: str = "launcher") -> str:
     return ""
 
 def _is_real_ico(path: str) -> bool:
+    """检查文件是否是真正 ICO（前 4 字节特征值）。"""
     try:
         if path and os.path.isfile(path):
             with open(path, "rb") as f:
@@ -94,6 +113,7 @@ def _is_real_ico(path: str) -> bool:
     return False
 
 def _ico_from_image(src: str, dest: str) -> str:
+    """用 Pillow 把图片转成多尺寸 ICO 并写到目标路径。"""
     try:
         from PIL import Image
 
@@ -111,6 +131,7 @@ def _ico_from_image(src: str, dest: str) -> str:
     return ""
 
 def window_icon_path(kind: str = "launcher") -> str:
+    """返回窗口图标路径，yisang 模式会按需生成缓存 ICO。"""
     if kind == "yisang":
         import tempfile
 
@@ -126,6 +147,7 @@ def window_icon_path(kind: str = "launcher") -> str:
     return fallback if _is_real_ico(fallback) else ""
 
 def hwnd_of(window) -> int:
+    """从 pywebview 窗口取 Win32 窗口句柄；取不到返回 0。"""
     if window is None:
         return 0
     try:
@@ -148,6 +170,7 @@ def hwnd_of(window) -> int:
     return 0
 
 def minimize_window(window) -> bool:
+    """最小化窗口；无句柄时返回 False。"""
     hwnd = hwnd_of(window)
     if not hwnd:
         return False
@@ -159,6 +182,7 @@ def minimize_window(window) -> bool:
         return False
 
 def close_window(window, fade: bool = True) -> bool:
+    """关闭窗口；默认先淡出再关闭。"""
     if fade:
         fade_out_window(window, then_close=True)
         return True
@@ -177,6 +201,7 @@ _MOVE_SWP = 0x0001 | 0x0004 | 0x0010 | 0x4000
 _RESIZE_SWP = 0x0004 | 0x0010 | 0x4000
 
 def begin_move_window(window, mouse_x, mouse_y) -> bool:
+    """记录拖拽起点（鼠标坐标 + 窗口位置），准备移动窗口。"""
     hwnd = hwnd_of(window)
     if not hwnd:
         return False
@@ -192,6 +217,7 @@ def begin_move_window(window, mouse_x, mouse_y) -> bool:
         return False
 
 def move_window(window, mouse_x, mouse_y) -> bool:
+    """根据鼠标位移调用 SetWindowPos 移动窗口。"""
     hwnd = hwnd_of(window)
     if not hwnd:
         return False
@@ -210,6 +236,7 @@ def move_window(window, mouse_x, mouse_y) -> bool:
         return False
 
 def end_move_window(window) -> bool:
+    """清理该窗口的拖拽起点。"""
     hwnd = hwnd_of(window)
     with _drag_lock:
         _drag_origins.pop(hwnd, None)
@@ -220,6 +247,7 @@ _resize_origins: dict[int, tuple] = {}
 _maximized: dict[int, tuple] = {}
 
 def _min_outer_size(window) -> tuple:
+    """取窗口允许的最小外框尺寸。"""
     try:
         min_size = getattr(window, "min_size", None)
         if min_size:
@@ -229,6 +257,7 @@ def _min_outer_size(window) -> tuple:
     return child_window_size(200, 100)
 
 def begin_resize_window(window, edge, mouse_x, mouse_y) -> bool:
+    """根据拖拽边(edge)记录缩放起点和初始尺寸。"""
     hwnd = hwnd_of(window)
     if not hwnd:
         return False
@@ -247,6 +276,7 @@ def begin_resize_window(window, edge, mouse_x, mouse_y) -> bool:
         return False
 
 def resize_window(window, mouse_x, mouse_y) -> bool:
+    """按拖拽边计算新尺寸并限制最小值，调用 SetWindowPos 缩放。"""
     hwnd = hwnd_of(window)
     if not hwnd:
         return False
@@ -291,12 +321,14 @@ def resize_window(window, mouse_x, mouse_y) -> bool:
         return False
 
 def end_resize_window(window) -> bool:
+    """清理该窗口的缩放起点。"""
     hwnd = hwnd_of(window)
     with _resize_lock:
         _resize_origins.pop(hwnd, None)
     return True
 
 def _work_area() -> tuple:
+    """取屏幕工作区矩形（排除任务栏），失败返回零值。"""
     try:
         import ctypes
         import ctypes.wintypes as wt
@@ -308,6 +340,7 @@ def _work_area() -> tuple:
     return 0, 0, 0, 0
 
 def toggle_maximize_window(window) -> bool:
+    """在普通尺寸与工作区最大化之间切换，返回切换后是否最大化。"""
     hwnd = hwnd_of(window)
     if not hwnd:
         return False
@@ -334,10 +367,12 @@ def toggle_maximize_window(window) -> bool:
         return False
 
 def is_maximized_window(window) -> bool:
+    """窗口当前是否处于本模块托管的最大化状态。"""
     hwnd = hwnd_of(window)
     return bool(hwnd and hwnd in _maximized)
 
 def _inject_js(style_id: str, css: str) -> str:
+    """生成注入 CSS 的 JS：按 id 创建/更新 style 节点。"""
     return (
         "(function(){var d=document,id=%s,s=d.getElementById(id);"
         "if(!s){s=d.createElement('style');s.id=id;(d.head||d.documentElement).appendChild(s);}"
@@ -345,6 +380,7 @@ def _inject_js(style_id: str, css: str) -> str:
     )
 
 def _plain_show(window):
+    """尽力调用 window.show，失败静默忽略。"""
     try:
         window.show()
     except Exception:
@@ -353,6 +389,7 @@ def _plain_show(window):
 _layered_ready = set()
 
 def ensure_layered(hwnd) -> bool:
+    """为窗口加上 WS_EX_LAYERED 样式，使透明度可调。"""
     if not hwnd:
         return False
     if hwnd in _layered_ready:
@@ -368,6 +405,7 @@ def ensure_layered(hwnd) -> bool:
         return False
 
 def clear_layered(hwnd) -> None:
+    """移除 WS_EX_LAYERED 样式并刷新窗口。"""
     try:
         import ctypes
         GWL_EXSTYLE, WS_EX_LAYERED = -20, 0x80000
@@ -382,6 +420,7 @@ def clear_layered(hwnd) -> None:
         pass
 
 def set_window_alpha(hwnd, alpha) -> None:
+    """设置窗口透明度（0~255），失败静默忽略。"""
     try:
         import ctypes
         ctypes.windll.user32.SetLayeredWindowAttributes(
@@ -390,6 +429,7 @@ def set_window_alpha(hwnd, alpha) -> None:
         pass
 
 def get_window_alpha(hwnd) -> int:
+    """读取窗口透明度；失败返回 -1。"""
     try:
         import ctypes
         import ctypes.wintypes as wt
@@ -404,6 +444,7 @@ def get_window_alpha(hwnd) -> int:
     return -1
 
 def fade_window(hwnd, start, end, step=20, delay=0.01) -> None:
+    """按 step/delay 在后台把窗口透明度从 start 渐变到 end。"""
     import time
 
     if not hwnd or start == end:
@@ -425,6 +466,7 @@ def fade_window(hwnd, start, end, step=20, delay=0.01) -> None:
     set_window_alpha(hwnd, end)
 
 def fade_in_window(window, *, step=15, delay=0.01) -> bool:
+    """显示窗口并在后台淡入；无句柄时直接 show。"""
     hwnd = hwnd_of(window)
     if not hwnd:
         _plain_show(window)
@@ -434,6 +476,7 @@ def fade_in_window(window, *, step=15, delay=0.01) -> bool:
     _plain_show(window)
 
     def _work():
+        """后台线程体：执行淡入/淡出动画并做收尾。"""
         try:
             fade_window(hwnd, 0, 255, step=step, delay=delay)
         except Exception:
@@ -446,6 +489,7 @@ def fade_in_window(window, *, step=15, delay=0.01) -> bool:
     return True
 
 def _post_close(window, hwnd=0) -> None:
+    """向窗口投递 WM_CLOSE，失败时退回 window.destroy。"""
     try:
         import ctypes
         if not hwnd:
@@ -461,9 +505,11 @@ def _post_close(window, hwnd=0) -> None:
         pass
 
 def fade_out_window(window, *, step=20, delay=0.008, then_close=False) -> bool:
+    """在后台淡出窗口；then_close=True 时结束后关闭窗口。"""
     hwnd = hwnd_of(window)
 
     def _work():
+        """后台线程体：执行淡入/淡出动画并做收尾。"""
         try:
             if hwnd:
                 ensure_layered(hwnd)
@@ -480,6 +526,7 @@ def fade_out_window(window, *, step=20, delay=0.008, then_close=False) -> bool:
 _shown_hwnds = set()
 
 def _safe_show(window):
+    """避免重复显示：记录已 show 的句柄后再淡入。"""
     hwnd = hwnd_of(window)
     if hwnd and hwnd in _shown_hwnds:
         return
@@ -488,6 +535,7 @@ def _safe_show(window):
     fade_in_window(window)
 
 def theme_revision() -> str:
+    """返回皮肤 id + CSS 修改时间的版本号，供前端检测换肤。"""
     sid = ""
     mtime = 0.0
     try:
@@ -509,6 +557,7 @@ def apply_window_chrome(window, *, title: str = "", kind: str = "launcher",
                         show_when_ready: bool = False, fallback_ms: int = 1500,
                         poll_ms: int = 1200, on_skin_change: str = "",
                         resizable: bool = True) -> bool:
+    """页面加载完成后注入主题/CSS/JS，启用自绘标题栏；可延迟显示窗口。"""
     if icon_path and not icon:
         icon = icon_data_uri(icon_path)
     if not icon:
@@ -520,6 +569,7 @@ def apply_window_chrome(window, *, title: str = "", kind: str = "launcher",
             title = ""
 
     def _apply():
+        """注入主题与标题栏资源，并在需要时安全显示窗口。"""
         theme = ""
         try:
             theme = full_theme_css()
@@ -560,10 +610,12 @@ class WindowChromeBridge(SkinBridge):
     _fl_window = None
 
     def attach_window(self, window):
+        """给 SkinBridge 绑定当前 webview 窗口。"""
         self._fl_window = window
         return True
 
     def _win(self):
+        """返回已绑定的窗口；没有则尝试 webview.windows[0]。"""
         w = getattr(self, "_fl_window", None)
         if w is not None:
             return w
@@ -574,34 +626,45 @@ class WindowChromeBridge(SkinBridge):
             return None
 
     def minimize_window(self):
+        """最小化窗口；无句柄时返回 False。"""
         return minimize_window(self._win())
 
     def close_window(self):
+        """关闭窗口；默认先淡出再关闭。"""
         return close_window(self._win())
 
     def begin_move_window(self, mouse_x, mouse_y):
+        """记录拖拽起点（鼠标坐标 + 窗口位置），准备移动窗口。"""
         return begin_move_window(self._win(), mouse_x, mouse_y)
 
     def move_window(self, mouse_x, mouse_y):
+        """根据鼠标位移调用 SetWindowPos 移动窗口。"""
         return move_window(self._win(), mouse_x, mouse_y)
 
     def end_move_window(self):
+        """清理该窗口的拖拽起点。"""
         return end_move_window(self._win())
 
     def begin_resize_window(self, edge, mouse_x, mouse_y):
+        """根据拖拽边(edge)记录缩放起点和初始尺寸。"""
         return begin_resize_window(self._win(), edge, mouse_x, mouse_y)
 
     def resize_window(self, mouse_x, mouse_y):
+        """按拖拽边计算新尺寸并限制最小值，调用 SetWindowPos 缩放。"""
         return resize_window(self._win(), mouse_x, mouse_y)
 
     def end_resize_window(self):
+        """清理该窗口的缩放起点。"""
         return end_resize_window(self._win())
 
     def toggle_maximize_window(self):
+        """在普通尺寸与工作区最大化之间切换，返回切换后是否最大化。"""
         return toggle_maximize_window(self._win())
 
     def is_maximized(self) -> bool:
+        """桥接版：窗口是否最大化。"""
         return is_maximized_window(self._win())
 
     def theme_revision(self) -> str:
+        """返回皮肤 id + CSS 修改时间的版本号，供前端检测换肤。"""
         return theme_revision()

@@ -1,3 +1,9 @@
+"""旧版 Tk 下载中心页面：插件/Mod 列表、分页、图标与更新检测。
+
+前端主界面已迁移到 pywebview，本模块保留给独立下载窗口/旧入口使用。
+图标异步加载用“代次”标记防止旧任务覆盖新页面；列表数据来自云端目录笔记。
+"""
+
 import tkinter as tk
 from tkinter import ttk, messagebox
 import os, shutil
@@ -13,6 +19,7 @@ from functions.base.custom_notebook import CustomNotebook
 from functions.base.style_utils import apply_scrollbar_style, RoundedFrame, RoundedButton
 
 def _safe_mod_dir_name(name) -> str:
+    """把 Mod 显示名转成可安全用作目录名的片段。"""
     n = str(name or '').strip()
     if not n or n in ('.', '..'):
         return ''
@@ -24,6 +31,7 @@ def _safe_mod_dir_name(name) -> str:
 
 class DownloadCenterPage:
     def __init__(self, parent, root, bg_color, lighten_bg_color):
+        """初始化下载中心状态与控件引用。"""
         self.parent = parent
         self.root = root
         self.bg_color = bg_color
@@ -58,6 +66,7 @@ class DownloadCenterPage:
         self.root.root.after(3000, self.total_detect_update)
 
     def _bind_mousewheel_recursive(self, widget, handler):
+        """给容器及其子控件递归绑定鼠标滚轮事件。"""
         try:
             widget.bind("<MouseWheel>", handler)
         except tk.TclError:
@@ -66,10 +75,12 @@ class DownloadCenterPage:
             self._bind_mousewheel_recursive(child, handler)
 
     def load_all_data(self):
+        """重新拉取插件/Mod 列表并渲染。"""
         self.load_addon_data()
         self.load_mod_data()
         
     def smooth_mousewheel(self, event, canvas, anim_state):
+        """把滚轮事件平滑地作用到目标 Canvas 的滚动条。"""
         if anim_state['after_id'] is not None:
             try:
                 canvas.after_cancel(anim_state['after_id'])
@@ -107,6 +118,7 @@ class DownloadCenterPage:
         anim_state['total_steps'] = self._anim_steps
 
         def _step():
+            """生成分步骤进度回调，用于更新状态文案。"""
             anim_state['step_count'] += 1
             t = anim_state['step_count'] / anim_state['total_steps']
             eased = t * t * (3 - 2 * t) if t < 1 else 1.0
@@ -127,6 +139,7 @@ class DownloadCenterPage:
         _step()
 
     def setup_ui(self):
+        """搭建下载中心的标签页、搜索框和卡片容器。"""
         content_frame = RoundedFrame(self.parent,
                                      bg=self.lighten_bg_color,
                                      border_color=border_color(self.lighten_bg_color),
@@ -141,6 +154,7 @@ class DownloadCenterPage:
         self.create_mods_tab()
 
     def create_addons_tab(self):
+        """创建插件标签页。"""
         addons_frame = tk.Frame(self.notebook, bg=self.bg_color)
         self.notebook.add(addons_frame, text="🔌 插件下载")
 
@@ -160,6 +174,7 @@ class DownloadCenterPage:
         )
 
         def _sync_width(event):
+            """让卡片内部控件宽度与容器保持一致。"""
             canvas.itemconfigure('scroll_window', width=event.width)
         canvas.bind('<Configure>', _sync_width)
 
@@ -170,6 +185,7 @@ class DownloadCenterPage:
         anim_state = {'target_frac': 0.0, 'step_count': 0, 'total_steps': self._anim_steps, 'after_id': None}
 
         def _on_mousewheel(event):
+            """滚轮事件处理：转发给 smooth_mousewheel。"""
             self.smooth_mousewheel(event, canvas, anim_state)
 
         self._addon_wheel_handler = _on_mousewheel
@@ -183,6 +199,7 @@ class DownloadCenterPage:
         scrollbar.pack(side="right", fill="y")
 
     def create_mods_tab(self):
+        """创建 Mod 标签页。"""
         mods_frame = tk.Frame(self.notebook, bg=self.bg_color)
         self.notebook.add(mods_frame, text="🎮 Mod下载")
 
@@ -202,6 +219,7 @@ class DownloadCenterPage:
         )
 
         def _sync_width(event):
+            """让卡片内部控件宽度与容器保持一致。"""
             canvas.itemconfigure('scroll_window', width=event.width)
         canvas.bind('<Configure>', _sync_width)
 
@@ -212,6 +230,7 @@ class DownloadCenterPage:
         anim_state = {'target_frac': 0.0, 'step_count': 0, 'total_steps': self._anim_steps, 'after_id': None}
 
         def _on_mousewheel(event):
+            """滚轮事件处理：转发给 smooth_mousewheel。"""
             self.smooth_mousewheel(event, canvas, anim_state)
 
         self._mod_wheel_handler = _on_mousewheel
@@ -225,7 +244,9 @@ class DownloadCenterPage:
         scrollbar.pack(side="right", fill="y")
 
     def load_data(self):
+        """加载当前标签页的数据。"""
         def load_data_addon():
+            """异步加载插件列表的封装。"""
             try:
                 self.addon_data = self.web_trigger.fetch_all_addon_info()
                 if self.addon_data:
@@ -237,6 +258,7 @@ class DownloadCenterPage:
                 self.show_error(f"加载插件数据失败: {str(e)}")
 
         def load_data_mod():
+            """异步加载 Mod 列表的封装。"""
             try:
                 self.mod_data = self.web_trigger.fetch_all_mod_info()
                 if self.mod_data:
@@ -253,6 +275,7 @@ class DownloadCenterPage:
         thread.start()
 
     def load_addon_data(self):
+        """加载并按页渲染插件列表。"""
         for widget in self.addon_scrollable_frame.winfo_children():
             widget.destroy()
 
@@ -267,6 +290,7 @@ class DownloadCenterPage:
         self.addon_scrollable_frame.update()
 
         def load_data_addon():
+            """异步加载插件列表的封装。"""
             try:
                 self.addon_data = self.web_trigger.fetch_all_addon_info()
                 if self.addon_data:
@@ -281,6 +305,7 @@ class DownloadCenterPage:
         thread.start()
 
     def load_mod_data(self):
+        """加载并按页渲染 Mod 列表。"""
         for widget in self.mod_scrollable_frame.winfo_children():
             widget.destroy()
 
@@ -295,6 +320,7 @@ class DownloadCenterPage:
         self.mod_scrollable_frame.update()
 
         def load_data_mod():
+            """异步加载 Mod 列表的封装。"""
             try:
                 self.mod_data = self.web_trigger.fetch_all_mod_info()
                 if self.mod_data:
@@ -309,6 +335,7 @@ class DownloadCenterPage:
         thread.start()
 
     def display_addon_page(self, page_num):
+        """渲染插件列表的指定页。"""
         for widget in self.addon_scrollable_frame.winfo_children():
             widget.destroy()
 
@@ -364,6 +391,7 @@ class DownloadCenterPage:
                                             self._addon_wheel_handler)
 
     def display_mod_page(self, page_num):
+        """渲染 Mod 列表的指定页。"""
         for widget in self.mod_scrollable_frame.winfo_children():
             widget.destroy()
 
@@ -419,6 +447,7 @@ class DownloadCenterPage:
                                             self._mod_wheel_handler)
 
     def create_addon_card(self, addon:dict, gen: int = None): # type: ignore
+        """构造一张插件卡片控件。"""
         gen_key = ('addon', gen if gen is not None else self._addon_page_gen)
         unable_download = addon.get('disabled', False)
         card_bg = self._card_bg if not unable_download else darken_color(self._card_bg, 0.5)
@@ -536,6 +565,7 @@ class DownloadCenterPage:
         download_button.pack(side=tk.RIGHT, padx=5)
 
     def create_mod_card(self, mod:dict, gen: int = None): # type: ignore
+        """构造一张 Mod 卡片控件。"""
         gen_key = ('mod', gen if gen is not None else self._mod_page_gen)
         unable_download = mod.get('disabled', False)
         card_bg = self._card_bg if not unable_download else darken_color(self._card_bg, 0.5)
@@ -654,10 +684,12 @@ class DownloadCenterPage:
 
     def _icon_cache_path(self, icon_url:str, item_name:str) -> str:
         # 返回真正存在的缓存文件: 同一个 item 的 url 会变, 只按 url 算路径会找不到
+        """取资源图标的本地缓存路径。"""
         from functions.base.common.icon_cache import find_cached_icon
         return find_cached_icon(icon_url, item_name, self.icon_cache_dir)
 
     def _prune_icon_cache_when_ready(self):
+        """后台清理过旧的图标缓存文件。"""
         with self._icon_lock:
             if self._icon_pruned or not self.addon_data or not self.mod_data:
                 return
@@ -669,11 +701,13 @@ class DownloadCenterPage:
             print(f"图标缓存清理失败: {e}")
 
     def _is_current_gen(self, gen_key):
+        """判断异步加载的图标是否仍属于当前页面代次，防止旧任务覆盖新界面。"""
         key, gen = gen_key
         return gen is not None and getattr(self, f'_{key}_page_gen') == gen
 
     def _load_icon_async(self, icon_url:str, item_name:str,
                          header_frame, card_bg, gen_key):
+        """后台下载/读取图标后回调主线程显示。"""
         key = hashlib.md5(icon_url.encode('utf-8')).hexdigest()
         with self._icon_lock:
             pending = self._icon_pending.get(key)
@@ -683,6 +717,7 @@ class DownloadCenterPage:
             self._icon_pending[key] = [(header_frame, card_bg, gen_key)]
 
         def _work():
+            """后台任务：取图标后带着代次标记回主线程显示。"""
             try:
                 icon_path = self.download_icon(icon_url, item_name)
                 with self._icon_lock:
@@ -699,6 +734,7 @@ class DownloadCenterPage:
         threading.Thread(target=_work, daemon=True).start()
 
     def _show_icon(self, header_frame, icon_path:str, card_bg, gen_key):
+        """把图标显示到卡片控件上。"""
         try:
             if not self._is_current_gen(gen_key):
                 return
@@ -771,10 +807,12 @@ class DownloadCenterPage:
         return None
 
     def refresh_center(self):
+        """刷新下载中心（列表 + 已下载状态）。"""
         self.load_data()
         self.root.core.refresh_all_tabs()
 
     def download_addon(self, addon, allow_update=True):
+        """触发插件下载。"""
         import time
         
         download_url = addon.get('dowload_url')
@@ -800,6 +838,7 @@ class DownloadCenterPage:
             print(f"准备下载插件: {addon.get('name', 'unknown')}，下载链接: {download_url}")
 
             def temp_func(gui, addon_path, download_files):
+                """临时调试入口。"""
                 download_and_extract_gui(gui, addon_path, download_files)
                 time.sleep(1)
                 print('插件下载完成, 正在重载所有插件...')
@@ -819,6 +858,7 @@ class DownloadCenterPage:
             threading.Thread(target=self.refresh_center).start()
 
     def download_mod(self, mod, allow_update=True):
+        """触发 Mod 下载。"""
         download_url = mod.get('dowload_url')
         if not download_url:
             messagebox.showerror("错误", "Mod下载链接无效")
@@ -863,6 +903,7 @@ class DownloadCenterPage:
             threading.Thread(target=self.refresh_center).start()
 
     def detect_mod_update(self):
+        """检测 Mod 是否有新版本。"""
         mod_paths = ModManager.get_mod_path()
 
         for mod_path in mod_paths:
@@ -887,6 +928,7 @@ class DownloadCenterPage:
                         print(f"模组: {local_name} 已是最新版本: {version}")
 
     def detect_addon_update(self):
+        """检测插件是否有新版本。"""
         am = AddonManager([])
         addon_names = am.addon_names
 
@@ -909,10 +951,12 @@ class DownloadCenterPage:
                         print(f"插件: {local_name} 已是最新版本: {version}")
 
     def total_detect_update(self):
+        """并发检测全部资源更新并汇总结果。"""
         self.detect_addon_update()
         self.detect_mod_update()
 
     def open_url(self, url):
+        """在浏览器打开传入链接。"""
         if os.name == 'nt':
             os.startfile(url)
         elif os.name == 'posix':
@@ -921,10 +965,12 @@ class DownloadCenterPage:
             os.system(f'open "{url}"')
 
     def show_error(self, message):
+        """把错误信息提示给用户。"""
         try:
             messagebox.showerror("下载中心", message)
         except Exception:
             print(f"[Error] {message}")
 
 def init_download_center(parent, root, bg_color, lighten_bg_color) -> DownloadCenterPage:
+    """创建并初始化下载中心页面实例。"""
     return DownloadCenterPage(parent, root, bg_color, lighten_bg_color)
