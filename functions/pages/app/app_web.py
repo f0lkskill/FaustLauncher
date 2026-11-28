@@ -1,3 +1,14 @@
+"""pywebview 前端与后端业务之间的 API 桥（AppApi）。
+
+前端 JS 通过 ``window.pywebview.api.<方法>`` 调用这里的公开方法：设置读写、
+资源卡片数据、下载/重装、插件启停与运行入口、公告、用户/皮肤等。所有耗时
+操作丢后台线程，结果通过 ``evaluate_js`` 推回页面；这里不负责渲染，DOM
+结构在 ``web/app/``。
+
+文件里的辅助层：窗口/Skin/图片 URI、下载任务登记与取消、进程查询与结束、
+插件重载合并队列。改动公开方法时保持返回值是可 JSON 序列化的字典/基本
+类型，并尽量让失败返回 ``{'error': ...}`` 而不是抛异常到 JS 桥。
+"""
 
 import base64
 import json
@@ -1707,6 +1718,11 @@ class AppApi:
         threading.Thread(target=worker, daemon=True, name="steam-binding").start()
 
     def _sync_steam_binding_setting(self, key, value):
+        """设置变更后的 Steam 绑定副作用；只处理该键。
+
+        使用设置总入口的生效值而不是调用方传入的值：该设置项已下线，
+        旧接口即使再传 True，也只会按 False 同步（清除绑定）。
+        """
         try:
             from functions.base.launcher_mode import STEAM_BINDING_KEY
         except Exception:
@@ -1720,6 +1736,7 @@ class AppApi:
         return True
 
     def set_setting(self, key, value):
+        """写一个设置项并处理昵称冷却、Steam 绑定等副作用。"""
         blocked = self._guard_user_name(key, value)
         if blocked:
             print(f"[User] 改名被冷却限制拒绝: {blocked}")
@@ -1733,6 +1750,7 @@ class AppApi:
         return True
 
     def save_settings(self, changes: dict):
+        """批量写设置并落盘：被冷却拦下的昵称改动会跳过，其余照常写入。"""
         changes = changes or {}
         blocked = ""
         renamed = False
@@ -2023,6 +2041,12 @@ class AppApi:
 
         只有插件在 ``scr.py`` 里调用过 ``register_run_func`` 才能命中；
         具体执行放在后台线程，点击后立即返回，避免打开 Tk 面板时卡住界面。
+
+        Args:
+            name: 插件目录名。
+
+        Returns:
+            dict: ``{'ok': bool, 'error'?: str}``。
         """
         try:
             am = getattr(self.core, 'addon_manager', None)
@@ -2040,6 +2064,9 @@ class AppApi:
         每页只显示 5 个（RES_PAGE_SIZE = 5）。现在只回 ``has_icon``，
         前端按当前页调用 ``get_res_icons`` 按需取，首屏 payload 从 MB 级
         降到几十 KB。
+
+        Returns:
+            list[dict]: 每项含 name/dir/enabled/runnable/has_icon 等字段。
         """
         import os, json
         # 首次进入资源页顺手把历史遗留的 MB 级图标缓存瘦身（后台线程，只跑一次）
@@ -2259,6 +2286,18 @@ class AppApi:
         return index.get(str(name).strip())
 
     def _reinstall_local(self, kind, local_dir):
+        """后台重装一个已安装资源：停插件/卸载 Mod → 删旧目录 → 下载新版。
+
+        插件删除前会先停宿主、结束占用目录的子进程，并用带重试的 rmtree
+        兜底；删除成功后立即重载插件，下载完成后下载链路还会再重载一次。
+
+        Args:
+            kind: ``'addon'`` 或 ``'mod'``。
+            local_dir: 本地资源目录名。
+
+        Returns:
+            dict: ``{'ok': bool, 'error': str|None}``。
+        """
         import json
         root = 'addons' if kind == 'addon' else 'mods'
         info_name = 'addon_info.json' if kind == 'addon' else 'mod_info.json'
@@ -2307,6 +2346,7 @@ class AppApi:
             return {'ok': False, 'error': str(e)}
 
     def reinstall_resource(self, kind, local_dir):
+        """在后台线程执行 :meth:`_reinstall_local`，失败时通知前端弹错。"""
         def _run():
             result = self._reinstall_local(kind, local_dir)
             if not result.get('ok'):
@@ -2315,6 +2355,14 @@ class AppApi:
         return {'ok': True, 'error': None}
 
     def prepare_reinstall(self, kind, local_dir):
+        """只删除旧资源并返回匹配到的云端条目，供前端启动下载抽屉。
+
+        与 :meth:`reinstall_resource` 的区别：这里不下载，前端拿到 ``item``
+        后自己调用 ``startDownloadItem``，进度显示更连贯。
+
+        Returns:
+            dict: ``{'ok': bool, 'error': str|None, 'item': dict|None}``。
+        """
         import json
         root = 'addons' if kind == 'addon' else 'mods'
         info_name = 'addon_info.json' if kind == 'addon' else 'mod_info.json'
@@ -2354,6 +2402,7 @@ class AppApi:
             return {'ok': False, 'error': str(e)}
 
     def reinstall_resources(self, kind, local_dirs):
+        """批量后台重装：逐个走 :meth:`_reinstall_local`，失败只打印日志。"""
         dirs = [str(x) for x in (local_dirs or [])]
         def _run():
             for local_dir in dirs:
@@ -2369,6 +2418,12 @@ class AppApi:
 
         解压目录直接沿用压缩包名，而不是 ``faust_inst_*`` 随机串；这里只做
         最基本的非法字符替换，真正的插件目录名仍以清单里的 ``name`` 为准。
+
+        Args:
+            archive: 压缩包路径。
+
+        Returns:
+            str: 可作为目录名的文件名片段（去掉扩展名）。
         """
         stem = os.path.splitext(os.path.basename(str(archive or '')))[0]
         cleaned = ''.join(
@@ -2378,7 +2433,15 @@ class AppApi:
 
     @staticmethod
     def _extract_archive(archive, dest):
-        """把 zip/7z 解压到 ``dest``，返回错误说明（成功时为空串）。"""
+        """把 zip/7z 解压到 ``dest``，返回错误说明（成功时为空串）。
+
+        Args:
+            archive: 压缩包路径。
+            dest: 已存在的目标目录。
+
+        Returns:
+            str: 空串表示成功，否则是可直接展示给用户的失败原因。
+        """
         lower = str(archive or '').lower()
         if lower.endswith('.zip'):
             try:
@@ -2399,6 +2462,13 @@ class AppApi:
 
         压缩包可能把插件放在根目录，也可能多套一层包装目录；取最浅的一层
         可以避免把嵌套的依赖/备份目录误当成插件本体。
+
+        Args:
+            base: 解压根目录。
+            manifest: 要找的清单文件名。
+
+        Returns:
+            str|None: 命中的目录路径；没找到返回 None。
         """
         found, found_depth = None, None
         for root, _dirs, files in os.walk(base):
@@ -2416,6 +2486,13 @@ class AppApi:
         目录。插件安装前先校验格式（``addon_info.json`` 可解析、``name``
         能当目录名、``scr.py`` 存在）：不合格只清理临时目录，不落盘、不
         重载；合格后按清单里的 ``name`` 安装，并在安装完成后立即重载插件。
+
+        Args:
+            archive: 本地 zip/7z 路径。
+            kind: ``'addon'`` 或 ``'mod'``。
+
+        Returns:
+            dict: ``{'ok': bool, 'error': str|None, 'name'?: str}``。
         """
         import shutil
         info_name = 'addon_info.json' if kind == 'addon' else 'mod_info.json'
@@ -2511,6 +2588,9 @@ class AppApi:
         已禁用的卡片当场跳到最后 —— 那正是用户抱怨的"点一下东西飞走"。
 
         连续快速点若干次开关时不会并发重载：内部合并成"排队再跑一轮"。
+
+        Args:
+            notify: 重载完成后是否向前端推 ``__onResChanged`` 刷新列表。
         """
         with _ADDON_RELOAD_LOCK:
             _ADDON_RELOAD_STATE['notify'] = bool(_ADDON_RELOAD_STATE['notify'] or notify)
@@ -2570,6 +2650,7 @@ class AppApi:
             return {'error': str(e)}
 
     def set_mod_enabled(self, name, enabled):
+        """改 Mod 的 enable 标记；Mod 不需要重载，前端自己刷新卡片。"""
         import json, os
         path = os.path.join('mods', str(name), 'mod_info.json')
         if not os.path.exists(path):
@@ -2583,6 +2664,7 @@ class AppApi:
             return {'error': str(e)}
 
     def set_addon_enabled(self, name, enabled):
+        """改插件 enable 标记并真正卸载/重载；依赖库禁止关闭。"""
         import json, os
         path = os.path.join('addons', str(name), 'addon_info.json')
         if not os.path.exists(path):
@@ -2642,6 +2724,12 @@ class AppApi:
         插件可能已经拉起自己的工作台/窗口子进程，并且这些进程把插件目录当作
         工作目录。Windows 下这会阻止删除目录（文件删得掉、目录却一直"被占用"）。
         这里先停独立宿主，再结束仍引用该目录的插件子进程，之后才能安全删除。
+
+        Args:
+            name: 插件目录名。
+
+        Returns:
+            list[int]: 被结束的进程号；没有则为空列表。
         """
         path = os.path.abspath(os.path.join('addons', str(name)))
         try:
@@ -2661,6 +2749,11 @@ class AppApi:
             return []
 
     def delete_addon(self, name):
+        """删除插件：先释放目录占用，再走管理器删除并重载。
+
+        Returns:
+            dict: ``{'error': str|None}``；目录仍被占用时给出明确错误。
+        """
         try:
             name = str(name)
             # 先结束插件子进程，再让插件自己收尾并删除目录；否则子进程把插件
@@ -3512,7 +3605,14 @@ if %errorlevel% equ 0 (
             return self._notice_manager
 
     def get_notices(self, allow_refresh=False):
-        """返回云端公告和本地已读状态。"""
+        """返回云端公告和本地已读状态。
+
+        Args:
+            allow_refresh: True 时强制跳过笔记缓存重新拉云端。
+
+        Returns:
+            dict: ``{'ok', 'notices', 'unread_count', 'error'}``。
+        """
         try:
             manager = self._get_notice_manager()
             if allow_refresh:
@@ -3535,7 +3635,11 @@ if %errorlevel% equ 0 (
             }
 
     def mark_notice_read(self, notice_id):
-        """持久化一个已展示公告的已读状态。"""
+        """持久化一个已展示公告的已读状态。
+
+        Returns:
+            dict: ``{'ok': bool, 'id': str, 'error': str|None}``。
+        """
         try:
             manager = self._get_notice_manager()
             ok = manager.mark_read(notice_id)
