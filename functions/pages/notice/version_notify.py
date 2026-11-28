@@ -1,3 +1,9 @@
+"""版本检查与更新提示的统一出口。
+
+负责从云端版本笔记收集信息、与普通/强制更新策略比较、把结果推给 Web 端弹窗，
+以及在用户点“更新”后后台下载并安装新包（进度通过 push 回调写给前端）。
+"""
+
 #! 版本更新提示统一出口
 
 import json
@@ -24,37 +30,45 @@ _DOWNLOAD_STATE = {"running": False}
 _MEM = {"info": None, "payload": None, "t": 0.0}
 
 def remember_version_info(info):
+    """把最近一次版本信息放进进程内缓存。"""
     if not isinstance(info, dict):
         return
     _MEM["info"] = dict(info)
     _MEM["t"] = time.time()
 
 def remember_version_payload(payload):
+    """把最近一次推送给前端的版本弹窗数据缓存起来。"""
     if not isinstance(payload, dict):
         return
     _MEM["payload"] = dict(payload)
     _MEM["t"] = time.time()
 
 def cached_version_info():
+    """取缓存的版本信息副本；没有返回 None。"""
     info = _MEM.get("info")
     return dict(info) if isinstance(info, dict) else None
 
 def cached_version_payload():
+    """取缓存的弹窗数据副本；没有返回 None。"""
     payload = _MEM.get("payload")
     return dict(payload) if isinstance(payload, dict) else None
 
 def register_web_pusher(pusher):
+    """注册 Web 端版本弹窗推送函数。"""
     global _WEB_PUSHER
     _WEB_PUSHER = pusher
 
 def unregister_web_pusher():
+    """注销 Web 端推送函数。"""
     global _WEB_PUSHER
     _WEB_PUSHER = None
 
 def get_web_pusher():
+    """取当前注册的推送函数；没有返回 None。"""
     return _WEB_PUSHER
 
 def _render_markdown_html(description):
+    """把版本说明 Markdown 渲染成安全 HTML，失败时退化为纯文本。"""
     text = description or ""
     if not text.strip():
         return ""
@@ -67,6 +81,7 @@ def _render_markdown_html(description):
         return "<p>" + _html.escape(text) + "</p>"
 
 def collect_version_info(allow_refresh=False):
+    """从云端笔记读版本信息并与本地版本比较，返回结构化结果。"""
     from functions.base.settings_manager import get_settings_manager
     current = str(get_settings_manager().get_setting("version_info") or "")
     result = {"current": current, "latest": "", "has_update": False, "entry": {}, "error": None}
@@ -93,6 +108,7 @@ def collect_version_info(allow_refresh=False):
     return result
 
 def _fmt_date(value):
+    """把日期对象/字符串统一成 ``YYYY-MM-DD HH:MM:SS``。"""
     if hasattr(value, "strftime"):
         return value.strftime("%Y-%m-%d %H:%M:%S")
     text = str(value or "").strip()
@@ -102,6 +118,7 @@ def _fmt_date(value):
 
 def build_payload(current_version, latest_info, info="发现新版本",
                   has_new_version=False, forced=False):
+    """把版本信息拼成前端弹窗需要的 payload。"""
     latest_info = latest_info or {}
     description = latest_info.get("description") or latest_info.get("version_description") or ""
     url = latest_info.get("bilibili_url") or latest_info.get("url") or ""
@@ -131,6 +148,7 @@ def build_payload(current_version, latest_info, info="发现新版本",
 
 def notify_version(current_version, latest_info, info="发现新版本", root=None,
                    has_new_version=False, forced=False):
+    """推送版本弹窗；8 秒内去重，强制更新可打断普通弹窗。"""
     pusher = _WEB_PUSHER
     if pusher is None:
         return False
@@ -155,11 +173,14 @@ def notify_version(current_version, latest_info, info="发现新版本", root=No
 
 class _TextVar:
 
+    """给下载 GUI 用的极简字符串变量，set 时回调前端。"""
     def __init__(self, on_set, initial=""):
+        """保存初始值或初始化推送回调与任务名。"""
         self._value = initial
         self._on_set = on_set
 
     def set(self, value):
+        """设置文本并回调前端。"""
         self._value = str(value)
         try:
             self._on_set(self._value)
@@ -167,17 +188,21 @@ class _TextVar:
             pass
 
     def get(self):
+        """返回当前文本。"""
         return self._value
 
 class _ProgressGui:
 
+    """把下载进度适配成 zeroasso_download 需要的 GUI 接口。"""
     def __init__(self, push, task="版本更新"):
+        """保存初始值或初始化推送回调与任务名。"""
         self.push = push
         self.task = task
         self.is_downloading = True
         self.current_file_var = _TextVar(lambda t: push({"stage": "status", "text": t}))
 
     def update_progress(self, percent, downloaded, total, speed):
+        """把进度事件推给前端。"""
         try:
             percent = round(float(percent), 1)
         except Exception:
@@ -191,10 +216,12 @@ class _ProgressGui:
         })
 
 def is_downloading():
+    """当前是否有版本包正在下载。"""
     with _DOWNLOAD_LOCK:
         return bool(_DOWNLOAD_STATE["running"])
 
 def start_version_download(version_name, url, push):
+    """后台启动版本包下载与安装；同一时刻只允许一个任务。"""
     with _DOWNLOAD_LOCK:
         if _DOWNLOAD_STATE["running"]:
             push({"stage": "error", "text": "更新包正在下载中, 请稍候"})
@@ -202,6 +229,7 @@ def start_version_download(version_name, url, push):
         _DOWNLOAD_STATE["running"] = True
 
     def _run():
+        """后台线程体：下载安装并把成功/失败推给前端。"""
         try:
             _download_and_install(version_name, url, push)
         except Exception as e:
@@ -217,6 +245,7 @@ def start_version_download(version_name, url, push):
     return True
 
 def _download_and_install(version_name, url, push):
+    """下载更新包、校验并解压安装到 cache/new_version。"""
     import shutil
     import subprocess
 
@@ -286,6 +315,7 @@ def _download_and_install(version_name, url, push):
     os._exit(0)
 
 def manual_payload():
+    """用户手动点“版本信息”时用的 payload：复用缓存并取消强制更新标记。"""
     payload = cached_version_payload()
     if payload:
         payload["forced"] = False
