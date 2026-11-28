@@ -867,6 +867,9 @@ body.modal-open .res-card {
 }
 .res-toggle-btn:active, .dc-dl-btn:active { transform: scale(.94); }
 .res-toggle-btn:disabled, .dc-dl-btn:disabled { opacity: .45; cursor: default; transform: none; }
+/* 插件独立运行入口: 与"更多"同款按钮, 只在执行瞬间禁用 */
+.res-run-btn:active { transform: scale(.94); }
+.res-run-btn:disabled { opacity: .45; cursor: default; transform: none; }
 /* 已启用: 只让图标亮一档, 仍是灰色 (不用绿色) */
 .res-toggle-btn.on { color: var(--text-2); }
 .res-toggle-btn.on:hover { color: var(--text); }

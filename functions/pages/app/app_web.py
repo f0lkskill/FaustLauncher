@@ -2014,6 +2014,20 @@ class AppApi:
         except Exception as e:
             return {'error': str(e)}
 
+    def run_addon_entry(self, name):
+        """执行插件注册的独立运行入口（资源页卡片上的 ▶ 按钮）。
+
+        只有插件在 ``scr.py`` 里调用过 ``register_run_func`` 才能命中；
+        具体执行放在后台线程，点击后立即返回，避免打开 Tk 面板时卡住界面。
+        """
+        try:
+            am = getattr(self.core, 'addon_manager', None)
+            if am is None or not hasattr(am, 'run_addon_entry'):
+                return {'ok': False, 'error': '插件管理器尚未就绪'}
+            return am.run_addon_entry(str(name))
+        except Exception as e:
+            return {'ok': False, 'error': f'{type(e).__name__}: {e}'}
+
     def get_mods_data(self):
         """本地插件/Mod 列表（轻量元数据，**不含图标**）。
 
@@ -2035,6 +2049,8 @@ class AppApi:
         addon_tags_style = self._get_catalog_tags_style('addon')
         try:
             base = os.path.abspath('addons')
+            # 运行入口由插件载入时注册；没注册的插件卡片不会出现 ▶ 按钮
+            addon_manager = getattr(self.core, 'addon_manager', None)
             if os.path.isdir(base):
                 for name in sorted(os.listdir(base)):
                     info_path = os.path.join(base, name, 'addon_info.json')
@@ -2068,6 +2084,9 @@ class AppApi:
                         # 依赖库自身不产生行为，界面上一律显示为已启用且不可关闭
                         'enabled': True if permanent else bool(info.get('settings', {}).get('enable', True)),
                         'permanent': permanent,
+                        # 只有载入时注册过运行入口的插件才显示 ▶ 按钮
+                        'runnable': bool(addon_manager is not None
+                                         and addon_manager.has_run_func(name)),
                         'requires': requires,
                         'missing_requires': missing,
                         'provides': [str(x) for x in (info.get('provides') or [])],

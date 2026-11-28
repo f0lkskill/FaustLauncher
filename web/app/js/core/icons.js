@@ -49,6 +49,7 @@ const ICONS = {
   moreTwo: 'more-two.svg',
   paperclip: 'paperclip.svg',
   pic: 'pic.svg',
+  play: 'play.svg',
   power: 'power.svg',
   previewClose: 'preview-close-one.svg',
   protect: 'protect.svg',

@@ -1,6 +1,7 @@
 import os
 import json
 import sys
+import threading
 from types import ModuleType
 from typing import Dict, List, Optional, Any
 from functions.web_update.translation_source import CustomTranslateSource
@@ -17,10 +18,16 @@ class _ScratchAddonManager:
         self.enabled_funcs: List[Dict[str, Any]] = []
         self.disabled_funcs: List[Dict[str, Any]] = []
         self.extend_translate_source: List[Any] = []
+        self.run_funcs: Dict[str, Dict[str, Any]] = {}
 
     def register_tray_item(self, item) -> None:
         self.custom_tray_items.append(item)
         self.menu_items.append(item)
+
+    def register_run_func(self, name, func, title='') -> None:
+        """收集阶段也接受注册调用（不生效），避免插件重装时脚本报错。"""
+        if callable(func):
+            self.run_funcs[str(name or '')] = {'func': func, 'title': str(title or '')}
 
     def _refresh_tray_menu(self) -> None:
         pass
@@ -53,6 +60,10 @@ class AddonManager:
         self.custom_tray_items: List[Any] = []
         self.addons_dir = 'addons'
         self.extend_translate_source:list[CustomTranslateSource] = []
+        # 插件自己的「运行入口」：插件载入时调用 register_run_func 注册，
+        # 资源页卡片只在注册过时显示 ▶ 按钮（没注册的插件完全不出现）。
+        # 值形如 {'func': callable, 'title': '仓库面板'}。
+        self.run_funcs: Dict[str, Dict[str, Any]] = {}
         # 插件命名空间代理层：所有插件通过 ADDON_ARG['Namespaces'] 拿同一份
         # 容器。谁想开命名空间、往里放什么工具，全由插件自己决定，
         # 启动器不针对任何插件做特殊适配。见 namespace_registry.py。
@@ -68,6 +79,56 @@ class AddonManager:
         self.custom_tray_items.append(item)
         self.menu_items.append(item)
         self._refresh_tray_menu()
+
+    # ---- 插件独立运行入口 ----
+    # 插件在 scr.py 里调用：
+    #   ADDON_ARG['AddonManager'].register_run_func(ADDON_ARG['AddonName'], 函数, '按钮悬停提示')
+    # 注册后资源页的插件卡片右侧会多出一个 ▶ 图标按钮；没注册的插件不会显示。
+    def register_run_func(self, name, func, title='') -> bool:
+        """注册本插件的独立运行入口（资源页卡片上的 ▶ 按钮）。
+
+        Args:
+            name: 插件目录名，通常直接传 ``ADDON_ARG['AddonName']``。
+            func: 点击按钮时执行的无参可调用对象。
+            title: 可选的按钮悬停提示；留空时前端显示「运行」。
+
+        Returns:
+            注册是否成功（名字为空或 func 不可调用时返回 False）。
+        """
+        addon_name = str(name or '').strip()
+        if not addon_name or not callable(func):
+            print(f"插件运行入口注册失败: name={addon_name!r} func={func!r}")
+            return False
+        self.run_funcs[addon_name] = {'func': func, 'title': str(title or '').strip()}
+        print(f"插件 {addon_name} 注册了运行入口")
+        return True
+
+    def has_run_func(self, addon_name: str) -> bool:
+        """插件是否注册过运行入口（决定资源页是否显示 ▶ 按钮）。"""
+        return str(addon_name or '').strip() in self.run_funcs
+
+    def run_addon_entry(self, addon_name: str) -> Dict[str, Any]:
+        """执行插件注册的运行入口。
+
+        入口可能是打开一个 Tk 面板这类会阻塞的调用，所以放到后台线程执行，
+        前端点击后立即返回，不卡住 pywebview 的 JS 桥。
+        """
+        name = str(addon_name or '').strip()
+        entry = self.run_funcs.get(name)
+        if not entry:
+            return {'ok': False, 'error': '该插件未注册运行入口'}
+        func = entry.get('func')
+        if not callable(func):
+            return {'ok': False, 'error': '运行入口不可用'}
+
+        def _call() -> None:
+            try:
+                func()
+            except Exception as exc:  # noqa: BLE001 - 插件自己的异常不能拖垮启动器
+                print(f"执行插件 {name} 的运行入口失败: {type(exc).__name__}: {exc}")
+
+        threading.Thread(target=_call, name=f"faust-addon-run-{name}", daemon=True).start()
+        return {'ok': True}
 
     def _refresh_tray_menu(self) -> None:
         try:
@@ -417,6 +478,7 @@ class AddonManager:
         self.disabled_funcs.clear()
         self.namespaces.clear()
         self.dep_skipped.clear()
+        self.run_funcs.clear()
         self.clear_custom_tray_items()
 
     def reload_all_addons(self, ADDON_ARG: Optional[Dict[str, Any]] = None) -> bool:

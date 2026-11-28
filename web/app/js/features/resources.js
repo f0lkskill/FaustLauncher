@@ -495,7 +495,14 @@ function buildResCard(item) {
       '</div>' +
     '</div>' +
     '<div class="res-card-ops">' +
-      '<button class="res-menu-btn" type="button">' +
+      // 独立运行入口: 只有插件载入时注册过才由后端下发 runnable=true,
+      // 没注册的插件这张按钮根本不会渲染。外观/尺寸与右侧其它图标按钮一致。
+      ((item.kind || resKind) === 'addon' && item.runnable
+        ? '<button class="res-menu-btn res-run-btn" type="button" title="运行" aria-label="运行">' +
+            iconSvg('play') +
+          '</button>'
+        : '') +
+      '<button class="res-menu-btn res-more-btn" type="button">' +
         '<svg class="ico" data-icon="more-one.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg>' +
       '</button>' +
       (item.permanent
@@ -536,7 +543,24 @@ function buildResCard(item) {
       btn.disabled = false;
     }
   };
-  card.querySelector('.res-menu-btn').onclick = () => openResModal(resKind, item);
+  card.querySelector('.res-more-btn').onclick = () => openResModal(resKind, item);
+  const runBtn = card.querySelector('.res-run-btn');
+  if (runBtn) runBtn.onclick = async (e) => {
+    stopClick(e);
+    if (!api) { toast('浏览器预览模式', 'warn'); return; }
+    runBtn.disabled = true;
+    try {
+      const r = await Promise.resolve(api.run_addon_entry(item.dir || item.name))
+        .catch(err => ({ ok: false, error: String(err) }));
+      if (!r || !r.ok) {
+        toast('运行失败: ' + ((r && r.error) || '未知错误'), 'error', 5000);
+      } else {
+        toast('已运行 ' + name, 'success', 2200);
+      }
+    } finally {
+      runBtn.disabled = false;
+    }
+  };
   addCardTilt(card);
   return card;
 }
