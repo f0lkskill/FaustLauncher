@@ -499,6 +499,8 @@ class AddonManager:
 
         self.loaded_modules.clear()
         self.gamestart_funcs.clear()
+        if hasattr(self, 'gamestart_owners'):
+            self.gamestart_owners.clear()
         self.del_funcs.clear()
         self.enabled_funcs.clear()
         self.disabled_funcs.clear()
