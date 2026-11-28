@@ -593,8 +593,9 @@ body.term-open .skin-wrap {
   flex: 1; min-width: 160px; max-width: 260px; margin-right: auto;
 }
 .res-search-ico {
-  position: absolute; left: 10px; width: 15px; height: 15px;
-  color: var(--text-3); pointer-events: none;
+  position: absolute; left: 10px; width: 16px; height: 16px;
+  /* 放大镜要和 placeholder 一样清楚：用正文次级色，描边也略加粗。 */
+  color: var(--text-2); stroke-width: 5; pointer-events: none;
 }
 .res-search {
   width: 100%;
