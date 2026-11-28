@@ -2,6 +2,11 @@ import requests
 import time
 from pathlib import Path
 
+# 所有网络调用都必须带超时：无超时的请求遇到网络 stall 会永久挂住，
+# 是定时 workflow 卡死且占住并发槽位的常见原因。
+REQUEST_TIMEOUT = (10, 60)   # (连接, 读取)
+TRANSFER_TIMEOUT = (10, 300)  # 上传/下载大文件
+
 class UpFileClient:
     def __init__(self):
         self.base_url = "https://upfile.live"
@@ -22,7 +27,7 @@ class UpFileClient:
             'file_name': file_name
         }
         
-        response = self.session.post(url, data=data)
+        response = self.session.post(url, data=data, timeout=REQUEST_TIMEOUT)
         if response.status_code == 200:
             result = response.json()
             if result.get('status') == 1:
@@ -43,7 +48,8 @@ class UpFileClient:
             'Content-Disposition': f'attachment; filename="{file_name}"'
         }
         
-        response = requests.put(upload_url, data=file_content, headers=headers)
+        response = requests.put(upload_url, data=file_content, headers=headers,
+                                timeout=TRANSFER_TIMEOUT)
         
         if response.status_code in [200, 204]:
             return True
@@ -58,7 +64,7 @@ class UpFileClient:
             'file_key': file_key
         }
         
-        response = self.session.post(url, data=data)
+        response = self.session.post(url, data=data, timeout=REQUEST_TIMEOUT)
         if response.status_code == 200:
             result = response.json()
             if result.get('status') == 1:
@@ -75,7 +81,7 @@ class UpFileClient:
             '_': int(time.time() * 1000)
         }
         
-        response = self.session.get(url, params=params)
+        response = self.session.get(url, params=params, timeout=REQUEST_TIMEOUT)
         if response.status_code == 200:
             result = response.json()
             if result.get('status') == 1:
@@ -97,7 +103,8 @@ class UpFileClient:
             
             download_url = f"{self.base_url}/download/{file_id}/"
 
-            response = self.session.get(download_url, allow_redirects=True)
+            response = self.session.get(download_url, allow_redirects=True,
+                                        timeout=TRANSFER_TIMEOUT)
             
             if response.status_code == 200:
                 with open(save_path, 'wb') as file:
@@ -127,7 +134,7 @@ class UpFileClient:
                 'file_id': file_id
             }
             
-            response = self.session.post(url, data=data)
+            response = self.session.post(url, data=data, timeout=REQUEST_TIMEOUT)
             if response.status_code == 200:
                 result = response.json()
                 if result.get('status') == 1:

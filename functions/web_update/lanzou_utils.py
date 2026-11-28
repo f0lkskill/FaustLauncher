@@ -31,7 +31,9 @@ MYDISK_URL = "https://pc.woozooo.com/mydisk.php"
 ACCOUNT_URL = "https://pc.woozooo.com/account.php"
 DO_LOAD_URL = "https://pc.woozooo.com/doupload.php"
 UPLOAD_URL = "https://pc.woozooo.com/html5up.php"
-UPLOAD_TIMEOUT_SECONDS = 600
+# 单文件读取超时。600 秒意味着一次卡住最多要等 10 分钟才报错，
+# 两个包叠加会让定时 workflow 卡满 20 分钟并堵住整个并发组。
+UPLOAD_TIMEOUT_SECONDS = 180
 
 ALLOW_UP_TYPES = [
     'doc', 'docx', 'zip', 'rar', 'apk', 'ipa', 'txt', 'exe', '7z', 'e', 'z', 'ct', 'ke',

@@ -19,11 +19,17 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    # 下载 / 上传可能因网络静默 hang；即使请求层漏了超时，也由 job 硬兜底，
+    # 避免一个卡住的运行占住 concurrency 组、把后续所有定时运行全部堵在队列里。
+    timeout-minutes: 20
 
     # runner 默认是 UTC, 而笔记里的时间戳按北京时间写入/比较, 所以固定时区。
     # 用 TZ 环境变量而不是第三方 action (Python 的 datetime.now() 会读 TZ)。
+    # PYTHONUNBUFFERED 让 print 实时写进 Actions 日志，否则 stdout 块缓冲会让
+    # 卡住的位置看起来像停在第一行警告上，没法定位。
     env:
       TZ: Asia/Shanghai
+      PYTHONUNBUFFERED: "1"
 
     steps:
       - name: 检出代码

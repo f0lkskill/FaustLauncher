@@ -12,10 +12,16 @@
 import json
 import os
 import sys
+import warnings
 from datetime import datetime, timedelta
 from pathlib import Path
 
 import requests
+from urllib3.exceptions import InsecureRequestWarning
+
+# 部分环境到 GitHub / 笔记站的证书链不完整，只能 verify=False；对应的警告
+# 刷屏没有排查价值，压掉它，让 Actions 日志只保留真正的进度和错误。
+warnings.filterwarnings('ignore', category=InsecureRequestWarning)
 
 project_root = Path(os.path.dirname(__file__)).parent
 sys.path.append(project_root.as_posix())
@@ -32,6 +38,9 @@ GITHUB_OWNER = "LocalizeLimbusCompany"
 GITHUB_REPO = "LocalizeLimbusCompany"
 # 镜像链接会被上游清理, 超过这个天数就重传一次 (与版本是否变化无关)
 MIRROR_REFRESH = timedelta(days=2, hours=12)
+# 连接 / 读取超时（秒）。无超时的请求在网络 stall 时会永久挂住，
+# 是 workflow 卡死最常见的原因；这里的读超时按单个 chunk 计算，不是整包总时长。
+DOWNLOAD_TIMEOUT = (15, 300)
 
 
 def _load_note_json(note_):
@@ -77,12 +86,33 @@ def get_llc():
 
 def download_assets(release):
     """下载 release 里的 .7z / .zip -> (zip 资源, 7z 资源, 笔记里的下载地址)"""
-    seven_asset = release.get_assets_by_extension(".7z")[0]  # type: ignore
-    zip_asset = release.get_assets_by_extension(".zip")[0]  # type: ignore
+    seven_assets = release.get_assets_by_extension(".7z")  # type: ignore
+    zip_assets = release.get_assets_by_extension(".zip")  # type: ignore
+    if not seven_assets or not zip_assets:
+        raise RuntimeError("release 缺少 .7z / .zip 资源，跳过本次更新")
+    seven_asset, zip_asset = seven_assets[0], zip_assets[0]
+
     for asset in (zip_asset, seven_asset):
-        # 关闭 SSL 验证: 部分环境到 GitHub 的证书链不完整
-        with open(asset.name, "wb") as f:
-            f.write(requests.get(asset.download_url, verify=False).content)
+        # 关闭 SSL 验证: 部分环境到 GitHub 的证书链不完整。
+        # 必须带超时并分块写入：原来的 requests.get(...).content 既没有超时，
+        # 又会把整包读进内存，网络一 stall 就永远卡住。
+        size_mb = (getattr(asset, 'size', 0) or 0) / 1024 / 1024
+        print(f"下载资源: {asset.name} ({size_mb:.1f} MB)")
+        part_path = asset.name + ".part"
+        try:
+            with requests.get(asset.download_url, verify=False,
+                              timeout=DOWNLOAD_TIMEOUT, stream=True) as resp:
+                resp.raise_for_status()
+                with open(part_path, "wb") as f:
+                    for chunk in resp.iter_content(chunk_size=1024 * 1024):
+                        if chunk:
+                            f.write(chunk)
+            os.replace(part_path, asset.name)
+        finally:
+            if os.path.exists(part_path):
+                os.remove(part_path)
+        print(f"下载完成: {asset.name}")
+
     return zip_asset, seven_asset, {'zip': zip_asset.download_url,
                                     'seven': seven_asset.download_url}
 
@@ -166,7 +196,11 @@ def main():
     if need_update:
         print(f"发现新版本: {current_version} -> {new_version}")
 
-    zip_asset, seven_asset, download_urls = download_assets(release)
+    try:
+        zip_asset, seven_asset, download_urls = download_assets(release)
+    except Exception as e:  # noqa: BLE001
+        print(f"下载资源失败: {e}")
+        return
     mirror = upload_mirror(zip_asset, seven_asset)
     if mirror is None:
         return
