@@ -991,6 +991,13 @@ def _fmt_authors(authors):
         return ''
     return str(authors)
 
+def _normalize_requires(raw):
+    """把清单里的 requires 统一成非空字符串列表（兼容字符串/数组两种写法）。"""
+    if isinstance(raw, str):
+        raw = [raw]
+    return [str(x).strip() for x in (raw or []) if str(x).strip()]
+
+
 def _find_local_dep(name, kind=None):
     """按清单里的 name（或目录名）找本地已安装的插件/Mod。
 
@@ -2282,10 +2289,7 @@ class AppApi:
                     cloud_tags = normalize_tags((cloud_item or {}).get('tags'))
                     local_tags = normalize_tags(info.get('tags'))
                     # Mod 也支持 requires：写法与插件一致（字符串或数组均可）
-                    requires = info.get('requires')
-                    if isinstance(requires, str):
-                        requires = [requires]
-                    requires = [str(x).strip() for x in (requires or []) if str(x).strip()]
+                    requires = _normalize_requires(info.get('requires'))
                     missing = [r for r in requires if _find_local_dep(r) is None]
                     dir_mods.append({
                         'kind': 'mod',
@@ -3161,14 +3165,15 @@ if %errorlevel% equ 0 (
     def get_addon_dep(self, name, kind='addon'):
         """取一个依赖项的基本信息（图标 / 简介 / 版本 / 作者 / 是否已安装）。
 
-        插件和 Mod 共用这一份逻辑：本地分别读 ``addons/<目录>/addon_info.json``
-        和 ``mods/<目录>/mod_info.json``，名字和目录名都可能不一致，按清单里的
-        ``name`` 反查。云端取不到（没网、刚清过缓存、条目还没更新）时降级用
-        本地信息，离线也能看清依赖是什么。
+        插件和 Mod 共用这一份逻辑：本地同时查 ``addons/`` 与 ``mods/``，因为
+        Mod 可以依赖插件（例如 Mod 依赖一个面板插件），反之亦然。名字和目录名
+        都可能不一致，按清单里的 ``name`` 反查。云端也同时查两份目录，取不到
+        （没网、刚清过缓存、条目还没更新）时降级用本地信息，离线也能看清
+        依赖是什么。
 
         Args:
             name: 依赖项名字（清单里的 name 或目录名）。
-            kind: ``'addon'`` 或 ``'mod'``，决定读哪一边。
+            kind: 仅作为兼容参数保留；依赖查询始终跨插件/Mod 两边。
 
         Returns:
             dict: ``{'ok', 'name', 'dir', 'desc', 'version', 'author',
@@ -3179,7 +3184,6 @@ if %errorlevel% equ 0 (
         want = str(name or '').strip()
         if not want:
             return {'ok': False, 'error': '缺少依赖名'}
-        is_addon = str(kind or 'addon') == 'addon'
         result = {
             'ok': True, 'name': want, 'dir': want, 'desc': '', 'version': '',
             'author': '', 'author_links': [], 'icon': '', 'source': 'none',
@@ -3188,7 +3192,7 @@ if %errorlevel% equ 0 (
 
         # 本地：清单里的 name 和目录名不一定相同，按 name 反查
         try:
-            found = _find_local_dep(want, 'addon' if is_addon else 'mod')
+            found = _find_local_dep(want)
         except Exception as e:
             found = None
             print(f"查找依赖 {want} 的本地目录失败: {e}")
@@ -3209,9 +3213,12 @@ if %errorlevel% equ 0 (
             except Exception:
                 pass
 
-        # 云端：覆盖简介与版本（云端是最新发布信息），图标优先用云端 icon_url
+        # 云端：两份目录都查（依赖可能跨类型），覆盖简介与版本，图标优先云端
         try:
-            for it in self._iter_cloud_addons(self._get_cached_list('addon' if is_addon else 'mod')):
+            cloud_items = list(self._iter_cloud_addons(
+                self._get_cached_list('addon'))) + list(self._iter_cloud_addons(
+                    self._get_cached_list('mod')))
+            for it in cloud_items:
                 if str(it.get('name', '')).strip() != want:
                     continue
                 if (it.get('desc') or '').strip():
@@ -3232,7 +3239,7 @@ if %errorlevel% equ 0 (
                 result['source'] = 'cloud'
                 break
         except Exception as e:
-            print(f"读取云端{'插件' if is_addon else 'Mod'}列表失败（依赖 {want} 降级用本地信息）: {e}")
+            print(f"读取云端依赖目录失败（依赖 {want} 降级用本地信息）: {e}")
 
         return result
 
@@ -3346,10 +3353,8 @@ if %errorlevel% equ 0 (
         from functions.web_update.zeroasso_download import download_and_extract_mod
 
         item = self._cloud_addon_item(pages, name)
-        requires = item.get('requires') if item else None
-        if isinstance(requires, str):
-            requires = [requires]
-        for dep in [str(x).strip() for x in (requires or []) if str(x).strip()]:
+        requires = _normalize_requires(item.get('requires') if item else None)
+        for dep in requires:
             if dep in chain:
                 log(f'插件 {name} 的依赖出现环: {" -> ".join(list(chain) + [dep])}，跳过 {dep}')
                 continue
@@ -3381,6 +3386,83 @@ if %errorlevel% equ 0 (
             log(f'插件 {name} 已取消下载')
         else:
             log(f'插件 {name} ' + ('下载并解压完成' if ok else '下载失败'))
+        return bool(ok)
+
+    def _install_mod_sync(self, name, url, addon_pages, mod_pages,
+                          chain=(), log=print):
+        """同步安装一个 Mod；先补齐云端条目声明的依赖，再装自己。
+
+        和 :meth:`_install_addon_sync` 同一套策略：依赖来自云端目录的
+        ``requires``（发布工具从 mod_info.json 带上去）；依赖可以跨类型——
+        Mod 依赖插件时走插件安装链路，依赖 Mod 时递归走本方法。
+        ``chain`` 记录递归路径，遇到环就跳过该依赖，避免线程绕死。
+
+        Args:
+            name: 要安装的 Mod 名字。
+            url: 该 Mod 的下载地址。
+            addon_pages: 云端插件目录缓存。
+            mod_pages: 云端 Mod 目录缓存。
+            chain: 递归链（内部使用）。
+            log: 单参数日志回调。
+
+        Returns:
+            bool: Mod 本体是否下载并解压成功。
+        """
+        import shutil
+        from functions.web_update.zeroasso_download import download_and_extract_mod
+
+        item = self._cloud_addon_item(mod_pages, name)
+        for dep in _normalize_requires(item.get('requires') if item else None):
+            if dep in chain:
+                log(f'Mod {name} 的依赖出现环: '
+                    f'{" -> ".join(list(chain) + [dep])}，跳过 {dep}')
+                continue
+            if _find_local_dep(dep) is not None:
+                log(f'依赖 {dep} 已安装')
+                continue
+
+            dep_item = self._cloud_addon_item(mod_pages, dep)
+            dep_kind = 'mod'
+            if dep_item is None:
+                dep_item = self._cloud_addon_item(addon_pages, dep)
+                dep_kind = 'addon'
+            dep_url = str((dep_item or {}).get('dowload_url') or '').strip()
+            if not dep_url:
+                log(f'依赖 {dep} 在云端找不到下载地址，放弃安装 {name}')
+                return False
+            log(f'先安装 {name} 的依赖 {dep}（{dep_kind}）')
+            if dep_kind == 'addon':
+                ok = self._install_addon_sync(
+                    dep, dep_url, addon_pages, tuple(chain) + (name,), log)
+            else:
+                ok = self._install_mod_sync(
+                    dep, dep_url, addon_pages, mod_pages,
+                    tuple(chain) + (name,), log)
+            if not ok:
+                log(f'依赖 {dep} 安装失败，放弃安装 {name}')
+                return False
+
+        try:
+            from functions.extension.mod.mod_utils import ModManager
+            ModManager().unload_mod(name)
+        except Exception:
+            pass
+        try:
+            shutil.rmtree(os.path.join('mods', name), ignore_errors=True)
+        except Exception:
+            pass
+        gui = HeadlessDownloadGUI('mods', auto_start=False, task=name)
+        self._dl_register(gui)
+        try:
+            ok = download_and_extract_mod(
+                gui, 'mods',
+                [{'url': url, 'name': name, 'temp_filename': f'{name}.7z'}])
+        finally:
+            self._dl_release(gui)
+        if not ok and self._dl_was_cancelled(name):
+            log(f'Mod {name} 已取消下载')
+        else:
+            log(f'Mod {name} ' + ('下载并解压完成' if ok else '下载失败'))
         return bool(ok)
 
     def install_required_addon(self, name):
@@ -3511,31 +3593,18 @@ if %errorlevel% equ 0 (
         return True
 
     def download_mod(self, name, url):
-        """下载Mod相关处理。"""
+        """下载 Mod：和插件一样先尝试补齐云端 requires 声明的依赖。"""
         def _run():
             """内部执行相关操作。"""
             try:
-                from functions.web_update.zeroasso_download import download_and_extract_mod
-                from functions.extension.mod.mod_utils import ModManager
-                import shutil
-                target = 'mods'
-                download_files = [{'url': url, 'name': name, 'temp_filename': f"{name}.7z"}]
+                mod_pages = addon_pages = None
                 try:
-                    ModManager().unload_mod(name)
-                except Exception:
-                    pass
-                try:
-                    shutil.rmtree(os.path.join('mods', name), ignore_errors=True)
-                except Exception:
-                    pass
-                gui = HeadlessDownloadGUI(target, auto_start=False, task=name)
-                self._dl_register(gui)
-                try:
-                    ok = download_and_extract_mod(gui, target, download_files)
-                finally:
-                    self._dl_release(gui)
-                if ok:
-                    print(f"Mod {name} 下载并解压完成")
+                    mod_pages = self._get_cached_list('mod')
+                    addon_pages = self._get_cached_list('addon')
+                except Exception as e:
+                    print(f"读取云端目录失败（将跳过依赖解析）: {e}")
+                if self._install_mod_sync(
+                        name, url, addon_pages or [], mod_pages or []):
                     self._notify_res_changed('mod')
                 elif self._dl_was_cancelled(name):
                     print(f"Mod {name} 已取消下载")
