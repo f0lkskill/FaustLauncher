@@ -2601,6 +2601,8 @@ body.no-hw .ver-card { animation: verCardInLite .38s cubic-bezier(.22, .9, .24, 
 }
 .notice-side {
   width: 200px; min-height: 0; flex-shrink: 0; overflow-y: auto;
+  /* 滚动条单独占一条槽，标题不再贴着滑块；条目增减时也不会左右跳。 */
+  scrollbar-gutter: stable;
   border-right: 1px solid rgba(var(--tint-rgb), .07);
   background: rgba(var(--tint-rgb), .012);
 }
@@ -2608,7 +2610,7 @@ body.no-hw .ver-card { animation: verCardInLite .38s cubic-bezier(.22, .9, .24, 
 .notice-side::-webkit-scrollbar-thumb, .notice-md::-webkit-scrollbar-thumb {
   background: rgba(148, 163, 184, .2); border-radius: 4px;
 }
-.notice-list { display: flex; flex-direction: column; gap: 2px; padding: 10px 8px; }
+.notice-list { display: flex; flex-direction: column; gap: 2px; padding: 10px 14px 10px 8px; }
 .notice-item {
   position: relative; display: flex; align-items: center; gap: 9px;
   width: 100%; min-height: 38px; padding: 8px 10px;
@@ -2652,7 +2654,10 @@ body.no-hw .ver-card { animation: verCardInLite .38s cubic-bezier(.22, .9, .24, 
   color: var(--text-3); font-variant-numeric: tabular-nums; font-weight: normal;
 }
 .notice-md {
-  flex: 1; min-height: 0; overflow-y: auto; padding-bottom: 26px;
+  flex: 1; min-height: 0; overflow-y: auto;
+  /* 正文右缘和滚动条之间留出一圈呼吸空间，别让文字顶着滑块。 */
+  scrollbar-gutter: stable;
+  padding: 0 14px 26px 0;
 }
 
 /* 收件箱页面: 复用公告卡片结构, 在主区可见高度内居中。
