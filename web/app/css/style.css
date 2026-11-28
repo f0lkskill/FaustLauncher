@@ -2633,7 +2633,8 @@ body.no-hw .ver-card { animation: verCardInLite .38s cubic-bezier(.22, .9, .24, 
 .notice-main {
   flex: 1; min-width: 0; min-height: 0;
   display: flex; flex-direction: column;
-  overflow: hidden; padding: 22px 24px 0;
+  /* 底部留白让滚动条滑块不直接顶到卡片边缘；正文自己的内边距见 .notice-md。 */
+  overflow: hidden; padding: 22px 24px 12px;
 }
 .notice-meta {
   display: flex; align-items: center; gap: 16px;
@@ -2658,7 +2659,7 @@ body.no-hw .ver-card { animation: verCardInLite .38s cubic-bezier(.22, .9, .24, 
   flex: 1; min-height: 0; overflow-y: auto;
   /* 正文右缘和滚动条之间留出一圈呼吸空间，别让文字顶着滑块。 */
   scrollbar-gutter: stable;
-  padding: 0 14px 26px 0;
+  padding: 0 14px 14px 0;
 }
 
 /* 收件箱页面: 复用公告卡片结构, 在主区可见高度内居中。
