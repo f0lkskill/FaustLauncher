@@ -50,6 +50,7 @@ def _norm(text) -> str:
 
 
 def _current_value() -> str:
+    """读当前已登录账号的 Steam 启动选项；读不到返回空串。"""
     got = _slo.get_launch_options()
     if not got.get("ok"):
         return ""

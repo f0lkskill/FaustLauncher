@@ -1,3 +1,12 @@
+"""从本机 Steam 安装中定位游戏目录。
+
+先读注册表/常见安装路径找到 Steam 根，再解析 ``libraryfolders.vdf`` 拿到
+所有库目录，最后用 ``appmanifest_<appid>.acf`` 的 installdir 或直接在
+``steamapps/common`` 下找游戏 exe。VDF 格式用一个不依赖第三方库的小解析器
+处理（:func:`_parse_vdf`），只支持本项目需要的键值/嵌套块子集。
+
+所有对外函数都返回归一化后的路径；找不到时返回 ``None`` 或空串，不抛异常。
+"""
 
 import os
 
@@ -7,6 +16,7 @@ GAME_EXE = "LimbusCompany.exe"
 _APP_ID_STR = str(STEAM_APP_ID)
 
 def _parse_vdf(text):
+    """解析 VDF/ACF 文本的子集（引号字符串 + 花括号块）成嵌套字典。"""
     i = 0
     n = len(text)
 
@@ -85,6 +95,7 @@ def _parse_vdf(text):
     return root
 
 def _steam_install_paths():
+    """从注册表和默认安装位置收集 Steam 根目录（去重）。"""
     paths = []
     try:
         import winreg
@@ -112,6 +123,7 @@ def _steam_install_paths():
     return out
 
 def normalize_game_path(path):
+    """规范化路径：去掉末尾分隔符并把盘符字母大写。"""
     if not path:
         return path
     p = os.path.normpath(str(path))
@@ -120,6 +132,15 @@ def normalize_game_path(path):
     return p
 
 def resolve_game_dir_ex(path):
+    """把用户填写的路径解析到含游戏 exe 的目录。
+
+    Args:
+        path: 游戏目录、游戏 exe 文件或上一层目录。
+
+    Returns:
+        tuple[str, str]: ``(目录, 错误码)``；成功时错误码为空串，失败码有
+        ``empty/not_dir/no_exe/ambiguous``。
+    """
     raw = str(path or "").strip()
     if not raw:
         return "", "empty"
@@ -146,18 +167,22 @@ def resolve_game_dir_ex(path):
     return "", ("ambiguous" if len(hits) > 1 else "no_exe")
 
 def resolve_game_dir(path) -> str:
+    """:func:`resolve_game_dir_ex` 的简化版：失败返回空串。"""
     return resolve_game_dir_ex(path)[0]
 
 def is_valid_game_path(path) -> bool:
+    """路径能否解析到真正的游戏目录。"""
     return bool(resolve_game_dir(path))
 
 def has_game_exe(path) -> bool:
+    """目录（或其下一层）里是否存在游戏 exe。"""
     try:
         return os.path.isfile(os.path.join(normalize_game_path(path), GAME_EXE))
     except Exception:
         return False
 
 def _acf_installdir(data):
+    """从 appmanifest 的解析结果里取 installdir（兼容大小写写法）。"""
     if not isinstance(data, dict):
         return ""
     node = data.get('AppState')
@@ -170,6 +195,7 @@ def _acf_installdir(data):
     return ""
 
 def _lib_paths_from_vdf(steam_dir):
+    """解析 ``libraryfolders.vdf``，返回所有 Steam 库目录。"""
     vdf = os.path.join(steam_dir, 'steamapps', 'libraryfolders.vdf')
     if not os.path.isfile(vdf):
         return []
@@ -190,6 +216,7 @@ def _lib_paths_from_vdf(steam_dir):
     return libs
 
 def _find_exe_in_common(lib, exe_name=GAME_EXE):
+    """在库目录的 ``steamapps/common`` 下找游戏 exe，返回其所在目录。"""
     common = os.path.join(lib, 'steamapps', 'common')
     for d in ('Limbus Company', 'LimbusCompany'):
         p = os.path.join(common, d)
@@ -205,6 +232,15 @@ def _find_exe_in_common(lib, exe_name=GAME_EXE):
     return None
 
 def find_steam_game_path(app_id=_APP_ID_STR, exe_name=GAME_EXE):
+    """自动查找游戏安装目录；先用 ACF 定位，失败再扫 common 目录。
+
+    Args:
+        app_id: Steam 应用 ID。
+        exe_name: 游戏可执行文件名。
+
+    Returns:
+        str|None: 归一化后的目录；找不到返回 None。
+    """
     for steam_dir in _steam_install_paths():
         libs = _lib_paths_from_vdf(steam_dir)
         if steam_dir not in libs:

@@ -71,6 +71,7 @@ class LaunchOptionsError(RuntimeError):
 # 环境探测
 # --------------------------------------------------------------------------- #
 def _pid_alive(pid: int) -> bool:
+    """判断一个 PID 是否还活着；非正数视为不存在。"""
     if pid <= 0:
         return False
     try:
@@ -205,6 +206,7 @@ def active_account_id() -> str | None:
 
 
 def _localconfig_path(steam_dir: str, account: str) -> str:
+    """拼出某个账号的 localconfig.vdf 路径。"""
     return os.path.join(steam_dir, "userdata", account, "config", "localconfig.vdf")
 
 
@@ -263,6 +265,7 @@ def _pick_target(account: str | None = None) -> dict | None:
 # 文本读写（保 BOM / 保换行符 / 保留原文件属性）
 # --------------------------------------------------------------------------- #
 def _read_text(path: str) -> tuple[str, bool]:
+    """读 UTF-8 文本并保留 BOM 信息，返回 ``(文本, 是否有 BOM)``。"""
     with open(path, "rb") as handle:
         raw = handle.read()
     bom = raw.startswith(b"\xef\xbb\xbf")
@@ -272,6 +275,7 @@ def _read_text(path: str) -> tuple[str, bool]:
 
 
 def _write_text_atomic(path: str, text: str, bom: bool) -> None:
+    """原子写文本：保留 BOM 与原文件属性，经临时文件 + 替换落盘。"""
     payload = (b"\xef\xbb\xbf" if bom else b"") + text.encode("utf-8", "surrogateescape")
     tmp = path + ".faust.tmp"
     with open(tmp, "wb") as handle:
@@ -319,10 +323,12 @@ def _apps_path(text: str) -> tuple[str, ...]:
 
 
 def _key_path(apps: tuple[str, ...], app_id: str) -> tuple[str, ...]:
+    """拼出 VDF 里 ``apps.<appid>.LaunchOptions`` 的完整键路径。"""
     return tuple(apps) + (str(app_id), LAUNCH_OPTIONS_KEY)
 
 
 def _backup(path: str) -> str:
+    """给文件留一份带后缀的备份，失败返回空串（不阻断主流程）。"""
     target = path + BACKUP_SUFFIX
     try:
         shutil.copy2(path, target)
@@ -375,6 +381,11 @@ def get_launch_options(app_id: str = APP_ID, *, account: str | None = None,
 # --------------------------------------------------------------------------- #
 def _apply_one(file_path: str, app_id: str, value: str, *,
                dry_run: bool, backup: bool) -> dict:
+    """对单个 localconfig.vdf 应用启动选项（可选只预览/先备份）。
+
+    Returns:
+        dict: 含 ok/previous/value/changed/verified/backup/error/diff 的结果。
+    """
     item: dict = {
         "ok": False, "path": file_path, "previous": "", "value": value,
         "changed": False, "verified": False, "backup": "", "error": "",
