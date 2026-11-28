@@ -1,8 +1,21 @@
+"""自绘标签页容器，替代 ttk.Notebook 以完全控制外观。
+
+顶部是一排扁平按钮，选中项下方有强调色指示条；切换时把对应 frame
+``pack`` 到内容区，并通过 ``<<NotebookTabChanged>>`` 伪事件通知调用方。
+"""
+
 import tkinter as tk
 from functions.base.color_scheme import C
 
 class CustomNotebook(tk.Frame):
+    """带自定义标签栏和切换回调的 Frame 容器。"""
+
     def __init__(self, master, *, bg=None, accent=None, **kwargs):
+        """Args:
+            master: 父控件。
+            bg: 背景色，默认深色。
+            accent: 选中态/指示条颜色，默认 C.ACCENT。
+        """
         bg = bg or '#1a1a1a'
         super().__init__(master, bg=bg, bd=0, highlightthickness=0, **kwargs)
         
@@ -31,6 +44,7 @@ class CustomNotebook(tk.Frame):
         self._indicator = tk.Frame(self._tab_center, bg=self._accent, height=3, bd=0)
     
     def _blend(self, bg: str, fg: str, ratio: float) -> str:
+        """按比例混合两个 ``#RRGGBB`` 颜色，解析失败时退回 bg。"""
         try:
             br = int(bg[1:3], 16); bg_r = int(bg[3:5], 16); bb = int(bg[5:7], 16)
             fr = int(fg[1:3], 16); fg_g = int(fg[3:5], 16); fb = int(fg[5:7], 16)
@@ -42,6 +56,12 @@ class CustomNotebook(tk.Frame):
             return bg
     
     def add(self, frame: tk.Frame, text: str):
+        """追加一个标签页；第一个标签页会自动选中。
+
+        Args:
+            frame: 已经建好内容的页面 Frame（背景色会被统一）。
+            text: 标签按钮文字。
+        """
         frame.configure(bg=self._bg)
         
         btn = tk.Button(
@@ -79,6 +99,7 @@ class CustomNotebook(tk.Frame):
             self.select(0)
     
     def select(self, index: int):
+        """切到指定下标的标签页；越界或已是当前页时什么都不做。"""
         if index < 0 or index >= len(self._tabs) or index == self._current_index:
             return
         
@@ -104,6 +125,7 @@ class CustomNotebook(tk.Frame):
                 cb(event)
     
     def _update_indicator(self, index: int):
+        """把强调色指示条放到目标按钮下方；延后 10ms 等布局稳定。"""
         def _place():
             self._indicator.place_forget()
             btn = self._tab_buttons[index]
@@ -116,6 +138,7 @@ class CustomNotebook(tk.Frame):
         self.after(10, _place)
     
     def bind(self, sequence: str, callback: callable, add=None): # type: ignore
+        """重写 bind：截获 ``<<NotebookTabChanged>>`` 存进回调列表。"""
         if sequence == '<<NotebookTabChanged>>':
             self._tab_changed_callbacks.append(callback)
         else:
@@ -123,4 +146,5 @@ class CustomNotebook(tk.Frame):
     
     @property
     def current_index(self) -> int:
+        """当前选中标签页下标；没有标签页时为 -1。"""
         return self._current_index

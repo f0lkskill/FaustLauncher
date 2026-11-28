@@ -1,3 +1,11 @@
+"""提示音播放（Windows winmm + 简易混音）。
+
+`play_sound` 把 16bit WAV 丢给后台守护线程；线程把多个正在播放的片段按
+当前时间偏移叠加成一段新 WAV，再通过 ``PlaySoundW`` 异步播放，从而实现
+短音效的重叠。超过 6 层时只保留最新几层；格式不一致时以最新片段为准。
+非 16bit WAV 不支持，会打印提示并跳过。
+"""
+
 import ctypes
 import ctypes.wintypes
 import io
@@ -18,6 +26,7 @@ _winmm.PlaySoundW.argtypes = [ctypes.c_wchar_p, ctypes.wintypes.HMODULE, ctypes.
 _winmm.PlaySoundW.restype = ctypes.c_int
 
 def _playsound_wav(path_or_none, flags):
+    """调用 PlaySoundW；返回是否成功，失败时打印 Win32 错误码。"""
     result = _winmm.PlaySoundW(path_or_none, None, flags)
     if not result:
         print(f"PlaySoundW 失败 (error={ctypes.get_last_error()})")
@@ -27,6 +36,10 @@ def _playsound_wav(path_or_none, flags):
 _pcm_cache = {}
 
 def _load_pcm(file_path):
+    """读 WAV 的 PCM 采样并缓存；非 16bit 返回 samples=None。
+
+    超大文件截到 8MB，避免一次点击占太多内存。
+    """
     item = _pcm_cache.get(file_path)
     if item is None:
         with wave.open(file_path, "rb") as wf:
@@ -42,6 +55,7 @@ def _load_pcm(file_path):
     return item
 
 class _MixerPlayer(threading.Thread):
+    """后台播放线程：把待播片段叠成一段 WAV 后异步播放。"""
 
     MAX_LAYERS = 6
 
@@ -58,20 +72,24 @@ class _MixerPlayer(threading.Thread):
         self._tmp_files = []
 
     def submit(self, file_path):
+        """把音频文件加入待播队列并唤醒播放线程。"""
         with self._lock:
             self._pending.append(file_path)
         self._wake.set()
 
     def request_stop(self):
+        """请求停止：丢掉待播队列并清掉当前混音层。"""
         with self._lock:
             self._stop_flag = True
             self._pending.clear()
         self._wake.set()
 
     def is_playing(self):
+        """按预期结束时间判断当前是否还在播放。"""
         return time.monotonic() < self._expected_end
 
     def run(self):
+        """线程主循环：处理一次队列后等待事件唤醒。"""
         while True:
             try:
                 self._process()
@@ -81,6 +99,7 @@ class _MixerPlayer(threading.Thread):
             self._wake.clear()
 
     def _process(self):
+        """取出待播项，推进已有片段的播放位置，混音后重新播放。"""
         with self._lock:
             pending = list(self._pending)
             self._pending.clear()
@@ -142,6 +161,7 @@ class _MixerPlayer(threading.Thread):
                 self._expected_end = 0.0
 
     def _mix_to_wav(self, layers, fmt):
+        """按各层的已消费采样数对齐叠加，限幅后写成 WAV 字节。"""
         rate, nch, sw = fmt
         total_frames = 0
         for samples, consumed in layers:
@@ -169,6 +189,7 @@ class _MixerPlayer(threading.Thread):
         return bio.getvalue()
 
     def _purge(self):
+        """停掉当前播放并清理上一轮生成的临时 WAV。"""
         _playsound_wav(None, SND_PURGE)
         for p in self._tmp_files:
             try:
@@ -178,6 +199,7 @@ class _MixerPlayer(threading.Thread):
         self._tmp_files = []
 
     def _play_async(self, wav_bytes):
+        """把混音结果写临时 WAV 并异步播放，路径留到下一轮清理。"""
         fd, path = tempfile.mkstemp(prefix="faust_snd_", suffix=".wav")
         with os.fdopen(fd, "wb") as f:
             f.write(wav_bytes)
@@ -188,6 +210,7 @@ _player = None
 _player_lock = threading.Lock()
 
 def _get_player():
+    """懒加载全局播放线程（首次调用才启动 daemon 线程）。"""
     global _player
     with _player_lock:
         if _player is None:
@@ -197,6 +220,11 @@ def _get_player():
     return _player
 
 def play_sound(file_path):
+    """提交一个音频文件到播放队列。
+
+    Returns:
+        bool: 文件存在且提交成功为 True；不存在或异常为 False。
+    """
     if not file_path or not os.path.exists(file_path):
         print(f"音频文件不存在: {file_path}")
         return False
@@ -208,6 +236,7 @@ def play_sound(file_path):
         return False
 
 def stop_sound():
+    """请求停止所有提示音；总是返回 True，失败只静默忽略。"""
     try:
         _get_player().request_stop()
     except Exception:
