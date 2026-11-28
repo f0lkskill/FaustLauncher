@@ -991,6 +991,42 @@ def _fmt_authors(authors):
         return ''
     return str(authors)
 
+def _find_local_dep(name, kind=None):
+    """按清单里的 name（或目录名）找本地已安装的插件/Mod。
+
+    Args:
+        name: 依赖项名字。
+        kind: 只查 ``'addon'`` / ``'mod'``；None 表示两边都查。
+
+    Returns:
+        dict|None: ``{'kind', 'dir', 'info'}``；找不到返回 None。
+    """
+    want = str(name or '').strip()
+    if not want:
+        return None
+    bases = [('addons', 'addon_info.json', 'addon'),
+             ('mods', 'mod_info.json', 'mod')]
+    if kind in ('addon', 'mod'):
+        bases = [b for b in bases if b[2] == kind]
+    for base, info_name, dep_kind in bases:
+        root = os.path.abspath(base)
+        if not os.path.isdir(root):
+            continue
+        for folder in sorted(os.listdir(root)):
+            info_path = os.path.join(root, folder, info_name)
+            if not os.path.isfile(info_path):
+                continue
+            try:
+                info = read_json(info_path)
+            except Exception:
+                continue
+            if not isinstance(info, dict):
+                continue
+            if str(info.get('name') or folder).strip() == want or folder == want:
+                return {'kind': dep_kind, 'dir': folder, 'info': info}
+    return None
+
+
 class AppApi:
 
     """AppApi类。"""
@@ -2245,6 +2281,12 @@ class AppApi:
                     cloud_item = self._cached_resource(kind='mod', name=local_name)
                     cloud_tags = normalize_tags((cloud_item or {}).get('tags'))
                     local_tags = normalize_tags(info.get('tags'))
+                    # Mod 也支持 requires：写法与插件一致（字符串或数组均可）
+                    requires = info.get('requires')
+                    if isinstance(requires, str):
+                        requires = [requires]
+                    requires = [str(x).strip() for x in (requires or []) if str(x).strip()]
+                    missing = [r for r in requires if _find_local_dep(r) is None]
                     dir_mods.append({
                         'kind': 'mod',
                         'dir': name,
@@ -2254,6 +2296,8 @@ class AppApi:
                         'author_links': _fmt_author_links(info.get('authors')),
                         'description': str(info.get('desc') or info.get('description', '')),
                         'files': list(info.get('file_names', [])),
+                        'requires': requires,
+                        'missing_requires': missing,
                         'has_installer': bool(os.path.exists(os.path.join(base, name, 'Installer.bat'))),
                         'enabled': bool(info.get('settings', {}).get('enable', False)),
                         'has_icon': _res_icon_exists('mods', name),
@@ -3114,44 +3158,42 @@ if %errorlevel% equ 0 (
             print(f'读取云端 {kind} 标签样式失败: {e}')
             return {}
 
-    def get_addon_dep(self, name):
-        """取一个依赖插件的基本信息（图标 / 简介 / 版本 / 作者）。
+    def get_addon_dep(self, name, kind='addon'):
+        """取一个依赖项的基本信息（图标 / 简介 / 版本 / 作者 / 是否已安装）。
 
-        优先用云端缓存里的条目，和资源页显示保持一致；云端取不到（没网、
-        刚清过缓存、云端条目还没更新）就降级读本地
-        ``addons/<目录>/addon_info.json``，这样离线时也能看清依赖是什么。
+        插件和 Mod 共用这一份逻辑：本地分别读 ``addons/<目录>/addon_info.json``
+        和 ``mods/<目录>/mod_info.json``，名字和目录名都可能不一致，按清单里的
+        ``name`` 反查。云端取不到（没网、刚清过缓存、条目还没更新）时降级用
+        本地信息，离线也能看清依赖是什么。
+
+        Args:
+            name: 依赖项名字（清单里的 name 或目录名）。
+            kind: ``'addon'`` 或 ``'mod'``，决定读哪一边。
+
+        Returns:
+            dict: ``{'ok', 'name', 'dir', 'desc', 'version', 'author',
+            'author_links', 'icon', 'source', 'installed', 'permanent',
+            'provides'}``。
         """
         import os
         want = str(name or '').strip()
         if not want:
-            return {'ok': False, 'error': '缺少插件名'}
+            return {'ok': False, 'error': '缺少依赖名'}
+        is_addon = str(kind or 'addon') == 'addon'
         result = {
             'ok': True, 'name': want, 'dir': want, 'desc': '', 'version': '',
             'author': '', 'author_links': [], 'icon': '', 'source': 'none',
             'installed': False, 'permanent': False, 'provides': [],
         }
 
-        # 本地：插件名和目录名不一定相同，按 addon_info.json 的 name 反查
-        local_dir = want
-        local_info = {}
+        # 本地：清单里的 name 和目录名不一定相同，按 name 反查
         try:
-            base = os.path.abspath('addons')
-            if os.path.isdir(base):
-                for folder in sorted(os.listdir(base)):
-                    info_path = os.path.join(base, folder, 'addon_info.json')
-                    if not os.path.isfile(info_path):
-                        continue
-                    try:
-                        info = read_json(info_path)
-                    except Exception:
-                        continue
-                    if str(info.get('name') or folder).strip() == want or folder == want:
-                        local_dir = folder
-                        local_info = info if isinstance(info, dict) else {}
-                        break
+            found = _find_local_dep(want, 'addon' if is_addon else 'mod')
         except Exception as e:
+            found = None
             print(f"查找依赖 {want} 的本地目录失败: {e}")
-        if local_info:
+        if found:
+            local_dir, local_info, found_kind = found['dir'], found['info'], found['kind']
             result['installed'] = True
             result['dir'] = local_dir
             result['desc'] = str(local_info.get('desc') or local_info.get('description') or '')
@@ -3162,13 +3204,14 @@ if %errorlevel% equ 0 (
             result['provides'] = [str(x) for x in (local_info.get('provides') or [])]
             result['source'] = 'local'
             try:
-                result['icon'] = _res_icon_uri('addons', local_dir)
+                result['icon'] = _res_icon_uri(
+                    'addons' if found_kind == 'addon' else 'mods', local_dir)
             except Exception:
                 pass
 
         # 云端：覆盖简介与版本（云端是最新发布信息），图标优先用云端 icon_url
         try:
-            for it in self._iter_cloud_addons(self._get_cached_list('addon')):
+            for it in self._iter_cloud_addons(self._get_cached_list('addon' if is_addon else 'mod')):
                 if str(it.get('name', '')).strip() != want:
                     continue
                 if (it.get('desc') or '').strip():
@@ -3189,9 +3232,13 @@ if %errorlevel% equ 0 (
                 result['source'] = 'cloud'
                 break
         except Exception as e:
-            print(f"读取云端插件列表失败（依赖 {want} 降级用本地信息）: {e}")
+            print(f"读取云端{'插件' if is_addon else 'Mod'}列表失败（依赖 {want} 降级用本地信息）: {e}")
 
         return result
+
+    def get_mod_dep(self, name):
+        """取一个 Mod 依赖项的信息；与插件版共用读取逻辑。"""
+        return self.get_addon_dep(name, kind='mod')
 
     def check_item_downloaded(self, kind, name):
         """检查条目downloaded。"""

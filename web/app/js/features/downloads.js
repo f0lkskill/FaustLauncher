@@ -491,7 +491,7 @@ function openDcModal(kind, item) {
   // 依赖卡片直接复用资源页的渲染实现，避免两处样式/状态口径不一致
   // （app.js 已把 fillDepList 挂到 window.Faust）。
   if (deps.length && window.Faust && typeof window.Faust.fillDepList === 'function') {
-    window.Faust.fillDepList(panel, Object.assign({}, item, { requires: deps }));
+    window.Faust.fillDepList(panel, Object.assign({}, item, { requires: deps, kind: kind }));
   }
   panel.addEventListener('click', (e) => { if (e.target === panel) closePanel(panel); });
   $('#dc-modal-close').onclick = () => closePanel(panel);

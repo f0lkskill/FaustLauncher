@@ -634,7 +634,7 @@ function collectSettingsFields(panel) {
  * 真实 installed 状态后再更新，避免把未安装的依赖误标成已安装。
  *
  * @param {Element} panel 详情面板根节点（内含 #res-dep-list）
- * @param {object} item 资源条目，至少含 requires；可含 missing_requires
+ * @param {object} item 资源条目，至少含 requires/kind；可含 missing_requires
  */
 function fillDepList(panel, item) {
   const box = panel.querySelector('#res-dep-list');
@@ -690,7 +690,11 @@ function fillDepList(panel, item) {
       }
     };
     if (!api) { fill(null); return; }
-    api.get_addon_dep(dep).then(function (r) {
+    // 插件和 Mod 的本地清单/云端目录不同，走各自后端接口。
+    const getter = (item.kind === 'mod' && typeof api.get_mod_dep === 'function')
+      ? api.get_mod_dep(dep)
+      : api.get_addon_dep(dep);
+    getter.then(function (r) {
       if (!r || !r.ok) { fill(null); return; }
       fill(r);
     }).catch(function () { fill(null); });
@@ -732,7 +736,7 @@ function openResModal(kind, item) {
       '</div>' +
       '<div class="res-detail-desc">' + esc(item.description || '（无描述）') + '</div>' +
       '<div class="res-settings-scroll">' + renderSettingsFields(item.settings, { permanent: item.permanent }) + '</div>' +
-      (isAddon && (item.requires || []).length ? '<div class="res-dep-list" id="res-dep-list"></div>' : '') +
+      ((item.requires || []).length ? '<div class="res-dep-list" id="res-dep-list"></div>' : '') +
       '<div class="res-detail-ops">' +
          '<button class="btn btn-ghost" id="res-open-dir">打开目录</button>' +
          (canReinstall ? '<button class="btn btn-primary" id="res-reinstall">重装</button>' : '') +
@@ -743,7 +747,7 @@ function openResModal(kind, item) {
   document.body.appendChild(panel);
   bindOverlayClose(panel);
   $('#res-modal-close').onclick = () => closePanel(panel);
-  fillDepList(panel, item);
+  fillDepList(panel, Object.assign({}, item, { kind: kind }));
   // 详情页图标与列表共用一份缓存: 列表已取过就直接命中, 没取过才补一次请求
   hydrateResIcons([item], panel);
 
