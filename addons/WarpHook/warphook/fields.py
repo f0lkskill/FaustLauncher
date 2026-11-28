@@ -15,8 +15,8 @@
         >>> spec["kind"]
         'obscured'
 
-当前字段来源：``cache/hook/dump/20261119_compare/dump.cs``，对应 metadata
-SHA256 ``7D3CCF0F3C150E0D5A7F36D8A5250E161AEE03752DF9E1A4B543BF110B367C25``。
+当前字段来源：``cache/hook/dump/20261127_compare/out/dump.cs``，对应 metadata
+SHA256 ``474A38AC64C2CF228EF81B2846E2F67E28AD29529E091331D11548157E958AF3``。
 
 ``kind_of("BattleUnitModel", "_state", "_hp")``
     只要落点 kind。
@@ -32,7 +32,7 @@ SHA256 ``7D3CCF0F3C150E0D5A7F36D8A5250E161AEE03752DF9E1A4B543BF110B367C25``。
 「verified=False」的条目照 dump.cs 抄的、还没在真机上对过数，用之前先对一眼
 （症状是「全 0」或者「数很大」，先怀疑偏移和尺寸）。
 
-字段来源：``cache/hook/dump/20261119_compare/dump.cs``（Il2CppDumper，
+字段来源：``cache/hook/dump/20261127_compare/out/dump.cs``（Il2CppDumper，
 2026-11-19 游戏更新后生成）。
 """
 

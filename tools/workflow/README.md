@@ -70,8 +70,8 @@ tools/workflow/
 - **版本号**：与上次发布相同则自动 patch+1（记录在包内 `.workflow_publish.json`）。
 - **上传日志**：模态窗口，可最小化到右下角浮标，再点开查看详情。
 - 发布技术流程：读取 info → 必填校验 → 版本自增 → 提取有用文件到临时目录 → **上传资格测验（每日 3 次）** → 上传蓝奏云 → **提交审核**（管理员通过后由服务端并入资源库；同名更新、没有则追加，强制打 `is_new`）→ 清理临时文件。
-  - Mod 白名单：`carra2` / `rebank` / `bank` / `json` / `mod_info.json` / `icon.png` / `Installer.bat` / `Uninstaller.bat` / `changes.json` 及 `Assets/` 资源；源 `.zip`、日志/进度、`.workflow_*` 一律不带。
-  - 插件：除源 `.zip` 外的文件全部带上（含 `scr.py`、资源）。
+  - 发布内容：除启动器/工作流运行时标记外全部带上（`*.log`、`loader_progress.txt`、`loader_threads.txt`、`launcher_manifest.json`、`.workflow_*`、`*.bank.orig`、`*.rebank.src` 等不带）；不再按 carra2 / rebank / json 白名单挑选，Installer 完整包、混合资源等也能原样发布。
+  - 插件：同样只排除运行时标记，`scr.py`、脚本、资源等全部带上。
 - 单文件 Mod 支持 `.bank` / `.carra2` / `.rebank`；可额外导入不限量 `.json`（仅放根目录，不做处理）。
 - 默认目录统一在 `tools/workflow/mods/`；包装/发布复用 `functions/tools/post_extension_tools.py`。
 
