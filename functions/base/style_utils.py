@@ -1,3 +1,11 @@
+"""Tk 控件的统一外观工具。
+
+提供两类东西：ttk 滚动条样式（:func:`apply_scrollbar_style` /
+:func:`make_scrollbar`）和用 Canvas 画出来的圆角控件（:class:`RoundedFrame`、
+:class:`RoundedButton`），以及基于原生 Button 的 :class:`ModernButton`。
+所有颜色取自 :mod:`functions.base.color_scheme`，避免各页面重复配色。
+"""
+
 import tkinter as tk
 from tkinter import ttk
 from functions.base.color_scheme import C, darken_color, lighten_color
@@ -5,6 +13,11 @@ from functions.base.color_scheme import C, darken_color, lighten_color
 def apply_scrollbar_style(style_name='App.Vertical.TScrollbar',
                           bg_color='#1a1a1a',
                           accent=C.ACCENT):
+    """注册扁平滚动条样式，同时配置纵向和横向两个名字。
+
+    Returns:
+        str: 纵向样式名，创建 Scrollbar 时直接传给 ``style=``。
+    """
     style = ttk.Style()
     thumb = darken_color(lighten_color(bg_color, 8), 0.75)
     trough = darken_color(bg_color, 0.7)
@@ -24,10 +37,12 @@ def apply_scrollbar_style(style_name='App.Vertical.TScrollbar',
     return v_name
 
 def make_scrollbar(parent, orient='vertical', style_name='App.Vertical.TScrollbar', **kw):
+    """按统一样式创建滚动条；``**kw`` 透传给 ttk.Scrollbar。"""
     return ttk.Scrollbar(parent, orient=orient, style=style_name, **kw) # type: ignore
 
 class RoundedFrame(tk.Canvas):
-    
+    """用 Canvas 圆弧+矩形画出圆角背景的容器，子控件放在 ``self.inner``。"""
+
     def __init__(self, master, *, bg=None, border_color=None, radius=10,
                  padx=10, pady=10, **kwargs):
         self._bg = bg or '#1a1a1a'
@@ -41,6 +56,7 @@ class RoundedFrame(tk.Canvas):
         self.bind('<Configure>', self._redraw)
     
     def _redraw(self, event=None):
+        """重画圆角背景/边框并重新摆放 inner 窗口；尺寸太小时直接跳过。"""
         self.delete('rf')
         w = self.winfo_width()
         h = self.winfo_height()
@@ -81,12 +97,14 @@ class RoundedFrame(tk.Canvas):
                           width=w - self._padx * 2, height=h - self._pady * 2, tags=t)
     
     def fit_content(self):
+        """按 inner 的实际请求高度调整 Canvas 高度，避免内容被裁切。"""
         self.inner.update_idletasks()
         needed = self.inner.winfo_reqheight() + self._pady * 2
         self.configure(height=needed)
 
 class RoundedButton(tk.Canvas):
-    
+    """Canvas 绘制的圆角按钮，支持点击/悬停/禁用与运行时改文字和颜色。"""
+
     def __init__(self, master, text='', command=None, *,
                  width=120, height=36, bg=C.ACCENT, fg=C.TEXT_WHITE,
                  hover_bg=None, font=('Microsoft YaHei UI', 10, 'bold'),
@@ -125,22 +143,28 @@ class RoundedButton(tk.Canvas):
         self.after(10, self._initial_draw)
     
     def _on_click(self, event):
+        """点击事件：调用注册的 command（禁用态没绑这个回调）。"""
         if self._command:
             self._command()
     
     def _on_enter(self, event):
+        """鼠标进入：换成悬停背景。"""
         self._draw(self._hover_bg)
     
     def _on_leave(self, event):
+        """鼠标离开：恢复普通背景。"""
         self._draw(self._bg)
     
     def _on_configure(self, event):
+        """控件尺寸变化时重画。"""
         self._draw(self._bg)
     
     def _initial_draw(self):
+        """延后到控件有实际尺寸后再画首帧。"""
         self._draw(self._bg)
     
     def _draw(self, fill):
+        """用给定填充色重画圆角按钮和居中文字。"""
         self.delete('btn')
         w = self.winfo_width()
         h = self.winfo_height()
@@ -166,6 +190,7 @@ class RoundedButton(tk.Canvas):
                         fill=self._fg, font=self._font, tags=t)
     
     def configure(self, **kwargs):
+        """扩展原生 configure：text/bg/command 更新内部状态后立即重画。"""
         if 'text' in kwargs:
             self._text = kwargs.pop('text')
         if 'bg' in kwargs:
@@ -176,11 +201,13 @@ class RoundedButton(tk.Canvas):
         self._draw(self._bg)
     
     def pack(self, **kwargs):
+        """重写 pack 返回 self，方便链式调用。"""
         super().pack(**kwargs)
         return self
 
 class ModernButton(tk.Button):
-    
+    """基于原生 tk.Button 的扁平按钮，用 Enter/Leave 事件模拟悬停底色。"""
+
     def __init__(self, master, text='', command=None,
                  bg=None, fg=C.TEXT_WHITE, hover_bg=None,
                  font=('Microsoft YaHei UI', 10, 'bold'),

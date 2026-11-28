@@ -1,6 +1,15 @@
+"""颜色计算与语义色板。
+
+`lighten_color` / `darken_color` 负责在 HLS 或 RGB 空间调整明暗；
+``SemanticColors`` 集中放全局语义色（强调/成功/警告/终端/Markdown 等），
+:class:`ThemeColors` 根据一个背景色派生出卡片、边框、输入框等配套颜色。
+Tk 控件通过这里的 helper 组装，避免每个页面各自硬编码色值。
+"""
+
 import colorsys
 
 def lighten_color(color: str, percent: float) -> str:
+    """按百分比提亮 ``#RRGGBB`` 颜色（在 HLS 空间调整亮度）。"""
     rgb = tuple(int(color[i:i + 2], 16) for i in (1, 3, 5))
     h, l, s = colorsys.rgb_to_hls(rgb[0] / 255, rgb[1] / 255, rgb[2] / 255)
     l = min(1.0, l + percent / 100)
@@ -8,6 +17,7 @@ def lighten_color(color: str, percent: float) -> str:
     return f"#{int(r * 255):02x}{int(g * 255):02x}{int(b * 255):02x}"
 
 def darken_color(color: str, factor: float = 0.8) -> str:
+    """按系数压暗 ``#RRGGBB`` 颜色；非颜色字符串原样返回。"""
     if color.startswith('#'):
         r = int(color[1:3], 16)
         g = int(color[3:5], 16)
@@ -19,7 +29,8 @@ def darken_color(color: str, factor: float = 0.8) -> str:
     return color
 
 class SemanticColors:
-    
+    """全局语义色常量集合（用类属性做命名空间，不需要实例化）。"""
+
     ACCENT = '#6366f1'
     ACCENT_HOVER = '#4f46e5'
     ACCENT_LIGHT = '#818cf8'
@@ -95,8 +106,14 @@ class SemanticColors:
     }
 
 class ThemeColors:
-    
+    """由主背景色派生的一整套配色，供 Tk 页面直接取用。"""
+
     def __init__(self, bg_color: str):
+        """根据背景色派生 surface/card/border/entry 等颜色。
+
+        Args:
+            bg_color: 主题主背景色 ``#RRGGBB``。
+        """
         self.bg_color = bg_color
         self.surface = lighten_color(bg_color, 5)
         self.card_bg = bg_color
@@ -106,30 +123,37 @@ class ThemeColors:
         self.status_bg = darken_color(bg_color, 0.85)
     
     def lighten(self, color_or_percent, percent=None):
+        """传两个参数时提亮指定颜色；传一个参数时按百分比提亮主题背景。"""
         if percent is not None:
             return lighten_color(color_or_percent, percent)
         return lighten_color(self.bg_color, color_or_percent)
     
     def darken(self, color_or_factor, factor=None):
+        """传两个参数时压暗指定颜色；传一个参数时按系数压暗主题背景。"""
         if factor is not None:
             return darken_color(color_or_factor, factor)
         return darken_color(self.bg_color, color_or_factor)
     
     def surface_lighten(self, percent: float) -> str:
+        """在 surface 色基础上提亮，用于卡片内的次级层。"""
         return lighten_color(self.surface, percent)
     
     def surface_darken(self, factor: float) -> str:
+        """在 surface 色基础上压暗，用于输入槽/凹槽。"""
         return darken_color(self.surface, factor)
 
 C = SemanticColors
 
 def create_theme(bg_color: str) -> ThemeColors:
+    """工厂函数：根据背景色创建一套 :class:`ThemeColors`。"""
     return ThemeColors(bg_color)
 
 def border_color(bg: str) -> str:
+    """按固定提亮幅度算出边框颜色。"""
     return lighten_color(bg, 22)
 
 def make_card(parent, *, bg, border_color=None, border_width=1, **pack_kw):
+    """建一个用 highlight 边框模拟描边的 Tk Frame，可顺带 pack。"""
     import tkinter as tk
     border_color = border_color or lighten_color(bg, 18)
     card = tk.Frame(parent, bg=bg, relief='flat', borderwidth=0,
