@@ -308,7 +308,7 @@
         ["bank", counts[".bank"] || 0],
         ["carra2", counts[".carra2"] || 0],
         ["rebank", counts[".rebank"] || 0],
-        ["免转", counts[".back"] || 0]
+        ["back", counts[".back"] || 0]
       ].forEach(function (pair) {
         var item = el("span");
         item.appendChild(el("b", null, String(pair[1])));
@@ -339,11 +339,11 @@
             var marked = /\.zip\.back$/i.test(file.name);
             if (marked || /\.zip$/i.test(file.name)) {
               var mark = el("button", "wf-file-mark" + (marked ? " active" : ""),
-                marked ? "取消免转" : "免转");
+                marked ? "↺" : "⊘");
               mark.type = "button";
               mark.title = marked
                 ? "恢复为 .zip（重新参与 carra2 打包）"
-                : "标记为不参与 carra2 打包（后缀改为 .zip.back）";
+                : "不参与 carra2 打包（后缀改为 .zip.back）";
               mark.addEventListener("click", function (event) {
                 event.stopPropagation();
                 invoke("toggle_zip_mark", pkg.name, file.name).then(function (result) {
