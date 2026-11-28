@@ -498,7 +498,7 @@ function buildResCard(item) {
       // 独立运行入口: 只有插件载入时注册过才由后端下发 runnable=true,
       // 没注册的插件这张按钮根本不会渲染。外观/尺寸与右侧其它图标按钮一致。
       ((item.kind || resKind) === 'addon' && item.runnable
-        ? '<button class="res-menu-btn res-run-btn" type="button" title="运行" aria-label="运行">' +
+        ? '<button class="res-menu-btn res-run-btn" type="button">' +
             iconSvg('play') +
           '</button>'
         : '') +
