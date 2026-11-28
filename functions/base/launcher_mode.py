@@ -28,12 +28,26 @@ STEAM_BINDING_KEY = "steam_launch_with_launcher"
 
 
 def is_launcher_mode(argv: list[str] | None = None) -> bool:
-    """当前进程是否被 Steam 以启动器模式拉起。"""
+    """当前进程是否被 Steam 以启动器模式拉起。
+
+    Args:
+        argv: 待检查的参数列表；省略时读 ``sys.argv``。
+
+    Returns:
+        bool: 参数里含有 :data:`LAUNCHER_MODE_FLAG` 时为 True。
+    """
     return LAUNCHER_MODE_FLAG in (sys.argv if argv is None else argv)
 
 
 def is_file_mode(argv: list[str] | None = None) -> bool:
-    """当前进程是否要求「直接起游戏 exe」而不是再走一次 Steam。"""
+    """当前进程是否要求「直接起游戏 exe」而不是再走一次 Steam。
+
+    Args:
+        argv: 待检查的参数列表；省略时读 ``sys.argv``。
+
+    Returns:
+        bool: 参数里含有 :data:`FILE_MODE_FLAG` 时为 True。
+    """
     return FILE_MODE_FLAG in (sys.argv if argv is None else argv)
 
 
@@ -43,6 +57,9 @@ def project_root() -> str:
     直接复用项目里的 `get_app_root()`，保证和 settings.json 等运行时文件同源：
     onedir 打包下 exe 在 `D:\\FaustLauncher\\FaustLauncher.exe`，配置在
     `D:\\FaustLauncher\\config\\`，不能用 `__file__` 推算（那会落到 _internal 里）。
+
+    Returns:
+        str: 配置/日志等运行时文件所在的根目录。
     """
     from functions.base.common.path_utils import get_app_root
     return get_app_root(create=False)
@@ -57,6 +74,10 @@ def launcher_command() -> tuple[str, list[str]]:
     开发版刻意用 python.exe 而不是 pythonw.exe：pythonw 下 ``sys.stdout`` 是 None，
     启动器里大量 ``print`` 日志会直接抛异常，脚本等于跑不起来。代价是 Steam 拉起时
     会带一个控制台窗口，调试阶段正好能看见输出。
+
+    Returns:
+        tuple[str, list[str]]: ``(可执行文件, 固定前置参数)``，可直接交给
+        ``subprocess.Popen`` 拉起启动器。
     """
     if getattr(sys, "frozen", False):
         return os.path.abspath(sys.executable), []
