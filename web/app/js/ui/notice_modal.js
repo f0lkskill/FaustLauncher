@@ -23,6 +23,11 @@ let noticeLoaded = false;
 let noticeStartupDone = false;
 let noticeDismissed = false;
 
+/**
+ * 把后端的一条公告规整成前端统一结构，丢弃缺 id/title 或 id 过长的脏数据。
+ * @param {object} raw 后端 get_notices 返回的原始条目
+ * @returns {object|null} 归一化后的公告，不合格返回 null
+ */
 function noticeNormalizeItem(raw) {
   if (!raw || typeof raw !== 'object') return null;
   const id = String(raw.id || '').trim();
@@ -49,6 +54,11 @@ function noticeUnreadItems() {
 // ---------------- 公告列表与正文 ----------------
 // 模态与收件箱共用同一视图结构; 根节点通过 data-notice-view 标识, 避免两处
 // 同时存在时互相抢固定 ID。页面不传关闭按钮, 因而两种载体只保留必要的差异。
+/**
+ * 生成公告视图的 HTML：模态与收件箱共用同一结构，仅关闭按钮/ARIA 不同。
+ * @param {boolean} isPage true 表示收件箱页面，false 表示弹窗
+ * @returns {string} 卡片根节点 HTML
+ */
 function noticeViewHtml(isPage) {
   return '<section class="notice-card' + (isPage ? ' notice-card-page' : '') + '"' +
     ' data-notice-view role="' + (isPage ? 'region' : 'dialog') + '"' +
@@ -97,6 +107,10 @@ function noticeRenderList(view) {
   });
 }
 
+/**
+ * 渲染选中公告的标题、时间和 Markdown 正文；后端没给 html 时用纯文本兜底。
+ * @param {Element} view 公告视图根节点
+ */
 function noticeRenderSelection(view) {
   if (!view) return;
   const item = noticeFindItem(noticeSelectedId);
@@ -129,6 +143,10 @@ function noticeRenderAllViews() {
   document.querySelectorAll('[data-notice-view]').forEach(noticeRenderView);
 }
 
+/**
+ * 切换选中公告：同步刷新所有视图，并把首次展示的公告标记为已读。
+ * @param {string} noticeId 公告 ID
+ */
 function noticeSelect(noticeId) {
   const item = noticeFindItem(noticeId);
   if (!item) return;
@@ -148,6 +166,10 @@ function noticeSelect(noticeId) {
 }
 
 // ---------------- 公告加载 ----------------
+/**
+ * 加载公告（带并发合并与成功缓存）：失败返回空列表，不影响启动流程。
+ * @returns {Promise<Array<object>>} 归一化后的公告列表
+ */
 function loadNotices() {
   if (noticeLoadPromise) return noticeLoadPromise;
   if (noticeLoaded) return Promise.resolve(noticeItems);
@@ -221,6 +243,9 @@ function noticeRenderInbox(markRead) {
   return true;
 }
 
+/**
+ * 进入收件箱页：能立刻渲染就渲染，否则等公告加载完成后再补。
+ */
 function enterInboxPage() {
   if (noticeRenderInbox(true)) return;
   loadNotices().then(() => {
@@ -229,6 +254,10 @@ function enterInboxPage() {
 }
 
 // ---------------- 公告模态窗口 ----------------
+/**
+ * 更高优先级的窗口（版本更新/路径确认/已有公告窗）是否正在占用界面。
+ * @returns {boolean} true 时本次不弹公告
+ */
 function noticePriorityBlocked() {
   return !!noticeModalEl ||
     !!(typeof verModalEl !== 'undefined' && verModalEl) ||
@@ -236,6 +265,10 @@ function noticePriorityBlocked() {
     document.body.classList.contains('path-locked');
 }
 
+/**
+ * 启动检查结束后尝试弹公告：只有存在未读公告且没有高优先级窗口时才展示。
+ * @returns {boolean} 是否真的打开了弹窗
+ */
 function maybeShowNoticeModal() {
   if (!noticeStartupDone || noticeDismissed || noticePriorityBlocked()) return false;
   if (!noticeLoaded) {
@@ -246,6 +279,10 @@ function maybeShowNoticeModal() {
   return openNoticeModal();
 }
 
+/**
+ * 创建并显示公告弹窗；默认选中第一条未读公告并立即标记已读。
+ * @returns {boolean} 是否成功创建弹窗
+ */
 function openNoticeModal() {
   if (noticeModalEl || noticePriorityBlocked()) return false;
   const item = noticeFindItem(noticeSelectedId) || noticeUnreadItems()[0];
@@ -271,6 +308,11 @@ function openNoticeModal() {
   return true;
 }
 
+/**
+ * 内部关闭函数。
+ * @param {boolean} suppressForSession true 表示本次启动不再自动弹公告；
+ *   高优先级窗口借用公告窗时传 false，之后还能恢复展示。
+ */
 function _noticeClose(suppressForSession) {
   if (suppressForSession) noticeDismissed = true;
   const panel = noticeModalEl;
@@ -279,11 +321,13 @@ function _noticeClose(suppressForSession) {
   closePanel(panel);
 }
 
+/** 用户主动关闭：本次启动不再自动弹公告。 */
 function closeNoticeModal() {
   _noticeClose(true);
 }
 
 // 版本更新/游戏路径窗口优先级更高: 暂存公告, 它们关闭后仍可恢复展示。
+/** 高优先级窗口借道关闭：不抑制本次启动后续的公告展示。 */
 function closeNoticeModalForPriority() {
   _noticeClose(false);
 }

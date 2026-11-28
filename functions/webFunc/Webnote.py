@@ -1,3 +1,14 @@
+"""云端笔记（webnote）的读取、缓存与写入。
+
+公告正文、版本信息等文本都放在云端笔记里。读取走三档：进程内 memo（短
+TTL）→ 磁盘缓存 ``cache/webnote/`` → 网络；网络失败时回退磁盘缓存，并在
+:class:`Note` 上打 ``used_cache`` 标记，调用方据此知道这份内容可能过期，
+不能拿它去做“云端已不存在”的清理。
+
+DNS 解析异常时还会尝试 DoH + 固定 IPv4 兜底，避免在部分网络环境下彻底拿
+不到笔记内容。写接口（:func:`write_note`）需要 web_config 里的
+simplenote API key。
+"""
 
 import json
 import os
@@ -46,6 +57,7 @@ _orig_getaddrinfo = socket.getaddrinfo
 _last_error = {}
 
 def get_note_bases():
+    """返回笔记 URL 模板列表，优先取 web_config，缺失时用内置默认地址。"""
     bases = []
     try:
         from functions.base.web_config import get_web_config
@@ -59,6 +71,7 @@ def get_note_bases():
     return bases or list(DEFAULT_BASES)
 
 def get_update_url():
+    """返回版本信息接口的 URL，配置里没有则用内置地址。"""
     try:
         from functions.base.web_config import get_web_config
         url = (get_web_config() or {}).get("webnote_update_url")
@@ -69,18 +82,26 @@ def get_update_url():
     return DEFAULT_UPDATE_URL
 
 def _build_url(template, key):
+    """把笔记 key 填进 URL 模板；模板没有 ``{key}`` 占位时直接拼到末尾。"""
     t = str(template).strip()
     if "{key}" in t:
         return t.replace("{key}", str(key))
     return t.rstrip("/") + "/" + str(key)
 
 def _cache_stem(key):
+    """把笔记名转成安全的文件名片段（非法字符替换为下划线，最长 80 字）。"""
     return re.sub(r"[^0-9A-Za-z._\-]", "_", str(key))[:80] or "note"
 
 def _cache_path(key):
+    """返回某个笔记名对应的磁盘缓存文件路径。"""
     return os.path.join(CACHE_DIR, _cache_stem(key) + ".txt")
 
 def configured_note_names():
+    """收集配置里出现过的所有笔记名（webnote 段 + lanzou 目录 + 内嵌地址）。
+
+    Returns:
+        list[str]: 去重后的笔记名，供缓存清理时保留白名单。
+    """
     names = []
 
     def add(value):
@@ -113,6 +134,11 @@ def configured_note_names():
     return names
 
 def prune_cache(extra=()):
+    """删掉不再被配置引用的旧笔记缓存文件。
+
+    Args:
+        extra: 额外的笔记名白名单，避免删掉调用方刚写入的缓存。
+    """
     keep = {_cache_stem(name) for name in configured_note_names()}
     for item in (extra or ()):
         text = str(item or "").strip()
@@ -157,6 +183,7 @@ def _prune_once():
         print(f"[Cloud] 笔记缓存清理失败(忽略): {exc}")
 
 def cache_read(key):
+    """读磁盘缓存，返回 ``(内容, 距修改时间秒数)``；没有则返回 ``("", None)``。"""
     path = _cache_path(key)
     try:
         if not os.path.isfile(path):
@@ -168,6 +195,7 @@ def cache_read(key):
         return "", None
 
 def cache_write(key, text):
+    """把笔记内容写到磁盘缓存，目录不存在时自动创建；失败静默忽略。"""
     try:
         os.makedirs(CACHE_DIR, exist_ok=True)
         with open(_cache_path(key), "w", encoding="utf-8") as f:
@@ -189,6 +217,7 @@ def _fmt_age(seconds):
 _MEMO = {}
 
 def memo_get(keys, ttl):
+    """查进程内短期缓存，返回 ``(内容, 使用的 key, 年龄秒)``；未命中返回 None。"""
     if ttl <= 0:
         return None
     now = time.time()
@@ -199,10 +228,12 @@ def memo_get(keys, ttl):
     return None
 
 def memo_put(key, text):
+    """把内容放进进程内短期缓存；key 为空时什么都不做。"""
     if key:
         _MEMO[key] = (text, time.time())
 
 def memo_clear():
+    """清空进程内短期缓存，下次读取会重新走磁盘或网络。"""
     _MEMO.clear()
 
 @contextmanager
@@ -273,6 +304,19 @@ def _fetch_by_ip(url, host, ips, timeout):
     return None
 
 def _fetch_note(keys, verbose=True):
+    """按候选笔记名/URL 模板逐个尝试网络读取，成功时顺手写磁盘缓存。
+
+    总耗时受 ``BUDGET_*`` 限制：有缓存时预算更短。常规线路失败再尝试 DoH
+    解析出的 IPv4 直连。
+
+    Args:
+        keys: 候选笔记名（字符串或列表）。
+        verbose: 是否把每次尝试打到终端。
+
+    Returns:
+        tuple[str, str, str, str]: ``(内容, 来源 URL, 命中的 key, 错误说明)``；
+        全部失败时内容为空、错误说明非空。
+    """
     if isinstance(keys, str):
         keys = [keys]
     _prune_once()
@@ -356,10 +400,16 @@ def _fetch_note(keys, verbose=True):
     return "", "", "", last_err or "未知错误"
 
 def _fetch_text(key, verbose=True):
+    """_fetch_note 的简化版，只返回 ``(内容, 来源 URL, 错误说明)``。"""
     text, url, _used, err = _fetch_note([key] if isinstance(key, str) else key, verbose)
     return text, url, err
 
 def read_note_live(note_id: str, address: str, pwd: str = "") -> tuple:
+    """忽略缓存、直接走网络读一次笔记，给工具窗口预览用。
+
+    Returns:
+        tuple[str, str, str]: ``(内容, 实际使用的地址, 错误说明)``。
+    """
     try:
         note = Note(note_id, address, pwd)
         keys = note._candidate_keys()
@@ -369,6 +419,7 @@ def read_note_live(note_id: str, address: str, pwd: str = "") -> tuple:
     return (text or ""), (used or str(address or "")), (err or "")
 
 def parse_write_response(r):
+    """解析写回接口的响应，返回 ``(是否成功, 详情字典)``；HTML 错误页也认。"""
     text = (r.text or "").strip()
     if not text:
         return False, {"error": f"HTTP {r.status_code} 空响应"}
@@ -389,6 +440,16 @@ def parse_write_response(r):
     return False, {"error": f"服务端返回失败: {str(data)[:160]}"}
 
 def write_note(key, value, update_url=None):
+    """把一段文本写回云端笔记；短文本走 GET，其余走 POST，各重试一次。
+
+    Args:
+        key: 笔记名。
+        value: 新内容；None 视为空串。
+        update_url: 可选的写入接口，缺省用 web_config/内置地址。
+
+    Returns:
+        dict: ``{'status': 1/0, 'error', 'method', 'req_id'}``。
+    """
     url = update_url or get_update_url()
     key = str(key or "")
     value = "" if value is None else str(value)
@@ -433,9 +494,23 @@ def write_note(key, value, update_url=None):
     return {"status": 0, "error": last_err or "未知错误", "method": "", "req_id": None}
 
 class Note:
+    """一个云端笔记的高层封装：记住 key、内容、来源和读取状态。
+
+    典型用法是构造后调用 :meth:`fetch_note_info`，再从 ``note_content`` 拿
+    文本。读取失败时 ``note_content`` 可能来自磁盘缓存，务必同时看
+    ``used_cache``，不要把过期内容当成最新云端数据。
+    """
 
     def __init__(self, id_name: str | None = None, address: str = "",
                  pwd: str = "", read_only: bool = False):
+        """创建一个未读取的笔记对象。
+
+        Args:
+            id_name: 配置里的笔记名/键，用于查内嵌地址。
+            address: 显式笔记地址；优先于 id_name。
+            pwd: 缺省提取码（公告场景一般不用）。
+            read_only: 只读标记，写接口可据此拒绝操作。
+        """
         self.note_id = id_name if id_name else address
         self._requested = str(address or "")
         self.note_name = self._requested
@@ -452,6 +527,7 @@ class Note:
         self.used_cache = False
 
     def _candidate_keys(self):
+        """候选笔记名列表：显式地址在前，内嵌配置地址在后。"""
         keys = []
 
         def add(k):
@@ -468,6 +544,7 @@ class Note:
         return keys or [self._requested]
 
     def _use_key(self, key):
+        """记录本次实际命中的笔记名，配置名和得到的内嵌名不一致时打印提示。"""
         key = str(key or "").strip()
         if not key:
             return
@@ -477,6 +554,14 @@ class Note:
         self.note_name = key
 
     def fetch_note_info(self, allow_refresh=False):
+        """按 memo → 网络 → 磁盘缓存的顺序读取笔记内容。
+
+        Args:
+            allow_refresh: True 时跳过 memo 强制走网络；失败仍会回退磁盘缓存。
+
+        Returns:
+            dict: ``{'note_content': str, 'note_id': str}``。
+        """
         if not allow_refresh and self.has_get and self.note_content:
             return {"note_content": self.note_content, "note_id": self.note_name}
 
@@ -531,6 +616,7 @@ class Note:
         return {"note_content": "", "note_id": self.note_name}
 
     def update_note_content(self, new_content):
+        """写回新内容；云端失败时在内存/memo 里仍然生效，并打印警告。"""
         result = write_note(self.note_name, new_content)
         self.note_content = new_content
         memo_put(self.note_name, new_content)
@@ -542,6 +628,7 @@ class Note:
         return result
 
     def delete_note(self):
+        """把云端笔记内容清空，并清掉磁盘缓存与进程内 memo。"""
         result = write_note(self.note_name, "")
         if result.get("status") == 1:
             cache_write(self.note_name, "")

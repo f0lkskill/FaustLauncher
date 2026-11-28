@@ -1,7 +1,12 @@
 """云端公告读取与本地已读状态管理。
 
-公告正文保存在云端笔记中，已读 ID 单独写入用户 APPDATA 目录，避免修改
-登录态或启动器设置文件。
+公告正文保存在云端笔记里（列表 JSON，每项含 id/title/content/timeline）；
+已读 ID 单独写到 ``%APPDATA%/FaustLauncher/user/notice_reads.json``，避免
+改动登录态或启动器设置文件。
+
+读取分成两步：:class:`AppNoticeManager` 负责拉取并规范化云端列表，再和本地
+已读表做差集得到未读数。云端失败或 JSON 损坏时宁可展示空公告，也不影响
+启动器其他功能；同理，只有确认内容来自云端时才会清理本地已过期的已读 ID。
 """
 
 from __future__ import annotations
@@ -26,6 +31,14 @@ def notice_reads_file() -> str:
 
 
 def _load_read_ids() -> set[str]:
+    """从用户目录读已读 ID，兼容旧的裸数组格式和新的 ``{"ids": [...]}``。
+
+    非字符串、超长 ID 会被丢掉；最多保留 :data:`_MAX_READ_IDS` 条，
+    防止损坏文件把内存撑爆。
+
+    Returns:
+        set[str]: 合法的已读公告 ID 集合。
+    """
     data = try_read_json(notice_reads_file(), [])
     values = data.get("ids") if isinstance(data, dict) else data
     if not isinstance(values, list):
@@ -44,6 +57,11 @@ def _load_read_ids() -> set[str]:
 
 
 def _save_read_ids(read_ids: set[str]) -> None:
+    """把已读 ID 排序后写回用户目录（原子写 + fsync）。
+
+    Args:
+        read_ids: 要持久化的 ID 集合；调用方负责先加/删再做差集。
+    """
     path = notice_reads_file()
     os.makedirs(os.path.dirname(path), exist_ok=True)
     write_json(path, sorted(read_ids), indent=2, fsync=True)
@@ -53,6 +71,11 @@ class AppNoticeManager:
     """读取并规范化云端公告，同时维护本地已读状态。"""
 
     def __init__(self, base_id: str = "notice") -> None:
+        """构造云端笔记客户端并立即载入一次公告列表。
+
+        Args:
+            base_id: 云端笔记名/内嵌配置键，默认 ``notice``。
+        """
         self.notice_note = Note(
             base_id, get_webnote(base_id)[0])
         self.notice_data: list[dict] = []
@@ -65,6 +88,7 @@ class AppNoticeManager:
 
     @staticmethod
     def _normalize(data) -> list[dict]:
+        """把云端 JSON 数组规整成公告列表，丢弃缺 id/title 或重复的项。"""
         if not isinstance(data, list):
             return []
 
@@ -140,7 +164,12 @@ class AppNoticeManager:
             print(f"[Notice] 清理已读记录失败: {type(exc).__name__}: {exc}")
 
     def get_notices(self) -> list[dict]:
-        """返回供前端渲染的公告列表，保留服务端顺序。"""
+        """返回供前端渲染的公告列表，保留服务端顺序。
+
+        Returns:
+            list[dict]: 每项在原字段基础上追加 ``html``（Markdown 渲染结果）
+            和 ``is_read``（本地已读状态）。
+        """
         with _READ_LOCK:
             read_ids = _load_read_ids()
         result = []
@@ -153,12 +182,20 @@ class AppNoticeManager:
         return result
 
     def unread_count(self) -> int:
+        """当前公告里未读的条数；列表为空时返回 0。"""
         with _READ_LOCK:
             read_ids = _load_read_ids()
         return sum(1 for item in self.notice_data if item["id"] not in read_ids)
 
     def mark_read(self, notice_id: str) -> bool:
-        """将一个已展示的公告 ID 持久化为已读。"""
+        """将一个已展示的公告 ID 持久化为已读。
+
+        Args:
+            notice_id: 公告 ID；不在当前云端列表里的 ID 不会被记录。
+
+        Returns:
+            bool: 是否成功写入（已是已读也返回 True）。
+        """
         clean_id = str(notice_id or "").strip()
         if not clean_id or not any(
             item["id"] == clean_id for item in self.notice_data
