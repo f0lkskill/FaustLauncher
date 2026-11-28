@@ -2412,7 +2412,7 @@ class AppApi:
         临时解压目录使用压缩包名，不再让 ``faust_inst_*`` 随机名变成插件
         目录。插件安装前先校验格式（``addon_info.json`` 可解析、``name``
         能当目录名、``scr.py`` 存在）：不合格只清理临时目录，不落盘、不
-        重载；合格后按清单里的 ``name`` 安装。
+        重载；合格后按清单里的 ``name`` 安装，并在安装完成后立即重载插件。
         """
         import shutil
         info_name = 'addon_info.json' if kind == 'addon' else 'mod_info.json'
@@ -2437,6 +2437,9 @@ class AppApi:
                 manager = getattr(self.core, 'addon_manager', None) or AddonManager()
                 if not manager.add_addon(target, name):
                     return {'ok': False, 'error': f'插件 {name} 已安装或复制失败'}
+                # 本地导入不经过下载链路，重载必须在这里补上，否则新插件
+                # 只是躺在 addons/ 里，不会被执行。
+                self._reload_addons_async()
                 return {'ok': True, 'error': None, 'name': name}
 
             name = os.path.basename(target) or 'mod'
