@@ -1,3 +1,19 @@
+"""插件管理器：扫描/载入/卸载插件，并维护它们注册的回调与命名空间。
+
+插件就是一个目录，目录里必须有 ``addon_info.json`` 和 ``scr.py``；管理器把
+``scr.py`` 当作脚本 ``exec``，通过 ``ADDON_ARG`` 把自身、目录名、命名空间
+容器等交给插件。所有插件共享同一个命名空间代理，启动器本身不针对任何具体
+插件写死逻辑。
+
+这里的“卸载”分两种：:meth:`AddonManager.unload_addon` 只执行回调并从内存
+摘掉插件，:meth:`AddonManager.remove_addon` 才会删磁盘目录。删除/重装前调用
+方还要先结束插件拉起的子进程（见 ``addon_processes.py``），否则 Windows 下
+目录会因为被占用而删不掉。
+
+运行入口采用显式注册：插件调用 ``register_run_func`` 后，资源页卡片才会出现
+▶ 按钮；管理器重载时会清空注册，插件每次载入都要重新注册。
+"""
+
 import os
 import json
 import sys
@@ -24,6 +40,12 @@ def is_valid_addon_dir_name(name: str) -> bool:
 
     除了字符白名单，还要挡掉首尾空白、结尾的点以及 ``CON``/``COM1`` 这类
     Windows 保留名 —— 这些都是“看起来正常、真正建目录时才报错”的坑。
+
+    Args:
+        name: 欲作为目录名的插件名。
+
+    Returns:
+        bool: 能否原样在 ``addons/`` 下建出同名目录。
     """
     name = str(name or '')
     if not name or name != name.strip() or name.endswith('.'):
@@ -41,6 +63,12 @@ def validate_addon_dir(addon_path: str) -> tuple[str, str]:
     就是 ``exec`` 这个文件，缺了它插件永远不会起来）。合格时返回
     ``(name, '')``；不合格返回 ``('', 原因)``，调用方据此丢弃暂存目录，
     不把半成品放进 ``addons/``，也不触发重载。
+
+    Args:
+        addon_path: 待检查的插件目录（通常是压缩包解压后的暂存目录）。
+
+    Returns:
+        tuple[str, str]: ``(清单里的插件名, 错误说明)``；合格时错误说明为空串。
     """
     addon_path = os.path.abspath(str(addon_path or ''))
     info_path = os.path.join(addon_path, 'addon_info.json')
@@ -63,6 +91,12 @@ def validate_addon_dir(addon_path: str) -> tuple[str, str]:
 
 
 class _ScratchAddonManager:
+    """收集插件回调用的假管理器。
+
+    删除插件时要执行它的 ``on_unload``/删除回调，但插件的 ``scr.py`` 只在真实
+    管理器里跑过。这里把脚本再 exec 一遍、让所有注册调用落到这个假对象上，
+    就能拿到回调列表而不污染真管理器的状态。
+    """
 
     def __init__(self) -> None:
         self.menu_items: List[Any] = []
@@ -75,6 +109,7 @@ class _ScratchAddonManager:
         self.run_funcs: Dict[str, Dict[str, Any]] = {}
 
     def register_tray_item(self, item) -> None:
+        """只把菜单项记在收集列表里，不触发任何真实托盘刷新。"""
         self.custom_tray_items.append(item)
         self.menu_items.append(item)
 
@@ -84,6 +119,7 @@ class _ScratchAddonManager:
             self.run_funcs[str(name or '')] = {'func': func, 'title': str(title or '')}
 
     def _refresh_tray_menu(self) -> None:
+        """收集阶段不需要刷新托盘，留空实现以兼容插件脚本的调用。"""
         pass
 
 #: 最近创建的那个管理器。命名空间、已载入模块都挂在实例上，而插件是 exec 进
@@ -100,6 +136,15 @@ def current_manager():
 class AddonManager:
 
     def __init__(self, menu_items=None, app=None) -> None:
+        """新建管理器并立即扫描 ``addons/``。
+
+        构造时把自己登记为 :func:`current_manager`，这样插件脚本内部（拿不到
+        管理器实例）也能通过全局函数找到它。
+
+        Args:
+            menu_items: 外部已有的托盘菜单项列表；None 时自建。
+            app: 主应用对象，仅用于刷新托盘菜单，可为 None。
+        """
         global _current_manager
         _current_manager = self
         self.menu_items = menu_items if menu_items is not None else []
@@ -130,6 +175,7 @@ class AddonManager:
         self.scan_addons()
 
     def register_tray_item(self, item) -> None:
+        """注册一个托盘菜单项并立刻刷新原生菜单。"""
         self.custom_tray_items.append(item)
         self.menu_items.append(item)
         self._refresh_tray_menu()
@@ -185,6 +231,7 @@ class AddonManager:
         return {'ok': True}
 
     def _refresh_tray_menu(self) -> None:
+        """让主应用重建托盘菜单；没有 app 或刷新失败时静默跳过。"""
         try:
             if self.app is not None and hasattr(self.app, 'tray') and self.app.tray is not None:
                 self.app.tray.update_menu()
@@ -192,11 +239,13 @@ class AddonManager:
             pass
 
     def clear_custom_tray_items(self) -> None:
+        """清空插件注册的菜单项并刷新托盘（重载插件前调用）。"""
         self.custom_tray_items.clear()
         self.menu_items.clear()
         self._refresh_tray_menu()
 
     def get_custom_tray_items(self) -> List[Any]:
+        """合并两个来源的菜单项并按对象 id 去重，坏条目由 _is_tray_item 过滤。"""
         seen: set = set()
         merged: List[Any] = []
         for item in [*self.custom_tray_items, *self.menu_items]:
@@ -232,6 +281,7 @@ class AddonManager:
         return self.get_custom_tray_items()
 
     def _print_addon_status(self) -> None:
+        """把扫描结果按“启用/禁用/永久/因依赖跳过”打印到终端，供排障用。"""
         print(f"共扫描到 {len(self.addon_names)} 个插件：")
         for name in self.addon_names:
             info = self.get_addon_info(name)
@@ -253,6 +303,11 @@ class AddonManager:
         print(f"插件自定义菜单项: {len(self.get_custom_tray_items())} 个")
 
     def scan_addons(self) -> None:
+        """重新列出 ``addons/`` 下的一级目录；目录不存在时创建它。
+
+        只按目录名登记，不在这里校验插件格式：缺清单或缺 scr.py 的目录会在
+        后续载入时自然失败，不应拖垮整个扫描。
+        """
         self.addon_paths = []
         self.addon_names = []
         if not os.path.exists(self.addons_dir):
@@ -266,6 +321,14 @@ class AddonManager:
                 self.addon_names.append(os.path.basename(item_path))
     
     def get_addon_info(self, addon_name: str) -> Optional[Dict[str, Any]]:
+        """读指定插件的 addon_info.json。
+
+        Args:
+            addon_name: 插件目录名，不是清单里的显示名。
+
+        Returns:
+            解析出的字典；目录不存在、缺文件或 JSON 损坏时返回 None。
+        """
         addon_path = self.get_addon_path(addon_name)
         if not addon_path:
             return None
@@ -282,12 +345,14 @@ class AddonManager:
             return None
     
     def get_addon_path(self, addon_name: str) -> Optional[str]:
+        """按目录名在已扫描的插件里找路径，找不到返回 None。"""
         for path in self.addon_paths:
             if os.path.basename(path) == addon_name:
                 return path
         return None
     
     def get_all_addons(self) -> List[Dict[str, Any]]:
+        """返回 ``[{'name', 'path', 'info'}, ...]``；清单读不到时用占位描述。"""
         addons = []
         for path in self.addon_paths:
             addon_name = os.path.basename(path)
@@ -373,6 +438,7 @@ class AddonManager:
         skipped: Dict[str, str] = {}
 
         def visit(name: str, stack: List[str]) -> bool:
+            """DFS 访问一个节点；返回它是否可载入，失败原因写进 skipped。"""
             if state.get(name) == 2:
                 return name not in skipped
             if state.get(name) == 1:
@@ -415,6 +481,16 @@ class AddonManager:
         return [name for name in order if name not in skipped], skipped
 
     def run_addon(self, addon_name: str, ADDON_ARG: Optional[Dict[str, Any]] = None) -> bool:
+        """按依赖顺序载入单个插件：检查启用状态/依赖，再 exec 它的 scr.py。
+
+        Args:
+            addon_name: 插件目录名。
+            ADDON_ARG: 可选的扩展参数字典；管理器会往里注入 AddonManager、
+                AddonName、ExtendTranslateSource、Namespaces 四个键。
+
+        Returns:
+            bool: 是否成功执行完脚本并登记模块。
+        """
         if ADDON_ARG is None:
             ADDON_ARG = {}
 
@@ -495,6 +571,7 @@ class AddonManager:
             return False
         
     def when_addon_enabled(self, addon_name: str) -> None:
+        """执行该插件注册的启用回调；单个回调出错只打印，不影响其他插件。"""
         for enabled_func in self.enabled_funcs:
             if enabled_func.get('name') == addon_name and enabled_func.get('func'):
                 try:
@@ -504,6 +581,7 @@ class AddonManager:
                     print(f"执行插件 {addon_name} 的启用回调失败: {e}")
                     
     def when_addon_disabled(self, addon_name: str) -> None:
+        """执行该插件注册的禁用回调；单个回调出错只打印，不影响其他插件。"""
         for disabled_func in self.disabled_funcs:
             if disabled_func.get('name') == addon_name and disabled_func.get('func'):
                 try:
@@ -539,6 +617,10 @@ class AddonManager:
         return mod is not None
 
     def unload_all_addons(self) -> None:
+        """执行所有插件的 on_unload，清空回调/命名空间/运行入口/托盘菜单。
+
+        不删磁盘文件；重载流程会紧接着重新扫描并载入。
+        """
         for name, mod in list(self.loaded_modules.items()):
             try:
                 on_unload = getattr(mod, 'on_unload', None)
@@ -564,6 +646,14 @@ class AddonManager:
         self.clear_custom_tray_items()
 
     def reload_all_addons(self, ADDON_ARG: Optional[Dict[str, Any]] = None) -> bool:
+        """卸载全部插件后重新扫描并按依赖顺序载入。
+
+        Args:
+            ADDON_ARG: 透传给 :meth:`run_all_addon` 的扩展参数。
+
+        Returns:
+            bool: 重载流程是否没有抛出异常（单个插件载入失败仍算成功）。
+        """
         print("开始重载插件...")
         try:
             self.extend_translate_source.clear()
@@ -583,6 +673,14 @@ class AddonManager:
         默认沿用源目录名，保持旧调用方的行为；本地导入时由调用方传入
         :func:`validate_addon_dir` 解析出的清单名，让落盘目录和插件自称的
         名字一致，而不是让暂存目录名（以前是 ``faust_inst_*``）泄漏进来。
+
+        Args:
+            addon_path: 源插件目录。
+            addon_name: 显式的落盘目录名；留空时取源目录名。
+
+        Returns:
+            bool: 是否复制成功；目标已存在或复制失败时返回 False（半成品
+            目录会被清掉，避免下次安装被误判为“已存在”）。
         """
         if not os.path.exists(addon_path):
             print(f"插件路径不存在: {addon_path}")
@@ -608,6 +706,11 @@ class AddonManager:
             return False
     
     def _run_del_funcs(self, addon_name: str, funcs: List[Dict[str, Any]]) -> bool:
+        """执行列表里属于该插件的删除回调，单个失败也继续并记为已尝试。
+
+        Returns:
+            bool: 是否至少找到并执行过一个回调。
+        """
         ran = False
         for del_func in funcs:
             if del_func.get('name') == addon_name and del_func.get('func'):
@@ -621,6 +724,17 @@ class AddonManager:
         return ran
 
     def collect_addon_callbacks(self, addon_name: str) -> _ScratchAddonManager:
+        """用假管理器再跑一遍 scr.py，收集该插件注册的清理回调。
+
+        插件没载入过时也能拿到删除回调，是 :meth:`remove_addon` 的兜底来源。
+        脚本执行出错只打印，返回收集到的部分结果。
+
+        Args:
+            addon_name: 插件目录名。
+
+        Returns:
+            _ScratchAddonManager: 只含回调记录的假管理器。
+        """
         scratch = _ScratchAddonManager()
         addon_path = self.get_addon_path(addon_name)
 
@@ -652,6 +766,14 @@ class AddonManager:
         return scratch
 
     def remove_addon(self, addon_name: str) -> bool:
+        """先执行删除回调（必要时从脚本重新收集），再删除插件目录。
+
+        这里只负责插件自己的清理逻辑；占用目录的子进程要由调用方在调用本
+        方法之前结束，否则 Windows 下目录会删不掉。
+
+        Returns:
+            bool: 目录是否成功删除。
+        """
         ran = self._run_del_funcs(addon_name, self.del_funcs)
 
         if not ran:
@@ -701,6 +823,13 @@ class AddonManager:
         return result
 
     def run_all_addon(self, ADDON_ARG: Optional[Dict[str, Any]] = None) -> None:
+        """启动流程入口：补必需插件 → 算依赖顺序 → 逐个载入 → 同步汉化源。
+
+        单个插件抛异常只打印并继续，坏插件不会拖垮启动器。
+
+        Args:
+            ADDON_ARG: 透传给每个 :meth:`run_addon` 的扩展参数。
+        """
         # 先把「必需插件」补齐（例如 WarpHook）。缺失时不阻塞启动：
         # 下载失败只是让依赖它的功能降级，其它插件照常载入。
         self.ensure_required()
@@ -728,6 +857,7 @@ class AddonManager:
         self._sync_extend_translate_source()
 
     def _sync_extend_translate_source(self) -> None:
+        """把插件注册的自定义汉化源推给翻译模块，失败只打印。"""
         try:
             from functions.web_update.translation_source import set_extend_translate_source
             set_extend_translate_source(self.extend_translate_source)
@@ -737,6 +867,7 @@ class AddonManager:
             print(f"同步插件自定义汉化源失败: {e}")
 
     def run_game_start_event(self) -> None:
+        """依次触发插件注册的游戏启动回调，单个失败不影响后续。"""
         for f in list(self.gamestart_funcs):
             try:
                 f()

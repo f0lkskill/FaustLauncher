@@ -105,14 +105,17 @@ def _state_path(name: str) -> str:
 
 
 def _stop_file() -> str:
+    """停止标记文件路径：宿主下一轮轮询看到它就会自行退出。"""
     return _state_path("addon_host.stop")
 
 
 def _pid_file() -> str:
+    """宿主进程号文件路径，供 ``host_pid()`` / ``is_host_running()`` 查询。"""
     return _state_path("addon_host.pid")
 
 
 def _log_file() -> str:
+    """宿主日志路径；顺手确保 logs 目录存在。"""
     folder = os.path.join(_root(), "logs")
     os.makedirs(folder, exist_ok=True)
     return os.path.join(folder, "addon_host.log")
@@ -148,6 +151,7 @@ _OWN_LOCK = {"handle": 0}
 
 
 def _lock_path() -> str:
+    """单实例锁文件路径，防止两个宿主同时写钩子表。"""
     return _state_path("addon_host.lock")
 
 
@@ -230,6 +234,7 @@ def host_pid() -> int:
 
 
 def _clear(path: str) -> None:
+    """尽力删掉一个状态文件；不存在或删不掉都不算错误。"""
     try:
         os.remove(path)
     except OSError:

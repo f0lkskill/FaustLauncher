@@ -44,6 +44,7 @@ class _PROCESSENTRY32W(ctypes.Structure):
 
 
 def _kernel32():
+    """准备一份声明好原型/返回类型的 kernel32，避免 64 位下句柄被截断。"""
     k32 = ctypes.WinDLL("kernel32", use_last_error=True)
     k32.CreateToolhelp32Snapshot.restype = ctypes.c_void_p
     k32.CreateToolhelp32Snapshot.argtypes = [wt.DWORD, wt.DWORD]
@@ -87,6 +88,7 @@ def _process_table():
 
 
 def _image_path(pid):
+    """读进程的映像文件路径；句柄打不开或查询失败时返回空串。"""
     try:
         k32 = _kernel32()
         handle = k32.OpenProcess(_PROCESS_QUERY_LIMITED_INFORMATION, False, int(pid))
@@ -105,7 +107,15 @@ def _image_path(pid):
 
 
 def _descendants(root_pid, table):
-    """``root_pid`` 的所有后代进程号（含多层子进程）。"""
+    """沿父子关系算出 ``root_pid`` 的所有后代进程号（含多层子进程）。
+
+    Args:
+        root_pid: 根进程号，通常是当前启动器进程。
+        table: :func:`_process_table` 返回的进程表。
+
+    Returns:
+        set[int]: 后代 PID 集合，不含根进程自己。
+    """
     children = {}
     for pid, info in table.items():
         children.setdefault(info.get("ppid"), []).append(pid)
@@ -124,6 +134,12 @@ def _command_line_pids(root):
 
     插件拉起的 PowerShell / Python / WebView 进程，命令行通常会带工作台脚本
     路径或 ``--addon <插件目录>``，这是识别它们最可靠的方式。
+
+    Args:
+        root: 插件目录的绝对路径，作为命令行匹配的关键字。
+
+    Returns:
+        set[int]: 命令行引用该目录的进程号；查询失败时为空集合。
     """
     if os.name != "nt":
         return set()
@@ -151,7 +167,15 @@ def _command_line_pids(root):
 
 
 def _wait_gone(pid, timeout=3.0):
-    """等一个进程真正退出；句柄一有信号就说明内核已回收它的资源。"""
+    """等一个进程真正退出；句柄一有信号就说明内核已回收它的资源。
+
+    Args:
+        pid: 被等待的进程号。
+        timeout: 最长等待秒数。
+
+    Returns:
+        bool: 进程已退出（或句柄打不开）为 True，超时仍存活为 False。
+    """
     try:
         k32 = _kernel32()
         handle = k32.OpenProcess(_SYNCHRONIZE, False, int(pid))
@@ -166,7 +190,14 @@ def _wait_gone(pid, timeout=3.0):
 
 
 def _terminate_tree(pid):
-    """结束进程及其子进程（先 taskkill /T，失败再直接 TerminateProcess）。"""
+    """结束进程及其子进程（先 taskkill /T，失败再直接 TerminateProcess）。
+
+    Args:
+        pid: 要结束的根进程号。
+
+    Returns:
+        bool: 等待后该进程是否已不存在。
+    """
     try:
         subprocess.run(
             ["taskkill", "/F", "/T", "/PID", str(int(pid))],
@@ -190,6 +221,15 @@ def _terminate_tree(pid):
 
 
 def _under(path, root):
+    """判断 path 是否位于 root 目录内（含 root 本身），统一大小写与分隔符。
+
+    Args:
+        path: 待判断的路径。
+        root: 目录边界。
+
+    Returns:
+        bool: path 等于 root 或以 ``root + 分隔符`` 开头时为 True。
+    """
     try:
         path = os.path.normcase(os.path.abspath(path))
         root = os.path.normcase(os.path.abspath(root)).rstrip("\\/")
@@ -204,6 +244,12 @@ def release_addon_dir(addon_dir):
     只处理当前启动器进程的后代、映像文件位于插件目录内的进程，以及命令行里
     明确带插件目录的常见脚本宿主（覆盖上一次启动遗留的孤儿工作台进程）；启动器
     自己、游戏进程（``LimbusCompany.exe``）永远不会被结束。
+
+    Args:
+        addon_dir: 插件目录的绝对路径。
+
+    Returns:
+        list[int]: 成功结束的进程号列表；目录不存在或进程表读不到时为空。
     """
     root = os.path.abspath(str(addon_dir or ""))
     if not root or not os.path.isdir(root):
