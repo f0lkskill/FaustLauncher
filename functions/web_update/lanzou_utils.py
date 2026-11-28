@@ -619,8 +619,11 @@ def _FindDownloadFrame(html, origin):
     return _Absolutize(match.group(1), origin) if match else None
 
 def _ParseSharePage(html, origin, pwd=None):
-    match = (re.search(r"url\s*:\s*['\"]([^'\"]*(?:ajaxfile|ajaxm)\.php[^'\"]*)['\"]", html)
-             or re.search(r"['\"]([^'\"]*(?:ajaxfile|ajaxm)\.php\?file=\d+[^'\"]*)['\"]", html))
+    # 蓝奏新版分享页把下载接口从 ajaxm/ajaxfile.php 换成了 ajaxfiles.php，
+    # 参数也从 sign/kd 扩成 websignkey/signs/ves；两种格式都要认。
+    _ajax_api = r"[^'\"]*(?:ajaxfiles?|ajaxm)\.php[^'\"]*"
+    match = (re.search(r"url\s*:\s*['\"](" + _ajax_api + r")['\"]", html)
+             or re.search(r"['\"](" + _ajax_api + r")['\"]", html))
     if not match:
         return None
     api = _Absolutize(match.group(1), origin)
