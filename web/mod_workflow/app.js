@@ -196,6 +196,7 @@
         (p.info && p.info.name) || "", (p.info && p.info.version) || "",
         (p.icon || "").length,
         p.job && p.job.status, p.job && p.job.message,
+        p.installer ? 1 : 0,
         (p.publish_missing || []).join(","), p.publish_ready ? 1 : 0,
         p.last_version || "",
         startBusy[p.name] ? 1 : 0, publishBusy[p.name] ? 1 : 0,
