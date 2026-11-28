@@ -50,6 +50,11 @@ if (api) {
 // 卸载/删除失败 (如文件被占用) 时由后端通知
 window.__onResError = function (msg) { toast(msg, 'error', 6000, 'caution'); };
 
+// 一批 Mod 的 Install/Uninstall 脚本因素材大小不符被跳过：流程结束后统一弹窗汇总
+window.__onModBatIssues = function (issues) {
+  if (typeof showModIssueModal === 'function') showModIssueModal(issues);
+};
+
 window.__onEvent = function (event, data) {
   if (event === 'progress') {
     if (data && data.task) {

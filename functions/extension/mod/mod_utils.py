@@ -32,6 +32,8 @@ import json
 import hashlib
 import datetime
 import shutil
+import threading
+import re
 from typing import List, Dict, Any
 from functions.base.settings_manager import SettingsManager
 from functions.base.common.path_utils import get_mod_root_dir
@@ -261,6 +263,96 @@ def _remove_stale_packages(target_dir: str, stale_names: List[str]) -> None:
             print(f"清理 {_ORPHAN_DIR_NAME} 目录失败: {e}", flush=True)
 
 
+#: 一次批处理流程里发现的“素材对不上”问题。由 :func:`take_bat_issues` 在流程
+#: 结束时取走并清空，交给前端汇总成模态提示（见 app_web._notify_mod_bat_issues）。
+_BAT_ISSUES: List[Dict[str, str]] = []
+_BAT_ISSUES_LOCK = threading.Lock()
+
+
+def record_bat_issue(mod_name: str, bat_name: str, reason: str) -> None:
+    """记录一条 Mod 脚本被跳过的原因（线程安全）。"""
+    with _BAT_ISSUES_LOCK:
+        _BAT_ISSUES.append({
+            'mod': str(mod_name or ''),
+            'bat': str(bat_name or ''),
+            'reason': str(reason or ''),
+        })
+
+
+def take_bat_issues() -> List[Dict[str, str]]:
+    """取走并清空当前累计的脚本问题，供一次流程结束后统一上报。"""
+    with _BAT_ISSUES_LOCK:
+        issues = list(_BAT_ISSUES)
+        _BAT_ISSUES.clear()
+    return issues
+
+
+# 每个脚本执行前，目标目录里应当存在的素材版本：
+#   安装前还是原版 -> 对应 Assets/Uninstallation；
+#   卸载前已是改版 -> 对应 Assets/Installation。
+_BAT_EXPECTED_ASSETS = {
+    'Installer.bat': 'Uninstallation',
+    'Uninstaller.bat': 'Installation',
+}
+
+
+def _bat_var(bat_text: str, key: str, mod_path: str) -> str:
+    """从批处理里读 ``set "key=value"``，展开 `%~dp0` 和环境变量。"""
+    match = re.search(r'set\s+"?' + re.escape(key) + r'"?=([^\r\n"]+)',
+                      bat_text, re.IGNORECASE)
+    if not match:
+        return ''
+    value = match.group(1).strip().strip('"')
+    value = value.replace('%~dp0', mod_path.rstrip('\\/') + os.sep)
+    return os.path.expandvars(value).strip()
+
+
+def _check_bat_materials(mod_path: str, bat_name: str, bat_text: str) -> List[str]:
+    """校验目标目录里将被覆盖的资源文件与应有的素材版本是否逐一同大小。
+
+    Unity 的缓存资源按 hash 目录存放（``<hash1>/<hash2>/__data``）；如果脚本
+    里的 hash 路径和游戏当前资源的 hash 索引对不上，就说明这是重复粘贴进来的
+    不对版素材。此时宁可跳过整个 bat，也不要把错误文件覆盖进游戏目录。
+
+    Returns:
+        list[str]: 空列表表示可以执行；否则是可展示给用户的不匹配原因。
+    """
+    expected_dir_name = _BAT_EXPECTED_ASSETS.get(os.path.basename(bat_name))
+    if not expected_dir_name:
+        return []
+    material_dir = os.path.join(mod_path, 'Assets', expected_dir_name)
+    if not os.path.isdir(material_dir):
+        # 兼容作者自定义目录名：回退到批处理里写的 sourceDir
+        fallback = _bat_var(bat_text, 'sourceDir', mod_path)
+        if fallback and os.path.isdir(fallback):
+            material_dir = fallback
+        else:
+            return [f'素材目录缺失: Assets/{expected_dir_name}']
+
+    dest_dir = _bat_var(bat_text, 'destDir', mod_path)
+    if not dest_dir:
+        dest_dir = os.path.join(
+            os.getenv('LOCALAPPDATA', ''), '..', 'LocalLow', 'Unity',
+            'ProjectMoon_LimbusCompany')
+    if not os.path.isdir(dest_dir):
+        return [f'目标目录不存在: {dest_dir}']
+
+    problems: List[str] = []
+    for root, _dirs, files in os.walk(material_dir):
+        for file_name in files:
+            src = os.path.join(root, file_name)
+            rel = os.path.relpath(src, material_dir)
+            target = os.path.join(dest_dir, rel)
+            if not os.path.isfile(target):
+                problems.append(f'{rel}: 目标资源不存在（hash 索引对不上）')
+                continue
+            src_size, dst_size = os.path.getsize(src), os.path.getsize(target)
+            if src_size != dst_size:
+                problems.append(
+                    f'{rel}: 大小不符 {dst_size} / 应为 {src_size}')
+    return problems
+
+
 def _run_mod_bat(mod_path, bat_name, mod_name, timeout=None):
     """在 Mod 目录里执行它的 `.bat` 脚本（Install / Uninstall）。
 
@@ -270,26 +362,42 @@ def _run_mod_bat(mod_path, bat_name, mod_name, timeout=None):
     1. 读取脚本内容后**删掉所有 `pause`**，写到临时文件 `_no_pause_<原名>`
        再执行 —— 否则批处理会卡在「请按任意键继续」把启动器一起挂住；
     2. `CREATE_NO_WINDOW` 避免弹出黑色控制台窗口；
-    3. 捕获 stdout/stderr 并按 GBK/UTF-8 解码后打日志，方便排查 Mod 脚本报错；
-    4. 无论成功失败都删掉临时脚本。
+    3. 执行前先用 :func:`_check_bat_materials` 校验目标资源的大小/路径：
+       安装前应对得上原始素材，卸载前应对得上改版素材，对不上就跳过整个
+       脚本并记录问题，避免把重复粘贴的错版素材覆盖进游戏目录；
+    4. 捕获 stdout/stderr 并按 GBK/UTF-8 解码后打日志，方便排查 Mod 脚本报错；
+    5. 无论成功失败都删掉临时脚本。
 
     Args:
         mod_path: Mod 目录（脚本所在目录，同时作为工作目录）。
         bat_name: 脚本文件名，如 `Installer.bat` / `Uninstaller.bat`。
         mod_name: Mod 名，仅用于日志前缀。
         timeout: 超时秒数；超时会抛 `TimeoutExpired`，由调用方决定如何处理。
+
+    Returns:
+        bool: 只有“素材大小校验失败”才返回 False（调用方应跳过这个 Mod）；
+        没有脚本、校验通过或普通执行异常都返回 True，保持原有调用行为。
     """
     try:
         abs_path = os.path.abspath(mod_path)
         bat_file = os.path.join(abs_path, bat_name)
         if not os.path.isfile(bat_file):
             print(f"[{mod_name}] 未找到 {bat_file}, 跳过", flush=True)
-            return
+            return True
         print(f"[{mod_name}] 运行 {bat_name} (cwd={abs_path})", flush=True)
         tmp_bat = os.path.join(abs_path, '_no_pause_' + bat_name)
         try:
             with open(bat_file, 'r', encoding='utf-8', errors='replace') as f:
                 content = f.read()
+            problems = _check_bat_materials(abs_path, bat_name, content)
+            if problems:
+                detail = '；'.join(problems[:4])
+                if len(problems) > 4:
+                    detail += f'；另有 {len(problems) - 4} 处'
+                reason = f'{bat_name} 未执行：素材与目标资源不符（{detail}）'
+                print(f'[{mod_name}] {reason}', flush=True)
+                record_bat_issue(mod_name, bat_name, reason)
+                return False
             # 去掉 pause（含其后同行内容），否则脚本会等人按键而卡死
             import re as _re
             content = _re.sub(r'\bpause\b[^\r\n]*', '', content, flags=_re.IGNORECASE)
@@ -314,8 +422,10 @@ def _run_mod_bat(mod_path, bat_name, mod_name, timeout=None):
         for line in _decode_output(result.stderr).splitlines():
             if line.strip():
                 print(f"[{mod_name} {bat_name} stderr] {line}", flush=True)
+        return True
     except Exception as e:
         print(f"执行 {mod_name} {bat_name} 失败: {e}", flush=True)
+        return True
 
 
 class ModManager:
@@ -448,7 +558,9 @@ class ModManager:
                     
                 mod_info = self.get_mod_info(mod_name)
                 if mod_info.get('settings', {}).get('enable', False) and has_installer:
-                    _run_mod_bat(mod_path, 'Installer.bat', mod_name, timeout=300)
+                    if not _run_mod_bat(mod_path, 'Installer.bat', mod_name, timeout=300):
+                        # 素材与目标资源大小不符：跳过这个 Mod，不要继续投放它的包
+                        continue
                     print(f"成功加载Mod贴图资源: {mod_name}")
             
                 # 重新读取：Installer.bat 有可能改写了 mod_info.json

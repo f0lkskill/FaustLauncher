@@ -2829,6 +2829,25 @@ class AppApi:
         except Exception:
             pass
 
+    def _notify_mod_bat_issues(self, issues):
+        """把一批 Mod 脚本跳过原因推给前端汇总弹窗。
+
+        Args:
+            issues: ``[{'mod', 'bat', 'reason'}, ...]``；空列表不打扰用户。
+        """
+        if not issues:
+            return
+        try:
+            import json as _json
+            win = self.window_ref.get("win") if self.window_ref else None
+            if win is None:
+                return
+            win.evaluate_js(
+                "window.__onModBatIssues(" +
+                _json.dumps(issues, ensure_ascii=False) + ")")
+        except Exception as e:
+            print(f"[Mod] 推送脚本问题汇总失败: {e}", flush=True)
+
     def _release_addon_dir(self, name):
         """删除/重装插件前释放它的目录。
 
@@ -2900,7 +2919,7 @@ class AppApi:
         def _run():
             """内部执行相关操作。"""
             try:
-                from functions.extension.mod.mod_utils import ModManager
+                from functions.extension.mod.mod_utils import ModManager, take_bat_issues
                 import os
                 mm = ModManager()
                 path = os.path.join('mods', str(name))
@@ -2913,6 +2932,8 @@ class AppApi:
                     print(f"Mod {name} 卸载缓存完成", flush=True)
                 except Exception as e:
                     print(f"卸载 Mod {name} 缓存失败(继续删除): {e}", flush=True)
+                # 卸载脚本可能因素材大小不符被跳过，整轮结束后统一汇总
+                self._notify_mod_bat_issues(take_bat_issues())
                 errs = self._rmtree_robust(path)
                 if errs:
                     print(f"删除 Mod {name} 失败: 部分文件被占用无法删除", flush=True)
@@ -2932,12 +2953,16 @@ class AppApi:
         """应用Mod。"""
         def _run():
             """内部执行相关操作。"""
-            from functions.extension.mod.mod_utils import ModManager
+            from functions.extension.mod.mod_utils import ModManager, take_bat_issues
             try:
                 loaded = ModManager().load_all_mods()
                 print(f"Mod 应用完成, 已加载 {len(loaded)} 个")
             except Exception as e:
                 print(f"应用 Mod 失败: {e}")
+            finally:
+                # 整轮 bat 流程结束后统一汇总：素材大小对不上的 Mod 已在
+                # _run_mod_bat 里被跳过，这里一次性提示用户可能已失效。
+                self._notify_mod_bat_issues(take_bat_issues())
         threading.Thread(target=_run, daemon=True).start()
         return True
 
