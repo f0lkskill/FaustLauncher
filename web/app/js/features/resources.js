@@ -625,16 +625,27 @@ function collectSettingsFields(panel) {
   return s;
 }
 
-// 依赖列表: 每个 requires 条目拉一份简介/版本/图标。
-// 数据优先走云端缓存(和资源页一致), 云端没有时后端会降级读本地
-// addons/<目录>/addon_info.json 与本地 icon.png, 所以离线也能看清依赖是什么。
+/**
+ * 渲染详情面板里的依赖卡片（资源管理与下载中心共用同一实现）。
+ *
+ * 每个 requires 条目拉一份简介/版本/图标：数据优先走云端缓存，云端没有时
+ * 后端降级读本地 addon_info.json 与 icon.png，所以离线也能看清依赖是什么。
+ * 下载中心的云端条目没有 missing_requires，这时先显示“读取中”，等接口返回
+ * 真实 installed 状态后再更新，避免把未安装的依赖误标成已安装。
+ *
+ * @param {Element} panel 详情面板根节点（内含 #res-dep-list）
+ * @param {object} item 资源条目，至少含 requires；可含 missing_requires
+ */
 function fillDepList(panel, item) {
   const box = panel.querySelector('#res-dep-list');
   if (!box) return;
   const deps = item.requires || [];
+  const known = Array.isArray(item.missing_requires);
   const missing = item.missing_requires || [];
   box.innerHTML = deps.map(function (d) {
-      const lack = missing.indexOf(d) >= 0;
+      const lack = known && missing.indexOf(d) >= 0;
+      const cls = known ? (lack ? 'missing' : 'ok') : 'loading';
+      const label = known ? (lack ? '未安装' : '已安装') : '读取中…';
       return '<div class="res-card' + (lack ? ' disabled' : '') + '" data-dep-name="' + esc(d) + '">' +
         '<div class="res-card-main">' +
         '<img class="res-icon" src="' + PROJECT_ICON + '" alt="">' +
@@ -642,9 +653,7 @@ function fillDepList(panel, item) {
           '<div class="res-title-row">' +
             '<span class="res-title">' + esc(d) + '</span>' +
             '<span class="res-ver-inline res-dep-ver"></span>' +
-            '<span class="res-dep-state ' + (lack ? 'missing' : 'ok') + '">' +
-              (lack ? '未安装' : '已安装') +
-            '</span>' +
+            '<span class="res-dep-state ' + cls + '">' + label + '</span>' +
           '</div>' +
           '<div class="res-desc res-dep-desc">读取中…</div>' +
         '</div>' +
@@ -667,11 +676,17 @@ function fillDepList(panel, item) {
         desc.textContent = text;
       }
       const state = row.querySelector('.res-dep-state');
-      if (state && info) {
-        // 本地已安装 + 云端有发布信息 = 正常; 本地缺就是缺
-        const lack = !info.installed;
-        state.className = 'res-dep-state ' + (lack ? 'missing' : 'ok');
-        state.textContent = lack ? '未安装' : '已安装';
+      if (state) {
+        // 本地已安装 + 云端有发布信息 = 正常；没读到就明确显示“状态未知”。
+        if (info) {
+          const lack = !info.installed;
+          state.className = 'res-dep-state ' + (lack ? 'missing' : 'ok');
+          state.textContent = lack ? '未安装' : '已安装';
+          row.classList.toggle('disabled', lack);
+        } else {
+          state.className = 'res-dep-state loading';
+          state.textContent = '状态未知';
+        }
       }
     };
     if (!api) { fill(null); return; }

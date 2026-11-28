@@ -452,6 +452,10 @@ function openDcModal(kind, item) {
   if (existing) { closePanel(existing); return; }
   document.body.classList.add('modal-open');
   const disabled = item.disabled;
+  // 云端插件条目也可能声明 requires（字符串或数组）；和本地资源页一样在详情里展示依赖卡片。
+  let deps = (kind === 'addon') ? (item.requires || []) : [];
+  if (typeof deps === 'string') deps = [deps];
+  deps = deps.filter(Boolean);
   const panel = document.createElement('div');
   panel.id = 'dc-modal';
   panel.className = 'panel-overlay';
@@ -475,6 +479,7 @@ function openDcModal(kind, item) {
         '</div>' +
       '</div>' +
       '<div class="res-detail-desc">' + esc(item.desc || '无描述') + '</div>' +
+      (deps.length ? '<div class="res-dep-list" id="res-dep-list"></div>' : '') +
       '<div class="res-detail-ops">' +
         '<button class="btn btn-primary" id="dc-modal-dl" ' + (disabled ? 'disabled' : '') + '>' +
           '<svg class="ico" data-icon="download-two.svg" viewBox="0 0 48 48" fill="none" aria-hidden="true"></svg> 下载' +
@@ -483,6 +488,11 @@ function openDcModal(kind, item) {
     '</div>';
   document.body.appendChild(panel);
   hydrateIcons(panel);
+  // 依赖卡片直接复用资源页的渲染实现，避免两处样式/状态口径不一致
+  // （app.js 已把 fillDepList 挂到 window.Faust）。
+  if (deps.length && window.Faust && typeof window.Faust.fillDepList === 'function') {
+    window.Faust.fillDepList(panel, Object.assign({}, item, { requires: deps }));
+  }
   panel.addEventListener('click', (e) => { if (e.target === panel) closePanel(panel); });
   $('#dc-modal-close').onclick = () => closePanel(panel);
   if (!disabled) {

@@ -764,9 +764,10 @@ body.modal-open .res-card {
   font-size: 11.5px; color: var(--text-3); line-height: 1.5;
   padding: 6px 2px 0;
 }
-/* 插件详情里的依赖列表 */
+/* 插件详情里的依赖列表（资源页/下载中心共用） */
 .res-dep-list {
   margin: 8px 16px 4px;
+  max-height: 240px; overflow-y: auto; scrollbar-gutter: stable;
 }
 .res-settings-scroll {
   max-height: 220px;
@@ -798,6 +799,7 @@ body.modal-open .res-card {
 }
 .res-dep-state.ok { color: var(--success); background: rgba(46, 160, 67, 0.15); border: 1px solid rgba(46, 160, 67, 0.35); }
 .res-dep-state.missing { color: var(--danger); background: rgba(220, 60, 60, 0.13); border: 1px solid rgba(220, 60, 60, 0.4); }
+.res-dep-state.loading { color: var(--text-3); background: rgba(var(--tint-rgb), .06); border: 1px solid rgba(var(--tint-rgb), .12); }
 /* NEW 标识: 周期性 摇摆+放大+表面泛光 (每 3s 播放一次, 播放约 1.2s) */
 @keyframes res-new-pop {
   0%, 100% {

@@ -240,6 +240,7 @@ window.Faust = {
   fmtBytes,
   fmtSpeed,
   openResModal,
+  fillDepList,
   openDcModal,
   openVersionModal,
   closeVersionModal,
