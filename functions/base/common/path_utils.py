@@ -1,3 +1,11 @@
+"""启动器运行时路径的统一解析。
+
+区分三组路径：用户数据（``%APPDATA%/FaustLauncher/user``）、前端资源
+（打包版在 exe 旁的 ``web``/``_internal/web``，开发版在仓库 ``web``）、
+启动器根目录（配置/日志/插件/缓存所在）。打包后 ``__file__`` 位于
+``_internal`` 里，不能拿来推算根目录，所以统一走 ``sys.executable``。
+"""
+
 import os
 import sys
 
@@ -40,10 +48,25 @@ def get_launcher_data_dir(*parts: str, create: bool = False) -> str:
 
 
 def get_launcher_user_dir(create: bool = False) -> str:
-    """返回启动器保存用户设置、登录态和缓存数据的目录。"""
+    """返回启动器保存用户设置、登录态和缓存数据的目录。
+
+    Args:
+        create: 是否自动创建目录。
+
+    Returns:
+        str: ``%APPDATA%/FaustLauncher/user`` 的绝对路径。
+    """
     return get_launcher_data_dir(LAUNCHER_USER_DIR_NAME, create=create)
 
 def get_web_root(*parts) -> str:
+    """找前端资源目录或文件；打包/开发、web/html 两种名字都兼容。
+
+    Args:
+        *parts: 资源目录下的相对路径片段。
+
+    Returns:
+        str: 第一个存在的候选路径；全都不存在时返回首个候选并打印诊断。
+    """
     if getattr(sys, 'frozen', False):
         exe_dir = os.path.dirname(os.path.abspath(sys.executable))
         candidates = []
@@ -67,6 +90,11 @@ def get_web_root(*parts) -> str:
     return candidates[0]
 
 def get_app_root(create: bool = True) -> str:
+    """返回启动器根目录：打包版是 exe 所在目录，开发版是仓库根。
+
+    Args:
+        create: 是否尝试创建目录（失败会被忽略）。
+    """
     if getattr(sys, 'frozen', False):
         root = os.path.dirname(os.path.abspath(sys.executable))
     else:
