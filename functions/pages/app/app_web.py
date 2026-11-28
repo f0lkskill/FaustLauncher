@@ -1255,23 +1255,24 @@ class AppApi:
                     "error": f"{type(exc).__name__}: {exc}"}
 
     def get_backgrounds(self):
+        """随机返回一张背景图。
+
+        2026-11-28 修正: 旧实现先 append 上一张再 shuffle，会把它重新打乱到
+        首位，等于"避免重复"失效；现在直接从打乱后的列表里剔除上一张。
+        """
         uris = []
         try:
-            import random
             blur = _bg_blur_setting()
             paths = _background_files(_active_skin_id())
             last = _LAST_BG_PATH.get("path")
-            if last and len(paths) > 1 and last in paths:
-                paths.remove(last)
-                paths.append(last)
-            random.shuffle(paths)
+            if last and len(paths) > 1:
+                paths = [p for p in paths if p != last]
             for path in paths:
-                if uris:
-                    break
                 u = _bg_encode(path, blur)
                 if u:
                     uris.append(u)
                     _LAST_BG_PATH["path"] = path
+                    break
         except Exception:
             pass
         return uris
