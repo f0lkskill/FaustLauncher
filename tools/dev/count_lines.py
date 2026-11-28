@@ -16,10 +16,10 @@ def count_lines_in_file(file_path):
 def find_py_files(directory):
     py_files = []
     for root, dirs, files in os.walk(directory):
-        dirs[:] = [d for d in dirs if d not in ['_internal', '__pycache__', '.git', 'build', 'dist', 'temp','venv', '.venv']]
+        dirs[:] = [d for d in dirs if d not in ['_internal', '__pycache__', '.git', 'build', 'dist', 'temp','venv', '.venv', 'addons', 'cache']]
         
         for file in files:
-            if file.endswith('.py') or file.endswith('.js') or file.endswith('.html'):
+            if file.endswith('.py') or file.endswith('.js') or file.endswith('.html') or file.endswith('.c') or file.endswith('.h'):
                 py_files.append(os.path.join(root, file))
     return py_files
 
