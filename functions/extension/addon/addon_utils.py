@@ -8,6 +8,60 @@ from functions.web_update.translation_source import CustomTranslateSource
 from functions.base.common.json_io import read_json, write_json
 from functions.extension.addon.namespace_registry import NamespaceRegistry
 
+#: Windows 不允许出现在目录名里的字符。插件的 ``name`` 会被直接用作目录名，
+#: 所以校验时用同一份规则，避免安装到一半才发现 ``mkdir`` 失败。
+_INVALID_DIR_CHARS = frozenset('<>:"/\\|?*')
+#: Windows 保留设备名（允许带扩展名，所以比较时只看第一个点之前）。
+_RESERVED_DIR_NAMES = frozenset(
+    ['CON', 'PRN', 'AUX', 'NUL']
+    + [f'COM{i}' for i in range(1, 10)]
+    + [f'LPT{i}' for i in range(1, 10)]
+)
+
+
+def is_valid_addon_dir_name(name: str) -> bool:
+    """判断插件名能否原样用作 ``addons/`` 下的目录名。
+
+    除了字符白名单，还要挡掉首尾空白、结尾的点以及 ``CON``/``COM1`` 这类
+    Windows 保留名 —— 这些都是“看起来正常、真正建目录时才报错”的坑。
+    """
+    name = str(name or '')
+    if not name or name != name.strip() or name.endswith('.'):
+        return False
+    if any(ch in _INVALID_DIR_CHARS or ord(ch) < 32 for ch in name):
+        return False
+    return name.split('.', 1)[0].upper() not in _RESERVED_DIR_NAMES
+
+
+def validate_addon_dir(addon_path: str) -> tuple[str, str]:
+    """校验一个目录是不是可安装的插件，返回 ``(插件名, 错误说明)``。
+
+    判定标准与运行时载入保持一致：必须有可解析的 ``addon_info.json``，
+    ``name`` 是非空字符串且能安全用作目录名，``scr.py`` 必须存在（载入器
+    就是 ``exec`` 这个文件，缺了它插件永远不会起来）。合格时返回
+    ``(name, '')``；不合格返回 ``('', 原因)``，调用方据此丢弃暂存目录，
+    不把半成品放进 ``addons/``，也不触发重载。
+    """
+    addon_path = os.path.abspath(str(addon_path or ''))
+    info_path = os.path.join(addon_path, 'addon_info.json')
+    if not os.path.isfile(info_path):
+        return '', '缺少 addon_info.json'
+    try:
+        info = read_json(info_path)
+    except Exception as e:  # noqa: BLE001 - 坏 JSON 也属于“格式不合格”
+        return '', f'addon_info.json 解析失败: {e}'
+    if not isinstance(info, dict):
+        return '', 'addon_info.json 不是 JSON 对象'
+    name = str(info.get('name') or '').strip()
+    if not name:
+        return '', 'addon_info.json 缺少 name'
+    if not is_valid_addon_dir_name(name):
+        return '', f'插件名不能用作目录名: {name}'
+    if not os.path.isfile(os.path.join(addon_path, 'scr.py')):
+        return '', '缺少 scr.py'
+    return name, ''
+
+
 class _ScratchAddonManager:
 
     def __init__(self) -> None:
@@ -523,25 +577,33 @@ class AddonManager:
             print(f"插件重载失败: {e}")
             return False
         
-    def add_addon(self, addon_path: str) -> bool:
+    def add_addon(self, addon_path: str, addon_name: Optional[str] = None) -> bool:
+        """把一个现成的插件目录复制进 ``addons/``。
+
+        默认沿用源目录名，保持旧调用方的行为；本地导入时由调用方传入
+        :func:`validate_addon_dir` 解析出的清单名，让落盘目录和插件自称的
+        名字一致，而不是让暂存目录名（以前是 ``faust_inst_*``）泄漏进来。
+        """
         if not os.path.exists(addon_path):
             print(f"插件路径不存在: {addon_path}")
             return False
-        
-        addon_name = os.path.basename(addon_path)
+
+        addon_name = str(addon_name or '').strip() or os.path.basename(addon_path)
         dest_path = os.path.join(self.addons_dir, addon_name)
-        
+
         if os.path.exists(dest_path):
             print(f"插件 {addon_name} 已存在")
             return False
-        
+
+        import shutil
         try:
-            import shutil
             shutil.copytree(addon_path, dest_path)
             self.scan_addons()
             print(f"插件 {addon_name} 添加成功")
             return True
         except Exception as e:
+            # 复制到一半失败会留下半个目录，下次安装会被误判成“已存在”。
+            shutil.rmtree(dest_path, ignore_errors=True)
             print(f"添加插件失败: {e}")
             return False
     
